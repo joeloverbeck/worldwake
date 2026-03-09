@@ -22,6 +22,7 @@ Lots must support split and merge with exact conservation and provenance trackin
 1. Operations are methods on `World` (not free functions) so they can create/archive entities atomically
 2. Split creates a new lot entity and reduces the source; merge archives one lot and increases the other
 3. Zero-quantity lots are archived immediately after split (spec rule: no live zero-quantity lots)
+4. Split/merge amounts should use `Quantity` end-to-end so conservation-sensitive APIs stay semantically typed
 
 ## What to Change
 
@@ -31,14 +32,14 @@ Lots must support split and merge with exact conservation and provenance trackin
 pub fn split_lot(
     &mut self,
     lot_id: EntityId,
-    amount: u32,
+    amount: Quantity,
     tick: Tick,
     event_id: Option<EventId>,
 ) -> Result<(EntityId, EntityId), WorldError>
 ```
 
 - Validates `lot_id` is alive with an `ItemLot` component
-- Validates `amount > 0` and `amount < lot.quantity` (splitting the full amount is just a move, not a split)
+- Validates `amount > Quantity(0)` and `amount < lot.quantity` (splitting the full amount is just a move, not a split)
 - Reduces source lot quantity by `amount`
 - Creates a new `ItemLot` entity with `quantity = amount` and `commodity` matching source
 - Appends `ProvenanceEntry { operation: Split, source_lot: Some(lot_id), amount, tick, event_id }` to both lots
@@ -83,11 +84,11 @@ If any operation would produce a zero-quantity lot, that lot must be archived. T
 
 ### Tests That Must Pass
 
-1. `split_lot(lot, 3)` on a lot with quantity 10 produces two lots: source has 7, new has 3
+1. `split_lot(lot, Quantity(3))` on a lot with quantity `Quantity(10)` produces two lots: source has `Quantity(7)`, new has `Quantity(3)`
 2. Total quantity is preserved exactly: `source.quantity + new.quantity == original`
 3. Both lots have the same `CommodityKind` after split
 4. Split appends a `ProvenanceEntry` with `LotOperation::Split` to both lots
-5. `split_lot` with `amount == 0` returns error
+5. `split_lot` with `amount == Quantity(0)` returns error
 6. `split_lot` with `amount >= lot.quantity` returns `WorldError::InsufficientQuantity`
 7. `split_lot` on a non-ItemLot entity returns error
 8. `merge_lots(apple_lot, grain_lot)` returns error (different commodities)
@@ -104,6 +105,7 @@ If any operation would produce a zero-quantity lot, that lot must be archived. T
 2. **No negative stocks**: no operation produces negative quantity (spec 9.6)
 3. **No live zero-quantity lots**: zero-quantity lots are archived immediately
 4. **Provenance is append-only**: entries are only added, never removed or mutated
+5. Conserved operation amounts stay typed as `Quantity`
 
 ## Test Plan
 

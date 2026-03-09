@@ -13,13 +13,15 @@ Lot lineage tracking requires a `ProvenanceEntry` that records when, why, and fr
 ## Assumption Reassessment (2026-03-09)
 
 1. `Tick` and `EventId` and `EntityId` already exist in `ids.rs` — confirmed
-2. No existing provenance types — confirmed
-3. `items.rs` will exist after E04ITECON-001 — dependency
+2. `Quantity` already exists in `numerics.rs` and should be reused for conserved lot amounts instead of raw `u32` — confirmed
+3. No existing provenance types — confirmed
+4. `items.rs` will exist after E04ITECON-001 — dependency
 
 ## Architecture Check
 
 1. Pure data types with no logic beyond construction; append-only provenance is enforced at the call site, not in these types
 2. Placed in `items.rs` alongside `CommodityKind` since they are part of the item identity model
+3. Provenance quantities should use the semantic `Quantity` wrapper so split/merge/production APIs stay type-safe at the conserved-stock boundary
 
 ## What to Change
 
@@ -46,7 +48,7 @@ pub struct ProvenanceEntry {
     pub event_id: Option<EventId>,
     pub operation: LotOperation,
     pub source_lot: Option<EntityId>,
-    pub amount: u32,
+    pub amount: Quantity,
 }
 ```
 
@@ -81,6 +83,7 @@ Add `LotOperation` and `ProvenanceEntry` to re-exports.
 
 1. `ProvenanceEntry` uses no `HashMap` or `HashSet`
 2. All `LotOperation` variants match the spec's list exactly
+3. Conserved provenance amounts use `Quantity`, not raw integers
 
 ## Test Plan
 

@@ -22,6 +22,7 @@ Stackable commodity lots need to be first-class ECS components so the world can 
 
 1. Follows the exact same macro pattern used for `Name` and `AgentData` — no new abstractions
 2. `ItemLot` is restricted to `EntityKind::ItemLot` entities via the kind-check closure
+3. Lot amounts should use `Quantity` so conserved inventory cannot silently degrade back into ad hoc `u32` arithmetic
 
 ## What to Change
 
@@ -31,7 +32,7 @@ Stackable commodity lots need to be first-class ECS components so the world can 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ItemLot {
     pub commodity: CommodityKind,
-    pub quantity: u32,
+    pub quantity: Quantity,
     pub provenance: Vec<ProvenanceEntry>,
 }
 
@@ -77,9 +78,9 @@ Convenience method that creates an `EntityKind::ItemLot` entity and attaches an 
 
 ### Tests That Must Pass
 
-1. `World::create_item_lot("Apple", 10, tick)` produces an alive entity with kind `ItemLot`
-2. Created lot has `quantity == 10` and exactly one `ProvenanceEntry` with `LotOperation::Created`
-3. `create_item_lot` with `quantity == 0` returns an error
+1. `World::create_item_lot(CommodityKind::Apple, Quantity(10), tick)` produces an alive entity with kind `ItemLot`
+2. Created lot has `quantity == Quantity(10)` and exactly one `ProvenanceEntry` with `LotOperation::Created`
+3. `create_item_lot` with `quantity == Quantity(0)` returns an error
 4. Inserting `ItemLot` on a non-`ItemLot` entity kind returns `WorldError::InvalidOperation`
 5. `query_item_lot()` returns only live `ItemLot` entities
 6. `ItemLot` component bincode round-trips correctly
@@ -93,6 +94,7 @@ Convenience method that creates an `EntityKind::ItemLot` entity and attaches an 
 2. Provenance entries are append-only (Vec only grows)
 3. `ItemLot` can only be attached to `EntityKind::ItemLot` entities
 4. All existing tests continue to pass unchanged
+5. Conserved lot counts use `Quantity`, not raw integers
 
 ## Test Plan
 

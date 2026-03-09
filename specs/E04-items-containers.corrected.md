@@ -60,7 +60,7 @@ This lets later trade logic price unique tools / weapons without pretending they
 ### ItemLot Component
 `ItemLot`:
 - `commodity: CommodityKind`
-- `quantity: u32`
+- `quantity: Quantity`
 - `provenance: Vec<ProvenanceEntry>`
 
 Rules:
@@ -74,7 +74,7 @@ Record enough information to preserve lot lineage:
 - `event_id: Option<EventId>`
 - `operation: LotOperation`
 - `source_lot: Option<EntityId>`
-- `amount: u32`
+- `amount: Quantity`
 
 `LotOperation` cases:
 - `Created`
@@ -88,7 +88,7 @@ Record enough information to preserve lot lineage:
 
 ### Lot Algebra
 Provide pure and world-level helpers for:
-- `split_lot(lot_id, amount) -> Result<(EntityId, EntityId)>`
+- `split_lot(lot_id, amount: Quantity) -> Result<(EntityId, EntityId)>`
 - `merge_lots(a, b) -> Result<EntityId>`
 
 Rules:
@@ -148,6 +148,7 @@ Provide:
 - `verify_conservation(world, commodity, expected_total) -> Result<()>`
 
 This helper is intentionally global and does not care where the lots are located.
+Lot-local quantities stay strongly typed as `Quantity`; the global helper widens to `u64` only at aggregation boundaries to avoid overflow when summing many lots.
 
 ## Invariants Enforced
 - Spec 3.6: hybrid identity is explicit

@@ -12,7 +12,7 @@ Spec invariant 9.5 requires that conserved quantities change only through explic
 
 ## Assumption Reassessment (2026-03-09)
 
-1. `ItemLot` component with `commodity` and `quantity` fields exists after E04ITECON-003 — dependency
+1. `ItemLot` component with `commodity` and `quantity: Quantity` fields exists after E04ITECON-003 — dependency
 2. `World::query_item_lot()` iterator exists after E04ITECON-003 — dependency
 3. `WorldError::InvariantViolation` variant exists in `error.rs` — confirmed
 4. No existing conservation functions — confirmed
@@ -20,8 +20,9 @@ Spec invariant 9.5 requires that conserved quantities change only through explic
 ## Architecture Check
 
 1. Pure query functions that scan all live `ItemLot` entities — no mutation
-2. Uses `u64` accumulator to avoid overflow when summing many `u32` quantities
+2. Uses `u64` accumulator to avoid overflow when summing many `Quantity` values
 3. Placed in a new `conservation.rs` module to keep concerns separate
+4. `Quantity` remains the lot-local semantic type; widening to `u64` happens only at the aggregate boundary
 
 ## What to Change
 
@@ -32,7 +33,7 @@ pub fn total_commodity_quantity(world: &World, commodity: CommodityKind) -> u64 
     world
         .query_item_lot()
         .filter(|(_, lot)| lot.commodity == commodity)
-        .map(|(_, lot)| u64::from(lot.quantity))
+        .map(|(_, lot)| u64::from(lot.quantity.0))
         .sum()
 }
 
@@ -90,6 +91,7 @@ Add `pub mod conservation;` and re-export both functions.
 2. Uses `u64` accumulator to prevent overflow
 3. Only counts live lots, not archived ones
 4. All existing tests continue to pass unchanged
+5. Global totals widen from `Quantity` instead of storing lot counts as raw integers
 
 ## Test Plan
 

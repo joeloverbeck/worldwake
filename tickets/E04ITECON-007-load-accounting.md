@@ -22,6 +22,7 @@ Container capacity enforcement requires deterministic load calculation. Without 
 1. Load weight functions are pure functions in a new `load.rs` module (not methods on components)
 2. Load-per-unit for commodities and unique item kinds is defined via match arms — single source of truth for weight tables
 3. Container load calculation requires iterating entities that reference a container — since `contained_by` relations don't exist yet (E05), this ticket provides the weight-per-item functions and a `current_container_load` that takes an explicit list of contained entity IDs. E05 will wire containment queries into this.
+4. `ItemLot.quantity` is a `Quantity`; load math should cross that wrapper only at the arithmetic boundary instead of spreading raw integers back through item-domain APIs
 
 ## What to Change
 
@@ -91,8 +92,8 @@ Add `pub mod load;` and re-export key functions.
 
 ### Tests That Must Pass
 
-1. `load_of_lot` for 10 apples returns `LoadUnits(10)` (1 per unit × 10)
-2. `load_of_lot` for 5 water returns `LoadUnits(10)` (2 per unit × 5)
+1. `load_of_lot` for `Quantity(10)` apples returns `LoadUnits(10)` (1 per unit × 10)
+2. `load_of_lot` for `Quantity(5)` water returns `LoadUnits(10)` (2 per unit × 5)
 3. `load_of_unique_item` for a Weapon returns `LoadUnits(10)`
 4. `load_of_entity` correctly dispatches between lot and unique item
 5. `load_of_entity` for an entity with no item component returns `LoadUnits(0)`
@@ -108,6 +109,7 @@ Add `pub mod load;` and re-export key functions.
 2. Load functions are pure and deterministic
 3. No `HashMap` or floating-point in load calculations
 4. All existing tests continue to pass unchanged
+5. Quantity wrappers are preserved in item-domain APIs and only unwrapped at the load-arithmetic boundary
 
 ## Test Plan
 
