@@ -26,6 +26,7 @@ pub mod knowledge_view;
 pub mod replay_state;
 pub mod replay_execution;
 pub mod replan_needed;
+pub mod save_load;
 pub mod scheduler;
 pub mod simulation_state;
 pub mod start_gate;
@@ -66,6 +67,9 @@ pub use replay_execution::{
 };
 pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
 pub use replan_needed::ReplanNeeded;
+pub use save_load::{
+    load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
+};
 pub use scheduler::Scheduler;
 pub use simulation_state::SimulationState;
 pub use start_gate::start_action;

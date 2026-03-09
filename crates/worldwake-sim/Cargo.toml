@@ -4,12 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bincode = "1"
 rand_chacha = { version = "0.3", features = ["serde1"] }
 serde = { version = "1", features = ["derive"] }
 worldwake-core = { path = "../worldwake-core" }
-
-[dev-dependencies]
-bincode = "1"
 
 [lints]
 workspace = true
