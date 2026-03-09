@@ -215,7 +215,9 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
             })
             .collect::<Vec<_>>();
         let items = [
-            world.create_agent("Aster", ControlSource::Ai, Tick(10)).unwrap(),
+            world
+                .create_agent("Aster", ControlSource::Ai, Tick(10))
+                .unwrap(),
             world
                 .create_item_lot(CommodityKind::Bread, Quantity(3), Tick(11))
                 .unwrap(),
@@ -257,8 +259,8 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
                 1 => {
                     let entity = pick_entity(&mut rng, &entities);
                     let container = pick_entity(&mut rng, &containers);
-                    let would_cycle =
-                        entity == container || world.recursive_contents_of(entity).contains(&container);
+                    let would_cycle = entity == container
+                        || world.recursive_contents_of(entity).contains(&container);
 
                     let result = world.put_into_container(entity, container);
                     if would_cycle {
@@ -271,11 +273,7 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
                         ));
                     } else {
                         result.unwrap();
-                        mark_entity_and_descendants_placed(
-                            &world,
-                            entity,
-                            &mut expected_placed,
-                        );
+                        mark_entity_and_descendants_placed(&world, entity, &mut expected_placed);
                     }
                 }
                 2 => {
@@ -308,9 +306,15 @@ fn randomized_reservations_preserve_exclusivity() {
         let mut world = World::new(Topology::new()).unwrap();
         let mut rng = seeded_rng(seed_offset.wrapping_add(32));
         let reservers = vec![
-            world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap(),
-            world.create_agent("Bram", ControlSource::Human, Tick(2)).unwrap(),
-            world.create_agent("Cora", ControlSource::Ai, Tick(3)).unwrap(),
+            world
+                .create_agent("Aster", ControlSource::Ai, Tick(1))
+                .unwrap(),
+            world
+                .create_agent("Bram", ControlSource::Human, Tick(2))
+                .unwrap(),
+            world
+                .create_agent("Cora", ControlSource::Ai, Tick(3))
+                .unwrap(),
         ];
         let reservable_entities = vec![
             world
@@ -336,7 +340,8 @@ fn randomized_reservations_preserve_exclusivity() {
                 .collect::<Vec<_>>();
 
             if !active_reservations.is_empty() && rng.next_u32().is_multiple_of(3) {
-                let released = active_reservations.swap_remove(pick_index(&mut rng, active_reservations.len()));
+                let released = active_reservations
+                    .swap_remove(pick_index(&mut rng, active_reservations.len()));
                 world.release_reservation(released.id).unwrap();
             } else {
                 let entity = pick_entity(&mut rng, &reservable_entities);
@@ -390,8 +395,8 @@ fn randomized_container_nesting_preserves_acyclic_containment() {
                 0 => {
                     let entity = pick_entity(&mut rng, &containers);
                     let container = pick_entity(&mut rng, &containers);
-                    let would_cycle =
-                        entity == container || world.recursive_contents_of(entity).contains(&container);
+                    let would_cycle = entity == container
+                        || world.recursive_contents_of(entity).contains(&container);
 
                     let result = world.put_into_container(entity, container);
                     if would_cycle {

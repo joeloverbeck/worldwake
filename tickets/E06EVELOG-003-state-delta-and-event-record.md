@@ -17,6 +17,7 @@ Individual delta types need a unified wrapper (`StateDelta`) so event records ca
 3. `WitnessData` exists from E06EVELOG-002 — prerequisite
 4. `EventId`, `Tick`, `EntityId` exist in `worldwake-core::ids` — confirmed
 5. `BTreeSet` is the project convention for ordered sets — confirmed
+6. E06EVELOG-002 now defines rich typed payloads including `ComponentValue`, `RelationValue`, and full `ReservationRecord`-backed reservation deltas — prerequisite
 
 ## Architecture Check
 
@@ -24,6 +25,7 @@ Individual delta types need a unified wrapper (`StateDelta`) so event records ca
 2. `EventRecord` fields match the spec exactly: event_id, tick, cause, actor_id, target_ids, place_id, state_deltas, visibility, witness_data, tags
 3. `target_ids` is `Vec<EntityId>` stored in sorted order when ordering is not semantically meaningful (spec requirement)
 4. `tags` is `BTreeSet<EventTag>` for deterministic iteration
+5. `StateDelta` must preserve the richer typed payloads from E06EVELOG-002 unchanged. It is a wrapper layer only, not a place to collapse deltas into strings or partial identifiers.
 
 ## What to Change
 
@@ -83,7 +85,7 @@ Add modules and re-export types.
 5. `EventRecord.tags` maintains deterministic ordering via `BTreeSet`
 6. `StateDelta` satisfies `Clone + Eq + Debug + Serialize + Deserialize`
 7. `EventRecord` satisfies `Clone + Eq + Debug + Serialize + Deserialize`
-8. Both types survive bincode round-trip with populated data
+8. Both types survive bincode round-trip with populated data, including `ComponentValue`, `RelationValue`, and full `ReservationRecord` payloads
 9. `state_deltas` order is preserved through serialization (Vec order stability)
 10. Existing suite: `cargo test --workspace`
 

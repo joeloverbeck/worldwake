@@ -2522,7 +2522,9 @@ mod tests {
     fn physical_entities_start_in_explicit_transit_until_placed() {
         let mut world = World::new(test_topology()).unwrap();
 
-        let agent = world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
         let lot = world
             .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
             .unwrap();
