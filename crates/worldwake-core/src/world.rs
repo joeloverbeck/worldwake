@@ -2588,6 +2588,7 @@ mod tests {
 
         assert_eq!(world.direct_container(root), None);
         assert_eq!(world.direct_container(nested_item), Some(leaf));
+        assert_eq!(world.possessions_of(root), Vec::<EntityId>::new());
 
         assert_eq!(world.direct_contents_of(root), vec![mid]);
         assert_eq!(world.direct_contents_of(mid), vec![leaf]);
@@ -2655,6 +2656,7 @@ mod tests {
         assert_eq!(world.direct_container(item), None);
         assert_eq!(world.owner_of(item), None);
         assert_eq!(world.possessor_of(item), None);
+        assert_eq!(world.possessions_of(holder), Vec::<EntityId>::new());
         assert_eq!(world.direct_contents_of(container), Vec::<EntityId>::new());
         assert_eq!(
             world.recursive_contents_of(container),
@@ -2671,6 +2673,58 @@ mod tests {
 
         assert_eq!(world.owner_of(item), None);
         assert_eq!(world.possessor_of(item), None);
+    }
+
+    #[test]
+    fn possessions_and_controlled_commodity_queries_follow_custody_graph() {
+        let mut world = World::new(test_topology()).unwrap();
+        let holder = world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap();
+        let satchel = world.create_container(open_container(100), Tick(2)).unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(3))
+            .unwrap();
+        let nested_bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(4), Tick(4))
+            .unwrap();
+        let nested_water = world
+            .create_item_lot(CommodityKind::Water, Quantity(9), Tick(5))
+            .unwrap();
+        let foreign_bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(8), Tick(6))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_possessor(bread, holder).unwrap();
+        world.set_possessor(satchel, holder).unwrap();
+        world.set_ground_location(satchel, place).unwrap();
+        world.put_into_container(nested_bread, satchel).unwrap();
+        world.put_into_container(nested_water, satchel).unwrap();
+
+        assert_eq!(world.possessions_of(holder), vec![satchel, bread]);
+        assert_eq!(
+            world.controlled_commodity_quantity(holder, CommodityKind::Bread),
+            Quantity(6)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(holder, CommodityKind::Water),
+            Quantity(9)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(holder, CommodityKind::Coin),
+            Quantity(0)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(foreign_bread, CommodityKind::Bread),
+            Quantity(8)
+        );
+
+        world.archive_entity(bread, Tick(7)).unwrap();
+
+        assert_eq!(world.possessions_of(holder), vec![satchel]);
+        assert_eq!(
+            world.controlled_commodity_quantity(holder, CommodityKind::Bread),
+            Quantity(4)
+        );
     }
 
     #[test]

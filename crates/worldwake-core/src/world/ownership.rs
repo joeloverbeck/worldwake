@@ -1,5 +1,6 @@
 use super::World;
-use crate::{EntityId, WorldError};
+use crate::{CommodityKind, EntityId, Quantity, WorldError};
+use std::collections::BTreeSet;
 
 impl World {
     #[must_use]
@@ -18,6 +19,51 @@ impl World {
             .then(|| self.relations.possessed_by.get(&entity).copied())
             .flatten()?;
         self.is_alive(holder).then_some(holder)
+    }
+
+    #[must_use]
+    pub fn possessions_of(&self, holder: EntityId) -> Vec<EntityId> {
+        if !self.is_alive(holder) {
+            return Vec::new();
+        }
+
+        self.relations
+            .possessions_of
+            .get(&holder)
+            .map(|entities| {
+                entities
+                    .iter()
+                    .copied()
+                    .filter(|entity| self.is_alive(*entity))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn controlled_commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+        let mut total = 0u32;
+        let mut frontier = vec![holder];
+        let mut visited = BTreeSet::new();
+
+        while let Some(current) = frontier.pop() {
+            if !visited.insert(current) || !self.is_alive(current) {
+                continue;
+            }
+
+            if let Some(lot) = self.get_component_item_lot(current) {
+                if lot.commodity == kind {
+                    total = total
+                        .checked_add(lot.quantity.0)
+                        .expect("controlled commodity quantity overflowed");
+                }
+            }
+
+            frontier.extend(self.direct_contents_of(current).into_iter().rev());
+            frontier.extend(self.possessions_of(current).into_iter().rev());
+        }
+
+        Quantity(total)
     }
 
     pub(crate) fn set_owner(
