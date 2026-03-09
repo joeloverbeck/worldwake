@@ -160,8 +160,7 @@ impl Component for Container {}
 mod tests {
     use super::{
         CommodityKind, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory,
-        UniqueItem,
-        UniqueItemKind,
+        UniqueItem, UniqueItemKind,
     };
     use crate::{traits::Component, EntityId, EventId, LoadUnits, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};

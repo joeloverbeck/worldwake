@@ -3,8 +3,8 @@
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
     Container, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, ItemLot, LoadUnits,
-    LotOperation, Name, ProvenanceEntry, Quantity, Tick, Topology, UniqueItem, UniqueItemKind,
-    WorldError,
+    LotOperation, Name, ProvenanceEntry, Quantity, RelationTables, Tick, Topology, UniqueItem,
+    UniqueItemKind, WorldError,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -81,6 +81,7 @@ macro_rules! world_component_api {
 pub struct World {
     allocator: EntityAllocator,
     components: ComponentTables,
+    relations: RelationTables,
     topology: Topology,
 }
 
@@ -94,6 +95,7 @@ impl World {
         Ok(Self {
             allocator,
             components: ComponentTables::default(),
+            relations: RelationTables::default(),
             topology,
         })
     }
@@ -322,6 +324,7 @@ impl World {
 
         self.allocator.purge_entity(id)?;
         self.components.remove_all(id);
+        self.relations.remove_all(id);
         Ok(())
     }
 
@@ -484,9 +487,9 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId,
-        ItemLot, LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity,
-        Tick, Topology, UniqueItem, UniqueItemKind, WorldError,
+        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId, ItemLot,
+        LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity, ReservationId,
+        ReservationRecord, Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -554,7 +557,10 @@ mod tests {
             roundtrip.entity_kind(unique_item),
             Some(EntityKind::UniqueItem)
         );
-        assert_eq!(roundtrip.entity_kind(container), Some(EntityKind::Container));
+        assert_eq!(
+            roundtrip.entity_kind(container),
+            Some(EntityKind::Container)
+        );
         assert_eq!(
             roundtrip.get_component_name(agent),
             Some(&Name("Aster".to_string()))
@@ -931,14 +937,10 @@ mod tests {
             .create_item_lot(CommodityKind::Grain, Quantity(5), Tick(1))
             .unwrap();
 
-        let same_entity = world
-            .merge_lots(apples, apples, Tick(2), None)
-            .unwrap_err();
+        let same_entity = world.merge_lots(apples, apples, Tick(2), None).unwrap_err();
         assert!(matches!(same_entity, WorldError::InvalidOperation(_)));
 
-        let mismatched = world
-            .merge_lots(apples, grain, Tick(2), None)
-            .unwrap_err();
+        let mismatched = world.merge_lots(apples, grain, Tick(2), None).unwrap_err();
         assert!(matches!(mismatched, WorldError::InvalidOperation(_)));
     }
 
@@ -949,9 +951,7 @@ mod tests {
             .create_item_lot(CommodityKind::Waste, Quantity(6), Tick(1))
             .unwrap();
 
-        let (_, split_off) = world
-            .split_lot(source, Quantity(2), Tick(2), None)
-            .unwrap();
+        let (_, split_off) = world.split_lot(source, Quantity(2), Tick(2), None).unwrap();
         world.merge_lots(source, split_off, Tick(3), None).unwrap();
 
         assert_eq!(
@@ -991,10 +991,7 @@ mod tests {
         let mut world = World::new(Topology::new()).unwrap();
         let container = Container {
             capacity: LoadUnits(30),
-            allowed_commodities: Some(BTreeSet::from([
-                CommodityKind::Apple,
-                CommodityKind::Bread,
-            ])),
+            allowed_commodities: Some(BTreeSet::from([CommodityKind::Apple, CommodityKind::Bread])),
             allows_unique_items: true,
             allows_nested_containers: false,
         };
@@ -1366,7 +1363,10 @@ mod tests {
 
         world.archive_entity(archived, Tick(3)).unwrap();
 
-        assert_eq!(world.entities_with_container().collect::<Vec<_>>(), vec![live]);
+        assert_eq!(
+            world.entities_with_container().collect::<Vec<_>>(),
+            vec![live]
+        );
         assert_eq!(
             world
                 .query_container()
@@ -1456,6 +1456,67 @@ mod tests {
         assert_eq!(world.entity_meta(id), None);
         assert_eq!(world.get_component_container(id), None);
         assert_eq!(world.query_container().count(), 0);
+    }
+
+    #[test]
+    fn purge_cleans_relation_rows() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world.create_entity(EntityKind::ItemLot, Tick(1));
+        let container = world.create_entity(EntityKind::Container, Tick(1));
+        let holder = world.create_entity(EntityKind::Agent, Tick(1));
+        let owner = world.create_entity(EntityKind::Faction, Tick(1));
+        let reserver = world.create_entity(EntityKind::Agent, Tick(1));
+        let place = entity(22);
+        let reservation_id = ReservationId(3);
+
+        world.relations.located_in.insert(item, place);
+        world
+            .relations
+            .entities_at
+            .insert(place, [item].into_iter().collect());
+        world.relations.contained_by.insert(item, container);
+        world
+            .relations
+            .contents_of
+            .insert(container, [item].into_iter().collect());
+        world.relations.possessed_by.insert(item, holder);
+        world
+            .relations
+            .possessions_of
+            .insert(holder, [item].into_iter().collect());
+        world.relations.owned_by.insert(item, owner);
+        world
+            .relations
+            .property_of
+            .insert(owner, [item].into_iter().collect());
+        world.relations.reservations.insert(
+            reservation_id,
+            ReservationRecord {
+                id: reservation_id,
+                entity: item,
+                reserver,
+                range: TickRange::new(Tick(4), Tick(7)).unwrap(),
+            },
+        );
+        world
+            .relations
+            .reservations_by_entity
+            .insert(item, [reservation_id].into_iter().collect());
+
+        world.archive_entity(item, Tick(2)).unwrap();
+        world.purge_entity(item).unwrap();
+
+        assert_eq!(world.entity_meta(item), None);
+        assert_eq!(world.relations.located_in.get(&item), None);
+        assert_eq!(world.relations.contained_by.get(&item), None);
+        assert_eq!(world.relations.possessed_by.get(&item), None);
+        assert_eq!(world.relations.owned_by.get(&item), None);
+        assert_eq!(world.relations.reservations.get(&reservation_id), None);
+        assert_eq!(world.relations.reservations_by_entity.get(&item), None);
+        assert_eq!(world.relations.entities_at.get(&place), None);
+        assert_eq!(world.relations.contents_of.get(&container), None);
+        assert_eq!(world.relations.possessions_of.get(&holder), None);
+        assert_eq!(world.relations.property_of.get(&owner), None);
     }
 
     #[test]

@@ -368,7 +368,12 @@ mod tests {
         tables.remove_all(target);
 
         assert_eq!(tables.get_container(target), None);
-        assert_eq!(tables.get_container(other).map(|container| container.capacity), Some(LoadUnits(8)));
+        assert_eq!(
+            tables
+                .get_container(other)
+                .map(|container| container.capacity),
+            Some(LoadUnits(8))
+        );
     }
 
     #[test]

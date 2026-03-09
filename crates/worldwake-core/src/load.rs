@@ -116,7 +116,8 @@ fn require_live_entity(world: &World, entity_id: EntityId) -> Result<(), WorldEr
 
 fn require_live_container(world: &World, container_id: EntityId) -> Result<&Container, WorldError> {
     require_live_entity(world, container_id)?;
-    world.get_component_container(container_id)
+    world
+        .get_component_container(container_id)
         .ok_or(WorldError::ComponentNotFound {
             entity: container_id,
             component_type: "Container",
@@ -169,10 +170,22 @@ mod tests {
 
     #[test]
     fn unique_item_load_table_matches_ticket_values() {
-        assert_eq!(load_of_unique_item_kind(UniqueItemKind::SimpleTool), LoadUnits(5));
-        assert_eq!(load_of_unique_item_kind(UniqueItemKind::Weapon), LoadUnits(10));
-        assert_eq!(load_of_unique_item_kind(UniqueItemKind::Contract), LoadUnits(1));
-        assert_eq!(load_of_unique_item_kind(UniqueItemKind::Artifact), LoadUnits(5));
+        assert_eq!(
+            load_of_unique_item_kind(UniqueItemKind::SimpleTool),
+            LoadUnits(5)
+        );
+        assert_eq!(
+            load_of_unique_item_kind(UniqueItemKind::Weapon),
+            LoadUnits(10)
+        );
+        assert_eq!(
+            load_of_unique_item_kind(UniqueItemKind::Contract),
+            LoadUnits(1)
+        );
+        assert_eq!(
+            load_of_unique_item_kind(UniqueItemKind::Artifact),
+            LoadUnits(5)
+        );
         assert_eq!(
             load_of_unique_item_kind(UniqueItemKind::OfficeInsignia),
             LoadUnits(2)

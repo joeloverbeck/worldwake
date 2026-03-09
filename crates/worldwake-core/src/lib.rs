@@ -27,8 +27,8 @@
 pub mod allocator;
 pub mod component_schema;
 pub mod component_tables;
-pub mod conservation;
 pub mod components;
+pub mod conservation;
 pub mod control;
 pub mod entity;
 pub mod error;
@@ -36,6 +36,7 @@ pub mod ids;
 pub mod items;
 pub mod load;
 pub mod numerics;
+pub mod relations;
 pub mod test_utils;
 pub mod topology;
 pub mod traits;
@@ -43,8 +44,8 @@ pub mod world;
 
 pub use allocator::EntityAllocator;
 pub use component_tables::ComponentTables;
-pub use conservation::{total_commodity_quantity, verify_conservation};
 pub use components::{AgentData, Name};
+pub use conservation::{total_commodity_quantity, verify_conservation};
 pub use control::ControlSource;
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
@@ -58,6 +59,7 @@ pub use load::{
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
 pub use numerics::{LoadUnits, Permille, Quantity};
+pub use relations::{RelationTables, ReservationRecord};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use traits::{Component, RelationRecord};
 pub use world::World;

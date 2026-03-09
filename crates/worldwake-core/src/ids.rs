@@ -306,7 +306,10 @@ mod tests {
 
     #[test]
     fn tick_range_new_rejects_empty_or_inverted_ranges() {
-        assert_eq!(TickRange::new(Tick(5), Tick(10)).unwrap().to_string(), "[t5,t10)");
+        assert_eq!(
+            TickRange::new(Tick(5), Tick(10)).unwrap().to_string(),
+            "[t5,t10)"
+        );
         assert!(TickRange::new(Tick(5), Tick(5)).is_err());
         assert!(TickRange::new(Tick(10), Tick(5)).is_err());
     }
@@ -355,7 +358,9 @@ mod tests {
         let empty = bincode::serialize(&(Tick(5), Tick(5))).unwrap();
         let inverted = bincode::serialize(&(Tick(10), Tick(5))).unwrap();
 
-        let empty_err = bincode::deserialize::<TickRange>(&empty).unwrap_err().to_string();
+        let empty_err = bincode::deserialize::<TickRange>(&empty)
+            .unwrap_err()
+            .to_string();
         let inverted_err = bincode::deserialize::<TickRange>(&inverted)
             .unwrap_err()
             .to_string();
