@@ -109,8 +109,7 @@ fn no_box_dyn_any() {
 
 #[test]
 fn canonical_bytes_stability() {
-    use worldwake_core::test_utils::canonical_bytes;
-    use worldwake_core::{EntityId, Tick};
+    use worldwake_core::{canonical_bytes, EntityId, Tick};
 
     let id = EntityId {
         slot: 42,
@@ -118,15 +117,15 @@ fn canonical_bytes_stability() {
     };
     let tick = Tick(12345);
 
-    let bytes_1 = canonical_bytes(&id);
-    let bytes_2 = canonical_bytes(&id);
+    let bytes_1 = canonical_bytes(&id).unwrap();
+    let bytes_2 = canonical_bytes(&id).unwrap();
     assert_eq!(
         bytes_1, bytes_2,
         "canonical_bytes must be stable for EntityId"
     );
 
-    let tick_bytes_1 = canonical_bytes(&tick);
-    let tick_bytes_2 = canonical_bytes(&tick);
+    let tick_bytes_1 = canonical_bytes(&tick).unwrap();
+    let tick_bytes_2 = canonical_bytes(&tick).unwrap();
     assert_eq!(
         tick_bytes_1, tick_bytes_2,
         "canonical_bytes must be stable for Tick"

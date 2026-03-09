@@ -287,23 +287,6 @@ impl Topology {
         self.edges.len()
     }
 
-    pub fn topology_hash(&self) -> Result<u64, WorldError> {
-        let bytes = bincode::serialize(self)
-            .map_err(|err| WorldError::SerializationError(err.to_string()))?;
-        Ok(fixed_hash64(&bytes))
-    }
-}
-
-fn fixed_hash64(bytes: &[u8]) -> u64 {
-    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-    const FNV_PRIME: u64 = 0x0100_0000_01b3;
-
-    let mut hash = FNV_OFFSET_BASIS;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
 }
 
 pub fn build_prototype_world() -> Topology {
@@ -680,8 +663,7 @@ impl Route {
 #[cfg(test)]
 mod tests {
     use super::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
-    use crate::test_utils::canonical_bytes;
-    use crate::{traits::Component, EntityId, Permille, TravelEdgeId, WorldError};
+    use crate::{canonical_bytes, hash_serializable, traits::Component, EntityId, Permille, TravelEdgeId, WorldError};
     use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeSet;
@@ -762,7 +744,7 @@ mod tests {
         };
 
         assert_eq!(place_a, place_b);
-        assert_eq!(canonical_bytes(&place_a), canonical_bytes(&place_b));
+        assert_eq!(canonical_bytes(&place_a).unwrap(), canonical_bytes(&place_b).unwrap());
     }
 
     #[test]
@@ -1120,7 +1102,7 @@ mod tests {
         let roundtrip: Topology = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, topology);
-        assert_eq!(canonical_bytes(&roundtrip), bytes);
+        assert_eq!(canonical_bytes(&roundtrip).unwrap(), bytes);
     }
 
     #[test]
@@ -1128,14 +1110,8 @@ mod tests {
         let first = build_prototype_world();
         let second = build_prototype_world();
 
-        assert_eq!(
-            first.topology_hash().unwrap(),
-            first.topology_hash().unwrap()
-        );
-        assert_eq!(
-            first.topology_hash().unwrap(),
-            second.topology_hash().unwrap()
-        );
+        assert_eq!(hash_serializable(&first).unwrap(), hash_serializable(&first).unwrap());
+        assert_eq!(hash_serializable(&first).unwrap(), hash_serializable(&second).unwrap());
     }
 
     #[test]

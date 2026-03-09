@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod allocator;
+pub mod canonical;
 pub mod cause;
 pub mod component_schema;
 pub mod component_tables;
@@ -52,6 +53,10 @@ pub mod world;
 pub mod world_txn;
 
 pub use allocator::EntityAllocator;
+pub use canonical::{
+    canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world, CanonicalError,
+    StateHash,
+};
 pub use cause::CauseRef;
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
