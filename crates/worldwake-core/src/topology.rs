@@ -284,6 +284,328 @@ impl Topology {
     }
 }
 
+pub fn build_prototype_world() -> Topology {
+    let mut topology = Topology::new();
+
+    for spec in PROTOTYPE_PLACE_SPECS {
+        topology
+            .add_place(
+                prototype_entity(spec.slot),
+                Place {
+                    name: spec.name.to_string(),
+                    capacity: None,
+                    tags: spec.tags.iter().copied().collect(),
+                },
+            )
+            .expect("prototype manifest must not contain duplicate place ids");
+    }
+
+    for spec in PROTOTYPE_EDGE_SPECS {
+        topology
+            .add_edge(
+                TravelEdge::new(
+                    TravelEdgeId(spec.id),
+                    prototype_entity(spec.from),
+                    prototype_entity(spec.to),
+                    spec.travel_time_ticks,
+                    None,
+                    prototype_permille(spec.danger),
+                    prototype_permille(spec.visibility),
+                )
+                .expect("prototype manifest must define valid travel edges"),
+            )
+            .expect("prototype manifest must reference existing place ids");
+    }
+
+    topology
+}
+
+#[derive(Copy, Clone)]
+struct PrototypePlaceSpec {
+    slot: u32,
+    name: &'static str,
+    tags: &'static [PlaceTag],
+}
+
+#[derive(Copy, Clone)]
+struct PrototypeEdgeSpec {
+    id: u32,
+    from: u32,
+    to: u32,
+    travel_time_ticks: u32,
+    danger: u16,
+    visibility: u16,
+}
+
+const PROTOTYPE_PLACE_SPECS: &[PrototypePlaceSpec] = &[
+    PrototypePlaceSpec {
+        slot: 0,
+        name: "Village Square",
+        tags: &[PlaceTag::Village],
+    },
+    PrototypePlaceSpec {
+        slot: 1,
+        name: "Orchard Farm",
+        tags: &[PlaceTag::Farm, PlaceTag::Field],
+    },
+    PrototypePlaceSpec {
+        slot: 2,
+        name: "General Store",
+        tags: &[PlaceTag::Store, PlaceTag::Village],
+    },
+    PrototypePlaceSpec {
+        slot: 3,
+        name: "Common House",
+        tags: &[PlaceTag::Inn, PlaceTag::Village],
+    },
+    PrototypePlaceSpec {
+        slot: 4,
+        name: "Ruler's Hall",
+        tags: &[PlaceTag::Hall, PlaceTag::Village],
+    },
+    PrototypePlaceSpec {
+        slot: 5,
+        name: "Guard Post",
+        tags: &[PlaceTag::Barracks, PlaceTag::Village],
+    },
+    PrototypePlaceSpec {
+        slot: 6,
+        name: "Public Latrine",
+        tags: &[PlaceTag::Latrine, PlaceTag::Village],
+    },
+    PrototypePlaceSpec {
+        slot: 7,
+        name: "North Crossroads",
+        tags: &[PlaceTag::Crossroads, PlaceTag::Road],
+    },
+    PrototypePlaceSpec {
+        slot: 8,
+        name: "Forest Path",
+        tags: &[PlaceTag::Forest, PlaceTag::Trail],
+    },
+    PrototypePlaceSpec {
+        slot: 9,
+        name: "Bandit Camp",
+        tags: &[PlaceTag::Camp, PlaceTag::Forest],
+    },
+    PrototypePlaceSpec {
+        slot: 10,
+        name: "South Gate",
+        tags: &[PlaceTag::Gate, PlaceTag::Road],
+    },
+    PrototypePlaceSpec {
+        slot: 11,
+        name: "East Field Trail",
+        tags: &[PlaceTag::Trail, PlaceTag::Field],
+    },
+];
+
+const PROTOTYPE_EDGE_SPECS: &[PrototypeEdgeSpec] = &[
+    PrototypeEdgeSpec {
+        id: 0,
+        from: 0,
+        to: 2,
+        travel_time_ticks: 1,
+        danger: 20,
+        visibility: 950,
+    },
+    PrototypeEdgeSpec {
+        id: 1,
+        from: 2,
+        to: 0,
+        travel_time_ticks: 1,
+        danger: 20,
+        visibility: 950,
+    },
+    PrototypeEdgeSpec {
+        id: 2,
+        from: 0,
+        to: 3,
+        travel_time_ticks: 1,
+        danger: 15,
+        visibility: 930,
+    },
+    PrototypeEdgeSpec {
+        id: 3,
+        from: 3,
+        to: 0,
+        travel_time_ticks: 1,
+        danger: 15,
+        visibility: 930,
+    },
+    PrototypeEdgeSpec {
+        id: 4,
+        from: 0,
+        to: 4,
+        travel_time_ticks: 1,
+        danger: 10,
+        visibility: 940,
+    },
+    PrototypeEdgeSpec {
+        id: 5,
+        from: 4,
+        to: 0,
+        travel_time_ticks: 1,
+        danger: 10,
+        visibility: 940,
+    },
+    PrototypeEdgeSpec {
+        id: 6,
+        from: 0,
+        to: 5,
+        travel_time_ticks: 1,
+        danger: 15,
+        visibility: 920,
+    },
+    PrototypeEdgeSpec {
+        id: 7,
+        from: 5,
+        to: 0,
+        travel_time_ticks: 1,
+        danger: 15,
+        visibility: 920,
+    },
+    PrototypeEdgeSpec {
+        id: 8,
+        from: 0,
+        to: 6,
+        travel_time_ticks: 1,
+        danger: 10,
+        visibility: 900,
+    },
+    PrototypeEdgeSpec {
+        id: 9,
+        from: 6,
+        to: 0,
+        travel_time_ticks: 1,
+        danger: 10,
+        visibility: 900,
+    },
+    PrototypeEdgeSpec {
+        id: 10,
+        from: 0,
+        to: 10,
+        travel_time_ticks: 2,
+        danger: 25,
+        visibility: 900,
+    },
+    PrototypeEdgeSpec {
+        id: 11,
+        from: 10,
+        to: 0,
+        travel_time_ticks: 2,
+        danger: 25,
+        visibility: 900,
+    },
+    PrototypeEdgeSpec {
+        id: 12,
+        from: 10,
+        to: 11,
+        travel_time_ticks: 3,
+        danger: 50,
+        visibility: 820,
+    },
+    PrototypeEdgeSpec {
+        id: 13,
+        from: 11,
+        to: 10,
+        travel_time_ticks: 3,
+        danger: 50,
+        visibility: 820,
+    },
+    PrototypeEdgeSpec {
+        id: 14,
+        from: 11,
+        to: 1,
+        travel_time_ticks: 2,
+        danger: 35,
+        visibility: 840,
+    },
+    PrototypeEdgeSpec {
+        id: 15,
+        from: 1,
+        to: 11,
+        travel_time_ticks: 2,
+        danger: 35,
+        visibility: 840,
+    },
+    PrototypeEdgeSpec {
+        id: 16,
+        from: 11,
+        to: 7,
+        travel_time_ticks: 3,
+        danger: 70,
+        visibility: 760,
+    },
+    PrototypeEdgeSpec {
+        id: 17,
+        from: 7,
+        to: 11,
+        travel_time_ticks: 3,
+        danger: 70,
+        visibility: 760,
+    },
+    PrototypeEdgeSpec {
+        id: 18,
+        from: 7,
+        to: 8,
+        travel_time_ticks: 4,
+        danger: 300,
+        visibility: 420,
+    },
+    PrototypeEdgeSpec {
+        id: 19,
+        from: 8,
+        to: 7,
+        travel_time_ticks: 4,
+        danger: 280,
+        visibility: 450,
+    },
+    PrototypeEdgeSpec {
+        id: 20,
+        from: 8,
+        to: 9,
+        travel_time_ticks: 5,
+        danger: 650,
+        visibility: 250,
+    },
+    PrototypeEdgeSpec {
+        id: 21,
+        from: 9,
+        to: 8,
+        travel_time_ticks: 5,
+        danger: 700,
+        visibility: 200,
+    },
+    PrototypeEdgeSpec {
+        id: 22,
+        from: 0,
+        to: 7,
+        travel_time_ticks: 3,
+        danger: 60,
+        visibility: 780,
+    },
+    PrototypeEdgeSpec {
+        id: 23,
+        from: 7,
+        to: 0,
+        travel_time_ticks: 3,
+        danger: 60,
+        visibility: 780,
+    },
+];
+
+fn prototype_entity(slot: u32) -> EntityId {
+    EntityId {
+        slot,
+        generation: 0,
+    }
+}
+
+fn prototype_permille(value: u16) -> Permille {
+    Permille::new(value).expect("prototype manifest permille values must be within 0..=1000")
+}
+
 fn insert_sorted_edge_id(edge_ids: &mut Vec<TravelEdgeId>, edge_id: TravelEdgeId) {
     match edge_ids.binary_search(&edge_id) {
         Ok(_) => {}
@@ -335,7 +657,7 @@ impl Route {
 
 #[cfg(test)]
 mod tests {
-    use super::{Place, PlaceTag, Route, Topology, TravelEdge};
+    use super::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
     use crate::test_utils::canonical_bytes;
     use crate::{traits::Component, EntityId, Permille, TravelEdgeId, WorldError};
     use serde::de::DeserializeOwned;
@@ -388,6 +710,10 @@ mod tests {
             Permille::new(1000).unwrap(),
         )
         .unwrap()
+    }
+
+    fn place_has_tag(place: &Place, tag: PlaceTag) -> bool {
+        place.tags.contains(&tag)
     }
 
     #[test]
@@ -600,7 +926,10 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
-        assert_eq!(err.to_string(), "invalid operation: duplicate place id: e1g0");
+        assert_eq!(
+            err.to_string(),
+            "invalid operation: duplicate place id: e1g0"
+        );
         assert_eq!(topology.place_count(), 1);
         assert_eq!(topology.place(entity(1)).unwrap().name, "Square");
     }
@@ -678,7 +1007,9 @@ mod tests {
             (2, "B", PlaceTag::Farm),
             (3, "C", PlaceTag::Store),
         ] {
-            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+            topology
+                .add_place(entity(slot), place(name, &[tag]))
+                .unwrap();
         }
 
         topology.add_edge(edge(30, 1, 3)).unwrap();
@@ -698,7 +1029,9 @@ mod tests {
             (4, "D", PlaceTag::Forest),
             (5, "E", PlaceTag::Camp),
         ] {
-            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+            topology
+                .add_place(entity(slot), place(name, &[tag]))
+                .unwrap();
         }
 
         topology.add_edge(edge(10, 1, 2)).unwrap();
@@ -799,7 +1132,9 @@ mod tests {
             (2, "B", PlaceTag::Farm),
             (3, "C", PlaceTag::Store),
         ] {
-            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+            topology
+                .add_place(entity(slot), place(name, &[tag]))
+                .unwrap();
         }
         topology.add_edge(edge_with_ticks(10, 1, 2, 3)).unwrap();
         topology.add_edge(edge_with_ticks(20, 2, 3, 5)).unwrap();
@@ -820,7 +1155,9 @@ mod tests {
             (3, "C", PlaceTag::Store),
             (4, "D", PlaceTag::Forest),
         ] {
-            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+            topology
+                .add_place(entity(slot), place(name, &[tag]))
+                .unwrap();
         }
         topology.add_edge(edge_with_ticks(10, 1, 2, 10)).unwrap();
         topology.add_edge(edge_with_ticks(20, 2, 4, 1)).unwrap();
@@ -843,7 +1180,9 @@ mod tests {
             (3, "C", PlaceTag::Store),
             (4, "D", PlaceTag::Forest),
         ] {
-            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+            topology
+                .add_place(entity(slot), place(name, &[tag]))
+                .unwrap();
         }
         topology.add_edge(edge_with_ticks(30, 1, 3, 1)).unwrap();
         topology.add_edge(edge_with_ticks(40, 3, 4, 2)).unwrap();
@@ -865,7 +1204,9 @@ mod tests {
             (2, "B", PlaceTag::Farm),
             (3, "C", PlaceTag::Store),
         ] {
-            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+            topology
+                .add_place(entity(slot), place(name, &[tag]))
+                .unwrap();
         }
         topology.add_edge(edge_with_ticks(10, 1, 2, 2)).unwrap();
         topology.add_edge(edge_with_ticks(20, 2, 3, 2)).unwrap();
@@ -873,5 +1214,116 @@ mod tests {
         let route = topology.shortest_path(entity(1), entity(3)).unwrap();
 
         assert_eq!(route.places.len(), route.edges.len() + 1);
+    }
+
+    #[test]
+    fn build_prototype_world_creates_spec_place_count_and_is_deterministic() {
+        let first = build_prototype_world();
+        let second = build_prototype_world();
+
+        assert_eq!(first, second);
+        assert!((12..=20).contains(&first.place_count()));
+    }
+
+    #[test]
+    fn build_prototype_world_gives_every_place_incoming_and_outgoing_edges() {
+        let topology = build_prototype_world();
+
+        for place_id in topology.places.keys().copied() {
+            assert!(
+                !topology.outgoing_edges(place_id).is_empty(),
+                "expected outgoing edges for {place_id}"
+            );
+            assert!(
+                !topology.incoming_edges(place_id).is_empty(),
+                "expected incoming edges for {place_id}"
+            );
+            assert!(
+                !topology.place(place_id).unwrap().name.trim().is_empty(),
+                "expected non-empty name for {place_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_prototype_world_is_strongly_connected() {
+        let topology = build_prototype_world();
+        let place_ids = topology.places.keys().copied().collect::<Vec<_>>();
+
+        for from in &place_ids {
+            for to in &place_ids {
+                assert!(
+                    topology.is_reachable(*from, *to),
+                    "expected {from} to reach {to}"
+                );
+                assert!(
+                    topology.shortest_path(*from, *to).is_some(),
+                    "expected route from {from} to {to}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn build_prototype_world_covers_all_spec_required_roles() {
+        let topology = build_prototype_world();
+        let observed_tags = topology
+            .places
+            .values()
+            .flat_map(|place| place.tags.iter().copied())
+            .collect::<BTreeSet<_>>();
+
+        for required_tag in [
+            PlaceTag::Village,
+            PlaceTag::Farm,
+            PlaceTag::Store,
+            PlaceTag::Inn,
+            PlaceTag::Hall,
+            PlaceTag::Barracks,
+            PlaceTag::Latrine,
+            PlaceTag::Crossroads,
+            PlaceTag::Forest,
+            PlaceTag::Camp,
+        ] {
+            assert!(
+                observed_tags.contains(&required_tag),
+                "missing required role tag: {required_tag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_prototype_world_edges_have_valid_stats_and_risk_gradient() {
+        let topology = build_prototype_world();
+        let mut village_dangers = Vec::new();
+        let mut village_visibilities = Vec::new();
+        let mut forest_dangers = Vec::new();
+        let mut forest_visibilities = Vec::new();
+
+        for edge in topology.edges.values() {
+            assert!(edge.travel_time_ticks() >= 1);
+            assert!(edge.danger().value() <= 1000);
+            assert!(edge.visibility().value() <= 1000);
+
+            let from = topology.place(edge.from()).unwrap();
+            let to = topology.place(edge.to()).unwrap();
+            let touches_forest = place_has_tag(from, PlaceTag::Forest)
+                || place_has_tag(from, PlaceTag::Camp)
+                || place_has_tag(to, PlaceTag::Forest)
+                || place_has_tag(to, PlaceTag::Camp);
+
+            if touches_forest {
+                forest_dangers.push(edge.danger().value());
+                forest_visibilities.push(edge.visibility().value());
+            } else {
+                village_dangers.push(edge.danger().value());
+                village_visibilities.push(edge.visibility().value());
+            }
+        }
+
+        assert!(!village_dangers.is_empty());
+        assert!(!forest_dangers.is_empty());
+        assert!(forest_dangers.iter().min() > village_dangers.iter().max());
+        assert!(forest_visibilities.iter().max() < village_visibilities.iter().min());
     }
 }
