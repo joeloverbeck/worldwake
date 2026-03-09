@@ -24,6 +24,7 @@
 //! This policy is enforced by integration tests that scan source files for
 //! forbidden patterns.
 
+pub mod allocator;
 pub mod control;
 pub mod entity;
 pub mod error;
@@ -33,6 +34,7 @@ pub mod test_utils;
 pub mod topology;
 pub mod traits;
 
+pub use allocator::EntityAllocator;
 pub use control::ControlSource;
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
