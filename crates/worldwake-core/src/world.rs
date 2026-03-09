@@ -487,9 +487,10 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId, ItemLot,
-        LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError,
+        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId, FactId,
+        ItemLot, LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity,
+        ReservationId, ReservationRecord, Tick, TickRange, Topology, UniqueItem, UniqueItemKind,
+        WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -523,6 +524,95 @@ mod tests {
             )
             .unwrap();
         topology
+    }
+
+    struct PurgeRelationFixture {
+        item: EntityId,
+        container: EntityId,
+        holder: EntityId,
+        owner: EntityId,
+        reserver: EntityId,
+        faction: EntityId,
+        loyal_target: EntityId,
+        office: EntityId,
+        enemy: EntityId,
+        place: EntityId,
+        reservation_id: ReservationId,
+        known_fact: FactId,
+        believed_fact: FactId,
+    }
+
+    fn populate_relation_rows_for_purge_test(world: &mut World, fx: &PurgeRelationFixture) {
+        world.relations.located_in.insert(fx.item, fx.place);
+        world
+            .relations
+            .entities_at
+            .insert(fx.place, [fx.item].into_iter().collect());
+        world.relations.contained_by.insert(fx.item, fx.container);
+        world
+            .relations
+            .contents_of
+            .insert(fx.container, [fx.item].into_iter().collect());
+        world.relations.possessed_by.insert(fx.item, fx.holder);
+        world
+            .relations
+            .possessions_of
+            .insert(fx.holder, [fx.item].into_iter().collect());
+        world.relations.owned_by.insert(fx.item, fx.owner);
+        world
+            .relations
+            .property_of
+            .insert(fx.owner, [fx.item].into_iter().collect());
+        world
+            .relations
+            .member_of
+            .insert(fx.item, [fx.faction].into_iter().collect());
+        world
+            .relations
+            .members_of
+            .insert(fx.faction, [fx.item].into_iter().collect());
+        world
+            .relations
+            .loyal_to
+            .insert(fx.item, [fx.loyal_target].into_iter().collect());
+        world
+            .relations
+            .loyalty_from
+            .insert(fx.loyal_target, [fx.item].into_iter().collect());
+        world.relations.office_holder.insert(fx.office, fx.item);
+        world
+            .relations
+            .offices_held
+            .insert(fx.item, [fx.office].into_iter().collect());
+        world
+            .relations
+            .hostile_to
+            .insert(fx.item, [fx.enemy].into_iter().collect());
+        world
+            .relations
+            .hostility_from
+            .insert(fx.enemy, [fx.item].into_iter().collect());
+        world
+            .relations
+            .knows_fact
+            .insert(fx.item, [fx.known_fact].into_iter().collect());
+        world
+            .relations
+            .believes_fact
+            .insert(fx.item, [fx.believed_fact].into_iter().collect());
+        world.relations.reservations.insert(
+            fx.reservation_id,
+            ReservationRecord {
+                id: fx.reservation_id,
+                entity: fx.item,
+                reserver: fx.reserver,
+                range: TickRange::new(Tick(4), Tick(7)).unwrap(),
+            },
+        );
+        world
+            .relations
+            .reservations_by_entity
+            .insert(fx.item, [fx.reservation_id].into_iter().collect());
     }
 
     fn assert_populated_world_roundtrip(
@@ -1466,42 +1556,31 @@ mod tests {
         let holder = world.create_entity(EntityKind::Agent, Tick(1));
         let owner = world.create_entity(EntityKind::Faction, Tick(1));
         let reserver = world.create_entity(EntityKind::Agent, Tick(1));
+        let faction = world.create_entity(EntityKind::Faction, Tick(1));
+        let loyal_target = world.create_entity(EntityKind::Faction, Tick(1));
+        let office = world.create_entity(EntityKind::Office, Tick(1));
+        let enemy = world.create_entity(EntityKind::Agent, Tick(1));
         let place = entity(22);
         let reservation_id = ReservationId(3);
-
-        world.relations.located_in.insert(item, place);
-        world
-            .relations
-            .entities_at
-            .insert(place, [item].into_iter().collect());
-        world.relations.contained_by.insert(item, container);
-        world
-            .relations
-            .contents_of
-            .insert(container, [item].into_iter().collect());
-        world.relations.possessed_by.insert(item, holder);
-        world
-            .relations
-            .possessions_of
-            .insert(holder, [item].into_iter().collect());
-        world.relations.owned_by.insert(item, owner);
-        world
-            .relations
-            .property_of
-            .insert(owner, [item].into_iter().collect());
-        world.relations.reservations.insert(
+        let known_fact = FactId(41);
+        let believed_fact = FactId(42);
+        let fixture = PurgeRelationFixture {
+            item,
+            container,
+            holder,
+            owner,
+            reserver,
+            faction,
+            loyal_target,
+            office,
+            enemy,
+            place,
             reservation_id,
-            ReservationRecord {
-                id: reservation_id,
-                entity: item,
-                reserver,
-                range: TickRange::new(Tick(4), Tick(7)).unwrap(),
-            },
-        );
-        world
-            .relations
-            .reservations_by_entity
-            .insert(item, [reservation_id].into_iter().collect());
+            known_fact,
+            believed_fact,
+        };
+
+        populate_relation_rows_for_purge_test(&mut world, &fixture);
 
         world.archive_entity(item, Tick(2)).unwrap();
         world.purge_entity(item).unwrap();
@@ -1511,12 +1590,22 @@ mod tests {
         assert_eq!(world.relations.contained_by.get(&item), None);
         assert_eq!(world.relations.possessed_by.get(&item), None);
         assert_eq!(world.relations.owned_by.get(&item), None);
+        assert_eq!(world.relations.member_of.get(&item), None);
+        assert_eq!(world.relations.loyal_to.get(&item), None);
+        assert_eq!(world.relations.office_holder.get(&office), None);
+        assert_eq!(world.relations.offices_held.get(&item), None);
+        assert_eq!(world.relations.hostile_to.get(&item), None);
+        assert_eq!(world.relations.knows_fact.get(&item), None);
+        assert_eq!(world.relations.believes_fact.get(&item), None);
         assert_eq!(world.relations.reservations.get(&reservation_id), None);
         assert_eq!(world.relations.reservations_by_entity.get(&item), None);
         assert_eq!(world.relations.entities_at.get(&place), None);
         assert_eq!(world.relations.contents_of.get(&container), None);
         assert_eq!(world.relations.possessions_of.get(&holder), None);
         assert_eq!(world.relations.property_of.get(&owner), None);
+        assert_eq!(world.relations.members_of.get(&faction), None);
+        assert_eq!(world.relations.loyalty_from.get(&loyal_target), None);
+        assert_eq!(world.relations.hostility_from.get(&enemy), None);
     }
 
     #[test]

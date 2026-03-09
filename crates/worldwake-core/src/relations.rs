@@ -1,6 +1,6 @@
 //! Explicit typed storage for authoritative relation state.
 
-use crate::{EntityId, RelationRecord, ReservationId, TickRange};
+use crate::{EntityId, FactId, RelationRecord, ReservationId, TickRange};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,6 +24,16 @@ pub struct RelationTables {
     pub(crate) possessions_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) owned_by: BTreeMap<EntityId, EntityId>,
     pub(crate) property_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) member_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) members_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) loyal_to: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) loyalty_from: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) office_holder: BTreeMap<EntityId, EntityId>,
+    pub(crate) offices_held: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) hostile_to: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) hostility_from: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) knows_fact: BTreeMap<EntityId, BTreeSet<FactId>>,
+    pub(crate) believes_fact: BTreeMap<EntityId, BTreeSet<FactId>>,
     pub(crate) reservations: BTreeMap<ReservationId, ReservationRecord>,
     pub(crate) reservations_by_entity: BTreeMap<EntityId, BTreeSet<ReservationId>>,
     pub(crate) next_reservation_id: u64,
@@ -35,6 +45,12 @@ impl RelationTables {
         Self::remove_entity_relations(&mut self.contained_by, &mut self.contents_of, entity);
         Self::remove_entity_relations(&mut self.possessed_by, &mut self.possessions_of, entity);
         Self::remove_entity_relations(&mut self.owned_by, &mut self.property_of, entity);
+        Self::remove_many_to_many_relations(&mut self.member_of, &mut self.members_of, entity);
+        Self::remove_many_to_many_relations(&mut self.loyal_to, &mut self.loyalty_from, entity);
+        Self::remove_entity_relations(&mut self.office_holder, &mut self.offices_held, entity);
+        Self::remove_many_to_many_relations(&mut self.hostile_to, &mut self.hostility_from, entity);
+        Self::remove_fact_relations(&mut self.knows_fact, entity);
+        Self::remove_fact_relations(&mut self.believes_fact, entity);
         self.remove_entity_reservations(entity);
     }
 
@@ -82,6 +98,36 @@ impl RelationTables {
         }
     }
 
+    fn remove_many_to_many_relations(
+        forward: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
+        reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
+        entity: EntityId,
+    ) {
+        if let Some(targets) = forward.remove(&entity) {
+            for target in targets {
+                Self::remove_reverse_link(reverse, target, entity);
+            }
+        }
+
+        if let Some(sources) = reverse.remove(&entity) {
+            for source in sources {
+                if let Some(targets) = forward.get_mut(&source) {
+                    targets.remove(&entity);
+                    if targets.is_empty() {
+                        forward.remove(&source);
+                    }
+                }
+            }
+        }
+    }
+
+    fn remove_fact_relations(
+        relations: &mut BTreeMap<EntityId, BTreeSet<FactId>>,
+        entity: EntityId,
+    ) {
+        relations.remove(&entity);
+    }
+
     fn remove_reverse_link(
         reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
         target: EntityId,
@@ -112,9 +158,10 @@ impl RelationTables {
 #[cfg(test)]
 mod tests {
     use super::{RelationTables, ReservationRecord};
-    use crate::{EntityId, RelationRecord, ReservationId, Tick, TickRange};
+    use crate::{EntityId, FactId, RelationRecord, ReservationId, Tick, TickRange};
     use serde::de::DeserializeOwned;
     use serde::Serialize;
+    use std::collections::BTreeSet;
     use std::fmt::Debug;
 
     fn entity(slot: u32) -> EntityId {
@@ -139,6 +186,16 @@ mod tests {
         assert!(tables.possessions_of.is_empty());
         assert!(tables.owned_by.is_empty());
         assert!(tables.property_of.is_empty());
+        assert!(tables.member_of.is_empty());
+        assert!(tables.members_of.is_empty());
+        assert!(tables.loyal_to.is_empty());
+        assert!(tables.loyalty_from.is_empty());
+        assert!(tables.office_holder.is_empty());
+        assert!(tables.offices_held.is_empty());
+        assert!(tables.hostile_to.is_empty());
+        assert!(tables.hostility_from.is_empty());
+        assert!(tables.knows_fact.is_empty());
+        assert!(tables.believes_fact.is_empty());
         assert!(tables.reservations.is_empty());
         assert!(tables.reservations_by_entity.is_empty());
         assert_eq!(tables.next_reservation_id, 0);
@@ -158,7 +215,13 @@ mod tests {
         let holder = entity(12);
         let owner = entity(13);
         let reserver = entity(14);
+        let faction = entity(15);
+        let loyal_target = entity(16);
+        let office = entity(17);
+        let enemy = entity(18);
         let reservation_id = ReservationId(7);
+        let known_fact = FactId(21);
+        let believed_fact = FactId(22);
         let reservation = ReservationRecord {
             id: reservation_id,
             entity: item,
@@ -183,6 +246,34 @@ mod tests {
         tables
             .property_of
             .insert(owner, [item].into_iter().collect());
+        tables
+            .member_of
+            .insert(item, [faction].into_iter().collect());
+        tables
+            .members_of
+            .insert(faction, [item].into_iter().collect());
+        tables
+            .loyal_to
+            .insert(item, [loyal_target].into_iter().collect());
+        tables
+            .loyalty_from
+            .insert(loyal_target, [item].into_iter().collect());
+        tables.office_holder.insert(office, item);
+        tables
+            .offices_held
+            .insert(item, [office].into_iter().collect());
+        tables
+            .hostile_to
+            .insert(item, [enemy].into_iter().collect());
+        tables
+            .hostility_from
+            .insert(enemy, [item].into_iter().collect());
+        tables
+            .knows_fact
+            .insert(item, [known_fact].into_iter().collect());
+        tables
+            .believes_fact
+            .insert(item, [believed_fact].into_iter().collect());
         tables.reservations.insert(reservation_id, reservation);
         tables
             .reservations_by_entity
@@ -203,7 +294,13 @@ mod tests {
         let holder = entity(12);
         let owner = entity(13);
         let reserver = entity(14);
+        let faction = entity(15);
+        let loyal_target = entity(16);
+        let office = entity(17);
+        let enemy = entity(18);
         let reservation_id = ReservationId(7);
+        let known_fact = FactId(21);
+        let believed_fact = FactId(22);
 
         let mut tables = RelationTables::default();
         tables.located_in.insert(item, place);
@@ -222,6 +319,34 @@ mod tests {
         tables
             .property_of
             .insert(owner, [item].into_iter().collect());
+        tables
+            .member_of
+            .insert(item, [faction].into_iter().collect());
+        tables
+            .members_of
+            .insert(faction, [item].into_iter().collect());
+        tables
+            .loyal_to
+            .insert(item, [loyal_target].into_iter().collect());
+        tables
+            .loyalty_from
+            .insert(loyal_target, [item].into_iter().collect());
+        tables.office_holder.insert(office, item);
+        tables
+            .offices_held
+            .insert(item, [office].into_iter().collect());
+        tables
+            .hostile_to
+            .insert(item, [enemy].into_iter().collect());
+        tables
+            .hostility_from
+            .insert(enemy, [item].into_iter().collect());
+        tables
+            .knows_fact
+            .insert(item, [known_fact].into_iter().collect());
+        tables
+            .believes_fact
+            .insert(item, [believed_fact].into_iter().collect());
         tables.reservations.insert(
             reservation_id,
             ReservationRecord {
@@ -245,6 +370,16 @@ mod tests {
         assert!(tables.possessions_of.is_empty());
         assert!(tables.owned_by.is_empty());
         assert!(tables.property_of.is_empty());
+        assert!(tables.member_of.is_empty());
+        assert!(tables.members_of.is_empty());
+        assert!(tables.loyal_to.is_empty());
+        assert!(tables.loyalty_from.is_empty());
+        assert!(tables.office_holder.is_empty());
+        assert!(tables.offices_held.is_empty());
+        assert!(tables.hostile_to.is_empty());
+        assert!(tables.hostility_from.is_empty());
+        assert!(tables.knows_fact.is_empty());
+        assert!(tables.believes_fact.is_empty());
         assert!(tables.reservations.is_empty());
         assert!(tables.reservations_by_entity.is_empty());
     }
@@ -256,6 +391,9 @@ mod tests {
         let holder = entity(12);
         let owner = entity(13);
         let reserver = entity(14);
+        let faction = entity(15);
+        let office = entity(16);
+        let enemy = entity(17);
         let reservation_id = ReservationId(7);
 
         let mut tables = RelationTables::default();
@@ -271,6 +409,22 @@ mod tests {
         tables
             .property_of
             .insert(owner, [item].into_iter().collect());
+        tables
+            .member_of
+            .insert(item, [faction].into_iter().collect());
+        tables
+            .members_of
+            .insert(faction, [item].into_iter().collect());
+        tables.office_holder.insert(office, item);
+        tables
+            .offices_held
+            .insert(item, [office].into_iter().collect());
+        tables
+            .hostile_to
+            .insert(item, [enemy].into_iter().collect());
+        tables
+            .hostility_from
+            .insert(enemy, [item].into_iter().collect());
         tables.reservations.insert(
             reservation_id,
             ReservationRecord {
@@ -290,6 +444,12 @@ mod tests {
         assert_eq!(tables.possessed_by.get(&item), Some(&holder));
         assert_eq!(tables.owned_by.get(&item), Some(&owner));
         assert_eq!(
+            tables.member_of.get(&item),
+            Some(&BTreeSet::from([faction]))
+        );
+        assert_eq!(tables.office_holder.get(&office), Some(&item));
+        assert_eq!(tables.hostile_to.get(&item), Some(&BTreeSet::from([enemy])));
+        assert_eq!(
             tables.reservations.get(&reservation_id).unwrap().reserver,
             reserver
         );
@@ -299,5 +459,72 @@ mod tests {
         assert!(tables.reservations_by_entity.is_empty());
         assert_eq!(tables.possessed_by.get(&item), Some(&holder));
         assert_eq!(tables.owned_by.get(&item), Some(&owner));
+    }
+
+    #[test]
+    fn remove_all_cleans_social_rows_when_entity_is_target_holder_or_office() {
+        let member = entity(10);
+        let faction = entity(11);
+        let loyal_subject = entity(12);
+        let target = entity(13);
+        let office = entity(14);
+        let holder = entity(15);
+        let hostile_subject = entity(16);
+
+        let mut tables = RelationTables::default();
+        tables
+            .member_of
+            .insert(member, [faction].into_iter().collect());
+        tables
+            .members_of
+            .insert(faction, [member].into_iter().collect());
+        tables
+            .loyal_to
+            .insert(loyal_subject, [target].into_iter().collect());
+        tables
+            .loyalty_from
+            .insert(target, [loyal_subject].into_iter().collect());
+        tables.office_holder.insert(office, holder);
+        tables
+            .offices_held
+            .insert(holder, [office].into_iter().collect());
+        tables
+            .hostile_to
+            .insert(hostile_subject, [target].into_iter().collect());
+        tables
+            .hostility_from
+            .insert(target, [hostile_subject].into_iter().collect());
+
+        tables.remove_all(target);
+        assert!(tables.loyal_to.is_empty());
+        assert!(tables.loyalty_from.is_empty());
+        assert!(tables.hostile_to.is_empty());
+        assert!(tables.hostility_from.is_empty());
+        assert_eq!(
+            tables.member_of.get(&member),
+            Some(&BTreeSet::from([faction]))
+        );
+        assert_eq!(tables.office_holder.get(&office), Some(&holder));
+
+        tables.remove_all(holder);
+        assert!(tables.office_holder.is_empty());
+        assert!(tables.offices_held.is_empty());
+        assert_eq!(
+            tables.member_of.get(&member),
+            Some(&BTreeSet::from([faction]))
+        );
+
+        tables.remove_all(faction);
+        assert!(tables.member_of.is_empty());
+        assert!(tables.members_of.is_empty());
+
+        tables.office_holder.insert(office, member);
+        tables
+            .offices_held
+            .insert(member, [office].into_iter().collect());
+
+        tables.remove_all(office);
+        assert!(tables.office_holder.is_empty());
+        assert!(tables.offices_held.is_empty());
     }
 }
