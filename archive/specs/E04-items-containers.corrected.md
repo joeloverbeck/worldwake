@@ -1,5 +1,7 @@
 # E04: Goods, Lots, Unique Items & Container Capacity
 
+**Status**: COMPLETED
+
 ## Epic Summary
 Implement the prototype’s hybrid identity inventory model:
 - stackable lots for bulk commodities
@@ -187,3 +189,19 @@ Note:
 - Section 7.1 (material propagation includes waste)
 - Section 9.5 (conservation)
 - Section 9.6 (no negative stocks)
+
+## Outcome
+
+- Completion date: 2026-03-09
+- What actually changed:
+  - Implemented the E04 core inventory model in `worldwake-core`: commodity taxonomy, provenance types, `ItemLot`, `UniqueItem`, `Container`, lot split/merge, load accounting, and conservation helpers
+  - Preserved deterministic storage choices (`BTreeMap`, `BTreeSet`) and live-only world query surfaces
+  - Added crate-level tests covering serialization, determinism, split/merge lineage, load accounting, and conservation behavior
+- Deviations from original plan:
+  - Deferred authoritative physical placement and containment semantics to E05 as intended; E04 helpers that depend on membership take caller-supplied inputs instead of inventing provisional relations
+  - Chose dedicated helper modules (`load.rs`, `conservation.rs`) over expanding `World` with derived-query responsibilities
+  - The spec’s ideal recursive nested-container accounting remains conceptually owned by E04, but its honest implementation still depends on E05 containment semantics
+- Verification results:
+  - `cargo test -p worldwake-core` passed
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed
+  - `cargo test --workspace` passed

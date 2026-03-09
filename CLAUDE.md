@@ -37,7 +37,30 @@ worldwake-ai      → GOAP planner, utility scoring, decision architecture (deps
 worldwake-cli     → Human control interface (deps: all)
 ```
 
-Custom ECS (no external crate) with `HashMap`-based typed component storage. The world is a place graph with travel times, not continuous space.
+Custom ECS (no external crate) with deterministic `BTreeMap`-based typed component storage. The world is a place graph with travel times, not continuous space.
+
+### worldwake-core modules
+
+The foundation crate contains all authoritative types and the ECS world boundary:
+
+| Module | Purpose |
+|--------|---------|
+| `ids` | `EntityId` (slot+generation), `Tick`, `EventId`, `Seed`, `TravelEdgeId` |
+| `entity` | `EntityKind` enum (Agent, Place, ItemLot, UniqueItem, Container, …), `EntityMeta` |
+| `allocator` | Generational slot allocator with archive/purge lifecycle |
+| `component_tables` | Macro-generated typed storage for all component types |
+| `component_schema` | Declarative component registration (which kinds accept which components) |
+| `components` | Domain components: `AgentData`, `Name` |
+| `control` | `ControlSource` enum (Human, Ai, None) |
+| `topology` | `Place`, `PlaceTag`, `TravelEdge`, `Route`, `Topology`, Dijkstra pathfinding, `build_prototype_world` |
+| `items` | `CommodityKind`, `ItemLot`, `UniqueItem`, `UniqueItemKind`, `Container`, `LotOperation`, `ProvenanceEntry`, `TradeCategory` |
+| `load` | Weight/load accounting: per-unit loads, container capacity checks |
+| `conservation` | `total_commodity_quantity`, `verify_conservation` — enforces the conservation invariant |
+| `numerics` | Newtype wrappers: `Quantity`, `LoadUnits`, `Permille` |
+| `traits` | `Component` and `RelationRecord` trait definitions |
+| `world` | `World` struct — authoritative boundary over allocator, component tables, and topology |
+| `error` | `WorldError` enum |
+| `test_utils` | Shared test helpers |
 
 ## Critical Invariants
 
@@ -46,13 +69,15 @@ These are non-negotiable design rules enforced by tests:
 - **No `Player` type** — only `ControlSource = Human | Ai | None`
 - **Belief-only planning** — agents never read world state directly (invariant 9.11)
 - **Append-only event log** — causal source of truth, never mutated
-- **Determinism** — `ChaCha8Rng` seeded, `BTreeMap` where iteration order matters
-- **Conservation** — items cannot be created/destroyed except through explicit actions
+- **Determinism** — `ChaCha8Rng` seeded, `BTreeMap`/`BTreeSet` only in authoritative state (no `HashMap`/`HashSet`), no floats, no wall-clock time
+- **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`
 - **Unique location** — every entity exists in exactly one place
 
 ## Implementation Plan
 
-22 epics across 4 phases with strict gates. Specs live in `specs/E01..E22-*.md`. Dependency graph and phase gates are in `specs/IMPLEMENTATION-ORDER.md`.
+22 epics across 4 phases with strict gates. Specs live in `specs/`. Dependency graph and phase gates are in `specs/IMPLEMENTATION-ORDER.md`. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
+
+**Completed epics**: E01 (project scaffold), E02 (world topology), E03 (entity store), E04 (items & containers). These established the foundation crate with the ECS, topology graph, item/container model, and conservation invariants.
 
 **Phase gates are blocking** — do not start a new phase until all gate tests for the previous phase pass.
 
@@ -64,7 +89,7 @@ Minimal: `serde`, `bincode`, `rand_chacha`. No external ECS crate.
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Epic specs: `specs/E01-*.md` through `specs/E22-*.md`
+- Epic specs: `specs/E05-*.md` through `specs/E22-*.md` (E01–E04 archived in `archive/specs/`)
 
 ## Commit Conventions
 
@@ -122,7 +147,7 @@ Do not duplicate or drift this procedure in other files; update `docs/archival-w
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (578 symbols, 1508 relationships, 45 execution flows).
+This project is indexed by GitNexus as **worldwake** (621 symbols, 1746 relationships, 49 execution flows).
 
 ## Always Start Here
 

@@ -27,6 +27,7 @@
 pub mod allocator;
 pub mod component_schema;
 pub mod component_tables;
+pub mod conservation;
 pub mod components;
 pub mod control;
 pub mod entity;
@@ -42,6 +43,7 @@ pub mod world;
 
 pub use allocator::EntityAllocator;
 pub use component_tables::ComponentTables;
+pub use conservation::{total_commodity_quantity, verify_conservation};
 pub use components::{AgentData, Name};
 pub use control::ControlSource;
 pub use entity::{EntityKind, EntityMeta};
