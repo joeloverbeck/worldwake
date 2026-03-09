@@ -35,6 +35,7 @@ pub mod numerics;
 pub mod test_utils;
 pub mod topology;
 pub mod traits;
+pub mod world;
 
 pub use allocator::EntityAllocator;
 pub use component_tables::ComponentTables;
@@ -46,3 +47,4 @@ pub use ids::{EntityId, EventId, Seed, Tick, TravelEdgeId};
 pub use numerics::{LoadUnits, Permille, Quantity};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use traits::{Component, RelationRecord};
+pub use world::World;

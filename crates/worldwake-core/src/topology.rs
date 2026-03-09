@@ -161,6 +161,10 @@ impl Topology {
         self.places.get(&id)
     }
 
+    pub fn place_ids(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.places.keys().copied()
+    }
+
     pub fn edge(&self, id: TravelEdgeId) -> Option<&TravelEdge> {
         self.edges.get(&id)
     }
@@ -1075,6 +1079,23 @@ mod tests {
         assert!(!topology.is_reachable(entity(1), entity(2)));
         assert_eq!(topology.place_count(), 0);
         assert_eq!(topology.edge_count(), 0);
+    }
+
+    #[test]
+    fn topology_place_ids_are_sorted() {
+        let mut topology = Topology::new();
+        for (slot, name, tag) in [
+            (4, "D", PlaceTag::Forest),
+            (1, "A", PlaceTag::Village),
+            (3, "C", PlaceTag::Store),
+        ] {
+            topology
+                .add_place(entity(slot), place(name, &[tag]))
+                .unwrap();
+        }
+
+        let ids = topology.place_ids().collect::<Vec<_>>();
+        assert_eq!(ids, vec![entity(1), entity(3), entity(4)]);
     }
 
     #[test]

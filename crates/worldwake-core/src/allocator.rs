@@ -45,6 +45,38 @@ impl EntityAllocator {
         }
     }
 
+    pub fn register_existing(
+        &mut self,
+        id: EntityId,
+        kind: EntityKind,
+        created_at: Tick,
+    ) -> Result<(), WorldError> {
+        if self
+            .slots
+            .get(&id.slot)
+            .is_some_and(|record| record.generation != id.generation || record.meta.is_some())
+        {
+            return Err(WorldError::InvalidOperation(format!(
+                "entity id already registered: {id}"
+            )));
+        }
+
+        let record = self
+            .slots
+            .entry(id.slot)
+            .or_insert_with(|| SlotRecord::new(id.generation));
+        record.generation = id.generation;
+        record.meta = Some(EntityMeta {
+            kind,
+            created_at,
+            archived_at: None,
+        });
+
+        self.free_slots.remove(&id.slot);
+        self.next_slot = self.next_slot.max(id.slot.saturating_add(1));
+        Ok(())
+    }
+
     pub fn archive_entity(&mut self, id: EntityId, tick: Tick) -> Result<(), WorldError> {
         let record = self.record_mut(id)?;
         let meta = record.meta.as_mut().ok_or(WorldError::EntityNotFound(id))?;
@@ -268,5 +300,35 @@ mod tests {
         assert!(!roundtrip.is_alive(archived));
         assert!(roundtrip.is_alive(live));
         assert!(roundtrip.is_alive(reused));
+    }
+
+    #[test]
+    fn register_existing_makes_entity_live() {
+        let mut allocator = EntityAllocator::new();
+        let id = EntityId {
+            slot: 7,
+            generation: 3,
+        };
+
+        allocator
+            .register_existing(id, EntityKind::Place, Tick(0))
+            .unwrap();
+
+        let meta = allocator.get_meta(id).unwrap();
+        assert_eq!(meta.kind, EntityKind::Place);
+        assert_eq!(meta.created_at, Tick(0));
+        assert!(allocator.is_alive(id));
+    }
+
+    #[test]
+    fn register_existing_rejects_duplicate_id() {
+        let mut allocator = EntityAllocator::new();
+        let id = allocator.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = allocator
+            .register_existing(id, EntityKind::Place, Tick(0))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
     }
 }
