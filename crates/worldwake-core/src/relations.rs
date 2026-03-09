@@ -1,6 +1,6 @@
 //! Explicit typed storage for authoritative relation state.
 
-use crate::{EntityId, FactId, RelationRecord, ReservationId, TickRange};
+use crate::{EntityId, FactId, Permille, RelationRecord, ReservationId, TickRange};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,8 +60,8 @@ pub struct RelationTables {
     pub(crate) property_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) member_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) members_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
-    pub(crate) loyal_to: BTreeMap<EntityId, BTreeSet<EntityId>>,
-    pub(crate) loyalty_from: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) loyal_to: BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
+    pub(crate) loyalty_from: BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
     pub(crate) office_holder: BTreeMap<EntityId, EntityId>,
     pub(crate) offices_held: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) hostile_to: BTreeMap<EntityId, BTreeSet<EntityId>>,
@@ -97,7 +97,7 @@ impl RelationTables {
             ArchiveDependencyKind::HasMembers,
             self.members_of.get(&entity),
         );
-        Self::push_archive_dependency(
+        Self::push_weighted_archive_dependency(
             &mut dependencies,
             ArchiveDependencyKind::HasLoyalSubjects,
             self.loyalty_from.get(&entity),
@@ -128,7 +128,11 @@ impl RelationTables {
         Self::remove_entity_relations(&mut self.possessed_by, &mut self.possessions_of, entity);
         Self::remove_entity_relations(&mut self.owned_by, &mut self.property_of, entity);
         Self::remove_many_to_many_relations(&mut self.member_of, &mut self.members_of, entity);
-        Self::remove_many_to_many_relations(&mut self.loyal_to, &mut self.loyalty_from, entity);
+        Self::remove_weighted_many_to_many_relations(
+            &mut self.loyal_to,
+            &mut self.loyalty_from,
+            entity,
+        );
         Self::remove_entity_relations(&mut self.office_holder, &mut self.offices_held, entity);
         Self::remove_many_to_many_relations(&mut self.hostile_to, &mut self.hostility_from, entity);
         Self::remove_fact_relations(&mut self.knows_fact, entity);
@@ -203,6 +207,29 @@ impl RelationTables {
         }
     }
 
+    fn remove_weighted_many_to_many_relations(
+        forward: &mut BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
+        reverse: &mut BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
+        entity: EntityId,
+    ) {
+        if let Some(targets) = forward.remove(&entity) {
+            for target in targets.into_keys() {
+                Self::remove_weighted_reverse_link(reverse, target, entity);
+            }
+        }
+
+        if let Some(sources) = reverse.remove(&entity) {
+            for source in sources.into_keys() {
+                if let Some(targets) = forward.get_mut(&source) {
+                    targets.remove(&entity);
+                    if targets.is_empty() {
+                        forward.remove(&source);
+                    }
+                }
+            }
+        }
+    }
+
     fn remove_fact_relations(
         relations: &mut BTreeMap<EntityId, BTreeSet<FactId>>,
         entity: EntityId,
@@ -248,15 +275,41 @@ impl RelationTables {
             });
         }
     }
+
+    fn push_weighted_archive_dependency(
+        dependencies: &mut Vec<ArchiveDependency>,
+        kind: ArchiveDependencyKind,
+        rows: Option<&BTreeMap<EntityId, Permille>>,
+    ) {
+        if let Some(rows) = rows.filter(|rows| !rows.is_empty()) {
+            dependencies.push(ArchiveDependency {
+                kind,
+                dependents: rows.keys().copied().collect(),
+            });
+        }
+    }
+
+    fn remove_weighted_reverse_link(
+        reverse: &mut BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
+        target: EntityId,
+        entity: EntityId,
+    ) {
+        if let Some(entities) = reverse.get_mut(&target) {
+            entities.remove(&entity);
+            if entities.is_empty() {
+                reverse.remove(&target);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{RelationTables, ReservationRecord};
-    use crate::{EntityId, FactId, RelationRecord, ReservationId, Tick, TickRange};
+    use crate::{EntityId, FactId, Permille, RelationRecord, ReservationId, Tick, TickRange};
     use serde::de::DeserializeOwned;
     use serde::Serialize;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 
     fn entity(slot: u32) -> EntityId {
@@ -347,12 +400,14 @@ mod tests {
         tables
             .members_of
             .insert(faction, [item].into_iter().collect());
-        tables
-            .loyal_to
-            .insert(item, [loyal_target].into_iter().collect());
-        tables
-            .loyalty_from
-            .insert(loyal_target, [item].into_iter().collect());
+        tables.loyal_to.insert(
+            item,
+            BTreeMap::from([(loyal_target, Permille::new(650).unwrap())]),
+        );
+        tables.loyalty_from.insert(
+            loyal_target,
+            BTreeMap::from([(item, Permille::new(650).unwrap())]),
+        );
         tables.office_holder.insert(office, item);
         tables
             .offices_held
@@ -420,12 +475,14 @@ mod tests {
         tables
             .members_of
             .insert(faction, [item].into_iter().collect());
-        tables
-            .loyal_to
-            .insert(item, [loyal_target].into_iter().collect());
-        tables
-            .loyalty_from
-            .insert(loyal_target, [item].into_iter().collect());
+        tables.loyal_to.insert(
+            item,
+            BTreeMap::from([(loyal_target, Permille::new(650).unwrap())]),
+        );
+        tables.loyalty_from.insert(
+            loyal_target,
+            BTreeMap::from([(item, Permille::new(650).unwrap())]),
+        );
         tables.office_holder.insert(office, item);
         tables
             .offices_held
@@ -573,12 +630,14 @@ mod tests {
         tables
             .members_of
             .insert(faction, [member].into_iter().collect());
-        tables
-            .loyal_to
-            .insert(loyal_subject, [target].into_iter().collect());
-        tables
-            .loyalty_from
-            .insert(target, [loyal_subject].into_iter().collect());
+        tables.loyal_to.insert(
+            loyal_subject,
+            BTreeMap::from([(target, Permille::new(500).unwrap())]),
+        );
+        tables.loyalty_from.insert(
+            target,
+            BTreeMap::from([(loyal_subject, Permille::new(500).unwrap())]),
+        );
         tables.office_holder.insert(office, holder);
         tables
             .offices_held

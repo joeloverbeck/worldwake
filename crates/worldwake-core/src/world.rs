@@ -14,6 +14,7 @@ mod ownership;
 mod placement;
 mod relation_mutation;
 mod reservations;
+mod social;
 
 macro_rules! world_component_api {
     ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
@@ -515,9 +516,9 @@ mod tests {
     use super::World;
     use crate::{
         AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId, FactId,
-        ItemLot, LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity,
-        ReservationId, ReservationRecord, Tick, TickRange, Topology, UniqueItem, UniqueItemKind,
-        WorldError,
+        ItemLot, LoadUnits, LotOperation, Name, Permille, Place, PlaceTag, ProvenanceEntry,
+        Quantity, ReservationId, ReservationRecord, Tick, TickRange, Topology, UniqueItem,
+        UniqueItemKind, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -607,14 +608,14 @@ mod tests {
             .relations
             .members_of
             .insert(fx.faction, [fx.item].into_iter().collect());
-        world
-            .relations
-            .loyal_to
-            .insert(fx.item, [fx.loyal_target].into_iter().collect());
-        world
-            .relations
-            .loyalty_from
-            .insert(fx.loyal_target, [fx.item].into_iter().collect());
+        world.relations.loyal_to.insert(
+            fx.item,
+            BTreeMap::from([(fx.loyal_target, Permille::new(650).unwrap())]),
+        );
+        world.relations.loyalty_from.insert(
+            fx.loyal_target,
+            BTreeMap::from([(fx.item, Permille::new(650).unwrap())]),
+        );
         world.relations.office_holder.insert(fx.office, fx.item);
         world
             .relations
@@ -739,6 +740,47 @@ mod tests {
                 allows_nested_containers: false,
             })
         );
+    }
+
+    fn seed_social_archive_blockers(
+        world: &mut World,
+        faction: EntityId,
+        member: EntityId,
+        loyal_subject: EntityId,
+        hostile_subject: EntityId,
+        office: EntityId,
+        item: EntityId,
+    ) {
+        world
+            .relations
+            .member_of
+            .insert(member, BTreeSet::from([faction]));
+        world
+            .relations
+            .members_of
+            .insert(faction, BTreeSet::from([member]));
+        world.relations.loyal_to.insert(
+            loyal_subject,
+            BTreeMap::from([(faction, Permille::new(700).unwrap())]),
+        );
+        world.relations.loyalty_from.insert(
+            faction,
+            BTreeMap::from([(loyal_subject, Permille::new(700).unwrap())]),
+        );
+        world
+            .relations
+            .hostile_to
+            .insert(hostile_subject, BTreeSet::from([faction]));
+        world
+            .relations
+            .hostility_from
+            .insert(faction, BTreeSet::from([hostile_subject]));
+        world.set_owner(item, faction).unwrap();
+        world.relations.office_holder.insert(office, faction);
+        world
+            .relations
+            .offices_held
+            .insert(faction, BTreeSet::from([office]));
     }
 
     #[test]
@@ -1594,36 +1636,15 @@ mod tests {
             .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(6))
             .unwrap();
 
-        world
-            .relations
-            .member_of
-            .insert(member, BTreeSet::from([faction]));
-        world
-            .relations
-            .members_of
-            .insert(faction, BTreeSet::from([member]));
-        world
-            .relations
-            .loyal_to
-            .insert(loyal_subject, BTreeSet::from([faction]));
-        world
-            .relations
-            .loyalty_from
-            .insert(faction, BTreeSet::from([loyal_subject]));
-        world
-            .relations
-            .hostile_to
-            .insert(hostile_subject, BTreeSet::from([faction]));
-        world
-            .relations
-            .hostility_from
-            .insert(faction, BTreeSet::from([hostile_subject]));
-        world.set_owner(item, faction).unwrap();
-        world.relations.office_holder.insert(office, faction);
-        world
-            .relations
-            .offices_held
-            .insert(faction, BTreeSet::from([office]));
+        seed_social_archive_blockers(
+            &mut world,
+            faction,
+            member,
+            loyal_subject,
+            hostile_subject,
+            office,
+            item,
+        );
 
         assert_eq!(
             world.prepare_entity_for_archive(faction).unwrap(),
@@ -2975,6 +2996,277 @@ mod tests {
         ));
         assert!(matches!(
             world.can_exercise_control(missing, item),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
+    }
+
+    #[test]
+    fn faction_membership_queries_stay_bidirectional_and_idempotent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let faction_a = world.create_faction("River Pact", Tick(2)).unwrap();
+        let faction_b = world.create_faction("Granary Guild", Tick(3)).unwrap();
+
+        world.add_member(member, faction_b).unwrap();
+        world.add_member(member, faction_a).unwrap();
+        world.add_member(member, faction_a).unwrap();
+
+        assert_eq!(world.factions_of(member), vec![faction_a, faction_b]);
+        assert_eq!(world.members_of(faction_a), vec![member]);
+        assert_eq!(world.members_of(faction_b), vec![member]);
+        assert_eq!(
+            world.relations.member_of.get(&member),
+            Some(&BTreeSet::from([faction_a, faction_b]))
+        );
+        assert_eq!(
+            world.relations.members_of.get(&faction_a),
+            Some(&BTreeSet::from([member]))
+        );
+
+        world.remove_member(member, faction_a).unwrap();
+        world.remove_member(member, faction_a).unwrap();
+
+        assert_eq!(world.factions_of(member), vec![faction_b]);
+        assert_eq!(world.members_of(faction_a), Vec::<EntityId>::new());
+        assert_eq!(world.members_of(faction_b), vec![member]);
+    }
+
+    #[test]
+    fn loyalty_and_hostility_queries_stay_bidirectional_and_strength_aware() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let subject = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let target_a = world.create_faction("River Pact", Tick(2)).unwrap();
+        let target_b = world.create_office("Granary Chair", Tick(3)).unwrap();
+        let weak = Permille::new(250).unwrap();
+        let strong = Permille::new(900).unwrap();
+
+        world.set_loyalty(subject, target_b, weak).unwrap();
+        world.set_loyalty(subject, target_a, weak).unwrap();
+        world.set_loyalty(subject, target_a, strong).unwrap();
+        world.add_hostility(subject, target_b).unwrap();
+        world.add_hostility(subject, target_b).unwrap();
+
+        assert_eq!(world.loyalty_to(subject, target_a), Some(strong));
+        assert_eq!(
+            world.loyal_targets_of(subject),
+            vec![(target_a, strong), (target_b, weak)]
+        );
+        assert_eq!(world.loyal_subjects_of(target_a), vec![(subject, strong)]);
+        assert_eq!(world.hostile_targets_of(subject), vec![target_b]);
+        assert_eq!(world.hostile_towards(target_b), vec![subject]);
+
+        world.clear_loyalty(subject, target_a).unwrap();
+        world.clear_loyalty(subject, target_a).unwrap();
+        world.remove_hostility(subject, target_b).unwrap();
+        world.remove_hostility(subject, target_b).unwrap();
+
+        assert_eq!(world.loyal_targets_of(subject), vec![(target_b, weak)]);
+        assert_eq!(
+            world.loyal_subjects_of(target_a),
+            Vec::<(EntityId, Permille)>::new()
+        );
+        assert_eq!(world.hostile_targets_of(subject), Vec::<EntityId>::new());
+        assert_eq!(world.hostile_towards(target_b), Vec::<EntityId>::new());
+    }
+
+    #[test]
+    fn office_assignment_replaces_prior_holder_and_vacates_idempotently() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office_a = world.create_office("Granary Chair", Tick(1)).unwrap();
+        let office_b = world.create_office("Market Chair", Tick(2)).unwrap();
+        let first_holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let second_holder = world
+            .create_agent("Bram", ControlSource::Human, Tick(4))
+            .unwrap();
+
+        world.assign_office(office_a, first_holder).unwrap();
+        world.assign_office(office_b, first_holder).unwrap();
+        world.assign_office(office_a, second_holder).unwrap();
+
+        assert_eq!(world.office_holder(office_a), Some(second_holder));
+        assert_eq!(world.office_holder(office_b), Some(first_holder));
+        assert_eq!(world.offices_held_by(first_holder), vec![office_b]);
+        assert_eq!(world.offices_held_by(second_holder), vec![office_a]);
+        assert_eq!(
+            world.relations.office_holder.get(&office_a),
+            Some(&second_holder)
+        );
+        assert_eq!(
+            world.relations.offices_held.get(&first_holder),
+            Some(&BTreeSet::from([office_b]))
+        );
+
+        world.vacate_office(office_a).unwrap();
+        world.vacate_office(office_a).unwrap();
+
+        assert_eq!(world.office_holder(office_a), None);
+        assert_eq!(world.offices_held_by(second_holder), Vec::<EntityId>::new());
+    }
+
+    #[test]
+    fn fact_queries_are_agent_scoped_and_idempotent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let known_a = FactId(7);
+        let known_b = FactId(9);
+        let believed = FactId(11);
+
+        world.add_known_fact(agent, known_b).unwrap();
+        world.add_known_fact(agent, known_a).unwrap();
+        world.add_known_fact(agent, known_a).unwrap();
+        world.add_believed_fact(agent, believed).unwrap();
+        world.add_believed_fact(agent, believed).unwrap();
+
+        assert_eq!(world.known_facts(agent), vec![known_a, known_b]);
+        assert_eq!(world.believed_facts(agent), vec![believed]);
+
+        world.remove_known_fact(agent, known_a).unwrap();
+        world.remove_known_fact(agent, known_a).unwrap();
+        world.remove_believed_fact(agent, believed).unwrap();
+        world.remove_believed_fact(agent, believed).unwrap();
+
+        assert_eq!(world.known_facts(agent), vec![known_b]);
+        assert_eq!(world.believed_facts(agent), Vec::<FactId>::new());
+    }
+
+    #[test]
+    fn social_query_helpers_hide_archived_entities_even_if_rows_are_stale() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let faction = world.create_faction("River Pact", Tick(2)).unwrap();
+        let loyal_target = world.create_faction("Granary Guild", Tick(3)).unwrap();
+        let office = world.create_office("Granary Chair", Tick(4)).unwrap();
+        let hostile_target = world
+            .create_agent("Bram", ControlSource::Human, Tick(5))
+            .unwrap();
+        let knower = world
+            .create_agent("Cato", ControlSource::Ai, Tick(6))
+            .unwrap();
+        let fact = FactId(21);
+
+        world.add_member(member, faction).unwrap();
+        world
+            .set_loyalty(member, loyal_target, Permille::new(700).unwrap())
+            .unwrap();
+        world.assign_office(office, member).unwrap();
+        world.add_hostility(member, hostile_target).unwrap();
+        world.add_known_fact(knower, fact).unwrap();
+
+        world.vacate_office(office).unwrap();
+        world.archive_entity(member, Tick(7)).unwrap();
+        world.archive_entity(faction, Tick(8)).unwrap();
+        world.archive_entity(loyal_target, Tick(9)).unwrap();
+        world.archive_entity(office, Tick(10)).unwrap();
+        world.archive_entity(hostile_target, Tick(11)).unwrap();
+        world.archive_entity(knower, Tick(12)).unwrap();
+
+        world
+            .relations
+            .member_of
+            .insert(member, BTreeSet::from([faction]));
+        world
+            .relations
+            .members_of
+            .insert(faction, BTreeSet::from([member]));
+        world.relations.loyal_to.insert(
+            member,
+            BTreeMap::from([(loyal_target, Permille::new(700).unwrap())]),
+        );
+        world.relations.loyalty_from.insert(
+            loyal_target,
+            BTreeMap::from([(member, Permille::new(700).unwrap())]),
+        );
+        world.relations.office_holder.insert(office, member);
+        world
+            .relations
+            .offices_held
+            .insert(member, BTreeSet::from([office]));
+        world
+            .relations
+            .hostile_to
+            .insert(member, BTreeSet::from([hostile_target]));
+        world
+            .relations
+            .hostility_from
+            .insert(hostile_target, BTreeSet::from([member]));
+        world
+            .relations
+            .knows_fact
+            .insert(knower, BTreeSet::from([fact]));
+
+        assert_eq!(world.factions_of(member), Vec::<EntityId>::new());
+        assert_eq!(world.members_of(faction), Vec::<EntityId>::new());
+        assert_eq!(
+            world.loyal_targets_of(member),
+            Vec::<(EntityId, Permille)>::new()
+        );
+        assert_eq!(
+            world.loyal_subjects_of(loyal_target),
+            Vec::<(EntityId, Permille)>::new()
+        );
+        assert_eq!(world.office_holder(office), None);
+        assert_eq!(world.offices_held_by(member), Vec::<EntityId>::new());
+        assert_eq!(world.hostile_targets_of(member), Vec::<EntityId>::new());
+        assert_eq!(
+            world.hostile_towards(hostile_target),
+            Vec::<EntityId>::new()
+        );
+        assert_eq!(world.known_facts(knower), Vec::<FactId>::new());
+    }
+
+    #[test]
+    fn social_apis_reject_wrong_kinds_missing_and_archived_entities() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let faction = world.create_faction("River Pact", Tick(2)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(4))
+            .unwrap();
+        let archived_agent = world
+            .create_agent("Bram", ControlSource::Human, Tick(5))
+            .unwrap();
+        let missing = entity(999);
+
+        world.archive_entity(archived_agent, Tick(6)).unwrap();
+
+        assert!(matches!(
+            world.add_member(agent, item),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.assign_office(item, agent),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.add_known_fact(faction, FactId(1)),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.set_loyalty(agent, archived_agent, Permille::new(500).unwrap()),
+            Err(WorldError::ArchivedEntity(id)) if id == archived_agent
+        ));
+        assert!(matches!(
+            world.add_hostility(missing, faction),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
+        assert!(matches!(
+            world.remove_believed_fact(archived_agent, FactId(2)),
+            Err(WorldError::ArchivedEntity(id)) if id == archived_agent
+        ));
+        assert!(matches!(
+            world.vacate_office(missing),
             Err(WorldError::EntityNotFound(id)) if id == missing
         ));
     }

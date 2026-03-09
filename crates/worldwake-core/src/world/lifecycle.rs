@@ -216,7 +216,7 @@ impl World {
                 Ok(())
             }
             (ArchiveDependencyKind::HasLoyalSubjects, ArchiveResolution::RevokeLoyalty) => {
-                self.clear_loyalty(entity, &dependency.dependents);
+                self.clear_loyalty_dependents(entity, &dependency.dependents);
                 Ok(())
             }
             (ArchiveDependencyKind::HasHostileSubjects, ArchiveResolution::RevokeHostility) => {
@@ -224,7 +224,7 @@ impl World {
                 Ok(())
             }
             (ArchiveDependencyKind::HasOfficeHolder, ArchiveResolution::VacateOffice) => {
-                self.vacate_office(entity);
+                self.clear_office_assignment(entity);
                 Ok(())
             }
             (ArchiveDependencyKind::HoldsOffices, ArchiveResolution::RelinquishOffices) => {
@@ -327,9 +327,9 @@ impl World {
         }
     }
 
-    fn clear_loyalty(&mut self, entity: EntityId, dependents: &[EntityId]) {
+    fn clear_loyalty_dependents(&mut self, entity: EntityId, dependents: &[EntityId]) {
         for subject in dependents {
-            Self::clear_many_to_many_relation(
+            Self::clear_weighted_relation(
                 &mut self.relations.loyal_to,
                 &mut self.relations.loyalty_from,
                 *subject,
@@ -349,7 +349,7 @@ impl World {
         }
     }
 
-    fn vacate_office(&mut self, office: EntityId) {
+    pub(super) fn clear_office_assignment(&mut self, office: EntityId) {
         Self::clear_entity_relation(
             &mut self.relations.office_holder,
             &mut self.relations.offices_held,
@@ -359,11 +359,7 @@ impl World {
 
     fn relinquish_offices(&mut self, dependents: &[EntityId]) {
         for office in dependents {
-            Self::clear_entity_relation(
-                &mut self.relations.office_holder,
-                &mut self.relations.offices_held,
-                *office,
-            );
+            self.clear_office_assignment(*office);
         }
     }
 
