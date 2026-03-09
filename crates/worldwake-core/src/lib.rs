@@ -33,6 +33,7 @@ pub mod entity;
 pub mod error;
 pub mod ids;
 pub mod items;
+pub mod load;
 pub mod numerics;
 pub mod test_utils;
 pub mod topology;
@@ -49,6 +50,10 @@ pub use ids::{EntityId, EventId, Seed, Tick, TravelEdgeId};
 pub use items::{
     CommodityKind, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
     UniqueItemKind,
+};
+pub use load::{
+    current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
+    load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
 pub use numerics::{LoadUnits, Permille, Quantity};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
