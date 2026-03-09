@@ -9,6 +9,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod placement;
+
 macro_rules! world_component_api {
     ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
         $(
@@ -524,6 +526,15 @@ mod tests {
             )
             .unwrap();
         topology
+    }
+
+    fn open_container(capacity: u32) -> Container {
+        Container {
+            capacity: LoadUnits(capacity),
+            allowed_commodities: None,
+            allows_unique_items: true,
+            allows_nested_containers: true,
+        }
     }
 
     struct PurgeRelationFixture {
@@ -1606,6 +1617,279 @@ mod tests {
         assert_eq!(world.relations.members_of.get(&faction), None);
         assert_eq!(world.relations.loyalty_from.get(&loyal_target), None);
         assert_eq!(world.relations.hostility_from.get(&enemy), None);
+    }
+
+    #[test]
+    fn set_ground_location_places_entity_and_moves_it_between_places() {
+        let mut world = World::new(test_topology()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(2), Tick(1))
+            .unwrap();
+        let square = entity(5);
+        let farm = entity(2);
+
+        world.set_ground_location(item, square).unwrap();
+        assert_eq!(world.relations.located_in.get(&item), Some(&square));
+        assert_eq!(
+            world.relations.entities_at.get(&square),
+            Some(&BTreeSet::from([item]))
+        );
+
+        world.set_ground_location(item, farm).unwrap();
+        assert_eq!(world.relations.located_in.get(&item), Some(&farm));
+        assert_eq!(world.relations.entities_at.get(&square), None);
+        assert_eq!(
+            world.relations.entities_at.get(&farm),
+            Some(&BTreeSet::from([item]))
+        );
+    }
+
+    #[test]
+    fn set_ground_location_rejects_non_place_targets() {
+        let mut world = World::new(test_topology()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(1))
+            .unwrap();
+        let non_place = world.create_agent("Aster", ControlSource::Ai, Tick(2)).unwrap();
+
+        let err = world.set_ground_location(item, non_place).unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn set_ground_location_on_container_updates_descendant_locations() {
+        let mut world = World::new(test_topology()).unwrap();
+        let outer = world.create_container(open_container(20), Tick(1)).unwrap();
+        let inner = world.create_container(open_container(10), Tick(2)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(3), Tick(3))
+            .unwrap();
+        let square = entity(5);
+        let farm = entity(2);
+
+        world.set_ground_location(outer, square).unwrap();
+        world.put_into_container(inner, outer).unwrap();
+        world.put_into_container(item, inner).unwrap();
+
+        world.set_ground_location(outer, farm).unwrap();
+
+        assert_eq!(world.relations.located_in.get(&outer), Some(&farm));
+        assert_eq!(world.relations.located_in.get(&inner), Some(&farm));
+        assert_eq!(world.relations.located_in.get(&item), Some(&farm));
+    }
+
+    #[test]
+    fn put_into_container_sets_containment_and_inherited_place() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Water, Quantity(2), Tick(2))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+
+        assert_eq!(world.relations.contained_by.get(&item), Some(&container));
+        assert_eq!(
+            world.relations.contents_of.get(&container),
+            Some(&BTreeSet::from([item]))
+        );
+        assert_eq!(world.relations.located_in.get(&item), Some(&place));
+        assert_eq!(
+            world.relations.entities_at.get(&place),
+            Some(&BTreeSet::from([container, item]))
+        );
+    }
+
+    #[test]
+    fn put_into_container_rejects_self_containment_and_cycles() {
+        let mut world = World::new(test_topology()).unwrap();
+        let outer = world.create_container(open_container(20), Tick(1)).unwrap();
+        let inner = world.create_container(open_container(10), Tick(2)).unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(outer, place).unwrap();
+        world.put_into_container(inner, outer).unwrap();
+
+        let self_err = world.put_into_container(outer, outer).unwrap_err();
+        assert!(matches!(
+            self_err,
+            WorldError::ContainmentCycle { entity, container }
+            if entity == outer && container == outer
+        ));
+
+        let cycle_err = world.put_into_container(outer, inner).unwrap_err();
+        assert!(matches!(
+            cycle_err,
+            WorldError::ContainmentCycle { entity, container }
+            if entity == outer && container == inner
+        ));
+    }
+
+    #[test]
+    fn put_into_container_rejects_non_container_targets() {
+        let mut world = World::new(test_topology()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Grain, Quantity(1), Tick(1))
+            .unwrap();
+        let office = world.create_office("Ledger Hall", Tick(2)).unwrap();
+
+        let err = world.put_into_container(item, office).unwrap_err();
+
+        assert!(matches!(
+            err,
+            WorldError::ComponentNotFound {
+                entity,
+                component_type: "Container",
+            } if entity == office
+        ));
+    }
+
+    #[test]
+    fn put_into_container_rejects_unplaced_container_targets() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        let err = world.put_into_container(item, container).unwrap_err();
+
+        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn put_into_container_rejects_policy_and_capacity_violations() {
+        let mut world = World::new(test_topology()).unwrap();
+        let grain_only = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(6),
+                    allowed_commodities: Some(BTreeSet::from([CommodityKind::Grain])),
+                    allows_unique_items: false,
+                    allows_nested_containers: false,
+                },
+                Tick(1),
+            )
+            .unwrap();
+        let place = entity(5);
+        let apples = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+        let contract = world
+            .create_unique_item(
+                UniqueItemKind::Contract,
+                Some("Lease"),
+                BTreeMap::new(),
+                Tick(3),
+            )
+            .unwrap();
+        let nested = world.create_container(open_container(3), Tick(4)).unwrap();
+        let heavy = world
+            .create_item_lot(CommodityKind::Grain, Quantity(7), Tick(5))
+            .unwrap();
+
+        world.set_ground_location(grain_only, place).unwrap();
+
+        assert!(matches!(
+            world.put_into_container(apples, grain_only),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.put_into_container(contract, grain_only),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.put_into_container(nested, grain_only),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.put_into_container(heavy, grain_only),
+            Err(WorldError::CapacityExceeded {
+                container,
+                requested: 7,
+                remaining: 6,
+            }) if container == grain_only
+        ));
+    }
+
+    #[test]
+    fn put_into_container_on_container_updates_descendant_locations() {
+        let mut world = World::new(test_topology()).unwrap();
+        let outer = world.create_container(open_container(20), Tick(1)).unwrap();
+        let inner = world.create_container(open_container(10), Tick(2)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(2), Tick(3))
+            .unwrap();
+        let square = entity(5);
+        let farm = entity(2);
+
+        world.set_ground_location(outer, square).unwrap();
+        world.set_ground_location(inner, farm).unwrap();
+        world.put_into_container(item, inner).unwrap();
+
+        world.put_into_container(inner, outer).unwrap();
+
+        assert_eq!(world.relations.contained_by.get(&inner), Some(&outer));
+        assert_eq!(world.relations.located_in.get(&inner), Some(&square));
+        assert_eq!(world.relations.located_in.get(&item), Some(&square));
+    }
+
+    #[test]
+    fn remove_from_container_clears_parent_but_keeps_effective_place() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(5), Tick(2))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+
+        world.remove_from_container(item).unwrap();
+
+        assert_eq!(world.relations.contained_by.get(&item), None);
+        assert_eq!(world.relations.contents_of.get(&container), None);
+        assert_eq!(world.relations.located_in.get(&item), Some(&place));
+    }
+
+    #[test]
+    fn remove_from_container_rejects_entities_not_in_containers() {
+        let mut world = World::new(test_topology()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(1))
+            .unwrap();
+
+        let err = world.remove_from_container(item).unwrap_err();
+
+        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn move_container_subtree_updates_recursive_effective_places() {
+        let mut world = World::new(test_topology()).unwrap();
+        let root = world.create_container(open_container(30), Tick(1)).unwrap();
+        let mid = world.create_container(open_container(20), Tick(2)).unwrap();
+        let leaf = world.create_container(open_container(10), Tick(3)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(4), Tick(4))
+            .unwrap();
+        let square = entity(5);
+        let farm = entity(2);
+
+        world.set_ground_location(root, square).unwrap();
+        world.put_into_container(mid, root).unwrap();
+        world.put_into_container(leaf, mid).unwrap();
+        world.put_into_container(item, leaf).unwrap();
+
+        world.move_container_subtree(root, farm).unwrap();
+
+        for entity in [root, mid, leaf, item] {
+            assert_eq!(world.relations.located_in.get(&entity), Some(&farm));
+        }
     }
 
     #[test]
