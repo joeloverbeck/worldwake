@@ -1,5 +1,7 @@
 # E08: Tick Loop, Deterministic Scheduler, Replay & Save/Load
 
+**Status**: COMPLETED
+
 ## Epic Summary
 Implement the scheduler, deterministic RNG service, input queue, replay recorder/replayer, canonical state hashing, and versioned save/load.
 
@@ -190,3 +192,27 @@ Before proceeding to Phase 2, all of the following must be green:
 - Section 9.19 (save/load integrity)
 - Section 9.21 (controlled-agent mortality / continuity)
 - Section 12 (Phase 1 gate)
+
+## Outcome
+
+Completion date: 2026-03-09
+
+What actually changed:
+
+1. Implemented the deterministic scheduler tick loop, canonical `SimulationState` root, deterministic RNG service, replay recording/execution, canonical state hashing, and versioned save/load in `worldwake-sim`.
+2. Proved T08 and T09 through focused module tests in `replay_execution.rs` and `save_load.rs`.
+3. Kept Phase 1 gate coverage distributed across the owning modules and crates instead of introducing a separate umbrella gate harness.
+
+Differences from the original plan:
+
+1. The state-equality and continuation proofs were satisfied by `SimulationState` equality plus focused replay/save-load tests, not by a new public `test_utils` facade.
+2. Phase 1 gate verification remains a workspace-level aggregation of authoritative module tests rather than a single `phase1_gate.rs` integration test file.
+
+Verification results:
+
+1. `cargo test -p worldwake-sim` passed.
+2. `cargo test -p worldwake-core --test relation_invariants` passed.
+3. `cargo test -p worldwake-core verification` passed.
+4. `cargo test -p worldwake-core conservation` passed.
+5. `cargo clippy --workspace --all-targets -- -D warnings` passed.
+6. `cargo test --workspace` passed.
