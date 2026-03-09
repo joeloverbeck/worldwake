@@ -19,7 +19,7 @@ mod social;
 macro_rules! world_component_api {
     ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
         $(
-            pub fn $insert_fn(
+            pub(crate) fn $insert_fn(
                 &mut self,
                 entity: EntityId,
                 component: $component_ty,
@@ -47,12 +47,14 @@ macro_rules! world_component_api {
                 self.is_alive(entity).then(|| self.components.$table_get(entity))?
             }
 
-            pub fn $get_mut_fn(&mut self, entity: EntityId) -> Option<&mut $component_ty> {
+            #[allow(dead_code)]
+            pub(crate) fn $get_mut_fn(&mut self, entity: EntityId) -> Option<&mut $component_ty> {
                 self.is_alive(entity)
                     .then(|| self.components.$table_get_mut(entity))?
             }
 
-            pub fn $remove_fn(&mut self, entity: EntityId) -> Result<Option<$component_ty>, WorldError> {
+            #[allow(dead_code)]
+            pub(crate) fn $remove_fn(&mut self, entity: EntityId) -> Result<Option<$component_ty>, WorldError> {
                 self.ensure_alive(entity)?;
                 Ok(self.components.$table_remove(entity))
             }
@@ -107,7 +109,7 @@ impl World {
         })
     }
 
-    pub fn create_entity(&mut self, kind: EntityKind, tick: Tick) -> EntityId {
+    pub(crate) fn create_entity(&mut self, kind: EntityKind, tick: Tick) -> EntityId {
         let entity = self.allocator.create_entity(kind, tick);
         if Self::requires_physical_placement(kind) {
             self.relations.in_transit.insert(entity);
@@ -115,7 +117,7 @@ impl World {
         entity
     }
 
-    pub fn create_agent(
+    pub(crate) fn create_agent(
         &mut self,
         name: &str,
         control_source: crate::ControlSource,
@@ -128,15 +130,19 @@ impl World {
         })
     }
 
-    pub fn create_office(&mut self, name: &str, tick: Tick) -> Result<EntityId, WorldError> {
+    pub(crate) fn create_office(&mut self, name: &str, tick: Tick) -> Result<EntityId, WorldError> {
         self.create_named_entity(EntityKind::Office, name, tick)
     }
 
-    pub fn create_faction(&mut self, name: &str, tick: Tick) -> Result<EntityId, WorldError> {
+    pub(crate) fn create_faction(
+        &mut self,
+        name: &str,
+        tick: Tick,
+    ) -> Result<EntityId, WorldError> {
         self.create_named_entity(EntityKind::Faction, name, tick)
     }
 
-    pub fn create_item_lot(
+    pub(crate) fn create_item_lot(
         &mut self,
         commodity: CommodityKind,
         quantity: Quantity,
@@ -156,7 +162,7 @@ impl World {
         )
     }
 
-    pub fn split_lot(
+    pub(crate) fn split_lot(
         &mut self,
         lot_id: EntityId,
         amount: Quantity,
@@ -225,7 +231,7 @@ impl World {
         Ok((lot_id, new_lot_id))
     }
 
-    pub fn merge_lots(
+    pub(crate) fn merge_lots(
         &mut self,
         target_id: EntityId,
         source_id: EntityId,
@@ -281,7 +287,7 @@ impl World {
         Ok(target_id)
     }
 
-    pub fn create_unique_item(
+    pub(crate) fn create_unique_item(
         &mut self,
         kind: UniqueItemKind,
         name: Option<&str>,
@@ -300,7 +306,7 @@ impl World {
         })
     }
 
-    pub fn create_container(
+    pub(crate) fn create_container(
         &mut self,
         container: Container,
         tick: Tick,
@@ -316,7 +322,7 @@ impl World {
         })
     }
 
-    pub fn archive_entity(&mut self, id: EntityId, tick: Tick) -> Result<(), WorldError> {
+    pub(crate) fn archive_entity(&mut self, id: EntityId, tick: Tick) -> Result<(), WorldError> {
         if self.topology.place(id).is_some() {
             return Err(WorldError::InvalidOperation(format!(
                 "cannot archive topology-owned place: {id}"
@@ -339,7 +345,7 @@ impl World {
         Ok(())
     }
 
-    pub fn purge_entity(&mut self, id: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn purge_entity(&mut self, id: EntityId) -> Result<(), WorldError> {
         if self.topology.place(id).is_some() {
             return Err(WorldError::InvalidOperation(format!(
                 "cannot purge topology-owned place: {id}"

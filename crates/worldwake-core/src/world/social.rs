@@ -2,7 +2,11 @@ use super::World;
 use crate::{EntityId, EntityKind, FactId, Permille, WorldError};
 
 impl World {
-    pub fn add_member(&mut self, member: EntityId, faction: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn add_member(
+        &mut self,
+        member: EntityId,
+        faction: EntityId,
+    ) -> Result<(), WorldError> {
         self.ensure_alive(member)?;
         self.ensure_live_kind(faction, EntityKind::Faction, "member target")?;
         Self::set_many_to_many_relation(
@@ -14,7 +18,11 @@ impl World {
         Ok(())
     }
 
-    pub fn remove_member(&mut self, member: EntityId, faction: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn remove_member(
+        &mut self,
+        member: EntityId,
+        faction: EntityId,
+    ) -> Result<(), WorldError> {
         self.ensure_alive(member)?;
         self.ensure_live_kind(faction, EntityKind::Faction, "member target")?;
         Self::clear_many_to_many_relation(
@@ -67,7 +75,7 @@ impl World {
             .unwrap_or_default()
     }
 
-    pub fn set_loyalty(
+    pub(crate) fn set_loyalty(
         &mut self,
         subject: EntityId,
         target: EntityId,
@@ -85,7 +93,11 @@ impl World {
         Ok(())
     }
 
-    pub fn clear_loyalty(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn clear_loyalty(
+        &mut self,
+        subject: EntityId,
+        target: EntityId,
+    ) -> Result<(), WorldError> {
         self.ensure_alive(subject)?;
         self.ensure_alive(target)?;
         Self::clear_weighted_relation(
@@ -149,7 +161,11 @@ impl World {
             .unwrap_or_default()
     }
 
-    pub fn assign_office(&mut self, office: EntityId, holder: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn assign_office(
+        &mut self,
+        office: EntityId,
+        holder: EntityId,
+    ) -> Result<(), WorldError> {
         self.ensure_live_kind(office, EntityKind::Office, "office assignment target")?;
         self.ensure_alive(holder)?;
         Self::set_entity_relation(
@@ -161,7 +177,7 @@ impl World {
         Ok(())
     }
 
-    pub fn vacate_office(&mut self, office: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn vacate_office(&mut self, office: EntityId) -> Result<(), WorldError> {
         self.ensure_live_kind(office, EntityKind::Office, "office vacancy target")?;
         self.clear_office_assignment(office);
         Ok(())
@@ -194,7 +210,11 @@ impl World {
             .unwrap_or_default()
     }
 
-    pub fn add_hostility(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn add_hostility(
+        &mut self,
+        subject: EntityId,
+        target: EntityId,
+    ) -> Result<(), WorldError> {
         self.ensure_alive(subject)?;
         self.ensure_alive(target)?;
         Self::set_many_to_many_relation(
@@ -206,7 +226,7 @@ impl World {
         Ok(())
     }
 
-    pub fn remove_hostility(
+    pub(crate) fn remove_hostility(
         &mut self,
         subject: EntityId,
         target: EntityId,
@@ -260,7 +280,11 @@ impl World {
             .unwrap_or_default()
     }
 
-    pub fn add_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
+    pub(crate) fn add_known_fact(
+        &mut self,
+        agent: EntityId,
+        fact: FactId,
+    ) -> Result<(), WorldError> {
         self.ensure_live_kind(agent, EntityKind::Agent, "knowledge subject")?;
         self.relations
             .knows_fact
@@ -270,7 +294,11 @@ impl World {
         Ok(())
     }
 
-    pub fn remove_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
+    pub(crate) fn remove_known_fact(
+        &mut self,
+        agent: EntityId,
+        fact: FactId,
+    ) -> Result<(), WorldError> {
         self.ensure_live_kind(agent, EntityKind::Agent, "knowledge subject")?;
         Self::clear_fact_relation(&mut self.relations.knows_fact, agent, fact);
         Ok(())
@@ -292,7 +320,11 @@ impl World {
             .unwrap_or_default()
     }
 
-    pub fn add_believed_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
+    pub(crate) fn add_believed_fact(
+        &mut self,
+        agent: EntityId,
+        fact: FactId,
+    ) -> Result<(), WorldError> {
         self.ensure_live_kind(agent, EntityKind::Agent, "belief subject")?;
         self.relations
             .believes_fact
@@ -302,7 +334,7 @@ impl World {
         Ok(())
     }
 
-    pub fn remove_believed_fact(
+    pub(crate) fn remove_believed_fact(
         &mut self,
         agent: EntityId,
         fact: FactId,

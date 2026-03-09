@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 worldwake-core = { path = "../worldwake-core" }
-worldwake-sim = { path = "../worldwake-sim" }
 worldwake-systems = { path = "../worldwake-systems" }
 
 [lints]

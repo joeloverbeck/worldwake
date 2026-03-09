@@ -7,7 +7,7 @@ impl World {
         self.relations.reservations.get(&reservation_id)
     }
 
-    pub fn try_reserve(
+    pub(crate) fn try_reserve(
         &mut self,
         entity: EntityId,
         reserver: EntityId,
@@ -49,7 +49,10 @@ impl World {
         Ok(reservation_id)
     }
 
-    pub fn release_reservation(&mut self, reservation_id: ReservationId) -> Result<(), WorldError> {
+    pub(crate) fn release_reservation(
+        &mut self,
+        reservation_id: ReservationId,
+    ) -> Result<(), WorldError> {
         let reservation = self.relations.reservations.remove(&reservation_id).ok_or(
             WorldError::InvalidOperation(format!("reservation {reservation_id} does not exist")),
         )?;

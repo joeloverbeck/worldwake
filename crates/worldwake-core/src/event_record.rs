@@ -1,9 +1,9 @@
 //! Immutable append-only event payloads.
 
 use crate::{CauseRef, EventTag, StateDelta, VisibilitySpec, WitnessData};
+use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use worldwake_core::{EntityId, EventId, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PendingEvent {
@@ -117,13 +117,13 @@ mod tests {
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
         WitnessData,
     };
-    use serde::{de::DeserializeOwned, Serialize};
-    use std::collections::BTreeSet;
-    use std::fmt::Debug;
-    use worldwake_core::{
+    use crate::{
         CommodityKind, EntityId, EntityKind, EventId, FactId, Name, Quantity, ReservationId,
         ReservationRecord, Tick, TickRange,
     };
+    use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::BTreeSet;
+    use std::fmt::Debug;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

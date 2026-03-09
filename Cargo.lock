@@ -106,7 +106,6 @@ name = "worldwake-ai"
 version = "0.1.0"
 dependencies = [
  "worldwake-core",
- "worldwake-sim",
  "worldwake-systems",
 ]
 
@@ -116,7 +115,6 @@ version = "0.1.0"
 dependencies = [
  "worldwake-ai",
  "worldwake-core",
- "worldwake-sim",
  "worldwake-systems",
 ]
 
@@ -132,19 +130,12 @@ dependencies = [
 [[package]]
 name = "worldwake-sim"
 version = "0.1.0"
-dependencies = [
- "bincode",
- "rand_chacha",
- "serde",
- "worldwake-core",
-]
 
 [[package]]
 name = "worldwake-systems"
 version = "0.1.0"
 dependencies = [
  "worldwake-core",
- "worldwake-sim",
 ]
 
 [[package]]

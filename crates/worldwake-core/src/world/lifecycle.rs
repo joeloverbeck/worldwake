@@ -163,7 +163,7 @@ pub struct ArchiveMutationSnapshot {
 }
 
 impl World {
-    pub fn archive_mutation_snapshot(
+    pub(crate) fn archive_mutation_snapshot(
         &self,
         entity: EntityId,
     ) -> Result<ArchiveMutationSnapshot, WorldError> {
@@ -226,14 +226,16 @@ impl World {
         Ok(ArchivePreparationPlan { actions, blocked })
     }
 
-    pub fn prepare_entity_for_archive(
+    #[allow(dead_code)]
+    pub(crate) fn prepare_entity_for_archive(
         &mut self,
         entity: EntityId,
     ) -> Result<ArchivePreparationReport, WorldError> {
         self.prepare_entity_for_archive_with_policy(entity, &ArchivePreparationPolicy::all())
     }
 
-    pub fn prepare_entity_for_archive_with_policy(
+    #[allow(dead_code)]
+    pub(crate) fn prepare_entity_for_archive_with_policy(
         &mut self,
         entity: EntityId,
         policy: &ArchivePreparationPolicy,
@@ -252,6 +254,7 @@ impl World {
         })
     }
 
+    #[allow(dead_code)]
     fn apply_archive_resolution(
         &mut self,
         entity: EntityId,
@@ -296,6 +299,7 @@ impl World {
         }
     }
 
+    #[allow(dead_code)]
     fn apply_containment_resolution(
         &mut self,
         entity: EntityId,
@@ -325,6 +329,7 @@ impl World {
         }
     }
 
+    #[allow(dead_code)]
     fn apply_possession_resolution(
         &mut self,
         dependents: &[EntityId],
@@ -350,6 +355,7 @@ impl World {
         }
     }
 
+    #[allow(dead_code)]
     fn apply_ownership_resolution(
         &mut self,
         dependents: &[EntityId],
@@ -375,6 +381,7 @@ impl World {
         }
     }
 
+    #[allow(dead_code)]
     fn clear_memberships(&mut self, entity: EntityId, dependents: &[EntityId]) {
         for member in dependents {
             Self::clear_many_to_many_relation(
@@ -386,6 +393,7 @@ impl World {
         }
     }
 
+    #[allow(dead_code)]
     fn clear_loyalty_dependents(&mut self, entity: EntityId, dependents: &[EntityId]) {
         for subject in dependents {
             Self::clear_weighted_relation(
@@ -397,6 +405,7 @@ impl World {
         }
     }
 
+    #[allow(dead_code)]
     fn clear_hostility(&mut self, entity: EntityId, dependents: &[EntityId]) {
         for subject in dependents {
             Self::clear_many_to_many_relation(
@@ -416,6 +425,7 @@ impl World {
         );
     }
 
+    #[allow(dead_code)]
     fn relinquish_offices(&mut self, dependents: &[EntityId]) {
         for office in dependents {
             self.clear_office_assignment(*office);

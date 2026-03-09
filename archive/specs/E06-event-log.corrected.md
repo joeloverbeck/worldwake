@@ -1,5 +1,9 @@
 # E06: Event Log, Mutation Journal & Causal Provenance
 
+## Archive Note
+
+The final implementation moved the authoritative event journal and `WorldTxn` boundary into `worldwake-core` rather than leaving them in `worldwake-sim`. That change was made to put the persistent write boundary next to `World` itself and to avoid compatibility aliasing across crates.
+
 ## Epic Summary
 Implement the append-only event log and the mutation-journaling layer that makes causal completeness enforceable instead of aspirational.
 

@@ -1,8 +1,8 @@
 //! Deterministic witness sets resolved at event creation time.
 
+use crate::EntityId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use worldwake_core::EntityId;
 
 /// Entities that directly perceived or could potentially perceive an event.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -14,10 +14,10 @@ pub struct WitnessData {
 #[cfg(test)]
 mod tests {
     use super::WitnessData;
+    use crate::EntityId;
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::fmt::Debug;
-    use worldwake_core::EntityId;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

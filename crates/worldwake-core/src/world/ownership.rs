@@ -20,7 +20,11 @@ impl World {
         self.is_alive(holder).then_some(holder)
     }
 
-    pub fn set_owner(&mut self, entity: EntityId, owner: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn set_owner(
+        &mut self,
+        entity: EntityId,
+        owner: EntityId,
+    ) -> Result<(), WorldError> {
         self.ensure_alive(entity)?;
         self.ensure_alive(owner)?;
         Self::set_entity_relation(
@@ -32,7 +36,7 @@ impl World {
         Ok(())
     }
 
-    pub fn clear_owner(&mut self, entity: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn clear_owner(&mut self, entity: EntityId) -> Result<(), WorldError> {
         self.ensure_alive(entity)?;
         Self::clear_entity_relation(
             &mut self.relations.owned_by,
@@ -42,7 +46,11 @@ impl World {
         Ok(())
     }
 
-    pub fn set_possessor(&mut self, entity: EntityId, holder: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn set_possessor(
+        &mut self,
+        entity: EntityId,
+        holder: EntityId,
+    ) -> Result<(), WorldError> {
         self.ensure_alive(entity)?;
         self.ensure_alive(holder)?;
         Self::set_entity_relation(
@@ -54,7 +62,7 @@ impl World {
         Ok(())
     }
 
-    pub fn clear_possessor(&mut self, entity: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn clear_possessor(&mut self, entity: EntityId) -> Result<(), WorldError> {
         self.ensure_alive(entity)?;
         Self::clear_entity_relation(
             &mut self.relations.possessed_by,

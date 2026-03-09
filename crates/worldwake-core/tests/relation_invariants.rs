@@ -2,8 +2,9 @@ use rand_chacha::rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    test_utils::deterministic_seed, CommodityKind, Container, ControlSource, EntityId, LoadUnits,
-    Place, PlaceTag, Quantity, Tick, TickRange, Topology, UniqueItemKind, World, WorldError,
+    test_utils::deterministic_seed, CauseRef, CommodityKind, Container, ControlSource, EntityId,
+    EventLog, EventTag, LoadUnits, Place, PlaceTag, Quantity, Tick, TickRange, Topology,
+    UniqueItemKind, VisibilitySpec, WitnessData, World, WorldError, WorldTxn,
 };
 
 const SEED_COUNT: u8 = 5;
@@ -201,37 +202,65 @@ fn assert_containment_invariants(world: &World, containers: &[EntityId]) {
     }
 }
 
+fn run_txn<T, F>(
+    world: &mut World,
+    event_log: &mut EventLog,
+    next_tick: &mut u64,
+    action: F,
+) -> Result<T, WorldError>
+where
+    F: FnOnce(&mut WorldTxn<'_>) -> Result<T, WorldError>,
+{
+    let mut txn = WorldTxn::new(
+        world,
+        Tick(*next_tick),
+        CauseRef::Bootstrap,
+        None,
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    *next_tick += 1;
+    txn.add_tag(EventTag::WorldMutation);
+    let result = action(&mut txn)?;
+    txn.commit(event_log);
+    Ok(result)
+}
+
 #[test]
+#[allow(clippy::too_many_lines)]
 fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_entities() {
     for seed_offset in 0..SEED_COUNT {
         let mut world = World::new(test_topology()).unwrap();
+        let mut event_log = EventLog::new();
+        let mut next_tick = 1;
         let mut rng = seeded_rng(seed_offset);
         let places = world.topology().place_ids().collect::<Vec<_>>();
         let containers = (0_u64..4)
             .map(|index| {
-                world
-                    .create_container(open_container(100), Tick(index + 1))
-                    .unwrap()
+                run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                    txn.create_container(open_container(100))
+                })
+                .unwrap_or_else(|_| panic!("failed to create container {index}"))
             })
             .collect::<Vec<_>>();
         let items = [
-            world
-                .create_agent("Aster", ControlSource::Ai, Tick(10))
-                .unwrap(),
-            world
-                .create_item_lot(CommodityKind::Bread, Quantity(3), Tick(11))
-                .unwrap(),
-            world
-                .create_item_lot(CommodityKind::Coin, Quantity(5), Tick(12))
-                .unwrap(),
-            world
-                .create_unique_item(
-                    UniqueItemKind::SimpleTool,
-                    Some("Hammer"),
-                    BTreeMap::new(),
-                    Tick(13),
-                )
-                .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_agent("Aster", ControlSource::Ai)
+            })
+            .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_item_lot(CommodityKind::Bread, Quantity(3))
+            })
+            .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_item_lot(CommodityKind::Coin, Quantity(5))
+            })
+            .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_unique_item(UniqueItemKind::SimpleTool, Some("Hammer"), BTreeMap::new())
+            })
+            .unwrap(),
         ];
         let entities = containers
             .iter()
@@ -242,7 +271,10 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
 
         for container in &containers {
             let place = pick_place(&mut rng, &places);
-            world.set_ground_location(*container, place).unwrap();
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.set_ground_location(*container, place)
+            })
+            .unwrap();
             mark_entity_and_descendants_placed(&world, *container, &mut expected_placed);
         }
 
@@ -253,7 +285,10 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
                 0 => {
                     let entity = pick_entity(&mut rng, &entities);
                     let place = pick_place(&mut rng, &places);
-                    world.set_ground_location(entity, place).unwrap();
+                    run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                        txn.set_ground_location(entity, place)
+                    })
+                    .unwrap();
                     mark_entity_and_descendants_placed(&world, entity, &mut expected_placed);
                 }
                 1 => {
@@ -262,7 +297,9 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
                     let would_cycle = entity == container
                         || world.recursive_contents_of(entity).contains(&container);
 
-                    let result = world.put_into_container(entity, container);
+                    let result = run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                        txn.put_into_container(entity, container)
+                    });
                     if would_cycle {
                         assert!(matches!(
                             result,
@@ -279,13 +316,18 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
                 2 => {
                     let container = pick_entity(&mut rng, &containers);
                     let place = pick_place(&mut rng, &places);
-                    world.move_container_subtree(container, place).unwrap();
+                    run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                        txn.move_container_subtree(container, place)
+                    })
+                    .unwrap();
                     mark_entity_and_descendants_placed(&world, container, &mut expected_placed);
                 }
                 _ => {
                     let entity = pick_entity(&mut rng, &entities);
                     let was_contained = world.direct_container(entity).is_some();
-                    let result = world.remove_from_container(entity);
+                    let result = run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                        txn.remove_from_container(entity)
+                    });
 
                     if was_contained {
                         result.unwrap();
@@ -304,33 +346,36 @@ fn randomized_moves_preserve_unique_effective_locations_for_explicitly_placed_en
 fn randomized_reservations_preserve_exclusivity() {
     for seed_offset in 0..SEED_COUNT {
         let mut world = World::new(Topology::new()).unwrap();
+        let mut event_log = EventLog::new();
+        let mut next_tick = 1;
         let mut rng = seeded_rng(seed_offset.wrapping_add(32));
         let reservers = vec![
-            world
-                .create_agent("Aster", ControlSource::Ai, Tick(1))
-                .unwrap(),
-            world
-                .create_agent("Bram", ControlSource::Human, Tick(2))
-                .unwrap(),
-            world
-                .create_agent("Cora", ControlSource::Ai, Tick(3))
-                .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_agent("Aster", ControlSource::Ai)
+            })
+            .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_agent("Bram", ControlSource::Human)
+            })
+            .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_agent("Cora", ControlSource::Ai)
+            })
+            .unwrap(),
         ];
         let reservable_entities = vec![
-            world
-                .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(4))
-                .unwrap(),
-            world
-                .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(5))
-                .unwrap(),
-            world
-                .create_unique_item(
-                    UniqueItemKind::Contract,
-                    Some("Lease"),
-                    BTreeMap::new(),
-                    Tick(6),
-                )
-                .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_item_lot(CommodityKind::Medicine, Quantity(1))
+            })
+            .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_item_lot(CommodityKind::Bread, Quantity(2))
+            })
+            .unwrap(),
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.create_unique_item(UniqueItemKind::Contract, Some("Lease"), BTreeMap::new())
+            })
+            .unwrap(),
         ];
 
         for _ in 0..ITERATIONS {
@@ -342,7 +387,10 @@ fn randomized_reservations_preserve_exclusivity() {
             if !active_reservations.is_empty() && rng.next_u32().is_multiple_of(3) {
                 let released = active_reservations
                     .swap_remove(pick_index(&mut rng, active_reservations.len()));
-                world.release_reservation(released.id).unwrap();
+                run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                    txn.release_reservation(released.id)
+                })
+                .unwrap();
             } else {
                 let entity = pick_entity(&mut rng, &reservable_entities);
                 let reserver = pick_entity(&mut rng, &reservers);
@@ -352,7 +400,9 @@ fn randomized_reservations_preserve_exclusivity() {
                     .iter()
                     .any(|reservation| reservation.range.overlaps(&range));
 
-                let result = world.try_reserve(entity, reserver, range);
+                let result = run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                    txn.try_reserve(entity, reserver, range)
+                });
                 if overlaps_existing {
                     assert!(matches!(
                         result,
@@ -372,20 +422,24 @@ fn randomized_reservations_preserve_exclusivity() {
 fn randomized_container_nesting_preserves_acyclic_containment() {
     for seed_offset in 0..SEED_COUNT {
         let mut world = World::new(test_topology()).unwrap();
+        let mut event_log = EventLog::new();
+        let mut next_tick = 1;
         let mut rng = seeded_rng(seed_offset.wrapping_add(64));
         let places = world.topology().place_ids().collect::<Vec<_>>();
         let containers = (0_u64..6)
             .map(|index| {
-                world
-                    .create_container(open_container(100), Tick(index + 1))
-                    .unwrap()
+                run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                    txn.create_container(open_container(100))
+                })
+                .unwrap_or_else(|_| panic!("failed to create container {index}"))
             })
             .collect::<Vec<_>>();
 
         for container in &containers {
-            world
-                .set_ground_location(*container, pick_place(&mut rng, &places))
-                .unwrap();
+            run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                txn.set_ground_location(*container, pick_place(&mut rng, &places))
+            })
+            .unwrap();
         }
 
         assert_containment_invariants(&world, &containers);
@@ -398,7 +452,9 @@ fn randomized_container_nesting_preserves_acyclic_containment() {
                     let would_cycle = entity == container
                         || world.recursive_contents_of(entity).contains(&container);
 
-                    let result = world.put_into_container(entity, container);
+                    let result = run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                        txn.put_into_container(entity, container)
+                    });
                     if would_cycle {
                         assert!(matches!(
                             result,
@@ -414,7 +470,9 @@ fn randomized_container_nesting_preserves_acyclic_containment() {
                 1 => {
                     let entity = pick_entity(&mut rng, &containers);
                     let was_contained = world.direct_container(entity).is_some();
-                    let result = world.remove_from_container(entity);
+                    let result = run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                        txn.remove_from_container(entity)
+                    });
 
                     if was_contained {
                         result.unwrap();
@@ -425,7 +483,10 @@ fn randomized_container_nesting_preserves_acyclic_containment() {
                 _ => {
                     let container = pick_entity(&mut rng, &containers);
                     let place = pick_place(&mut rng, &places);
-                    world.move_container_subtree(container, place).unwrap();
+                    run_txn(&mut world, &mut event_log, &mut next_tick, |txn| {
+                        txn.move_container_subtree(container, place)
+                    })
+                    .unwrap();
                 }
             }
 

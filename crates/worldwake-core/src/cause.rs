@@ -1,7 +1,7 @@
 //! Explicit causal references for event-log records.
 
+use crate::{EventId, Tick};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{EventId, Tick};
 
 /// Direct cause of an event record.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -19,8 +19,8 @@ pub enum CauseRef {
 #[cfg(test)]
 mod tests {
     use super::CauseRef;
+    use crate::{EventId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{EventId, Tick};
 
     fn assert_traits<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,

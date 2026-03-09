@@ -98,7 +98,7 @@ impl World {
             .collect()
     }
 
-    pub fn set_ground_location(
+    pub(crate) fn set_ground_location(
         &mut self,
         entity: EntityId,
         place: EntityId,
@@ -109,7 +109,7 @@ impl World {
         self.set_effective_place(entity, place)
     }
 
-    pub fn put_into_container(
+    pub(crate) fn put_into_container(
         &mut self,
         entity: EntityId,
         container: EntityId,
@@ -125,7 +125,7 @@ impl World {
         self.set_effective_place(entity, effective_place)
     }
 
-    pub fn remove_from_container(&mut self, entity: EntityId) -> Result<(), WorldError> {
+    pub(crate) fn remove_from_container(&mut self, entity: EntityId) -> Result<(), WorldError> {
         self.ensure_alive(entity)?;
         if !self.relations.contained_by.contains_key(&entity) {
             return Err(WorldError::PreconditionFailed(format!(
@@ -137,7 +137,7 @@ impl World {
         Ok(())
     }
 
-    pub fn move_container_subtree(
+    pub(crate) fn move_container_subtree(
         &mut self,
         container: EntityId,
         new_place: EntityId,

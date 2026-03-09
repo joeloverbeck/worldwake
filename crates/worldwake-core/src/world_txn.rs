@@ -1,15 +1,15 @@
 use crate::{
-    CauseRef, ComponentDelta, ComponentValue, EntityDelta, EventLog, EventTag, PendingEvent,
-    RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
-    WitnessData,
-};
-use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Deref;
-use worldwake_core::{
     ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
     EventId, FactId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World,
     WorldError,
 };
+use crate::{
+    CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
+    PendingEvent, QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta,
+    StateDelta, VisibilitySpec, WitnessData,
+};
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
 
 pub struct WorldTxn<'w> {
     world: &'w mut World,
@@ -258,6 +258,311 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    pub fn split_lot(
+        &mut self,
+        lot_id: EntityId,
+        amount: Quantity,
+    ) -> Result<(EntityId, EntityId), WorldError> {
+        let before = self.world.get_component_item_lot(lot_id).cloned();
+        let (source_id, new_lot_id) = self.world.split_lot(lot_id, amount, self.tick, None)?;
+        let before = before.expect("successful split must start from an item lot");
+        let after = self
+            .world
+            .get_component_item_lot(source_id)
+            .cloned()
+            .expect("split source lot should remain available");
+        let new_lot = self
+            .world
+            .get_component_item_lot(new_lot_id)
+            .cloned()
+            .expect("split should create a readable child lot");
+
+        self.deltas.push(StateDelta::Component(ComponentDelta::Set {
+            entity: source_id,
+            component_kind: ComponentKind::ItemLot,
+            before: Some(ComponentValue::ItemLot(before.clone())),
+            after: ComponentValue::ItemLot(after.clone()),
+        }));
+        self.deltas
+            .push(StateDelta::Quantity(QuantityDelta::Changed {
+                entity: source_id,
+                commodity: before.commodity,
+                before: before.quantity,
+                after: after.quantity,
+            }));
+        self.record_created_entity(new_lot_id, EntityKind::ItemLot);
+        self.deltas
+            .push(StateDelta::Quantity(QuantityDelta::Changed {
+                entity: new_lot_id,
+                commodity: new_lot.commodity,
+                before: Quantity(0),
+                after: new_lot.quantity,
+            }));
+
+        Ok((source_id, new_lot_id))
+    }
+
+    pub fn merge_lots(
+        &mut self,
+        target_id: EntityId,
+        source_id: EntityId,
+    ) -> Result<EntityId, WorldError> {
+        let target_before = self.world.get_component_item_lot(target_id).cloned();
+        let source_before = self.world.get_component_item_lot(source_id).cloned();
+        let source_snapshot = self.world.archive_mutation_snapshot(source_id)?;
+        let merged_id = self
+            .world
+            .merge_lots(target_id, source_id, self.tick, None)?;
+        let target_before = target_before.expect("successful merge must start from a target lot");
+        let source_before = source_before.expect("successful merge must start from a source lot");
+        let target_after = self
+            .world
+            .get_component_item_lot(merged_id)
+            .cloned()
+            .expect("merge target should remain available");
+
+        self.deltas.push(StateDelta::Component(ComponentDelta::Set {
+            entity: merged_id,
+            component_kind: ComponentKind::ItemLot,
+            before: Some(ComponentValue::ItemLot(target_before.clone())),
+            after: ComponentValue::ItemLot(target_after.clone()),
+        }));
+        self.deltas
+            .push(StateDelta::Quantity(QuantityDelta::Changed {
+                entity: merged_id,
+                commodity: target_before.commodity,
+                before: target_before.quantity,
+                after: target_after.quantity,
+            }));
+        self.deltas
+            .push(StateDelta::Quantity(QuantityDelta::Changed {
+                entity: source_id,
+                commodity: source_before.commodity,
+                before: source_before.quantity,
+                after: Quantity(0),
+            }));
+        self.push_archive_snapshot(source_snapshot);
+
+        Ok(merged_id)
+    }
+
+    pub fn set_owner(&mut self, entity: EntityId, owner: EntityId) -> Result<(), WorldError> {
+        let before = self.world.owner_of(entity);
+        self.world.set_owner(entity, owner)?;
+        let after = self.world.owner_of(entity);
+        self.push_single_target_relation_delta(
+            entity,
+            before,
+            after,
+            RelationKind::OwnedBy,
+            |entity, owner| RelationValue::OwnedBy { entity, owner },
+        );
+        Ok(())
+    }
+
+    pub fn clear_owner(&mut self, entity: EntityId) -> Result<(), WorldError> {
+        let before = self.world.owner_of(entity);
+        self.world.clear_owner(entity)?;
+        let after = self.world.owner_of(entity);
+        self.push_single_target_relation_delta(
+            entity,
+            before,
+            after,
+            RelationKind::OwnedBy,
+            |entity, owner| RelationValue::OwnedBy { entity, owner },
+        );
+        Ok(())
+    }
+
+    pub fn set_possessor(&mut self, entity: EntityId, holder: EntityId) -> Result<(), WorldError> {
+        let before = self.world.possessor_of(entity);
+        self.world.set_possessor(entity, holder)?;
+        let after = self.world.possessor_of(entity);
+        self.push_single_target_relation_delta(
+            entity,
+            before,
+            after,
+            RelationKind::PossessedBy,
+            |entity, holder| RelationValue::PossessedBy { entity, holder },
+        );
+        Ok(())
+    }
+
+    pub fn clear_possessor(&mut self, entity: EntityId) -> Result<(), WorldError> {
+        let before = self.world.possessor_of(entity);
+        self.world.clear_possessor(entity)?;
+        let after = self.world.possessor_of(entity);
+        self.push_single_target_relation_delta(
+            entity,
+            before,
+            after,
+            RelationKind::PossessedBy,
+            |entity, holder| RelationValue::PossessedBy { entity, holder },
+        );
+        Ok(())
+    }
+
+    pub fn add_member(&mut self, member: EntityId, faction: EntityId) -> Result<(), WorldError> {
+        let before = self.world.factions_of(member).contains(&faction);
+        self.world.add_member(member, faction)?;
+        let after = self.world.factions_of(member).contains(&faction);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::MemberOf,
+            RelationValue::MemberOf { member, faction },
+        );
+        Ok(())
+    }
+
+    pub fn remove_member(&mut self, member: EntityId, faction: EntityId) -> Result<(), WorldError> {
+        let before = self.world.factions_of(member).contains(&faction);
+        self.world.remove_member(member, faction)?;
+        let after = self.world.factions_of(member).contains(&faction);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::MemberOf,
+            RelationValue::MemberOf { member, faction },
+        );
+        Ok(())
+    }
+
+    pub fn set_loyalty(
+        &mut self,
+        subject: EntityId,
+        target: EntityId,
+        strength: Permille,
+    ) -> Result<(), WorldError> {
+        let before = self.world.loyalty_to(subject, target);
+        self.world.set_loyalty(subject, target, strength)?;
+        let after = self.world.loyalty_to(subject, target);
+        self.push_weighted_relation_delta(subject, target, before, after);
+        Ok(())
+    }
+
+    pub fn clear_loyalty(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
+        let before = self.world.loyalty_to(subject, target);
+        self.world.clear_loyalty(subject, target)?;
+        let after = self.world.loyalty_to(subject, target);
+        self.push_weighted_relation_delta(subject, target, before, after);
+        Ok(())
+    }
+
+    pub fn assign_office(&mut self, office: EntityId, holder: EntityId) -> Result<(), WorldError> {
+        let before = self.world.office_holder(office);
+        self.world.assign_office(office, holder)?;
+        let after = self.world.office_holder(office);
+        self.push_single_target_relation_delta(
+            office,
+            before,
+            after,
+            RelationKind::OfficeHolder,
+            |office, holder| RelationValue::OfficeHolder { office, holder },
+        );
+        Ok(())
+    }
+
+    pub fn vacate_office(&mut self, office: EntityId) -> Result<(), WorldError> {
+        let before = self.world.office_holder(office);
+        self.world.vacate_office(office)?;
+        let after = self.world.office_holder(office);
+        self.push_single_target_relation_delta(
+            office,
+            before,
+            after,
+            RelationKind::OfficeHolder,
+            |office, holder| RelationValue::OfficeHolder { office, holder },
+        );
+        Ok(())
+    }
+
+    pub fn add_hostility(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
+        let before = self.world.hostile_targets_of(subject).contains(&target);
+        self.world.add_hostility(subject, target)?;
+        let after = self.world.hostile_targets_of(subject).contains(&target);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::HostileTo,
+            RelationValue::HostileTo { subject, target },
+        );
+        Ok(())
+    }
+
+    pub fn remove_hostility(
+        &mut self,
+        subject: EntityId,
+        target: EntityId,
+    ) -> Result<(), WorldError> {
+        let before = self.world.hostile_targets_of(subject).contains(&target);
+        self.world.remove_hostility(subject, target)?;
+        let after = self.world.hostile_targets_of(subject).contains(&target);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::HostileTo,
+            RelationValue::HostileTo { subject, target },
+        );
+        Ok(())
+    }
+
+    pub fn add_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
+        let before = self.world.known_facts(agent).contains(&fact);
+        self.world.add_known_fact(agent, fact)?;
+        let after = self.world.known_facts(agent).contains(&fact);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::KnowsFact,
+            RelationValue::KnowsFact { agent, fact },
+        );
+        Ok(())
+    }
+
+    pub fn remove_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
+        let before = self.world.known_facts(agent).contains(&fact);
+        self.world.remove_known_fact(agent, fact)?;
+        let after = self.world.known_facts(agent).contains(&fact);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::KnowsFact,
+            RelationValue::KnowsFact { agent, fact },
+        );
+        Ok(())
+    }
+
+    pub fn add_believed_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
+        let before = self.world.believed_facts(agent).contains(&fact);
+        self.world.add_believed_fact(agent, fact)?;
+        let after = self.world.believed_facts(agent).contains(&fact);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::BelievesFact,
+            RelationValue::BelievesFact { agent, fact },
+        );
+        Ok(())
+    }
+
+    pub fn remove_believed_fact(
+        &mut self,
+        agent: EntityId,
+        fact: FactId,
+    ) -> Result<(), WorldError> {
+        let before = self.world.believed_facts(agent).contains(&fact);
+        self.world.remove_believed_fact(agent, fact)?;
+        let after = self.world.believed_facts(agent).contains(&fact);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::BelievesFact,
+            RelationValue::BelievesFact { agent, fact },
+        );
+        Ok(())
+    }
+
     fn record_created_entity(&mut self, entity: EntityId, kind: EntityKind) {
         self.deltas
             .push(StateDelta::Entity(EntityDelta::Created { entity, kind }));
@@ -410,6 +715,94 @@ impl<'w> WorldTxn<'w> {
             self.deltas.push(StateDelta::Relation(RelationDelta::Added {
                 relation_kind: RelationKind::InTransit,
                 relation: RelationValue::InTransit { entity },
+            }));
+        }
+    }
+
+    fn push_single_target_relation_delta<F>(
+        &mut self,
+        subject: EntityId,
+        before: Option<EntityId>,
+        after: Option<EntityId>,
+        relation_kind: RelationKind,
+        relation: F,
+    ) where
+        F: Fn(EntityId, EntityId) -> RelationValue,
+    {
+        if before == after {
+            return;
+        }
+
+        if let Some(target) = before {
+            self.deltas
+                .push(StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind,
+                    relation: relation(subject, target),
+                }));
+        }
+        if let Some(target) = after {
+            self.deltas.push(StateDelta::Relation(RelationDelta::Added {
+                relation_kind,
+                relation: relation(subject, target),
+            }));
+        }
+    }
+
+    fn push_presence_relation_delta(
+        &mut self,
+        before: bool,
+        after: bool,
+        relation_kind: RelationKind,
+        relation: RelationValue,
+    ) {
+        if before == after {
+            return;
+        }
+
+        let delta = if after {
+            RelationDelta::Added {
+                relation_kind,
+                relation,
+            }
+        } else {
+            RelationDelta::Removed {
+                relation_kind,
+                relation,
+            }
+        };
+        self.deltas.push(StateDelta::Relation(delta));
+    }
+
+    fn push_weighted_relation_delta(
+        &mut self,
+        subject: EntityId,
+        target: EntityId,
+        before: Option<Permille>,
+        after: Option<Permille>,
+    ) {
+        if before == after {
+            return;
+        }
+
+        if let Some(strength) = before {
+            self.deltas
+                .push(StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::LoyalTo,
+                    relation: RelationValue::LoyalTo {
+                        subject,
+                        target,
+                        strength,
+                    },
+                }));
+        }
+        if let Some(strength) = after {
+            self.deltas.push(StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::LoyalTo,
+                relation: RelationValue::LoyalTo {
+                    subject,
+                    target,
+                    strength,
+                },
             }));
         }
     }
@@ -688,15 +1081,15 @@ mod tests {
     use super::WorldTxn;
     use crate::{
         CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
-        RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
-        WitnessData,
+        QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
+        VisibilitySpec, WitnessData,
     };
-    use std::collections::{BTreeMap, BTreeSet};
-    use worldwake_core::{
+    use crate::{
         CommodityKind, Container, ControlSource, EntityId, EntityKind, FactId, LoadUnits, Name,
         Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord, Tick, TickRange,
         Topology, UniqueItemKind, World, WorldError,
     };
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -864,7 +1257,7 @@ mod tests {
                     entity: agent,
                     component_kind: ComponentKind::AgentData,
                     before: None,
-                    after: ComponentValue::AgentData(worldwake_core::AgentData {
+                    after: ComponentValue::AgentData(crate::AgentData {
                         control_source: ControlSource::Human,
                     }),
                 }),
@@ -1155,6 +1548,139 @@ mod tests {
     }
 
     #[test]
+    fn split_and_merge_lot_wrappers_record_quantity_audit_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let source = world
+            .create_item_lot(CommodityKind::Bread, Quantity(6), Tick(1))
+            .unwrap();
+
+        let mut split_txn = new_txn(&mut world);
+        let (_, split_off) = split_txn.split_lot(source, Quantity(2)).unwrap();
+
+        assert!(split_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Quantity(QuantityDelta::Changed {
+                entity,
+                commodity: CommodityKind::Bread,
+                before: Quantity(6),
+                after: Quantity(4),
+            }) if *entity == source
+        )));
+        assert!(split_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Quantity(QuantityDelta::Changed {
+                entity,
+                commodity: CommodityKind::Bread,
+                before: Quantity(0),
+                after: Quantity(2),
+            }) if *entity == split_off
+        )));
+
+        let mut merge_txn = new_txn(&mut world);
+        merge_txn.merge_lots(source, split_off).unwrap();
+
+        assert!(merge_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Quantity(QuantityDelta::Changed {
+                entity,
+                commodity: CommodityKind::Bread,
+                before: Quantity(4),
+                after: Quantity(6),
+            }) if *entity == source
+        )));
+        assert!(merge_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Quantity(QuantityDelta::Changed {
+                entity,
+                commodity: CommodityKind::Bread,
+                before: Quantity(2),
+                after: Quantity(0),
+            }) if *entity == split_off
+        )));
+        assert!(merge_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Entity(EntityDelta::Archived { entity, kind: EntityKind::ItemLot })
+                if *entity == split_off
+        )));
+    }
+
+    #[test]
+    fn social_and_ownership_wrappers_record_relation_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let faction = world.create_faction("Granary Guild", Tick(3)).unwrap();
+        let target = world.create_office("Chair", Tick(4)).unwrap();
+        let fact = FactId(9);
+        let strength = Permille::new(700).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_owner(member, owner).unwrap();
+        txn.add_member(member, faction).unwrap();
+        txn.set_loyalty(member, target, strength).unwrap();
+        txn.assign_office(target, member).unwrap();
+        txn.add_hostility(member, owner).unwrap();
+        txn.add_known_fact(member, fact).unwrap();
+        txn.add_believed_fact(member, fact).unwrap();
+
+        assert!(txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OwnedBy,
+                relation: RelationValue::OwnedBy { entity, owner: actual_owner },
+            }) if *entity == member && *actual_owner == owner
+        )));
+        assert!(txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::MemberOf,
+                relation: RelationValue::MemberOf { member: actual_member, faction: actual_faction },
+            }) if *actual_member == member && *actual_faction == faction
+        )));
+        assert!(txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::LoyalTo,
+                relation: RelationValue::LoyalTo {
+                    subject,
+                    target: actual_target,
+                    strength: actual_strength,
+                },
+            }) if *subject == member && *actual_target == target && *actual_strength == strength
+        )));
+        assert!(txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OfficeHolder,
+                relation: RelationValue::OfficeHolder { office, holder },
+            }) if *office == target && *holder == member
+        )));
+        assert!(txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::HostileTo,
+                relation: RelationValue::HostileTo { subject, target: actual_target },
+            }) if *subject == member && *actual_target == owner
+        )));
+        assert!(txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::KnowsFact,
+                relation: RelationValue::KnowsFact { agent, fact: actual_fact },
+            }) if *agent == member && *actual_fact == fact
+        )));
+        assert!(txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::BelievesFact,
+                relation: RelationValue::BelievesFact { agent, fact: actual_fact },
+            }) if *agent == member && *actual_fact == fact
+        )));
+    }
+
+    #[test]
     fn builder_methods_accumulate_without_duplicates() {
         let mut world = World::new(test_topology()).unwrap();
         let mut txn = new_txn(&mut world);
@@ -1191,7 +1717,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(event_id, worldwake_core::EventId(0));
+        assert_eq!(event_id, crate::EventId(0));
         assert_eq!(record.event_id, event_id);
         assert_eq!(record.tick, Tick(9));
         assert_eq!(record.cause, CauseRef::Bootstrap);
@@ -1218,7 +1744,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(event_id, worldwake_core::EventId(0));
+        assert_eq!(event_id, crate::EventId(0));
         assert!(record.state_deltas.is_empty());
         assert!(record.tags.is_empty());
         assert!(record.target_ids.is_empty());
@@ -1244,8 +1770,8 @@ mod tests {
         second.add_tag(EventTag::System);
         let second_id = second.commit(&mut log);
 
-        assert_eq!(first_id, worldwake_core::EventId(0));
-        assert_eq!(second_id, worldwake_core::EventId(1));
+        assert_eq!(first_id, crate::EventId(0));
+        assert_eq!(second_id, crate::EventId(1));
         assert_eq!(log.events_at_tick(Tick(9)), &[first_id]);
         assert_eq!(log.events_at_tick(Tick(10)), &[second_id]);
         assert_eq!(log.events_by_place(entity(2)), &[second_id]);

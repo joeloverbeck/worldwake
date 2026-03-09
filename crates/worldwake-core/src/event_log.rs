@@ -1,9 +1,9 @@
 //! Append-only event storage, deterministic indexing, and causal traversal.
 
 use crate::{CauseRef, EventRecord, EventTag, PendingEvent};
+use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{EntityId, EventId, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EventLog {
@@ -144,6 +144,40 @@ impl EventLog {
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
+
+    #[cfg(test)]
+    pub(crate) fn from_records_for_test(events: Vec<EventRecord>) -> Self {
+        let mut log = Self {
+            events,
+            next_id: EventId(0),
+            by_tick: BTreeMap::new(),
+            by_actor: BTreeMap::new(),
+            by_place: BTreeMap::new(),
+            by_tag: BTreeMap::new(),
+            by_cause: BTreeMap::new(),
+        };
+
+        for record in &log.events {
+            let event_id = record.event_id;
+            log.by_tick.entry(record.tick).or_default().push(event_id);
+            if let Some(actor_id) = record.actor_id {
+                log.by_actor.entry(actor_id).or_default().push(event_id);
+            }
+            if let Some(place_id) = record.place_id {
+                log.by_place.entry(place_id).or_default().push(event_id);
+            }
+            for tag in &record.tags {
+                log.by_tag.entry(*tag).or_default().push(event_id);
+            }
+            if let CauseRef::Event(cause_id) = record.cause {
+                log.by_cause.entry(cause_id).or_default().push(event_id);
+            }
+        }
+
+        log.next_id =
+            EventId(u64::try_from(log.events.len()).expect("test event log length exceeds u64"));
+        log
+    }
 }
 
 impl Default for EventLog {
@@ -156,10 +190,10 @@ impl Default for EventLog {
 mod tests {
     use super::EventLog;
     use crate::{CauseRef, EventRecord, EventTag, PendingEvent, VisibilitySpec, WitnessData};
+    use crate::{EntityId, EventId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::fmt::Debug;
-    use worldwake_core::{EntityId, EventId, Tick};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

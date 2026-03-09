@@ -1,10 +1,10 @@
 //! Typed event-log deltas over canonical world semantics.
 
-use serde::{Deserialize, Serialize};
-use worldwake_core::{
+use crate::{
     AgentData, CommodityKind, Container, EntityId, EntityKind, FactId, ItemLot, Name, Permille,
     Quantity, ReservationRecord, UniqueItem,
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum ComponentKind {
@@ -78,7 +78,7 @@ impl RelationKind {
     ];
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum RelationValue {
     LocatedIn {
         entity: EntityId,
@@ -209,14 +209,14 @@ mod tests {
         ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
-    use serde::{de::DeserializeOwned, Serialize};
-    use std::collections::{BTreeMap, BTreeSet};
-    use std::fmt::Debug;
-    use worldwake_core::{
+    use crate::{
         AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId, FactId,
         ItemLot, LoadUnits, LotOperation, Name, Permille, ProvenanceEntry, Quantity, ReservationId,
         ReservationRecord, Tick, TickRange, UniqueItem, UniqueItemKind,
     };
+    use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fmt::Debug;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
