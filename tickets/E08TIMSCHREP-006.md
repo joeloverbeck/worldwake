@@ -22,25 +22,31 @@ The E08 spec defines a strict 7-step per-tick sequence that is the authoritative
 ## Architecture Check
 
 1. The tick flow is a free function (or method on a context struct), not a trait — keeps it explicit and auditable
-2. System dispatch uses a `SystemFn` type alias: `fn(&mut World, &mut EventLog, &mut DeterministicRng, Tick)` — systems are plain functions, not trait objects
-3. A `SystemRegistry` maps `SystemId -> SystemFn` and is validated against the `SystemManifest` at construction
-4. No phase may mutate authoritative state outside event-producing paths — enforced by the API structure where `World` mutations go through `WorldTxn` which emits events
+2. System dispatch should remain closed and fixed, matching the closed `SystemId` set. Do not introduce a dynamic registration API for scheduler phases.
+3. Use a fixed dispatch table keyed by `SystemId` declaration order rather than a map-like registry. The scheduler should run the manifest order against a compile-time dispatch surface.
+4. Systems are plain functions, not trait objects
+5. No phase may mutate authoritative state outside event-producing paths — enforced by the API structure where `World` mutations go through `WorldTxn` which emits events
 
 ## What to Change
 
-### 1. New type: `SystemFn` and `SystemRegistry`
+### 1. New type: `SystemFn` and fixed dispatch table
 
 ```rust
 pub type SystemFn = fn(&mut World, &mut EventLog, &mut DeterministicRng, Tick);
 
-pub struct SystemRegistry {
-    handlers: BTreeMap<SystemId, SystemFn>,
+pub struct SystemDispatchTable {
+    handlers: Box<[SystemFn]>,
 }
 ```
 
-- `new() -> Self`
-- `register(id: SystemId, f: SystemFn)`
-- `validate(&self, manifest: &SystemManifest) -> Result<(), Vec<SystemId>>` — checks all manifest IDs have handlers
+- `new(handlers: [SystemFn; N]) -> Self` or an equivalent constructor tied to `SystemId::ALL`
+- `get(id: SystemId) -> SystemFn`
+- `validate_against(manifest: &SystemManifest) -> Result<(), Vec<SystemId>>` if a validation helper is still useful
+
+The important constraint is architectural, not cosmetic:
+- no runtime registration order
+- no partially populated mutable registry
+- no map lookup when the legal system set is already closed in code
 
 ### 2. New function: `step_tick`
 
@@ -53,7 +59,7 @@ pub fn step_tick(
     scheduler: &mut Scheduler,
     controller: &mut ControllerState,
     rng: &mut DeterministicRng,
-    systems: &SystemRegistry,
+    systems: &SystemDispatchTable,
 ) -> TickStepResult { ... }
 ```
 
@@ -78,7 +84,7 @@ Summary of what happened in the tick:
 
 ## Files to Touch
 
-- `crates/worldwake-sim/src/system_registry.rs` (new)
+- `crates/worldwake-sim/src/system_dispatch.rs` (new)
 - `crates/worldwake-sim/src/tick_step.rs` (new)
 - `crates/worldwake-sim/src/lib.rs` (modify — add modules + re-exports)
 
@@ -103,7 +109,7 @@ Summary of what happened in the tick:
 7. Completed actions are removed from active set after commit
 8. Systems run in manifest order — test with 2+ mock systems that append to a shared log, verify order
 9. End-of-tick event is emitted with `CauseRef::SystemTick(current_tick)`
-10. `SystemRegistry::validate` rejects mismatched manifest
+10. `SystemDispatchTable` construction or validation rejects mismatched handler counts / missing manifest coverage
 11. Two identical tick sequences (same state, same inputs) produce identical results (determinism smoke test)
 12. Existing suite: `cargo test -p worldwake-sim`
 
@@ -118,11 +124,11 @@ Summary of what happened in the tick:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-sim/src/system_registry.rs` — registration, validation
+1. `crates/worldwake-sim/src/system_dispatch.rs` — fixed dispatch-table coverage, lookup, validation
 2. `crates/worldwake-sim/src/tick_step.rs` — full tick flow integration tests with mock systems and sample actions
 
 ### Commands
 
 1. `cargo test -p worldwake-sim tick_step`
-2. `cargo test -p worldwake-sim system_registry`
+2. `cargo test -p worldwake-sim system_dispatch`
 3. `cargo clippy --workspace && cargo test --workspace`

@@ -21,6 +21,7 @@ pub mod interrupt_abort;
 pub mod knowledge_view;
 pub mod replan_needed;
 pub mod start_gate;
+pub mod system_manifest;
 pub mod tick_action;
 pub mod world_knowledge_view;
 
@@ -49,5 +50,6 @@ pub use interrupt_abort::{
 pub use knowledge_view::KnowledgeView;
 pub use replan_needed::ReplanNeeded;
 pub use start_gate::start_action;
+pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use tick_action::{tick_action, TickOutcome};
 pub use world_knowledge_view::WorldKnowledgeView;
