@@ -15,6 +15,7 @@ pub mod action_instance;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
+pub mod controller_state;
 pub mod deterministic_rng;
 pub mod affordance;
 pub mod affordance_query;
@@ -43,6 +44,7 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
+pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use affordance::Affordance;
 pub use affordance_query::{
