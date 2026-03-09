@@ -29,10 +29,12 @@ pub mod error;
 pub mod ids;
 pub mod numerics;
 pub mod test_utils;
+pub mod topology;
 pub mod traits;
 
 pub use control::ControlSource;
 pub use error::WorldError;
 pub use ids::{EntityId, EventId, Seed, Tick};
 pub use numerics::{LoadUnits, Permille, Quantity};
+pub use topology::{Place, PlaceTag};
 pub use traits::{Component, RelationRecord};

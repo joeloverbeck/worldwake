@@ -1,6 +1,6 @@
 # E02WORTOP-001: PlaceTag Enum and Place Struct
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -16,11 +16,13 @@ E02 requires typed place nodes for the world topology graph. Before building the
 2. `Component` trait exists in `crates/worldwake-core/src/traits.rs` — confirmed; requires `'static + Send + Sync + Clone + Debug + Serialize + DeserializeOwned`.
 3. `BTreeSet` is allowed per the deterministic data policy in `lib.rs` — confirmed.
 4. `NonZeroU16` is a standard library type, no external dep needed — confirmed.
+5. `worldwake-core` does not yet have a topology module or any existing `Place`/`PlaceTag` types — confirmed.
+6. `worldwake-core` already has crate-level policy tests that scan all source files, so any new topology code must continue avoiding `HashMap`, `HashSet`, `TypeId`, and `Box<dyn Any>` — confirmed in `crates/worldwake-core/tests/policy.rs`.
 
 ## Architecture Check
 
 1. `PlaceTag` is a simple flat enum with derived `Ord` for `BTreeSet` storage. No variant carries data — just tags. This keeps it serializable and deterministic.
-2. `Place` implements `Component` so it can later be stored in the ECS. It holds `name`, `capacity`, and `tags`.
+2. `Place` should remain a pure data component with no constructor yet. At this stage it only needs to hold `name`, `capacity`, and `tags`, and implement `Component` so later ECS work can store it directly.
 3. No shims or backwards-compatibility needed — these are new types.
 
 ## What to Change
@@ -83,7 +85,7 @@ Add `pub mod topology;` and re-export `PlaceTag` and `Place`.
 
 1. `PlaceTag` variants are `Copy + Clone + Eq + Ord + Hash + Debug + Serialize + DeserializeOwned`.
 2. `Place` satisfies the `Component` trait bounds.
-3. `PlaceTag` sorts deterministically (e.g., `Village < Farm` is consistent with derive order).
+3. `PlaceTag` values sort deterministically in `BTreeSet` order without relying on insertion order.
 4. `Place` with a `BTreeSet<PlaceTag>` containing multiple tags serializes and deserializes via bincode round-trip.
 5. `Place` with `capacity: None` and `capacity: Some(NonZeroU16)` both round-trip correctly.
 6. Existing suite: `cargo test -p worldwake-core`.
@@ -98,9 +100,24 @@ Add `pub mod topology;` and re-export `PlaceTag` and `Place`.
 
 ### New/Modified Tests
 
-1. `crates/worldwake-core/src/topology.rs` (inline `#[cfg(test)]`) — trait bound assertions, bincode round-trips, sort order verification.
+1. `crates/worldwake-core/src/topology.rs` (inline `#[cfg(test)]`) — trait bound assertions, bincode round-trips, deterministic `BTreeSet` ordering verification, and `Component` bound coverage for `Place`.
 
 ### Commands
 
 1. `cargo test -p worldwake-core topology`
 2. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-09
+- What actually changed:
+  - Added `crates/worldwake-core/src/topology.rs` with `PlaceTag` and `Place`.
+  - Registered the new topology module in `crates/worldwake-core/src/lib.rs` and re-exported `PlaceTag` and `Place`.
+  - Added topology unit tests covering trait bounds, `Component` conformance, deterministic serialization for tag sets, and bincode round-trips for `capacity: None` and `capacity: Some(NonZeroU16)`.
+- Deviations from original plan:
+  - Corrected the ticket before implementation to stop hardcoding a specific enum ordering assertion (`Village < Farm`). The implementation instead verifies deterministic canonical serialization regardless of `BTreeSet` insertion order, which is less brittle and better aligned with long-term extensibility.
+- Verification results:
+  - `cargo test -p worldwake-core topology` passed.
+  - `cargo test -p worldwake-core` passed.
+  - `cargo clippy --workspace` passed.
+  - `cargo test --workspace` passed.
