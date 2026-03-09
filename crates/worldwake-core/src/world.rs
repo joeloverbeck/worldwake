@@ -4,6 +4,7 @@ use crate::{
     component_schema::with_authoritative_components, AgentData, ComponentTables, EntityAllocator,
     EntityId, EntityKind, EntityMeta, Name, Tick, Topology, WorldError,
 };
+use serde::{Deserialize, Serialize};
 
 macro_rules! world_component_api {
     ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
@@ -73,7 +74,7 @@ macro_rules! world_component_api {
 ///
 /// All fields are private. External code accesses state through typed read
 /// methods and controlled mutation methods.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct World {
     allocator: EntityAllocator,
     components: ComponentTables,
@@ -435,6 +436,96 @@ mod tests {
         assert_eq!(world.all_entities().count(), 0);
         assert_eq!(world.count_with_name(), 0);
         assert_eq!(world.count_with_agent_data(), 0);
+    }
+
+    #[test]
+    fn world_bincode_roundtrip_empty() {
+        let world = World::new(Topology::new()).unwrap();
+
+        let bytes = bincode::serialize(&world).unwrap();
+        let roundtrip: World = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, world);
+        assert_eq!(roundtrip.entity_count(), 0);
+        assert_eq!(roundtrip.entities().collect::<Vec<_>>(), Vec::<EntityId>::new());
+        assert_eq!(roundtrip.count_with_name(), 0);
+        assert_eq!(roundtrip.count_with_agent_data(), 0);
+    }
+
+    #[test]
+    fn world_bincode_roundtrip_populated() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(7))
+            .unwrap();
+        let office = world.create_office("Ledger Hall", Tick(8)).unwrap();
+        let faction = world.create_faction("River Pact", Tick(9)).unwrap();
+
+        let bytes = bincode::serialize(&world).unwrap();
+        let roundtrip: World = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, world);
+        assert_eq!(
+            roundtrip.entities().collect::<Vec<_>>(),
+            vec![entity(2), entity(5), agent, office, faction]
+        );
+        assert_eq!(roundtrip.entity_kind(entity(2)), Some(EntityKind::Place));
+        assert_eq!(roundtrip.entity_kind(entity(5)), Some(EntityKind::Place));
+        assert_eq!(roundtrip.entity_kind(agent), Some(EntityKind::Agent));
+        assert_eq!(roundtrip.entity_kind(office), Some(EntityKind::Office));
+        assert_eq!(roundtrip.entity_kind(faction), Some(EntityKind::Faction));
+        assert_eq!(
+            roundtrip.get_component_name(agent),
+            Some(&Name("Aster".to_string()))
+        );
+        assert_eq!(
+            roundtrip.get_component_name(office),
+            Some(&Name("Ledger Hall".to_string()))
+        );
+        assert_eq!(
+            roundtrip.get_component_name(faction),
+            Some(&Name("River Pact".to_string()))
+        );
+        assert_eq!(
+            roundtrip.get_component_agent_data(agent),
+            Some(&AgentData {
+                control_source: ControlSource::Ai,
+            })
+        );
+    }
+
+    #[test]
+    fn deserialized_world_remains_operational() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Human, Tick(4))
+            .unwrap();
+
+        let bytes = bincode::serialize(&world).unwrap();
+        let mut roundtrip: World = bincode::deserialize(&bytes).unwrap();
+
+        let office = roundtrip.create_office("Ledger Hall", Tick(5)).unwrap();
+        roundtrip
+            .get_component_name_mut(agent)
+            .unwrap()
+            .0
+            .push_str(" of the Square");
+
+        assert_eq!(
+            roundtrip.get_component_name(agent),
+            Some(&Name("Aster of the Square".to_string()))
+        );
+        assert_eq!(
+            roundtrip.query_name().map(|(entity, _)| entity).collect::<Vec<_>>(),
+            vec![agent, office]
+        );
+        assert_eq!(
+            roundtrip
+                .query_name_and_agent_data()
+                .map(|(entity, name, data)| (entity, name.0.as_str(), data.control_source))
+                .collect::<Vec<_>>(),
+            vec![(agent, "Aster of the Square", ControlSource::Human)]
+        );
     }
 
     #[test]

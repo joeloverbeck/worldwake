@@ -93,6 +93,11 @@ fn no_type_id() {
 }
 
 #[test]
+fn no_dyn_any() {
+    assert_pattern_absent("dyn Any", "no type-erased storage in authoritative state");
+}
+
+#[test]
 fn no_box_dyn_any() {
     assert_pattern_absent(
         "Box<dyn Any>",
