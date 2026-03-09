@@ -13,6 +13,7 @@ pub mod lifecycle;
 mod ownership;
 mod placement;
 mod relation_mutation;
+mod reservations;
 
 macro_rules! world_component_api {
     ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
@@ -2582,6 +2583,181 @@ mod tests {
 
         assert_eq!(world.owner_of(item), None);
         assert_eq!(world.possessor_of(item), None);
+    }
+
+    #[test]
+    fn try_reserve_assigns_monotonic_ids_and_lists_in_id_order() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(1))
+            .unwrap();
+        let reserver = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+
+        let first = world
+            .try_reserve(item, reserver, TickRange::new(Tick(1), Tick(3)).unwrap())
+            .unwrap();
+        let second = world
+            .try_reserve(item, reserver, TickRange::new(Tick(3), Tick(5)).unwrap())
+            .unwrap();
+
+        assert_eq!(first, ReservationId(0));
+        assert_eq!(second, ReservationId(1));
+        assert_eq!(world.relations.next_reservation_id, 2);
+        assert_eq!(
+            world.relations.reservations_by_entity.get(&item),
+            Some(&BTreeSet::from([first, second]))
+        );
+        assert_eq!(
+            world.reservations_for(item),
+            vec![
+                ReservationRecord {
+                    id: first,
+                    entity: item,
+                    reserver,
+                    range: TickRange::new(Tick(1), Tick(3)).unwrap(),
+                },
+                ReservationRecord {
+                    id: second,
+                    entity: item,
+                    reserver,
+                    range: TickRange::new(Tick(3), Tick(5)).unwrap(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn try_reserve_rejects_overlaps_and_allows_adjacent_windows() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(1))
+            .unwrap();
+        let reserver = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+
+        world
+            .try_reserve(item, reserver, TickRange::new(Tick(5), Tick(10)).unwrap())
+            .unwrap();
+
+        let conflict = world
+            .try_reserve(item, reserver, TickRange::new(Tick(7), Tick(12)).unwrap())
+            .unwrap_err();
+        assert!(matches!(
+            conflict,
+            WorldError::ConflictingReservation { entity } if entity == item
+        ));
+
+        let adjacent = world
+            .try_reserve(item, reserver, TickRange::new(Tick(10), Tick(15)).unwrap())
+            .unwrap();
+        assert_eq!(adjacent, ReservationId(1));
+    }
+
+    #[test]
+    fn release_reservation_removes_rows_and_reopens_the_window() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+        let reserver = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+
+        let reservation_id = world
+            .try_reserve(item, reserver, TickRange::new(Tick(4), Tick(8)).unwrap())
+            .unwrap();
+
+        world.release_reservation(reservation_id).unwrap();
+
+        assert_eq!(world.relations.reservations.get(&reservation_id), None);
+        assert_eq!(world.relations.reservations_by_entity.get(&item), None);
+        assert_eq!(
+            world.reservations_for(item),
+            Vec::<ReservationRecord>::new()
+        );
+
+        let replacement = world
+            .try_reserve(item, reserver, TickRange::new(Tick(4), Tick(8)).unwrap())
+            .unwrap();
+        assert_eq!(replacement, ReservationId(1));
+    }
+
+    #[test]
+    fn reservation_queries_hide_missing_or_archived_entities_and_release_errors_for_unknown_ids() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(1))
+            .unwrap();
+        let reserver = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let archived_item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+        let archived_reserver = world
+            .create_agent("Bram", ControlSource::Human, Tick(4))
+            .unwrap();
+        let missing = entity(999);
+
+        world.archive_entity(archived_item, Tick(5)).unwrap();
+        world.archive_entity(archived_reserver, Tick(6)).unwrap();
+
+        assert!(matches!(
+            world.try_reserve(missing, reserver, TickRange::new(Tick(1), Tick(2)).unwrap()),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
+        assert!(matches!(
+            world.try_reserve(item, archived_reserver, TickRange::new(Tick(1), Tick(2)).unwrap()),
+            Err(WorldError::ArchivedEntity(id)) if id == archived_reserver
+        ));
+        assert_eq!(
+            world.reservations_for(missing),
+            Vec::<ReservationRecord>::new()
+        );
+        assert_eq!(
+            world.reservations_for(archived_item),
+            Vec::<ReservationRecord>::new()
+        );
+
+        let err = world.release_reservation(ReservationId(42)).unwrap_err();
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn reservation_roundtrip_preserves_records_and_next_id() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(1))
+            .unwrap();
+        let reserver = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+
+        let first = world
+            .try_reserve(item, reserver, TickRange::new(Tick(2), Tick(4)).unwrap())
+            .unwrap();
+        let second = world
+            .try_reserve(item, reserver, TickRange::new(Tick(6), Tick(9)).unwrap())
+            .unwrap();
+
+        let bytes = bincode::serialize(&world).unwrap();
+        let mut roundtrip: World = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(
+            roundtrip.reservations_for(item),
+            world.reservations_for(item)
+        );
+        assert_eq!(roundtrip.relations.next_reservation_id, 2);
+
+        let third = roundtrip
+            .try_reserve(item, reserver, TickRange::new(Tick(9), Tick(12)).unwrap())
+            .unwrap();
+        assert_eq!(first, ReservationId(0));
+        assert_eq!(second, ReservationId(1));
+        assert_eq!(third, ReservationId(2));
     }
 
     #[test]
