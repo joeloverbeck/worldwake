@@ -63,7 +63,7 @@ pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, Re
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use traits::{Component, RelationRecord};
 pub use world::lifecycle::{
-    ArchivePreparationAction, ArchivePreparationPlan, ArchivePreparationPolicy,
-    ArchivePreparationReport, ArchiveResolution,
+    ArchiveMutationSnapshot, ArchivePreparationAction, ArchivePreparationPlan,
+    ArchivePreparationPolicy, ArchivePreparationReport, ArchiveResolution,
 };
 pub use world::World;

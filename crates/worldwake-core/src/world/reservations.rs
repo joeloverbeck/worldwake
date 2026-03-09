@@ -2,6 +2,11 @@ use super::World;
 use crate::{EntityId, ReservationId, ReservationRecord, TickRange, WorldError};
 
 impl World {
+    #[must_use]
+    pub fn reservation(&self, reservation_id: ReservationId) -> Option<&ReservationRecord> {
+        self.relations.reservations.get(&reservation_id)
+    }
+
     pub fn try_reserve(
         &mut self,
         entity: EntityId,
@@ -115,5 +120,32 @@ impl World {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{CommodityKind, ControlSource, Quantity, Tick, TickRange, Topology, World};
+
+    #[test]
+    fn reservation_accessor_returns_created_record_and_none_after_release() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+        let reserver = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let range = TickRange::new(Tick(4), Tick(7)).unwrap();
+
+        let reservation_id = world.try_reserve(item, reserver, range).unwrap();
+        let reservation = world.reservation(reservation_id).unwrap();
+        assert_eq!(reservation.id, reservation_id);
+        assert_eq!(reservation.entity, item);
+        assert_eq!(reservation.reserver, reserver);
+        assert_eq!(reservation.range, range);
+
+        world.release_reservation(reservation_id).unwrap();
+        assert_eq!(world.reservation(reservation_id), None);
     }
 }

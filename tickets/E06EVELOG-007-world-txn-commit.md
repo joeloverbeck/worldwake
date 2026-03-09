@@ -3,7 +3,7 @@
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — adds `commit()` to `WorldTxn`, connects to `EventLog::emit`
+**Engine Changes**: Yes — adds event emission/commit on top of `WorldTxn`, connects to `EventLog::emit`
 **Deps**: E06EVELOG-006 (WorldTxn with journaled mutations exists), E06EVELOG-005 (EventLog with all indices exists)
 
 ## Problem
@@ -12,43 +12,44 @@
 
 ## Assumption Reassessment (2026-03-09)
 
-1. `WorldTxn` exists from E06EVELOG-006 with `deltas: Vec<StateDelta>`, metadata fields, and `&mut EventLog` — prerequisite
+1. `WorldTxn` exists from E06EVELOG-006 with `deltas: Vec<StateDelta>`, metadata fields, and an immutable read-through over `World`, but it is intentionally decoupled from `EventLog` — prerequisite
 2. `PendingEvent` exists from E06EVELOG-004 as the pre-append event payload without an assigned `EventId` — prerequisite
 3. `EventLog::emit(pending_event) -> EventId` exists from E06EVELOG-004 and assigns gapless IDs internally — prerequisite
 4. `EventRecord` exists from E06EVELOG-003 with all required fields — prerequisite
 5. Secondary indices (by_actor, by_place, by_tag) are maintained by `emit` from E06EVELOG-005 — prerequisite
+6. `WorldTxn` now journals composite archive teardown as well as create, placement, and reservation mutations, so commit must preserve those multi-delta batches without reshaping them
 
 ## Architecture Check
 
 1. `commit()` consumes `WorldTxn` (takes `self`, not `&mut self`) to enforce single-use semantics
 2. `commit()` assembles a `PendingEvent` from the accumulated metadata and deltas, then calls `EventLog::emit`
-3. `target_ids` are sorted before insertion into the record (spec: "stored in stable sorted order where ordering is not semantically meaningful")
-4. An empty `deltas` vec is allowed (e.g. system tick heartbeat events)
-5. After commit, the `WorldTxn` is consumed — no further mutations possible
+3. Because `WorldTxn` does not own `EventLog`, commit should take the log explicitly: `commit(self, event_log: &mut EventLog) -> EventId`
+4. `target_ids` are sorted before insertion into the record (spec: "stored in stable sorted order where ordering is not semantically meaningful")
+5. An empty `deltas` vec is allowed (e.g. system tick heartbeat events)
+6. After commit, the `WorldTxn` is consumed — no further mutations possible
 
 ## What to Change
 
-### 1. Add `commit(self) -> EventId` to `WorldTxn`
+### 1. Add `commit(self, event_log: &mut EventLog) -> EventId` to `WorldTxn`
 
 ```rust
-pub fn commit(mut self) -> EventId {
+pub fn commit(mut self, event_log: &mut EventLog) -> EventId {
     self.target_ids.sort();
     self.target_ids.dedup();
 
-    let pending = PendingEvent {
-        tick: self.tick,
-        cause: self.cause,
-        actor_id: self.actor_id,
-        target_ids: self.target_ids,
-        place_id: self.place_id,
-        state_deltas: self.deltas,
-        visibility: self.visibility,
-        witness_data: self.witness_data,
-        tags: self.tags,
-    };
+    let pending = PendingEvent::new(
+        self.tick,
+        self.cause,
+        self.actor_id,
+        self.target_ids,
+        self.place_id,
+        self.deltas,
+        self.visibility,
+        self.witness_data,
+        self.tags,
+    );
 
-    self.committed = true;
-    self.event_log.emit(pending)
+    event_log.emit(pending)
 }
 ```
 
@@ -56,13 +57,13 @@ pub fn commit(mut self) -> EventId {
 
 Explicit abort that drops without committing. Note: world mutations are already applied (WorldTxn is observational, not transactional), so abort means "don't create an event record for these mutations." This should only be used in error recovery paths.
 
-### 3. Implement `Drop` warning
+### 3. Implement `Drop` warning if still desired
 
 If `WorldTxn` is dropped without `commit()` or `abort()`, log a debug warning. This helps catch forgotten commits during development.
 
 ## Files to Touch
 
-- `crates/worldwake-sim/src/world_txn.rs` (modify — add commit, abort, Drop impl)
+- `crates/worldwake-sim/src/world_txn.rs` (modify — add commit, abort, optional Drop impl)
 
 ## Out of Scope
 
@@ -100,7 +101,7 @@ If `WorldTxn` is dropped without `commit()` or `abort()`, log a debug warning. T
 
 ### New/Modified Tests
 
-1. `crates/worldwake-sim/src/world_txn.rs` — commit produces correct record, sequential IDs across multiple commits, target sorting, empty deltas allowed, abort leaves log unchanged, end-to-end: create entity → commit → verify in log
+1. `crates/worldwake-sim/src/world_txn.rs` — commit produces correct record, sequential IDs across multiple commits, target sorting, empty deltas allowed, archive teardown deltas survive commit unchanged, abort leaves log unchanged, end-to-end: create entity → commit → verify in log
 
 ### Commands
 

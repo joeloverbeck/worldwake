@@ -10,6 +10,7 @@ pub mod event_record;
 pub mod event_tag;
 pub mod visibility;
 pub mod witness;
+pub mod world_txn;
 
 pub use cause::CauseRef;
 pub use delta::{
@@ -21,3 +22,4 @@ pub use event_record::{EventRecord, PendingEvent};
 pub use event_tag::EventTag;
 pub use visibility::VisibilitySpec;
 pub use witness::WitnessData;
+pub use world_txn::WorldTxn;

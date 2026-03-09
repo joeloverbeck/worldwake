@@ -1,6 +1,9 @@
 use super::World;
-use crate::{ArchiveDependency, ArchiveDependencyKind, EntityId, WorldError};
-use std::collections::BTreeMap;
+use crate::{
+    ArchiveDependency, ArchiveDependencyKind, EntityId, EntityKind, FactId, Permille,
+    ReservationRecord, WorldError,
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArchiveResolution {
@@ -134,7 +137,63 @@ impl ArchivePreparationPlan {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArchiveMutationSnapshot {
+    pub entity: EntityId,
+    pub kind: EntityKind,
+    pub located_in: Option<EntityId>,
+    pub in_transit: bool,
+    pub contained_by: Option<EntityId>,
+    pub contents_of: Vec<EntityId>,
+    pub possessed_by: Option<EntityId>,
+    pub possessions_of: Vec<EntityId>,
+    pub owned_by: Option<EntityId>,
+    pub property_of: Vec<EntityId>,
+    pub member_of: Vec<EntityId>,
+    pub members_of: Vec<EntityId>,
+    pub loyal_to: Vec<(EntityId, Permille)>,
+    pub loyalty_from: Vec<(EntityId, Permille)>,
+    pub office_holder: Option<EntityId>,
+    pub offices_held: Vec<EntityId>,
+    pub hostile_to: Vec<EntityId>,
+    pub hostility_from: Vec<EntityId>,
+    pub known_facts: Vec<FactId>,
+    pub believed_facts: Vec<FactId>,
+    pub released_reservations: Vec<ReservationRecord>,
+}
+
 impl World {
+    pub fn archive_mutation_snapshot(
+        &self,
+        entity: EntityId,
+    ) -> Result<ArchiveMutationSnapshot, WorldError> {
+        let kind = self.ensure_alive(entity)?.kind;
+
+        Ok(ArchiveMutationSnapshot {
+            entity,
+            kind,
+            located_in: self.relations.located_in.get(&entity).copied(),
+            in_transit: self.relations.in_transit.contains(&entity),
+            contained_by: self.relations.contained_by.get(&entity).copied(),
+            contents_of: Self::snapshot_entities(&self.relations.contents_of, entity),
+            possessed_by: self.relations.possessed_by.get(&entity).copied(),
+            possessions_of: Self::snapshot_entities(&self.relations.possessions_of, entity),
+            owned_by: self.relations.owned_by.get(&entity).copied(),
+            property_of: Self::snapshot_entities(&self.relations.property_of, entity),
+            member_of: Self::snapshot_entities(&self.relations.member_of, entity),
+            members_of: Self::snapshot_entities(&self.relations.members_of, entity),
+            loyal_to: Self::snapshot_weighted_entities(&self.relations.loyal_to, entity),
+            loyalty_from: Self::snapshot_weighted_entities(&self.relations.loyalty_from, entity),
+            office_holder: self.relations.office_holder.get(&entity).copied(),
+            offices_held: Self::snapshot_entities(&self.relations.offices_held, entity),
+            hostile_to: Self::snapshot_entities(&self.relations.hostile_to, entity),
+            hostility_from: Self::snapshot_entities(&self.relations.hostility_from, entity),
+            known_facts: Self::snapshot_facts(&self.relations.knows_fact, entity),
+            believed_facts: Self::snapshot_facts(&self.relations.believes_fact, entity),
+            released_reservations: self.snapshot_archive_reservations(entity),
+        })
+    }
+
     pub fn plan_entity_archive_preparation(
         &self,
         entity: EntityId,
@@ -411,5 +470,178 @@ impl World {
             )));
         }
         Ok(())
+    }
+
+    fn snapshot_entities(
+        relations: &BTreeMap<EntityId, BTreeSet<EntityId>>,
+        entity: EntityId,
+    ) -> Vec<EntityId> {
+        relations
+            .get(&entity)
+            .map(|entities| entities.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    fn snapshot_weighted_entities(
+        relations: &BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
+        entity: EntityId,
+    ) -> Vec<(EntityId, Permille)> {
+        relations
+            .get(&entity)
+            .map(|entities| {
+                entities
+                    .iter()
+                    .map(|(&target, &strength)| (target, strength))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn snapshot_facts(
+        relations: &BTreeMap<EntityId, BTreeSet<FactId>>,
+        entity: EntityId,
+    ) -> Vec<FactId> {
+        relations
+            .get(&entity)
+            .map(|facts| facts.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    fn snapshot_archive_reservations(&self, entity: EntityId) -> Vec<ReservationRecord> {
+        let mut released_reservations = self.reservations_for(entity);
+        released_reservations.extend(
+            self.relations
+                .reservations
+                .values()
+                .filter(|reservation| reservation.reserver == entity)
+                .cloned(),
+        );
+        released_reservations.sort_by_key(|reservation| reservation.id);
+        released_reservations.dedup_by_key(|reservation| reservation.id);
+        released_reservations
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        CommodityKind, Container, ControlSource, EntityId, FactId, LoadUnits, Permille, Place,
+        PlaceTag, Quantity, Tick, TickRange, Topology, World,
+    };
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn open_container(capacity: u32) -> Container {
+        Container {
+            capacity: LoadUnits(capacity),
+            allowed_commodities: None,
+            allows_unique_items: true,
+            allows_nested_containers: true,
+        }
+    }
+
+    fn test_topology() -> Topology {
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                entity(5),
+                Place {
+                    name: "Square".to_string(),
+                    capacity: None,
+                    tags: [PlaceTag::Village].into_iter().collect(),
+                },
+            )
+            .unwrap();
+        topology
+    }
+
+    #[test]
+    fn archive_mutation_snapshot_captures_forward_and_reverse_rows() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let archived = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let holder = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let faction = world.create_faction("Granary Guild", Tick(4)).unwrap();
+        let loyal_target = world.create_office("Chair", Tick(5)).unwrap();
+        let hostile_target = world.create_faction("Watch", Tick(6)).unwrap();
+        let hostile_subject = world
+            .create_agent("Cato", ControlSource::Ai, Tick(7))
+            .unwrap();
+        let reserved_target = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(8))
+            .unwrap();
+
+        world.set_owner(archived, owner).unwrap();
+        world.set_possessor(archived, holder).unwrap();
+        world.add_member(archived, faction).unwrap();
+        world
+            .set_loyalty(archived, loyal_target, Permille::new(650).unwrap())
+            .unwrap();
+        world.add_hostility(archived, hostile_target).unwrap();
+        world.add_hostility(hostile_subject, archived).unwrap();
+        world.add_known_fact(archived, FactId(11)).unwrap();
+        world.add_believed_fact(archived, FactId(12)).unwrap();
+        world
+            .try_reserve(
+                archived,
+                holder,
+                TickRange::new(Tick(10), Tick(12)).unwrap(),
+            )
+            .unwrap();
+        world
+            .try_reserve(
+                reserved_target,
+                archived,
+                TickRange::new(Tick(12), Tick(14)).unwrap(),
+            )
+            .unwrap();
+
+        let snapshot = world.archive_mutation_snapshot(archived).unwrap();
+
+        assert_eq!(snapshot.kind, crate::EntityKind::Agent);
+        assert_eq!(snapshot.owned_by, Some(owner));
+        assert_eq!(snapshot.possessed_by, Some(holder));
+        assert_eq!(snapshot.member_of, vec![faction]);
+        assert_eq!(
+            snapshot.loyal_to,
+            vec![(loyal_target, Permille::new(650).unwrap())]
+        );
+        assert_eq!(snapshot.hostile_to, vec![hostile_target]);
+        assert_eq!(snapshot.hostility_from, vec![hostile_subject]);
+        assert_eq!(snapshot.known_facts, vec![FactId(11)]);
+        assert_eq!(snapshot.believed_facts, vec![FactId(12)]);
+        assert!(snapshot.in_transit);
+        assert_eq!(snapshot.released_reservations.len(), 2);
+    }
+
+    #[test]
+    fn archive_mutation_snapshot_captures_placement_and_blocked_dependents() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(2))
+            .unwrap();
+        let child = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_ground_location(container, entity(5)).unwrap();
+        world.put_into_container(item, container).unwrap();
+        world.put_into_container(child, container).unwrap();
+
+        let snapshot = world.archive_mutation_snapshot(container).unwrap();
+
+        assert_eq!(snapshot.located_in, Some(entity(5)));
+        assert!(!snapshot.in_transit);
+        assert_eq!(snapshot.contents_of, vec![item, child]);
     }
 }
