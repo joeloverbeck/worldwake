@@ -1,6 +1,6 @@
-//! Append-only event storage and deterministic tick indexing.
+//! Append-only event storage, deterministic indexing, and causal traversal.
 
-use crate::{EventRecord, EventTag, PendingEvent};
+use crate::{CauseRef, EventRecord, EventTag, PendingEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{EntityId, EventId, Tick};
@@ -13,6 +13,7 @@ pub struct EventLog {
     by_actor: BTreeMap<EntityId, Vec<EventId>>,
     by_place: BTreeMap<EntityId, Vec<EventId>>,
     by_tag: BTreeMap<EventTag, Vec<EventId>>,
+    by_cause: BTreeMap<EventId, Vec<EventId>>,
 }
 
 impl EventLog {
@@ -25,16 +26,30 @@ impl EventLog {
             by_actor: BTreeMap::new(),
             by_place: BTreeMap::new(),
             by_tag: BTreeMap::new(),
+            by_cause: BTreeMap::new(),
         }
     }
 
     pub fn emit(&mut self, pending: PendingEvent) -> EventId {
         let event_id = self.next_id;
         let record = pending.into_record(event_id);
+        let cause = record.cause;
         let tick = record.tick;
         let actor_id = record.actor_id;
         let place_id = record.place_id;
         let tags: Vec<_> = record.tags.iter().copied().collect();
+
+        if let CauseRef::Event(cause_id) = cause {
+            assert!(
+                cause_id < event_id,
+                "event cause {cause_id:?} must precede emitted event {event_id:?}"
+            );
+            assert!(
+                self.get(cause_id).is_some(),
+                "event cause {cause_id:?} must exist before emitted event {event_id:?}"
+            );
+        }
+
         self.events.push(record);
         self.by_tick.entry(tick).or_default().push(event_id);
         if let Some(actor_id) = actor_id {
@@ -45,6 +60,9 @@ impl EventLog {
         }
         for tag in tags {
             self.by_tag.entry(tag).or_default().push(event_id);
+        }
+        if let CauseRef::Event(cause_id) = cause {
+            self.by_cause.entry(cause_id).or_default().push(event_id);
         }
         self.next_id = EventId(self.next_id.0 + 1);
 
@@ -76,6 +94,45 @@ impl EventLog {
     #[must_use]
     pub fn events_by_tag(&self, tag: EventTag) -> &[EventId] {
         self.by_tag.get(&tag).map_or(&[], Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn get_effects(&self, event_id: EventId) -> &[EventId] {
+        self.by_cause.get(&event_id).map_or(&[], Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn trace_cause_chain(&self, event_id: EventId) -> Vec<EventId> {
+        let mut chain = Vec::new();
+        let mut current_id = event_id;
+
+        while let Some(record) = self.get(current_id) {
+            chain.push(current_id);
+
+            match record.cause {
+                CauseRef::Event(cause_id) => {
+                    debug_assert!(
+                        cause_id < current_id,
+                        "validated event log contains non-backward cause {current_id:?} -> {cause_id:?}"
+                    );
+                    current_id = cause_id;
+                }
+                CauseRef::Bootstrap | CauseRef::SystemTick(_) | CauseRef::ExternalInput(_) => {
+                    break;
+                }
+            }
+        }
+
+        chain
+    }
+
+    #[must_use]
+    pub fn causal_depth(&self, event_id: EventId) -> u32 {
+        self.trace_cause_chain(event_id)
+            .len()
+            .saturating_sub(1)
+            .try_into()
+            .expect("causal chain length exceeds u32")
     }
 
     #[must_use]
@@ -112,9 +169,13 @@ mod tests {
     }
 
     fn pending(tick: Tick) -> PendingEvent {
+        pending_with_cause(tick, CauseRef::Bootstrap)
+    }
+
+    fn pending_with_cause(tick: Tick, cause: CauseRef) -> PendingEvent {
         PendingEvent::new(
             tick,
-            CauseRef::Bootstrap,
+            cause,
             Some(entity(1)),
             vec![entity(3), entity(2)],
             Some(entity(4)),
@@ -127,13 +188,14 @@ mod tests {
 
     fn pending_with_metadata(
         tick: Tick,
+        cause: CauseRef,
         actor_id: Option<EntityId>,
         place_id: Option<EntityId>,
         tags: BTreeSet<EventTag>,
     ) -> PendingEvent {
         PendingEvent::new(
             tick,
-            CauseRef::Bootstrap,
+            cause,
             actor_id,
             vec![entity(3), entity(2)],
             place_id,
@@ -265,18 +327,21 @@ mod tests {
 
         let first = log.emit(pending_with_metadata(
             Tick(1),
+            CauseRef::Bootstrap,
             Some(entity(7)),
             Some(entity(20)),
             BTreeSet::from([EventTag::WorldMutation]),
         ));
         log.emit(pending_with_metadata(
             Tick(2),
+            CauseRef::Bootstrap,
             None,
             Some(entity(20)),
             BTreeSet::from([EventTag::System]),
         ));
         let third = log.emit(pending_with_metadata(
             Tick(3),
+            CauseRef::Bootstrap,
             Some(entity(7)),
             Some(entity(21)),
             BTreeSet::from([EventTag::Travel]),
@@ -292,18 +357,21 @@ mod tests {
 
         let first = log.emit(pending_with_metadata(
             Tick(1),
+            CauseRef::Bootstrap,
             Some(entity(7)),
             Some(entity(30)),
             BTreeSet::from([EventTag::WorldMutation]),
         ));
         log.emit(pending_with_metadata(
             Tick(2),
+            CauseRef::Bootstrap,
             Some(entity(8)),
             None,
             BTreeSet::from([EventTag::System]),
         ));
         let third = log.emit(pending_with_metadata(
             Tick(3),
+            CauseRef::Bootstrap,
             Some(entity(9)),
             Some(entity(30)),
             BTreeSet::from([EventTag::Travel]),
@@ -319,18 +387,21 @@ mod tests {
 
         let first = log.emit(pending_with_metadata(
             Tick(1),
+            CauseRef::Bootstrap,
             Some(entity(7)),
             Some(entity(30)),
             BTreeSet::from([EventTag::System, EventTag::WorldMutation]),
         ));
         let second = log.emit(pending_with_metadata(
             Tick(2),
+            CauseRef::Bootstrap,
             Some(entity(8)),
             Some(entity(31)),
             BTreeSet::from([EventTag::Travel]),
         ));
         let third = log.emit(pending_with_metadata(
             Tick(3),
+            CauseRef::Bootstrap,
             None,
             None,
             BTreeSet::from([EventTag::System, EventTag::Travel]),
@@ -347,18 +418,21 @@ mod tests {
         let mut log = EventLog::new();
         log.emit(pending_with_metadata(
             Tick(2),
+            CauseRef::Bootstrap,
             Some(entity(7)),
             Some(entity(30)),
             BTreeSet::from([EventTag::System, EventTag::WorldMutation]),
         ));
         log.emit(pending_with_metadata(
             Tick(2),
+            CauseRef::Bootstrap,
             Some(entity(7)),
             None,
             BTreeSet::from([EventTag::Travel]),
         ));
         log.emit(pending_with_metadata(
             Tick(4),
+            CauseRef::Bootstrap,
             None,
             Some(entity(30)),
             BTreeSet::from([EventTag::System]),
@@ -382,5 +456,88 @@ mod tests {
         );
         assert_eq!(roundtrip.events_by_tag(EventTag::Travel), &[EventId(1)]);
         assert_eq!(roundtrip.events_by_tag(EventTag::Combat), &[]);
+    }
+
+    #[test]
+    fn trace_cause_chain_returns_only_the_root_event_for_explicit_root_causes() {
+        let mut log = EventLog::new();
+
+        let bootstrap = log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
+        let tick = log.emit(pending_with_cause(Tick(2), CauseRef::SystemTick(Tick(2))));
+        let input = log.emit(pending_with_cause(Tick(3), CauseRef::ExternalInput(9)));
+
+        assert_eq!(log.trace_cause_chain(bootstrap), vec![bootstrap]);
+        assert_eq!(log.trace_cause_chain(tick), vec![tick]);
+        assert_eq!(log.trace_cause_chain(input), vec![input]);
+        assert_eq!(log.causal_depth(bootstrap), 0);
+        assert_eq!(log.causal_depth(tick), 0);
+        assert_eq!(log.causal_depth(input), 0);
+    }
+
+    #[test]
+    fn trace_cause_chain_and_causal_depth_follow_a_linear_event_chain() {
+        let mut log = EventLog::new();
+
+        let root = log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
+        let middle = log.emit(pending_with_cause(Tick(2), CauseRef::Event(root)));
+        let leaf = log.emit(pending_with_cause(Tick(3), CauseRef::Event(middle)));
+
+        assert_eq!(log.trace_cause_chain(leaf), vec![leaf, middle, root]);
+        assert_eq!(log.trace_cause_chain(middle), vec![middle, root]);
+        assert_eq!(log.causal_depth(leaf), 2);
+        assert_eq!(log.causal_depth(middle), 1);
+    }
+
+    #[test]
+    fn get_effects_returns_direct_effects_only_in_emission_order() {
+        let mut log = EventLog::new();
+
+        let root = log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
+        let first_child = log.emit(pending_with_cause(Tick(2), CauseRef::Event(root)));
+        let second_child = log.emit(pending_with_cause(Tick(3), CauseRef::Event(root)));
+        let grandchild = log.emit(pending_with_cause(Tick(4), CauseRef::Event(first_child)));
+
+        assert_eq!(log.get_effects(root), &[first_child, second_child]);
+        assert_eq!(log.get_effects(first_child), &[grandchild]);
+        assert_eq!(log.get_effects(second_child), &[]);
+        assert_eq!(log.get_effects(grandchild), &[]);
+    }
+
+    #[test]
+    fn event_log_roundtrips_through_bincode_with_cause_index_and_traversal() {
+        let mut log = EventLog::new();
+        let root = log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
+        let child = log.emit(pending_with_cause(Tick(2), CauseRef::Event(root)));
+        let sibling = log.emit(pending_with_cause(Tick(3), CauseRef::Event(root)));
+
+        let bytes = bincode::serialize(&log).unwrap();
+        let roundtrip: EventLog = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, log);
+        assert_eq!(roundtrip.get_effects(root), &[child, sibling]);
+        assert_eq!(roundtrip.trace_cause_chain(child), vec![child, root]);
+        assert_eq!(roundtrip.trace_cause_chain(sibling), vec![sibling, root]);
+    }
+
+    #[test]
+    #[should_panic(expected = "must exist before emitted event")]
+    fn emit_rejects_missing_cause_event() {
+        let mut log = EventLog::new();
+        log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
+        log.next_id = EventId(2);
+
+        log.emit(pending_with_cause(Tick(2), CauseRef::Event(EventId(1))));
+    }
+
+    #[test]
+    #[should_panic(expected = "must precede emitted event")]
+    fn emit_rejects_self_or_future_cause_event() {
+        let mut log = EventLog::new();
+        let root = log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
+
+        log.emit(pending_with_cause(
+            Tick(2),
+            CauseRef::Event(EventId(root.0 + 1)),
+        ));
     }
 }
