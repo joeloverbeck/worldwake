@@ -59,9 +59,7 @@ pub enum AbortReason {
 #[cfg(test)]
 mod tests {
     use super::{AbortReason, ActionError, ActionHandler, ActionProgress};
-    use crate::{
-        ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState, ActionStatus,
-    };
+    use crate::{ActionDefId, ActionInstance, ActionInstanceId, ActionState, ActionStatus};
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, ReservationId, Tick,
@@ -72,7 +70,6 @@ mod tests {
         ActionInstance {
             instance_id: ActionInstanceId(9),
             def_id: ActionDefId(2),
-            handler_id: ActionHandlerId(4),
             actor: EntityId {
                 slot: 3,
                 generation: 1,
@@ -89,6 +86,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn noop_start(
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
@@ -96,6 +94,7 @@ mod tests {
         Ok(Some(ActionState::Empty))
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn noop_tick(
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
@@ -112,6 +111,7 @@ mod tests {
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn noop_abort(
         _instance: &ActionInstance,
         _reason: &AbortReason,
@@ -146,8 +146,14 @@ mod tests {
             WitnessData::default(),
         );
 
-        assert_eq!((handler.on_start)(&instance, &mut txn).unwrap(), Some(ActionState::Empty));
-        assert_eq!((handler.on_tick)(&instance, &mut txn).unwrap(), ActionProgress::Continue);
+        assert_eq!(
+            (handler.on_start)(&instance, &mut txn).unwrap(),
+            Some(ActionState::Empty)
+        );
+        assert_eq!(
+            (handler.on_tick)(&instance, &mut txn).unwrap(),
+            ActionProgress::Continue
+        );
         (handler.on_abort)(
             &instance,
             &AbortReason::ExternalAbort("test".to_string()),
@@ -160,7 +166,9 @@ mod tests {
     fn action_handler_on_commit_can_mutate_world_through_world_txn() {
         let handler = ActionHandler::new(noop_start, noop_tick, create_agent_on_commit, noop_abort);
         let mut world = World::new(build_prototype_world()).unwrap();
-        let before = world.entities_of_kind(worldwake_core::EntityKind::Agent).count();
+        let before = world
+            .entities_of_kind(worldwake_core::EntityKind::Agent)
+            .count();
         let instance = sample_instance();
         let mut txn = WorldTxn::new(
             &mut world,
@@ -174,9 +182,7 @@ mod tests {
 
         (handler.on_commit)(&instance, &mut txn).unwrap();
 
-        let after = txn
-            .query_agent_data()
-            .count();
+        let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);
     }
 }

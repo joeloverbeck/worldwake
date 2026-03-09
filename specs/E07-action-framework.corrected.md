@@ -70,7 +70,7 @@ Rules:
 Provide a deterministic registry mapping `ActionHandlerId` to executable logic.
 
 Rules:
-- active actions store only ids and serializable state, never function pointers or references
+- active actions store only `def_id` plus serializable state, never function pointers, direct handler ids, or references
 - handlers mutate world state only through `WorldTxn`
 - registry iteration order is stable
 
@@ -120,7 +120,6 @@ Rules:
 `ActionInstance`:
 - `instance_id: ActionInstanceId`
 - `def_id: ActionDefId`
-- `handler_id: ActionHandlerId`
 - `actor: EntityId`
 - `targets: Vec<EntityId>`
 - `start_tick: Tick`
@@ -131,6 +130,7 @@ Rules:
 
 Rules:
 - the full struct is serializable
+- executable dispatch is derived from `def_id -> ActionDef -> handler`, keeping behavior selection under a single source of truth
 - no borrowed references
 - no closure-captured transient state
 

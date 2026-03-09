@@ -1,4 +1,4 @@
-use crate::{ActionDefId, ActionHandlerId, ActionInstanceId, ActionState, ActionStatus};
+use crate::{ActionDefId, ActionInstanceId, ActionState, ActionStatus};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, ReservationId, Tick};
 
@@ -6,7 +6,6 @@ use worldwake_core::{EntityId, ReservationId, Tick};
 pub struct ActionInstance {
     pub instance_id: ActionInstanceId,
     pub def_id: ActionDefId,
-    pub handler_id: ActionHandlerId,
     pub actor: EntityId,
     pub targets: Vec<EntityId>,
     pub start_tick: Tick,
@@ -19,7 +18,7 @@ pub struct ActionInstance {
 #[cfg(test)]
 mod tests {
     use super::ActionInstance;
-    use crate::{ActionDefId, ActionHandlerId, ActionInstanceId, ActionState, ActionStatus};
+    use crate::{ActionDefId, ActionInstanceId, ActionState, ActionStatus};
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{EntityId, ReservationId, Tick};
 
@@ -29,7 +28,6 @@ mod tests {
         ActionInstance {
             instance_id: ActionInstanceId(3),
             def_id: ActionDefId(1),
-            handler_id: ActionHandlerId(2),
             actor: EntityId {
                 slot: 5,
                 generation: 1,

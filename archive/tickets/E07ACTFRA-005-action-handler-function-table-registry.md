@@ -112,7 +112,7 @@ Declare modules, re-export public types.
 
 ### Invariants
 
-1. Active actions store `ActionHandlerId`, never the handler itself
+1. Active actions never store the handler itself; executable dispatch is resolved from the action definition's handler linkage
 2. Handlers mutate world state only through `WorldTxn`
 3. Registry iteration order is stable (insertion order)
 4. `ActionHandlerRegistry` is explicitly NOT serializable
@@ -144,3 +144,7 @@ Declare modules, re-export public types.
   - `cargo test -p worldwake-sim`
   - `cargo clippy --workspace`
   - `cargo test --workspace`
+
+Outcome amended: 2026-03-09
+- Follow-up architectural refinement removed redundant `ActionHandlerId` storage from `ActionInstance`.
+- The handler registry remains the executable lookup table, but active instances now reach it indirectly through `ActionDef`, keeping dispatch aligned with the action schema.

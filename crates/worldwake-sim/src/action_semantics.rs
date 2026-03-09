@@ -1,28 +1,25 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{CommodityKind, EntityId, EntityKind, Quantity};
 
-#[derive(
-    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum Constraint {
     ActorAlive,
     ActorHasControl,
     ActorAtPlace(EntityId),
-    ActorHasCommodity { kind: CommodityKind, min_qty: Quantity },
+    ActorHasCommodity {
+        kind: CommodityKind,
+        min_qty: Quantity,
+    },
     ActorKind(EntityKind),
 }
 
-#[derive(
-    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum TargetSpec {
     SpecificEntity(EntityId),
     EntityAtActorPlace { kind: EntityKind },
 }
 
-#[derive(
-    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum Precondition {
     ActorAlive,
     TargetExists(u8),
@@ -30,16 +27,12 @@ pub enum Precondition {
     TargetKind { target_index: u8, kind: EntityKind },
 }
 
-#[derive(
-    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub struct ReservationReq {
     pub target_index: u8,
 }
 
-#[derive(
-    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum DurationExpr {
     Fixed(u32),
 }
@@ -53,9 +46,7 @@ impl DurationExpr {
     }
 }
 
-#[derive(
-    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum Interruptibility {
     NonInterruptible,
     InterruptibleWithPenalty,
@@ -108,8 +99,10 @@ mod tests {
         },
     ];
 
-    const ALL_RESERVATION_REQS: [ReservationReq; 2] =
-        [ReservationReq { target_index: 0 }, ReservationReq { target_index: 3 }];
+    const ALL_RESERVATION_REQS: [ReservationReq; 2] = [
+        ReservationReq { target_index: 0 },
+        ReservationReq { target_index: 3 },
+    ];
 
     const ALL_DURATION_EXPRS: [DurationExpr; 2] = [DurationExpr::Fixed(0), DurationExpr::Fixed(5)];
 
@@ -120,14 +113,7 @@ mod tests {
     ];
 
     fn assert_traits<
-        T: Copy
-            + Clone
-            + Eq
-            + Ord
-            + std::hash::Hash
-            + std::fmt::Debug
-            + Serialize
-            + DeserializeOwned,
+        T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
     >() {
     }
 

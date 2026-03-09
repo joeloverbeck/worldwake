@@ -3,14 +3,18 @@
 //! Event log, action framework, scheduler, and replay engine.
 //! Depends on `worldwake-core`.
 
-pub mod action_ids;
+pub mod action_def;
+pub mod action_def_registry;
 pub mod action_handler;
 pub mod action_handler_registry;
+pub mod action_ids;
 pub mod action_instance;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
 
+pub use action_def::ActionDef;
+pub use action_def_registry::ActionDefRegistry;
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionCommitFn, ActionError, ActionHandler, ActionProgress,
     ActionStartFn, ActionTickFn,

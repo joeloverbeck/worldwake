@@ -44,7 +44,6 @@ Define `ActionInstance`:
 pub struct ActionInstance {
     pub instance_id: ActionInstanceId,
     pub def_id: ActionDefId,
-    pub handler_id: ActionHandlerId,
     pub actor: EntityId,
     pub targets: Vec<EntityId>,
     pub start_tick: Tick,
@@ -121,3 +120,7 @@ Declare modules, re-export public types.
   - `cargo test -p worldwake-sim`
   - `cargo clippy --workspace`
   - `cargo test --workspace`
+
+Outcome amended: 2026-03-09
+- Follow-up architectural refinement removed `handler_id` from `ActionInstance`.
+- Rationale: executable dispatch now derives through `def_id -> ActionDef -> handler`, so persisted active state no longer carries redundant behavior linkage that could drift.

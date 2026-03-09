@@ -53,7 +53,6 @@ mod tests {
         ActionInstance {
             instance_id: ActionInstanceId(6),
             def_id: ActionDefId(1),
-            handler_id: ActionHandlerId(0),
             actor: EntityId {
                 slot: 4,
                 generation: 1,
@@ -67,6 +66,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn start_a(
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
@@ -74,6 +74,7 @@ mod tests {
         Ok(None)
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn start_b(
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
@@ -81,6 +82,7 @@ mod tests {
         Ok(Some(ActionState::Empty))
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn tick_a(
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
@@ -88,10 +90,12 @@ mod tests {
         Ok(ActionProgress::Continue)
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn commit_a(_instance: &ActionInstance, _txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn abort_a(
         _instance: &ActionInstance,
         _reason: &AbortReason,
@@ -141,7 +145,10 @@ mod tests {
             WitnessData::default(),
         );
 
-        assert_eq!((retrieved_first.on_start)(&instance, &mut txn).unwrap(), None);
+        assert_eq!(
+            (retrieved_first.on_start)(&instance, &mut txn).unwrap(),
+            None
+        );
         assert_eq!(
             (retrieved_second.on_start)(&instance, &mut txn).unwrap(),
             Some(ActionState::Empty)
