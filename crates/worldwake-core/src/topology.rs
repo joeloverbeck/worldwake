@@ -2,7 +2,7 @@
 
 use crate::{Component, EntityId, Permille, TravelEdgeId, WorldError};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU16, NonZeroU32};
 
 /// Categorizes a place in the world graph.
@@ -100,9 +100,130 @@ impl TravelEdge {
     }
 }
 
+/// Ordered storage for the world place graph and deterministic query APIs.
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
+pub struct Topology {
+    places: BTreeMap<EntityId, Place>,
+    edges: BTreeMap<TravelEdgeId, TravelEdge>,
+    outgoing: BTreeMap<EntityId, Vec<TravelEdgeId>>,
+    incoming: BTreeMap<EntityId, Vec<TravelEdgeId>>,
+}
+
+impl Topology {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_place(&mut self, id: EntityId, place: Place) -> Result<(), WorldError> {
+        if self.places.contains_key(&id) {
+            return Err(WorldError::InvalidOperation(format!(
+                "duplicate place id: {id}"
+            )));
+        }
+
+        self.places.insert(id, place);
+        Ok(())
+    }
+
+    pub fn add_edge(&mut self, edge: TravelEdge) -> Result<(), WorldError> {
+        if self.edges.contains_key(&edge.id()) {
+            return Err(WorldError::InvalidOperation(format!(
+                "duplicate travel edge id: {}",
+                edge.id()
+            )));
+        }
+        if !self.places.contains_key(&edge.from()) {
+            return Err(WorldError::EntityNotFound(edge.from()));
+        }
+        if !self.places.contains_key(&edge.to()) {
+            return Err(WorldError::EntityNotFound(edge.to()));
+        }
+
+        let edge_id = edge.id();
+        let from = edge.from();
+        let to = edge.to();
+        self.edges.insert(edge_id, edge);
+        insert_sorted_edge_id(self.outgoing.entry(from).or_default(), edge_id);
+        insert_sorted_edge_id(self.incoming.entry(to).or_default(), edge_id);
+        Ok(())
+    }
+
+    pub fn place(&self, id: EntityId) -> Option<&Place> {
+        self.places.get(&id)
+    }
+
+    pub fn edge(&self, id: TravelEdgeId) -> Option<&TravelEdge> {
+        self.edges.get(&id)
+    }
+
+    pub fn outgoing_edges(&self, place: EntityId) -> &[TravelEdgeId] {
+        self.outgoing.get(&place).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn incoming_edges(&self, place: EntityId) -> &[TravelEdgeId] {
+        self.incoming.get(&place).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn neighbors(&self, place: EntityId) -> Vec<EntityId> {
+        self.outgoing_edges(place)
+            .iter()
+            .filter_map(|edge_id| self.edge(*edge_id))
+            .map(TravelEdge::to)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    pub fn is_reachable(&self, from: EntityId, to: EntityId) -> bool {
+        if !self.places.contains_key(&from) || !self.places.contains_key(&to) {
+            return false;
+        }
+        if from == to {
+            return true;
+        }
+
+        let mut visited = BTreeSet::new();
+        let mut frontier = vec![from];
+
+        while let Some(current) = frontier.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+
+            let mut neighbors = self.neighbors(current);
+            neighbors.reverse();
+            for neighbor in neighbors {
+                if neighbor == to {
+                    return true;
+                }
+                if !visited.contains(&neighbor) {
+                    frontier.push(neighbor);
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn place_count(&self) -> usize {
+        self.places.len()
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+}
+
+fn insert_sorted_edge_id(edge_ids: &mut Vec<TravelEdgeId>, edge_id: TravelEdgeId) {
+    match edge_ids.binary_search(&edge_id) {
+        Ok(_) => {}
+        Err(index) => edge_ids.insert(index, edge_id),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Place, PlaceTag, TravelEdge};
+    use super::{Place, PlaceTag, Topology, TravelEdge};
     use crate::test_utils::canonical_bytes;
     use crate::{traits::Component, EntityId, Permille, TravelEdgeId, WorldError};
     use serde::de::DeserializeOwned;
@@ -124,6 +245,34 @@ mod tests {
     }
 
     fn assert_component_bounds<T: Component>() {}
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn place(name: &str, tags: &[PlaceTag]) -> Place {
+        Place {
+            name: name.to_string(),
+            capacity: None,
+            tags: tags.iter().copied().collect(),
+        }
+    }
+
+    fn edge(id: u32, from: u32, to: u32) -> TravelEdge {
+        TravelEdge::new(
+            TravelEdgeId(id),
+            entity(from),
+            entity(to),
+            1,
+            None,
+            Permille::new(0).unwrap(),
+            Permille::new(1000).unwrap(),
+        )
+        .unwrap()
+    }
 
     #[test]
     fn place_tag_satisfies_required_traits() {
@@ -310,5 +459,154 @@ mod tests {
             err.to_string().contains("invalid value: integer `0`"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn topology_add_place_returns_inserted_place() {
+        let mut topology = Topology::new();
+        let square = place("Square", &[PlaceTag::Village, PlaceTag::Hall]);
+
+        topology.add_place(entity(1), square.clone()).unwrap();
+
+        assert_eq!(topology.place(entity(1)), Some(&square));
+        assert_eq!(topology.place_count(), 1);
+    }
+
+    #[test]
+    fn topology_add_place_rejects_duplicate_place_ids() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("Square", &[PlaceTag::Village]))
+            .unwrap();
+
+        let err = topology
+            .add_place(entity(1), place("Duplicate", &[PlaceTag::Hall]))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(err.to_string(), "invalid operation: duplicate place id: e1g0");
+        assert_eq!(topology.place_count(), 1);
+        assert_eq!(topology.place(entity(1)).unwrap().name, "Square");
+    }
+
+    #[test]
+    fn topology_add_edge_returns_inserted_edge_and_sorted_adjacency() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+        topology
+            .add_place(entity(2), place("B", &[PlaceTag::Farm]))
+            .unwrap();
+        topology
+            .add_place(entity(3), place("C", &[PlaceTag::Store]))
+            .unwrap();
+
+        topology.add_edge(edge(30, 1, 3)).unwrap();
+        topology.add_edge(edge(10, 1, 2)).unwrap();
+        topology.add_edge(edge(20, 3, 2)).unwrap();
+
+        assert_eq!(topology.edge(TravelEdgeId(10)).unwrap().to(), entity(2));
+        assert_eq!(topology.edge_count(), 3);
+        assert_eq!(
+            topology.outgoing_edges(entity(1)),
+            &[TravelEdgeId(10), TravelEdgeId(30)]
+        );
+        assert_eq!(
+            topology.incoming_edges(entity(2)),
+            &[TravelEdgeId(10), TravelEdgeId(20)]
+        );
+    }
+
+    #[test]
+    fn topology_add_edge_rejects_duplicate_edge_ids() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+        topology
+            .add_place(entity(2), place("B", &[PlaceTag::Farm]))
+            .unwrap();
+        topology.add_edge(edge(7, 1, 2)).unwrap();
+
+        let err = topology.add_edge(edge(7, 2, 1)).unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(
+            err.to_string(),
+            "invalid operation: duplicate travel edge id: te7"
+        );
+        assert_eq!(topology.edge_count(), 1);
+    }
+
+    #[test]
+    fn topology_add_edge_rejects_missing_endpoints() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+
+        let missing_to = topology.add_edge(edge(1, 1, 2)).unwrap_err();
+        assert!(matches!(missing_to, WorldError::EntityNotFound(id) if id == entity(2)));
+
+        let missing_from = topology.add_edge(edge(2, 3, 1)).unwrap_err();
+        assert!(matches!(missing_from, WorldError::EntityNotFound(id) if id == entity(3)));
+        assert_eq!(topology.edge_count(), 0);
+    }
+
+    #[test]
+    fn topology_neighbors_are_sorted_and_deduplicated() {
+        let mut topology = Topology::new();
+        for (slot, name, tag) in [
+            (1, "A", PlaceTag::Village),
+            (2, "B", PlaceTag::Farm),
+            (3, "C", PlaceTag::Store),
+        ] {
+            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+        }
+
+        topology.add_edge(edge(30, 1, 3)).unwrap();
+        topology.add_edge(edge(10, 1, 2)).unwrap();
+        topology.add_edge(edge(20, 1, 2)).unwrap();
+
+        assert_eq!(topology.neighbors(entity(1)), vec![entity(2), entity(3)]);
+    }
+
+    #[test]
+    fn topology_reachability_matches_connected_and_disconnected_graphs() {
+        let mut topology = Topology::new();
+        for (slot, name, tag) in [
+            (1, "A", PlaceTag::Village),
+            (2, "B", PlaceTag::Farm),
+            (3, "C", PlaceTag::Store),
+            (4, "D", PlaceTag::Forest),
+            (5, "E", PlaceTag::Camp),
+        ] {
+            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+        }
+
+        topology.add_edge(edge(10, 1, 2)).unwrap();
+        topology.add_edge(edge(20, 2, 3)).unwrap();
+        topology.add_edge(edge(30, 3, 4)).unwrap();
+
+        assert!(topology.is_reachable(entity(1), entity(4)));
+        assert!(topology.is_reachable(entity(3), entity(3)));
+        assert!(!topology.is_reachable(entity(4), entity(1)));
+        assert!(!topology.is_reachable(entity(1), entity(5)));
+        assert!(!topology.is_reachable(entity(1), entity(99)));
+    }
+
+    #[test]
+    fn topology_empty_queries_are_graceful() {
+        let topology = Topology::new();
+
+        assert_eq!(topology.place(entity(1)), None);
+        assert_eq!(topology.edge(TravelEdgeId(1)), None);
+        assert!(topology.outgoing_edges(entity(1)).is_empty());
+        assert!(topology.incoming_edges(entity(1)).is_empty());
+        assert!(topology.neighbors(entity(1)).is_empty());
+        assert!(!topology.is_reachable(entity(1), entity(2)));
+        assert_eq!(topology.place_count(), 0);
+        assert_eq!(topology.edge_count(), 0);
     }
 }
