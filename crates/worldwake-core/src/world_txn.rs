@@ -143,7 +143,9 @@ impl<'w> WorldTxn<'w> {
         name: &str,
         control_source: ControlSource,
     ) -> Result<EntityId, WorldError> {
-        let entity = self.staged_world.create_agent(name, control_source, self.tick)?;
+        let entity = self
+            .staged_world
+            .create_agent(name, control_source, self.tick)?;
         self.record_created_entity(entity, EntityKind::Agent);
         Ok(entity)
     }
@@ -165,7 +167,9 @@ impl<'w> WorldTxn<'w> {
         commodity: CommodityKind,
         quantity: Quantity,
     ) -> Result<EntityId, WorldError> {
-        let entity = self.staged_world.create_item_lot(commodity, quantity, self.tick)?;
+        let entity = self
+            .staged_world
+            .create_item_lot(commodity, quantity, self.tick)?;
         self.record_created_entity(entity, EntityKind::ItemLot);
         Ok(entity)
     }
@@ -483,9 +487,15 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn add_hostility(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
-        let before = self.staged_world.hostile_targets_of(subject).contains(&target);
+        let before = self
+            .staged_world
+            .hostile_targets_of(subject)
+            .contains(&target);
         self.staged_world.add_hostility(subject, target)?;
-        let after = self.staged_world.hostile_targets_of(subject).contains(&target);
+        let after = self
+            .staged_world
+            .hostile_targets_of(subject)
+            .contains(&target);
         self.push_presence_relation_delta(
             before,
             after,
@@ -500,9 +510,15 @@ impl<'w> WorldTxn<'w> {
         subject: EntityId,
         target: EntityId,
     ) -> Result<(), WorldError> {
-        let before = self.staged_world.hostile_targets_of(subject).contains(&target);
+        let before = self
+            .staged_world
+            .hostile_targets_of(subject)
+            .contains(&target);
         self.staged_world.remove_hostility(subject, target)?;
-        let after = self.staged_world.hostile_targets_of(subject).contains(&target);
+        let after = self
+            .staged_world
+            .hostile_targets_of(subject)
+            .contains(&target);
         self.push_presence_relation_delta(
             before,
             after,

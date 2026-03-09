@@ -2678,8 +2678,12 @@ mod tests {
     #[test]
     fn possessions_and_controlled_commodity_queries_follow_custody_graph() {
         let mut world = World::new(test_topology()).unwrap();
-        let holder = world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap();
-        let satchel = world.create_container(open_container(100), Tick(2)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let satchel = world
+            .create_container(open_container(100), Tick(2))
+            .unwrap();
         let bread = world
             .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(3))
             .unwrap();

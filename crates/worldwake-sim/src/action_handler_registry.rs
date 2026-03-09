@@ -129,10 +129,7 @@ mod tests {
         let retrieved_second = registry.get(second_id).unwrap();
         let instance = sample_instance();
 
-        assert_eq!(
-            (retrieved_first.on_start)(&instance).unwrap(),
-            None
-        );
+        assert_eq!((retrieved_first.on_start)(&instance).unwrap(), None);
         assert_eq!(
             (retrieved_second.on_start)(&instance).unwrap(),
             Some(ActionState::Empty)

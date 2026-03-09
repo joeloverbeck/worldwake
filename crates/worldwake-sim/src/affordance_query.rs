@@ -1,6 +1,4 @@
-use crate::{
-    ActionDefRegistry, Affordance, Constraint, KnowledgeView, Precondition, TargetSpec,
-};
+use crate::{ActionDefRegistry, Affordance, Constraint, KnowledgeView, Precondition, TargetSpec};
 use worldwake_core::EntityId;
 
 #[must_use]
@@ -21,20 +19,19 @@ pub fn get_affordances(
         }
 
         let mut bound_targets = Vec::new();
-        enumerate_bindings(&def.targets, actor, view, &mut bound_targets, &mut affordances, def.id);
+        enumerate_bindings(
+            &def.targets,
+            actor,
+            view,
+            &mut bound_targets,
+            &mut affordances,
+            def.id,
+        );
         affordances.retain(|affordance| {
             affordance.def_id != def.id
-                || def
-                    .preconditions
-                    .iter()
-                    .all(|precondition| {
-                        evaluate_precondition(
-                            precondition,
-                            actor,
-                            &affordance.bound_targets,
-                            view,
-                        )
-                    })
+                || def.preconditions.iter().all(|precondition| {
+                    evaluate_precondition(precondition, actor, &affordance.bound_targets, view)
+                })
         });
     }
 
@@ -142,9 +139,7 @@ fn enumerate_bindings(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
-    };
+    use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, Constraint, DurationExpr,
         Interruptibility, Precondition, ReservationReq, TargetSpec, WorldKnowledgeView,
@@ -293,7 +288,11 @@ mod tests {
             .insert((actor, CommodityKind::Bread), Quantity(3));
 
         assert!(evaluate_constraint(&Constraint::ActorAlive, actor, &view));
-        assert!(evaluate_constraint(&Constraint::ActorHasControl, actor, &view));
+        assert!(evaluate_constraint(
+            &Constraint::ActorHasControl,
+            actor,
+            &view
+        ));
         assert!(evaluate_constraint(
             &Constraint::ActorHasCommodity {
                 kind: CommodityKind::Bread,

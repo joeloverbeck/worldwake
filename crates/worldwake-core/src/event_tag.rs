@@ -12,6 +12,7 @@ pub enum EventTag {
     ActionStarted,
     ActionCommitted,
     ActionAborted,
+    ActionInterrupted,
     Travel,
     Trade,
     Crime,
@@ -31,7 +32,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 14] = [
+    const ALL_EVENT_TAGS: [EventTag; 15] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -39,6 +40,7 @@ mod tests {
         EventTag::ActionStarted,
         EventTag::ActionCommitted,
         EventTag::ActionAborted,
+        EventTag::ActionInterrupted,
         EventTag::Travel,
         EventTag::Trade,
         EventTag::Crime,
@@ -55,7 +57,7 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 14);
+        assert_eq!(ALL_EVENT_TAGS.len(), 15);
     }
 
     #[test]

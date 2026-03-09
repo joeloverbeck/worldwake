@@ -1,5 +1,6 @@
 use crate::{
     ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState, ActionStatus,
+    Interruptibility,
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, WorldTxn};
@@ -51,6 +52,10 @@ pub enum ActionError {
         instance_id: ActionInstanceId,
         status: ActionStatus,
     },
+    InterruptBlocked {
+        instance_id: ActionInstanceId,
+        interruptibility: Interruptibility,
+    },
     ConstraintFailed(String),
     PreconditionFailed(String),
     ReservationUnavailable(EntityId),
@@ -96,9 +101,7 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn noop_start(
-        _instance: &ActionInstance,
-    ) -> Result<Option<ActionState>, ActionError> {
+    fn noop_start(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
 

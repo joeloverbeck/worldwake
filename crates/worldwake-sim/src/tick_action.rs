@@ -1,38 +1,32 @@
 use crate::{
+    ActionExecutionAuthority, ActionExecutionContext,
+    action_termination::{
+        add_targets, finalize_failed_action, release_reservations, FailedActionTermination,
+    },
     evaluate_precondition, AbortReason, ActionDefRegistry, ActionError, ActionHandlerRegistry,
-    ActionInstance, ActionInstanceId, ActionProgress, ActionStatus, KnowledgeView,
+    ActionInstance, ActionInstanceId, ActionProgress, ActionStatus, KnowledgeView, ReplanNeeded,
     WorldKnowledgeView,
 };
-use std::collections::BTreeMap;
-use worldwake_core::{CauseRef, EventLog, EventTag, Tick, WitnessData, World, WorldTxn};
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct TickActionContext {
-    pub cause: CauseRef,
-    pub tick: Tick,
-}
-
-pub struct TickActionAuthority<'a> {
-    pub active_actions: &'a mut BTreeMap<ActionInstanceId, ActionInstance>,
-    pub world: &'a mut World,
-    pub event_log: &'a mut EventLog,
-}
+use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TickOutcome {
     Continuing,
     Committed,
-    Aborted { reason: AbortReason },
+    Aborted {
+        reason: AbortReason,
+        replan: ReplanNeeded,
+    },
 }
 
 pub fn tick_action(
     instance_id: ActionInstanceId,
     registry: &ActionDefRegistry,
     handler_registry: &ActionHandlerRegistry,
-    authority: TickActionAuthority<'_>,
-    context: TickActionContext,
+    authority: ActionExecutionAuthority<'_>,
+    context: ActionExecutionContext,
 ) -> Result<TickOutcome, ActionError> {
-    let TickActionAuthority {
+    let ActionExecutionAuthority {
         active_actions,
         world,
         event_log,
@@ -54,13 +48,19 @@ pub fn tick_action(
     match result {
         Ok(TickOutcome::Continuing) => {
             let replaced = active_actions.insert(instance_id, instance);
-            debug_assert!(replaced.is_none(), "active action should have been removed first");
+            debug_assert!(
+                replaced.is_none(),
+                "active action should have been removed first"
+            );
             Ok(TickOutcome::Continuing)
         }
         Ok(outcome) => Ok(outcome),
         Err(err) => {
             let replaced = active_actions.insert(instance_id, instance);
-            debug_assert!(replaced.is_none(), "active action should have been removed first");
+            debug_assert!(
+                replaced.is_none(),
+                "active action should have been removed first"
+            );
             Err(err)
         }
     }
@@ -72,7 +72,7 @@ fn tick_action_inner(
     handler_registry: &ActionHandlerRegistry,
     world: &mut World,
     event_log: &mut EventLog,
-    context: TickActionContext,
+    context: ActionExecutionContext,
 ) -> Result<TickOutcome, ActionError> {
     if instance.status != ActionStatus::Active {
         return Err(ActionError::InvalidActionStatus {
@@ -126,13 +126,18 @@ fn tick_action_inner(
     };
 
     if let Some(reason) = failure_reason {
-        instance.status = ActionStatus::Aborted;
-        (handler.on_abort)(instance, &reason, &mut txn)?;
-        release_reservations(&mut txn, &instance.reservation_ids)?;
-        txn.add_tag(EventTag::ActionAborted);
-        add_targets(&mut txn, &instance.targets);
-        let _ = txn.commit(event_log);
-        Ok(TickOutcome::Aborted { reason })
+        let replan = finalize_failed_action(
+            instance,
+            handler,
+            txn,
+            event_log,
+            &FailedActionTermination {
+                status: ActionStatus::Aborted,
+                reason: reason.clone(),
+                event_tag: EventTag::ActionAborted,
+            },
+        )?;
+        Ok(TickOutcome::Aborted { reason, replan })
     } else {
         instance.status = ActionStatus::Committed;
         (handler.on_commit)(instance, &mut txn)?;
@@ -147,36 +152,19 @@ fn tick_action_inner(
     }
 }
 
-fn release_reservations(
-    txn: &mut WorldTxn<'_>,
-    reservation_ids: &[worldwake_core::ReservationId],
-) -> Result<(), ActionError> {
-    for reservation_id in reservation_ids.iter().rev().copied() {
-        txn.release_reservation(reservation_id)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    Ok(())
-}
-
-fn add_targets(txn: &mut WorldTxn<'_>, targets: &[worldwake_core::EntityId]) {
-    for target in targets {
-        txn.add_target(*target);
-    }
-}
-
 fn txn_has_effects(txn: &WorldTxn<'_>) -> bool {
     !txn.deltas().is_empty() || !txn.tags().is_empty()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{tick_action, TickActionAuthority, TickActionContext, TickOutcome};
+    use super::{tick_action, TickOutcome};
     use crate::{
         start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
-        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionProgress, ActionState, ActionStatus, Affordance, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, StartActionAuthority, StartActionContext,
-        TargetSpec,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
+        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionState,
+        ActionStatus, Affordance, Constraint, DurationExpr, Interruptibility, Precondition,
+        ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::{Mutex, OnceLock};
@@ -297,7 +285,10 @@ mod tests {
             name: format!("action-{}", id.0),
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::SpecificEntity(entity(99))],
-            preconditions: vec![Precondition::TargetExists(0), Precondition::TargetAtActorPlace(0)],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
             reservation_requirements,
             duration: DurationExpr::Fixed(duration),
             interruptibility: Interruptibility::FreelyInterruptible,
@@ -313,7 +304,9 @@ mod tests {
         let (actor, target) = {
             let mut txn = new_txn(world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
-            let target = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let target = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             commit_txn(txn);
             (actor, target)
         };
@@ -375,20 +368,29 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(10),
             },
         )
         .unwrap();
 
-        (world, log, active_actions, defs, handlers, instance_id, actor, target)
+        (
+            world,
+            log,
+            active_actions,
+            defs,
+            handlers,
+            instance_id,
+            actor,
+            target,
+        )
     }
 
     #[test]
@@ -407,12 +409,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
@@ -443,12 +445,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
@@ -482,12 +484,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
@@ -504,7 +506,7 @@ mod tests {
     fn tick_action_aborts_and_releases_reservations_when_commit_conditions_fail() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, target) =
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, target) =
             start_sample_action(
                 1,
                 vec![ReservationReq { target_index: 0 }],
@@ -519,12 +521,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
@@ -537,12 +539,23 @@ mod tests {
                 reason: AbortReason::CommitConditionFailed(
                     "TargetKind { target_index: 0, kind: Container }".to_string(),
                 ),
+                replan: ReplanNeeded {
+                    agent: actor,
+                    failed_action_def: ActionDefId(0),
+                    failed_instance: instance_id,
+                    reason: AbortReason::CommitConditionFailed(
+                        "TargetKind { target_index: 0, kind: Container }".to_string(),
+                    ),
+                    tick: Tick(11),
+                },
             }
         );
         assert!(!active_actions.contains_key(&instance_id));
         assert!(world.reservations_for(target).is_empty());
         assert_eq!(log.events_by_tag(EventTag::ActionAborted).len(), 1);
-        let record = log.get(log.events_by_tag(EventTag::ActionAborted)[0]).unwrap();
+        let record = log
+            .get(log.events_by_tag(EventTag::ActionAborted)[0])
+            .unwrap();
         assert!(record.tags.contains(&EventTag::ActionAborted));
         assert!(!record.tags.contains(&EventTag::Travel));
         assert_eq!(record.target_ids, vec![target]);
@@ -577,12 +590,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
@@ -614,12 +627,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
@@ -653,12 +666,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
@@ -691,19 +704,22 @@ mod tests {
             ActionInstanceId(77),
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
         )
         .unwrap_err();
 
-        assert_eq!(err, ActionError::UnknownActionInstance(ActionInstanceId(77)));
+        assert_eq!(
+            err,
+            ActionError::UnknownActionInstance(ActionInstanceId(77))
+        );
     }
 
     #[test]
@@ -723,12 +739,12 @@ mod tests {
             instance_id,
             &defs,
             &handlers,
-            TickActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
             },
-            TickActionContext {
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },

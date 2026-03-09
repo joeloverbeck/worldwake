@@ -13,7 +13,7 @@ Agents (human and AI) need to discover which actions are currently available to 
 
 ## Assumption Reassessment (2026-03-09)
 
-1. The active E07 spec is [`specs/E07-action-framework.corrected.md`](/home/joeloverbeck/projects/worldwake/specs/E07-action-framework.corrected.md), not `specs/E07ACTFRA-*.md`.
+1. The governing E07 spec is [`archive/specs/E07-action-framework.corrected.md`](/home/joeloverbeck/projects/worldwake/archive/specs/E07-action-framework.corrected.md), not `specs/E07ACTFRA-*.md`.
 2. `ActionDefRegistry` from archived ticket E07ACTFRA-003 already provides deterministic iteration over registered `ActionDef` values.
 3. `KnowledgeView` from archived ticket E07ACTFRA-006 already exposes the exact read-only queries needed for Phase 1 affordance legality checks: liveness, kind, effective place, colocated entities, commodity quantity, control presence, and reservation conflicts.
 4. `Constraint`, `TargetSpec`, and `Precondition` from archived ticket E07ACTFRA-002 are the data model to evaluate. Their current Phase 1 variants are intentionally narrow and fully concrete.

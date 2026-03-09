@@ -1,38 +1,22 @@
 use crate::{
     evaluate_constraint, evaluate_precondition, ActionDefRegistry, ActionError,
-    ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus, Affordance,
-    KnowledgeView, WorldKnowledgeView,
+    ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
+    ActionInstanceId, ActionStatus, Affordance, KnowledgeView, WorldKnowledgeView,
 };
-use std::collections::BTreeMap;
-use worldwake_core::{
-    CauseRef, EventLog, EventTag, Tick, TickRange, WitnessData, World, WorldError, WorldTxn,
-};
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct StartActionContext {
-    pub cause: CauseRef,
-    pub tick: Tick,
-}
-
-pub struct StartActionAuthority<'a> {
-    pub active_actions: &'a mut BTreeMap<ActionInstanceId, ActionInstance>,
-    pub world: &'a mut World,
-    pub event_log: &'a mut EventLog,
-    pub next_instance_id: &'a mut ActionInstanceId,
-}
+use worldwake_core::{EventTag, Tick, TickRange, WitnessData, WorldError, WorldTxn};
 
 pub fn start_action(
     affordance: &Affordance,
     registry: &ActionDefRegistry,
     handler_registry: &ActionHandlerRegistry,
-    authority: StartActionAuthority<'_>,
-    context: StartActionContext,
+    authority: ActionExecutionAuthority<'_>,
+    next_instance_id: &mut ActionInstanceId,
+    context: ActionExecutionContext,
 ) -> Result<ActionInstanceId, ActionError> {
-    let StartActionAuthority {
+    let ActionExecutionAuthority {
         active_actions,
         world,
         event_log,
-        next_instance_id,
     } = authority;
 
     let def = registry
@@ -52,8 +36,12 @@ pub fn start_action(
         }
 
         for precondition in &def.preconditions {
-            if !evaluate_precondition(precondition, affordance.actor, &affordance.bound_targets, &view)
-            {
+            if !evaluate_precondition(
+                precondition,
+                affordance.actor,
+                &affordance.bound_targets,
+                &view,
+            ) {
                 return Err(ActionError::PreconditionFailed(format!("{precondition:?}")));
             }
         }
@@ -122,12 +110,10 @@ pub fn start_action(
         }
     };
 
-    *next_instance_id = ActionInstanceId(
-        next_instance_id
-            .0
-            .checked_add(1)
-            .ok_or_else(|| ActionError::InternalError("action instance id overflowed".to_string()))?,
-    );
+    *next_instance_id =
+        ActionInstanceId(next_instance_id.0.checked_add(1).ok_or_else(|| {
+            ActionError::InternalError("action instance id overflowed".to_string())
+        })?);
 
     txn.add_tag(EventTag::ActionStarted);
     for target in &instance.targets {
@@ -175,12 +161,12 @@ fn map_reservation_error(err: WorldError, entity: worldwake_core::EntityId) -> A
 
 #[cfg(test)]
 mod tests {
-    use super::{start_action, StartActionAuthority, StartActionContext};
+    use super::start_action;
     use crate::{
-        AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-        ActionHandlerId, ActionHandlerRegistry, ActionInstanceId, ActionProgress, ActionState,
-        Affordance, Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq,
-        TargetSpec,
+        AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
+        ActionHandlerRegistry, ActionInstanceId, ActionProgress, ActionState, Affordance,
+        Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
@@ -276,7 +262,9 @@ mod tests {
         let (actor, target) = {
             let mut txn = new_txn(world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
-            let target = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let target = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             commit_txn(txn);
             (actor, target)
         };
@@ -304,7 +292,10 @@ mod tests {
             ActionDefId(0),
             ActionHandlerId(0),
             vec![Constraint::ActorAlive],
-            vec![Precondition::TargetExists(0), Precondition::TargetAtActorPlace(0)],
+            vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
             vec![ReservationReq { target_index: 0 }],
             3,
         ));
@@ -323,13 +314,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
             },
@@ -399,13 +390,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
             },
@@ -461,13 +452,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
             },
@@ -491,8 +482,12 @@ mod tests {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let blocker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
-            let first_target = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
-            let second_target = txn.create_item_lot(CommodityKind::Coin, Quantity(1)).unwrap();
+            let first_target = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            let second_target = txn
+                .create_item_lot(CommodityKind::Coin, Quantity(1))
+                .unwrap();
             commit_txn(txn);
             (actor, blocker, first_target, second_target)
         };
@@ -506,8 +501,12 @@ mod tests {
         }
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.try_reserve(second_target, blocker, TickRange::new(Tick(5), Tick(8)).unwrap())
-                .unwrap();
+            txn.try_reserve(
+                second_target,
+                blocker,
+                TickRange::new(Tick(5), Tick(8)).unwrap(),
+            )
+            .unwrap();
             commit_txn(txn);
         }
         let affordance = Affordance {
@@ -522,7 +521,10 @@ mod tests {
             ActionHandlerId(0),
             vec![Constraint::ActorAlive],
             vec![Precondition::TargetExists(0), Precondition::TargetExists(1)],
-            vec![ReservationReq { target_index: 0 }, ReservationReq { target_index: 1 }],
+            vec![
+                ReservationReq { target_index: 0 },
+                ReservationReq { target_index: 1 },
+            ],
             3,
         );
         def.targets = vec![
@@ -545,13 +547,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
             },
@@ -574,7 +576,9 @@ mod tests {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let blocker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
-            let target = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+            let target = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
             commit_txn(txn);
             (actor, blocker, target, place)
         };
@@ -603,7 +607,10 @@ mod tests {
             ActionDefId(0),
             ActionHandlerId(0),
             vec![Constraint::ActorAlive],
-            vec![Precondition::TargetExists(0), Precondition::TargetAtActorPlace(0)],
+            vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
             vec![ReservationReq { target_index: 0 }],
             0,
         ));
@@ -622,13 +629,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
             },
@@ -681,13 +688,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
             },
@@ -697,13 +704,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
             },
@@ -744,13 +751,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
             },
@@ -779,13 +786,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
             },
@@ -852,13 +859,13 @@ mod tests {
             &affordance,
             &defs,
             &handlers,
-            StartActionAuthority {
+            ActionExecutionAuthority {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
-                next_instance_id: &mut next_instance_id,
             },
-            StartActionContext {
+            &mut next_instance_id,
+            ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
             },
