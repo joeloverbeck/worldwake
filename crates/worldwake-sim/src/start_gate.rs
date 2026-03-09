@@ -84,12 +84,13 @@ pub fn start_action(
                     req.target_index
                 ))
             })?;
-        let range = reservation_range(context.tick, duration)?;
-        match txn.try_reserve(target, affordance.actor, range) {
-            Ok(reservation_id) => reservation_ids.push(reservation_id),
-            Err(err) => {
-                release_reservations(&mut txn, &reservation_ids)?;
-                return Err(map_reservation_error(err, target));
+        if let Some(range) = reservation_range(context.tick, duration)? {
+            match txn.try_reserve(target, affordance.actor, range) {
+                Ok(reservation_id) => reservation_ids.push(reservation_id),
+                Err(err) => {
+                    release_reservations(&mut txn, &reservation_ids)?;
+                    return Err(map_reservation_error(err, target));
+                }
             }
         }
     }
@@ -139,12 +140,17 @@ pub fn start_action(
     Ok(instance_id)
 }
 
-fn reservation_range(current_tick: Tick, duration: u32) -> Result<TickRange, ActionError> {
+fn reservation_range(current_tick: Tick, duration: u32) -> Result<Option<TickRange>, ActionError> {
+    if duration == 0 {
+        return Ok(None);
+    }
+
     let end = current_tick
         .0
         .checked_add(u64::from(duration))
         .ok_or_else(|| ActionError::InternalError("reservation range overflowed".to_string()))?;
     TickRange::new(current_tick, Tick(end))
+        .map(Some)
         .map_err(|err| ActionError::InternalError(err.to_string()))
 }
 
@@ -545,6 +551,79 @@ mod tests {
         assert_eq!(log.len(), 0);
         assert!(active_actions.is_empty());
         assert_eq!(next_instance_id, ActionInstanceId(0));
+    }
+
+    #[test]
+    fn start_action_zero_duration_skips_reservations_and_still_starts() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, blocker, target, place) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let blocker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let target = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+            let place = world.topology().place_ids().next().unwrap();
+            (actor, blocker, target, place)
+        };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(blocker, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+        }
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.try_reserve(target, blocker, TickRange::new(Tick(5), Tick(8)).unwrap())
+                .unwrap();
+        }
+
+        let affordance = Affordance {
+            def_id: ActionDefId(0),
+            actor,
+            bound_targets: vec![target],
+            explanation: None,
+        };
+        let mut defs = ActionDefRegistry::new();
+        defs.register(sample_def(
+            ActionDefId(0),
+            ActionHandlerId(0),
+            vec![Constraint::ActorAlive],
+            vec![Precondition::TargetExists(0), Precondition::TargetAtActorPlace(0)],
+            vec![ReservationReq { target_index: 0 }],
+            0,
+        ));
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(
+            start_none,
+            tick_continue,
+            commit_noop,
+            abort_noop,
+        ));
+        let mut active_actions = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_instance_id = ActionInstanceId(9);
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            StartActionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                next_instance_id: &mut next_instance_id,
+            },
+            StartActionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        let instance = active_actions.get(&instance_id).unwrap();
+        assert_eq!(instance.remaining_ticks, 0);
+        assert!(instance.reservation_ids.is_empty());
+        assert_eq!(world.reservations_for(target).len(), 1);
+        assert_eq!(log.events_by_tag(EventTag::ActionStarted).len(), 1);
     }
 
     #[test]

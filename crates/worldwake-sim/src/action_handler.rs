@@ -1,4 +1,6 @@
-use crate::{ActionDefId, ActionHandlerId, ActionInstance, ActionState};
+use crate::{
+    ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState, ActionStatus,
+};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, WorldTxn};
 
@@ -42,8 +44,13 @@ pub enum ActionProgress {
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ActionError {
+    UnknownActionInstance(ActionInstanceId),
     UnknownActionDef(ActionDefId),
     UnknownActionHandler(ActionHandlerId),
+    InvalidActionStatus {
+        instance_id: ActionInstanceId,
+        status: ActionStatus,
+    },
     ConstraintFailed(String),
     PreconditionFailed(String),
     ReservationUnavailable(EntityId),

@@ -177,3 +177,8 @@ Verification:
 1. `cargo test -p worldwake-sim`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
+
+Outcome amended: 2026-03-09
+
+1. Follow-up architectural refinement aligned start-time reservation semantics with the existing action duration model: `DurationExpr::Fixed(0)` now skips reservation acquisition instead of failing on an invalid empty `TickRange`.
+2. Rationale: zero-duration actions have no occupied interval to reserve, so the start gate should not reject them merely because reservation windows are modeled as strictly non-empty half-open ranges.

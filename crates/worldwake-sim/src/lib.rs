@@ -16,6 +16,7 @@ pub mod affordance;
 pub mod affordance_query;
 pub mod knowledge_view;
 pub mod start_gate;
+pub mod tick_action;
 pub mod world_knowledge_view;
 
 pub use action_def::ActionDef;
@@ -38,4 +39,5 @@ pub use affordance_query::{
 };
 pub use knowledge_view::KnowledgeView;
 pub use start_gate::{start_action, StartActionAuthority, StartActionContext};
+pub use tick_action::{tick_action, TickActionAuthority, TickActionContext, TickOutcome};
 pub use world_knowledge_view::WorldKnowledgeView;
