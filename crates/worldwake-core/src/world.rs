@@ -9,6 +9,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod lifecycle;
 mod ownership;
 mod placement;
 mod relation_mutation;
@@ -315,8 +316,21 @@ impl World {
                 "cannot archive topology-owned place: {id}"
             )));
         }
+        let dependencies = self.archive_dependencies(id)?;
+        if !dependencies.is_empty() {
+            let summary = dependencies
+                .iter()
+                .map(|dependency| dependency.kind.description())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(WorldError::PreconditionFailed(format!(
+                "cannot archive entity {id} because it still has archive dependencies: {summary}"
+            )));
+        }
 
-        self.allocator.archive_entity(id, tick)
+        self.allocator.archive_entity(id, tick)?;
+        self.relations.remove_all(id);
+        Ok(())
     }
 
     pub fn purge_entity(&mut self, id: EntityId) -> Result<(), WorldError> {
@@ -355,6 +369,14 @@ impl World {
     #[must_use]
     pub fn topology(&self) -> &Topology {
         &self.topology
+    }
+
+    pub fn archive_dependencies(
+        &self,
+        entity: EntityId,
+    ) -> Result<Vec<crate::relations::ArchiveDependency>, WorldError> {
+        self.ensure_alive(entity)?;
+        Ok(self.relations.archive_dependencies(entity))
     }
 
     pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
@@ -1319,6 +1341,558 @@ mod tests {
     }
 
     #[test]
+    fn archive_entity_cleans_outbound_relation_rows() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world.create_entity(EntityKind::ItemLot, Tick(1));
+        let container = world.create_entity(EntityKind::Container, Tick(1));
+        let holder = world.create_entity(EntityKind::Agent, Tick(1));
+        let owner = world.create_entity(EntityKind::Faction, Tick(1));
+        let reserver = world.create_entity(EntityKind::Agent, Tick(1));
+        let faction = world.create_entity(EntityKind::Faction, Tick(1));
+        let loyal_target = world.create_entity(EntityKind::Faction, Tick(1));
+        let office = world.create_entity(EntityKind::Office, Tick(1));
+        let enemy = world.create_entity(EntityKind::Agent, Tick(1));
+        let place = entity(22);
+        let reservation_id = ReservationId(3);
+        let known_fact = FactId(41);
+        let believed_fact = FactId(42);
+        let fixture = PurgeRelationFixture {
+            item,
+            container,
+            holder,
+            owner,
+            reserver,
+            faction,
+            loyal_target,
+            office,
+            enemy,
+            place,
+            reservation_id,
+            known_fact,
+            believed_fact,
+        };
+
+        populate_relation_rows_for_purge_test(&mut world, &fixture);
+        world.relations.office_holder.remove(&office);
+        world.relations.offices_held.remove(&item);
+
+        world.archive_entity(item, Tick(2)).unwrap();
+
+        assert_eq!(world.relations.located_in.get(&item), None);
+        assert_eq!(world.relations.contained_by.get(&item), None);
+        assert_eq!(world.relations.possessed_by.get(&item), None);
+        assert_eq!(world.relations.owned_by.get(&item), None);
+        assert_eq!(world.relations.member_of.get(&item), None);
+        assert_eq!(world.relations.loyal_to.get(&item), None);
+        assert_eq!(world.relations.hostile_to.get(&item), None);
+        assert_eq!(world.relations.knows_fact.get(&item), None);
+        assert_eq!(world.relations.believes_fact.get(&item), None);
+        assert_eq!(world.relations.reservations.get(&reservation_id), None);
+        assert_eq!(world.relations.reservations_by_entity.get(&item), None);
+        assert_eq!(world.relations.entities_at.get(&place), None);
+        assert_eq!(world.relations.contents_of.get(&container), None);
+        assert_eq!(world.relations.possessions_of.get(&holder), None);
+        assert_eq!(world.relations.property_of.get(&owner), None);
+        assert_eq!(world.relations.members_of.get(&faction), None);
+        assert_eq!(world.relations.loyalty_from.get(&loyal_target), None);
+        assert_eq!(world.relations.hostility_from.get(&enemy), None);
+    }
+
+    #[test]
+    fn archive_entity_rejects_entities_that_still_anchor_live_dependents() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(2))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+
+        let err = world.archive_entity(container, Tick(3)).unwrap_err();
+
+        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert_eq!(world.relations.contained_by.get(&item), Some(&container));
+        assert_eq!(
+            world.relations.contents_of.get(&container),
+            Some(&BTreeSet::from([item]))
+        );
+        assert_eq!(world.relations.located_in.get(&container), Some(&place));
+        assert_eq!(
+            world.relations.entities_at.get(&place),
+            Some(&BTreeSet::from([container, item]))
+        );
+    }
+
+    #[test]
+    fn archive_entity_rejects_live_owners_and_holders_until_relations_are_cleared() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+
+        world.set_owner(item, owner).unwrap();
+        world.set_possessor(item, holder).unwrap();
+
+        let owner_err = world.archive_entity(owner, Tick(4)).unwrap_err();
+        let holder_err = world.archive_entity(holder, Tick(5)).unwrap_err();
+
+        assert!(matches!(owner_err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(holder_err, WorldError::PreconditionFailed(_)));
+        assert_eq!(world.owner_of(item), Some(owner));
+        assert_eq!(world.possessor_of(item), Some(holder));
+    }
+
+    #[test]
+    fn archive_dependencies_reports_blockers_deterministically() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let owner = world.create_faction("River Pact", Tick(1)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let office_a = world.create_office("Granary Chair", Tick(3)).unwrap();
+        let office_b = world.create_office("Market Chair", Tick(4)).unwrap();
+        let item_a = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(5))
+            .unwrap();
+        let item_b = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(6))
+            .unwrap();
+
+        world.set_owner(item_b, owner).unwrap();
+        world.set_possessor(item_a, holder).unwrap();
+        world
+            .relations
+            .offices_held
+            .insert(owner, BTreeSet::from([office_a, office_b]));
+
+        assert_eq!(
+            world.archive_dependencies(owner).unwrap(),
+            vec![
+                crate::relations::ArchiveDependency {
+                    kind: crate::relations::ArchiveDependencyKind::OwnsEntities,
+                    dependents: vec![item_b],
+                },
+                crate::relations::ArchiveDependency {
+                    kind: crate::relations::ArchiveDependencyKind::HoldsOffices,
+                    dependents: vec![office_a, office_b],
+                },
+            ]
+        );
+        assert_eq!(
+            world.archive_dependencies(holder).unwrap(),
+            vec![crate::relations::ArchiveDependency {
+                kind: crate::relations::ArchiveDependencyKind::PossessesEntities,
+                dependents: vec![item_a],
+            }]
+        );
+    }
+
+    #[test]
+    fn plan_entity_archive_preparation_reports_actions_without_mutating_state() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(2))
+            .unwrap();
+        let held_item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(3))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+        world.set_possessor(held_item, container).unwrap();
+
+        let policy = crate::ArchivePreparationPolicy::with_resolutions([(
+            crate::ArchiveDependencyKind::ContainsEntities,
+            crate::ArchiveResolution::DetachContentsToGround,
+        )]);
+
+        let plan = world
+            .plan_entity_archive_preparation_with_policy(container, &policy)
+            .unwrap();
+        assert!(!plan.is_ready_for_archive());
+        assert_eq!(
+            plan,
+            crate::ArchivePreparationPlan {
+                actions: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::ContainsEntities,
+                        dependents: vec![item],
+                    },
+                    resolution: crate::ArchiveResolution::DetachContentsToGround,
+                }],
+                blocked: vec![crate::ArchiveDependency {
+                    kind: crate::ArchiveDependencyKind::PossessesEntities,
+                    dependents: vec![held_item],
+                }],
+            }
+        );
+
+        assert_eq!(world.direct_container(item), Some(container));
+        assert_eq!(world.possessor_of(held_item), Some(container));
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_clears_container_blockers_and_allows_archive() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(2))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+
+        let report = world.prepare_entity_for_archive(container).unwrap();
+        assert!(report.is_ready_for_archive());
+        assert_eq!(
+            report,
+            crate::ArchivePreparationReport {
+                applied: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::ContainsEntities,
+                        dependents: vec![item],
+                    },
+                    resolution: crate::ArchiveResolution::DetachContentsToGround,
+                }],
+                blocked: vec![],
+            }
+        );
+        assert_eq!(world.direct_container(item), None);
+        assert_eq!(world.effective_place(item), Some(place));
+        assert_eq!(world.archive_dependencies(container).unwrap(), Vec::new());
+
+        world.archive_entity(container, Tick(3)).unwrap();
+
+        assert!(world.is_archived(container));
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_clears_social_property_and_office_blockers() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let loyal_subject = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let hostile_subject = world
+            .create_agent("Cato", ControlSource::Ai, Tick(4))
+            .unwrap();
+        let office = world.create_office("Granary Chair", Tick(5)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(6))
+            .unwrap();
+
+        world
+            .relations
+            .member_of
+            .insert(member, BTreeSet::from([faction]));
+        world
+            .relations
+            .members_of
+            .insert(faction, BTreeSet::from([member]));
+        world
+            .relations
+            .loyal_to
+            .insert(loyal_subject, BTreeSet::from([faction]));
+        world
+            .relations
+            .loyalty_from
+            .insert(faction, BTreeSet::from([loyal_subject]));
+        world
+            .relations
+            .hostile_to
+            .insert(hostile_subject, BTreeSet::from([faction]));
+        world
+            .relations
+            .hostility_from
+            .insert(faction, BTreeSet::from([hostile_subject]));
+        world.set_owner(item, faction).unwrap();
+        world.relations.office_holder.insert(office, faction);
+        world
+            .relations
+            .offices_held
+            .insert(faction, BTreeSet::from([office]));
+
+        assert_eq!(
+            world.prepare_entity_for_archive(faction).unwrap(),
+            crate::ArchivePreparationReport {
+                applied: vec![
+                    crate::ArchivePreparationAction {
+                        dependency: crate::ArchiveDependency {
+                            kind: crate::ArchiveDependencyKind::OwnsEntities,
+                            dependents: vec![item],
+                        },
+                        resolution: crate::ArchiveResolution::RelinquishOwnership,
+                    },
+                    crate::ArchivePreparationAction {
+                        dependency: crate::ArchiveDependency {
+                            kind: crate::ArchiveDependencyKind::HasMembers,
+                            dependents: vec![member],
+                        },
+                        resolution: crate::ArchiveResolution::RevokeMemberships,
+                    },
+                    crate::ArchivePreparationAction {
+                        dependency: crate::ArchiveDependency {
+                            kind: crate::ArchiveDependencyKind::HasLoyalSubjects,
+                            dependents: vec![loyal_subject],
+                        },
+                        resolution: crate::ArchiveResolution::RevokeLoyalty,
+                    },
+                    crate::ArchivePreparationAction {
+                        dependency: crate::ArchiveDependency {
+                            kind: crate::ArchiveDependencyKind::HasHostileSubjects,
+                            dependents: vec![hostile_subject],
+                        },
+                        resolution: crate::ArchiveResolution::RevokeHostility,
+                    },
+                    crate::ArchivePreparationAction {
+                        dependency: crate::ArchiveDependency {
+                            kind: crate::ArchiveDependencyKind::HoldsOffices,
+                            dependents: vec![office],
+                        },
+                        resolution: crate::ArchiveResolution::RelinquishOffices,
+                    },
+                ],
+                blocked: vec![],
+            }
+        );
+
+        assert_eq!(world.owner_of(item), None);
+        assert_eq!(world.relations.member_of.get(&member), None);
+        assert_eq!(world.relations.loyal_to.get(&loyal_subject), None);
+        assert_eq!(world.relations.hostile_to.get(&hostile_subject), None);
+        assert_eq!(world.relations.office_holder.get(&office), None);
+        assert_eq!(world.archive_dependencies(faction).unwrap(), Vec::new());
+
+        world.archive_entity(faction, Tick(7)).unwrap();
+
+        assert!(world.is_archived(faction));
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_with_policy_leaves_disallowed_blockers_intact() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(2))
+            .unwrap();
+        let _holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let held_item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(4))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+        world.set_possessor(held_item, container).unwrap();
+
+        let policy = crate::ArchivePreparationPolicy::with_resolutions([(
+            crate::ArchiveDependencyKind::ContainsEntities,
+            crate::ArchiveResolution::DetachContentsToGround,
+        )]);
+        assert_eq!(
+            world
+                .prepare_entity_for_archive_with_policy(container, &policy)
+                .unwrap(),
+            crate::ArchivePreparationReport {
+                applied: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::ContainsEntities,
+                        dependents: vec![item],
+                    },
+                    resolution: crate::ArchiveResolution::DetachContentsToGround,
+                }],
+                blocked: vec![crate::ArchiveDependency {
+                    kind: crate::ArchiveDependencyKind::PossessesEntities,
+                    dependents: vec![held_item],
+                }],
+            }
+        );
+
+        assert_eq!(world.direct_container(item), None);
+        assert_eq!(world.possessor_of(held_item), Some(container));
+        assert_eq!(
+            world.archive_dependencies(container).unwrap(),
+            vec![crate::ArchiveDependency {
+                kind: crate::ArchiveDependencyKind::PossessesEntities,
+                dependents: vec![held_item],
+            }]
+        );
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_with_invalid_resolution_errors() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(2))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+
+        let policy = crate::ArchivePreparationPolicy::with_resolutions([(
+            crate::ArchiveDependencyKind::ContainsEntities,
+            crate::ArchiveResolution::RelinquishOwnership,
+        )]);
+
+        assert!(matches!(
+            world.plan_entity_archive_preparation_with_policy(container, &policy),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.prepare_entity_for_archive_with_policy(container, &policy),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert_eq!(world.direct_container(item), Some(container));
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_with_recursive_spill_flattens_nested_contents() {
+        let mut world = World::new(test_topology()).unwrap();
+        let root = world.create_container(open_container(20), Tick(1)).unwrap();
+        let inner = world.create_container(open_container(10), Tick(2)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(root, place).unwrap();
+        world.put_into_container(inner, root).unwrap();
+        world.put_into_container(item, inner).unwrap();
+
+        let policy = crate::ArchivePreparationPolicy::with_resolutions([(
+            crate::ArchiveDependencyKind::ContainsEntities,
+            crate::ArchiveResolution::SpillContentsRecursively,
+        )]);
+
+        assert_eq!(
+            world
+                .prepare_entity_for_archive_with_policy(root, &policy)
+                .unwrap(),
+            crate::ArchivePreparationReport {
+                applied: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::ContainsEntities,
+                        dependents: vec![inner],
+                    },
+                    resolution: crate::ArchiveResolution::SpillContentsRecursively,
+                }],
+                blocked: vec![],
+            }
+        );
+
+        assert_eq!(world.direct_container(inner), None);
+        assert_eq!(world.direct_container(item), None);
+        assert_eq!(world.effective_place(inner), Some(place));
+        assert_eq!(world.effective_place(item), Some(place));
+        assert_eq!(world.ground_entities_at(place), vec![root, inner, item]);
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_can_transfer_ownership_and_possessions() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let current_owner = world.create_faction("River Pact", Tick(1)).unwrap();
+        let successor_owner = world.create_faction("Granary Guild", Tick(2)).unwrap();
+        let current_holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let successor_holder = world
+            .create_agent("Bram", ControlSource::Ai, Tick(4))
+            .unwrap();
+        let owned_item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(5))
+            .unwrap();
+        let held_item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(6))
+            .unwrap();
+
+        world.set_owner(owned_item, current_owner).unwrap();
+        world.set_possessor(held_item, current_holder).unwrap();
+
+        let policy = crate::ArchivePreparationPolicy::with_resolutions([
+            (
+                crate::ArchiveDependencyKind::OwnsEntities,
+                crate::ArchiveResolution::TransferOwnershipTo(successor_owner),
+            ),
+            (
+                crate::ArchiveDependencyKind::PossessesEntities,
+                crate::ArchiveResolution::TransferPossessionsTo(successor_holder),
+            ),
+        ]);
+
+        assert_eq!(
+            world
+                .prepare_entity_for_archive_with_policy(current_owner, &policy)
+                .unwrap(),
+            crate::ArchivePreparationReport {
+                applied: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::OwnsEntities,
+                        dependents: vec![owned_item],
+                    },
+                    resolution: crate::ArchiveResolution::TransferOwnershipTo(successor_owner),
+                }],
+                blocked: vec![],
+            }
+        );
+        assert_eq!(world.owner_of(owned_item), Some(successor_owner));
+
+        assert_eq!(
+            world
+                .prepare_entity_for_archive_with_policy(current_holder, &policy)
+                .unwrap(),
+            crate::ArchivePreparationReport {
+                applied: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::PossessesEntities,
+                        dependents: vec![held_item],
+                    },
+                    resolution: crate::ArchiveResolution::TransferPossessionsTo(successor_holder),
+                }],
+                blocked: vec![],
+            }
+        );
+        assert_eq!(world.possessor_of(held_item), Some(successor_holder));
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_rejects_self_transfer_resolution() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let owner = world.create_faction("River Pact", Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(2))
+            .unwrap();
+
+        world.set_owner(item, owner).unwrap();
+
+        let policy = crate::ArchivePreparationPolicy::with_resolutions([(
+            crate::ArchiveDependencyKind::OwnsEntities,
+            crate::ArchiveResolution::TransferOwnershipTo(owner),
+        )]);
+
+        assert!(matches!(
+            world.prepare_entity_for_archive_with_policy(owner, &policy),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert_eq!(world.owner_of(item), Some(owner));
+    }
+
+    #[test]
     fn entities_returns_sorted_live_ids() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world.create_entity(EntityKind::Agent, Tick(1));
@@ -1595,7 +2169,7 @@ mod tests {
 
         populate_relation_rows_for_purge_test(&mut world, &fixture);
 
-        world.archive_entity(item, Tick(2)).unwrap();
+        world.allocator.archive_entity(item, Tick(2)).unwrap();
         world.purge_entity(item).unwrap();
 
         assert_eq!(world.entity_meta(item), None);
@@ -1897,6 +2471,120 @@ mod tests {
     }
 
     #[test]
+    fn inventory_query_helpers_follow_authoritative_relation_indices() {
+        let mut world = World::new(test_topology()).unwrap();
+        let root = world.create_container(open_container(30), Tick(1)).unwrap();
+        let mid = world.create_container(open_container(20), Tick(2)).unwrap();
+        let leaf = world.create_container(open_container(10), Tick(3)).unwrap();
+        let nested_item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(4), Tick(4))
+            .unwrap();
+        let ground_item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(5), Tick(5))
+            .unwrap();
+        let loose_item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(6))
+            .unwrap();
+        let square = entity(5);
+        let farm = entity(2);
+
+        world.set_ground_location(root, square).unwrap();
+        world.put_into_container(mid, root).unwrap();
+        world.put_into_container(leaf, mid).unwrap();
+        world.put_into_container(nested_item, leaf).unwrap();
+        world.set_ground_location(ground_item, square).unwrap();
+
+        assert_eq!(world.effective_place(root), Some(square));
+        assert_eq!(world.effective_place(nested_item), Some(square));
+        assert_eq!(world.effective_place(loose_item), None);
+
+        assert_eq!(world.direct_container(root), None);
+        assert_eq!(world.direct_container(nested_item), Some(leaf));
+
+        assert_eq!(world.direct_contents_of(root), vec![mid]);
+        assert_eq!(world.direct_contents_of(mid), vec![leaf]);
+        assert_eq!(world.direct_contents_of(leaf), vec![nested_item]);
+        assert_eq!(
+            world.direct_contents_of(nested_item),
+            Vec::<EntityId>::new()
+        );
+
+        assert_eq!(
+            world.recursive_contents_of(root),
+            vec![mid, leaf, nested_item]
+        );
+        assert_eq!(world.recursive_contents_of(leaf), vec![nested_item]);
+        assert_eq!(
+            world.recursive_contents_of(nested_item),
+            Vec::<EntityId>::new()
+        );
+
+        assert_eq!(
+            world.entities_effectively_at(square),
+            vec![root, mid, leaf, nested_item, ground_item]
+        );
+        assert_eq!(world.ground_entities_at(square), vec![root, ground_item]);
+
+        world.move_container_subtree(root, farm).unwrap();
+
+        assert_eq!(world.effective_place(root), Some(farm));
+        assert_eq!(world.effective_place(nested_item), Some(farm));
+        assert_eq!(
+            world.entities_effectively_at(farm),
+            vec![root, mid, leaf, nested_item]
+        );
+        assert_eq!(world.ground_entities_at(farm), vec![root]);
+        assert_eq!(world.entities_effectively_at(square), vec![ground_item]);
+        assert_eq!(world.ground_entities_at(square), vec![ground_item]);
+    }
+
+    #[test]
+    fn relation_query_helpers_hide_archived_entities_from_public_results() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(2))
+            .unwrap();
+        let other_item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(3))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(4)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(5))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(container, place).unwrap();
+        world.put_into_container(item, container).unwrap();
+        world.set_ground_location(other_item, place).unwrap();
+        world.set_owner(item, owner).unwrap();
+        world.set_possessor(item, holder).unwrap();
+
+        world.archive_entity(item, Tick(6)).unwrap();
+
+        assert_eq!(world.effective_place(item), None);
+        assert_eq!(world.direct_container(item), None);
+        assert_eq!(world.owner_of(item), None);
+        assert_eq!(world.possessor_of(item), None);
+        assert_eq!(world.direct_contents_of(container), Vec::<EntityId>::new());
+        assert_eq!(
+            world.recursive_contents_of(container),
+            Vec::<EntityId>::new()
+        );
+        assert_eq!(
+            world.entities_effectively_at(place),
+            vec![container, other_item]
+        );
+        assert_eq!(world.ground_entities_at(place), vec![container, other_item]);
+
+        world.archive_entity(owner, Tick(7)).unwrap();
+        world.archive_entity(holder, Tick(8)).unwrap();
+
+        assert_eq!(world.owner_of(item), None);
+        assert_eq!(world.possessor_of(item), None);
+    }
+
+    #[test]
     fn set_owner_sets_and_replaces_reverse_index() {
         let mut world = World::new(Topology::new()).unwrap();
         let item = world
@@ -2009,6 +2697,35 @@ mod tests {
             world.relations.possessions_of.get(&holder),
             Some(&BTreeSet::from([item]))
         );
+    }
+
+    #[test]
+    fn ownership_query_helpers_return_live_relations_or_none() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+
+        assert_eq!(world.owner_of(item), None);
+        assert_eq!(world.possessor_of(item), None);
+
+        world.set_owner(item, owner).unwrap();
+        world.set_possessor(item, holder).unwrap();
+
+        assert_eq!(world.owner_of(item), Some(owner));
+        assert_eq!(world.possessor_of(item), Some(holder));
+
+        world.clear_owner(item).unwrap();
+        world.clear_possessor(item).unwrap();
+        world.archive_entity(owner, Tick(4)).unwrap();
+        world.archive_entity(holder, Tick(5)).unwrap();
+
+        assert_eq!(world.owner_of(item), None);
+        assert_eq!(world.possessor_of(item), None);
     }
 
     #[test]

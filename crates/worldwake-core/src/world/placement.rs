@@ -3,6 +3,96 @@ use crate::{load_of_entity, remaining_container_capacity, Container, EntityId, W
 use std::collections::BTreeSet;
 
 impl World {
+    #[must_use]
+    pub fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+        self.is_alive(entity)
+            .then(|| self.relations.located_in.get(&entity).copied())
+            .flatten()
+    }
+
+    #[must_use]
+    pub fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        let container = self
+            .is_alive(entity)
+            .then(|| self.relations.contained_by.get(&entity).copied())
+            .flatten()?;
+        self.is_alive(container).then_some(container)
+    }
+
+    #[must_use]
+    pub fn direct_contents_of(&self, container: EntityId) -> Vec<EntityId> {
+        if !self.is_alive(container) {
+            return Vec::new();
+        }
+
+        self.relations
+            .contents_of
+            .get(&container)
+            .map(|contents| {
+                contents
+                    .iter()
+                    .copied()
+                    .filter(|entity| self.is_alive(*entity))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn recursive_contents_of(&self, container: EntityId) -> Vec<EntityId> {
+        if !self.is_alive(container) {
+            return Vec::new();
+        }
+
+        let mut descendants = Vec::new();
+        let mut frontier = self
+            .relations
+            .contents_of
+            .get(&container)
+            .map(|contents| contents.iter().rev().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let mut visited = BTreeSet::new();
+
+        while let Some(current) = frontier.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+
+            if self.is_alive(current) {
+                descendants.push(current);
+            }
+
+            if let Some(children) = self.relations.contents_of.get(&current) {
+                frontier.extend(children.iter().rev().copied());
+            }
+        }
+
+        descendants
+    }
+
+    #[must_use]
+    pub fn entities_effectively_at(&self, place: EntityId) -> Vec<EntityId> {
+        self.relations
+            .entities_at
+            .get(&place)
+            .map(|entities| {
+                entities
+                    .iter()
+                    .copied()
+                    .filter(|entity| self.is_alive(*entity))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn ground_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        self.entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| !self.relations.contained_by.contains_key(entity))
+            .collect()
+    }
+
     pub fn set_ground_location(
         &mut self,
         entity: EntityId,

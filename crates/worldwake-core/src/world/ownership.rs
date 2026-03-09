@@ -2,6 +2,24 @@ use super::World;
 use crate::{EntityId, WorldError};
 
 impl World {
+    #[must_use]
+    pub fn owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        let owner = self
+            .is_alive(entity)
+            .then(|| self.relations.owned_by.get(&entity).copied())
+            .flatten()?;
+        self.is_alive(owner).then_some(owner)
+    }
+
+    #[must_use]
+    pub fn possessor_of(&self, entity: EntityId) -> Option<EntityId> {
+        let holder = self
+            .is_alive(entity)
+            .then(|| self.relations.possessed_by.get(&entity).copied())
+            .flatten()?;
+        self.is_alive(holder).then_some(holder)
+    }
+
     pub fn set_owner(&mut self, entity: EntityId, owner: EntityId) -> Result<(), WorldError> {
         self.ensure_alive(entity)?;
         self.ensure_alive(owner)?;

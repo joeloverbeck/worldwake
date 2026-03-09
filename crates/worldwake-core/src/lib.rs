@@ -59,7 +59,11 @@ pub use load::{
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
 pub use numerics::{LoadUnits, Permille, Quantity};
-pub use relations::{RelationTables, ReservationRecord};
+pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use traits::{Component, RelationRecord};
+pub use world::lifecycle::{
+    ArchivePreparationAction, ArchivePreparationPlan, ArchivePreparationPolicy,
+    ArchivePreparationReport, ArchiveResolution,
+};
 pub use world::World;

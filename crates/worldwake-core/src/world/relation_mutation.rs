@@ -27,6 +27,21 @@ impl World {
         }
     }
 
+    pub(super) fn clear_many_to_many_relation(
+        forward: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
+        reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
+        entity: EntityId,
+        target: EntityId,
+    ) {
+        if let Some(targets) = forward.get_mut(&entity) {
+            targets.remove(&target);
+            if targets.is_empty() {
+                forward.remove(&entity);
+            }
+        }
+        Self::remove_reverse_link(reverse, target, entity);
+    }
+
     fn remove_reverse_link(
         reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
         target: EntityId,

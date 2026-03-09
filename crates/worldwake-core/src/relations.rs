@@ -14,6 +14,40 @@ pub struct ReservationRecord {
 
 impl RelationRecord for ReservationRecord {}
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArchiveDependencyKind {
+    ContainsEntities,
+    PossessesEntities,
+    OwnsEntities,
+    HasMembers,
+    HasLoyalSubjects,
+    HasHostileSubjects,
+    HasOfficeHolder,
+    HoldsOffices,
+}
+
+impl ArchiveDependencyKind {
+    #[must_use]
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::ContainsEntities => "contains other entities",
+            Self::PossessesEntities => "possesses other entities",
+            Self::OwnsEntities => "owns other entities",
+            Self::HasMembers => "has member entities",
+            Self::HasLoyalSubjects => "has loyal subjects",
+            Self::HasHostileSubjects => "has hostile subjects",
+            Self::HasOfficeHolder => "has an office holder",
+            Self::HoldsOffices => "holds offices",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArchiveDependency {
+    pub kind: ArchiveDependencyKind,
+    pub dependents: Vec<EntityId>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RelationTables {
     pub(crate) located_in: BTreeMap<EntityId, EntityId>,
@@ -40,6 +74,54 @@ pub struct RelationTables {
 }
 
 impl RelationTables {
+    pub(crate) fn archive_dependencies(&self, entity: EntityId) -> Vec<ArchiveDependency> {
+        let mut dependencies = Vec::new();
+
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::ContainsEntities,
+            self.contents_of.get(&entity),
+        );
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::PossessesEntities,
+            self.possessions_of.get(&entity),
+        );
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::OwnsEntities,
+            self.property_of.get(&entity),
+        );
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::HasMembers,
+            self.members_of.get(&entity),
+        );
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::HasLoyalSubjects,
+            self.loyalty_from.get(&entity),
+        );
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::HasHostileSubjects,
+            self.hostility_from.get(&entity),
+        );
+        if let Some(holder) = self.office_holder.get(&entity).copied() {
+            dependencies.push(ArchiveDependency {
+                kind: ArchiveDependencyKind::HasOfficeHolder,
+                dependents: vec![holder],
+            });
+        }
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::HoldsOffices,
+            self.offices_held.get(&entity),
+        );
+
+        dependencies
+    }
+
     pub fn remove_all(&mut self, entity: EntityId) {
         Self::remove_entity_relations(&mut self.located_in, &mut self.entities_at, entity);
         Self::remove_entity_relations(&mut self.contained_by, &mut self.contents_of, entity);
@@ -151,6 +233,19 @@ impl RelationTables {
             if reservations.is_empty() {
                 reverse.remove(&entity);
             }
+        }
+    }
+
+    fn push_archive_dependency(
+        dependencies: &mut Vec<ArchiveDependency>,
+        kind: ArchiveDependencyKind,
+        rows: Option<&BTreeSet<EntityId>>,
+    ) {
+        if let Some(rows) = rows.filter(|rows| !rows.is_empty()) {
+            dependencies.push(ArchiveDependency {
+                kind,
+                dependents: rows.iter().copied().collect(),
+            });
         }
     }
 }
