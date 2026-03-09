@@ -4,6 +4,7 @@
 //! Serialize + Deserialize` — the minimum set required for deterministic
 //! authoritative state.
 
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Sub};
@@ -55,6 +56,81 @@ pub struct EventId(pub u64);
 impl fmt::Display for EventId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ev{}", self.0)
+    }
+}
+
+/// Unique identifier for a reservation record in the relation layer.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub struct ReservationId(pub u64);
+
+impl fmt::Display for ReservationId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "r{}", self.0)
+    }
+}
+
+/// Unique identifier for an opaque fact handle in the relation layer.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub struct FactId(pub u64);
+
+impl fmt::Display for FactId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "f{}", self.0)
+    }
+}
+
+/// Half-open tick interval `[start, end)` used for reservation windows.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize)]
+pub struct TickRange {
+    start: Tick,
+    end: Tick,
+}
+
+impl TickRange {
+    pub fn new(start: Tick, end: Tick) -> Result<Self, &'static str> {
+        if end <= start {
+            return Err("tick range end must be greater than start");
+        }
+
+        Ok(Self { start, end })
+    }
+
+    pub fn start(&self) -> Tick {
+        self.start
+    }
+
+    pub fn end(&self) -> Tick {
+        self.end
+    }
+
+    pub fn overlaps(&self, other: &Self) -> bool {
+        self.start < other.end && other.start < self.end
+    }
+
+    pub fn contains_tick(&self, tick: Tick) -> bool {
+        self.start <= tick && tick < self.end
+    }
+}
+
+impl<'de> Deserialize<'de> for TickRange {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct TickRangeRepr {
+            start: Tick,
+            end: Tick,
+        }
+
+        let repr = TickRangeRepr::deserialize(deserializer)?;
+        TickRange::new(repr.start, repr.end).map_err(de::Error::custom)
+    }
+}
+
+impl fmt::Display for TickRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{},{})", self.start, self.end)
     }
 }
 
@@ -172,6 +248,9 @@ mod tests {
         assert_bounds::<EntityId>();
         assert_bounds::<Tick>();
         assert_bounds::<EventId>();
+        assert_bounds::<ReservationId>();
+        assert_bounds::<FactId>();
+        assert_bounds::<TickRange>();
         assert_bounds::<TravelEdgeId>();
         assert_bounds::<Seed>();
     }
@@ -203,6 +282,92 @@ mod tests {
         let bytes = bincode::serialize(&val).unwrap();
         let back: EventId = bincode::deserialize(&bytes).unwrap();
         assert_eq!(val, back);
+    }
+
+    #[test]
+    fn reservation_id_display_and_bincode_roundtrip() {
+        let val = ReservationId(14);
+        assert_eq!(val.to_string(), "r14");
+
+        let bytes = bincode::serialize(&val).unwrap();
+        let back: ReservationId = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(val, back);
+    }
+
+    #[test]
+    fn fact_id_display_and_bincode_roundtrip() {
+        let val = FactId(28);
+        assert_eq!(val.to_string(), "f28");
+
+        let bytes = bincode::serialize(&val).unwrap();
+        let back: FactId = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(val, back);
+    }
+
+    #[test]
+    fn tick_range_new_rejects_empty_or_inverted_ranges() {
+        assert_eq!(TickRange::new(Tick(5), Tick(10)).unwrap().to_string(), "[t5,t10)");
+        assert!(TickRange::new(Tick(5), Tick(5)).is_err());
+        assert!(TickRange::new(Tick(10), Tick(5)).is_err());
+    }
+
+    #[test]
+    fn tick_range_overlap_uses_half_open_semantics() {
+        let left = TickRange::new(Tick(3), Tick(7)).unwrap();
+        let right = TickRange::new(Tick(5), Tick(10)).unwrap();
+        let adjacent_left = TickRange::new(Tick(3), Tick(5)).unwrap();
+        let adjacent_right = TickRange::new(Tick(5), Tick(10)).unwrap();
+
+        assert!(left.overlaps(&right));
+        assert!(right.overlaps(&left));
+        assert!(!adjacent_left.overlaps(&adjacent_right));
+        assert!(!adjacent_right.overlaps(&adjacent_left));
+    }
+
+    #[test]
+    fn tick_range_contains_start_but_not_end() {
+        let range = TickRange::new(Tick(5), Tick(10)).unwrap();
+
+        assert!(range.contains_tick(Tick(5)));
+        assert!(range.contains_tick(Tick(9)));
+        assert!(!range.contains_tick(Tick(10)));
+        assert!(!range.contains_tick(Tick(4)));
+    }
+
+    #[test]
+    fn tick_range_bincode_roundtrip() {
+        let val = TickRange::new(Tick(8), Tick(13)).unwrap();
+        let bytes = bincode::serialize(&val).unwrap();
+        let back: TickRange = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(val, back);
+    }
+
+    #[test]
+    fn tick_range_accessors_expose_bounds() {
+        let range = TickRange::new(Tick(8), Tick(13)).unwrap();
+
+        assert_eq!(range.start(), Tick(8));
+        assert_eq!(range.end(), Tick(13));
+    }
+
+    #[test]
+    fn tick_range_deserialization_rejects_empty_or_inverted_ranges() {
+        let empty = bincode::serialize(&(Tick(5), Tick(5))).unwrap();
+        let inverted = bincode::serialize(&(Tick(10), Tick(5))).unwrap();
+
+        let empty_err = bincode::deserialize::<TickRange>(&empty).unwrap_err().to_string();
+        let inverted_err = bincode::deserialize::<TickRange>(&inverted)
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            empty_err.contains("tick range end must be greater than start"),
+            "unexpected empty-range error: {empty_err}"
+        );
+        assert!(
+            inverted_err.contains("tick range end must be greater than start"),
+            "unexpected inverted-range error: {inverted_err}"
+        );
     }
 
     #[test]

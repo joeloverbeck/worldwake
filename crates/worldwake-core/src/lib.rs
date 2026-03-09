@@ -48,7 +48,7 @@ pub use components::{AgentData, Name};
 pub use control::ControlSource;
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
-pub use ids::{EntityId, EventId, Seed, Tick, TravelEdgeId};
+pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{
     CommodityKind, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
     UniqueItemKind,
