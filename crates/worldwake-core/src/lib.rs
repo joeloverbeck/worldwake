@@ -25,6 +25,8 @@
 //! forbidden patterns.
 
 pub mod allocator;
+pub mod component_tables;
+pub mod components;
 pub mod control;
 pub mod entity;
 pub mod error;
@@ -35,6 +37,8 @@ pub mod topology;
 pub mod traits;
 
 pub use allocator::EntityAllocator;
+pub use component_tables::ComponentTables;
+pub use components::{AgentData, Name};
 pub use control::ControlSource;
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
