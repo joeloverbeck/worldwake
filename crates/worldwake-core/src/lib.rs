@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod control;
+pub mod entity;
 pub mod error;
 pub mod ids;
 pub mod numerics;
@@ -33,6 +34,7 @@ pub mod topology;
 pub mod traits;
 
 pub use control::ControlSource;
+pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
 pub use ids::{EntityId, EventId, Seed, Tick, TravelEdgeId};
 pub use numerics::{LoadUnits, Permille, Quantity};
