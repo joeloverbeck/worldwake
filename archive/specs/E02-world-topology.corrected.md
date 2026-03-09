@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # E02: Deterministic World Topology
 
 ## Epic Summary
@@ -160,3 +162,20 @@ Requirements:
 - Section 5.2 (directed graph topology)
 - Section 9.2 (determinism)
 - Section 9.10 (no teleportation)
+
+## Outcome
+
+- Completion date: 2026-03-09
+- What actually changed:
+  - Implemented deterministic topology primitives in `worldwake-core`, including `PlaceTag`, `Place`, `TravelEdge`, `Route`, and ordered `Topology` storage backed by `BTreeMap`.
+  - Implemented deterministic topology queries, including sorted adjacency, reachability, and lexicographically tie-broken shortest-path routing.
+  - Added a fixed manifest-driven `build_prototype_world()` that produces a strongly connected 12-place prototype world with stable IDs and explicit danger/visibility gradients.
+  - Completed topology serialization support by deriving serde for `Topology` and adding a stable topology hash based on serialized bytes.
+  - Added topology tests covering structural invariants, pathfinding determinism, prototype builder coverage, serialization round-trip, and stable-hash repeatability.
+- Deviations from original plan:
+  - The spec required stability across repeated runs in the same build. The implementation uses an explicit fixed hash function rather than `DefaultHasher`, which is a stricter and clearer determinism choice.
+  - Capacity remains topology metadata where present; the current prototype builder leaves capacities unset because no Phase 1 gameplay logic consumes them yet.
+- Verification results:
+  - `cargo test -p worldwake-core` passed.
+  - `cargo clippy --workspace` passed.
+  - `cargo test --workspace` passed.

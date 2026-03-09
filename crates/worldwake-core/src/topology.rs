@@ -110,7 +110,7 @@ pub struct Route {
 }
 
 /// Ordered storage for the world place graph and deterministic query APIs.
-#[derive(Clone, Eq, PartialEq, Debug, Default)]
+#[derive(Clone, Eq, PartialEq, Debug, Default, Serialize, Deserialize)]
 pub struct Topology {
     places: BTreeMap<EntityId, Place>,
     edges: BTreeMap<TravelEdgeId, TravelEdge>,
@@ -282,6 +282,24 @@ impl Topology {
     pub fn edge_count(&self) -> usize {
         self.edges.len()
     }
+
+    pub fn topology_hash(&self) -> Result<u64, WorldError> {
+        let bytes = bincode::serialize(self)
+            .map_err(|err| WorldError::SerializationError(err.to_string()))?;
+        Ok(fixed_hash64(&bytes))
+    }
+}
+
+fn fixed_hash64(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }
 
 pub fn build_prototype_world() -> Topology {
@@ -1071,6 +1089,52 @@ mod tests {
         let roundtrip: Route = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, route);
+    }
+
+    #[test]
+    fn topology_roundtrips_through_bincode() {
+        let topology = build_prototype_world();
+
+        let bytes = bincode::serialize(&topology).unwrap();
+        let roundtrip: Topology = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, topology);
+        assert_eq!(canonical_bytes(&roundtrip), bytes);
+    }
+
+    #[test]
+    fn topology_hash_is_stable_for_identical_values() {
+        let first = build_prototype_world();
+        let second = build_prototype_world();
+
+        assert_eq!(
+            first.topology_hash().unwrap(),
+            first.topology_hash().unwrap()
+        );
+        assert_eq!(
+            first.topology_hash().unwrap(),
+            second.topology_hash().unwrap()
+        );
+    }
+
+    #[test]
+    fn topology_roundtrip_preserves_counts_and_queries() {
+        let topology = build_prototype_world();
+        let bytes = bincode::serialize(&topology).unwrap();
+        let roundtrip: Topology = bincode::deserialize(&bytes).unwrap();
+        let from = entity(0);
+        let to = entity(9);
+
+        assert_eq!(roundtrip.place_count(), topology.place_count());
+        assert_eq!(roundtrip.edge_count(), topology.edge_count());
+        assert_eq!(
+            roundtrip.shortest_path(from, to),
+            topology.shortest_path(from, to)
+        );
+        assert_eq!(
+            roundtrip.is_reachable(from, to),
+            topology.is_reachable(from, to)
+        );
     }
 
     #[test]
