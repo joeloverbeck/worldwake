@@ -1,5 +1,6 @@
 //! Item-domain taxonomy types for stackable commodities and trade grouping.
 
+use crate::{EntityId, EventId, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 
 /// Stackable commodity kinds available in Phase 1.
@@ -65,20 +66,50 @@ impl TradeCategory {
     ];
 }
 
+/// Lot lineage operations tracked in append-only provenance history.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub enum LotOperation {
+    Created,
+    Split,
+    Merge,
+    Produced,
+    Consumed,
+    Destroyed,
+    Spoiled,
+    Transformed,
+}
+
+impl LotOperation {
+    pub const ALL: [Self; 8] = [
+        Self::Created,
+        Self::Split,
+        Self::Merge,
+        Self::Produced,
+        Self::Consumed,
+        Self::Destroyed,
+        Self::Spoiled,
+        Self::Transformed,
+    ];
+}
+
+/// Immutable lineage record for a lot change.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProvenanceEntry {
+    pub tick: Tick,
+    pub event_id: Option<EventId>,
+    pub operation: LotOperation,
+    pub source_lot: Option<EntityId>,
+    pub amount: Quantity,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CommodityKind, TradeCategory};
+    use super::{CommodityKind, LotOperation, ProvenanceEntry, TradeCategory};
+    use crate::{EntityId, EventId, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
 
     fn assert_enum_bounds<
-        T: Copy
-            + Clone
-            + Eq
-            + Ord
-            + std::hash::Hash
-            + std::fmt::Debug
-            + Serialize
-            + DeserializeOwned,
+        T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
     >() {
     }
 
@@ -88,8 +119,20 @@ mod tests {
     }
 
     #[test]
+    fn lot_operation_trait_bounds() {
+        assert_enum_bounds::<LotOperation>();
+    }
+
+    #[test]
     fn trade_category_trait_bounds() {
         assert_enum_bounds::<TradeCategory>();
+    }
+
+    fn assert_struct_bounds<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
+
+    #[test]
+    fn provenance_entry_trait_bounds() {
+        assert_struct_bounds::<ProvenanceEntry>();
     }
 
     #[test]
@@ -127,6 +170,23 @@ mod tests {
     }
 
     #[test]
+    fn lot_operation_all_is_canonical_variant_list() {
+        assert_eq!(
+            LotOperation::ALL,
+            [
+                LotOperation::Created,
+                LotOperation::Split,
+                LotOperation::Merge,
+                LotOperation::Produced,
+                LotOperation::Consumed,
+                LotOperation::Destroyed,
+                LotOperation::Spoiled,
+                LotOperation::Transformed,
+            ]
+        );
+    }
+
+    #[test]
     fn commodity_kind_variants_roundtrip_through_bincode() {
         for commodity in CommodityKind::ALL {
             let bytes = bincode::serialize(&commodity).unwrap();
@@ -145,11 +205,55 @@ mod tests {
     }
 
     #[test]
+    fn lot_operation_variants_roundtrip_through_bincode() {
+        for operation in LotOperation::ALL {
+            let bytes = bincode::serialize(&operation).unwrap();
+            let roundtrip: LotOperation = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, operation);
+        }
+    }
+
+    #[test]
+    fn provenance_entry_roundtrips_through_bincode() {
+        let with_links = ProvenanceEntry {
+            tick: Tick(11),
+            event_id: Some(EventId(4)),
+            operation: LotOperation::Split,
+            source_lot: Some(EntityId {
+                slot: 7,
+                generation: 1,
+            }),
+            amount: Quantity(3),
+        };
+        let without_links = ProvenanceEntry {
+            tick: Tick(12),
+            event_id: None,
+            operation: LotOperation::Created,
+            source_lot: None,
+            amount: Quantity(9),
+        };
+
+        for entry in [with_links, without_links] {
+            let bytes = bincode::serialize(&entry).unwrap();
+            let roundtrip: ProvenanceEntry = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, entry);
+        }
+    }
+
+    #[test]
     fn commodity_kind_ordering_is_deterministic() {
         let mut reversed = CommodityKind::ALL;
         reversed.reverse();
         reversed.sort();
         assert_eq!(reversed, CommodityKind::ALL);
+    }
+
+    #[test]
+    fn lot_operation_ordering_is_deterministic() {
+        let mut reversed = LotOperation::ALL;
+        reversed.reverse();
+        reversed.sort();
+        assert_eq!(reversed, LotOperation::ALL);
     }
 
     #[test]
@@ -166,7 +270,10 @@ mod tests {
         assert_eq!(CommodityKind::Grain.trade_category(), TradeCategory::Food);
         assert_eq!(CommodityKind::Bread.trade_category(), TradeCategory::Food);
         assert_eq!(CommodityKind::Water.trade_category(), TradeCategory::Water);
-        assert_eq!(CommodityKind::Firewood.trade_category(), TradeCategory::Fuel);
+        assert_eq!(
+            CommodityKind::Firewood.trade_category(),
+            TradeCategory::Fuel
+        );
         assert_eq!(
             CommodityKind::Medicine.trade_category(),
             TradeCategory::Medicine
