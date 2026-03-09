@@ -1,5 +1,7 @@
 # E05: Relations, Placement, Ownership & Reservations
 
+**Status**: COMPLETED
+
 ## Epic Summary
 Implement the authoritative relation layer for:
 - physical placement
@@ -209,3 +211,20 @@ Requirements:
 - Section 9.8 (reservation exclusivity)
 - Section 9.13 (office uniqueness)
 - Section 9.18 (no circular containment)
+
+## Outcome
+
+- Completion date: 2026-03-09
+- What actually changed:
+  - Implemented deterministic typed relation storage for placement, containment, possession, ownership, reservations, office holding, and social/knowledge relations in `worldwake-core`
+  - Added legality-preserving placement and movement helpers, reservation APIs, inventory/custody queries, and the corresponding relation cleanup/archive behavior
+  - Added deterministic randomized invariant coverage for T01, T04, and T13
+  - Implemented explicit `in_transit` state for physical entities so the final architecture matches the spec's `effective place or explicit transit state` rule
+- Deviations from original plan:
+  - Most focused relation behavior tests remain inline in `src/world.rs`, with the randomized invariant suite added as a separate black-box integration-style test file
+  - `effective_place(entity) -> Option<EntityId>` remains the query API, with `None` now specifically representing explicit transit for physical entities instead of an implicit unmodeled gap
+- Verification results:
+  - `cargo test -p worldwake-core --test relation_invariants` passed
+  - `cargo test -p worldwake-core` passed
+  - `cargo clippy --workspace` passed
+  - `cargo test --workspace` passed

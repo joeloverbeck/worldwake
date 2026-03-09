@@ -11,6 +11,11 @@ impl World {
     }
 
     #[must_use]
+    pub fn is_in_transit(&self, entity: EntityId) -> bool {
+        self.is_alive(entity) && self.relations.in_transit.contains(&entity)
+    }
+
+    #[must_use]
     pub fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
         let container = self
             .is_alive(entity)
@@ -269,10 +274,12 @@ impl World {
     }
 
     fn set_effective_place(&mut self, entity: EntityId, place: EntityId) -> Result<(), WorldError> {
+        self.relations.in_transit.remove(&entity);
         self.set_located_in(entity, place);
         if self.get_component_container(entity).is_some() {
             let descendants = self.collect_container_descendants(entity)?;
             for descendant in descendants {
+                self.relations.in_transit.remove(&descendant);
                 self.set_located_in(descendant, place);
             }
         }

@@ -108,7 +108,11 @@ impl World {
     }
 
     pub fn create_entity(&mut self, kind: EntityKind, tick: Tick) -> EntityId {
-        self.allocator.create_entity(kind, tick)
+        let entity = self.allocator.create_entity(kind, tick);
+        if Self::requires_physical_placement(kind) {
+            self.relations.in_transit.insert(entity);
+        }
+        entity
     }
 
     pub fn create_agent(
@@ -422,6 +426,16 @@ impl World {
             return Err(WorldError::ArchivedEntity(id));
         }
         Ok(meta)
+    }
+
+    fn requires_physical_placement(kind: EntityKind) -> bool {
+        matches!(
+            kind,
+            EntityKind::Agent
+                | EntityKind::ItemLot
+                | EntityKind::UniqueItem
+                | EntityKind::Container
+        )
     }
 
     fn create_named_entity(
@@ -2226,7 +2240,9 @@ mod tests {
         let square = entity(5);
         let farm = entity(2);
 
+        assert!(world.is_in_transit(item));
         world.set_ground_location(item, square).unwrap();
+        assert!(!world.is_in_transit(item));
         assert_eq!(world.relations.located_in.get(&item), Some(&square));
         assert_eq!(
             world.relations.entities_at.get(&square),
@@ -2274,6 +2290,9 @@ mod tests {
 
         world.set_ground_location(outer, farm).unwrap();
 
+        assert!(!world.is_in_transit(outer));
+        assert!(!world.is_in_transit(inner));
+        assert!(!world.is_in_transit(item));
         assert_eq!(world.relations.located_in.get(&outer), Some(&farm));
         assert_eq!(world.relations.located_in.get(&inner), Some(&farm));
         assert_eq!(world.relations.located_in.get(&item), Some(&farm));
@@ -2291,6 +2310,7 @@ mod tests {
         world.set_ground_location(container, place).unwrap();
         world.put_into_container(item, container).unwrap();
 
+        assert!(!world.is_in_transit(item));
         assert_eq!(world.relations.contained_by.get(&item), Some(&container));
         assert_eq!(
             world.relations.contents_of.get(&container),
@@ -2355,6 +2375,8 @@ mod tests {
             .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
             .unwrap();
 
+        assert!(world.is_in_transit(container));
+        assert!(world.is_in_transit(item));
         let err = world.put_into_container(item, container).unwrap_err();
 
         assert!(matches!(err, WorldError::PreconditionFailed(_)));
@@ -2432,6 +2454,8 @@ mod tests {
 
         world.put_into_container(inner, outer).unwrap();
 
+        assert!(!world.is_in_transit(inner));
+        assert!(!world.is_in_transit(item));
         assert_eq!(world.relations.contained_by.get(&inner), Some(&outer));
         assert_eq!(world.relations.located_in.get(&inner), Some(&square));
         assert_eq!(world.relations.located_in.get(&item), Some(&square));
@@ -2451,6 +2475,7 @@ mod tests {
 
         world.remove_from_container(item).unwrap();
 
+        assert!(!world.is_in_transit(item));
         assert_eq!(world.relations.contained_by.get(&item), None);
         assert_eq!(world.relations.contents_of.get(&container), None);
         assert_eq!(world.relations.located_in.get(&item), Some(&place));
@@ -2488,7 +2513,39 @@ mod tests {
         world.move_container_subtree(root, farm).unwrap();
 
         for entity in [root, mid, leaf, item] {
+            assert!(!world.is_in_transit(entity));
             assert_eq!(world.relations.located_in.get(&entity), Some(&farm));
+        }
+    }
+
+    #[test]
+    fn physical_entities_start_in_explicit_transit_until_placed() {
+        let mut world = World::new(test_topology()).unwrap();
+
+        let agent = world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap();
+        let lot = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+        let unique = world
+            .create_unique_item(
+                UniqueItemKind::SimpleTool,
+                Some("Hammer"),
+                BTreeMap::new(),
+                Tick(3),
+            )
+            .unwrap();
+        let container = world.create_container(open_container(10), Tick(4)).unwrap();
+        let faction = world.create_faction("River Pact", Tick(5)).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(6)).unwrap();
+
+        for entity in [agent, lot, unique, container] {
+            assert!(world.is_in_transit(entity));
+            assert_eq!(world.effective_place(entity), None);
+        }
+
+        for entity in [faction, office] {
+            assert!(!world.is_in_transit(entity));
+            assert_eq!(world.effective_place(entity), None);
         }
     }
 
@@ -2519,6 +2576,7 @@ mod tests {
         assert_eq!(world.effective_place(root), Some(square));
         assert_eq!(world.effective_place(nested_item), Some(square));
         assert_eq!(world.effective_place(loose_item), None);
+        assert!(world.is_in_transit(loose_item));
 
         assert_eq!(world.direct_container(root), None);
         assert_eq!(world.direct_container(nested_item), Some(leaf));
@@ -2585,6 +2643,7 @@ mod tests {
         world.archive_entity(item, Tick(6)).unwrap();
 
         assert_eq!(world.effective_place(item), None);
+        assert!(!world.is_in_transit(item));
         assert_eq!(world.direct_container(item), None);
         assert_eq!(world.owner_of(item), None);
         assert_eq!(world.possessor_of(item), None);

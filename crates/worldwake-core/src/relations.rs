@@ -52,6 +52,7 @@ pub struct ArchiveDependency {
 pub struct RelationTables {
     pub(crate) located_in: BTreeMap<EntityId, EntityId>,
     pub(crate) entities_at: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) in_transit: BTreeSet<EntityId>,
     pub(crate) contained_by: BTreeMap<EntityId, EntityId>,
     pub(crate) contents_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) possessed_by: BTreeMap<EntityId, EntityId>,
@@ -124,6 +125,7 @@ impl RelationTables {
 
     pub fn remove_all(&mut self, entity: EntityId) {
         Self::remove_entity_relations(&mut self.located_in, &mut self.entities_at, entity);
+        self.in_transit.remove(&entity);
         Self::remove_entity_relations(&mut self.contained_by, &mut self.contents_of, entity);
         Self::remove_entity_relations(&mut self.possessed_by, &mut self.possessions_of, entity);
         Self::remove_entity_relations(&mut self.owned_by, &mut self.property_of, entity);
@@ -328,6 +330,7 @@ mod tests {
 
         assert!(tables.located_in.is_empty());
         assert!(tables.entities_at.is_empty());
+        assert!(tables.in_transit.is_empty());
         assert!(tables.contained_by.is_empty());
         assert!(tables.contents_of.is_empty());
         assert!(tables.possessed_by.is_empty());
@@ -382,6 +385,7 @@ mod tests {
         tables
             .entities_at
             .insert(place, [item].into_iter().collect());
+        tables.in_transit.insert(container);
         tables.contained_by.insert(item, container);
         tables
             .contents_of
@@ -457,6 +461,7 @@ mod tests {
         tables
             .entities_at
             .insert(place, [item].into_iter().collect());
+        tables.in_transit.insert(item);
         tables.contained_by.insert(item, container);
         tables
             .contents_of
@@ -516,6 +521,7 @@ mod tests {
 
         assert!(tables.located_in.is_empty());
         assert!(tables.entities_at.is_empty());
+        assert!(tables.in_transit.is_empty());
         assert!(tables.contained_by.is_empty());
         assert!(tables.contents_of.is_empty());
         assert!(tables.possessed_by.is_empty());
@@ -549,6 +555,7 @@ mod tests {
         let reservation_id = ReservationId(7);
 
         let mut tables = RelationTables::default();
+        tables.in_transit.insert(container);
         tables.contained_by.insert(item, container);
         tables
             .contents_of
@@ -593,6 +600,7 @@ mod tests {
         tables.remove_all(container);
         assert!(tables.contained_by.is_empty());
         assert!(tables.contents_of.is_empty());
+        assert!(tables.in_transit.is_empty());
         assert_eq!(tables.possessed_by.get(&item), Some(&holder));
         assert_eq!(tables.owned_by.get(&item), Some(&owner));
         assert_eq!(

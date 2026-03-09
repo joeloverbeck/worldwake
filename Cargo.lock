@@ -125,6 +125,7 @@ name = "worldwake-core"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "rand_chacha",
  "serde",
 ]
 
