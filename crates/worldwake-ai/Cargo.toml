@@ -1,0 +1,12 @@
+[package]
+name = "worldwake-ai"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+worldwake-core = { path = "../worldwake-core" }
+worldwake-sim = { path = "../worldwake-sim" }
+worldwake-systems = { path = "../worldwake-systems" }
+
+[lints]
+workspace = true

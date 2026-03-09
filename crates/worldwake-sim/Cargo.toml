@@ -1,0 +1,13 @@
+[package]
+name = "worldwake-sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+worldwake-core = { path = "../worldwake-core" }
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+rand_chacha = "0.3"
+
+[lints]
+workspace = true

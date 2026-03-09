@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/worldwake-core",
+    "crates/worldwake-sim",
+    "crates/worldwake-systems",
+    "crates/worldwake-ai",
+    "crates/worldwake-cli",
+]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Allowed clippy lints — documented rationale for each:
+module_name_repetitions = "allow"   # e.g. core::ids::EntityId is fine
+must_use_candidate = "allow"        # too noisy for builders/constructors
+missing_errors_doc = "allow"        # we document errors at module level
+missing_panics_doc = "allow"        # panics are bugs, not API surface
+cast_possible_truncation = "allow"  # we use fixed-width newtypes deliberately
