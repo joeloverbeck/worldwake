@@ -1,6 +1,6 @@
 # E07ACTFRA-004: ActionState + ActionInstance
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — defines serializable active action state
@@ -16,12 +16,14 @@ Active actions need a serializable representation that can survive save/load and
 2. `ReservationId` exists in `worldwake-core/src/ids.rs`.
 3. `Tick` and `EntityId` exist in core.
 4. The spec explicitly forbids borrowed references, closure-captured transient state, and function pointers in `ActionInstance`.
+5. No concrete action handlers exist yet, so there is no real Phase 1 need for a generic ad hoc state bag.
 
 ## Architecture Check
 
-1. `ActionState` is a serializable enum that handlers use to persist intermediate data. Phase 1 starts with a minimal variant set (Empty + generic key-value for flexibility).
-2. `ActionInstance` is a flat struct with no `&` references. All entity/ID links are by value.
-3. Both types are fully serializable — the combination must survive bincode round-trip.
+1. `ActionState` should be a closed serializable enum, not a generic `BTreeMap<String, ...>` escape hatch. String-keyed state would smuggle mini-schemas into runtime data and make later action-specific state harder to reason about.
+2. Phase 1 should start with a minimal explicit variant set. Since no concrete handlers need persistent local data yet, `ActionState::Empty` is sufficient.
+3. `ActionInstance` is a flat struct with no `&` references. All entity/ID links are by value.
+4. Both types are fully serializable — the combination must survive bincode round-trip.
 
 ## What to Change
 
@@ -31,21 +33,9 @@ Define `ActionState`:
 ```rust
 enum ActionState {
     Empty,
-    Data(BTreeMap<String, ActionStateValue>),
 }
 ```
-
-Where `ActionStateValue` is:
-```rust
-enum ActionStateValue {
-    Integer(i64),
-    Entity(EntityId),
-    Text(String),
-    Quantity(Quantity),
-}
-```
-
-Both derive: `Clone, Debug, Eq, PartialEq, Serialize, Deserialize`.
+Derive: `Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize`.
 
 ### 2. Create `worldwake-sim/src/action_instance.rs`
 
@@ -84,6 +74,7 @@ Declare modules, re-export public types.
 - Start gate logic (E07ACTFRA-008)
 - Handler execution that reads/writes ActionState (E07ACTFRA-005)
 - ActionDef (E07ACTFRA-003)
+- Generic string-keyed or loosely typed local state containers; future handlers should add concrete `ActionState` variants instead
 
 ## Acceptance Criteria
 
@@ -91,7 +82,7 @@ Declare modules, re-export public types.
 
 1. `ActionInstance` satisfies `Clone + Eq + Debug + Serialize + DeserializeOwned`
 2. `ActionState` satisfies `Clone + Eq + Debug + Serialize + DeserializeOwned`
-3. An `ActionInstance` with `local_state: Some(ActionState::Data(...))` survives bincode round-trip with all fields preserved
+3. An `ActionInstance` with `local_state: Some(ActionState::Empty)` survives bincode round-trip with all fields preserved
 4. An `ActionInstance` with `local_state: None` also round-trips correctly
 5. `ActionInstance` contains no `&` references, no `Box<dyn ...>`, no function pointers (verified by compilation — the derives enforce this)
 6. Existing suite: `cargo test --workspace`
@@ -102,6 +93,7 @@ Declare modules, re-export public types.
 2. No closure-captured transient state
 3. All fields are serializable and replay-safe
 4. No `HashMap` or `HashSet`
+5. `ActionState` stays a closed type model rather than a string-keyed runtime schema
 
 ## Test Plan
 
@@ -114,3 +106,18 @@ Declare modules, re-export public types.
 
 1. `cargo test -p worldwake-sim`
 2. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- Completed: 2026-03-09
+- Changed vs. original plan:
+  - Added `crates/worldwake-sim/src/action_state.rs` with a closed `ActionState` enum containing only `Empty`.
+  - Added `crates/worldwake-sim/src/action_instance.rs` with a fully serializable `ActionInstance`.
+  - Re-exported both from `crates/worldwake-sim/src/lib.rs`.
+- Deviations from original plan:
+  - Rejected the proposed generic `BTreeMap<String, ActionStateValue>` state bag. It would have created a runtime mini-schema and weakened later action-specific state modeling.
+  - Kept `ActionState` intentionally minimal for Phase 1 because no concrete handlers currently need persistent local state.
+- Verification:
+  - `cargo test -p worldwake-sim`
+  - `cargo clippy --workspace`
+  - `cargo test --workspace`
