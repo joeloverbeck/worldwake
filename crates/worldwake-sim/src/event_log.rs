@@ -1,15 +1,18 @@
 //! Append-only event storage and deterministic tick indexing.
 
-use crate::{EventRecord, PendingEvent};
+use crate::{EventRecord, EventTag, PendingEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{EventId, Tick};
+use worldwake_core::{EntityId, EventId, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EventLog {
     events: Vec<EventRecord>,
     next_id: EventId,
     by_tick: BTreeMap<Tick, Vec<EventId>>,
+    by_actor: BTreeMap<EntityId, Vec<EventId>>,
+    by_place: BTreeMap<EntityId, Vec<EventId>>,
+    by_tag: BTreeMap<EventTag, Vec<EventId>>,
 }
 
 impl EventLog {
@@ -19,6 +22,9 @@ impl EventLog {
             events: Vec::new(),
             next_id: EventId(0),
             by_tick: BTreeMap::new(),
+            by_actor: BTreeMap::new(),
+            by_place: BTreeMap::new(),
+            by_tag: BTreeMap::new(),
         }
     }
 
@@ -26,8 +32,20 @@ impl EventLog {
         let event_id = self.next_id;
         let record = pending.into_record(event_id);
         let tick = record.tick;
+        let actor_id = record.actor_id;
+        let place_id = record.place_id;
+        let tags: Vec<_> = record.tags.iter().copied().collect();
         self.events.push(record);
         self.by_tick.entry(tick).or_default().push(event_id);
+        if let Some(actor_id) = actor_id {
+            self.by_actor.entry(actor_id).or_default().push(event_id);
+        }
+        if let Some(place_id) = place_id {
+            self.by_place.entry(place_id).or_default().push(event_id);
+        }
+        for tag in tags {
+            self.by_tag.entry(tag).or_default().push(event_id);
+        }
         self.next_id = EventId(self.next_id.0 + 1);
 
         event_id
@@ -43,6 +61,21 @@ impl EventLog {
     #[must_use]
     pub fn events_at_tick(&self, tick: Tick) -> &[EventId] {
         self.by_tick.get(&tick).map_or(&[], Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn events_by_actor(&self, actor: EntityId) -> &[EventId] {
+        self.by_actor.get(&actor).map_or(&[], Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn events_by_place(&self, place: EntityId) -> &[EventId] {
+        self.by_place.get(&place).map_or(&[], Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn events_by_tag(&self, tag: EventTag) -> &[EventId] {
+        self.by_tag.get(&tag).map_or(&[], Vec::as_slice)
     }
 
     #[must_use]
@@ -89,6 +122,25 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
             BTreeSet::from([EventTag::WorldMutation]),
+        )
+    }
+
+    fn pending_with_metadata(
+        tick: Tick,
+        actor_id: Option<EntityId>,
+        place_id: Option<EntityId>,
+        tags: BTreeSet<EventTag>,
+    ) -> PendingEvent {
+        PendingEvent::new(
+            tick,
+            CauseRef::Bootstrap,
+            actor_id,
+            vec![entity(3), entity(2)],
+            place_id,
+            Vec::new(),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+            tags,
         )
     }
 
@@ -205,5 +257,130 @@ mod tests {
         );
         assert_eq!(roundtrip.events_at_tick(Tick(2)), &[EventId(0), EventId(1)]);
         assert_eq!(roundtrip.events_at_tick(Tick(4)), &[EventId(2)]);
+    }
+
+    #[test]
+    fn events_by_actor_returns_emission_order_and_skips_none_actor_events() {
+        let mut log = EventLog::new();
+
+        let first = log.emit(pending_with_metadata(
+            Tick(1),
+            Some(entity(7)),
+            Some(entity(20)),
+            BTreeSet::from([EventTag::WorldMutation]),
+        ));
+        log.emit(pending_with_metadata(
+            Tick(2),
+            None,
+            Some(entity(20)),
+            BTreeSet::from([EventTag::System]),
+        ));
+        let third = log.emit(pending_with_metadata(
+            Tick(3),
+            Some(entity(7)),
+            Some(entity(21)),
+            BTreeSet::from([EventTag::Travel]),
+        ));
+
+        assert_eq!(log.events_by_actor(entity(7)), &[first, third]);
+        assert_eq!(log.events_by_actor(entity(999)), &[]);
+    }
+
+    #[test]
+    fn events_by_place_returns_emission_order_and_skips_none_place_events() {
+        let mut log = EventLog::new();
+
+        let first = log.emit(pending_with_metadata(
+            Tick(1),
+            Some(entity(7)),
+            Some(entity(30)),
+            BTreeSet::from([EventTag::WorldMutation]),
+        ));
+        log.emit(pending_with_metadata(
+            Tick(2),
+            Some(entity(8)),
+            None,
+            BTreeSet::from([EventTag::System]),
+        ));
+        let third = log.emit(pending_with_metadata(
+            Tick(3),
+            Some(entity(9)),
+            Some(entity(30)),
+            BTreeSet::from([EventTag::Travel]),
+        ));
+
+        assert_eq!(log.events_by_place(entity(30)), &[first, third]);
+        assert_eq!(log.events_by_place(entity(999)), &[]);
+    }
+
+    #[test]
+    fn events_by_tag_indexes_each_tag_and_returns_empty_slice_when_missing() {
+        let mut log = EventLog::new();
+
+        let first = log.emit(pending_with_metadata(
+            Tick(1),
+            Some(entity(7)),
+            Some(entity(30)),
+            BTreeSet::from([EventTag::System, EventTag::WorldMutation]),
+        ));
+        let second = log.emit(pending_with_metadata(
+            Tick(2),
+            Some(entity(8)),
+            Some(entity(31)),
+            BTreeSet::from([EventTag::Travel]),
+        ));
+        let third = log.emit(pending_with_metadata(
+            Tick(3),
+            None,
+            None,
+            BTreeSet::from([EventTag::System, EventTag::Travel]),
+        ));
+
+        assert_eq!(log.events_by_tag(EventTag::WorldMutation), &[first]);
+        assert_eq!(log.events_by_tag(EventTag::System), &[first, third]);
+        assert_eq!(log.events_by_tag(EventTag::Travel), &[second, third]);
+        assert_eq!(log.events_by_tag(EventTag::Combat), &[]);
+    }
+
+    #[test]
+    fn event_log_roundtrips_through_bincode_with_all_secondary_indices() {
+        let mut log = EventLog::new();
+        log.emit(pending_with_metadata(
+            Tick(2),
+            Some(entity(7)),
+            Some(entity(30)),
+            BTreeSet::from([EventTag::System, EventTag::WorldMutation]),
+        ));
+        log.emit(pending_with_metadata(
+            Tick(2),
+            Some(entity(7)),
+            None,
+            BTreeSet::from([EventTag::Travel]),
+        ));
+        log.emit(pending_with_metadata(
+            Tick(4),
+            None,
+            Some(entity(30)),
+            BTreeSet::from([EventTag::System]),
+        ));
+
+        let bytes = bincode::serialize(&log).unwrap();
+        let roundtrip: EventLog = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, log);
+        assert_eq!(
+            roundtrip.events_by_actor(entity(7)),
+            &[EventId(0), EventId(1)]
+        );
+        assert_eq!(
+            roundtrip.events_by_place(entity(30)),
+            &[EventId(0), EventId(2)]
+        );
+        assert_eq!(
+            roundtrip.events_by_tag(EventTag::System),
+            &[EventId(0), EventId(2)]
+        );
+        assert_eq!(roundtrip.events_by_tag(EventTag::Travel), &[EventId(1)]);
+        assert_eq!(roundtrip.events_by_tag(EventTag::Combat), &[]);
     }
 }

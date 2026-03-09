@@ -1,6 +1,6 @@
 # E06EVELOG-005: EventLog Secondary Indices (Actor, Place, Tag)
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — extends `EventLog` in `worldwake-sim`
@@ -12,12 +12,13 @@ The event log needs secondary indices by actor, place, and tag for efficient que
 
 ## Assumption Reassessment (2026-03-09)
 
-1. `EventLog` exists from E06EVELOG-004 with `events: Vec<EventRecord>`, `next_id`, and `by_tick` index — prerequisite
-2. `EventLog::emit` now accepts a pending event payload and assigns `EventId` internally; index maintenance still happens only inside `emit`
-3. `EventRecord` has `actor_id: Option<EntityId>`, `place_id: Option<EntityId>`, `tags: BTreeSet<EventTag>` — prerequisite (E06EVELOG-003)
-4. `EntityId` and `EventId` exist in `worldwake-core::ids` — confirmed
-5. `EventTag` exists from E06EVELOG-001 — prerequisite
-6. Project convention: `BTreeMap` for ordered indices — confirmed
+1. `EventLog` already exists from E06EVELOG-004 with append-only `events: Vec<EventRecord>`, `next_id`, and `by_tick: BTreeMap<Tick, Vec<EventId>>` — confirmed in `crates/worldwake-sim/src/event_log.rs`
+2. `EventLog::emit(&mut self, pending: PendingEvent) -> EventId` is already the only append surface and the only valid place to maintain secondary indices — confirmed
+3. `PendingEvent` / `EventRecord` already carry `actor_id: Option<EntityId>`, `place_id: Option<EntityId>`, and `tags: BTreeSet<EventTag>` — confirmed in `crates/worldwake-sim/src/event_record.rs`
+4. Existing `EventLog` tests already live inline in `crates/worldwake-sim/src/event_log.rs`; this ticket should extend that suite rather than introducing a parallel test module
+5. `EntityId`, `EventId`, and `Tick` exist in `worldwake-core::ids` — confirmed
+6. `EventTag` exists from E06EVELOG-001 and is ordered, so it is safe as a `BTreeMap` key — confirmed
+7. Project convention remains `BTreeMap` for deterministic key order and `Vec<EventId>` for emission-order-preserving value storage — confirmed
 
 ## Architecture Check
 
@@ -26,6 +27,7 @@ The event log needs secondary indices by actor, place, and tag for efficient que
 3. Actor and place indices only insert when the respective field is `Some`
 4. Tag index inserts one entry per tag in the event's `tags` set
 5. All indices use `BTreeMap` for deterministic iteration order
+6. Query methods should follow the existing `events_at_tick` API and return borrowed slices backed by internal index storage; this avoids unnecessary allocation and keeps the API consistent
 
 ## What to Change
 
@@ -53,13 +55,9 @@ After appending the event and updating `by_tick`:
 
 Each returns an empty slice if no events match.
 
-### 4. Update serialization
-
-Ensure new fields are included in `Serialize`/`Deserialize` derives. Update any existing round-trip tests.
-
 ## Files to Touch
 
-- `crates/worldwake-sim/src/event_log.rs` (modify — add index fields, update emit, add query methods)
+- `crates/worldwake-sim/src/event_log.rs` (modify — add index fields, update `emit`, add query methods, extend existing tests)
 
 ## Out of Scope
 
@@ -67,6 +65,7 @@ Ensure new fields are included in `Serialize`/`Deserialize` derives. Update any 
 - Composite queries (e.g. actor + tick range) — not needed yet
 - Index compaction or pagination
 - EventLog hash stability (separate concern)
+- Generalizing indices behind a shared abstraction unless the implementation would otherwise repeat meaningful logic; this ticket should stay small and direct
 
 ## Acceptance Criteria
 
@@ -95,7 +94,7 @@ Ensure new fields are included in `Serialize`/`Deserialize` derives. Update any 
 
 ### New/Modified Tests
 
-1. `crates/worldwake-sim/src/event_log.rs` — actor index queries, place index queries, tag index queries, None-field exclusion, multi-tag indexing, round-trip with populated indices
+1. `crates/worldwake-sim/src/event_log.rs` — actor index queries, place index queries, tag index queries, `None`-field exclusion, multi-tag indexing, empty-slice behavior for absent keys, and round-trip with populated secondary indices
 
 ### Commands
 
@@ -103,3 +102,10 @@ Ensure new fields are included in `Serialize`/`Deserialize` derives. Update any 
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
 4. `cargo fmt --check`
+
+## Outcome
+
+- Completion date: 2026-03-09
+- What actually changed: extended `EventLog` with deterministic secondary indices for actor, place, and tag; kept `emit(PendingEvent)` as the single append-and-index maintenance path; added borrowed-slice query methods for all three indices; extended the inline `event_log.rs` test suite to cover emission-order preservation, `None` exclusions, multi-tag indexing, empty-key behavior, and bincode round-tripping of populated secondary indices
+- Deviations from original plan: corrected the ticket first so it matched the existing `PendingEvent`-based architecture and existing inline test layout; no broader abstraction layer was introduced because the direct `BTreeMap<Key, Vec<EventId>>` shape is currently the cleanest and most extensible fit for the codebase
+- Verification results: `cargo test -p worldwake-sim`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo fmt`, and `cargo fmt --check` passed

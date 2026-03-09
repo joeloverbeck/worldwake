@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Foundational Principles
 
-Read `docs/FOUNDATIONS.md` before making any design decision. It defines the 9 non-negotiable principles that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, and concrete state over abstract scores. All code, specs, and architectural choices must be evaluated against these principles.
+Read `docs/FOUNDATIONS.md` before making any design decision. It defines 13 non-negotiable principles in 4 categories (Causal Foundations, World Dynamics, Agent Architecture, System Architecture) that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, concrete state over abstract scores, locality of information, feedback dampening, agent diversity, and system decoupling. All code, specs, and architectural choices must be evaluated against these principles.
 
 ## Project
 
@@ -71,7 +71,9 @@ The foundation crate contains all authoritative types and the ECS world boundary
 These are non-negotiable design rules enforced by tests:
 
 - **No `Player` type** — only `ControlSource = Human | Ai | None`
-- **Belief-only planning** — agents never read world state directly (invariant 9.11)
+- **Belief-only planning** — agents never read world state directly (Principle 10)
+- **Information locality** — no system queries global state on behalf of an agent; information propagates at finite speed through the place graph (Principle 7)
+- **System decoupling** — system modules in `worldwake-systems` depend only on `worldwake-core` and `worldwake-sim`, never on each other (Principle 12)
 - **Append-only event log** — causal source of truth, never mutated
 - **Determinism** — `ChaCha8Rng` seeded, `BTreeMap`/`BTreeSet` only in authoritative state (no `HashMap`/`HashSet`), no floats, no wall-clock time
 - **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`
@@ -151,7 +153,7 @@ Do not duplicate or drift this procedure in other files; update `docs/archival-w
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (1039 symbols, 3431 relationships, 84 execution flows).
+This project is indexed by GitNexus as **worldwake** (1076 symbols, 3601 relationships, 87 execution flows).
 
 ## Always Start Here
 
