@@ -4,6 +4,10 @@
 
 The final authoritative `WorldTxn` implementation lives in `worldwake-core`, not `worldwake-sim`. This archived ticket keeps the intermediate plan, but the final journal boundary was moved beside `World`.
 
+## Archive Amendment (2026-03-09, post E06EVELOG-010)
+
+The eager-mutation assumption described below is no longer current. `WorldTxn` now stages against an internal cloned `World` and only publishes authoritative state on `commit()`. Read-through still exists, but it reflects staged transaction state rather than leaked authoritative writes.
+
 **Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
@@ -173,3 +177,4 @@ Changed from the original plan:
 - wrapper calls are allowed to emit multiple canonical deltas when one world mutation changes multiple facts
 - archive journaling was intentionally removed from this ticket's scope because `archive_entity` is a composite teardown; a one-delta wrapper would have produced an incomplete causal record
 - the final architecture moved `WorldTxn` into `worldwake-core` so normal authoritative writes cannot bypass the journal by crossing a crate boundary
+- the later E06EVELOG-010 redesign replaced the observational eager journal with staged transaction semantics while preserving the canonical delta surface defined here

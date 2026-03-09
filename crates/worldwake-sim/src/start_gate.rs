@@ -207,6 +207,11 @@ mod tests {
         )
     }
 
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
     #[allow(clippy::unnecessary_wraps)]
     fn start_empty(_instance: &crate::ActionInstance) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
@@ -272,12 +277,14 @@ mod tests {
             let mut txn = new_txn(world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let target = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            commit_txn(txn);
             (actor, target)
         };
         {
             let mut txn = new_txn(world, 2);
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(target, place).unwrap();
+            commit_txn(txn);
         }
         (actor, target, place)
     }
@@ -358,7 +365,9 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
-            txn.create_agent("Dormant", ControlSource::None).unwrap()
+            let actor = txn.create_agent("Dormant", ControlSource::None).unwrap();
+            commit_txn(txn);
+            actor
         };
         let affordance = Affordance {
             def_id: ActionDefId(0),
@@ -420,6 +429,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut world, 4);
             txn.set_ground_location(target, other_place).unwrap();
+            commit_txn(txn);
         }
         let affordance = Affordance {
             def_id: ActionDefId(0),
@@ -483,6 +493,7 @@ mod tests {
             let blocker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
             let first_target = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
             let second_target = txn.create_item_lot(CommodityKind::Coin, Quantity(1)).unwrap();
+            commit_txn(txn);
             (actor, blocker, first_target, second_target)
         };
         {
@@ -491,11 +502,13 @@ mod tests {
             txn.set_ground_location(blocker, place).unwrap();
             txn.set_ground_location(first_target, place).unwrap();
             txn.set_ground_location(second_target, place).unwrap();
+            commit_txn(txn);
         }
         {
             let mut txn = new_txn(&mut world, 3);
             txn.try_reserve(second_target, blocker, TickRange::new(Tick(5), Tick(8)).unwrap())
                 .unwrap();
+            commit_txn(txn);
         }
         let affordance = Affordance {
             def_id: ActionDefId(0),
@@ -556,12 +569,13 @@ mod tests {
     #[test]
     fn start_action_zero_duration_skips_reservations_and_still_starts() {
         let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
         let (actor, blocker, target, place) = {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let blocker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
             let target = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
-            let place = world.topology().place_ids().next().unwrap();
+            commit_txn(txn);
             (actor, blocker, target, place)
         };
         {
@@ -569,11 +583,13 @@ mod tests {
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(blocker, place).unwrap();
             txn.set_ground_location(target, place).unwrap();
+            commit_txn(txn);
         }
         {
             let mut txn = new_txn(&mut world, 3);
             txn.try_reserve(target, blocker, TickRange::new(Tick(5), Tick(8)).unwrap())
                 .unwrap();
+            commit_txn(txn);
         }
 
         let affordance = Affordance {
@@ -631,7 +647,9 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
-            txn.create_agent("Aster", ControlSource::Ai).unwrap()
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            actor
         };
         let affordance = Affordance {
             def_id: ActionDefId(0),
@@ -706,7 +724,9 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
-            txn.create_agent("Aster", ControlSource::Ai).unwrap()
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            actor
         };
         let affordance = Affordance {
             def_id: ActionDefId(9),
@@ -785,7 +805,9 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
-            txn.create_agent("Aster", ControlSource::Ai).unwrap()
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            actor
         };
         let affordance = Affordance {
             def_id: ActionDefId(0),

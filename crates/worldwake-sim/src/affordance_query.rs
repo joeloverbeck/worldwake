@@ -152,7 +152,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
-        Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        EventLog, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Default)]
@@ -243,6 +243,11 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
     }
 
     #[test]
@@ -431,13 +436,17 @@ mod tests {
         let mut human_world = World::new(build_prototype_world()).unwrap();
         let human = {
             let mut txn = new_txn(&mut human_world, 1);
-            txn.create_agent("Aster", ControlSource::Human).unwrap()
+            let human = txn.create_agent("Aster", ControlSource::Human).unwrap();
+            commit_txn(txn);
+            human
         };
 
         let mut ai_world = World::new(build_prototype_world()).unwrap();
         let ai = {
             let mut txn = new_txn(&mut ai_world, 1);
-            txn.create_agent("Aster", ControlSource::Ai).unwrap()
+            let ai = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            ai
         };
 
         let mut registry = ActionDefRegistry::new();
@@ -477,7 +486,9 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
-            txn.create_agent("Aster", ControlSource::None).unwrap()
+            let actor = txn.create_agent("Aster", ControlSource::None).unwrap();
+            commit_txn(txn);
+            actor
         };
 
         let mut registry = ActionDefRegistry::new();

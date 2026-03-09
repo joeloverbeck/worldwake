@@ -52,8 +52,8 @@ mod tests {
     use super::WorldKnowledgeView;
     use crate::KnowledgeView;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, Container, ControlSource, LoadUnits,
-        Quantity, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, CauseRef, CommodityKind, Container, ControlSource, EventLog,
+        LoadUnits, Quantity, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn assert_knowledge_view<T: KnowledgeView>() {}
@@ -68,6 +68,11 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
     }
 
     fn open_container(capacity: u32) -> Container {
@@ -91,10 +96,13 @@ mod tests {
             let mut txn = new_txn(&mut world, 1);
             let archived = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
             let live = txn.create_item_lot(CommodityKind::Coin, Quantity(2)).unwrap();
+            commit_txn(txn);
             (archived, live)
         };
 
-        new_txn(&mut world, 3).archive_entity(archived).unwrap();
+        let mut txn = new_txn(&mut world, 3);
+        txn.archive_entity(archived).unwrap();
+        commit_txn(txn);
 
         let view = WorldKnowledgeView::new(&world);
 
@@ -116,6 +124,7 @@ mod tests {
             let root = txn.create_container(open_container(20)).unwrap();
             let inner = txn.create_container(open_container(10)).unwrap();
             let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            commit_txn(txn);
             (root, inner, lot)
         };
 
@@ -125,6 +134,7 @@ mod tests {
             txn.put_into_container(inner, root).unwrap();
             txn.put_into_container(lot, inner).unwrap();
             txn.move_container_subtree(root, other_place).unwrap();
+            commit_txn(txn);
         }
 
         let view = WorldKnowledgeView::new(&world);
@@ -148,6 +158,7 @@ mod tests {
             let bag_bread = txn.create_item_lot(CommodityKind::Bread, Quantity(4)).unwrap();
             let bag_water = txn.create_item_lot(CommodityKind::Water, Quantity(9)).unwrap();
             let foreign_bread = txn.create_item_lot(CommodityKind::Bread, Quantity(8)).unwrap();
+            commit_txn(txn);
             (actor, loose_bread, bag, bag_bread, bag_water, foreign_bread)
         };
 
@@ -158,6 +169,7 @@ mod tests {
             txn.set_ground_location(bag, place).unwrap();
             txn.put_into_container(bag_bread, bag).unwrap();
             txn.put_into_container(bag_water, bag).unwrap();
+            commit_txn(txn);
         }
 
         let view = WorldKnowledgeView::new(&world);
@@ -180,6 +192,7 @@ mod tests {
             let ai = txn.create_agent("Bram", ControlSource::Ai).unwrap();
             let dormant = txn.create_agent("Cato", ControlSource::None).unwrap();
             let item = txn.create_item_lot(CommodityKind::Coin, Quantity(1)).unwrap();
+            commit_txn(txn);
             (human, ai, dormant, item)
         };
 
@@ -198,6 +211,7 @@ mod tests {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let item = txn.create_item_lot(CommodityKind::Coin, Quantity(1)).unwrap();
+            commit_txn(txn);
             (actor, item)
         };
 
@@ -205,6 +219,7 @@ mod tests {
             let mut txn = new_txn(&mut world, 3);
             txn.try_reserve(item, actor, TickRange::new(Tick(5), Tick(8)).unwrap())
                 .unwrap();
+            commit_txn(txn);
         }
 
         let view = WorldKnowledgeView::new(&world);

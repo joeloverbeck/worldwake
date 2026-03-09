@@ -192,6 +192,7 @@ mod tests {
         abort_calls: usize,
         complete_on_tick: bool,
         mutate_on_tick: bool,
+        fail_after_tick_mutation: bool,
         abort_reasons: Vec<AbortReason>,
     }
 
@@ -228,6 +229,11 @@ mod tests {
         )
     }
 
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
     #[allow(clippy::unnecessary_wraps)]
     fn start_none(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
@@ -243,6 +249,11 @@ mod tests {
             let name = format!("tick-agent-{}", state.tick_calls);
             txn.create_agent(&name, ControlSource::Ai)
                 .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        }
+        if state.fail_after_tick_mutation {
+            return Err(ActionError::InternalError(
+                "tick handler failed after staging mutation".to_string(),
+            ));
         }
         Ok(if state.complete_on_tick {
             ActionProgress::Complete
@@ -303,12 +314,14 @@ mod tests {
             let mut txn = new_txn(world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let target = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            commit_txn(txn);
             (actor, target)
         };
         {
             let mut txn = new_txn(world, 2);
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(target, place).unwrap();
+            commit_txn(txn);
         }
         (actor, target)
     }
@@ -615,6 +628,53 @@ mod tests {
 
         assert_eq!(outcome, TickOutcome::Continuing);
         assert_eq!(log.len(), 1);
+    }
+
+    #[test]
+    fn tick_action_handler_error_after_staging_does_not_leak_world_state() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        {
+            let mut state = hook_state().lock().unwrap();
+            state.mutate_on_tick = true;
+            state.fail_after_tick_mutation = true;
+        }
+
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
+            start_sample_action(
+                3,
+                vec![ReservationReq { target_index: 0 }],
+                vec![Precondition::ActorAlive],
+                BTreeSet::new(),
+            );
+        let before_agents = world.query_agent_data().count();
+
+        let err = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            TickActionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            TickActionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            ActionError::InternalError("tick handler failed after staging mutation".to_string())
+        );
+        assert_eq!(world.query_agent_data().count(), before_agents);
+        assert_eq!(log.len(), 1);
+        assert_eq!(
+            active_actions.get(&instance_id).unwrap().status,
+            ActionStatus::Active
+        );
     }
 
     #[test]

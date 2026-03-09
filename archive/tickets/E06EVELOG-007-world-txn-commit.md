@@ -4,6 +4,10 @@
 
 The final authoritative `WorldTxn` and `EventLog` implementation lives in `worldwake-core`, not `worldwake-sim`. This archived ticket preserves the intermediate commit-path plan before that consolidation.
 
+## Archive Amendment (2026-03-09, post E06EVELOG-010)
+
+The "commit an already-mutated world journal" assumption below is now historical only. `commit()` is the authoritative publish boundary: it swaps staged transaction state into `World` and emits the matching event record as one atomic visibility step.
+
 **Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
@@ -124,3 +128,4 @@ Changed from the original plan:
 - kept target canonicalization in `PendingEvent::new(...)` instead of duplicating it in `WorldTxn::commit`
 - removed `abort()` and `Drop` warning work from scope because, under the current immediate-mutation architecture, they would add lifecycle surface without improving causal completeness
 - the final architecture colocated commit with the authoritative log in `worldwake-core`, which is cleaner than leaving the commit boundary in `worldwake-sim`
+- the later E06EVELOG-010 redesign tightened this boundary further: authoritative world state no longer changes before `commit()`

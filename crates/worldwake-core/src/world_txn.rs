@@ -13,6 +13,7 @@ use std::ops::Deref;
 
 pub struct WorldTxn<'w> {
     world: &'w mut World,
+    staged_world: World,
     tick: Tick,
     cause: CauseRef,
     actor_id: Option<EntityId>,
@@ -43,6 +44,7 @@ impl<'w> WorldTxn<'w> {
         witness_data: WitnessData,
     ) -> Self {
         Self {
+            staged_world: world.clone(),
             world,
             tick,
             cause,
@@ -102,6 +104,7 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn commit(self, event_log: &mut EventLog) -> EventId {
+        *self.world = self.staged_world;
         let pending = PendingEvent::new(
             self.tick,
             self.cause,
@@ -130,7 +133,7 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn create_entity(&mut self, kind: EntityKind) -> EntityId {
-        let entity = self.world.create_entity(kind, self.tick);
+        let entity = self.staged_world.create_entity(kind, self.tick);
         self.record_created_entity(entity, kind);
         entity
     }
@@ -140,19 +143,19 @@ impl<'w> WorldTxn<'w> {
         name: &str,
         control_source: ControlSource,
     ) -> Result<EntityId, WorldError> {
-        let entity = self.world.create_agent(name, control_source, self.tick)?;
+        let entity = self.staged_world.create_agent(name, control_source, self.tick)?;
         self.record_created_entity(entity, EntityKind::Agent);
         Ok(entity)
     }
 
     pub fn create_office(&mut self, name: &str) -> Result<EntityId, WorldError> {
-        let entity = self.world.create_office(name, self.tick)?;
+        let entity = self.staged_world.create_office(name, self.tick)?;
         self.record_created_entity(entity, EntityKind::Office);
         Ok(entity)
     }
 
     pub fn create_faction(&mut self, name: &str) -> Result<EntityId, WorldError> {
-        let entity = self.world.create_faction(name, self.tick)?;
+        let entity = self.staged_world.create_faction(name, self.tick)?;
         self.record_created_entity(entity, EntityKind::Faction);
         Ok(entity)
     }
@@ -162,7 +165,7 @@ impl<'w> WorldTxn<'w> {
         commodity: CommodityKind,
         quantity: Quantity,
     ) -> Result<EntityId, WorldError> {
-        let entity = self.world.create_item_lot(commodity, quantity, self.tick)?;
+        let entity = self.staged_world.create_item_lot(commodity, quantity, self.tick)?;
         self.record_created_entity(entity, EntityKind::ItemLot);
         Ok(entity)
     }
@@ -174,21 +177,21 @@ impl<'w> WorldTxn<'w> {
         metadata: BTreeMap<String, String>,
     ) -> Result<EntityId, WorldError> {
         let entity = self
-            .world
+            .staged_world
             .create_unique_item(kind, name, metadata, self.tick)?;
         self.record_created_entity(entity, EntityKind::UniqueItem);
         Ok(entity)
     }
 
     pub fn create_container(&mut self, container: Container) -> Result<EntityId, WorldError> {
-        let entity = self.world.create_container(container, self.tick)?;
+        let entity = self.staged_world.create_container(container, self.tick)?;
         self.record_created_entity(entity, EntityKind::Container);
         Ok(entity)
     }
 
     pub fn archive_entity(&mut self, entity: EntityId) -> Result<(), WorldError> {
-        let snapshot = self.world.archive_mutation_snapshot(entity)?;
-        self.world.archive_entity(entity, self.tick)?;
+        let snapshot = self.staged_world.archive_mutation_snapshot(entity)?;
+        self.staged_world.archive_entity(entity, self.tick)?;
         self.push_archive_snapshot(snapshot);
         Ok(())
     }
@@ -229,9 +232,9 @@ impl<'w> WorldTxn<'w> {
         reserver: EntityId,
         range: TickRange,
     ) -> Result<ReservationId, WorldError> {
-        let reservation_id = self.world.try_reserve(entity, reserver, range)?;
+        let reservation_id = self.staged_world.try_reserve(entity, reserver, range)?;
         let reservation = self
-            .world
+            .staged_world
             .reservation(reservation_id)
             .cloned()
             .expect("created reservation should be readable immediately");
@@ -244,13 +247,13 @@ impl<'w> WorldTxn<'w> {
 
     pub fn release_reservation(&mut self, reservation_id: ReservationId) -> Result<(), WorldError> {
         let reservation = self
-            .world
+            .staged_world
             .reservation(reservation_id)
             .cloned()
             .ok_or_else(|| {
                 WorldError::InvalidOperation(format!("reservation {reservation_id} does not exist"))
             })?;
-        self.world.release_reservation(reservation_id)?;
+        self.staged_world.release_reservation(reservation_id)?;
         self.deltas
             .push(StateDelta::Reservation(ReservationDelta::Released {
                 reservation,
@@ -263,16 +266,18 @@ impl<'w> WorldTxn<'w> {
         lot_id: EntityId,
         amount: Quantity,
     ) -> Result<(EntityId, EntityId), WorldError> {
-        let before = self.world.get_component_item_lot(lot_id).cloned();
-        let (source_id, new_lot_id) = self.world.split_lot(lot_id, amount, self.tick, None)?;
+        let before = self.staged_world.get_component_item_lot(lot_id).cloned();
+        let (source_id, new_lot_id) = self
+            .staged_world
+            .split_lot(lot_id, amount, self.tick, None)?;
         let before = before.expect("successful split must start from an item lot");
         let after = self
-            .world
+            .staged_world
             .get_component_item_lot(source_id)
             .cloned()
             .expect("split source lot should remain available");
         let new_lot = self
-            .world
+            .staged_world
             .get_component_item_lot(new_lot_id)
             .cloned()
             .expect("split should create a readable child lot");
@@ -307,16 +312,16 @@ impl<'w> WorldTxn<'w> {
         target_id: EntityId,
         source_id: EntityId,
     ) -> Result<EntityId, WorldError> {
-        let target_before = self.world.get_component_item_lot(target_id).cloned();
-        let source_before = self.world.get_component_item_lot(source_id).cloned();
-        let source_snapshot = self.world.archive_mutation_snapshot(source_id)?;
+        let target_before = self.staged_world.get_component_item_lot(target_id).cloned();
+        let source_before = self.staged_world.get_component_item_lot(source_id).cloned();
+        let source_snapshot = self.staged_world.archive_mutation_snapshot(source_id)?;
         let merged_id = self
-            .world
+            .staged_world
             .merge_lots(target_id, source_id, self.tick, None)?;
         let target_before = target_before.expect("successful merge must start from a target lot");
         let source_before = source_before.expect("successful merge must start from a source lot");
         let target_after = self
-            .world
+            .staged_world
             .get_component_item_lot(merged_id)
             .cloned()
             .expect("merge target should remain available");
@@ -347,9 +352,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn set_owner(&mut self, entity: EntityId, owner: EntityId) -> Result<(), WorldError> {
-        let before = self.world.owner_of(entity);
-        self.world.set_owner(entity, owner)?;
-        let after = self.world.owner_of(entity);
+        let before = self.staged_world.owner_of(entity);
+        self.staged_world.set_owner(entity, owner)?;
+        let after = self.staged_world.owner_of(entity);
         self.push_single_target_relation_delta(
             entity,
             before,
@@ -361,9 +366,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn clear_owner(&mut self, entity: EntityId) -> Result<(), WorldError> {
-        let before = self.world.owner_of(entity);
-        self.world.clear_owner(entity)?;
-        let after = self.world.owner_of(entity);
+        let before = self.staged_world.owner_of(entity);
+        self.staged_world.clear_owner(entity)?;
+        let after = self.staged_world.owner_of(entity);
         self.push_single_target_relation_delta(
             entity,
             before,
@@ -375,9 +380,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn set_possessor(&mut self, entity: EntityId, holder: EntityId) -> Result<(), WorldError> {
-        let before = self.world.possessor_of(entity);
-        self.world.set_possessor(entity, holder)?;
-        let after = self.world.possessor_of(entity);
+        let before = self.staged_world.possessor_of(entity);
+        self.staged_world.set_possessor(entity, holder)?;
+        let after = self.staged_world.possessor_of(entity);
         self.push_single_target_relation_delta(
             entity,
             before,
@@ -389,9 +394,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn clear_possessor(&mut self, entity: EntityId) -> Result<(), WorldError> {
-        let before = self.world.possessor_of(entity);
-        self.world.clear_possessor(entity)?;
-        let after = self.world.possessor_of(entity);
+        let before = self.staged_world.possessor_of(entity);
+        self.staged_world.clear_possessor(entity)?;
+        let after = self.staged_world.possessor_of(entity);
         self.push_single_target_relation_delta(
             entity,
             before,
@@ -403,9 +408,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn add_member(&mut self, member: EntityId, faction: EntityId) -> Result<(), WorldError> {
-        let before = self.world.factions_of(member).contains(&faction);
-        self.world.add_member(member, faction)?;
-        let after = self.world.factions_of(member).contains(&faction);
+        let before = self.staged_world.factions_of(member).contains(&faction);
+        self.staged_world.add_member(member, faction)?;
+        let after = self.staged_world.factions_of(member).contains(&faction);
         self.push_presence_relation_delta(
             before,
             after,
@@ -416,9 +421,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn remove_member(&mut self, member: EntityId, faction: EntityId) -> Result<(), WorldError> {
-        let before = self.world.factions_of(member).contains(&faction);
-        self.world.remove_member(member, faction)?;
-        let after = self.world.factions_of(member).contains(&faction);
+        let before = self.staged_world.factions_of(member).contains(&faction);
+        self.staged_world.remove_member(member, faction)?;
+        let after = self.staged_world.factions_of(member).contains(&faction);
         self.push_presence_relation_delta(
             before,
             after,
@@ -434,25 +439,25 @@ impl<'w> WorldTxn<'w> {
         target: EntityId,
         strength: Permille,
     ) -> Result<(), WorldError> {
-        let before = self.world.loyalty_to(subject, target);
-        self.world.set_loyalty(subject, target, strength)?;
-        let after = self.world.loyalty_to(subject, target);
+        let before = self.staged_world.loyalty_to(subject, target);
+        self.staged_world.set_loyalty(subject, target, strength)?;
+        let after = self.staged_world.loyalty_to(subject, target);
         self.push_weighted_relation_delta(subject, target, before, after);
         Ok(())
     }
 
     pub fn clear_loyalty(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
-        let before = self.world.loyalty_to(subject, target);
-        self.world.clear_loyalty(subject, target)?;
-        let after = self.world.loyalty_to(subject, target);
+        let before = self.staged_world.loyalty_to(subject, target);
+        self.staged_world.clear_loyalty(subject, target)?;
+        let after = self.staged_world.loyalty_to(subject, target);
         self.push_weighted_relation_delta(subject, target, before, after);
         Ok(())
     }
 
     pub fn assign_office(&mut self, office: EntityId, holder: EntityId) -> Result<(), WorldError> {
-        let before = self.world.office_holder(office);
-        self.world.assign_office(office, holder)?;
-        let after = self.world.office_holder(office);
+        let before = self.staged_world.office_holder(office);
+        self.staged_world.assign_office(office, holder)?;
+        let after = self.staged_world.office_holder(office);
         self.push_single_target_relation_delta(
             office,
             before,
@@ -464,9 +469,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn vacate_office(&mut self, office: EntityId) -> Result<(), WorldError> {
-        let before = self.world.office_holder(office);
-        self.world.vacate_office(office)?;
-        let after = self.world.office_holder(office);
+        let before = self.staged_world.office_holder(office);
+        self.staged_world.vacate_office(office)?;
+        let after = self.staged_world.office_holder(office);
         self.push_single_target_relation_delta(
             office,
             before,
@@ -478,9 +483,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn add_hostility(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
-        let before = self.world.hostile_targets_of(subject).contains(&target);
-        self.world.add_hostility(subject, target)?;
-        let after = self.world.hostile_targets_of(subject).contains(&target);
+        let before = self.staged_world.hostile_targets_of(subject).contains(&target);
+        self.staged_world.add_hostility(subject, target)?;
+        let after = self.staged_world.hostile_targets_of(subject).contains(&target);
         self.push_presence_relation_delta(
             before,
             after,
@@ -495,9 +500,9 @@ impl<'w> WorldTxn<'w> {
         subject: EntityId,
         target: EntityId,
     ) -> Result<(), WorldError> {
-        let before = self.world.hostile_targets_of(subject).contains(&target);
-        self.world.remove_hostility(subject, target)?;
-        let after = self.world.hostile_targets_of(subject).contains(&target);
+        let before = self.staged_world.hostile_targets_of(subject).contains(&target);
+        self.staged_world.remove_hostility(subject, target)?;
+        let after = self.staged_world.hostile_targets_of(subject).contains(&target);
         self.push_presence_relation_delta(
             before,
             after,
@@ -508,9 +513,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn add_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
-        let before = self.world.known_facts(agent).contains(&fact);
-        self.world.add_known_fact(agent, fact)?;
-        let after = self.world.known_facts(agent).contains(&fact);
+        let before = self.staged_world.known_facts(agent).contains(&fact);
+        self.staged_world.add_known_fact(agent, fact)?;
+        let after = self.staged_world.known_facts(agent).contains(&fact);
         self.push_presence_relation_delta(
             before,
             after,
@@ -521,9 +526,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn remove_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
-        let before = self.world.known_facts(agent).contains(&fact);
-        self.world.remove_known_fact(agent, fact)?;
-        let after = self.world.known_facts(agent).contains(&fact);
+        let before = self.staged_world.known_facts(agent).contains(&fact);
+        self.staged_world.remove_known_fact(agent, fact)?;
+        let after = self.staged_world.known_facts(agent).contains(&fact);
         self.push_presence_relation_delta(
             before,
             after,
@@ -534,9 +539,9 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn add_believed_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
-        let before = self.world.believed_facts(agent).contains(&fact);
-        self.world.add_believed_fact(agent, fact)?;
-        let after = self.world.believed_facts(agent).contains(&fact);
+        let before = self.staged_world.believed_facts(agent).contains(&fact);
+        self.staged_world.add_believed_fact(agent, fact)?;
+        let after = self.staged_world.believed_facts(agent).contains(&fact);
         self.push_presence_relation_delta(
             before,
             after,
@@ -551,9 +556,9 @@ impl<'w> WorldTxn<'w> {
         agent: EntityId,
         fact: FactId,
     ) -> Result<(), WorldError> {
-        let before = self.world.believed_facts(agent).contains(&fact);
-        self.world.remove_believed_fact(agent, fact)?;
-        let after = self.world.believed_facts(agent).contains(&fact);
+        let before = self.staged_world.believed_facts(agent).contains(&fact);
+        self.staged_world.remove_believed_fact(agent, fact)?;
+        let after = self.staged_world.believed_facts(agent).contains(&fact);
         self.push_presence_relation_delta(
             before,
             after,
@@ -568,7 +573,7 @@ impl<'w> WorldTxn<'w> {
             .push(StateDelta::Entity(EntityDelta::Created { entity, kind }));
         self.deltas
             .extend(self.component_deltas_after_create(entity));
-        if self.world.is_in_transit(entity) {
+        if self.staged_world.is_in_transit(entity) {
             self.deltas.push(StateDelta::Relation(RelationDelta::Added {
                 relation_kind: RelationKind::InTransit,
                 relation: RelationValue::InTransit { entity },
@@ -580,23 +585,23 @@ impl<'w> WorldTxn<'w> {
         let mut deltas = Vec::new();
 
         for value in [
-            self.world
+            self.staged_world
                 .get_component_name(entity)
                 .cloned()
                 .map(ComponentValue::Name),
-            self.world
+            self.staged_world
                 .get_component_agent_data(entity)
                 .cloned()
                 .map(ComponentValue::AgentData),
-            self.world
+            self.staged_world
                 .get_component_item_lot(entity)
                 .cloned()
                 .map(ComponentValue::ItemLot),
-            self.world
+            self.staged_world
                 .get_component_unique_item(entity)
                 .cloned()
                 .map(ComponentValue::UniqueItem),
-            self.world
+            self.staged_world
                 .get_component_container(entity)
                 .cloned()
                 .map(ComponentValue::Container),
@@ -630,7 +635,7 @@ impl<'w> WorldTxn<'w> {
             .map(|id| (id, self.placement_snapshot(id)))
             .collect::<BTreeMap<_, _>>();
 
-        mutate(self.world)?;
+        mutate(&mut self.staged_world)?;
 
         let after_scope = self.placement_scope(entity);
         let mut ordered_scope = before_scope;
@@ -651,17 +656,17 @@ impl<'w> WorldTxn<'w> {
 
     fn placement_scope(&self, entity: EntityId) -> Vec<EntityId> {
         let mut scope = vec![entity];
-        if self.world.get_component_container(entity).is_some() {
-            scope.extend(self.world.recursive_contents_of(entity));
+        if self.staged_world.get_component_container(entity).is_some() {
+            scope.extend(self.staged_world.recursive_contents_of(entity));
         }
         scope
     }
 
     fn placement_snapshot(&self, entity: EntityId) -> PlacementSnapshot {
         PlacementSnapshot {
-            located_in: self.world.effective_place(entity),
-            in_transit: self.world.is_in_transit(entity),
-            contained_by: self.world.direct_container(entity),
+            located_in: self.staged_world.effective_place(entity),
+            in_transit: self.staged_world.is_in_transit(entity),
+            contained_by: self.staged_world.direct_container(entity),
         }
     }
 
@@ -1072,7 +1077,7 @@ impl Deref for WorldTxn<'_> {
     type Target = World;
 
     fn deref(&self) -> &Self::Target {
-        self.world
+        &self.staged_world
     }
 }
 
@@ -1161,6 +1166,11 @@ mod tests {
         )
     }
 
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
     fn archive_teardown_fixture(world: &mut World) -> ArchiveTeardownFixture {
         let archived = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
@@ -1227,6 +1237,33 @@ mod tests {
         assert!(txn.target_ids().is_empty());
         assert!(txn.tags().is_empty());
         assert!(txn.deltas().is_empty());
+    }
+
+    #[test]
+    fn dropping_uncommitted_transaction_leaves_authoritative_world_unchanged() {
+        let mut world = World::new(test_topology()).unwrap();
+
+        {
+            let mut txn = new_txn(&mut world);
+            let _ = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            assert_eq!(txn.query_agent_data().count(), 1);
+        }
+
+        assert_eq!(world.query_agent_data().count(), 0);
+    }
+
+    #[test]
+    fn commit_publishes_staged_world_to_authoritative_world() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        assert!(world.is_alive(agent));
+        assert_eq!(world.query_agent_data().count(), 1);
     }
 
     #[test]
@@ -1575,6 +1612,8 @@ mod tests {
                 after: Quantity(2),
             }) if *entity == split_off
         )));
+
+        commit_txn(split_txn);
 
         let mut merge_txn = new_txn(&mut world);
         merge_txn.merge_lots(source, split_off).unwrap();
