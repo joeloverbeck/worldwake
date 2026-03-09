@@ -12,6 +12,8 @@ pub mod action_instance;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
+pub mod affordance;
+pub mod affordance_query;
 pub mod knowledge_view;
 pub mod world_knowledge_view;
 
@@ -29,5 +31,9 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
+pub use affordance::Affordance;
+pub use affordance_query::{
+    enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
+};
 pub use knowledge_view::KnowledgeView;
 pub use world_knowledge_view::WorldKnowledgeView;

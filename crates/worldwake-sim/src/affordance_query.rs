@@ -1,0 +1,502 @@
+use crate::{
+    ActionDefRegistry, Affordance, Constraint, KnowledgeView, Precondition, TargetSpec,
+};
+use worldwake_core::EntityId;
+
+#[must_use]
+pub fn get_affordances(
+    view: &dyn KnowledgeView,
+    actor: EntityId,
+    registry: &ActionDefRegistry,
+) -> Vec<Affordance> {
+    let mut affordances = Vec::new();
+
+    for def in registry.iter() {
+        if !def
+            .actor_constraints
+            .iter()
+            .all(|constraint| evaluate_constraint(constraint, actor, view))
+        {
+            continue;
+        }
+
+        let mut bound_targets = Vec::new();
+        enumerate_bindings(&def.targets, actor, view, &mut bound_targets, &mut affordances, def.id);
+        affordances.retain(|affordance| {
+            affordance.def_id != def.id
+                || def
+                    .preconditions
+                    .iter()
+                    .all(|precondition| {
+                        evaluate_precondition(
+                            precondition,
+                            actor,
+                            &affordance.bound_targets,
+                            view,
+                        )
+                    })
+        });
+    }
+
+    affordances.sort();
+    affordances.dedup();
+    affordances
+}
+
+#[must_use]
+pub fn evaluate_constraint(
+    constraint: &Constraint,
+    actor: EntityId,
+    view: &dyn KnowledgeView,
+) -> bool {
+    match constraint {
+        Constraint::ActorAlive => view.is_alive(actor),
+        Constraint::ActorHasControl => view.has_control(actor),
+        Constraint::ActorAtPlace(place) => view.effective_place(actor) == Some(*place),
+        Constraint::ActorHasCommodity { kind, min_qty } => {
+            view.commodity_quantity(actor, *kind) >= *min_qty
+        }
+        Constraint::ActorKind(kind) => view.entity_kind(actor) == Some(*kind),
+    }
+}
+
+#[must_use]
+pub fn evaluate_precondition(
+    precondition: &Precondition,
+    actor: EntityId,
+    targets: &[EntityId],
+    view: &dyn KnowledgeView,
+) -> bool {
+    match precondition {
+        Precondition::ActorAlive => view.is_alive(actor),
+        Precondition::TargetExists(index) => targets
+            .get(usize::from(*index))
+            .is_some_and(|target| view.is_alive(*target)),
+        Precondition::TargetAtActorPlace(index) => {
+            let Some(target) = targets.get(usize::from(*index)).copied() else {
+                return false;
+            };
+            let Some(actor_place) = view.effective_place(actor) else {
+                return false;
+            };
+            view.effective_place(target) == Some(actor_place)
+        }
+        Precondition::TargetKind { target_index, kind } => targets
+            .get(usize::from(*target_index))
+            .is_some_and(|target| view.entity_kind(*target) == Some(*kind)),
+    }
+}
+
+#[must_use]
+pub fn enumerate_targets(
+    spec: &TargetSpec,
+    actor: EntityId,
+    view: &dyn KnowledgeView,
+) -> Vec<EntityId> {
+    let mut targets = match spec {
+        TargetSpec::SpecificEntity(entity) => view
+            .is_alive(*entity)
+            .then_some(*entity)
+            .into_iter()
+            .collect::<Vec<_>>(),
+        TargetSpec::EntityAtActorPlace { kind } => {
+            let Some(place) = view.effective_place(actor) else {
+                return Vec::new();
+            };
+            view.entities_at(place)
+                .into_iter()
+                .filter(|entity| view.entity_kind(*entity) == Some(*kind))
+                .collect::<Vec<_>>()
+        }
+    };
+
+    targets.sort();
+    targets.dedup();
+    targets
+}
+
+fn enumerate_bindings(
+    specs: &[TargetSpec],
+    actor: EntityId,
+    view: &dyn KnowledgeView,
+    current: &mut Vec<EntityId>,
+    affordances: &mut Vec<Affordance>,
+    def_id: crate::ActionDefId,
+) {
+    if let Some((spec, remaining)) = specs.split_first() {
+        for target in enumerate_targets(spec, actor, view) {
+            current.push(target);
+            enumerate_bindings(remaining, actor, view, current, affordances, def_id);
+            current.pop();
+        }
+        return;
+    }
+
+    affordances.push(Affordance {
+        def_id,
+        actor,
+        bound_targets: current.clone(),
+        explanation: None,
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
+    };
+    use crate::{
+        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, Constraint, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec, WorldKnowledgeView,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+    use worldwake_core::{
+        build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
+        Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+    };
+
+    #[derive(Default)]
+    struct StubKnowledgeView {
+        alive: BTreeMap<EntityId, bool>,
+        kinds: BTreeMap<EntityId, EntityKind>,
+        places: BTreeMap<EntityId, EntityId>,
+        colocated: BTreeMap<EntityId, Vec<EntityId>>,
+        commodities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        control: BTreeMap<EntityId, bool>,
+    }
+
+    impl crate::KnowledgeView for StubKnowledgeView {
+        fn is_alive(&self, entity: EntityId) -> bool {
+            self.alive.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.is_alive(entity)
+                .then(|| self.kinds.get(&entity).copied())
+                .flatten()
+        }
+
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.places.get(&entity).copied()
+        }
+
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.colocated.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.control.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn reservation_conflicts(
+            &self,
+            _entity: EntityId,
+            _range: worldwake_core::TickRange,
+        ) -> bool {
+            false
+        }
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 1,
+        }
+    }
+
+    fn sample_action_def(
+        id: ActionDefId,
+        actor_constraints: Vec<Constraint>,
+        targets: Vec<TargetSpec>,
+        preconditions: Vec<Precondition>,
+    ) -> ActionDef {
+        ActionDef {
+            id,
+            name: format!("action-{}", id.0),
+            actor_constraints,
+            targets,
+            preconditions,
+            reservation_requirements: vec![ReservationReq { target_index: 0 }],
+            duration: DurationExpr::Fixed(3),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            handler: ActionHandlerId(id.0),
+        }
+    }
+
+    fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
+        WorldTxn::new(
+            world,
+            Tick(tick),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    #[test]
+    fn enumerate_targets_filters_and_sorts_entities_for_actor_place() {
+        let actor = entity(1);
+        let place = entity(10);
+        let matching_a = entity(30);
+        let matching_b = entity(20);
+        let other_kind = entity(40);
+
+        let mut view = StubKnowledgeView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(matching_a, true);
+        view.alive.insert(matching_b, true);
+        view.alive.insert(other_kind, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(matching_a, EntityKind::Facility);
+        view.kinds.insert(matching_b, EntityKind::Facility);
+        view.kinds.insert(other_kind, EntityKind::ItemLot);
+        view.places.insert(actor, place);
+        view.colocated
+            .insert(place, vec![matching_a, other_kind, matching_b, matching_a]);
+
+        let targets = enumerate_targets(
+            &TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Facility,
+            },
+            actor,
+            &view,
+        );
+
+        assert_eq!(targets, vec![matching_b, matching_a]);
+    }
+
+    #[test]
+    fn evaluate_constraint_checks_control_and_commodity_requirements() {
+        let actor = entity(1);
+        let mut view = StubKnowledgeView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.control.insert(actor, true);
+        view.commodities
+            .insert((actor, CommodityKind::Bread), Quantity(3));
+
+        assert!(evaluate_constraint(&Constraint::ActorAlive, actor, &view));
+        assert!(evaluate_constraint(&Constraint::ActorHasControl, actor, &view));
+        assert!(evaluate_constraint(
+            &Constraint::ActorHasCommodity {
+                kind: CommodityKind::Bread,
+                min_qty: Quantity(2),
+            },
+            actor,
+            &view,
+        ));
+        assert!(!evaluate_constraint(
+            &Constraint::ActorHasCommodity {
+                kind: CommodityKind::Water,
+                min_qty: Quantity(1),
+            },
+            actor,
+            &view,
+        ));
+    }
+
+    #[test]
+    fn evaluate_precondition_returns_false_for_out_of_bounds_target_index() {
+        let actor = entity(1);
+        let mut view = StubKnowledgeView::default();
+        view.alive.insert(actor, true);
+
+        assert!(!evaluate_precondition(
+            &Precondition::TargetExists(2),
+            actor,
+            &[entity(4)],
+            &view,
+        ));
+        assert!(!evaluate_precondition(
+            &Precondition::TargetKind {
+                target_index: 1,
+                kind: EntityKind::Facility,
+            },
+            actor,
+            &[entity(4)],
+            &view,
+        ));
+    }
+
+    #[test]
+    fn get_affordances_sorts_and_deduplicates_equivalent_results() {
+        let actor = entity(1);
+        let place = entity(10);
+        let target_a = entity(20);
+        let target_b = entity(30);
+
+        let mut view = StubKnowledgeView::default();
+        for entity in [actor, target_a, target_b] {
+            view.alive.insert(entity, true);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target_a, EntityKind::Facility);
+        view.kinds.insert(target_b, EntityKind::Facility);
+        view.places.insert(actor, place);
+        view.places.insert(target_a, place);
+        view.places.insert(target_b, place);
+        view.colocated
+            .insert(place, vec![target_b, target_a, target_b]);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Facility,
+            }],
+            vec![Precondition::TargetAtActorPlace(0)],
+        ));
+        registry.register(sample_action_def(
+            ActionDefId(1),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(target_b)],
+            vec![Precondition::TargetExists(0)],
+        ));
+
+        let affordances = get_affordances(&view, actor, &registry);
+
+        assert_eq!(affordances.len(), 3);
+        assert_eq!(affordances[0].def_id, ActionDefId(0));
+        assert_eq!(affordances[0].bound_targets, vec![target_a]);
+        assert_eq!(affordances[1].def_id, ActionDefId(0));
+        assert_eq!(affordances[1].bound_targets, vec![target_b]);
+        assert_eq!(affordances[2].def_id, ActionDefId(1));
+        assert_eq!(affordances[2].bound_targets, vec![target_b]);
+    }
+
+    #[test]
+    fn get_affordances_filters_false_constraints_preconditions_and_missing_targets() {
+        let actor = entity(1);
+        let place = entity(10);
+        let target = entity(20);
+
+        let mut view = StubKnowledgeView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Facility);
+        view.places.insert(actor, place);
+        view.places.insert(target, place);
+        view.colocated.insert(place, vec![target]);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorHasControl],
+            vec![TargetSpec::SpecificEntity(target)],
+            vec![Precondition::TargetExists(0)],
+        ));
+        registry.register(sample_action_def(
+            ActionDefId(1),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(target)],
+            vec![Precondition::TargetKind {
+                target_index: 0,
+                kind: EntityKind::Container,
+            }],
+        ));
+        registry.register(sample_action_def(
+            ActionDefId(2),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(entity(99))],
+            vec![Precondition::TargetExists(0)],
+        ));
+        registry.register(sample_action_def(
+            ActionDefId(3),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(target)],
+            vec![Precondition::TargetExists(4)],
+        ));
+
+        let affordances = get_affordances(&view, actor, &registry);
+
+        assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn world_knowledge_view_affordances_match_for_human_and_ai_control() {
+        let mut human_world = World::new(build_prototype_world()).unwrap();
+        let human = {
+            let mut txn = new_txn(&mut human_world, 1);
+            txn.create_agent("Aster", ControlSource::Human).unwrap()
+        };
+
+        let mut ai_world = World::new(build_prototype_world()).unwrap();
+        let ai = {
+            let mut txn = new_txn(&mut ai_world, 1);
+            txn.create_agent("Aster", ControlSource::Ai).unwrap()
+        };
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            Vec::new(),
+            vec![Precondition::ActorAlive],
+        ));
+        registry.register(sample_action_def(
+            ActionDefId(1),
+            vec![Constraint::ActorHasControl],
+            Vec::new(),
+            vec![Precondition::ActorAlive],
+        ));
+
+        let human_affordances =
+            get_affordances(&WorldKnowledgeView::new(&human_world), human, &registry);
+        let ai_affordances = get_affordances(&WorldKnowledgeView::new(&ai_world), ai, &registry);
+
+        assert_eq!(human_affordances.len(), 2);
+        assert_eq!(ai_affordances.len(), 2);
+        assert_eq!(
+            human_affordances
+                .iter()
+                .map(|affordance| (affordance.def_id, affordance.bound_targets.clone()))
+                .collect::<Vec<_>>(),
+            ai_affordances
+                .iter()
+                .map(|affordance| (affordance.def_id, affordance.bound_targets.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn world_knowledge_view_none_control_only_changes_actor_has_control_actions() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            txn.create_agent("Aster", ControlSource::None).unwrap()
+        };
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            Vec::new(),
+            vec![Precondition::ActorAlive],
+        ));
+        registry.register(sample_action_def(
+            ActionDefId(1),
+            vec![Constraint::ActorHasControl],
+            Vec::new(),
+            vec![Precondition::ActorAlive],
+        ));
+
+        let affordances = get_affordances(&WorldKnowledgeView::new(&world), actor, &registry);
+
+        assert_eq!(affordances.len(), 1);
+        assert_eq!(affordances[0].def_id, ActionDefId(0));
+    }
+}
