@@ -43,6 +43,26 @@ macro_rules! with_authoritative_components {
                 "AgentData",
                 |kind| kind == EntityKind::Agent
             }
+            {
+                item_lots,
+                ItemLot,
+                insert_item_lot,
+                get_item_lot,
+                get_item_lot_mut,
+                remove_item_lot,
+                has_item_lot,
+                iter_item_lots,
+                insert_component_item_lot,
+                get_component_item_lot,
+                get_component_item_lot_mut,
+                remove_component_item_lot,
+                has_component_item_lot,
+                entities_with_item_lot,
+                query_item_lot,
+                count_with_item_lot,
+                "ItemLot",
+                |kind| kind == EntityKind::ItemLot
+            }
         }
     };
 }

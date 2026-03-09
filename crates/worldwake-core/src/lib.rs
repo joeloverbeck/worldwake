@@ -46,7 +46,7 @@ pub use control::ControlSource;
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
 pub use ids::{EntityId, EventId, Seed, Tick, TravelEdgeId};
-pub use items::{CommodityKind, LotOperation, ProvenanceEntry, TradeCategory};
+pub use items::{CommodityKind, ItemLot, LotOperation, ProvenanceEntry, TradeCategory};
 pub use numerics::{LoadUnits, Permille, Quantity};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use traits::{Component, RelationRecord};

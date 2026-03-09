@@ -46,14 +46,7 @@ mod tests {
     ];
 
     fn assert_entity_kind_bounds<
-        T: Copy
-            + Clone
-            + Eq
-            + Ord
-            + std::hash::Hash
-            + std::fmt::Debug
-            + Serialize
-            + DeserializeOwned,
+        T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
     >() {
     }
 

@@ -26,10 +26,7 @@ impl EntityAllocator {
 
     pub fn create_entity(&mut self, kind: EntityKind, created_at: Tick) -> EntityId {
         let slot = self.allocate_slot();
-        let record = self
-            .slots
-            .entry(slot)
-            .or_insert_with(|| SlotRecord::new(0));
+        let record = self.slots.entry(slot).or_insert_with(|| SlotRecord::new(0));
 
         debug_assert!(record.meta.is_none(), "reused slot must be empty");
 
@@ -101,7 +98,10 @@ impl EntityAllocator {
 
         record.meta = None;
         record.generation = record.generation.checked_add(1).ok_or_else(|| {
-            WorldError::InvariantViolation(format!("entity generation overflow for slot {}", id.slot))
+            WorldError::InvariantViolation(format!(
+                "entity generation overflow for slot {}",
+                id.slot
+            ))
         })?;
         self.free_slots.insert(id.slot);
         Ok(())
@@ -109,12 +109,14 @@ impl EntityAllocator {
 
     #[must_use]
     pub fn is_alive(&self, id: EntityId) -> bool {
-        self.get_meta(id).is_some_and(|meta| meta.archived_at.is_none())
+        self.get_meta(id)
+            .is_some_and(|meta| meta.archived_at.is_none())
     }
 
     #[must_use]
     pub fn is_archived(&self, id: EntityId) -> bool {
-        self.get_meta(id).is_some_and(|meta| meta.archived_at.is_some())
+        self.get_meta(id)
+            .is_some_and(|meta| meta.archived_at.is_some())
     }
 
     #[must_use]
@@ -132,8 +134,10 @@ impl EntityAllocator {
     }
 
     pub fn entity_ids(&self) -> impl Iterator<Item = EntityId> + '_ {
-        self.all_entity_ids()
-            .filter(|entity| self.get_meta(*entity).is_some_and(|meta| meta.archived_at.is_none()))
+        self.all_entity_ids().filter(|entity| {
+            self.get_meta(*entity)
+                .is_some_and(|meta| meta.archived_at.is_none())
+        })
     }
 
     fn allocate_slot(&mut self) -> u32 {
@@ -172,8 +176,8 @@ impl SlotRecord {
 #[cfg(test)]
 mod tests {
     use super::EntityAllocator;
-    use crate::{EntityId, EntityKind, WorldError};
     use crate::Tick;
+    use crate::{EntityId, EntityKind, WorldError};
 
     #[test]
     fn create_produces_unique_ids() {

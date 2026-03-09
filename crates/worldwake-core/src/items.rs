@@ -1,6 +1,6 @@
-//! Item-domain taxonomy types for stackable commodities and trade grouping.
+//! Item-domain taxonomy types for stackable commodities, lots, and trade grouping.
 
-use crate::{EntityId, EventId, Quantity, Tick};
+use crate::{Component, EntityId, EventId, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 
 /// Stackable commodity kinds available in Phase 1.
@@ -102,10 +102,20 @@ pub struct ProvenanceEntry {
     pub amount: Quantity,
 }
 
+/// Stackable conserved commodity lot stored as an ECS component on `ItemLot` entities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ItemLot {
+    pub commodity: CommodityKind,
+    pub quantity: Quantity,
+    pub provenance: Vec<ProvenanceEntry>,
+}
+
+impl Component for ItemLot {}
+
 #[cfg(test)]
 mod tests {
-    use super::{CommodityKind, LotOperation, ProvenanceEntry, TradeCategory};
-    use crate::{EntityId, EventId, Quantity, Tick};
+    use super::{CommodityKind, ItemLot, LotOperation, ProvenanceEntry, TradeCategory};
+    use crate::{traits::Component, EntityId, EventId, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
 
     fn assert_enum_bounds<
@@ -133,6 +143,12 @@ mod tests {
     #[test]
     fn provenance_entry_trait_bounds() {
         assert_struct_bounds::<ProvenanceEntry>();
+    }
+
+    #[test]
+    fn item_lot_component_bounds() {
+        fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
+        assert_component_bounds::<ItemLot>();
     }
 
     #[test]
@@ -238,6 +254,38 @@ mod tests {
             let roundtrip: ProvenanceEntry = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, entry);
         }
+    }
+
+    #[test]
+    fn item_lot_roundtrips_through_bincode() {
+        let lot = ItemLot {
+            commodity: CommodityKind::Grain,
+            quantity: Quantity(12),
+            provenance: vec![
+                ProvenanceEntry {
+                    tick: Tick(3),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    source_lot: None,
+                    amount: Quantity(12),
+                },
+                ProvenanceEntry {
+                    tick: Tick(5),
+                    event_id: Some(EventId(2)),
+                    operation: LotOperation::Produced,
+                    source_lot: Some(EntityId {
+                        slot: 4,
+                        generation: 1,
+                    }),
+                    amount: Quantity(4),
+                },
+            ],
+        };
+
+        let bytes = bincode::serialize(&lot).unwrap();
+        let roundtrip: ItemLot = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, lot);
     }
 
     #[test]

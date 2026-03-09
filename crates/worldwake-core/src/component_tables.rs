@@ -1,6 +1,11 @@
 //! Explicit typed component storage.
 
-use crate::{component_schema::with_authoritative_components, components::{AgentData, Name}, EntityId};
+use crate::{
+    component_schema::with_authoritative_components,
+    components::{AgentData, Name},
+    items::ItemLot,
+    EntityId,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -15,7 +20,11 @@ macro_rules! component_table_methods {
         $field:ident,
         $component_ty:ty
     ) => {
-        pub fn $insert_fn(&mut self, entity: EntityId, component: $component_ty) -> Option<$component_ty> {
+        pub fn $insert_fn(
+            &mut self,
+            entity: EntityId,
+            component: $component_ty,
+        ) -> Option<$component_ty> {
             self.$field.insert(entity, component)
         }
 
@@ -36,7 +45,9 @@ macro_rules! component_table_methods {
         }
 
         pub fn $iter_fn(&self) -> impl Iterator<Item = (EntityId, &$component_ty)> + '_ {
-            self.$field.iter().map(|(entity, component)| (*entity, component))
+            self.$field
+                .iter()
+                .map(|(entity, component)| (*entity, component))
         }
     };
 }
@@ -82,7 +93,7 @@ mod tests {
     use super::ComponentTables;
     use crate::{
         components::{AgentData, Name},
-        ControlSource, EntityId,
+        ControlSource, EntityId, ItemLot, LotOperation, ProvenanceEntry, Quantity, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -98,6 +109,7 @@ mod tests {
 
         assert_eq!(tables.iter_names().count(), 0);
         assert_eq!(tables.iter_agent_data().count(), 0);
+        assert_eq!(tables.iter_item_lots().count(), 0);
     }
 
     #[test]
@@ -174,11 +186,26 @@ mod tests {
                 control_source: ControlSource::Ai,
             },
         );
+        tables.insert_item_lot(
+            id,
+            ItemLot {
+                commodity: crate::CommodityKind::Apple,
+                quantity: Quantity(2),
+                provenance: vec![ProvenanceEntry {
+                    tick: Tick(1),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    source_lot: None,
+                    amount: Quantity(2),
+                }],
+            },
+        );
 
         tables.remove_all(id);
 
         assert_eq!(tables.get_name(id), None);
         assert_eq!(tables.get_agent_data(id), None);
+        assert_eq!(tables.get_item_lot(id), None);
     }
 
     #[test]
@@ -194,10 +221,45 @@ mod tests {
                 control_source: ControlSource::None,
             },
         );
+        tables.insert_item_lot(
+            entity(11),
+            ItemLot {
+                commodity: crate::CommodityKind::Water,
+                quantity: Quantity(6),
+                provenance: vec![ProvenanceEntry {
+                    tick: Tick(3),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    source_lot: None,
+                    amount: Quantity(6),
+                }],
+            },
+        );
 
         let bytes = bincode::serialize(&tables).unwrap();
         let roundtrip: ComponentTables = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, tables);
+    }
+
+    #[test]
+    fn insert_and_get_item_lot() {
+        let mut tables = ComponentTables::default();
+        let id = entity(10);
+        let lot = ItemLot {
+            commodity: crate::CommodityKind::Bread,
+            quantity: Quantity(4),
+            provenance: vec![ProvenanceEntry {
+                tick: Tick(2),
+                event_id: None,
+                operation: LotOperation::Created,
+                source_lot: None,
+                amount: Quantity(4),
+            }],
+        };
+
+        assert_eq!(tables.insert_item_lot(id, lot.clone()), None);
+        assert_eq!(tables.get_item_lot(id), Some(&lot));
+        assert!(tables.has_item_lot(id));
     }
 }

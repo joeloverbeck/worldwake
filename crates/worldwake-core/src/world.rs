@@ -1,8 +1,9 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_authoritative_components, AgentData, ComponentTables, EntityAllocator,
-    EntityId, EntityKind, EntityMeta, Name, Tick, Topology, WorldError,
+    component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
+    EntityAllocator, EntityId, EntityKind, EntityMeta, ItemLot, LotOperation, Name,
+    ProvenanceEntry, Quantity, Tick, Topology, WorldError,
 };
 use serde::{Deserialize, Serialize};
 
@@ -120,6 +121,36 @@ impl World {
         self.create_named_entity(EntityKind::Faction, name, tick)
     }
 
+    pub fn create_item_lot(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        tick: Tick,
+    ) -> Result<EntityId, WorldError> {
+        if quantity == Quantity(0) {
+            return Err(WorldError::InvalidOperation(
+                "item lot quantity must be greater than zero".to_string(),
+            ));
+        }
+
+        self.create_entity_with(EntityKind::ItemLot, tick, |world, entity| {
+            world.insert_component_item_lot(
+                entity,
+                ItemLot {
+                    commodity,
+                    quantity,
+                    provenance: vec![ProvenanceEntry {
+                        tick,
+                        event_id: None,
+                        operation: LotOperation::Created,
+                        source_lot: None,
+                        amount: quantity,
+                    }],
+                },
+            )
+        })
+    }
+
     pub fn archive_entity(&mut self, id: EntityId, tick: Tick) -> Result<(), WorldError> {
         if self.topology.place(id).is_some() {
             return Err(WorldError::InvalidOperation(format!(
@@ -186,7 +217,8 @@ impl World {
     }
 
     pub fn entities_with_name_and_agent_data(&self) -> impl Iterator<Item = EntityId> + '_ {
-        self.query_name_and_agent_data().map(|(entity, _, _)| entity)
+        self.query_name_and_agent_data()
+            .map(|(entity, _, _)| entity)
     }
 
     pub fn query_name_and_agent_data(
@@ -256,7 +288,10 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::World;
-    use crate::{AgentData, ControlSource, EntityId, EntityKind, Name, Place, PlaceTag, Tick, Topology, WorldError};
+    use crate::{
+        AgentData, CommodityKind, ControlSource, EntityId, EntityKind, ItemLot, LotOperation, Name,
+        Place, PlaceTag, ProvenanceEntry, Quantity, Tick, Topology, WorldError,
+    };
     use std::collections::BTreeSet;
 
     fn entity(slot: u32) -> EntityId {
@@ -323,7 +358,10 @@ mod tests {
 
         assert!(world.is_alive(id));
         assert_eq!(world.entity_kind(id), Some(EntityKind::Agent));
-        assert_eq!(world.get_component_name(id), Some(&Name("Aster".to_string())));
+        assert_eq!(
+            world.get_component_name(id),
+            Some(&Name("Aster".to_string()))
+        );
         assert_eq!(
             world.get_component_agent_data(id),
             Some(&AgentData {
@@ -335,12 +373,19 @@ mod tests {
     #[test]
     fn create_agent_components_queryable() {
         let mut world = World::new(Topology::new()).unwrap();
-        let id = world.create_agent("Bram", ControlSource::Ai, Tick(3)).unwrap();
+        let id = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
 
         assert_eq!(world.entities_with_name().collect::<Vec<_>>(), vec![id]);
-        assert_eq!(world.entities_with_agent_data().collect::<Vec<_>>(), vec![id]);
         assert_eq!(
-            world.entities_with_name_and_agent_data().collect::<Vec<_>>(),
+            world.entities_with_agent_data().collect::<Vec<_>>(),
+            vec![id]
+        );
+        assert_eq!(
+            world
+                .entities_with_name_and_agent_data()
+                .collect::<Vec<_>>(),
             vec![id]
         );
     }
@@ -376,6 +421,44 @@ mod tests {
     }
 
     #[test]
+    fn create_item_lot_produces_correct_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let id = world
+            .create_item_lot(CommodityKind::Apple, Quantity(10), Tick(5))
+            .unwrap();
+
+        assert!(world.is_alive(id));
+        assert_eq!(world.entity_kind(id), Some(EntityKind::ItemLot));
+        assert_eq!(
+            world.get_component_item_lot(id),
+            Some(&ItemLot {
+                commodity: CommodityKind::Apple,
+                quantity: Quantity(10),
+                provenance: vec![ProvenanceEntry {
+                    tick: Tick(5),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    source_lot: None,
+                    amount: Quantity(10),
+                }],
+            })
+        );
+    }
+
+    #[test]
+    fn create_item_lot_rejects_zero_quantity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let err = world
+            .create_item_lot(CommodityKind::Water, Quantity(0), Tick(8))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.entity_count(), 0);
+    }
+
+    #[test]
     fn factory_equivalent_to_manual_creation() {
         let mut factory_world = World::new(Topology::new()).unwrap();
         let factory_id = factory_world
@@ -397,7 +480,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(factory_id, manual_id);
-        assert_eq!(factory_world.entity_meta(factory_id), manual_world.entity_meta(manual_id));
+        assert_eq!(
+            factory_world.entity_meta(factory_id),
+            manual_world.entity_meta(manual_id)
+        );
         assert_eq!(
             factory_world.get_component_name(factory_id),
             manual_world.get_component_name(manual_id)
@@ -412,13 +498,20 @@ mod tests {
     fn multiple_agents_unique_ids() {
         let mut world = World::new(Topology::new()).unwrap();
 
-        let first = world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap();
+        let first = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
         let second = world
             .create_agent("Bram", ControlSource::Human, Tick(2))
             .unwrap();
 
         assert_ne!(first, second);
-        assert_eq!(world.entities_of_kind(EntityKind::Agent).collect::<Vec<_>>(), vec![first, second]);
+        assert_eq!(
+            world
+                .entities_of_kind(EntityKind::Agent)
+                .collect::<Vec<_>>(),
+            vec![first, second]
+        );
     }
 
     #[test]
@@ -436,6 +529,7 @@ mod tests {
         assert_eq!(world.all_entities().count(), 0);
         assert_eq!(world.count_with_name(), 0);
         assert_eq!(world.count_with_agent_data(), 0);
+        assert_eq!(world.count_with_item_lot(), 0);
     }
 
     #[test]
@@ -447,9 +541,13 @@ mod tests {
 
         assert_eq!(roundtrip, world);
         assert_eq!(roundtrip.entity_count(), 0);
-        assert_eq!(roundtrip.entities().collect::<Vec<_>>(), Vec::<EntityId>::new());
+        assert_eq!(
+            roundtrip.entities().collect::<Vec<_>>(),
+            Vec::<EntityId>::new()
+        );
         assert_eq!(roundtrip.count_with_name(), 0);
         assert_eq!(roundtrip.count_with_agent_data(), 0);
+        assert_eq!(roundtrip.count_with_item_lot(), 0);
     }
 
     #[test]
@@ -460,6 +558,9 @@ mod tests {
             .unwrap();
         let office = world.create_office("Ledger Hall", Tick(8)).unwrap();
         let faction = world.create_faction("River Pact", Tick(9)).unwrap();
+        let lot = world
+            .create_item_lot(CommodityKind::Grain, Quantity(6), Tick(10))
+            .unwrap();
 
         let bytes = bincode::serialize(&world).unwrap();
         let roundtrip: World = bincode::deserialize(&bytes).unwrap();
@@ -467,13 +568,14 @@ mod tests {
         assert_eq!(roundtrip, world);
         assert_eq!(
             roundtrip.entities().collect::<Vec<_>>(),
-            vec![entity(2), entity(5), agent, office, faction]
+            vec![entity(2), entity(5), agent, office, faction, lot]
         );
         assert_eq!(roundtrip.entity_kind(entity(2)), Some(EntityKind::Place));
         assert_eq!(roundtrip.entity_kind(entity(5)), Some(EntityKind::Place));
         assert_eq!(roundtrip.entity_kind(agent), Some(EntityKind::Agent));
         assert_eq!(roundtrip.entity_kind(office), Some(EntityKind::Office));
         assert_eq!(roundtrip.entity_kind(faction), Some(EntityKind::Faction));
+        assert_eq!(roundtrip.entity_kind(lot), Some(EntityKind::ItemLot));
         assert_eq!(
             roundtrip.get_component_name(agent),
             Some(&Name("Aster".to_string()))
@@ -490,6 +592,20 @@ mod tests {
             roundtrip.get_component_agent_data(agent),
             Some(&AgentData {
                 control_source: ControlSource::Ai,
+            })
+        );
+        assert_eq!(
+            roundtrip.get_component_item_lot(lot),
+            Some(&ItemLot {
+                commodity: CommodityKind::Grain,
+                quantity: Quantity(6),
+                provenance: vec![ProvenanceEntry {
+                    tick: Tick(10),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    source_lot: None,
+                    amount: Quantity(6),
+                }],
             })
         );
     }
@@ -516,7 +632,10 @@ mod tests {
             Some(&Name("Aster of the Square".to_string()))
         );
         assert_eq!(
-            roundtrip.query_name().map(|(entity, _)| entity).collect::<Vec<_>>(),
+            roundtrip
+                .query_name()
+                .map(|(entity, _)| entity)
+                .collect::<Vec<_>>(),
             vec![agent, office]
         );
         assert_eq!(
@@ -561,7 +680,10 @@ mod tests {
         let archived = world.create_entity(EntityKind::Office, Tick(2));
 
         world.archive_entity(archived, Tick(3)).unwrap();
-        assert_eq!(world.all_entities().collect::<Vec<_>>(), vec![live, archived]);
+        assert_eq!(
+            world.all_entities().collect::<Vec<_>>(),
+            vec![live, archived]
+        );
 
         world.purge_entity(archived).unwrap();
 
@@ -577,14 +699,48 @@ mod tests {
 
         world.archive_entity(archived_agent, Tick(4)).unwrap();
 
-        assert_eq!(world.entities_of_kind(EntityKind::Agent).collect::<Vec<_>>(), vec![agent]);
         assert_eq!(
-            world.entities_of_kind(EntityKind::Place).collect::<Vec<_>>(),
+            world
+                .entities_of_kind(EntityKind::Agent)
+                .collect::<Vec<_>>(),
+            vec![agent]
+        );
+        assert_eq!(
+            world
+                .entities_of_kind(EntityKind::Place)
+                .collect::<Vec<_>>(),
             vec![entity(2), entity(5)]
         );
         assert_eq!(
-            world.entities_of_kind(EntityKind::Office).collect::<Vec<_>>(),
+            world
+                .entities_of_kind(EntityKind::Office)
+                .collect::<Vec<_>>(),
             vec![office]
+        );
+    }
+
+    #[test]
+    fn query_item_lot_returns_live_entities_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let live = world
+            .create_item_lot(CommodityKind::Bread, Quantity(4), Tick(1))
+            .unwrap();
+        let archived = world
+            .create_item_lot(CommodityKind::Bread, Quantity(7), Tick(2))
+            .unwrap();
+
+        world.archive_entity(archived, Tick(3)).unwrap();
+
+        assert_eq!(
+            world.entities_with_item_lot().collect::<Vec<_>>(),
+            vec![live]
+        );
+        assert_eq!(
+            world
+                .query_item_lot()
+                .map(|(entity, lot)| (entity, lot.quantity))
+                .collect::<Vec<_>>(),
+            vec![(live, Quantity(4))]
         );
     }
 
@@ -613,6 +769,21 @@ mod tests {
     }
 
     #[test]
+    fn purge_cleans_item_lot_components() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world
+            .create_item_lot(CommodityKind::Coin, Quantity(3), Tick(1))
+            .unwrap();
+
+        world.archive_entity(id, Tick(2)).unwrap();
+        world.purge_entity(id).unwrap();
+
+        assert_eq!(world.entity_meta(id), None);
+        assert_eq!(world.get_component_item_lot(id), None);
+        assert_eq!(world.query_item_lot().count(), 0);
+    }
+
+    #[test]
     fn component_crud_roundtrip() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
@@ -625,7 +796,11 @@ mod tests {
             Some(&Name("Ledger Hall".to_string()))
         );
 
-        world.get_component_name_mut(id).unwrap().0.push_str(" Annex");
+        world
+            .get_component_name_mut(id)
+            .unwrap()
+            .0
+            .push_str(" Annex");
         assert_eq!(
             world.get_component_name(id),
             Some(&Name("Ledger Hall Annex".to_string()))
@@ -671,6 +846,39 @@ mod tests {
     }
 
     #[test]
+    fn insert_duplicate_item_lot_component_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(2), Tick(1))
+            .unwrap();
+
+        let err = world
+            .insert_component_item_lot(
+                id,
+                ItemLot {
+                    commodity: CommodityKind::Medicine,
+                    quantity: Quantity(2),
+                    provenance: vec![ProvenanceEntry {
+                        tick: Tick(1),
+                        event_id: None,
+                        operation: LotOperation::Created,
+                        source_lot: None,
+                        amount: Quantity(2),
+                    }],
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            WorldError::DuplicateComponent {
+                entity,
+                component_type: "ItemLot",
+            } if entity == id
+        ));
+    }
+
+    #[test]
     fn insert_agent_data_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
@@ -680,6 +888,31 @@ mod tests {
                 id,
                 AgentData {
                     control_source: ControlSource::Human,
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_item_lot_on_non_item_lot_entity_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_item_lot(
+                id,
+                ItemLot {
+                    commodity: CommodityKind::Firewood,
+                    quantity: Quantity(5),
+                    provenance: vec![ProvenanceEntry {
+                        tick: Tick(1),
+                        event_id: None,
+                        operation: LotOperation::Created,
+                        source_lot: None,
+                        amount: Quantity(5),
+                    }],
                 },
             )
             .unwrap_err();
@@ -718,7 +951,10 @@ mod tests {
             .unwrap();
         world.archive_entity(archived_named, Tick(4)).unwrap();
 
-        assert_eq!(world.entities_with_name().collect::<Vec<_>>(), vec![named_agent]);
+        assert_eq!(
+            world.entities_with_name().collect::<Vec<_>>(),
+            vec![named_agent]
+        );
         assert!(!world.has_component_name(unnamed_agent));
     }
 
@@ -814,10 +1050,7 @@ mod tests {
 
         assert_eq!(
             pairs,
-            vec![
-                (first, ControlSource::Human),
-                (second, ControlSource::Ai),
-            ]
+            vec![(first, ControlSource::Human), (second, ControlSource::Ai),]
         );
     }
 
@@ -955,6 +1188,8 @@ mod tests {
         assert_eq!(world.query_name().count(), 0);
         assert_eq!(world.entities_with_agent_data().count(), 0);
         assert_eq!(world.query_agent_data().count(), 0);
+        assert_eq!(world.entities_with_item_lot().count(), 0);
+        assert_eq!(world.query_item_lot().count(), 0);
         assert_eq!(world.entities_with_name_and_agent_data().count(), 0);
         assert_eq!(world.query_name_and_agent_data().count(), 0);
     }
@@ -996,6 +1231,7 @@ mod tests {
         assert_eq!(world.entity_count(), 4);
         assert_eq!(world.count_with_name(), 2);
         assert_eq!(world.count_with_agent_data(), 1);
+        assert_eq!(world.count_with_item_lot(), 0);
     }
 
     #[test]
@@ -1038,7 +1274,10 @@ mod tests {
         let left = build_world();
         let right = build_world();
 
-        assert_eq!(left.entities().collect::<Vec<_>>(), right.entities().collect::<Vec<_>>());
+        assert_eq!(
+            left.entities().collect::<Vec<_>>(),
+            right.entities().collect::<Vec<_>>()
+        );
         assert_eq!(
             left.all_entities().collect::<Vec<_>>(),
             right.all_entities().collect::<Vec<_>>()
@@ -1054,11 +1293,19 @@ mod tests {
         );
         assert_eq!(
             left.query_name_and_agent_data()
-                .map(|(entity, name, agent_data)| (entity, name.0.as_str(), agent_data.control_source))
+                .map(|(entity, name, agent_data)| (
+                    entity,
+                    name.0.as_str(),
+                    agent_data.control_source
+                ))
                 .collect::<Vec<_>>(),
             right
                 .query_name_and_agent_data()
-                .map(|(entity, name, agent_data)| (entity, name.0.as_str(), agent_data.control_source))
+                .map(|(entity, name, agent_data)| (
+                    entity,
+                    name.0.as_str(),
+                    agent_data.control_source
+                ))
                 .collect::<Vec<_>>()
         );
     }
@@ -1078,6 +1325,7 @@ mod tests {
         for place_id in [entity(2), entity(5)] {
             assert_eq!(world.get_component_name(place_id), None);
             assert_eq!(world.get_component_agent_data(place_id), None);
+            assert_eq!(world.get_component_item_lot(place_id), None);
         }
     }
 
