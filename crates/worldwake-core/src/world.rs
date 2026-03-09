@@ -98,6 +98,27 @@ impl World {
         self.allocator.create_entity(kind, tick)
     }
 
+    pub fn create_agent(
+        &mut self,
+        name: &str,
+        control_source: crate::ControlSource,
+        tick: Tick,
+    ) -> Result<EntityId, WorldError> {
+        self.create_entity_with(EntityKind::Agent, tick, |world, entity| {
+            world.insert_component_name(entity, Name(name.to_string()))?;
+            world.insert_component_agent_data(entity, AgentData { control_source })?;
+            Ok(())
+        })
+    }
+
+    pub fn create_office(&mut self, name: &str, tick: Tick) -> Result<EntityId, WorldError> {
+        self.create_named_entity(EntityKind::Office, name, tick)
+    }
+
+    pub fn create_faction(&mut self, name: &str, tick: Tick) -> Result<EntityId, WorldError> {
+        self.create_named_entity(EntityKind::Faction, name, tick)
+    }
+
     pub fn archive_entity(&mut self, id: EntityId, tick: Tick) -> Result<(), WorldError> {
         if self.topology.place(id).is_some() {
             return Err(WorldError::InvalidOperation(format!(
@@ -187,6 +208,47 @@ impl World {
         Ok(meta)
     }
 
+    fn create_named_entity(
+        &mut self,
+        kind: EntityKind,
+        name: &str,
+        tick: Tick,
+    ) -> Result<EntityId, WorldError> {
+        self.create_entity_with(kind, tick, |world, entity| {
+            world.insert_component_name(entity, Name(name.to_string()))
+        })
+    }
+
+    fn create_entity_with<F>(
+        &mut self,
+        kind: EntityKind,
+        tick: Tick,
+        init: F,
+    ) -> Result<EntityId, WorldError>
+    where
+        F: FnOnce(&mut Self, EntityId) -> Result<(), WorldError>,
+    {
+        let entity = self.create_entity(kind, tick);
+        if let Err(err) = init(self, entity) {
+            self.rollback_created_entity(entity, tick);
+            return Err(err);
+        }
+
+        Ok(entity)
+    }
+
+    fn rollback_created_entity(&mut self, entity: EntityId, tick: Tick) {
+        debug_assert!(
+            self.topology.place(entity).is_none(),
+            "factory rollback only supports non-topological entities"
+        );
+
+        self.archive_entity(entity, tick)
+            .expect("newly created entity should archive during rollback");
+        self.purge_entity(entity)
+            .expect("newly created entity should purge during rollback");
+    }
+
     with_authoritative_components!(world_component_api);
 }
 
@@ -248,6 +310,131 @@ mod tests {
         assert!(world.is_alive(id));
         assert_eq!(world.entity_kind(id), Some(EntityKind::Agent));
         assert_eq!(world.entity_meta(id).unwrap().created_at, Tick(4));
+    }
+
+    #[test]
+    fn create_agent_produces_correct_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let id = world
+            .create_agent("Aster", ControlSource::Human, Tick(7))
+            .unwrap();
+
+        assert!(world.is_alive(id));
+        assert_eq!(world.entity_kind(id), Some(EntityKind::Agent));
+        assert_eq!(world.get_component_name(id), Some(&Name("Aster".to_string())));
+        assert_eq!(
+            world.get_component_agent_data(id),
+            Some(&AgentData {
+                control_source: ControlSource::Human,
+            })
+        );
+    }
+
+    #[test]
+    fn create_agent_components_queryable() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_agent("Bram", ControlSource::Ai, Tick(3)).unwrap();
+
+        assert_eq!(world.entities_with_name().collect::<Vec<_>>(), vec![id]);
+        assert_eq!(world.entities_with_agent_data().collect::<Vec<_>>(), vec![id]);
+        assert_eq!(
+            world.entities_with_name_and_agent_data().collect::<Vec<_>>(),
+            vec![id]
+        );
+    }
+
+    #[test]
+    fn create_office_produces_correct_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let id = world.create_office("Ledger Hall", Tick(5)).unwrap();
+
+        assert!(world.is_alive(id));
+        assert_eq!(world.entity_kind(id), Some(EntityKind::Office));
+        assert_eq!(
+            world.get_component_name(id),
+            Some(&Name("Ledger Hall".to_string()))
+        );
+        assert_eq!(world.get_component_agent_data(id), None);
+    }
+
+    #[test]
+    fn create_faction_produces_correct_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let id = world.create_faction("River Pact", Tick(6)).unwrap();
+
+        assert!(world.is_alive(id));
+        assert_eq!(world.entity_kind(id), Some(EntityKind::Faction));
+        assert_eq!(
+            world.get_component_name(id),
+            Some(&Name("River Pact".to_string()))
+        );
+        assert_eq!(world.get_component_agent_data(id), None);
+    }
+
+    #[test]
+    fn factory_equivalent_to_manual_creation() {
+        let mut factory_world = World::new(Topology::new()).unwrap();
+        let factory_id = factory_world
+            .create_agent("Aster", ControlSource::Ai, Tick(9))
+            .unwrap();
+
+        let mut manual_world = World::new(Topology::new()).unwrap();
+        let manual_id = manual_world.create_entity(EntityKind::Agent, Tick(9));
+        manual_world
+            .insert_component_name(manual_id, Name("Aster".to_string()))
+            .unwrap();
+        manual_world
+            .insert_component_agent_data(
+                manual_id,
+                AgentData {
+                    control_source: ControlSource::Ai,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(factory_id, manual_id);
+        assert_eq!(factory_world.entity_meta(factory_id), manual_world.entity_meta(manual_id));
+        assert_eq!(
+            factory_world.get_component_name(factory_id),
+            manual_world.get_component_name(manual_id)
+        );
+        assert_eq!(
+            factory_world.get_component_agent_data(factory_id),
+            manual_world.get_component_agent_data(manual_id)
+        );
+    }
+
+    #[test]
+    fn multiple_agents_unique_ids() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let first = world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap();
+        let second = world
+            .create_agent("Bram", ControlSource::Human, Tick(2))
+            .unwrap();
+
+        assert_ne!(first, second);
+        assert_eq!(world.entities_of_kind(EntityKind::Agent).collect::<Vec<_>>(), vec![first, second]);
+    }
+
+    #[test]
+    fn factory_failure_rolls_back_allocated_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let err = world
+            .create_entity_with(EntityKind::Office, Tick(12), |_, _| {
+                Err(WorldError::InvalidOperation("boom".to_string()))
+            })
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(message) if message == "boom"));
+        assert_eq!(world.entity_count(), 0);
+        assert_eq!(world.all_entities().count(), 0);
+        assert_eq!(world.count_with_name(), 0);
+        assert_eq!(world.count_with_agent_data(), 0);
     }
 
     #[test]
