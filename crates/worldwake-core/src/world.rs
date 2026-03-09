@@ -3,9 +3,10 @@
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
     EntityAllocator, EntityId, EntityKind, EntityMeta, ItemLot, LotOperation, Name,
-    ProvenanceEntry, Quantity, Tick, Topology, WorldError,
+    ProvenanceEntry, Quantity, Tick, Topology, UniqueItem, UniqueItemKind, WorldError,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 macro_rules! world_component_api {
     ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
@@ -151,6 +152,25 @@ impl World {
         })
     }
 
+    pub fn create_unique_item(
+        &mut self,
+        kind: UniqueItemKind,
+        name: Option<&str>,
+        metadata: BTreeMap<String, String>,
+        tick: Tick,
+    ) -> Result<EntityId, WorldError> {
+        self.create_entity_with(EntityKind::UniqueItem, tick, |world, entity| {
+            world.insert_component_unique_item(
+                entity,
+                UniqueItem {
+                    kind,
+                    name: name.map(str::to_owned),
+                    metadata,
+                },
+            )
+        })
+    }
+
     pub fn archive_entity(&mut self, id: EntityId, tick: Tick) -> Result<(), WorldError> {
         if self.topology.place(id).is_some() {
             return Err(WorldError::InvalidOperation(format!(
@@ -290,9 +310,10 @@ mod tests {
     use super::World;
     use crate::{
         AgentData, CommodityKind, ControlSource, EntityId, EntityKind, ItemLot, LotOperation, Name,
-        Place, PlaceTag, ProvenanceEntry, Quantity, Tick, Topology, WorldError,
+        Place, PlaceTag, ProvenanceEntry, Quantity, Tick, Topology, UniqueItem, UniqueItemKind,
+        WorldError,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -459,6 +480,31 @@ mod tests {
     }
 
     #[test]
+    fn create_unique_item_produces_correct_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let id = world
+            .create_unique_item(
+                UniqueItemKind::Weapon,
+                Some("Rusty Sword"),
+                BTreeMap::from([("condition".to_string(), "worn".to_string())]),
+                Tick(5),
+            )
+            .unwrap();
+
+        assert!(world.is_alive(id));
+        assert_eq!(world.entity_kind(id), Some(EntityKind::UniqueItem));
+        assert_eq!(
+            world.get_component_unique_item(id),
+            Some(&UniqueItem {
+                kind: UniqueItemKind::Weapon,
+                name: Some("Rusty Sword".to_string()),
+                metadata: BTreeMap::from([("condition".to_string(), "worn".to_string())]),
+            })
+        );
+    }
+
+    #[test]
     fn factory_equivalent_to_manual_creation() {
         let mut factory_world = World::new(Topology::new()).unwrap();
         let factory_id = factory_world
@@ -561,6 +607,14 @@ mod tests {
         let lot = world
             .create_item_lot(CommodityKind::Grain, Quantity(6), Tick(10))
             .unwrap();
+        let unique_item = world
+            .create_unique_item(
+                UniqueItemKind::Artifact,
+                Some("Court Seal"),
+                BTreeMap::from([("origin".to_string(), "vault".to_string())]),
+                Tick(11),
+            )
+            .unwrap();
 
         let bytes = bincode::serialize(&world).unwrap();
         let roundtrip: World = bincode::deserialize(&bytes).unwrap();
@@ -568,7 +622,15 @@ mod tests {
         assert_eq!(roundtrip, world);
         assert_eq!(
             roundtrip.entities().collect::<Vec<_>>(),
-            vec![entity(2), entity(5), agent, office, faction, lot]
+            vec![
+                entity(2),
+                entity(5),
+                agent,
+                office,
+                faction,
+                lot,
+                unique_item
+            ]
         );
         assert_eq!(roundtrip.entity_kind(entity(2)), Some(EntityKind::Place));
         assert_eq!(roundtrip.entity_kind(entity(5)), Some(EntityKind::Place));
@@ -576,6 +638,10 @@ mod tests {
         assert_eq!(roundtrip.entity_kind(office), Some(EntityKind::Office));
         assert_eq!(roundtrip.entity_kind(faction), Some(EntityKind::Faction));
         assert_eq!(roundtrip.entity_kind(lot), Some(EntityKind::ItemLot));
+        assert_eq!(
+            roundtrip.entity_kind(unique_item),
+            Some(EntityKind::UniqueItem)
+        );
         assert_eq!(
             roundtrip.get_component_name(agent),
             Some(&Name("Aster".to_string()))
@@ -606,6 +672,14 @@ mod tests {
                     source_lot: None,
                     amount: Quantity(6),
                 }],
+            })
+        );
+        assert_eq!(
+            roundtrip.get_component_unique_item(unique_item),
+            Some(&UniqueItem {
+                kind: UniqueItemKind::Artifact,
+                name: Some("Court Seal".to_string()),
+                metadata: BTreeMap::from([("origin".to_string(), "vault".to_string())]),
             })
         );
     }
@@ -745,6 +819,41 @@ mod tests {
     }
 
     #[test]
+    fn query_unique_item_returns_live_entities_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let live = world
+            .create_unique_item(
+                UniqueItemKind::Weapon,
+                Some("Rusty Sword"),
+                BTreeMap::new(),
+                Tick(1),
+            )
+            .unwrap();
+        let archived = world
+            .create_unique_item(
+                UniqueItemKind::Contract,
+                Some("Charter"),
+                BTreeMap::from([("issuer".to_string(), "council".to_string())]),
+                Tick(2),
+            )
+            .unwrap();
+
+        world.archive_entity(archived, Tick(3)).unwrap();
+
+        assert_eq!(
+            world.entities_with_unique_item().collect::<Vec<_>>(),
+            vec![live]
+        );
+        assert_eq!(
+            world
+                .query_unique_item()
+                .map(|(entity, item)| (entity, item.kind))
+                .collect::<Vec<_>>(),
+            vec![(live, UniqueItemKind::Weapon)]
+        );
+    }
+
+    #[test]
     fn purge_cleans_components() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
@@ -781,6 +890,26 @@ mod tests {
         assert_eq!(world.entity_meta(id), None);
         assert_eq!(world.get_component_item_lot(id), None);
         assert_eq!(world.query_item_lot().count(), 0);
+    }
+
+    #[test]
+    fn purge_cleans_unique_item_components() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world
+            .create_unique_item(
+                UniqueItemKind::Artifact,
+                Some("Seal"),
+                BTreeMap::new(),
+                Tick(1),
+            )
+            .unwrap();
+
+        world.archive_entity(id, Tick(2)).unwrap();
+        world.purge_entity(id).unwrap();
+
+        assert_eq!(world.entity_meta(id), None);
+        assert_eq!(world.get_component_unique_item(id), None);
+        assert_eq!(world.query_unique_item().count(), 0);
     }
 
     #[test]
@@ -879,6 +1008,38 @@ mod tests {
     }
 
     #[test]
+    fn insert_duplicate_unique_item_component_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world
+            .create_unique_item(
+                UniqueItemKind::Weapon,
+                Some("Rusty Sword"),
+                BTreeMap::new(),
+                Tick(1),
+            )
+            .unwrap();
+
+        let err = world
+            .insert_component_unique_item(
+                id,
+                UniqueItem {
+                    kind: UniqueItemKind::Weapon,
+                    name: Some("Rusty Sword".to_string()),
+                    metadata: BTreeMap::new(),
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            WorldError::DuplicateComponent {
+                entity,
+                component_type: "UniqueItem",
+            } if entity == id
+        ));
+    }
+
+    #[test]
     fn insert_agent_data_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
@@ -913,6 +1074,25 @@ mod tests {
                         source_lot: None,
                         amount: Quantity(5),
                     }],
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_unique_item_on_non_unique_item_entity_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_unique_item(
+                id,
+                UniqueItem {
+                    kind: UniqueItemKind::OfficeInsignia,
+                    name: Some("Seal".to_string()),
+                    metadata: BTreeMap::new(),
                 },
             )
             .unwrap_err();
@@ -1190,6 +1370,8 @@ mod tests {
         assert_eq!(world.query_agent_data().count(), 0);
         assert_eq!(world.entities_with_item_lot().count(), 0);
         assert_eq!(world.query_item_lot().count(), 0);
+        assert_eq!(world.entities_with_unique_item().count(), 0);
+        assert_eq!(world.query_unique_item().count(), 0);
         assert_eq!(world.entities_with_name_and_agent_data().count(), 0);
         assert_eq!(world.query_name_and_agent_data().count(), 0);
     }
@@ -1232,6 +1414,7 @@ mod tests {
         assert_eq!(world.count_with_name(), 2);
         assert_eq!(world.count_with_agent_data(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
+        assert_eq!(world.count_with_unique_item(), 0);
     }
 
     #[test]
@@ -1326,6 +1509,7 @@ mod tests {
             assert_eq!(world.get_component_name(place_id), None);
             assert_eq!(world.get_component_agent_data(place_id), None);
             assert_eq!(world.get_component_item_lot(place_id), None);
+            assert_eq!(world.get_component_unique_item(place_id), None);
         }
     }
 

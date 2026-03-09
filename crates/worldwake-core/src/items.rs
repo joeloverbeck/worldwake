@@ -2,6 +2,7 @@
 
 use crate::{Component, EntityId, EventId, Quantity, Tick};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Stackable commodity kinds available in Phase 1.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -92,6 +93,28 @@ impl LotOperation {
     ];
 }
 
+/// Unique-item kinds for singular objects that cannot be stacked into lots.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub enum UniqueItemKind {
+    SimpleTool,
+    Weapon,
+    Contract,
+    Artifact,
+    OfficeInsignia,
+    Misc,
+}
+
+impl UniqueItemKind {
+    pub const ALL: [Self; 6] = [
+        Self::SimpleTool,
+        Self::Weapon,
+        Self::Contract,
+        Self::Artifact,
+        Self::OfficeInsignia,
+        Self::Misc,
+    ];
+}
+
 /// Immutable lineage record for a lot change.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProvenanceEntry {
@@ -112,11 +135,25 @@ pub struct ItemLot {
 
 impl Component for ItemLot {}
 
+/// Singular item state stored on `UniqueItem` entities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UniqueItem {
+    pub kind: UniqueItemKind,
+    pub name: Option<String>,
+    pub metadata: BTreeMap<String, String>,
+}
+
+impl Component for UniqueItem {}
+
 #[cfg(test)]
 mod tests {
-    use super::{CommodityKind, ItemLot, LotOperation, ProvenanceEntry, TradeCategory};
+    use super::{
+        CommodityKind, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
+        UniqueItemKind,
+    };
     use crate::{traits::Component, EntityId, EventId, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::BTreeMap;
 
     fn assert_enum_bounds<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
@@ -138,6 +175,11 @@ mod tests {
         assert_enum_bounds::<TradeCategory>();
     }
 
+    #[test]
+    fn unique_item_kind_trait_bounds() {
+        assert_enum_bounds::<UniqueItemKind>();
+    }
+
     fn assert_struct_bounds<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 
     #[test]
@@ -149,6 +191,12 @@ mod tests {
     fn item_lot_component_bounds() {
         fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
         assert_component_bounds::<ItemLot>();
+    }
+
+    #[test]
+    fn unique_item_component_bounds() {
+        fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
+        assert_component_bounds::<UniqueItem>();
     }
 
     #[test]
@@ -203,6 +251,21 @@ mod tests {
     }
 
     #[test]
+    fn unique_item_kind_all_is_canonical_variant_list() {
+        assert_eq!(
+            UniqueItemKind::ALL,
+            [
+                UniqueItemKind::SimpleTool,
+                UniqueItemKind::Weapon,
+                UniqueItemKind::Contract,
+                UniqueItemKind::Artifact,
+                UniqueItemKind::OfficeInsignia,
+                UniqueItemKind::Misc,
+            ]
+        );
+    }
+
+    #[test]
     fn commodity_kind_variants_roundtrip_through_bincode() {
         for commodity in CommodityKind::ALL {
             let bytes = bincode::serialize(&commodity).unwrap();
@@ -226,6 +289,15 @@ mod tests {
             let bytes = bincode::serialize(&operation).unwrap();
             let roundtrip: LotOperation = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, operation);
+        }
+    }
+
+    #[test]
+    fn unique_item_kind_variants_roundtrip_through_bincode() {
+        for kind in UniqueItemKind::ALL {
+            let bytes = bincode::serialize(&kind).unwrap();
+            let roundtrip: UniqueItemKind = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, kind);
         }
     }
 
@@ -289,6 +361,37 @@ mod tests {
     }
 
     #[test]
+    fn unique_item_roundtrips_through_bincode() {
+        let item = UniqueItem {
+            kind: UniqueItemKind::Weapon,
+            name: Some("Rusty Sword".to_string()),
+            metadata: BTreeMap::from([
+                ("condition".to_string(), "worn".to_string()),
+                ("material".to_string(), "iron".to_string()),
+            ]),
+        };
+
+        let bytes = bincode::serialize(&item).unwrap();
+        let roundtrip: UniqueItem = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, item);
+    }
+
+    #[test]
+    fn unique_item_with_empty_metadata_and_no_name_roundtrips_through_bincode() {
+        let item = UniqueItem {
+            kind: UniqueItemKind::Contract,
+            name: None,
+            metadata: BTreeMap::new(),
+        };
+
+        let bytes = bincode::serialize(&item).unwrap();
+        let roundtrip: UniqueItem = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, item);
+    }
+
+    #[test]
     fn commodity_kind_ordering_is_deterministic() {
         let mut reversed = CommodityKind::ALL;
         reversed.reverse();
@@ -313,6 +416,14 @@ mod tests {
     }
 
     #[test]
+    fn unique_item_kind_ordering_is_deterministic() {
+        let mut reversed = UniqueItemKind::ALL;
+        reversed.reverse();
+        reversed.sort();
+        assert_eq!(reversed, UniqueItemKind::ALL);
+    }
+
+    #[test]
     fn commodity_kind_trade_category_mapping_matches_catalog() {
         assert_eq!(CommodityKind::Apple.trade_category(), TradeCategory::Food);
         assert_eq!(CommodityKind::Grain.trade_category(), TradeCategory::Food);
@@ -328,5 +439,30 @@ mod tests {
         );
         assert_eq!(CommodityKind::Coin.trade_category(), TradeCategory::Coin);
         assert_eq!(CommodityKind::Waste.trade_category(), TradeCategory::Waste);
+    }
+
+    #[test]
+    fn unique_item_metadata_serialization_is_deterministic() {
+        let item_a = UniqueItem {
+            kind: UniqueItemKind::Artifact,
+            name: Some("Seal".to_string()),
+            metadata: BTreeMap::from([
+                ("era".to_string(), "old".to_string()),
+                ("origin".to_string(), "court".to_string()),
+            ]),
+        };
+        let mut metadata = BTreeMap::new();
+        metadata.insert("origin".to_string(), "court".to_string());
+        metadata.insert("era".to_string(), "old".to_string());
+        let item_b = UniqueItem {
+            kind: UniqueItemKind::Artifact,
+            name: Some("Seal".to_string()),
+            metadata,
+        };
+
+        let bytes_a = bincode::serialize(&item_a).unwrap();
+        let bytes_b = bincode::serialize(&item_b).unwrap();
+
+        assert_eq!(bytes_a, bytes_b);
     }
 }

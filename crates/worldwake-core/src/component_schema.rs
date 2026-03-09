@@ -63,6 +63,26 @@ macro_rules! with_authoritative_components {
                 "ItemLot",
                 |kind| kind == EntityKind::ItemLot
             }
+            {
+                unique_items,
+                UniqueItem,
+                insert_unique_item,
+                get_unique_item,
+                get_unique_item_mut,
+                remove_unique_item,
+                has_unique_item,
+                iter_unique_items,
+                insert_component_unique_item,
+                get_component_unique_item,
+                get_component_unique_item_mut,
+                remove_component_unique_item,
+                has_component_unique_item,
+                entities_with_unique_item,
+                query_unique_item,
+                count_with_unique_item,
+                "UniqueItem",
+                |kind| kind == EntityKind::UniqueItem
+            }
         }
     };
 }

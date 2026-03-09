@@ -3,7 +3,7 @@
 use crate::{
     component_schema::with_authoritative_components,
     components::{AgentData, Name},
-    items::ItemLot,
+    items::{ItemLot, UniqueItem},
     EntityId,
 };
 use serde::{Deserialize, Serialize};
@@ -94,7 +94,9 @@ mod tests {
     use crate::{
         components::{AgentData, Name},
         ControlSource, EntityId, ItemLot, LotOperation, ProvenanceEntry, Quantity, Tick,
+        UniqueItem, UniqueItemKind,
     };
+    use std::collections::BTreeMap;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -110,6 +112,7 @@ mod tests {
         assert_eq!(tables.iter_names().count(), 0);
         assert_eq!(tables.iter_agent_data().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
+        assert_eq!(tables.iter_unique_items().count(), 0);
     }
 
     #[test]
@@ -200,12 +203,21 @@ mod tests {
                 }],
             },
         );
+        tables.insert_unique_item(
+            id,
+            UniqueItem {
+                kind: UniqueItemKind::Weapon,
+                name: Some("Rusty Sword".to_string()),
+                metadata: BTreeMap::from([("quality".to_string(), "poor".to_string())]),
+            },
+        );
 
         tables.remove_all(id);
 
         assert_eq!(tables.get_name(id), None);
         assert_eq!(tables.get_agent_data(id), None);
         assert_eq!(tables.get_item_lot(id), None);
+        assert_eq!(tables.get_unique_item(id), None);
     }
 
     #[test]
@@ -235,6 +247,14 @@ mod tests {
                 }],
             },
         );
+        tables.insert_unique_item(
+            entity(12),
+            UniqueItem {
+                kind: UniqueItemKind::Artifact,
+                name: None,
+                metadata: BTreeMap::from([("origin".to_string(), "vault".to_string())]),
+            },
+        );
 
         let bytes = bincode::serialize(&tables).unwrap();
         let roundtrip: ComponentTables = bincode::deserialize(&bytes).unwrap();
@@ -261,5 +281,52 @@ mod tests {
         assert_eq!(tables.insert_item_lot(id, lot.clone()), None);
         assert_eq!(tables.get_item_lot(id), Some(&lot));
         assert!(tables.has_item_lot(id));
+    }
+
+    #[test]
+    fn insert_and_get_unique_item() {
+        let mut tables = ComponentTables::default();
+        let id = entity(12);
+        let item = UniqueItem {
+            kind: UniqueItemKind::SimpleTool,
+            name: Some("Hammer".to_string()),
+            metadata: BTreeMap::from([("material".to_string(), "wood".to_string())]),
+        };
+
+        assert_eq!(tables.insert_unique_item(id, item.clone()), None);
+        assert_eq!(tables.get_unique_item(id), Some(&item));
+        assert!(tables.has_unique_item(id));
+    }
+
+    #[test]
+    fn remove_all_clears_only_target_unique_item_storage() {
+        let mut tables = ComponentTables::default();
+        let target = entity(14);
+        let other = entity(15);
+
+        tables.insert_unique_item(
+            target,
+            UniqueItem {
+                kind: UniqueItemKind::Contract,
+                name: Some("Grain Charter".to_string()),
+                metadata: BTreeMap::new(),
+            },
+        );
+        tables.insert_unique_item(
+            other,
+            UniqueItem {
+                kind: UniqueItemKind::Artifact,
+                name: None,
+                metadata: BTreeMap::from([("era".to_string(), "old".to_string())]),
+            },
+        );
+
+        tables.remove_all(target);
+
+        assert_eq!(tables.get_unique_item(target), None);
+        assert_eq!(
+            tables.get_unique_item(other).map(|item| item.kind),
+            Some(UniqueItemKind::Artifact)
+        );
     }
 }
