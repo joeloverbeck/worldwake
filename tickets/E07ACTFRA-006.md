@@ -5,6 +5,7 @@
 **Effort**: Small
 **Engine Changes**: Yes — defines the affordance evaluation abstraction
 **Deps**: E07ACTFRA-001 (IDs), worldwake-core (EntityId, EntityKind, CommodityKind, etc.)
+**Dependency Note**: Completed E07 prerequisites are archived under `archive/tickets/`. For this ticket, see `archive/tickets/E07ACTFRA-001-sim-crate-bootstrap-action-ids-action-status.md`.
 
 ## Problem
 

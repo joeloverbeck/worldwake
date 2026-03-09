@@ -5,6 +5,7 @@
 **Effort**: Medium
 **Engine Changes**: Yes — defines external interruption and replan signaling
 **Deps**: E07ACTFRA-004 (ActionInstance, ActionStatus), E07ACTFRA-005 (Handler Registry), E07ACTFRA-002 (Interruptibility)
+**Dependency Note**: Completed E07 prerequisites are archived under `archive/tickets/`. For this ticket, see `archive/tickets/E07ACTFRA-002-supporting-semantic-types.md`, `archive/tickets/E07ACTFRA-004-action-state-action-instance.md`, and `archive/tickets/E07ACTFRA-005-action-handler-function-table-registry.md`.
 
 ## Problem
 

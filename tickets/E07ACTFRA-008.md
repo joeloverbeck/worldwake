@@ -5,6 +5,7 @@
 **Effort**: Medium
 **Engine Changes**: Yes — defines action initiation pipeline
 **Deps**: E07ACTFRA-003 (ActionDef, ActionDefRegistry), E07ACTFRA-004 (ActionInstance), E07ACTFRA-005 (Handler Registry), E07ACTFRA-006 (KnowledgeView), E07ACTFRA-007 (Affordance)
+**Dependency Note**: Completed E07 prerequisites are archived under `archive/tickets/`. For this ticket, see `archive/tickets/E07ACTFRA-003-action-def-action-def-registry.md`, `archive/tickets/E07ACTFRA-004-action-state-action-instance.md`, and `archive/tickets/E07ACTFRA-005-action-handler-function-table-registry.md`.
 
 ## Problem
 

@@ -5,6 +5,7 @@
 **Effort**: Medium
 **Engine Changes**: Yes — defines the action query surface
 **Deps**: E07ACTFRA-002 (semantic types), E07ACTFRA-003 (ActionDef, ActionDefRegistry), E07ACTFRA-006 (KnowledgeView)
+**Dependency Note**: Completed E07 prerequisites are archived under `archive/tickets/`. For this ticket, see `archive/tickets/E07ACTFRA-002-supporting-semantic-types.md` and `archive/tickets/E07ACTFRA-003-action-def-action-def-registry.md`.
 
 ## Problem
 
