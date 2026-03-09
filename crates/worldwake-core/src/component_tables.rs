@@ -3,7 +3,7 @@
 use crate::{
     component_schema::with_authoritative_components,
     components::{AgentData, Name},
-    items::{ItemLot, UniqueItem},
+    items::{Container, ItemLot, UniqueItem},
     EntityId,
 };
 use serde::{Deserialize, Serialize};
@@ -93,10 +93,10 @@ mod tests {
     use super::ComponentTables;
     use crate::{
         components::{AgentData, Name},
-        ControlSource, EntityId, ItemLot, LotOperation, ProvenanceEntry, Quantity, Tick,
-        UniqueItem, UniqueItemKind,
+        CommodityKind, Container, ControlSource, EntityId, ItemLot, LoadUnits, LotOperation,
+        ProvenanceEntry, Quantity, Tick, UniqueItem, UniqueItemKind,
     };
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -113,6 +113,7 @@ mod tests {
         assert_eq!(tables.iter_agent_data().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
+        assert_eq!(tables.iter_containers().count(), 0);
     }
 
     #[test]
@@ -211,6 +212,15 @@ mod tests {
                 metadata: BTreeMap::from([("quality".to_string(), "poor".to_string())]),
             },
         );
+        tables.insert_container(
+            id,
+            Container {
+                capacity: LoadUnits(9),
+                allowed_commodities: Some(BTreeSet::from([CommodityKind::Apple])),
+                allows_unique_items: false,
+                allows_nested_containers: false,
+            },
+        );
 
         tables.remove_all(id);
 
@@ -218,6 +228,7 @@ mod tests {
         assert_eq!(tables.get_agent_data(id), None);
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
+        assert_eq!(tables.get_container(id), None);
     }
 
     #[test]
@@ -253,6 +264,18 @@ mod tests {
                 kind: UniqueItemKind::Artifact,
                 name: None,
                 metadata: BTreeMap::from([("origin".to_string(), "vault".to_string())]),
+            },
+        );
+        tables.insert_container(
+            entity(15),
+            Container {
+                capacity: LoadUnits(12),
+                allowed_commodities: Some(BTreeSet::from([
+                    CommodityKind::Bread,
+                    CommodityKind::Water,
+                ])),
+                allows_unique_items: true,
+                allows_nested_containers: false,
             },
         );
 
@@ -296,6 +319,56 @@ mod tests {
         assert_eq!(tables.insert_unique_item(id, item.clone()), None);
         assert_eq!(tables.get_unique_item(id), Some(&item));
         assert!(tables.has_unique_item(id));
+    }
+
+    #[test]
+    fn insert_and_get_container() {
+        let mut tables = ComponentTables::default();
+        let id = entity(16);
+        let container = Container {
+            capacity: LoadUnits(21),
+            allowed_commodities: Some(BTreeSet::from([
+                CommodityKind::Coin,
+                CommodityKind::Medicine,
+            ])),
+            allows_unique_items: true,
+            allows_nested_containers: false,
+        };
+
+        assert_eq!(tables.insert_container(id, container.clone()), None);
+        assert_eq!(tables.get_container(id), Some(&container));
+        assert!(tables.has_container(id));
+    }
+
+    #[test]
+    fn remove_all_clears_only_target_container_storage() {
+        let mut tables = ComponentTables::default();
+        let target = entity(17);
+        let other = entity(18);
+
+        tables.insert_container(
+            target,
+            Container {
+                capacity: LoadUnits(5),
+                allowed_commodities: None,
+                allows_unique_items: true,
+                allows_nested_containers: false,
+            },
+        );
+        tables.insert_container(
+            other,
+            Container {
+                capacity: LoadUnits(8),
+                allowed_commodities: Some(BTreeSet::from([CommodityKind::Water])),
+                allows_unique_items: false,
+                allows_nested_containers: true,
+            },
+        );
+
+        tables.remove_all(target);
+
+        assert_eq!(tables.get_container(target), None);
+        assert_eq!(tables.get_container(other).map(|container| container.capacity), Some(LoadUnits(8)));
     }
 
     #[test]

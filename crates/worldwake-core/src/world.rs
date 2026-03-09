@@ -2,8 +2,9 @@
 
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, ItemLot, LotOperation, Name,
-    ProvenanceEntry, Quantity, Tick, Topology, UniqueItem, UniqueItemKind, WorldError,
+    Container, EntityAllocator, EntityId, EntityKind, EntityMeta, ItemLot, LoadUnits,
+    LotOperation, Name, ProvenanceEntry, Quantity, Tick, Topology, UniqueItem, UniqueItemKind,
+    WorldError,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -171,6 +172,22 @@ impl World {
         })
     }
 
+    pub fn create_container(
+        &mut self,
+        container: Container,
+        tick: Tick,
+    ) -> Result<EntityId, WorldError> {
+        if container.capacity == LoadUnits(0) {
+            return Err(WorldError::InvalidOperation(
+                "container capacity must be greater than zero".to_string(),
+            ));
+        }
+
+        self.create_entity_with(EntityKind::Container, tick, |world, entity| {
+            world.insert_component_container(entity, container)
+        })
+    }
+
     pub fn archive_entity(&mut self, id: EntityId, tick: Tick) -> Result<(), WorldError> {
         if self.topology.place(id).is_some() {
             return Err(WorldError::InvalidOperation(format!(
@@ -309,9 +326,9 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentData, CommodityKind, ControlSource, EntityId, EntityKind, ItemLot, LotOperation, Name,
-        Place, PlaceTag, ProvenanceEntry, Quantity, Tick, Topology, UniqueItem, UniqueItemKind,
-        WorldError,
+        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, ItemLot,
+        LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity, Tick,
+        Topology, UniqueItem, UniqueItemKind, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -345,6 +362,93 @@ mod tests {
             )
             .unwrap();
         topology
+    }
+
+    fn assert_populated_world_roundtrip(
+        roundtrip: &World,
+        agent: EntityId,
+        office: EntityId,
+        faction: EntityId,
+        lot: EntityId,
+        unique_item: EntityId,
+        container: EntityId,
+    ) {
+        assert_eq!(
+            roundtrip.entities().collect::<Vec<_>>(),
+            vec![
+                entity(2),
+                entity(5),
+                agent,
+                office,
+                faction,
+                lot,
+                unique_item,
+                container,
+            ]
+        );
+        assert_eq!(roundtrip.entity_kind(entity(2)), Some(EntityKind::Place));
+        assert_eq!(roundtrip.entity_kind(entity(5)), Some(EntityKind::Place));
+        assert_eq!(roundtrip.entity_kind(agent), Some(EntityKind::Agent));
+        assert_eq!(roundtrip.entity_kind(office), Some(EntityKind::Office));
+        assert_eq!(roundtrip.entity_kind(faction), Some(EntityKind::Faction));
+        assert_eq!(roundtrip.entity_kind(lot), Some(EntityKind::ItemLot));
+        assert_eq!(
+            roundtrip.entity_kind(unique_item),
+            Some(EntityKind::UniqueItem)
+        );
+        assert_eq!(roundtrip.entity_kind(container), Some(EntityKind::Container));
+        assert_eq!(
+            roundtrip.get_component_name(agent),
+            Some(&Name("Aster".to_string()))
+        );
+        assert_eq!(
+            roundtrip.get_component_name(office),
+            Some(&Name("Ledger Hall".to_string()))
+        );
+        assert_eq!(
+            roundtrip.get_component_name(faction),
+            Some(&Name("River Pact".to_string()))
+        );
+        assert_eq!(
+            roundtrip.get_component_agent_data(agent),
+            Some(&AgentData {
+                control_source: ControlSource::Ai,
+            })
+        );
+        assert_eq!(
+            roundtrip.get_component_item_lot(lot),
+            Some(&ItemLot {
+                commodity: CommodityKind::Grain,
+                quantity: Quantity(6),
+                provenance: vec![ProvenanceEntry {
+                    tick: Tick(10),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    source_lot: None,
+                    amount: Quantity(6),
+                }],
+            })
+        );
+        assert_eq!(
+            roundtrip.get_component_unique_item(unique_item),
+            Some(&UniqueItem {
+                kind: UniqueItemKind::Artifact,
+                name: Some("Court Seal".to_string()),
+                metadata: BTreeMap::from([("origin".to_string(), "vault".to_string())]),
+            })
+        );
+        assert_eq!(
+            roundtrip.get_component_container(container),
+            Some(&Container {
+                capacity: LoadUnits(20),
+                allowed_commodities: Some(BTreeSet::from([
+                    CommodityKind::Coin,
+                    CommodityKind::Grain,
+                ])),
+                allows_unique_items: false,
+                allows_nested_containers: false,
+            })
+        );
     }
 
     #[test]
@@ -505,6 +609,47 @@ mod tests {
     }
 
     #[test]
+    fn create_container_produces_correct_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let container = Container {
+            capacity: LoadUnits(30),
+            allowed_commodities: Some(BTreeSet::from([
+                CommodityKind::Apple,
+                CommodityKind::Bread,
+            ])),
+            allows_unique_items: true,
+            allows_nested_containers: false,
+        };
+
+        let id = world.create_container(container.clone(), Tick(6)).unwrap();
+
+        assert!(world.is_alive(id));
+        assert_eq!(world.entity_kind(id), Some(EntityKind::Container));
+        assert_eq!(world.get_component_container(id), Some(&container));
+    }
+
+    #[test]
+    fn create_container_rejects_zero_capacity() {
+        let mut world = World::new(Topology::new()).unwrap();
+
+        let err = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(0),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                },
+                Tick(7),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.entity_count(), 0);
+        assert_eq!(world.all_entities().count(), 0);
+    }
+
+    #[test]
     fn factory_equivalent_to_manual_creation() {
         let mut factory_world = World::new(Topology::new()).unwrap();
         let factory_id = factory_world
@@ -576,6 +721,7 @@ mod tests {
         assert_eq!(world.count_with_name(), 0);
         assert_eq!(world.count_with_agent_data(), 0);
         assert_eq!(world.count_with_item_lot(), 0);
+        assert_eq!(world.count_with_container(), 0);
     }
 
     #[test]
@@ -615,72 +761,33 @@ mod tests {
                 Tick(11),
             )
             .unwrap();
+        let container = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(20),
+                    allowed_commodities: Some(BTreeSet::from([
+                        CommodityKind::Coin,
+                        CommodityKind::Grain,
+                    ])),
+                    allows_unique_items: false,
+                    allows_nested_containers: false,
+                },
+                Tick(12),
+            )
+            .unwrap();
 
         let bytes = bincode::serialize(&world).unwrap();
         let roundtrip: World = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, world);
-        assert_eq!(
-            roundtrip.entities().collect::<Vec<_>>(),
-            vec![
-                entity(2),
-                entity(5),
-                agent,
-                office,
-                faction,
-                lot,
-                unique_item
-            ]
-        );
-        assert_eq!(roundtrip.entity_kind(entity(2)), Some(EntityKind::Place));
-        assert_eq!(roundtrip.entity_kind(entity(5)), Some(EntityKind::Place));
-        assert_eq!(roundtrip.entity_kind(agent), Some(EntityKind::Agent));
-        assert_eq!(roundtrip.entity_kind(office), Some(EntityKind::Office));
-        assert_eq!(roundtrip.entity_kind(faction), Some(EntityKind::Faction));
-        assert_eq!(roundtrip.entity_kind(lot), Some(EntityKind::ItemLot));
-        assert_eq!(
-            roundtrip.entity_kind(unique_item),
-            Some(EntityKind::UniqueItem)
-        );
-        assert_eq!(
-            roundtrip.get_component_name(agent),
-            Some(&Name("Aster".to_string()))
-        );
-        assert_eq!(
-            roundtrip.get_component_name(office),
-            Some(&Name("Ledger Hall".to_string()))
-        );
-        assert_eq!(
-            roundtrip.get_component_name(faction),
-            Some(&Name("River Pact".to_string()))
-        );
-        assert_eq!(
-            roundtrip.get_component_agent_data(agent),
-            Some(&AgentData {
-                control_source: ControlSource::Ai,
-            })
-        );
-        assert_eq!(
-            roundtrip.get_component_item_lot(lot),
-            Some(&ItemLot {
-                commodity: CommodityKind::Grain,
-                quantity: Quantity(6),
-                provenance: vec![ProvenanceEntry {
-                    tick: Tick(10),
-                    event_id: None,
-                    operation: LotOperation::Created,
-                    source_lot: None,
-                    amount: Quantity(6),
-                }],
-            })
-        );
-        assert_eq!(
-            roundtrip.get_component_unique_item(unique_item),
-            Some(&UniqueItem {
-                kind: UniqueItemKind::Artifact,
-                name: Some("Court Seal".to_string()),
-                metadata: BTreeMap::from([("origin".to_string(), "vault".to_string())]),
-            })
+        assert_populated_world_roundtrip(
+            &roundtrip,
+            agent,
+            office,
+            faction,
+            lot,
+            unique_item,
+            container,
         );
     }
 
@@ -854,6 +961,44 @@ mod tests {
     }
 
     #[test]
+    fn query_container_returns_live_entities_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let live = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(15),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: false,
+                },
+                Tick(1),
+            )
+            .unwrap();
+        let archived = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(9),
+                    allowed_commodities: Some(BTreeSet::from([CommodityKind::Water])),
+                    allows_unique_items: false,
+                    allows_nested_containers: true,
+                },
+                Tick(2),
+            )
+            .unwrap();
+
+        world.archive_entity(archived, Tick(3)).unwrap();
+
+        assert_eq!(world.entities_with_container().collect::<Vec<_>>(), vec![live]);
+        assert_eq!(
+            world
+                .query_container()
+                .map(|(entity, container)| (entity, container.capacity))
+                .collect::<Vec<_>>(),
+            vec![(live, LoadUnits(15))]
+        );
+    }
+
+    #[test]
     fn purge_cleans_components() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
@@ -910,6 +1055,29 @@ mod tests {
         assert_eq!(world.entity_meta(id), None);
         assert_eq!(world.get_component_unique_item(id), None);
         assert_eq!(world.query_unique_item().count(), 0);
+    }
+
+    #[test]
+    fn purge_cleans_container_components() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(18),
+                    allowed_commodities: Some(BTreeSet::from([CommodityKind::Medicine])),
+                    allows_unique_items: true,
+                    allows_nested_containers: false,
+                },
+                Tick(1),
+            )
+            .unwrap();
+
+        world.archive_entity(id, Tick(2)).unwrap();
+        world.purge_entity(id).unwrap();
+
+        assert_eq!(world.entity_meta(id), None);
+        assert_eq!(world.get_component_container(id), None);
+        assert_eq!(world.query_container().count(), 0);
     }
 
     #[test]
@@ -1040,6 +1208,42 @@ mod tests {
     }
 
     #[test]
+    fn insert_duplicate_container_component_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(11),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: false,
+                },
+                Tick(1),
+            )
+            .unwrap();
+
+        let err = world
+            .insert_component_container(
+                id,
+                Container {
+                    capacity: LoadUnits(11),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: false,
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            WorldError::DuplicateComponent {
+                entity,
+                component_type: "Container",
+            } if entity == id
+        ));
+    }
+
+    #[test]
     fn insert_agent_data_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
@@ -1093,6 +1297,26 @@ mod tests {
                     kind: UniqueItemKind::OfficeInsignia,
                     name: Some("Seal".to_string()),
                     metadata: BTreeMap::new(),
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_container_on_non_container_entity_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_container(
+                id,
+                Container {
+                    capacity: LoadUnits(10),
+                    allowed_commodities: Some(BTreeSet::from([CommodityKind::Firewood])),
+                    allows_unique_items: false,
+                    allows_nested_containers: false,
                 },
             )
             .unwrap_err();
@@ -1372,6 +1596,8 @@ mod tests {
         assert_eq!(world.query_item_lot().count(), 0);
         assert_eq!(world.entities_with_unique_item().count(), 0);
         assert_eq!(world.query_unique_item().count(), 0);
+        assert_eq!(world.entities_with_container().count(), 0);
+        assert_eq!(world.query_container().count(), 0);
         assert_eq!(world.entities_with_name_and_agent_data().count(), 0);
         assert_eq!(world.query_name_and_agent_data().count(), 0);
     }
@@ -1415,6 +1641,7 @@ mod tests {
         assert_eq!(world.count_with_agent_data(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
         assert_eq!(world.count_with_unique_item(), 0);
+        assert_eq!(world.count_with_container(), 0);
     }
 
     #[test]

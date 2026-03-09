@@ -83,6 +83,26 @@ macro_rules! with_authoritative_components {
                 "UniqueItem",
                 |kind| kind == EntityKind::UniqueItem
             }
+            {
+                containers,
+                Container,
+                insert_container,
+                get_container,
+                get_container_mut,
+                remove_container,
+                has_container,
+                iter_containers,
+                insert_component_container,
+                get_component_container,
+                get_component_container_mut,
+                remove_component_container,
+                has_component_container,
+                entities_with_container,
+                query_container,
+                count_with_container,
+                "Container",
+                |kind| kind == EntityKind::Container
+            }
         }
     };
 }

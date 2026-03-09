@@ -2,7 +2,7 @@
 
 use crate::{Component, EntityId, EventId, Quantity, Tick};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Stackable commodity kinds available in Phase 1.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -145,15 +145,27 @@ pub struct UniqueItem {
 
 impl Component for UniqueItem {}
 
+/// Deterministic storage and admission policy for container entities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Container {
+    pub capacity: crate::LoadUnits,
+    pub allowed_commodities: Option<BTreeSet<CommodityKind>>,
+    pub allows_unique_items: bool,
+    pub allows_nested_containers: bool,
+}
+
+impl Component for Container {}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CommodityKind, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
+        CommodityKind, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory,
+        UniqueItem,
         UniqueItemKind,
     };
-    use crate::{traits::Component, EntityId, EventId, Quantity, Tick};
+    use crate::{traits::Component, EntityId, EventId, LoadUnits, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn assert_enum_bounds<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
@@ -197,6 +209,12 @@ mod tests {
     fn unique_item_component_bounds() {
         fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
         assert_component_bounds::<UniqueItem>();
+    }
+
+    #[test]
+    fn container_component_bounds() {
+        fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
+        assert_component_bounds::<Container>();
     }
 
     #[test]
@@ -389,6 +407,52 @@ mod tests {
         let roundtrip: UniqueItem = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, item);
+    }
+
+    #[test]
+    fn container_with_open_policy_roundtrips_through_bincode() {
+        let container = Container {
+            capacity: LoadUnits(25),
+            allowed_commodities: None,
+            allows_unique_items: true,
+            allows_nested_containers: false,
+        };
+
+        let bytes = bincode::serialize(&container).unwrap();
+        let roundtrip: Container = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, container);
+    }
+
+    #[test]
+    fn container_with_commodity_restrictions_roundtrips_deterministically() {
+        let container_a = Container {
+            capacity: LoadUnits(40),
+            allowed_commodities: Some(BTreeSet::from([
+                CommodityKind::Water,
+                CommodityKind::Bread,
+                CommodityKind::Apple,
+            ])),
+            allows_unique_items: false,
+            allows_nested_containers: true,
+        };
+        let mut allowed = BTreeSet::new();
+        allowed.insert(CommodityKind::Apple);
+        allowed.insert(CommodityKind::Water);
+        allowed.insert(CommodityKind::Bread);
+        let container_b = Container {
+            capacity: LoadUnits(40),
+            allowed_commodities: Some(allowed),
+            allows_unique_items: false,
+            allows_nested_containers: true,
+        };
+
+        let bytes_a = bincode::serialize(&container_a).unwrap();
+        let bytes_b = bincode::serialize(&container_b).unwrap();
+        let roundtrip: Container = bincode::deserialize(&bytes_a).unwrap();
+
+        assert_eq!(bytes_a, bytes_b);
+        assert_eq!(roundtrip, container_a);
     }
 
     #[test]

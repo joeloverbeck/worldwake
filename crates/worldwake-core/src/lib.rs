@@ -47,7 +47,7 @@ pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
 pub use ids::{EntityId, EventId, Seed, Tick, TravelEdgeId};
 pub use items::{
-    CommodityKind, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
+    CommodityKind, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
     UniqueItemKind,
 };
 pub use numerics::{LoadUnits, Permille, Quantity};
