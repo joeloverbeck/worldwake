@@ -123,7 +123,7 @@ Rules:
 - `tags: BTreeSet<EventTag>`
 
 Rules:
-- `event_id` is monotonic and gapless
+- `event_id` is monotonic and gapless, and is assigned only by `EventLog` at append time
 - `target_ids` are stored in stable sorted order where ordering is not semantically meaningful
 - `state_deltas` preserve mutation order within the event
 
@@ -138,11 +138,15 @@ Rules:
   - by tag
 
 Provide:
-- `emit(record) -> EventId`
+- `emit(pending_event) -> EventId`
 - `get(id) -> Option<&EventRecord>`
 - `events_at_tick(tick) -> &[EventId]` or equivalent
 - `events_by_actor(actor) -> Vec<EventId>`
 - `events_by_place(place) -> Vec<EventId>`
+
+Rules:
+- callers do not reserve or inject `EventId`s
+- append is the only place where a pending event becomes an immutable `EventRecord`
 
 ### Mutation Journal / World Transaction
 Introduce `WorldTxn` (or equivalent):

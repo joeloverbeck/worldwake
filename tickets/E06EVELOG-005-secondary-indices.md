@@ -13,10 +13,11 @@ The event log needs secondary indices by actor, place, and tag for efficient que
 ## Assumption Reassessment (2026-03-09)
 
 1. `EventLog` exists from E06EVELOG-004 with `events: Vec<EventRecord>`, `next_id`, and `by_tick` index — prerequisite
-2. `EventRecord` has `actor_id: Option<EntityId>`, `place_id: Option<EntityId>`, `tags: BTreeSet<EventTag>` — prerequisite (E06EVELOG-003)
-3. `EntityId` and `EventId` exist in `worldwake-core::ids` — confirmed
-4. `EventTag` exists from E06EVELOG-001 — prerequisite
-5. Project convention: `BTreeMap` for ordered indices — confirmed
+2. `EventLog::emit` now accepts a pending event payload and assigns `EventId` internally; index maintenance still happens only inside `emit`
+3. `EventRecord` has `actor_id: Option<EntityId>`, `place_id: Option<EntityId>`, `tags: BTreeSet<EventTag>` — prerequisite (E06EVELOG-003)
+4. `EntityId` and `EventId` exist in `worldwake-core::ids` — confirmed
+5. `EventTag` exists from E06EVELOG-001 — prerequisite
+6. Project convention: `BTreeMap` for ordered indices — confirmed
 
 ## Architecture Check
 
