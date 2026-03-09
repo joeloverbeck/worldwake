@@ -1,5 +1,9 @@
 # E06EVELOG-001: CauseRef, EventTag, and VisibilitySpec Enums
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative implementation for these event-foundation types lives in `worldwake-core`, not `worldwake-sim`. This archived ticket preserves the intermediate plan that was later superseded by the E06 architecture correction.
+
 **Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
@@ -107,16 +111,18 @@ Declare and re-export the three new modules.
 
 ## Outcome
 
+- Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
 - What actually changed:
-  - Added `CauseRef`, `EventTag`, and `VisibilitySpec` as new public modules in `worldwake-sim`
-  - Re-exported the three types from `crates/worldwake-sim/src/lib.rs`
-  - Added colocated unit tests covering trait bounds, variant coverage, deterministic ordering where relevant, and bincode round-trip behavior
+  - Added `CauseRef` in `crates/worldwake-core/src/cause.rs`, `EventTag` in `crates/worldwake-core/src/event_tag.rs`, and `VisibilitySpec` in `crates/worldwake-core/src/visibility.rs`
+  - Re-exported the three types from `crates/worldwake-core/src/lib.rs`
+  - Added colocated unit tests in `worldwake-core` covering trait bounds, variant coverage, deterministic ordering where relevant, and bincode round-trip behavior
 - Deviations from original plan:
   - Tightened the ticket and implementation to align these enums with existing core value-type conventions by deriving `Copy`, `PartialEq`, and `PartialOrd` in addition to the originally listed traits
   - Clarified assumptions to reflect the real crate state (`lib.rs` had docs only, not a fully empty file) and the adjacent E06EVELOG-002 ticket filename
+  - The final architecture moved the authoritative event model into `worldwake-core` so the journal boundary sits beside `World`; no compatibility layer was kept in `worldwake-sim`
 - Verification results:
-  - `cargo test -p worldwake-sim` passed
+  - `cargo test -p worldwake-core` passed
   - `cargo clippy --workspace --all-targets -- -D warnings` passed
   - `cargo test --workspace` passed
-  - `cargo fmt --all --check` reported pre-existing formatting drift in unrelated `worldwake-core` files; the modified `worldwake-sim` files were formatted and pass `rustfmt --check`
+  - `cargo fmt --all --check` passed after the event model settled in `worldwake-core`

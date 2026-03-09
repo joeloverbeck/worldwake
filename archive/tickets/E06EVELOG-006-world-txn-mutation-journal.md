@@ -1,5 +1,9 @@
 # E06EVELOG-006: WorldTxn Mutation Journal
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative `WorldTxn` implementation lives in `worldwake-core`, not `worldwake-sim`. This archived ticket keeps the intermediate plan, but the final journal boundary was moved beside `World`.
+
 **Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
@@ -156,8 +160,10 @@ Allow callers to accumulate targets and tags before commit.
 
 ## Outcome
 
+Outcome amended: 2026-03-09
+
 Implemented:
-- `WorldTxn` as a mutation journal over `&mut World` with explicit create, placement, reservation, tag, and target helpers
+- `WorldTxn` in `crates/worldwake-core/src/world_txn.rs` as a mutation journal over `&mut World` with explicit create, placement, reservation, tag, and target helpers
 - immutable read-through via `Deref<Target = World>` instead of a duplicated getter surface
 - canonical multi-delta journaling for create helpers, placement changes, and reservation create/release
 - minimal core accessor `World::reservation(...)` so reservation release can be journaled without breaking the core/sim boundary
@@ -166,3 +172,4 @@ Changed from the original plan:
 - `WorldTxn` was kept decoupled from `EventLog`; commit remains in E06EVELOG-007
 - wrapper calls are allowed to emit multiple canonical deltas when one world mutation changes multiple facts
 - archive journaling was intentionally removed from this ticket's scope because `archive_entity` is a composite teardown; a one-delta wrapper would have produced an incomplete causal record
+- the final architecture moved `WorldTxn` into `worldwake-core` so normal authoritative writes cannot bypass the journal by crossing a crate boundary

@@ -1,5 +1,9 @@
 # E06EVELOG-003: StateDelta Wrapper and EventRecord Struct
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative implementation for `StateDelta`, `PendingEvent`, and `EventRecord` lives in `worldwake-core`, not `worldwake-sim`. This archived ticket captures the pre-consolidation plan.
+
 **Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
@@ -119,17 +123,19 @@ Rationale: verifies the event payload shape now exists and that it encodes the s
 
 ## Outcome
 
+- Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
 - What actually changed:
-  - Added `StateDelta` to `crates/worldwake-sim/src/delta.rs` so the heterogeneous event-delta wrapper lives with the concrete delta schema it owns.
-  - Added `crates/worldwake-sim/src/event_record.rs` with `EventRecord` and `EventRecord::new`, which canonicalizes `target_ids` into stable sorted, deduplicated order while preserving `state_deltas` order.
-  - Registered and re-exported `StateDelta` and `EventRecord` from `crates/worldwake-sim/src/lib.rs`.
+  - Added `StateDelta` to `crates/worldwake-core/src/delta.rs` so the heterogeneous event-delta wrapper lives with the concrete delta schema it owns.
+  - Added `crates/worldwake-core/src/event_record.rs` with `PendingEvent`, `EventRecord`, and canonical constructors that sort and deduplicate `target_ids` while preserving `state_deltas` order.
+  - Registered and re-exported `StateDelta`, `PendingEvent`, and `EventRecord` from `crates/worldwake-core/src/lib.rs`.
   - Added focused unit coverage for `StateDelta` wrapping/round-trip behavior and for `EventRecord` construction, edge cases, canonicalization, and serialization order stability.
 - Deviations from original plan:
   - Corrected the ticket before implementation because the original file plan was architecturally stale. `StateDelta` was added to the existing `delta.rs` instead of a new `state_delta.rs` file to keep all event-delta schema in one ownership boundary.
   - Strengthened the original design by adding `EventRecord::new` so the stable `target_ids` invariant is enforced centrally instead of being duplicated across future callers.
+  - The final architecture moved the event payload model into `worldwake-core` so the immutable event record type stays with `WorldTxn` and `EventLog`
 - Verification results:
-  - `cargo test -p worldwake-sim` passed
+  - `cargo test -p worldwake-core` passed
   - `cargo fmt --check` passed
   - `cargo clippy --workspace --all-targets -- -D warnings` passed
   - `cargo test --workspace` passed

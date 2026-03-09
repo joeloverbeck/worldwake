@@ -130,6 +130,11 @@ dependencies = [
 [[package]]
 name = "worldwake-sim"
 version = "0.1.0"
+dependencies = [
+ "bincode",
+ "serde",
+ "worldwake-core",
+]
 
 [[package]]
 name = "worldwake-systems"

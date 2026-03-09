@@ -1,5 +1,9 @@
 # E06EVELOG-002: WitnessData and Component/Relation Delta Types
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative implementation for witness and delta schema types lives in `worldwake-core`, not `worldwake-sim`. This archived ticket records the intermediate plan before E06 ownership was consolidated next to `World`.
+
 **Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
@@ -163,17 +167,19 @@ Add `mod witness;` and `mod delta;`, re-export types.
 
 ## Outcome
 
+- Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
 - What actually changed:
-  - Added `WitnessData` in `worldwake-sim` with deterministic `BTreeSet` witness storage.
-  - Added typed event delta foundations in `worldwake-sim`: `ComponentKind`, `ComponentValue`, `RelationKind`, `RelationValue`, `EntityDelta`, `ComponentDelta`, `RelationDelta`, `QuantityDelta`, and `ReservationDelta`.
-  - Re-exported the new types from `crates/worldwake-sim/src/lib.rs`.
+  - Added `WitnessData` in `crates/worldwake-core/src/witness.rs` with deterministic `BTreeSet` witness storage.
+  - Added typed event delta foundations in `crates/worldwake-core/src/delta.rs`: `ComponentKind`, `ComponentValue`, `RelationKind`, `RelationValue`, `EntityDelta`, `ComponentDelta`, `RelationDelta`, `QuantityDelta`, and `ReservationDelta`.
+  - Re-exported the new types from `crates/worldwake-core/src/lib.rs`.
   - Added focused unit coverage for witness ordering, kind/value completeness, typed snapshot payloads, semantic relation payloads, and bincode round-trips.
 - Deviations from original plan:
   - Corrected the ticket before implementation because the original assumptions were lossy in three places: entity deltas lacked `EntityId`, reservation deltas only stored `ReservationId`, and relation deltas assumed every relation was a simple `EntityId -> EntityId` edge.
   - Implemented typed component before/after snapshots in this ticket instead of deferring them to `WorldTxn`, because the deferred design would have forced a later schema break across E06EVELOG-003/004/006.
+  - The final architecture consolidated the event schema into `worldwake-core` so authoritative payload types live beside the authoritative world model
 - Verification results:
-  - `cargo test -p worldwake-sim` passed
+  - `cargo test -p worldwake-core` passed
   - `cargo fmt --check` passed
   - `cargo clippy --workspace --all-targets -- -D warnings` passed
   - `cargo test --workspace` passed

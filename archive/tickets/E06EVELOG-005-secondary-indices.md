@@ -1,5 +1,9 @@
 # E06EVELOG-005: EventLog Secondary Indices (Actor, Place, Tag)
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative `EventLog` implementation lives in `worldwake-core`, not `worldwake-sim`. This archived ticket records the intermediate plan before the journal ownership correction.
+
 **Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
@@ -105,7 +109,8 @@ Each returns an empty slice if no events match.
 
 ## Outcome
 
+- Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
-- What actually changed: extended `EventLog` with deterministic secondary indices for actor, place, and tag; kept `emit(PendingEvent)` as the single append-and-index maintenance path; added borrowed-slice query methods for all three indices; extended the inline `event_log.rs` test suite to cover emission-order preservation, `None` exclusions, multi-tag indexing, empty-key behavior, and bincode round-tripping of populated secondary indices
-- Deviations from original plan: corrected the ticket first so it matched the existing `PendingEvent`-based architecture and existing inline test layout; no broader abstraction layer was introduced because the direct `BTreeMap<Key, Vec<EventId>>` shape is currently the cleanest and most extensible fit for the codebase
-- Verification results: `cargo test -p worldwake-sim`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo fmt`, and `cargo fmt --check` passed
+- What actually changed: extended `crates/worldwake-core/src/event_log.rs` with deterministic secondary indices for actor, place, and tag; kept `emit(PendingEvent)` as the single append-and-index maintenance path; added borrowed-slice query methods for all three indices; extended the inline `event_log.rs` test suite to cover emission-order preservation, `None` exclusions, multi-tag indexing, empty-key behavior, and bincode round-tripping of populated secondary indices
+- Deviations from original plan: corrected the ticket first so it matched the existing `PendingEvent`-based architecture and inline test layout; no broader abstraction layer was introduced because the direct `BTreeMap<Key, Vec<EventId>>` shape is currently the cleanest and most extensible fit for the codebase; the final ownership boundary moved into `worldwake-core`
+- Verification results: `cargo test -p worldwake-core`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo fmt`, and `cargo fmt --check` passed

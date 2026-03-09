@@ -1,5 +1,9 @@
 # E06EVELOG-007: WorldTxn Commit → EventRecord Emission
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative `WorldTxn` and `EventLog` implementation lives in `worldwake-core`, not `worldwake-sim`. This archived ticket preserves the intermediate commit-path plan before that consolidation.
+
 **Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
@@ -110,10 +114,13 @@ A `Drop` warning may still be useful later, but it is secondary to establishing 
 
 ## Outcome
 
+Outcome amended: 2026-03-09
+
 Implemented:
-- `WorldTxn::commit(self, event_log: &mut EventLog) -> EventId` in `worldwake-sim`
+- `WorldTxn::commit(self, event_log: &mut EventLog) -> EventId` in `crates/worldwake-core/src/world_txn.rs`
 - commit-focused tests covering canonical target ordering, empty-delta events, sequential IDs, secondary-index updates, and archive batch preservation
 
 Changed from the original plan:
 - kept target canonicalization in `PendingEvent::new(...)` instead of duplicating it in `WorldTxn::commit`
 - removed `abort()` and `Drop` warning work from scope because, under the current immediate-mutation architecture, they would add lifecycle surface without improving causal completeness
+- the final architecture colocated commit with the authoritative log in `worldwake-core`, which is cleaner than leaving the commit boundary in `worldwake-sim`

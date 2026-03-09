@@ -13,7 +13,9 @@ Without a journaled mutation path, “every persistent state change has exactly 
 Phase 1: World Legality
 
 ## Crate
-`worldwake-sim`
+`worldwake-core` (final implementation)
+
+Original draft target: `worldwake-sim`
 
 ## Dependencies
 - E05 (legal world mutations now exist)

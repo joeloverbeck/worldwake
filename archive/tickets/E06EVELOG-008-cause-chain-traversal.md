@@ -1,5 +1,9 @@
 # E06EVELOG-008: Cause Chain Traversal and Reverse Effect Index
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative `EventLog` implementation lives in `worldwake-core`, not `worldwake-sim`. This archived ticket captures the intermediate traversal plan before the event journal was consolidated beside `World`.
+
 **Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
@@ -119,7 +123,8 @@ Do not build a second corruption-recovery layer into traversal. Once `emit` enfo
 
 ## Outcome
 
+- Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
-- What actually changed: extended `EventLog` with a deterministic `by_cause` reverse index, added `trace_cause_chain`, `get_effects`, and `causal_depth`, and strengthened `emit` so event-caused appends must reference an existing earlier event
-- Deviations from original plan: corrected the ticket first so it matched the current `PendingEvent`/inline-test architecture, and tightened scope so causal validity is enforced at append time instead of being treated as a debug-only traversal concern
-- Verification results: `cargo test -p worldwake-sim`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo fmt --check` passed
+- What actually changed: extended `crates/worldwake-core/src/event_log.rs` with a deterministic `by_cause` reverse index, added `trace_cause_chain`, `get_effects`, and `causal_depth`, and strengthened `emit` so event-caused appends must reference an existing earlier event
+- Deviations from original plan: corrected the ticket first so it matched the current `PendingEvent`/inline-test architecture, and tightened scope so causal validity is enforced at append time instead of being treated as a debug-only traversal concern; the final implementation also lives in `worldwake-core`, which is the cleaner long-term ownership boundary
+- Verification results: `cargo test -p worldwake-core`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo fmt --check` passed

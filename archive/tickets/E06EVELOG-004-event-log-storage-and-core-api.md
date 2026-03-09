@@ -1,5 +1,9 @@
 # E06EVELOG-004: EventLog Storage and Core API
 
+## Archive Amendment (2026-03-09)
+
+The final authoritative `EventLog` implementation lives in `worldwake-core`, not `worldwake-sim`. This archived ticket preserves the intermediate plan before the event journal was moved beside `World`.
+
 **Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
@@ -120,6 +124,6 @@ Add module and re-export.
 
 - Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
-- What actually changed: added `worldwake_sim::EventLog` with append-only `Vec<EventRecord>` storage, internal gapless `EventId` assignment during append, tick indexing, O(1) lookup by `EventId`, a `PendingEvent` payload type, and public exports from `worldwake-sim`
-- Deviations from original plan: corrected the ticket assumptions first because E06EVELOG-003 had already landed, then refined the append API so callers no longer supply event IDs; this is the cleaner long-term shape for `WorldTxn` and future indices
-- Verification results: `cargo test -p worldwake-sim`, `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all passed
+- What actually changed: added `worldwake_core::EventLog` in `crates/worldwake-core/src/event_log.rs` with append-only `Vec<EventRecord>` storage, internal gapless `EventId` assignment during append, tick indexing, O(1) lookup by `EventId`, a `PendingEvent` payload type, and public exports from `worldwake-core`
+- Deviations from original plan: corrected the ticket assumptions first because E06EVELOG-003 had already landed, then refined the append API so callers no longer supply event IDs; the final architecture also moved the authoritative log into `worldwake-core` so the append boundary sits next to `WorldTxn`
+- Verification results: `cargo test -p worldwake-core`, `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all passed
