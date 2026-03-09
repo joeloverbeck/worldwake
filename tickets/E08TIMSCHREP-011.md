@@ -16,6 +16,7 @@ The simulation must support saving to and loading from disk with versioned binar
 2. `bincode` is available for binary serialization — confirmed
 3. `serde` derives on all component types — confirmed throughout codebase
 4. No save/load exists yet — confirmed
+5. Replay and checkpoint helpers now operate on `SimulationState` directly; save/load should preserve that root-first boundary instead of reintroducing separate root arguments — confirmed
 
 ## Architecture Check
 
@@ -24,6 +25,7 @@ The simulation must support saving to and loading from disk with versioned binar
 3. Format version: `u32` starting at `1` — incremented on breaking schema changes
 4. Loading checks magic + version before deserializing — mismatches produce clear errors, not panics
 5. No compression for prototype scope — bincode is already compact
+6. Save/load APIs should stay root-first: callers pass or receive `SimulationState`, and continuation tests should exercise the loaded root directly
 
 ## What to Change
 
@@ -83,6 +85,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<SimulationState, SaveError>
 - Autosave or periodic save logic
 - Save file browser / listing
 - CLI integration for save/load (E21)
+- Refactoring runtime/replay APIs away from `SimulationState`; this ticket should follow the root-first architecture established in E08TIMSCHREP-010
 
 ## Acceptance Criteria
 
@@ -104,6 +107,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<SimulationState, SaveError>
 2. Old or mismatched versions fail cleanly (Spec requirement)
 3. Save/load is a semantic round-trip — simulation continues identically (Spec 9.19)
 4. No silent data loss on round-trip
+5. Save/load does not reintroduce exploded authoritative-root APIs where a single `SimulationState` root is sufficient
 
 ## Test Plan
 

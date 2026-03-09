@@ -1,12 +1,9 @@
 use crate::{
-    step_tick, ControllerState, DeterministicRng, InputQueueError, ReplayCheckpoint, ReplayState,
-    ReplayStateError, Scheduler, TickStepServices,
+    step_tick, InputQueueError, ReplayCheckpoint, ReplayStateError, SimulationState,
+    TickStepServices,
 };
 use std::fmt;
-use worldwake_core::{
-    hash_event_log, hash_serializable, hash_world, CanonicalError, EventLog, StateHash, Tick,
-    World,
-};
+use worldwake_core::{hash_event_log, hash_world, CanonicalError, StateHash, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayError {
@@ -93,26 +90,17 @@ impl From<InputQueueError> for ReplayCheckpointError {
 }
 
 pub fn replay_and_verify(
-    initial_world: &World,
-    initial_event_log: &EventLog,
-    initial_scheduler: &Scheduler,
-    initial_controller: &ControllerState,
-    replay: &ReplayState,
+    initial_state: &SimulationState,
     services: TickStepServices<'_>,
 ) -> Result<StateHash, Vec<ReplayError>> {
     let mut errors = Vec::new();
-    let initial_hash = match hash_replay_roots(
-        initial_world,
-        initial_event_log,
-        initial_scheduler,
-        initial_controller,
-    ) {
+    let initial_hash = match initial_state.replay_bootstrap_hash() {
         Ok(hash) => hash,
         Err(source) => panic!("replay initial-state hashing failed unexpectedly: {source}"),
     };
-    if initial_hash != replay.initial_state_hash() {
+    if initial_hash != initial_state.replay_state().initial_state_hash() {
         errors.push(ReplayError::InitialStateHashMismatch {
-            expected: replay.initial_state_hash(),
+            expected: initial_state.replay_state().initial_state_hash(),
             actual: initial_hash,
         });
     }
@@ -121,74 +109,73 @@ pub fn replay_and_verify(
         return Err(errors);
     }
 
-    let mut world = initial_world.clone();
-    let mut event_log = initial_event_log.clone();
-    let mut scheduler = initial_scheduler.clone();
-    let mut controller = initial_controller.clone();
-    let mut rng = DeterministicRng::new(replay.master_seed());
+    let mut state = initial_state.clone();
+    let replay_inputs = state.replay_state().input_log().to_vec();
 
-    scheduler
+    state
+        .scheduler_mut()
         .input_queue_mut()
-        .replace_with_recorded(replay.input_log())
+        .replace_with_recorded(&replay_inputs)
         .expect("replay input log must remain reconstructible");
 
     let mut checkpoint_index = 0usize;
-    while scheduler.current_tick() < replay.terminal_tick() {
-        let result = step_tick(
-            &mut world,
-            &mut event_log,
-            &mut scheduler,
-            &mut controller,
-            &mut rng,
-            services,
-        )
+    while state.scheduler().current_tick() < state.replay_state().terminal_tick() {
+        let result = {
+            let (world, event_log, scheduler, controller, rng) = state.runtime_parts_mut();
+            step_tick(world, event_log, scheduler, controller, rng, services)
+        }
         .unwrap_or_else(|error| panic!("replay tick stepping failed unexpectedly: {error}"));
 
-        while let Some(checkpoint) = replay.checkpoints().get(checkpoint_index) {
+        let checkpoints = state.replay_state().checkpoints();
+        while let Some(checkpoint) = checkpoints.get(checkpoint_index) {
             if checkpoint.tick != result.tick {
                 break;
             }
 
-            verify_checkpoint(checkpoint, &world, &event_log, &mut errors);
+            verify_checkpoint(checkpoint, state.world(), state.event_log(), &mut errors);
             checkpoint_index += 1;
         }
     }
 
     if errors.is_empty() {
-        Ok(
-            hash_replay_roots(&world, &event_log, &scheduler, &controller)
-                .expect("replay final-state hashing failed unexpectedly"),
-        )
+        Ok(state
+            .replay_bootstrap_hash()
+            .expect("replay final-state hashing failed unexpectedly"))
     } else {
         Err(errors)
     }
 }
 
 pub fn record_tick_checkpoint(
-    replay: &mut ReplayState,
+    state: &mut SimulationState,
     tick: Tick,
-    world: &World,
-    event_log: &EventLog,
 ) -> Result<bool, ReplayCheckpointError> {
-    if !replay.should_checkpoint(tick) {
+    if !state.replay_state().should_checkpoint(tick) {
         return Ok(false);
     }
 
-    replay.record_checkpoint(ReplayCheckpoint {
+    let event_log_hash = hash_event_log(state.event_log())?;
+    let world_state_hash = hash_world(state.world())?;
+    state.replay_state_mut().record_checkpoint(ReplayCheckpoint {
         tick,
-        event_log_hash: hash_event_log(event_log)?,
-        world_state_hash: hash_world(world)?,
+        event_log_hash,
+        world_state_hash,
     })?;
     Ok(true)
 }
 
 pub fn seed_replay_inputs_from_scheduler(
-    replay: &mut ReplayState,
-    scheduler: &Scheduler,
+    state: &mut SimulationState,
 ) -> Result<usize, ReplayCheckpointError> {
     let mut recorded = 0usize;
-    for input in scheduler.input_queue().iter_in_sequence_order().cloned() {
-        replay.record_input(input)?;
+    let inputs = state
+        .scheduler()
+        .input_queue()
+        .iter_in_sequence_order()
+        .cloned()
+        .collect::<Vec<_>>();
+    for input in inputs {
+        state.replay_state_mut().record_input(input)?;
         recorded = recorded
             .checked_add(1)
             .expect("replay seeded input counter overflowed");
@@ -199,8 +186,8 @@ pub fn seed_replay_inputs_from_scheduler(
 
 fn verify_checkpoint(
     checkpoint: &ReplayCheckpoint,
-    world: &World,
-    event_log: &EventLog,
+    world: &worldwake_core::World,
+    event_log: &worldwake_core::EventLog,
     errors: &mut Vec<ReplayError>,
 ) {
     let actual_event_log_hash =
@@ -223,25 +210,16 @@ fn verify_checkpoint(
     }
 }
 
-fn hash_replay_roots(
-    world: &World,
-    event_log: &EventLog,
-    scheduler: &Scheduler,
-    controller: &ControllerState,
-) -> Result<StateHash, CanonicalError> {
-    hash_serializable(&(world, event_log, scheduler, controller))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        hash_replay_roots, record_tick_checkpoint, replay_and_verify,
-        seed_replay_inputs_from_scheduler, ReplayError,
+        record_tick_checkpoint, replay_and_verify, seed_replay_inputs_from_scheduler, ReplayError,
     };
     use crate::{
         ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind,
-        ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler, SystemDispatchTable,
-        SystemError, SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
+        ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemId, SystemManifest,
+        TickStepServices,
     };
     use std::num::NonZeroU64;
     use worldwake_core::{
@@ -320,24 +298,35 @@ mod tests {
         SystemDispatchTable::from_handlers([dispatch; SystemId::ALL.len()])
     }
 
-    fn build_initial_state() -> (
-        World,
-        EventLog,
-        Scheduler,
-        ControllerState,
-        EntityId,
-        EntityId,
-    ) {
+    fn build_initial_state(advance_initial_rng: bool) -> (SimulationState, EntityId, EntityId) {
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut event_log = EventLog::new();
         let first = spawn_agent(&mut world, &mut event_log, 1);
         let second = spawn_agent(&mut world, &mut event_log, 2);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let controller = ControllerState::with_entity(first);
+        let mut rng = DeterministicRng::new(Seed([17; 32]));
+        if advance_initial_rng {
+            let _ = rng.next_u32();
+        }
+
+        let initial_hash = SimulationState::replay_bootstrap_hash_parts(
+            &world,
+            &event_log,
+            &scheduler,
+            &controller,
+            &rng,
+        )
+        .unwrap();
+        let replay = ReplayState::new(
+            initial_hash,
+            Seed([17; 32]),
+            scheduler.current_tick(),
+            ReplayRecordingConfig::disabled(),
+        );
 
         (
-            world,
-            event_log,
-            Scheduler::new(SystemManifest::canonical()),
-            ControllerState::with_entity(first),
+            SimulationState::new(world, event_log, scheduler, replay, controller, rng),
             first,
             second,
         )
@@ -370,66 +359,59 @@ mod tests {
         checkpoint_config: ReplayRecordingConfig,
         total_ticks: u64,
         seed_initial_queue: bool,
-    ) -> (
-        World,
-        EventLog,
-        Scheduler,
-        ControllerState,
-        ReplayState,
-        StateHash,
-    ) {
-        let (initial_world, initial_event_log, mut initial_scheduler, initial_controller, first, second) =
-            build_initial_state();
-        let mut world = initial_world.clone();
-        let mut event_log = initial_event_log.clone();
-        let mut scheduler = initial_scheduler.clone();
-        let mut controller = initial_controller.clone();
-        let seed = Seed([17; 32]);
+        advance_initial_rng: bool,
+    ) -> (SimulationState, StateHash) {
+        let (mut initial_state, first, second) = build_initial_state(advance_initial_rng);
+        *initial_state.replay_state_mut() = ReplayState::new(
+            initial_state.replay_bootstrap_hash().unwrap(),
+            initial_state.replay_state().master_seed(),
+            initial_state.scheduler().current_tick(),
+            checkpoint_config,
+        );
+        let mut state = initial_state.clone();
 
         if seed_initial_queue {
-            let _ = scheduler
+            let _ = state
+                .scheduler_mut()
                 .input_queue_mut()
                 .enqueue(Tick(0), InputKind::SwitchControl {
                     from: Some(first),
                     to: Some(second),
                 });
-            let _ = scheduler
+            let _ = state
+                .scheduler_mut()
                 .input_queue_mut()
                 .enqueue(Tick(0), InputKind::SwitchControl {
                     from: Some(second),
                     to: Some(first),
                 });
-            initial_scheduler = scheduler.clone();
+            *initial_state.scheduler_mut() = state.scheduler().clone();
+            *initial_state.replay_state_mut() = ReplayState::new(
+                initial_state.replay_bootstrap_hash().unwrap(),
+                initial_state.replay_state().master_seed(),
+                initial_state.scheduler().current_tick(),
+                checkpoint_config,
+            );
+            *state.replay_state_mut() = initial_state.replay_state().clone();
         }
 
-        let mut replay = ReplayState::new(
-            hash_replay_roots(
-                &initial_world,
-                &initial_event_log,
-                &initial_scheduler,
-                &initial_controller,
-            )
-            .unwrap(),
-            seed,
-            initial_scheduler.current_tick(),
-            checkpoint_config,
-        );
-
         if seed_initial_queue {
-            seed_replay_inputs_from_scheduler(&mut replay, &scheduler).unwrap();
+            seed_replay_inputs_from_scheduler(&mut state).unwrap();
         } else {
+            let (scheduler, replay) = state.scheduler_and_replay_mut();
             enqueue_recorded_input(
-                &mut scheduler,
-                &mut replay,
+                scheduler,
+                replay,
                 Tick(0),
                 InputKind::SwitchControl {
                     from: Some(first),
                     to: Some(second),
                 },
             );
+            let (scheduler, replay) = state.scheduler_and_replay_mut();
             enqueue_recorded_input(
-                &mut scheduler,
-                &mut replay,
+                scheduler,
+                replay,
                 Tick(0),
                 InputKind::SwitchControl {
                     from: Some(second),
@@ -438,9 +420,10 @@ mod tests {
             );
         }
         if total_ticks > 3 {
+            let (scheduler, replay) = state.scheduler_and_replay_mut();
             enqueue_recorded_input(
-                &mut scheduler,
-                &mut replay,
+                scheduler,
+                replay,
                 Tick(3),
                 InputKind::SwitchControl {
                     from: Some(first),
@@ -449,9 +432,10 @@ mod tests {
             );
         }
         if total_ticks > 7 {
+            let (scheduler, replay) = state.scheduler_and_replay_mut();
             enqueue_recorded_input(
-                &mut scheduler,
-                &mut replay,
+                scheduler,
+                replay,
                 Tick(7),
                 InputKind::SwitchControl {
                     from: Some(second),
@@ -463,155 +447,95 @@ mod tests {
         let action_defs = ActionDefRegistry::new();
         let action_handlers = ActionHandlerRegistry::new();
         let systems = deterministic_systems();
-        let mut rng = DeterministicRng::new(seed);
 
         for _ in 0..total_ticks {
-            let result = crate::step_tick(
-                &mut world,
-                &mut event_log,
-                &mut scheduler,
-                &mut controller,
-                &mut rng,
-                services(&action_defs, &action_handlers, &systems),
-            )
+            let result = {
+                let (world, event_log, scheduler, controller, rng) = state.runtime_parts_mut();
+                crate::step_tick(
+                    world,
+                    event_log,
+                    scheduler,
+                    controller,
+                    rng,
+                    services(&action_defs, &action_handlers, &systems),
+                )
+            }
             .unwrap();
-            let _ = record_tick_checkpoint(&mut replay, result.tick, &world, &event_log).unwrap();
-            replay.set_terminal_tick(scheduler.current_tick()).unwrap();
+            let _ = record_tick_checkpoint(&mut state, result.tick).unwrap();
+            let next_tick = state.scheduler().current_tick();
+            state.replay_state_mut().set_terminal_tick(next_tick).unwrap();
         }
 
-        let final_hash = hash_replay_roots(&world, &event_log, &scheduler, &controller).unwrap();
+        let final_hash = state.replay_bootstrap_hash().unwrap();
 
-        (
-            initial_world,
-            initial_event_log,
-            initial_scheduler,
-            initial_controller,
-            replay,
-            final_hash,
-        )
+        *initial_state.replay_state_mut() = state.replay_state().clone();
+
+        (initial_state, final_hash)
     }
 
     fn replay_with_recording(
-        initial_world: &World,
-        initial_event_log: &EventLog,
-        initial_scheduler: &Scheduler,
-        initial_controller: &ControllerState,
-        replay: &ReplayState,
+        initial_state: &SimulationState,
     ) -> Result<StateHash, Vec<ReplayError>> {
         let action_defs = ActionDefRegistry::new();
         let action_handlers = ActionHandlerRegistry::new();
         let systems = deterministic_systems();
 
-        replay_and_verify(
-            initial_world,
-            initial_event_log,
-            initial_scheduler,
-            initial_controller,
-            replay,
-            services(&action_defs, &action_handlers, &systems),
-        )
+        replay_and_verify(initial_state, services(&action_defs, &action_handlers, &systems))
     }
 
     #[test]
     fn replay_determinism_matches_recorded_checkpoints_and_final_hash() {
-        let (
-            initial_world,
-            initial_event_log,
-            initial_scheduler,
-            initial_controller,
-            replay,
-            expected_final_hash,
-        ) = build_recording(
+        let (initial_state, expected_final_hash) = build_recording(
             ReplayRecordingConfig::every(NonZeroU64::new(1).unwrap()),
             12,
             false,
+            false,
         );
-        let original_world = initial_world.clone();
-        let original_event_log = initial_event_log.clone();
-        let original_scheduler = initial_scheduler.clone();
-        let original_controller = initial_controller.clone();
+        let original_state = initial_state.clone();
 
-        let actual_final_hash = replay_with_recording(
-            &initial_world,
-            &initial_event_log,
-            &initial_scheduler,
-            &initial_controller,
-            &replay,
-        )
-        .unwrap();
+        let actual_final_hash = replay_with_recording(&initial_state).unwrap();
 
         assert_eq!(actual_final_hash, expected_final_hash);
-        assert_eq!(initial_world, original_world);
-        assert_eq!(initial_event_log, original_event_log);
-        assert_eq!(initial_scheduler, original_scheduler);
-        assert_eq!(initial_controller, original_controller);
+        assert_eq!(initial_state, original_state);
     }
 
     #[test]
     fn replay_zero_inputs_and_zero_ticks_returns_initial_hash() {
-        let (world, event_log, scheduler, controller, _, _) = build_initial_state();
-        let replay = ReplayState::new(
-            hash_replay_roots(&world, &event_log, &scheduler, &controller).unwrap(),
+        let (mut state, _, _) = build_initial_state(false);
+        *state.replay_state_mut() = ReplayState::new(
+            state.replay_bootstrap_hash().unwrap(),
             Seed([23; 32]),
-            scheduler.current_tick(),
+            state.scheduler().current_tick(),
             ReplayRecordingConfig::disabled(),
         );
 
-        let final_hash =
-            replay_with_recording(&world, &event_log, &scheduler, &controller, &replay).unwrap();
+        let final_hash = replay_with_recording(&state).unwrap();
 
-        assert_eq!(
-            final_hash,
-            hash_replay_roots(&world, &event_log, &scheduler, &controller).unwrap()
-        );
+        assert_eq!(final_hash, state.replay_bootstrap_hash().unwrap());
     }
 
     #[test]
     fn replay_preserves_same_tick_input_ordering() {
-        let (
-            initial_world,
-            initial_event_log,
-            initial_scheduler,
-            initial_controller,
-            replay,
-            expected_final_hash,
-        ) = build_recording(ReplayRecordingConfig::disabled(), 1, false);
+        let (initial_state, expected_final_hash) =
+            build_recording(ReplayRecordingConfig::disabled(), 1, false, false);
 
-        let actual_final_hash = replay_with_recording(
-            &initial_world,
-            &initial_event_log,
-            &initial_scheduler,
-            &initial_controller,
-            &replay,
-        )
-        .unwrap();
+        let actual_final_hash = replay_with_recording(&initial_state).unwrap();
 
         assert_eq!(actual_final_hash, expected_final_hash);
     }
 
     #[test]
     fn replay_rejects_initial_state_hash_mismatch() {
-        let (
-            initial_world,
-            initial_event_log,
-            initial_scheduler,
-            initial_controller,
-            replay,
-            _,
-        ) = build_recording(ReplayRecordingConfig::disabled(), 2, false);
-        let mut wrong_controller = initial_controller.clone();
-        wrong_controller
-            .switch_control(initial_controller.controlled_entity(), Some(entity(999)))
+        let (initial_state, _) =
+            build_recording(ReplayRecordingConfig::disabled(), 2, false, false);
+        let mut wrong_state = initial_state.clone();
+        let current_controller = wrong_state.controller_state().clone();
+        wrong_state
+            .controller_state_mut()
+            .switch_control(current_controller.controlled_entity(), Some(entity(999)))
             .unwrap();
 
-        let errors = replay_with_recording(
-            &initial_world,
-            &initial_event_log,
-            &initial_scheduler,
-            &wrong_controller,
-            &replay,
-        )
-        .unwrap_err();
+        let errors = replay_with_recording(&wrong_state).unwrap_err();
 
         assert!(matches!(
             errors.as_slice(),
@@ -621,48 +545,44 @@ mod tests {
 
     #[test]
     fn replay_reconstructs_nonempty_initial_scheduler_queue_and_sequence_offset() {
-        let (
-            initial_world,
-            initial_event_log,
-            initial_scheduler,
-            initial_controller,
-            replay,
-            expected_final_hash,
-        ) = build_recording(
+        let (initial_state, expected_final_hash) = build_recording(
             ReplayRecordingConfig::every(NonZeroU64::new(1).unwrap()),
             2,
             true,
+            false,
         );
 
-        assert!(!initial_scheduler.input_queue().is_empty());
-        assert_eq!(initial_scheduler.input_queue().next_sequence_no(), 2);
+        assert!(!initial_state.scheduler().input_queue().is_empty());
+        assert_eq!(initial_state.scheduler().input_queue().next_sequence_no(), 2);
 
-        let final_hash = replay_with_recording(
-            &initial_world,
-            &initial_event_log,
-            &initial_scheduler,
-            &initial_controller,
-            &replay,
-        )
-        .unwrap();
+        let final_hash = replay_with_recording(&initial_state).unwrap();
+
+        assert_eq!(final_hash, expected_final_hash);
+    }
+
+    #[test]
+    fn replay_uses_recorded_initial_rng_state_instead_of_reseeding_from_master_seed() {
+        let (initial_state, expected_final_hash) = build_recording(
+            ReplayRecordingConfig::every(NonZeroU64::new(1).unwrap()),
+            3,
+            false,
+            true,
+        );
+
+        let final_hash = replay_with_recording(&initial_state).unwrap();
 
         assert_eq!(final_hash, expected_final_hash);
     }
 
     #[test]
     fn replay_reports_world_checkpoint_mismatch() {
-        let (
-            initial_world,
-            initial_event_log,
-            initial_scheduler,
-            initial_controller,
-            replay,
-            _,
-        ) = build_recording(
+        let (initial_state, _) = build_recording(
             ReplayRecordingConfig::every(NonZeroU64::new(1).unwrap()),
             4,
             false,
+            false,
         );
+        let replay = initial_state.replay_state();
         let mut corrupted_replay = ReplayState::new(
             replay.initial_state_hash(),
             replay.master_seed(),
@@ -686,48 +606,45 @@ mod tests {
             corrupted_replay.record_checkpoint(checkpoint).unwrap();
         }
 
-        let errors = replay_with_recording(
-            &initial_world,
-            &initial_event_log,
-            &initial_scheduler,
-            &initial_controller,
-            &corrupted_replay,
-        )
-        .unwrap_err();
+        let mut corrupted_state = initial_state.clone();
+        *corrupted_state.replay_state_mut() = corrupted_replay;
+
+        let errors = replay_with_recording(&corrupted_state).unwrap_err();
 
         assert!(errors.contains(&ReplayError::WorldCheckpointMismatch {
             tick: Tick(2),
             expected: StateHash([0x55; 32]),
-            actual: replay.checkpoints()[2].world_state_hash,
+            actual: initial_state.replay_state().checkpoints()[2].world_state_hash,
         }));
     }
 
     #[test]
     fn record_tick_checkpoint_respects_disabled_and_interval_configs() {
-        let (world, event_log, scheduler, controller, _, _) = build_initial_state();
-        let initial_hash = hash_replay_roots(&world, &event_log, &scheduler, &controller).unwrap();
-        let mut disabled =
-            ReplayState::new(
-                initial_hash,
-                Seed([1; 32]),
-                scheduler.current_tick(),
-                ReplayRecordingConfig::disabled(),
-            );
-        let mut every_five = ReplayState::new(
+        let (mut disabled, _, _) = build_initial_state(false);
+        let initial_hash = disabled.replay_bootstrap_hash().unwrap();
+        *disabled.replay_state_mut() = ReplayState::new(
             initial_hash,
             Seed([1; 32]),
-            scheduler.current_tick(),
+            disabled.scheduler().current_tick(),
+            ReplayRecordingConfig::disabled(),
+        );
+        let mut every_five = disabled.clone();
+        *every_five.replay_state_mut() = ReplayState::new(
+            initial_hash,
+            Seed([1; 32]),
+            every_five.scheduler().current_tick(),
             ReplayRecordingConfig::every(NonZeroU64::new(5).unwrap()),
         );
 
-        assert!(!record_tick_checkpoint(&mut disabled, Tick(0), &world, &event_log).unwrap());
-        assert!(disabled.checkpoints().is_empty());
+        assert!(!record_tick_checkpoint(&mut disabled, Tick(0)).unwrap());
+        assert!(disabled.replay_state().checkpoints().is_empty());
 
-        assert!(record_tick_checkpoint(&mut every_five, Tick(0), &world, &event_log).unwrap());
-        assert!(!record_tick_checkpoint(&mut every_five, Tick(1), &world, &event_log).unwrap());
-        assert!(record_tick_checkpoint(&mut every_five, Tick(5), &world, &event_log).unwrap());
+        assert!(record_tick_checkpoint(&mut every_five, Tick(0)).unwrap());
+        assert!(!record_tick_checkpoint(&mut every_five, Tick(1)).unwrap());
+        assert!(record_tick_checkpoint(&mut every_five, Tick(5)).unwrap());
         assert_eq!(
             every_five
+                .replay_state()
                 .checkpoints()
                 .iter()
                 .map(|checkpoint| checkpoint.tick)
@@ -738,24 +655,25 @@ mod tests {
 
     #[test]
     fn seed_replay_inputs_from_scheduler_copies_pending_inputs_in_queue_order() {
-        let (world, event_log, mut scheduler, controller, first, second) = build_initial_state();
-        let initial_hash = hash_replay_roots(&world, &event_log, &scheduler, &controller).unwrap();
-        let mut replay =
-            ReplayState::new(
-                initial_hash,
-                Seed([1; 32]),
-                scheduler.current_tick(),
-                ReplayRecordingConfig::disabled(),
-            );
+        let (mut state, first, second) = build_initial_state(false);
+        let initial_hash = state.replay_bootstrap_hash().unwrap();
+        *state.replay_state_mut() = ReplayState::new(
+            initial_hash,
+            Seed([1; 32]),
+            state.scheduler().current_tick(),
+            ReplayRecordingConfig::disabled(),
+        );
 
-        let first_input = scheduler
+        let first_input = state
+            .scheduler_mut()
             .input_queue_mut()
             .enqueue(Tick(5), InputKind::SwitchControl {
                 from: Some(first),
                 to: Some(second),
             })
             .clone();
-        let second_input = scheduler
+        let second_input = state
+            .scheduler_mut()
             .input_queue_mut()
             .enqueue(Tick(2), InputKind::SwitchControl {
                 from: Some(second),
@@ -763,63 +681,46 @@ mod tests {
             })
             .clone();
 
-        let recorded = seed_replay_inputs_from_scheduler(&mut replay, &scheduler).unwrap();
+        let recorded = seed_replay_inputs_from_scheduler(&mut state).unwrap();
 
         assert_eq!(recorded, 2);
-        assert_eq!(replay.input_log(), &[first_input, second_input]);
+        assert_eq!(state.replay_state().input_log(), &[first_input, second_input]);
     }
 
     #[test]
     fn replay_uses_terminal_tick_when_no_inputs_or_checkpoints_exist() {
-        let (initial_world, initial_event_log, initial_scheduler, initial_controller, _, _) =
-            build_initial_state();
-        let mut replay = ReplayState::new(
-            hash_replay_roots(
-                &initial_world,
-                &initial_event_log,
-                &initial_scheduler,
-                &initial_controller,
-            )
-            .unwrap(),
+        let (mut initial_state, _, _) = build_initial_state(false);
+        *initial_state.replay_state_mut() = ReplayState::new(
+            initial_state.replay_bootstrap_hash().unwrap(),
             Seed([42; 32]),
-            initial_scheduler.current_tick(),
+            initial_state.scheduler().current_tick(),
             ReplayRecordingConfig::disabled(),
         );
-        replay.set_terminal_tick(Tick(3)).unwrap();
+        initial_state
+            .replay_state_mut()
+            .set_terminal_tick(Tick(3))
+            .unwrap();
 
-        let final_hash = replay_with_recording(
-            &initial_world,
-            &initial_event_log,
-            &initial_scheduler,
-            &initial_controller,
-            &replay,
-        )
-        .unwrap();
+        let final_hash = replay_with_recording(&initial_state).unwrap();
 
-        let mut world = initial_world.clone();
-        let mut event_log = initial_event_log.clone();
-        let mut scheduler = initial_scheduler.clone();
-        let mut controller = initial_controller.clone();
+        let mut state = initial_state.clone();
         let action_defs = ActionDefRegistry::new();
         let action_handlers = ActionHandlerRegistry::new();
         let systems = deterministic_systems();
-        let mut rng = DeterministicRng::new(replay.master_seed());
 
         for _ in 0..3 {
+            let (world, event_log, scheduler, controller, rng) = state.runtime_parts_mut();
             crate::step_tick(
-                &mut world,
-                &mut event_log,
-                &mut scheduler,
-                &mut controller,
-                &mut rng,
+                world,
+                event_log,
+                scheduler,
+                controller,
+                rng,
                 services(&action_defs, &action_handlers, &systems),
             )
             .unwrap();
         }
 
-        assert_eq!(
-            final_hash,
-            hash_replay_roots(&world, &event_log, &scheduler, &controller).unwrap()
-        );
+        assert_eq!(final_hash, state.replay_bootstrap_hash().unwrap());
     }
 }

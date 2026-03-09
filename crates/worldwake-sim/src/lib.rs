@@ -27,6 +27,7 @@ pub mod replay_state;
 pub mod replay_execution;
 pub mod replan_needed;
 pub mod scheduler;
+pub mod simulation_state;
 pub mod start_gate;
 pub mod system_manifest;
 pub mod system_dispatch;
@@ -66,6 +67,7 @@ pub use replay_execution::{
 pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
 pub use replan_needed::ReplanNeeded;
 pub use scheduler::Scheduler;
+pub use simulation_state::SimulationState;
 pub use start_gate::start_action;
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
