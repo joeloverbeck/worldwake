@@ -122,15 +122,18 @@ impl EntityAllocator {
         self.record(id)?.meta.as_ref()
     }
 
-    pub fn entity_ids(&self) -> impl Iterator<Item = EntityId> + '_ {
+    pub fn all_entity_ids(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.slots.iter().filter_map(|(slot, record)| {
-            record.meta.as_ref().and_then(|meta| {
-                (meta.archived_at.is_none()).then_some(EntityId {
-                    slot: *slot,
-                    generation: record.generation,
-                })
+            record.meta.as_ref().map(|_| EntityId {
+                slot: *slot,
+                generation: record.generation,
             })
         })
+    }
+
+    pub fn entity_ids(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.all_entity_ids()
+            .filter(|entity| self.get_meta(*entity).is_some_and(|meta| meta.archived_at.is_none()))
     }
 
     fn allocate_slot(&mut self) -> u32 {
@@ -281,6 +284,23 @@ mod tests {
 
         let live: Vec<EntityId> = allocator.entity_ids().collect();
         assert_eq!(live, vec![id0, id2]);
+    }
+
+    #[test]
+    fn all_entity_ids_include_archived_but_not_purged() {
+        let mut allocator = EntityAllocator::new();
+        let live = allocator.create_entity(EntityKind::Agent, Tick(1));
+        let archived = allocator.create_entity(EntityKind::Place, Tick(2));
+
+        allocator.archive_entity(archived, Tick(3)).unwrap();
+
+        let all: Vec<EntityId> = allocator.all_entity_ids().collect();
+        assert_eq!(all, vec![live, archived]);
+
+        allocator.purge_entity(archived).unwrap();
+
+        let all: Vec<EntityId> = allocator.all_entity_ids().collect();
+        assert_eq!(all, vec![live]);
     }
 
     #[test]

@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod allocator;
+pub mod component_schema;
 pub mod component_tables;
 pub mod components;
 pub mod control;

@@ -1,6 +1,6 @@
 //! Explicit typed component storage.
 
-use crate::{components::{AgentData, Name}, EntityId};
+use crate::{component_schema::with_authoritative_components, components::{AgentData, Name}, EntityId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -41,41 +41,41 @@ macro_rules! component_table_methods {
     };
 }
 
-/// Explicit typed component storage for non-topological authoritative components.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ComponentTables {
-    pub(crate) names: BTreeMap<EntityId, Name>,
-    pub(crate) agents: BTreeMap<EntityId, AgentData>,
+macro_rules! define_component_tables_struct {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
+        /// Explicit typed component storage for non-topological authoritative components.
+        #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+        pub struct ComponentTables {
+            $(pub(crate) $field: BTreeMap<EntityId, $component_ty>,)*
+        }
+    };
 }
 
-impl ComponentTables {
-    component_table_methods!(
-        insert_name,
-        get_name,
-        get_name_mut,
-        remove_name,
-        has_name,
-        iter_names,
-        names,
-        Name
-    );
+macro_rules! define_component_table_impls {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
+        impl ComponentTables {
+            $(
+                component_table_methods!(
+                    $table_insert,
+                    $table_get,
+                    $table_get_mut,
+                    $table_remove,
+                    $table_has,
+                    $table_iter,
+                    $field,
+                    $component_ty
+                );
+            )*
 
-    component_table_methods!(
-        insert_agent_data,
-        get_agent_data,
-        get_agent_data_mut,
-        remove_agent_data,
-        has_agent_data,
-        iter_agent_data,
-        agents,
-        AgentData
-    );
-
-    pub fn remove_all(&mut self, entity: EntityId) {
-        self.names.remove(&entity);
-        self.agents.remove(&entity);
-    }
+            pub fn remove_all(&mut self, entity: EntityId) {
+                $(self.$field.remove(&entity);)*
+            }
+        }
+    };
 }
+
+with_authoritative_components!(define_component_tables_struct);
+with_authoritative_components!(define_component_table_impls);
 
 #[cfg(test)]
 mod tests {

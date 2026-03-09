@@ -1,68 +1,71 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    AgentData, ComponentTables, EntityAllocator, EntityId, EntityKind, EntityMeta, Name, Tick,
-    Topology, WorldError,
+    component_schema::with_authoritative_components, AgentData, ComponentTables, EntityAllocator,
+    EntityId, EntityKind, EntityMeta, Name, Tick, Topology, WorldError,
 };
 
-macro_rules! world_component_methods {
-    (
-        $insert_fn:ident,
-        $get_fn:ident,
-        $get_mut_fn:ident,
-        $remove_fn:ident,
-        $has_fn:ident,
-        $table_insert:ident,
-        $table_get:ident,
-        $table_get_mut:ident,
-        $table_remove:ident,
-        $table_has:ident,
-        $component_ty:ty,
-        $component_name:literal,
-        $kind_check:expr
-    ) => {
-        pub fn $insert_fn(
-            &mut self,
-            entity: EntityId,
-            component: $component_ty,
-        ) -> Result<(), WorldError> {
-            let meta = self.ensure_alive(entity)?;
-            if !(($kind_check)(meta.kind)) {
-                return Err(WorldError::InvalidOperation(format!(
-                    "component {} not valid for entity kind {:?}: {}",
-                    $component_name, meta.kind, entity
-                )));
+macro_rules! world_component_api {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
+        $(
+            pub fn $insert_fn(
+                &mut self,
+                entity: EntityId,
+                component: $component_ty,
+            ) -> Result<(), WorldError> {
+                let meta = self.ensure_alive(entity)?;
+                if !(($kind_check)(meta.kind)) {
+                    return Err(WorldError::InvalidOperation(format!(
+                        "component {} not valid for entity kind {:?}: {}",
+                        $component_name, meta.kind, entity
+                    )));
+                }
+                if self.components.$table_has(entity) {
+                    return Err(WorldError::DuplicateComponent {
+                        entity,
+                        component_type: $component_name,
+                    });
+                }
+                let replaced = self.components.$table_insert(entity, component);
+                debug_assert!(replaced.is_none(), "duplicate check must prevent replacement");
+                Ok(())
             }
-            if self.components.$table_has(entity) {
-                return Err(WorldError::DuplicateComponent {
-                    entity,
-                    component_type: $component_name,
-                });
+
+            #[must_use]
+            pub fn $get_fn(&self, entity: EntityId) -> Option<&$component_ty> {
+                self.is_alive(entity).then(|| self.components.$table_get(entity))?
             }
-            let replaced = self.components.$table_insert(entity, component);
-            debug_assert!(replaced.is_none(), "duplicate check must prevent replacement");
-            Ok(())
-        }
 
-        #[must_use]
-        pub fn $get_fn(&self, entity: EntityId) -> Option<&$component_ty> {
-            self.is_alive(entity).then(|| self.components.$table_get(entity))?
-        }
+            pub fn $get_mut_fn(&mut self, entity: EntityId) -> Option<&mut $component_ty> {
+                self.is_alive(entity)
+                    .then(|| self.components.$table_get_mut(entity))?
+            }
 
-        pub fn $get_mut_fn(&mut self, entity: EntityId) -> Option<&mut $component_ty> {
-            self.is_alive(entity)
-                .then(|| self.components.$table_get_mut(entity))?
-        }
+            pub fn $remove_fn(&mut self, entity: EntityId) -> Result<Option<$component_ty>, WorldError> {
+                self.ensure_alive(entity)?;
+                Ok(self.components.$table_remove(entity))
+            }
 
-        pub fn $remove_fn(&mut self, entity: EntityId) -> Result<Option<$component_ty>, WorldError> {
-            self.ensure_alive(entity)?;
-            Ok(self.components.$table_remove(entity))
-        }
+            #[must_use]
+            pub fn $has_fn(&self, entity: EntityId) -> bool {
+                self.is_alive(entity) && self.components.$table_has(entity)
+            }
 
-        #[must_use]
-        pub fn $has_fn(&self, entity: EntityId) -> bool {
-            self.is_alive(entity) && self.components.$table_has(entity)
-        }
+            pub fn $entities_fn(&self) -> impl Iterator<Item = EntityId> + '_ {
+                self.$query_fn().map(|(entity, _)| entity)
+            }
+
+            pub fn $query_fn(&self) -> impl Iterator<Item = (EntityId, &$component_ty)> + '_ {
+                self.components
+                    .$table_iter()
+                    .filter(move |(entity, _)| self.is_alive(*entity))
+            }
+
+            #[must_use]
+            pub fn $count_fn(&self) -> usize {
+                self.$query_fn().count()
+            }
+        )*
     };
 }
 
@@ -142,6 +145,37 @@ impl World {
         &self.topology
     }
 
+    pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.allocator.entity_ids()
+    }
+
+    pub fn all_entities(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.allocator.all_entity_ids()
+    }
+
+    pub fn entities_of_kind(&self, kind: EntityKind) -> impl Iterator<Item = EntityId> + '_ {
+        self.entities()
+            .filter(move |entity| self.entity_kind(*entity) == Some(kind))
+    }
+
+    #[must_use]
+    pub fn entity_count(&self) -> usize {
+        self.entities().count()
+    }
+
+    pub fn entities_with_name_and_agent_data(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.query_name_and_agent_data().map(|(entity, _, _)| entity)
+    }
+
+    pub fn query_name_and_agent_data(
+        &self,
+    ) -> impl Iterator<Item = (EntityId, &Name, &AgentData)> + '_ {
+        self.query_name().filter_map(move |(entity, name)| {
+            self.get_component_agent_data(entity)
+                .map(|agent_data| (entity, name, agent_data))
+        })
+    }
+
     fn ensure_alive(&self, id: EntityId) -> Result<&EntityMeta, WorldError> {
         let meta = self
             .allocator
@@ -153,37 +187,7 @@ impl World {
         Ok(meta)
     }
 
-    world_component_methods!(
-        insert_component_name,
-        get_component_name,
-        get_component_name_mut,
-        remove_component_name,
-        has_component_name,
-        insert_name,
-        get_name,
-        get_name_mut,
-        remove_name,
-        has_name,
-        Name,
-        "Name",
-        |_| true
-    );
-
-    world_component_methods!(
-        insert_component_agent_data,
-        get_component_agent_data,
-        get_component_agent_data_mut,
-        remove_component_agent_data,
-        has_component_agent_data,
-        insert_agent_data,
-        get_agent_data,
-        get_agent_data_mut,
-        remove_agent_data,
-        has_agent_data,
-        AgentData,
-        "AgentData",
-        |kind| kind == EntityKind::Agent
-    );
+    with_authoritative_components!(world_component_api);
 }
 
 #[cfg(test)]
@@ -256,6 +260,54 @@ mod tests {
         assert!(!world.is_alive(id));
         assert!(world.is_archived(id));
         assert_eq!(world.entity_meta(id).unwrap().archived_at, Some(Tick(9)));
+    }
+
+    #[test]
+    fn entities_returns_sorted_live_ids() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let office = world.create_entity(EntityKind::Office, Tick(2));
+        let faction = world.create_entity(EntityKind::Faction, Tick(3));
+
+        world.archive_entity(office, Tick(4)).unwrap();
+
+        let ids = world.entities().collect::<Vec<_>>();
+
+        assert_eq!(ids, vec![entity(2), entity(5), agent, faction]);
+    }
+
+    #[test]
+    fn all_entities_includes_archived_but_not_purged() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let live = world.create_entity(EntityKind::Agent, Tick(1));
+        let archived = world.create_entity(EntityKind::Office, Tick(2));
+
+        world.archive_entity(archived, Tick(3)).unwrap();
+        assert_eq!(world.all_entities().collect::<Vec<_>>(), vec![live, archived]);
+
+        world.purge_entity(archived).unwrap();
+
+        assert_eq!(world.all_entities().collect::<Vec<_>>(), vec![live]);
+    }
+
+    #[test]
+    fn entities_of_kind_filters_live_entities() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let archived_agent = world.create_entity(EntityKind::Agent, Tick(2));
+        let office = world.create_entity(EntityKind::Office, Tick(3));
+
+        world.archive_entity(archived_agent, Tick(4)).unwrap();
+
+        assert_eq!(world.entities_of_kind(EntityKind::Agent).collect::<Vec<_>>(), vec![agent]);
+        assert_eq!(
+            world.entities_of_kind(EntityKind::Place).collect::<Vec<_>>(),
+            vec![entity(2), entity(5)]
+        );
+        assert_eq!(
+            world.entities_of_kind(EntityKind::Office).collect::<Vec<_>>(),
+            vec![office]
+        );
     }
 
     #[test]
@@ -371,6 +423,366 @@ mod tests {
         let id = world.create_entity(EntityKind::Faction, Tick(1));
 
         assert_eq!(world.remove_component_name(id).unwrap(), None);
+    }
+
+    #[test]
+    fn entities_with_name_returns_live_entities() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let named_agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let unnamed_agent = world.create_entity(EntityKind::Agent, Tick(2));
+        let archived_named = world.create_entity(EntityKind::Office, Tick(3));
+
+        world
+            .insert_component_name(named_agent, Name("Aster".to_string()))
+            .unwrap();
+        world
+            .insert_component_name(archived_named, Name("Old Hall".to_string()))
+            .unwrap();
+        world.archive_entity(archived_named, Tick(4)).unwrap();
+
+        assert_eq!(world.entities_with_name().collect::<Vec<_>>(), vec![named_agent]);
+        assert!(!world.has_component_name(unnamed_agent));
+    }
+
+    #[test]
+    fn query_name_returns_sorted_pairs() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let second = world.create_entity(EntityKind::Office, Tick(1));
+        let third = world.create_entity(EntityKind::Faction, Tick(2));
+        let first = world.create_entity(EntityKind::Agent, Tick(3));
+
+        world
+            .insert_component_name(second, Name("Ledger Hall".to_string()))
+            .unwrap();
+        world
+            .insert_component_name(third, Name("River Pact".to_string()))
+            .unwrap();
+        world
+            .insert_component_name(first, Name("Aster".to_string()))
+            .unwrap();
+
+        let pairs = world
+            .query_name()
+            .map(|(entity, name)| (entity, name.0.as_str()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            pairs,
+            vec![
+                (second, "Ledger Hall"),
+                (third, "River Pact"),
+                (first, "Aster"),
+            ]
+        );
+    }
+
+    #[test]
+    fn entities_with_agent_data_returns_live_entities() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let archived_agent = world.create_entity(EntityKind::Agent, Tick(2));
+
+        world
+            .insert_component_agent_data(
+                agent,
+                AgentData {
+                    control_source: ControlSource::Human,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                archived_agent,
+                AgentData {
+                    control_source: ControlSource::Ai,
+                },
+            )
+            .unwrap();
+        world.archive_entity(archived_agent, Tick(3)).unwrap();
+
+        assert_eq!(
+            world.entities_with_agent_data().collect::<Vec<_>>(),
+            vec![agent]
+        );
+    }
+
+    #[test]
+    fn query_agent_data_returns_sorted_pairs() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let first = world.create_entity(EntityKind::Agent, Tick(1));
+        let second = world.create_entity(EntityKind::Agent, Tick(2));
+
+        world
+            .insert_component_agent_data(
+                first,
+                AgentData {
+                    control_source: ControlSource::Human,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                second,
+                AgentData {
+                    control_source: ControlSource::Ai,
+                },
+            )
+            .unwrap();
+
+        let pairs = world
+            .query_agent_data()
+            .map(|(entity, agent_data)| (entity, agent_data.control_source))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            pairs,
+            vec![
+                (first, ControlSource::Human),
+                (second, ControlSource::Ai),
+            ]
+        );
+    }
+
+    #[test]
+    fn entities_with_name_and_agent_data_returns_intersection() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let full = world.create_entity(EntityKind::Agent, Tick(1));
+        let name_only = world.create_entity(EntityKind::Office, Tick(2));
+        let agent_only = world.create_entity(EntityKind::Agent, Tick(3));
+        let archived_full = world.create_entity(EntityKind::Agent, Tick(4));
+
+        world
+            .insert_component_name(full, Name("Aster".to_string()))
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                full,
+                AgentData {
+                    control_source: ControlSource::Ai,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_name(name_only, Name("Ledger Hall".to_string()))
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                agent_only,
+                AgentData {
+                    control_source: ControlSource::Human,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_name(archived_full, Name("Ash".to_string()))
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                archived_full,
+                AgentData {
+                    control_source: ControlSource::Human,
+                },
+            )
+            .unwrap();
+        world.archive_entity(archived_full, Tick(5)).unwrap();
+
+        assert_eq!(
+            world
+                .entities_with_name_and_agent_data()
+                .collect::<Vec<_>>(),
+            vec![full]
+        );
+    }
+
+    #[test]
+    fn query_name_and_agent_data_returns_sorted_tuples() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let first = world.create_entity(EntityKind::Agent, Tick(1));
+        let second = world.create_entity(EntityKind::Agent, Tick(2));
+        let partial = world.create_entity(EntityKind::Office, Tick(3));
+
+        world
+            .insert_component_name(first, Name("Aster".to_string()))
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                first,
+                AgentData {
+                    control_source: ControlSource::Human,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_name(second, Name("Bram".to_string()))
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                second,
+                AgentData {
+                    control_source: ControlSource::Ai,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_name(partial, Name("Ledger Hall".to_string()))
+            .unwrap();
+
+        let tuples = world
+            .query_name_and_agent_data()
+            .map(|(entity, name, agent_data)| (entity, name.0.as_str(), agent_data.control_source))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            tuples,
+            vec![
+                (first, "Aster", ControlSource::Human),
+                (second, "Bram", ControlSource::Ai),
+            ]
+        );
+    }
+
+    #[test]
+    fn filtering_query_preserves_relative_order() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let first = world.create_entity(EntityKind::Agent, Tick(1));
+        let second = world.create_entity(EntityKind::Office, Tick(2));
+        let third = world.create_entity(EntityKind::Agent, Tick(3));
+
+        world
+            .insert_component_name(first, Name("Aster".to_string()))
+            .unwrap();
+        world
+            .insert_component_name(second, Name("Ledger Hall".to_string()))
+            .unwrap();
+        world
+            .insert_component_name(third, Name("Bram".to_string()))
+            .unwrap();
+
+        let filtered = world
+            .query_name()
+            .filter(|(_, name)| name.0.starts_with('A') || name.0.contains("Hall"))
+            .map(|(entity, _)| entity)
+            .collect::<Vec<_>>();
+
+        assert_eq!(filtered, vec![first, second]);
+    }
+
+    #[test]
+    fn empty_queries_are_safe() {
+        let world = World::new(Topology::new()).unwrap();
+
+        assert_eq!(world.entities().count(), 0);
+        assert_eq!(world.all_entities().count(), 0);
+        assert_eq!(world.entities_with_name().count(), 0);
+        assert_eq!(world.query_name().count(), 0);
+        assert_eq!(world.entities_with_agent_data().count(), 0);
+        assert_eq!(world.query_agent_data().count(), 0);
+        assert_eq!(world.entities_with_name_and_agent_data().count(), 0);
+        assert_eq!(world.query_name_and_agent_data().count(), 0);
+    }
+
+    #[test]
+    fn count_helpers_report_live_totals() {
+        let mut world = World::new(test_topology()).unwrap();
+        let live_named_agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let archived_named_agent = world.create_entity(EntityKind::Agent, Tick(2));
+        let live_named_office = world.create_entity(EntityKind::Office, Tick(3));
+
+        world
+            .insert_component_name(live_named_agent, Name("Aster".to_string()))
+            .unwrap();
+        world
+            .insert_component_name(archived_named_agent, Name("Ash".to_string()))
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                live_named_agent,
+                AgentData {
+                    control_source: ControlSource::Ai,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_agent_data(
+                archived_named_agent,
+                AgentData {
+                    control_source: ControlSource::Human,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_name(live_named_office, Name("Ledger Hall".to_string()))
+            .unwrap();
+        world.archive_entity(archived_named_agent, Tick(4)).unwrap();
+
+        assert_eq!(world.entity_count(), 4);
+        assert_eq!(world.count_with_name(), 2);
+        assert_eq!(world.count_with_agent_data(), 1);
+    }
+
+    #[test]
+    fn query_results_are_deterministic_across_identical_sequences() {
+        fn build_world() -> World {
+            let mut world = World::new(test_topology()).unwrap();
+            let aster = world.create_entity(EntityKind::Agent, Tick(1));
+            let ledger = world.create_entity(EntityKind::Office, Tick(2));
+            let bram = world.create_entity(EntityKind::Agent, Tick(3));
+
+            world
+                .insert_component_name(aster, Name("Aster".to_string()))
+                .unwrap();
+            world
+                .insert_component_agent_data(
+                    aster,
+                    AgentData {
+                        control_source: ControlSource::Human,
+                    },
+                )
+                .unwrap();
+            world
+                .insert_component_name(ledger, Name("Ledger Hall".to_string()))
+                .unwrap();
+            world
+                .insert_component_name(bram, Name("Bram".to_string()))
+                .unwrap();
+            world
+                .insert_component_agent_data(
+                    bram,
+                    AgentData {
+                        control_source: ControlSource::Ai,
+                    },
+                )
+                .unwrap();
+
+            world
+        }
+
+        let left = build_world();
+        let right = build_world();
+
+        assert_eq!(left.entities().collect::<Vec<_>>(), right.entities().collect::<Vec<_>>());
+        assert_eq!(
+            left.all_entities().collect::<Vec<_>>(),
+            right.all_entities().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            left.query_name()
+                .map(|(entity, name)| (entity, name.0.as_str()))
+                .collect::<Vec<_>>(),
+            right
+                .query_name()
+                .map(|(entity, name)| (entity, name.0.as_str()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            left.query_name_and_agent_data()
+                .map(|(entity, name, agent_data)| (entity, name.0.as_str(), agent_data.control_source))
+                .collect::<Vec<_>>(),
+            right
+                .query_name_and_agent_data()
+                .map(|(entity, name, agent_data)| (entity, name.0.as_str(), agent_data.control_source))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
