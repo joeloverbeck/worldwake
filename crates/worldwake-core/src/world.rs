@@ -9,7 +9,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod ownership;
 mod placement;
+mod relation_mutation;
 
 macro_rules! world_component_api {
     ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
@@ -1650,7 +1652,9 @@ mod tests {
         let item = world
             .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(1))
             .unwrap();
-        let non_place = world.create_agent("Aster", ControlSource::Ai, Tick(2)).unwrap();
+        let non_place = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
 
         let err = world.set_ground_location(item, non_place).unwrap_err();
 
@@ -1890,6 +1894,196 @@ mod tests {
         for entity in [root, mid, leaf, item] {
             assert_eq!(world.relations.located_in.get(&entity), Some(&farm));
         }
+    }
+
+    #[test]
+    fn set_owner_sets_and_replaces_reverse_index() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(3), Tick(1))
+            .unwrap();
+        let first_owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let second_owner = world.create_faction("Granary Guild", Tick(3)).unwrap();
+
+        world.set_owner(item, first_owner).unwrap();
+        assert_eq!(world.relations.owned_by.get(&item), Some(&first_owner));
+        assert_eq!(
+            world.relations.property_of.get(&first_owner),
+            Some(&BTreeSet::from([item]))
+        );
+
+        world.set_owner(item, second_owner).unwrap();
+        assert_eq!(world.relations.owned_by.get(&item), Some(&second_owner));
+        assert_eq!(world.relations.property_of.get(&first_owner), None);
+        assert_eq!(
+            world.relations.property_of.get(&second_owner),
+            Some(&BTreeSet::from([item]))
+        );
+    }
+
+    #[test]
+    fn clear_owner_removes_relation_and_is_idempotent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(3), Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+
+        world.set_owner(item, owner).unwrap();
+        world.clear_owner(item).unwrap();
+        world.clear_owner(item).unwrap();
+
+        assert_eq!(world.relations.owned_by.get(&item), None);
+        assert_eq!(world.relations.property_of.get(&owner), None);
+    }
+
+    #[test]
+    fn set_possessor_sets_and_replaces_reverse_index() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+        let first_holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let second_holder = world
+            .create_agent("Bram", ControlSource::Human, Tick(3))
+            .unwrap();
+
+        world.set_possessor(item, first_holder).unwrap();
+        assert_eq!(world.relations.possessed_by.get(&item), Some(&first_holder));
+        assert_eq!(
+            world.relations.possessions_of.get(&first_holder),
+            Some(&BTreeSet::from([item]))
+        );
+
+        world.set_possessor(item, second_holder).unwrap();
+        assert_eq!(
+            world.relations.possessed_by.get(&item),
+            Some(&second_holder)
+        );
+        assert_eq!(world.relations.possessions_of.get(&first_holder), None);
+        assert_eq!(
+            world.relations.possessions_of.get(&second_holder),
+            Some(&BTreeSet::from([item]))
+        );
+    }
+
+    #[test]
+    fn clear_possessor_removes_relation_and_is_idempotent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+
+        world.set_possessor(item, holder).unwrap();
+        world.clear_possessor(item).unwrap();
+        world.clear_possessor(item).unwrap();
+
+        assert_eq!(world.relations.possessed_by.get(&item), None);
+        assert_eq!(world.relations.possessions_of.get(&holder), None);
+    }
+
+    #[test]
+    fn ownership_and_possession_stay_independent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Medicine, Quantity(1), Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+
+        world.set_owner(item, owner).unwrap();
+        world.set_possessor(item, holder).unwrap();
+        world.clear_owner(item).unwrap();
+
+        assert_eq!(world.relations.owned_by.get(&item), None);
+        assert_eq!(world.relations.property_of.get(&owner), None);
+        assert_eq!(world.relations.possessed_by.get(&item), Some(&holder));
+        assert_eq!(
+            world.relations.possessions_of.get(&holder),
+            Some(&BTreeSet::from([item]))
+        );
+    }
+
+    #[test]
+    fn can_exercise_control_enforces_possession_then_unpossessed_ownership() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let stranger = world
+            .create_agent("Bram", ControlSource::Human, Tick(4))
+            .unwrap();
+
+        world.set_owner(item, owner).unwrap();
+        assert!(world.can_exercise_control(owner, item).is_ok());
+
+        world.set_possessor(item, holder).unwrap();
+        assert!(world.can_exercise_control(holder, item).is_ok());
+
+        let blocked_owner = world.can_exercise_control(owner, item).unwrap_err();
+        assert!(matches!(blocked_owner, WorldError::PreconditionFailed(_)));
+
+        let unrelated = world.can_exercise_control(stranger, item).unwrap_err();
+        assert!(matches!(unrelated, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn ownership_and_control_methods_reject_missing_and_archived_entities() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(1))
+            .unwrap();
+        let owner = world.create_faction("River Pact", Tick(2)).unwrap();
+        let archived_holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let archived_item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(4))
+            .unwrap();
+        let missing = entity(999);
+
+        world.archive_entity(archived_holder, Tick(5)).unwrap();
+        world.archive_entity(archived_item, Tick(6)).unwrap();
+
+        assert!(matches!(
+            world.set_owner(missing, owner),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
+        assert!(matches!(
+            world.set_owner(item, archived_holder),
+            Err(WorldError::ArchivedEntity(id)) if id == archived_holder
+        ));
+        assert!(matches!(
+            world.set_possessor(item, archived_holder),
+            Err(WorldError::ArchivedEntity(id)) if id == archived_holder
+        ));
+        assert!(matches!(
+            world.clear_owner(archived_item),
+            Err(WorldError::ArchivedEntity(id)) if id == archived_item
+        ));
+        assert!(matches!(
+            world.clear_possessor(missing),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
+        assert!(matches!(
+            world.can_exercise_control(owner, archived_item),
+            Err(WorldError::ArchivedEntity(id)) if id == archived_item
+        ));
+        assert!(matches!(
+            world.can_exercise_control(missing, item),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
     }
 
     #[test]

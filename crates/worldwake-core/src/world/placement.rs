@@ -1,8 +1,6 @@
 use super::World;
-use crate::{
-    load_of_entity, remaining_container_capacity, Container, EntityId, WorldError,
-};
-use std::collections::{BTreeMap, BTreeSet};
+use crate::{load_of_entity, remaining_container_capacity, Container, EntityId, WorldError};
+use std::collections::BTreeSet;
 
 impl World {
     pub fn set_ground_location(
@@ -90,7 +88,8 @@ impl World {
             }
         }
 
-        if self.get_component_unique_item(entity).is_some() && !container_component.allows_unique_items
+        if self.get_component_unique_item(entity).is_some()
+            && !container_component.allows_unique_items
         {
             return Err(WorldError::InvalidOperation(format!(
                 "container {container} does not allow unique items like {entity}"
@@ -244,42 +243,5 @@ impl World {
             &mut self.relations.contents_of,
             entity,
         );
-    }
-
-    fn set_entity_relation(
-        forward: &mut BTreeMap<EntityId, EntityId>,
-        reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
-        entity: EntityId,
-        target: EntityId,
-    ) {
-        if let Some(previous) = forward.insert(entity, target) {
-            if previous != target {
-                Self::remove_reverse_link(reverse, previous, entity);
-            }
-        }
-        reverse.entry(target).or_default().insert(entity);
-    }
-
-    fn clear_entity_relation(
-        forward: &mut BTreeMap<EntityId, EntityId>,
-        reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
-        entity: EntityId,
-    ) {
-        if let Some(target) = forward.remove(&entity) {
-            Self::remove_reverse_link(reverse, target, entity);
-        }
-    }
-
-    fn remove_reverse_link(
-        reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
-        target: EntityId,
-        entity: EntityId,
-    ) {
-        if let Some(entities) = reverse.get_mut(&target) {
-            entities.remove(&entity);
-            if entities.is_empty() {
-                reverse.remove(&target);
-            }
-        }
     }
 }
