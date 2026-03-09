@@ -5,6 +5,7 @@
 **Effort**: Large
 **Engine Changes**: Yes — new module in worldwake-sim
 **Deps**: E08TIMSCHREP-006 (step_tick), E08TIMSCHREP-007 (canonical hashing), E08TIMSCHREP-008 (ReplayState)
+**Spec Ref**: `specs/E08-time-scheduler-replay.corrected.md` ("Replay Recording", "Replay Execution", "Per-Tick Flow")
 
 ## Problem
 
@@ -12,19 +13,35 @@ The replay system must prove determinism: given the same initial state, same see
 
 ## Assumption Reassessment (2026-03-09)
 
-1. `step_tick` from E08TIMSCHREP-006 drives the tick loop
-2. `ReplayState` from E08TIMSCHREP-008 holds initial hash, seed, input log, checkpoints
-3. `StateHash` and `hash_world`/`hash_event_log` from E08TIMSCHREP-007 provide hashing
-4. `DeterministicRng` from E08TIMSCHREP-002 reconstructs from seed
-5. `InputQueue` from E08TIMSCHREP-003 can be populated from the recorded input log
-6. `Scheduler`, `ControllerState`, `SystemRegistry` from prior tickets provide the tick context
+1. `step_tick` already defines the authoritative tick boundary and already consumes a `TickStepServices` bundle containing action registries plus `SystemDispatchTable` — confirmed.
+2. `ReplayState` now exists and stores the initial state hash, master seed, ordered input log, replay checkpoints, and checkpoint policy — confirmed.
+3. `StateHash`, `hash_world`, and `hash_event_log` already exist in `worldwake-core` and are the correct canonical comparison primitives for replay checkpoints — confirmed.
+4. `DeterministicRng` reconstructs from `Seed` and uses deterministic substreams per `(tick, system_id, seq)` — confirmed.
+5. `Scheduler` owns the mutable `InputQueue`; replay should rebuild that queue from the recorded `ReplayState::input_log()` on a cloned scheduler, not invent a parallel execution path — confirmed.
+6. There is no `SystemRegistry` type in the current architecture. Runtime systems are supplied through `SystemDispatchTable`, and replay must use that same interface to stay aligned with normal execution — confirmed.
+7. There is no `SimulationState` root type yet. Replay execution should therefore operate on explicit state roots (`World`, `EventLog`, `Scheduler`, `ControllerState`) until E08TIMSCHREP-010 introduces a consolidated simulation root.
 
 ## Architecture Check
 
-1. Replay is a function that takes an initial `SimulationState` snapshot + `ReplayState` recording, then re-executes all ticks, comparing hashes at checkpoints
-2. The replay function does NOT modify the original state — it works on a clone
-3. Mismatches produce a `ReplayError` with the tick number and expected/actual hashes
-4. This is the key integration test infrastructure for Phase 1 gate
+1. Replay must reuse the exact production tick path (`step_tick`) rather than a replay-specific simulation loop. Determinism proof is strongest when replay exercises the same scheduler, action, and system boundaries as live execution.
+2. Replay should clone the provided authoritative roots and seed a fresh `DeterministicRng` from the recording's master seed. The original state objects must remain untouched.
+3. The replay API should accept the same registries/dispatch objects that `step_tick` already needs. Introducing a separate replay-specific registry abstraction would be architectural duplication.
+4. Checkpoint verification should compare recorded `ReplayCheckpoint` entries directly, in recorded order, and should report mismatches with concrete tick and checkpoint-kind data.
+5. Recording helpers that compute and append checkpoints after a tick step are appropriate here because they are shared replay infrastructure and keep hashing/append rules out of `step_tick` itself.
+
+## Scope Correction
+
+This ticket should:
+
+1. Implement replay execution and verification on top of the existing `step_tick` + `TickStepServices` architecture.
+2. Add a shared helper for recording per-tick checkpoints into `ReplayState`.
+3. Provide the T08 determinism proof tests for the current Phase 1 scheduler stack.
+
+This ticket should not:
+
+1. Introduce a shadow replay runner with different execution phases.
+2. Depend on a not-yet-existing `SimulationState` root.
+3. Rework scheduler ownership boundaries established in E08TIMSCHREP-006 and E08TIMSCHREP-008.
 
 ## What to Change
 
@@ -58,23 +75,38 @@ pub fn replay_and_verify(
     initial_scheduler: &Scheduler,
     initial_controller: &ControllerState,
     replay: &ReplayState,
-    systems: &SystemRegistry,
+    services: TickStepServices<'_>,
 ) -> Result<StateHash, Vec<ReplayError>>
 ```
 
 Flow:
 1. Reconstruct `DeterministicRng` from `replay.master_seed()`
 2. Verify initial state hash matches `replay.initial_state_hash()`
-3. Populate `InputQueue` from `replay.input_log()`
-4. Clone all mutable state
-5. Step through ticks, calling `step_tick` for each
-6. At checkpoint ticks, compute hashes and compare against recorded checkpoints
-7. After all inputs are exhausted and final tick reached, compute final state hash
-8. Return final hash on success, or accumulated errors
+3. Clone `World`, `EventLog`, `Scheduler`, and `ControllerState`
+4. Populate the cloned scheduler's `InputQueue` from `replay.input_log()`
+5. Step through ticks with `step_tick(...)`, reusing the provided `TickStepServices`
+6. After each stepped tick, compare any expected checkpoint for that tick against freshly computed hashes
+7. After replay reaches the last recorded checkpoint/input boundary, compute and return the final world-state hash
+8. Return the final hash on success, or accumulated replay errors
 
 ### 3. Integration with recording
 
-Add a helper function `record_tick_checkpoint` that can be called after `step_tick` to record the checkpoint into `ReplayState` if the tick interval matches. This wires E08TIMSCHREP-008's recording into the tick loop.
+Add a helper that computes and appends a replay checkpoint after a completed tick when the recording policy says that tick should be checkpointed:
+
+```rust
+pub fn record_tick_checkpoint(
+    replay: &mut ReplayState,
+    tick: Tick,
+    world: &World,
+    event_log: &EventLog,
+) -> Result<bool, ReplayCheckpointError>
+```
+
+Behavior:
+
+1. If `replay.should_checkpoint(tick)` is `false`, do nothing and return `Ok(false)`.
+2. Otherwise compute `hash_event_log(event_log)` and `hash_world(world)`, append a `ReplayCheckpoint`, and return `Ok(true)`.
+3. Surface either canonical-hashing failures or replay-state append failures through a small replay-checkpoint error type.
 
 ## Files to Touch
 
@@ -98,23 +130,26 @@ Add a helper function `record_tick_checkpoint` that can be called after `step_ti
 4. Replay detects initial hash mismatch when given wrong initial state
 5. Replay detects checkpoint mismatch when state is corrupted mid-replay (inject a mutation)
 6. `ReplayError` variants are descriptive (tick, expected/actual hashes)
-7. Replay with checkpoint_interval=1: every tick verified
-8. Replay with checkpoint_interval=5: only ticks 0, 5, 10, ... verified
-9. Existing suite: `cargo test -p worldwake-sim`
+7. `record_tick_checkpoint` records nothing when `ReplayRecordingConfig::disabled()` is used
+8. Replay with `ReplayRecordingConfig::every(NonZeroU64::new(1).unwrap())`: every tick verified
+9. Replay with `ReplayRecordingConfig::every(NonZeroU64::new(5).unwrap())`: only ticks 0, 5, 10, ... verified
+10. Existing suite: `cargo test -p worldwake-sim`
 
 ### Invariants
 
 1. Same initial state + same seed + same input log ⇒ identical checkpoint hashes and identical final state hash (Spec 9.2)
 2. Replay does not modify the original state objects
-3. No nondeterministic operations in replay path
+3. Replay uses the same execution path and system-dispatch surface as authoritative runtime
+4. No nondeterministic operations in replay path
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-sim/src/replay_execution.rs` (inline `#[cfg(test)]`) — determinism proof, error detection, checkpoint verification
+1. `crates/worldwake-sim/src/replay_execution.rs` (inline `#[cfg(test)]`) — determinism proof, error detection, checkpoint verification, recording helper behavior
 
 ### Commands
 
 1. `cargo test -p worldwake-sim replay_execution`
-2. `cargo clippy --workspace && cargo test --workspace`
+2. `cargo clippy --workspace`
+3. `cargo test --workspace`
