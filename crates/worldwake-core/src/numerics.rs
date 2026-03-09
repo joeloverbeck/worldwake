@@ -150,12 +150,23 @@ mod tests {
 
     // --- Trait bound assertions ---
 
-    fn _assert_numeric_bounds<T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + std::fmt::Display + Serialize + serde::de::DeserializeOwned>() {}
+    fn assert_numeric_bounds<
+        T: Copy
+            + Clone
+            + Eq
+            + Ord
+            + std::hash::Hash
+            + std::fmt::Debug
+            + std::fmt::Display
+            + Serialize
+            + serde::de::DeserializeOwned,
+    >() {
+    }
 
     #[test]
     fn numeric_types_satisfy_required_traits() {
-        _assert_numeric_bounds::<LoadUnits>();
-        _assert_numeric_bounds::<Permille>();
-        _assert_numeric_bounds::<Quantity>();
+        assert_numeric_bounds::<LoadUnits>();
+        assert_numeric_bounds::<Permille>();
+        assert_numeric_bounds::<Quantity>();
     }
 }

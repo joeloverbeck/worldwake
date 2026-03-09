@@ -58,6 +58,16 @@ impl fmt::Display for EventId {
     }
 }
 
+/// Unique identifier for a directed travel edge in the topology graph.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub struct TravelEdgeId(pub u32);
+
+impl fmt::Display for TravelEdgeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "te{}", self.0)
+    }
+}
+
 /// Deterministic seed for `ChaCha8Rng`.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub struct Seed(pub [u8; 32]);
@@ -83,25 +93,49 @@ mod tests {
 
     #[test]
     fn entity_id_stale_reference_detection() {
-        let fresh = EntityId { slot: 0, generation: 1 };
-        let stale = EntityId { slot: 0, generation: 0 };
-        assert_ne!(fresh, stale, "same slot, different generation must be unequal");
+        let fresh = EntityId {
+            slot: 0,
+            generation: 1,
+        };
+        let stale = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        assert_ne!(
+            fresh, stale,
+            "same slot, different generation must be unequal"
+        );
     }
 
     #[test]
     fn entity_id_deterministic_ordering() {
-        let a = EntityId { slot: 0, generation: 5 };
-        let b = EntityId { slot: 1, generation: 0 };
+        let a = EntityId {
+            slot: 0,
+            generation: 5,
+        };
+        let b = EntityId {
+            slot: 1,
+            generation: 0,
+        };
         assert!(a < b, "slot-major ordering");
 
-        let c = EntityId { slot: 1, generation: 0 };
-        let d = EntityId { slot: 1, generation: 1 };
+        let c = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+        let d = EntityId {
+            slot: 1,
+            generation: 1,
+        };
         assert!(c < d, "generation-minor ordering");
     }
 
     #[test]
     fn entity_id_display() {
-        let id = EntityId { slot: 42, generation: 3 };
+        let id = EntityId {
+            slot: 42,
+            generation: 3,
+        };
         assert_eq!(id.to_string(), "e42g3");
     }
 
@@ -120,21 +154,36 @@ mod tests {
 
     // --- Compile-time trait bound assertions ---
 
-    fn _assert_bounds<T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + std::fmt::Display + Serialize + serde::de::DeserializeOwned>() {}
+    fn assert_bounds<
+        T: Copy
+            + Clone
+            + Eq
+            + Ord
+            + std::hash::Hash
+            + std::fmt::Debug
+            + std::fmt::Display
+            + Serialize
+            + serde::de::DeserializeOwned,
+    >() {
+    }
 
     #[test]
     fn id_types_satisfy_required_traits() {
-        _assert_bounds::<EntityId>();
-        _assert_bounds::<Tick>();
-        _assert_bounds::<EventId>();
-        _assert_bounds::<Seed>();
+        assert_bounds::<EntityId>();
+        assert_bounds::<Tick>();
+        assert_bounds::<EventId>();
+        assert_bounds::<TravelEdgeId>();
+        assert_bounds::<Seed>();
     }
 
     // --- Bincode round-trip ---
 
     #[test]
     fn entity_id_bincode_roundtrip() {
-        let val = EntityId { slot: 99, generation: 7 };
+        let val = EntityId {
+            slot: 99,
+            generation: 7,
+        };
         let bytes = bincode::serialize(&val).unwrap();
         let back: EntityId = bincode::deserialize(&bytes).unwrap();
         assert_eq!(val, back);
@@ -153,6 +202,20 @@ mod tests {
         let val = EventId(999);
         let bytes = bincode::serialize(&val).unwrap();
         let back: EventId = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(val, back);
+    }
+
+    #[test]
+    fn travel_edge_id_display() {
+        let id = TravelEdgeId(42);
+        assert_eq!(id.to_string(), "te42");
+    }
+
+    #[test]
+    fn travel_edge_id_bincode_roundtrip() {
+        let val = TravelEdgeId(77);
+        let bytes = bincode::serialize(&val).unwrap();
+        let back: TravelEdgeId = bincode::deserialize(&bytes).unwrap();
         assert_eq!(val, back);
     }
 

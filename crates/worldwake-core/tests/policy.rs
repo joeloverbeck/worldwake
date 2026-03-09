@@ -29,7 +29,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<(String, String)>) {
 }
 
 /// Check that a forbidden pattern does not appear in any source line
-/// (ignoring comments and the test_utils module).
+/// (ignoring comments and the `test_utils` module).
 fn assert_pattern_absent(pattern: &str, description: &str) {
     for (path, content) in source_files() {
         // Skip test_utils — it's test infrastructure, not authoritative state.
@@ -86,12 +86,18 @@ fn no_hash_set() {
 
 #[test]
 fn no_type_id() {
-    assert_pattern_absent("TypeId", "no runtime type identification in authoritative state");
+    assert_pattern_absent(
+        "TypeId",
+        "no runtime type identification in authoritative state",
+    );
 }
 
 #[test]
 fn no_box_dyn_any() {
-    assert_pattern_absent("Box<dyn Any>", "no type-erased storage in authoritative state");
+    assert_pattern_absent(
+        "Box<dyn Any>",
+        "no type-erased storage in authoritative state",
+    );
 }
 
 // --- Canonical bytes stability ---
@@ -109,7 +115,10 @@ fn canonical_bytes_stability() {
 
     let bytes_1 = canonical_bytes(&id);
     let bytes_2 = canonical_bytes(&id);
-    assert_eq!(bytes_1, bytes_2, "canonical_bytes must be stable for EntityId");
+    assert_eq!(
+        bytes_1, bytes_2,
+        "canonical_bytes must be stable for EntityId"
+    );
 
     let tick_bytes_1 = canonical_bytes(&tick);
     let tick_bytes_2 = canonical_bytes(&tick);

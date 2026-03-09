@@ -94,11 +94,11 @@ impl std::error::Error for WorldError {}
 mod tests {
     use super::*;
 
-    fn _assert_send_sync<T: Send + Sync>() {}
+    fn assert_send_sync<T: Send + Sync>() {}
 
     #[test]
     fn world_error_is_send_sync() {
-        _assert_send_sync::<WorldError>();
+        assert_send_sync::<WorldError>();
     }
 
     #[test]

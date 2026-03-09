@@ -21,11 +21,20 @@ pub enum ControlSource {
 mod tests {
     use super::*;
 
-    fn _assert_bounds<T: Copy + Clone + Eq + std::hash::Hash + std::fmt::Debug + Serialize + serde::de::DeserializeOwned>() {}
+    fn assert_bounds<
+        T: Copy
+            + Clone
+            + Eq
+            + std::hash::Hash
+            + std::fmt::Debug
+            + Serialize
+            + serde::de::DeserializeOwned,
+    >() {
+    }
 
     #[test]
     fn control_source_trait_bounds() {
-        _assert_bounds::<ControlSource>();
+        assert_bounds::<ControlSource>();
     }
 
     #[test]
