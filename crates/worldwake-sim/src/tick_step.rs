@@ -457,6 +457,7 @@ mod tests {
         Ok(())
     }
 
+    #[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
     fn record_system(context: SystemExecutionContext<'_>) -> Result<(), SystemError> {
         hook_log().lock().unwrap().systems.push(context.system_id);
         let _ = context.world;

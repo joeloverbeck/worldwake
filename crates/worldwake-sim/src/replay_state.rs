@@ -47,6 +47,7 @@ impl Default for ReplayRecordingConfig {
 pub struct ReplayState {
     initial_state_hash: StateHash,
     master_seed: Seed,
+    terminal_tick: Tick,
     input_log: Vec<InputEvent>,
     checkpoints: Vec<ReplayCheckpoint>,
     config: ReplayRecordingConfig,
@@ -54,18 +55,36 @@ pub struct ReplayState {
 
 impl ReplayState {
     #[must_use]
-    pub fn new(initial_hash: StateHash, seed: Seed, config: ReplayRecordingConfig) -> Self {
+    pub fn new(
+        initial_hash: StateHash,
+        seed: Seed,
+        initial_terminal_tick: Tick,
+        config: ReplayRecordingConfig,
+    ) -> Self {
         Self {
             initial_state_hash: initial_hash,
             master_seed: seed,
+            terminal_tick: initial_terminal_tick,
             input_log: Vec::new(),
             checkpoints: Vec::new(),
             config,
         }
     }
 
-    pub fn record_input(&mut self, input: InputEvent) {
+    pub fn record_input(&mut self, input: InputEvent) -> Result<(), ReplayStateError> {
+        if let Some(previous) = self.input_log.last() {
+            if input.sequence_no <= previous.sequence_no {
+                return Err(ReplayStateError::NonMonotonicInputSequence {
+                    previous_tick: previous.scheduled_tick,
+                    previous_sequence_no: previous.sequence_no,
+                    attempted_tick: input.scheduled_tick,
+                    attempted_sequence_no: input.sequence_no,
+                });
+            }
+        }
+
         self.input_log.push(input);
+        Ok(())
     }
 
     pub fn record_checkpoint(
@@ -82,6 +101,18 @@ impl ReplayState {
         }
 
         self.checkpoints.push(checkpoint);
+        Ok(())
+    }
+
+    pub fn set_terminal_tick(&mut self, terminal_tick: Tick) -> Result<(), ReplayStateError> {
+        if terminal_tick < self.terminal_tick {
+            return Err(ReplayStateError::TerminalTickRegression {
+                current_terminal_tick: self.terminal_tick,
+                attempted_terminal_tick: terminal_tick,
+            });
+        }
+
+        self.terminal_tick = terminal_tick;
         Ok(())
     }
 
@@ -103,6 +134,11 @@ impl ReplayState {
     }
 
     #[must_use]
+    pub const fn terminal_tick(&self) -> Tick {
+        self.terminal_tick
+    }
+
+    #[must_use]
     pub const fn config(&self) -> &ReplayRecordingConfig {
         &self.config
     }
@@ -120,6 +156,16 @@ impl ReplayState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayStateError {
+    NonMonotonicInputSequence {
+        previous_tick: Tick,
+        previous_sequence_no: u64,
+        attempted_tick: Tick,
+        attempted_sequence_no: u64,
+    },
+    TerminalTickRegression {
+        current_terminal_tick: Tick,
+        attempted_terminal_tick: Tick,
+    },
     NonMonotonicCheckpoint {
         previous_tick: Tick,
         attempted_tick: Tick,
@@ -129,6 +175,22 @@ pub enum ReplayStateError {
 impl fmt::Display for ReplayStateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NonMonotonicInputSequence {
+                previous_tick,
+                previous_sequence_no,
+                attempted_tick,
+                attempted_sequence_no,
+            } => write!(
+                f,
+                "replay input sequence must increase strictly: previous=({previous_tick}, {previous_sequence_no}), attempted=({attempted_tick}, {attempted_sequence_no})"
+            ),
+            Self::TerminalTickRegression {
+                current_terminal_tick,
+                attempted_terminal_tick,
+            } => write!(
+                f,
+                "replay terminal tick {attempted_terminal_tick} must not be earlier than current terminal tick {current_terminal_tick}"
+            ),
             Self::NonMonotonicCheckpoint {
                 previous_tick,
                 attempted_tick,
@@ -203,10 +265,11 @@ mod tests {
     #[test]
     fn new_stores_initial_hash_seed_and_config() {
         let config = ReplayRecordingConfig::every(NonZeroU64::new(5).unwrap());
-        let replay = ReplayState::new(hash(3), Seed([4; 32]), config);
+        let replay = ReplayState::new(hash(3), Seed([4; 32]), Tick(9), config);
 
         assert_eq!(replay.initial_state_hash(), hash(3));
         assert_eq!(replay.master_seed(), Seed([4; 32]));
+        assert_eq!(replay.terminal_tick(), Tick(9));
         assert_eq!(replay.config(), &config);
         assert!(replay.input_log().is_empty());
         assert!(replay.checkpoints().is_empty());
@@ -215,22 +278,41 @@ mod tests {
     #[test]
     fn record_input_preserves_insertion_order() {
         let mut replay =
-            ReplayState::new(hash(1), Seed([2; 32]), ReplayRecordingConfig::disabled());
+            ReplayState::new(hash(1), Seed([2; 32]), Tick(0), ReplayRecordingConfig::disabled());
         let first = input_event(3, 0, 1, 2);
         let second = input_event(3, 1, 3, 4);
         let third = input_event(5, 2, 5, 6);
 
-        replay.record_input(first.clone());
-        replay.record_input(second.clone());
-        replay.record_input(third.clone());
+        replay.record_input(first.clone()).unwrap();
+        replay.record_input(second.clone()).unwrap();
+        replay.record_input(third.clone()).unwrap();
 
         assert_eq!(replay.input_log(), &[first, second, third]);
     }
 
     #[test]
+    fn record_input_rejects_duplicate_or_earlier_sequence_numbers() {
+        let mut replay =
+            ReplayState::new(hash(1), Seed([2; 32]), Tick(0), ReplayRecordingConfig::disabled());
+        replay.record_input(input_event(3, 4, 1, 2)).unwrap();
+
+        let error = replay.record_input(input_event(5, 4, 3, 4)).unwrap_err();
+
+        assert_eq!(
+            error,
+            ReplayStateError::NonMonotonicInputSequence {
+                previous_tick: Tick(3),
+                previous_sequence_no: 4,
+                attempted_tick: Tick(5),
+                attempted_sequence_no: 4,
+            }
+        );
+    }
+
+    #[test]
     fn record_checkpoint_preserves_insertion_order_for_increasing_ticks() {
         let mut replay =
-            ReplayState::new(hash(1), Seed([2; 32]), ReplayRecordingConfig::disabled());
+            ReplayState::new(hash(1), Seed([2; 32]), Tick(0), ReplayRecordingConfig::disabled());
         let first = checkpoint(0, 10, 20);
         let second = checkpoint(5, 11, 21);
         let third = checkpoint(9, 12, 22);
@@ -245,7 +327,7 @@ mod tests {
     #[test]
     fn record_checkpoint_rejects_duplicate_tick() {
         let mut replay =
-            ReplayState::new(hash(1), Seed([2; 32]), ReplayRecordingConfig::disabled());
+            ReplayState::new(hash(1), Seed([2; 32]), Tick(0), ReplayRecordingConfig::disabled());
         replay.record_checkpoint(checkpoint(5, 10, 20)).unwrap();
 
         let error = replay.record_checkpoint(checkpoint(5, 11, 21)).unwrap_err();
@@ -262,7 +344,7 @@ mod tests {
     #[test]
     fn record_checkpoint_rejects_earlier_tick() {
         let mut replay =
-            ReplayState::new(hash(1), Seed([2; 32]), ReplayRecordingConfig::disabled());
+            ReplayState::new(hash(1), Seed([2; 32]), Tick(0), ReplayRecordingConfig::disabled());
         replay.record_checkpoint(checkpoint(8, 10, 20)).unwrap();
 
         let error = replay.record_checkpoint(checkpoint(3, 11, 21)).unwrap_err();
@@ -278,7 +360,8 @@ mod tests {
 
     #[test]
     fn disabled_config_never_checkpoints() {
-        let replay = ReplayState::new(hash(1), Seed([2; 32]), ReplayRecordingConfig::disabled());
+        let replay =
+            ReplayState::new(hash(1), Seed([2; 32]), Tick(0), ReplayRecordingConfig::disabled());
 
         assert!(!replay.should_checkpoint(Tick(0)));
         assert!(!replay.should_checkpoint(Tick(5)));
@@ -290,6 +373,7 @@ mod tests {
         let replay = ReplayState::new(
             hash(1),
             Seed([2; 32]),
+            Tick(0),
             ReplayRecordingConfig::every(NonZeroU64::new(5).unwrap()),
         );
 
@@ -305,6 +389,7 @@ mod tests {
         let replay = ReplayState::new(
             hash(1),
             Seed([2; 32]),
+            Tick(0),
             ReplayRecordingConfig::every(NonZeroU64::new(1).unwrap()),
         );
 
@@ -328,12 +413,12 @@ mod tests {
     #[test]
     fn replay_state_roundtrips_through_bincode() {
         let config = ReplayRecordingConfig::every(NonZeroU64::new(3).unwrap());
-        let mut replay = ReplayState::new(hash(7), Seed([8; 32]), config);
+        let mut replay = ReplayState::new(hash(7), Seed([8; 32]), Tick(4), config);
         let first = input_event(2, 0, 1, 9);
         let second = input_event(4, 1, 2, 8);
         let checkpoint = checkpoint(6, 15, 16);
-        replay.record_input(first.clone());
-        replay.record_input(second.clone());
+        replay.record_input(first.clone()).unwrap();
+        replay.record_input(second.clone()).unwrap();
         replay.record_checkpoint(checkpoint).unwrap();
 
         let bytes = bincode::serialize(&replay).unwrap();
@@ -342,6 +427,25 @@ mod tests {
         assert_eq!(roundtrip, replay);
         assert_eq!(roundtrip.input_log(), &[first, second]);
         assert_eq!(roundtrip.checkpoints(), &[checkpoint]);
+        assert_eq!(roundtrip.terminal_tick(), Tick(4));
         assert_eq!(roundtrip.config(), &config);
+    }
+
+    #[test]
+    fn set_terminal_tick_advances_and_rejects_regression() {
+        let mut replay =
+            ReplayState::new(hash(1), Seed([2; 32]), Tick(3), ReplayRecordingConfig::disabled());
+
+        replay.set_terminal_tick(Tick(5)).unwrap();
+        assert_eq!(replay.terminal_tick(), Tick(5));
+
+        let error = replay.set_terminal_tick(Tick(4)).unwrap_err();
+        assert_eq!(
+            error,
+            ReplayStateError::TerminalTickRegression {
+                current_terminal_tick: Tick(5),
+                attempted_terminal_tick: Tick(4),
+            }
+        );
     }
 }

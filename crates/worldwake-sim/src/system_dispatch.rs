@@ -78,6 +78,7 @@ mod tests {
         calls().lock().unwrap().clear();
     }
 
+    #[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
     fn record_call(context: SystemExecutionContext<'_>) -> Result<(), SystemError> {
         calls().lock().unwrap().push(context.system_id);
         let _ = context.world;

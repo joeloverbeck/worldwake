@@ -24,6 +24,7 @@ pub mod input_queue;
 pub mod interrupt_abort;
 pub mod knowledge_view;
 pub mod replay_state;
+pub mod replay_execution;
 pub mod replan_needed;
 pub mod scheduler;
 pub mod start_gate;
@@ -55,9 +56,13 @@ pub use affordance_query::{
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use input_event::{InputEvent, InputKind};
-pub use input_queue::InputQueue;
+pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use knowledge_view::KnowledgeView;
+pub use replay_execution::{
+    record_tick_checkpoint, replay_and_verify, seed_replay_inputs_from_scheduler,
+    ReplayCheckpointError, ReplayError,
+};
 pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
 pub use replan_needed::ReplanNeeded;
 pub use scheduler::Scheduler;
