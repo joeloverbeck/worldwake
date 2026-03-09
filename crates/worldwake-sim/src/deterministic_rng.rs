@@ -75,18 +75,8 @@ impl DeterministicRng {
 }
 
 fn substream_word_pos(tick: Tick, system_id: SystemId) -> u128 {
-    (u128::from(tick.0) << SUBSTREAM_SYSTEM_BITS) | (u128::from(system_slot(system_id)) & SUBSTREAM_SYSTEM_MASK)
-}
-
-const fn system_slot(system_id: SystemId) -> u8 {
-    match system_id {
-        SystemId::Needs => 0,
-        SystemId::Production => 1,
-        SystemId::Trade => 2,
-        SystemId::Combat => 3,
-        SystemId::Perception => 4,
-        SystemId::Politics => 5,
-    }
+    (u128::from(tick.0) << SUBSTREAM_SYSTEM_BITS)
+        | (u128::from(system_id.ordinal() as u64) & SUBSTREAM_SYSTEM_MASK)
 }
 
 #[cfg(test)]

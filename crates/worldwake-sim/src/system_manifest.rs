@@ -32,6 +32,17 @@ impl SystemId {
             Self::Politics => "politics",
         }
     }
+
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Needs => 0,
+            Self::Production => 1,
+            Self::Trade => 2,
+            Self::Combat => 3,
+            Self::Perception => 4,
+            Self::Politics => 5,
+        }
+    }
 }
 
 impl fmt::Display for SystemId {
@@ -132,6 +143,13 @@ mod tests {
                 SystemId::Politics,
             ]
         );
+    }
+
+    #[test]
+    fn system_id_ordinals_match_declaration_order() {
+        for (expected, system_id) in SystemId::ALL.into_iter().enumerate() {
+            assert_eq!(system_id.ordinal(), expected);
+        }
     }
 
     #[test]

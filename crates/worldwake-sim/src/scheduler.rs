@@ -1,7 +1,18 @@
-use crate::{ActionInstance, ActionInstanceId, InputQueue, SystemManifest};
+use crate::{
+    abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
+    ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
+    ActionInstanceId, Affordance, InputEvent, InputQueue, SystemManifest, TickOutcome,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::Tick;
+use worldwake_core::{EntityId, EventLog, Tick, World};
+
+pub(crate) struct SchedulerActionRuntime<'a> {
+    pub(crate) action_defs: &'a ActionDefRegistry,
+    pub(crate) action_handlers: &'a ActionHandlerRegistry,
+    pub(crate) world: &'a mut World,
+    pub(crate) event_log: &'a mut EventLog,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Scheduler {
@@ -53,6 +64,10 @@ impl Scheduler {
         &mut self.input_queue
     }
 
+    pub(crate) fn drain_current_tick_inputs(&mut self) -> Vec<InputEvent> {
+        self.input_queue.drain_tick(self.current_tick)
+    }
+
     pub fn allocate_instance_id(&mut self) -> ActionInstanceId {
         let instance_id = self.next_instance_id;
         self.next_instance_id = ActionInstanceId(
@@ -74,6 +89,88 @@ impl Scheduler {
 
     pub fn remove_action(&mut self, id: ActionInstanceId) -> Option<ActionInstance> {
         self.active_actions.remove(&id)
+    }
+
+    pub(crate) fn active_action_actor(&self, id: ActionInstanceId) -> Option<EntityId> {
+        self.active_actions.get(&id).map(|instance| instance.actor)
+    }
+
+    pub(crate) fn start_affordance(
+        &mut self,
+        affordance: &Affordance,
+        runtime: SchedulerActionRuntime<'_>,
+        context: ActionExecutionContext,
+    ) -> Result<ActionInstanceId, ActionError> {
+        let SchedulerActionRuntime {
+            action_defs,
+            action_handlers,
+            world,
+            event_log,
+        } = runtime;
+        start_action(
+            affordance,
+            action_defs,
+            action_handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut self.active_actions,
+                world,
+                event_log,
+            },
+            &mut self.next_instance_id,
+            context,
+        )
+    }
+
+    pub(crate) fn abort_active_action(
+        &mut self,
+        id: ActionInstanceId,
+        runtime: SchedulerActionRuntime<'_>,
+        context: ActionExecutionContext,
+        reason: String,
+    ) -> Result<crate::ReplanNeeded, ActionError> {
+        let SchedulerActionRuntime {
+            action_defs,
+            action_handlers,
+            world,
+            event_log,
+        } = runtime;
+        abort_action(
+            id,
+            action_defs,
+            action_handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut self.active_actions,
+                world,
+                event_log,
+            },
+            context,
+            reason,
+        )
+    }
+
+    pub(crate) fn tick_active_action(
+        &mut self,
+        id: ActionInstanceId,
+        runtime: SchedulerActionRuntime<'_>,
+        context: ActionExecutionContext,
+    ) -> Result<TickOutcome, ActionError> {
+        let SchedulerActionRuntime {
+            action_defs,
+            action_handlers,
+            world,
+            event_log,
+        } = runtime;
+        tick_action(
+            id,
+            action_defs,
+            action_handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut self.active_actions,
+                world,
+                event_log,
+            },
+            context,
+        )
     }
 
     pub fn increment_tick(&mut self) {

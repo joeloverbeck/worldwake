@@ -27,6 +27,8 @@ pub mod replan_needed;
 pub mod scheduler;
 pub mod start_gate;
 pub mod system_manifest;
+pub mod system_dispatch;
+pub mod tick_step;
 pub mod tick_action;
 pub mod world_knowledge_view;
 
@@ -59,5 +61,7 @@ pub use replan_needed::ReplanNeeded;
 pub use scheduler::Scheduler;
 pub use start_gate::start_action;
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
+pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
+pub use tick_step::{step_tick, TickStepError, TickStepResult, TickStepServices};
 pub use tick_action::{tick_action, TickOutcome};
 pub use world_knowledge_view::WorldKnowledgeView;
