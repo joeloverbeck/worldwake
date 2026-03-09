@@ -63,7 +63,7 @@ pub struct ProvenanceEntry {
     pub tick: Tick,
     pub event_id: Option<EventId>,
     pub operation: LotOperation,
-    pub source_lot: Option<EntityId>,
+    pub related_lot: Option<EntityId>,
     pub amount: Quantity,
 }
 ```
@@ -90,7 +90,7 @@ Add `LotOperation` and `ProvenanceEntry` to re-exports.
 
 1. `LotOperation::ALL` contains all 8 variants in declaration order and each variant round-trips through bincode
 2. `LotOperation` satisfies `Copy + Clone + Eq + Ord + Hash + Debug + Serialize + DeserializeOwned`
-3. `ProvenanceEntry` round-trips through bincode (with `Some` and `None` event_id/source_lot)
+3. `ProvenanceEntry` round-trips through bincode (with `Some` and `None` event_id/related_lot)
 4. `ProvenanceEntry` satisfies `Clone + Debug + Eq + Serialize + DeserializeOwned`
 5. `LotOperation` ordering is deterministic (`LotOperation::ALL` remains unchanged after reverse + sort)
 6. Existing suite: `cargo test -p worldwake-core`
@@ -114,15 +114,18 @@ Add `LotOperation` and `ProvenanceEntry` to re-exports.
 
 ## Outcome
 
+- Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
 - What actually changed:
   - Added `LotOperation` and `ProvenanceEntry` to `crates/worldwake-core/src/items.rs`
   - Added canonical `LotOperation::ALL` coverage to match the established item-enum pattern and keep future lot logic/tests DRY
   - Re-exported `LotOperation` and `ProvenanceEntry` from `crates/worldwake-core/src/lib.rs`
   - Added inline unit coverage for trait bounds, canonical variant inventory, deterministic ordering, and bincode round-trips including `Option` field cases
+  - Refined `ProvenanceEntry` from `source_lot` to `related_lot` once E04ITECON-006 made the asymmetry concrete; this keeps provenance neutral across split and merge operations and better fits future lot transforms
 - Deviations from original plan:
   - Strengthened the enum design during reassessment by adding `LotOperation::ALL`; this was not explicit in the original draft but better matches the current `items.rs` architecture and reduces future test drift
   - Tightened the ticket assumptions to reflect that `items.rs` and the E04ITECON-001 dependency were already completed rather than still pending
+  - The archived original field name was superseded by a stronger relationship-oriented field name after lot algebra landed; the old wording is retained here only where needed to explain the amendment
 - Verification results:
   - `cargo fmt --all` passed
   - `cargo test -p worldwake-core items` passed

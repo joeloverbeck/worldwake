@@ -2,7 +2,7 @@
 
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
-    Container, EntityAllocator, EntityId, EntityKind, EntityMeta, ItemLot, LoadUnits,
+    Container, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, ItemLot, LoadUnits,
     LotOperation, Name, ProvenanceEntry, Quantity, Tick, Topology, UniqueItem, UniqueItemKind,
     WorldError,
 };
@@ -129,28 +129,143 @@ impl World {
         quantity: Quantity,
         tick: Tick,
     ) -> Result<EntityId, WorldError> {
-        if quantity == Quantity(0) {
+        self.create_item_lot_with_provenance(
+            commodity,
+            quantity,
+            tick,
+            vec![ProvenanceEntry {
+                tick,
+                event_id: None,
+                operation: LotOperation::Created,
+                related_lot: None,
+                amount: quantity,
+            }],
+        )
+    }
+
+    pub fn split_lot(
+        &mut self,
+        lot_id: EntityId,
+        amount: Quantity,
+        tick: Tick,
+        event_id: Option<EventId>,
+    ) -> Result<(EntityId, EntityId), WorldError> {
+        if amount == Quantity(0) {
             return Err(WorldError::InvalidOperation(
-                "item lot quantity must be greater than zero".to_string(),
+                "split amount must be greater than zero".to_string(),
             ));
         }
 
-        self.create_entity_with(EntityKind::ItemLot, tick, |world, entity| {
-            world.insert_component_item_lot(
-                entity,
-                ItemLot {
-                    commodity,
-                    quantity,
-                    provenance: vec![ProvenanceEntry {
-                        tick,
-                        event_id: None,
-                        operation: LotOperation::Created,
-                        source_lot: None,
-                        amount: quantity,
-                    }],
+        let (commodity, available) = {
+            let lot = self.require_item_lot(lot_id)?;
+            (lot.commodity, lot.quantity)
+        };
+        let remaining = available
+            .checked_sub(amount)
+            .ok_or(WorldError::InsufficientQuantity {
+                entity: lot_id,
+                requested: amount.0,
+                available: available.0,
+            })?;
+        if remaining == Quantity(0) {
+            return Err(WorldError::InsufficientQuantity {
+                entity: lot_id,
+                requested: amount.0,
+                available: available.0,
+            });
+        }
+
+        let new_lot_id = self.create_item_lot_with_provenance(
+            commodity,
+            amount,
+            tick,
+            vec![
+                ProvenanceEntry {
+                    tick,
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    related_lot: None,
+                    amount,
                 },
+                ProvenanceEntry {
+                    tick,
+                    event_id,
+                    operation: LotOperation::Split,
+                    related_lot: Some(lot_id),
+                    amount,
+                },
+            ],
+        )?;
+
+        {
+            let source_lot = self.require_item_lot_mut(lot_id)?;
+            source_lot.quantity = remaining;
+            source_lot.provenance.push(ProvenanceEntry {
+                tick,
+                event_id,
+                operation: LotOperation::Split,
+                related_lot: Some(new_lot_id),
+                amount,
+            });
+        }
+
+        Ok((lot_id, new_lot_id))
+    }
+
+    pub fn merge_lots(
+        &mut self,
+        target_id: EntityId,
+        source_id: EntityId,
+        tick: Tick,
+        event_id: Option<EventId>,
+    ) -> Result<EntityId, WorldError> {
+        if target_id == source_id {
+            return Err(WorldError::InvalidOperation(
+                "cannot merge a lot into itself".to_string(),
+            ));
+        }
+
+        let (target_commodity, source_commodity, source_quantity) = {
+            let target_lot = self.require_item_lot(target_id)?;
+            let source_lot = self.require_item_lot(source_id)?;
+            (
+                target_lot.commodity,
+                source_lot.commodity,
+                source_lot.quantity,
             )
-        })
+        };
+        if target_commodity != source_commodity {
+            return Err(WorldError::InvalidOperation(format!(
+                "cannot merge {source_commodity:?} lot {source_id} into {target_commodity:?} lot {target_id}"
+            )));
+        }
+
+        {
+            let target_lot = self.require_item_lot_mut(target_id)?;
+            target_lot.quantity = target_lot.quantity + source_quantity;
+            target_lot.provenance.push(ProvenanceEntry {
+                tick,
+                event_id,
+                operation: LotOperation::Merge,
+                related_lot: Some(source_id),
+                amount: source_quantity,
+            });
+        }
+
+        {
+            let source_lot = self.require_item_lot_mut(source_id)?;
+            source_lot.provenance.push(ProvenanceEntry {
+                tick,
+                event_id,
+                operation: LotOperation::Merge,
+                related_lot: Some(target_id),
+                amount: source_quantity,
+            });
+        }
+
+        self.archive_entity(source_id, tick)?;
+
+        Ok(target_id)
     }
 
     pub fn create_unique_item(
@@ -289,6 +404,49 @@ impl World {
         })
     }
 
+    fn create_item_lot_with_provenance(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        tick: Tick,
+        provenance: Vec<ProvenanceEntry>,
+    ) -> Result<EntityId, WorldError> {
+        if quantity == Quantity(0) {
+            return Err(WorldError::InvalidOperation(
+                "item lot quantity must be greater than zero".to_string(),
+            ));
+        }
+
+        self.create_entity_with(EntityKind::ItemLot, tick, |world, entity| {
+            world.insert_component_item_lot(
+                entity,
+                ItemLot {
+                    commodity,
+                    quantity,
+                    provenance,
+                },
+            )
+        })
+    }
+
+    fn require_item_lot(&self, entity: EntityId) -> Result<&ItemLot, WorldError> {
+        self.ensure_alive(entity)?;
+        self.get_component_item_lot(entity)
+            .ok_or(WorldError::ComponentNotFound {
+                entity,
+                component_type: "ItemLot",
+            })
+    }
+
+    fn require_item_lot_mut(&mut self, entity: EntityId) -> Result<&mut ItemLot, WorldError> {
+        self.ensure_alive(entity)?;
+        self.get_component_item_lot_mut(entity)
+            .ok_or(WorldError::ComponentNotFound {
+                entity,
+                component_type: "ItemLot",
+            })
+    }
+
     fn create_entity_with<F>(
         &mut self,
         kind: EntityKind,
@@ -326,9 +484,9 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, ItemLot,
-        LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity, Tick,
-        Topology, UniqueItem, UniqueItemKind, WorldError,
+        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId,
+        ItemLot, LoadUnits, LotOperation, Name, Place, PlaceTag, ProvenanceEntry, Quantity,
+        Tick, Topology, UniqueItem, UniqueItemKind, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -424,7 +582,7 @@ mod tests {
                     tick: Tick(10),
                     event_id: None,
                     operation: LotOperation::Created,
-                    source_lot: None,
+                    related_lot: None,
                     amount: Quantity(6),
                 }],
             })
@@ -564,7 +722,7 @@ mod tests {
                     tick: Tick(5),
                     event_id: None,
                     operation: LotOperation::Created,
-                    source_lot: None,
+                    related_lot: None,
                     amount: Quantity(10),
                 }],
             })
@@ -581,6 +739,226 @@ mod tests {
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
         assert_eq!(world.entity_count(), 0);
+    }
+
+    #[test]
+    fn split_lot_creates_child_and_preserves_total_quantity() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let source = world
+            .create_item_lot(CommodityKind::Apple, Quantity(10), Tick(1))
+            .unwrap();
+
+        let (returned_source, split_off) = world
+            .split_lot(source, Quantity(3), Tick(2), Some(EventId(9)))
+            .unwrap();
+
+        assert_eq!(returned_source, source);
+        assert!(world.is_alive(source));
+        assert!(world.is_alive(split_off));
+
+        let source_lot = world.get_component_item_lot(source).unwrap();
+        let split_off_lot = world.get_component_item_lot(split_off).unwrap();
+
+        assert_eq!(source_lot.commodity, CommodityKind::Apple);
+        assert_eq!(split_off_lot.commodity, CommodityKind::Apple);
+        assert_eq!(source_lot.quantity, Quantity(7));
+        assert_eq!(split_off_lot.quantity, Quantity(3));
+        assert_eq!(source_lot.quantity + split_off_lot.quantity, Quantity(10));
+
+        assert_eq!(
+            source_lot.provenance,
+            vec![
+                ProvenanceEntry {
+                    tick: Tick(1),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    related_lot: None,
+                    amount: Quantity(10),
+                },
+                ProvenanceEntry {
+                    tick: Tick(2),
+                    event_id: Some(EventId(9)),
+                    operation: LotOperation::Split,
+                    related_lot: Some(split_off),
+                    amount: Quantity(3),
+                },
+            ]
+        );
+        assert_eq!(
+            split_off_lot.provenance,
+            vec![
+                ProvenanceEntry {
+                    tick: Tick(2),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    related_lot: None,
+                    amount: Quantity(3),
+                },
+                ProvenanceEntry {
+                    tick: Tick(2),
+                    event_id: Some(EventId(9)),
+                    operation: LotOperation::Split,
+                    related_lot: Some(source),
+                    amount: Quantity(3),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn split_lot_rejects_zero_full_and_excessive_amounts() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let source = world
+            .create_item_lot(CommodityKind::Grain, Quantity(10), Tick(1))
+            .unwrap();
+
+        let zero = world
+            .split_lot(source, Quantity(0), Tick(2), None)
+            .unwrap_err();
+        assert!(matches!(zero, WorldError::InvalidOperation(_)));
+
+        let full = world
+            .split_lot(source, Quantity(10), Tick(2), None)
+            .unwrap_err();
+        assert!(matches!(
+            full,
+            WorldError::InsufficientQuantity {
+                entity,
+                requested: 10,
+                available: 10,
+            } if entity == source
+        ));
+
+        let excessive = world
+            .split_lot(source, Quantity(11), Tick(2), None)
+            .unwrap_err();
+        assert!(matches!(
+            excessive,
+            WorldError::InsufficientQuantity {
+                entity,
+                requested: 11,
+                available: 10,
+            } if entity == source
+        ));
+    }
+
+    #[test]
+    fn split_lot_rejects_non_item_lot_entities() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
+
+        let err = world
+            .split_lot(office, Quantity(1), Tick(2), None)
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            WorldError::ComponentNotFound {
+                entity,
+                component_type: "ItemLot",
+            } if entity == office
+        ));
+    }
+
+    #[test]
+    fn merge_lots_combines_quantity_archives_source_and_preserves_traceability() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let source = world
+            .create_item_lot(CommodityKind::Water, Quantity(10), Tick(1))
+            .unwrap();
+        let (_, split_off) = world
+            .split_lot(source, Quantity(4), Tick(2), Some(EventId(3)))
+            .unwrap();
+
+        let merged = world
+            .merge_lots(source, split_off, Tick(3), Some(EventId(4)))
+            .unwrap();
+
+        assert_eq!(merged, source);
+        assert!(world.is_alive(source));
+        assert!(world.is_archived(split_off));
+        assert_eq!(world.get_component_item_lot(split_off), None);
+
+        let merged_lot = world.get_component_item_lot(source).unwrap();
+        assert_eq!(merged_lot.quantity, Quantity(10));
+        assert_eq!(
+            merged_lot.provenance,
+            vec![
+                ProvenanceEntry {
+                    tick: Tick(1),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    related_lot: None,
+                    amount: Quantity(10),
+                },
+                ProvenanceEntry {
+                    tick: Tick(2),
+                    event_id: Some(EventId(3)),
+                    operation: LotOperation::Split,
+                    related_lot: Some(split_off),
+                    amount: Quantity(4),
+                },
+                ProvenanceEntry {
+                    tick: Tick(3),
+                    event_id: Some(EventId(4)),
+                    operation: LotOperation::Merge,
+                    related_lot: Some(split_off),
+                    amount: Quantity(4),
+                },
+            ]
+        );
+
+        let archived_source_lot = world.components.item_lots.get(&split_off).unwrap();
+        assert_eq!(
+            archived_source_lot.provenance.last(),
+            Some(&ProvenanceEntry {
+                tick: Tick(3),
+                event_id: Some(EventId(4)),
+                operation: LotOperation::Merge,
+                related_lot: Some(source),
+                amount: Quantity(4),
+            })
+        );
+    }
+
+    #[test]
+    fn merge_lots_rejects_mismatched_or_identical_lots() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let apples = world
+            .create_item_lot(CommodityKind::Apple, Quantity(4), Tick(1))
+            .unwrap();
+        let grain = world
+            .create_item_lot(CommodityKind::Grain, Quantity(5), Tick(1))
+            .unwrap();
+
+        let same_entity = world
+            .merge_lots(apples, apples, Tick(2), None)
+            .unwrap_err();
+        assert!(matches!(same_entity, WorldError::InvalidOperation(_)));
+
+        let mismatched = world
+            .merge_lots(apples, grain, Tick(2), None)
+            .unwrap_err();
+        assert!(matches!(mismatched, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn waste_lots_support_split_and_merge() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let source = world
+            .create_item_lot(CommodityKind::Waste, Quantity(6), Tick(1))
+            .unwrap();
+
+        let (_, split_off) = world
+            .split_lot(source, Quantity(2), Tick(2), None)
+            .unwrap();
+        world.merge_lots(source, split_off, Tick(3), None).unwrap();
+
+        assert_eq!(
+            world.get_component_item_lot(source).unwrap().quantity,
+            Quantity(6)
+        );
+        assert!(world.is_archived(split_off));
     }
 
     #[test]
@@ -1159,7 +1537,7 @@ mod tests {
                         tick: Tick(1),
                         event_id: None,
                         operation: LotOperation::Created,
-                        source_lot: None,
+                        related_lot: None,
                         amount: Quantity(2),
                     }],
                 },
@@ -1275,7 +1653,7 @@ mod tests {
                         tick: Tick(1),
                         event_id: None,
                         operation: LotOperation::Created,
-                        source_lot: None,
+                        related_lot: None,
                         amount: Quantity(5),
                     }],
                 },

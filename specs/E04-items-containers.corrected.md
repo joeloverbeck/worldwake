@@ -73,8 +73,11 @@ Record enough information to preserve lot lineage:
 - `tick: Tick`
 - `event_id: Option<EventId>`
 - `operation: LotOperation`
-- `source_lot: Option<EntityId>`
+- `related_lot: Option<EntityId>`
 - `amount: Quantity`
+
+Rule:
+- `related_lot` points to the other lot involved in the operation when one exists; this keeps split and merge lineage symmetric instead of pretending every linked lot is always a source
 
 `LotOperation` cases:
 - `Created`

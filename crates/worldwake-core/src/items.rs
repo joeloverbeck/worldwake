@@ -121,7 +121,7 @@ pub struct ProvenanceEntry {
     pub tick: Tick,
     pub event_id: Option<EventId>,
     pub operation: LotOperation,
-    pub source_lot: Option<EntityId>,
+    pub related_lot: Option<EntityId>,
     pub amount: Quantity,
 }
 
@@ -325,7 +325,7 @@ mod tests {
             tick: Tick(11),
             event_id: Some(EventId(4)),
             operation: LotOperation::Split,
-            source_lot: Some(EntityId {
+            related_lot: Some(EntityId {
                 slot: 7,
                 generation: 1,
             }),
@@ -335,7 +335,7 @@ mod tests {
             tick: Tick(12),
             event_id: None,
             operation: LotOperation::Created,
-            source_lot: None,
+            related_lot: None,
             amount: Quantity(9),
         };
 
@@ -356,14 +356,14 @@ mod tests {
                     tick: Tick(3),
                     event_id: None,
                     operation: LotOperation::Created,
-                    source_lot: None,
+                    related_lot: None,
                     amount: Quantity(12),
                 },
                 ProvenanceEntry {
                     tick: Tick(5),
                     event_id: Some(EventId(2)),
                     operation: LotOperation::Produced,
-                    source_lot: Some(EntityId {
+                    related_lot: Some(EntityId {
                         slot: 4,
                         generation: 1,
                     }),

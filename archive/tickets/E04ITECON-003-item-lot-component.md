@@ -69,7 +69,7 @@ ProvenanceEntry {
     tick,
     event_id: None,
     operation: LotOperation::Created,
-    source_lot: None,
+    related_lot: None,
     amount: quantity,
 }
 ```
@@ -135,6 +135,7 @@ Rules:
 
 ## Outcome
 
+- Outcome amended: 2026-03-09
 - Completion date: 2026-03-09
 - What actually changed:
   - Added `ItemLot` to `crates/worldwake-core/src/items.rs` as the item-domain lot component built from existing `CommodityKind`, `Quantity`, and `ProvenanceEntry` types
@@ -146,6 +147,7 @@ Rules:
   - Tightened the ticket scope during reassessment to reflect that the taxonomy and provenance dependencies were already completed; this work only added the ECS component and world integration layer
   - Kept `ItemLot` in `items.rs` rather than `components.rs` because it is domain state that composes existing item-domain types and will be reused by later lot algebra/load-accounting work
   - Reused the existing `create_entity_with` rollback path instead of introducing a special-case item-lot constructor path
+  - The example `Created` provenance entry now uses `related_lot: None` after the provenance model was generalized from a one-way source field to a relationship-oriented field
 - Verification results:
   - `cargo test -p worldwake-core item_lot` passed
   - `cargo test -p worldwake-core items` passed
