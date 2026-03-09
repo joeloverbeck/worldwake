@@ -1,12 +1,14 @@
 use crate::{
-    CauseRef, ComponentDelta, ComponentValue, EntityDelta, EventTag, RelationDelta, RelationKind,
-    RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
+    CauseRef, ComponentDelta, ComponentValue, EntityDelta, EventLog, EventTag, PendingEvent,
+    RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
+    WitnessData,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use worldwake_core::{
-    ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind, FactId,
-    Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
+    ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
+    EventId, FactId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World,
+    WorldError,
 };
 
 pub struct WorldTxn<'w> {
@@ -97,6 +99,22 @@ impl<'w> WorldTxn<'w> {
     #[must_use]
     pub fn deltas(&self) -> &[StateDelta] {
         &self.deltas
+    }
+
+    pub fn commit(self, event_log: &mut EventLog) -> EventId {
+        let pending = PendingEvent::new(
+            self.tick,
+            self.cause,
+            self.actor_id,
+            self.target_ids,
+            self.place_id,
+            self.deltas,
+            self.visibility,
+            self.witness_data,
+            self.tags,
+        );
+
+        event_log.emit(pending)
     }
 
     pub fn add_target(&mut self, target_id: EntityId) -> &mut Self {
@@ -669,7 +687,7 @@ impl Deref for WorldTxn<'_> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventTag,
+        CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
         WitnessData,
     };
@@ -1153,6 +1171,106 @@ mod tests {
             txn.tags().iter().copied().collect::<Vec<_>>(),
             vec![EventTag::WorldMutation, EventTag::System]
         );
+    }
+
+    #[test]
+    fn commit_emits_record_with_canonical_targets_and_preserved_delta_order() {
+        let mut world = World::new(test_topology()).unwrap();
+        let mut txn = new_txn(&mut world);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.add_target(entity(9))
+            .add_target(agent)
+            .add_target(entity(4))
+            .add_tag(EventTag::WorldMutation)
+            .add_tag(EventTag::Control);
+        let expected_deltas = txn.deltas().to_vec();
+        let expected_witness = txn.witness_data().clone();
+        let expected_tags = txn.tags().clone();
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(event_id, worldwake_core::EventId(0));
+        assert_eq!(record.event_id, event_id);
+        assert_eq!(record.tick, Tick(9));
+        assert_eq!(record.cause, CauseRef::Bootstrap);
+        assert_eq!(record.actor_id, Some(entity(11)));
+        assert_eq!(record.place_id, Some(entity(5)));
+        assert_eq!(record.target_ids, vec![entity(4), agent, entity(9)]);
+        assert_eq!(record.state_deltas, expected_deltas);
+        assert_eq!(record.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(record.witness_data, expected_witness);
+        assert_eq!(record.tags, expected_tags);
+        assert_eq!(log.events_at_tick(Tick(9)), &[event_id]);
+        assert_eq!(log.events_by_actor(entity(11)), &[event_id]);
+        assert_eq!(log.events_by_place(entity(5)), &[event_id]);
+        assert_eq!(log.events_by_tag(EventTag::WorldMutation), &[event_id]);
+        assert_eq!(log.events_by_tag(EventTag::Control), &[event_id]);
+    }
+
+    #[test]
+    fn commit_allows_empty_deltas_for_root_events() {
+        let mut world = World::new(test_topology()).unwrap();
+        let txn = new_txn(&mut world);
+        let mut log = EventLog::new();
+
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(event_id, worldwake_core::EventId(0));
+        assert!(record.state_deltas.is_empty());
+        assert!(record.tags.is_empty());
+        assert!(record.target_ids.is_empty());
+    }
+
+    #[test]
+    fn sequential_commits_receive_gapless_ids() {
+        let mut world = World::new(test_topology()).unwrap();
+        let mut first = new_txn(&mut world);
+        first.add_tag(EventTag::WorldMutation);
+
+        let mut log = EventLog::new();
+        let first_id = first.commit(&mut log);
+        let mut second = WorldTxn::new(
+            &mut world,
+            Tick(10),
+            CauseRef::SystemTick(Tick(10)),
+            None,
+            Some(entity(2)),
+            VisibilitySpec::PublicRecord,
+            WitnessData::default(),
+        );
+        second.add_tag(EventTag::System);
+        let second_id = second.commit(&mut log);
+
+        assert_eq!(first_id, worldwake_core::EventId(0));
+        assert_eq!(second_id, worldwake_core::EventId(1));
+        assert_eq!(log.events_at_tick(Tick(9)), &[first_id]);
+        assert_eq!(log.events_at_tick(Tick(10)), &[second_id]);
+        assert_eq!(log.events_by_place(entity(2)), &[second_id]);
+        assert_eq!(log.events_by_tag(EventTag::System), &[second_id]);
+    }
+
+    #[test]
+    fn commit_preserves_archive_teardown_batch_without_reshaping_it() {
+        let mut world = World::new(test_topology()).unwrap();
+        let fixture = archive_teardown_fixture(&mut world);
+        let mut txn = new_txn(&mut world);
+        txn.add_target(fixture.archived)
+            .add_tag(EventTag::WorldMutation);
+        txn.archive_entity(fixture.archived).unwrap();
+        let expected_deltas = txn.deltas().to_vec();
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas, expected_deltas);
+        assert!(matches!(
+            record.state_deltas.first(),
+            Some(StateDelta::Entity(EntityDelta::Archived { entity, .. })) if *entity == fixture.archived
+        ));
     }
 
     #[test]
