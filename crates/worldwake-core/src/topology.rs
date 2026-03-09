@@ -2,7 +2,8 @@
 
 use crate::{Component, EntityId, Permille, TravelEdgeId, WorldError};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::{NonZeroU16, NonZeroU32};
 
 /// Categorizes a place in the world graph.
@@ -98,6 +99,14 @@ impl TravelEdge {
     pub fn visibility(&self) -> Permille {
         self.visibility
     }
+}
+
+/// Deterministic route through the topology graph.
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct Route {
+    pub places: Vec<EntityId>,
+    pub edges: Vec<TravelEdgeId>,
+    pub total_travel_time: u32,
 }
 
 /// Ordered storage for the world place graph and deterministic query APIs.
@@ -205,6 +214,67 @@ impl Topology {
         false
     }
 
+    pub fn shortest_path(&self, from: EntityId, to: EntityId) -> Option<Route> {
+        if !self.places.contains_key(&from) || !self.places.contains_key(&to) {
+            return None;
+        }
+        if from == to {
+            return Some(Route {
+                places: vec![from],
+                edges: Vec::new(),
+                total_travel_time: 0,
+            });
+        }
+
+        let mut best_routes = BTreeMap::new();
+        best_routes.insert(
+            from,
+            Route {
+                places: vec![from],
+                edges: Vec::new(),
+                total_travel_time: 0,
+            },
+        );
+
+        let mut frontier = BinaryHeap::new();
+        frontier.push(RouteQueueEntry {
+            total_travel_time: 0,
+            place: from,
+        });
+
+        while let Some(entry) = frontier.pop() {
+            let Some(current_route) = best_routes.get(&entry.place).cloned() else {
+                continue;
+            };
+            if entry.total_travel_time != current_route.total_travel_time {
+                continue;
+            }
+            if entry.place == to {
+                return Some(current_route);
+            }
+
+            for edge_id in self.outgoing_edges(entry.place) {
+                let edge = self
+                    .edge(*edge_id)
+                    .expect("topology adjacency must reference existing edges");
+                let candidate = current_route.extend(*edge_id, edge.to(), edge.travel_time_ticks());
+                let should_replace = best_routes
+                    .get(&edge.to())
+                    .is_none_or(|existing| candidate.is_better_than(existing));
+
+                if should_replace {
+                    frontier.push(RouteQueueEntry {
+                        total_travel_time: candidate.total_travel_time,
+                        place: edge.to(),
+                    });
+                    best_routes.insert(edge.to(), candidate);
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn place_count(&self) -> usize {
         self.places.len()
     }
@@ -221,9 +291,51 @@ fn insert_sorted_edge_id(edge_ids: &mut Vec<TravelEdgeId>, edge_id: TravelEdgeId
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+struct RouteQueueEntry {
+    total_travel_time: u32,
+    place: EntityId,
+}
+
+impl Ord for RouteQueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .total_travel_time
+            .cmp(&self.total_travel_time)
+            .then_with(|| other.place.cmp(&self.place))
+    }
+}
+
+impl PartialOrd for RouteQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Route {
+    fn extend(&self, edge_id: TravelEdgeId, next_place: EntityId, edge_travel_time: u32) -> Self {
+        let mut places = self.places.clone();
+        places.push(next_place);
+
+        let mut edges = self.edges.clone();
+        edges.push(edge_id);
+
+        Self {
+            places,
+            edges,
+            total_travel_time: self.total_travel_time + edge_travel_time,
+        }
+    }
+
+    fn is_better_than(&self, other: &Self) -> bool {
+        self.total_travel_time < other.total_travel_time
+            || (self.total_travel_time == other.total_travel_time && self.edges < other.edges)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Place, PlaceTag, Topology, TravelEdge};
+    use super::{Place, PlaceTag, Route, Topology, TravelEdge};
     use crate::test_utils::canonical_bytes;
     use crate::{traits::Component, EntityId, Permille, TravelEdgeId, WorldError};
     use serde::de::DeserializeOwned;
@@ -262,11 +374,15 @@ mod tests {
     }
 
     fn edge(id: u32, from: u32, to: u32) -> TravelEdge {
+        edge_with_ticks(id, from, to, 1)
+    }
+
+    fn edge_with_ticks(id: u32, from: u32, to: u32, ticks: u32) -> TravelEdge {
         TravelEdge::new(
             TravelEdgeId(id),
             entity(from),
             entity(to),
-            1,
+            ticks,
             None,
             Permille::new(0).unwrap(),
             Permille::new(1000).unwrap(),
@@ -608,5 +724,154 @@ mod tests {
         assert!(!topology.is_reachable(entity(1), entity(2)));
         assert_eq!(topology.place_count(), 0);
         assert_eq!(topology.edge_count(), 0);
+    }
+
+    #[test]
+    fn route_roundtrips_through_bincode() {
+        let route = Route {
+            places: vec![entity(1), entity(2), entity(3)],
+            edges: vec![TravelEdgeId(10), TravelEdgeId(20)],
+            total_travel_time: 7,
+        };
+
+        let bytes = bincode::serialize(&route).unwrap();
+        let roundtrip: Route = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, route);
+    }
+
+    #[test]
+    fn shortest_path_returns_zero_cost_route_for_existing_origin() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+
+        let route = topology.shortest_path(entity(1), entity(1)).unwrap();
+
+        assert_eq!(route.places, vec![entity(1)]);
+        assert!(route.edges.is_empty());
+        assert_eq!(route.total_travel_time, 0);
+    }
+
+    #[test]
+    fn shortest_path_returns_none_for_missing_or_disconnected_places() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+        topology
+            .add_place(entity(2), place("B", &[PlaceTag::Farm]))
+            .unwrap();
+        topology
+            .add_place(entity(3), place("C", &[PlaceTag::Forest]))
+            .unwrap();
+        topology.add_edge(edge_with_ticks(10, 1, 2, 3)).unwrap();
+
+        assert_eq!(topology.shortest_path(entity(1), entity(3)), None);
+        assert_eq!(topology.shortest_path(entity(1), entity(99)), None);
+        assert_eq!(topology.shortest_path(entity(99), entity(1)), None);
+    }
+
+    #[test]
+    fn shortest_path_returns_single_edge_route() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+        topology
+            .add_place(entity(2), place("B", &[PlaceTag::Farm]))
+            .unwrap();
+        topology.add_edge(edge_with_ticks(10, 1, 2, 4)).unwrap();
+
+        let route = topology.shortest_path(entity(1), entity(2)).unwrap();
+
+        assert_eq!(route.places, vec![entity(1), entity(2)]);
+        assert_eq!(route.edges, vec![TravelEdgeId(10)]);
+        assert_eq!(route.total_travel_time, 4);
+    }
+
+    #[test]
+    fn shortest_path_returns_linear_route_with_total_cost() {
+        let mut topology = Topology::new();
+        for (slot, name, tag) in [
+            (1, "A", PlaceTag::Village),
+            (2, "B", PlaceTag::Farm),
+            (3, "C", PlaceTag::Store),
+        ] {
+            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+        }
+        topology.add_edge(edge_with_ticks(10, 1, 2, 3)).unwrap();
+        topology.add_edge(edge_with_ticks(20, 2, 3, 5)).unwrap();
+
+        let route = topology.shortest_path(entity(1), entity(3)).unwrap();
+
+        assert_eq!(route.places, vec![entity(1), entity(2), entity(3)]);
+        assert_eq!(route.edges, vec![TravelEdgeId(10), TravelEdgeId(20)]);
+        assert_eq!(route.total_travel_time, 8);
+    }
+
+    #[test]
+    fn shortest_path_chooses_globally_shortest_route_over_greedy_first_edge() {
+        let mut topology = Topology::new();
+        for (slot, name, tag) in [
+            (1, "A", PlaceTag::Village),
+            (2, "B", PlaceTag::Farm),
+            (3, "C", PlaceTag::Store),
+            (4, "D", PlaceTag::Forest),
+        ] {
+            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+        }
+        topology.add_edge(edge_with_ticks(10, 1, 2, 10)).unwrap();
+        topology.add_edge(edge_with_ticks(20, 2, 4, 1)).unwrap();
+        topology.add_edge(edge_with_ticks(30, 1, 3, 2)).unwrap();
+        topology.add_edge(edge_with_ticks(40, 3, 4, 2)).unwrap();
+
+        let route = topology.shortest_path(entity(1), entity(4)).unwrap();
+
+        assert_eq!(route.places, vec![entity(1), entity(3), entity(4)]);
+        assert_eq!(route.edges, vec![TravelEdgeId(30), TravelEdgeId(40)]);
+        assert_eq!(route.total_travel_time, 4);
+    }
+
+    #[test]
+    fn shortest_path_uses_lexicographically_smallest_edge_sequence_for_equal_cost_routes() {
+        let mut topology = Topology::new();
+        for (slot, name, tag) in [
+            (1, "A", PlaceTag::Village),
+            (2, "B", PlaceTag::Farm),
+            (3, "C", PlaceTag::Store),
+            (4, "D", PlaceTag::Forest),
+        ] {
+            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+        }
+        topology.add_edge(edge_with_ticks(30, 1, 3, 1)).unwrap();
+        topology.add_edge(edge_with_ticks(40, 3, 4, 2)).unwrap();
+        topology.add_edge(edge_with_ticks(10, 1, 2, 1)).unwrap();
+        topology.add_edge(edge_with_ticks(20, 2, 4, 2)).unwrap();
+
+        let route = topology.shortest_path(entity(1), entity(4)).unwrap();
+
+        assert_eq!(route.places, vec![entity(1), entity(2), entity(4)]);
+        assert_eq!(route.edges, vec![TravelEdgeId(10), TravelEdgeId(20)]);
+        assert_eq!(route.total_travel_time, 3);
+    }
+
+    #[test]
+    fn shortest_path_keeps_places_and_edges_aligned() {
+        let mut topology = Topology::new();
+        for (slot, name, tag) in [
+            (1, "A", PlaceTag::Village),
+            (2, "B", PlaceTag::Farm),
+            (3, "C", PlaceTag::Store),
+        ] {
+            topology.add_place(entity(slot), place(name, &[tag])).unwrap();
+        }
+        topology.add_edge(edge_with_ticks(10, 1, 2, 2)).unwrap();
+        topology.add_edge(edge_with_ticks(20, 2, 3, 2)).unwrap();
+
+        let route = topology.shortest_path(entity(1), entity(3)).unwrap();
+
+        assert_eq!(route.places.len(), route.edges.len() + 1);
     }
 }
