@@ -15,15 +15,16 @@ pub mod action_instance;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
-pub mod controller_state;
-pub mod deterministic_rng;
 pub mod affordance;
 pub mod affordance_query;
+pub mod controller_state;
+pub mod deterministic_rng;
 pub mod input_event;
 pub mod input_queue;
 pub mod interrupt_abort;
 pub mod knowledge_view;
 pub mod replan_needed;
+pub mod scheduler;
 pub mod start_gate;
 pub mod system_manifest;
 pub mod tick_action;
@@ -44,19 +45,18 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
-pub use controller_state::{ControlError, ControllerState};
-pub use deterministic_rng::DeterministicRng;
 pub use affordance::Affordance;
 pub use affordance_query::{
     enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
 };
+pub use controller_state::{ControlError, ControllerState};
+pub use deterministic_rng::DeterministicRng;
 pub use input_event::{InputEvent, InputKind};
 pub use input_queue::InputQueue;
-pub use interrupt_abort::{
-    abort_action, interrupt_action,
-};
+pub use interrupt_abort::{abort_action, interrupt_action};
 pub use knowledge_view::KnowledgeView;
 pub use replan_needed::ReplanNeeded;
+pub use scheduler::Scheduler;
 pub use start_gate::start_action;
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use tick_action::{tick_action, TickOutcome};
