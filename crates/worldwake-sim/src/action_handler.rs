@@ -1,9 +1,8 @@
-use crate::{ActionInstance, ActionState};
+use crate::{ActionDefId, ActionHandlerId, ActionInstance, ActionState};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, WorldTxn};
 
-pub type ActionStartFn =
-    for<'w> fn(&ActionInstance, &mut WorldTxn<'w>) -> Result<Option<ActionState>, ActionError>;
+pub type ActionStartFn = fn(&ActionInstance) -> Result<Option<ActionState>, ActionError>;
 pub type ActionTickFn =
     for<'w> fn(&ActionInstance, &mut WorldTxn<'w>) -> Result<ActionProgress, ActionError>;
 pub type ActionCommitFn = for<'w> fn(&ActionInstance, &mut WorldTxn<'w>) -> Result<(), ActionError>;
@@ -43,8 +42,11 @@ pub enum ActionProgress {
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ActionError {
+    UnknownActionDef(ActionDefId),
+    UnknownActionHandler(ActionHandlerId),
+    ConstraintFailed(String),
     PreconditionFailed(String),
-    ReservationUnavailable,
+    ReservationUnavailable(EntityId),
     InvalidTarget(EntityId),
     InternalError(String),
 }
@@ -89,7 +91,6 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn noop_start(
         _instance: &ActionInstance,
-        _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
@@ -147,7 +148,7 @@ mod tests {
         );
 
         assert_eq!(
-            (handler.on_start)(&instance, &mut txn).unwrap(),
+            (handler.on_start)(&instance).unwrap(),
             Some(ActionState::Empty)
         );
         assert_eq!(

@@ -15,6 +15,7 @@ pub mod action_status;
 pub mod affordance;
 pub mod affordance_query;
 pub mod knowledge_view;
+pub mod start_gate;
 pub mod world_knowledge_view;
 
 pub use action_def::ActionDef;
@@ -36,4 +37,5 @@ pub use affordance_query::{
     enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
 };
 pub use knowledge_view::KnowledgeView;
+pub use start_gate::{start_action, StartActionAuthority, StartActionContext};
 pub use world_knowledge_view::WorldKnowledgeView;
