@@ -194,11 +194,20 @@ pub enum ReservationDelta {
     Released { reservation: ReservationRecord },
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StateDelta {
+    Entity(EntityDelta),
+    Component(ComponentDelta),
+    Relation(RelationDelta),
+    Quantity(QuantityDelta),
+    Reservation(ReservationDelta),
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
-        RelationKind, RelationValue, ReservationDelta,
+        RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -323,6 +332,7 @@ mod tests {
         assert_traits::<RelationDelta>();
         assert_traits::<QuantityDelta>();
         assert_traits::<ReservationDelta>();
+        assert_traits::<StateDelta>();
     }
 
     #[test]
@@ -569,5 +579,94 @@ mod tests {
             reservation_roundtrip,
             ReservationDelta::Released { .. }
         ));
+    }
+
+    #[test]
+    fn state_delta_wraps_all_delta_families() {
+        let reservation = reservation_record();
+        let variants = [
+            StateDelta::Entity(EntityDelta::Created {
+                entity: entity(1),
+                kind: EntityKind::Agent,
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: entity(2),
+                component_kind: ComponentKind::Name,
+                before: None,
+                after: ComponentValue::Name(Name("Kite".to_string())),
+            }),
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::LocatedIn,
+                relation: RelationValue::LocatedIn {
+                    entity: entity(3),
+                    place: entity(4),
+                },
+            }),
+            StateDelta::Quantity(QuantityDelta::Changed {
+                entity: entity(5),
+                commodity: CommodityKind::Water,
+                before: Quantity(2),
+                after: Quantity(6),
+            }),
+            StateDelta::Reservation(ReservationDelta::Created { reservation }),
+        ];
+
+        assert!(matches!(
+            variants[0],
+            StateDelta::Entity(EntityDelta::Created { .. })
+        ));
+        assert!(matches!(
+            variants[1],
+            StateDelta::Component(ComponentDelta::Set { .. })
+        ));
+        assert!(matches!(
+            variants[2],
+            StateDelta::Relation(RelationDelta::Added { .. })
+        ));
+        assert!(matches!(
+            variants[3],
+            StateDelta::Quantity(QuantityDelta::Changed { .. })
+        ));
+        assert!(matches!(
+            variants[4],
+            StateDelta::Reservation(ReservationDelta::Created { .. })
+        ));
+    }
+
+    #[test]
+    fn state_delta_roundtrips_through_bincode() {
+        let deltas = [
+            StateDelta::Entity(EntityDelta::Archived {
+                entity: entity(6),
+                kind: EntityKind::Office,
+            }),
+            StateDelta::Component(ComponentDelta::Removed {
+                entity: entity(7),
+                component_kind: ComponentKind::Container,
+                before: component_samples().pop().unwrap(),
+            }),
+            StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: RelationKind::KnowsFact,
+                relation: RelationValue::KnowsFact {
+                    agent: entity(8),
+                    fact: FactId(11),
+                },
+            }),
+            StateDelta::Quantity(QuantityDelta::Changed {
+                entity: entity(9),
+                commodity: CommodityKind::Coin,
+                before: Quantity(4),
+                after: Quantity(9),
+            }),
+            StateDelta::Reservation(ReservationDelta::Released {
+                reservation: reservation_record(),
+            }),
+        ];
+
+        for delta in deltas {
+            let bytes = bincode::serialize(&delta).unwrap();
+            let roundtrip: StateDelta = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, delta);
+        }
     }
 }

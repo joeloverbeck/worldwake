@@ -11,6 +11,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Worktree Discipline: When instructed to work inside a worktree (e.g., `.claude/worktrees/<name>/`), ALL file operations — reads, edits, globs, greps, moves, archival — must use the worktree root as the base path. The default working directory is the main repo root; tool calls without an explicit worktree path will silently operate on main.
 - Ticket Fidelity: Never silently skip or rationalize away explicit ticket deliverables. If a ticket says to touch a file or produce an artifact, do it. If you believe a deliverable is wrong, unnecessary, or blocked, apply the 1-3-1 rule — present the problem and options to the user rather than deciding on your own. Marking a task "completed" with an excuse instead of doing the work, or instead of flagging the blocker, is never acceptable.
 
+## Foundational Principles
+
+Read `docs/FOUNDATIONS.md` before making any design decision. It defines the 9 non-negotiable principles that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, and concrete state over abstract scores. All code, specs, and architectural choices must be evaluated against these principles.
+
 ## Project
 
 Worldwake is a causality-first emergent micro-world simulation in Rust. CLI/text prototype where agents plan from beliefs (never world state), and all consequences propagate through an append-only event log.
@@ -147,7 +151,7 @@ Do not duplicate or drift this procedure in other files; update `docs/archival-w
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (928 symbols, 3189 relationships, 75 execution flows).
+This project is indexed by GitNexus as **worldwake** (1010 symbols, 3368 relationships, 82 execution flows).
 
 ## Always Start Here
 

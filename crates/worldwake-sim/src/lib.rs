@@ -5,6 +5,7 @@
 
 pub mod cause;
 pub mod delta;
+pub mod event_record;
 pub mod event_tag;
 pub mod visibility;
 pub mod witness;
@@ -12,8 +13,9 @@ pub mod witness;
 pub use cause::CauseRef;
 pub use delta::{
     ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
-    RelationKind, RelationValue, ReservationDelta,
+    RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
+pub use event_record::EventRecord;
 pub use event_tag::EventTag;
 pub use visibility::VisibilitySpec;
 pub use witness::WitnessData;

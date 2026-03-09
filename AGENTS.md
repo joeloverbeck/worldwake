@@ -17,6 +17,10 @@ This file provides guidance to coding agents working in this repository.
 - Respect worktree boundaries. If the user asks you to work inside `.claude/worktrees/<name>/`, use that worktree root for all reads, writes, searches, moves, and archival actions.
 - Maintain ticket fidelity. Do not silently skip explicit deliverables from a spec or ticket. If a deliverable seems wrong or blocked, surface it with the 1-3-1 rule instead of deciding unilaterally.
 
+## Foundational Principles
+
+Read `docs/FOUNDATIONS.md` before making any design decision. It defines the 9 non-negotiable principles that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, and concrete state over abstract scores. All code, specs, and architectural choices must be evaluated against these principles.
+
 ## Project
 
 Worldwake is a causality-first emergent micro-world simulation in Rust. It is currently a CLI/text prototype where agents plan from beliefs rather than world state, and all consequences propagate through an append-only event log.
@@ -112,7 +116,7 @@ PRs should include:
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (928 symbols, 3189 relationships, 75 execution flows).
+This project is indexed by GitNexus as **worldwake** (1010 symbols, 3368 relationships, 82 execution flows).
 
 ## Always Start Here
 
