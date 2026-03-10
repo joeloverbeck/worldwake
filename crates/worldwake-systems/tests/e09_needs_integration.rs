@@ -417,6 +417,7 @@ fn authoritative_schema_includes_expected_shared_and_e09_components_and_fields()
             ComponentKind::DeprivationExposure,
             ComponentKind::MetabolismProfile,
             ComponentKind::CarryCapacity,
+            ComponentKind::KnownRecipes,
             ComponentKind::ResourceSource,
             ComponentKind::InTransitOnEdge,
             ComponentKind::ItemLot,

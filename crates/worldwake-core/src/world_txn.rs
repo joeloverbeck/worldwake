@@ -1,5 +1,5 @@
 use crate::{
-    component_schema::with_txn_simple_set_components, ArchiveMutationSnapshot, CommodityKind,
+    component_schema::with_component_schema_entries, ArchiveMutationSnapshot, CommodityKind,
     Container, ControlSource, EntityId, EntityKind, EventId, FactId, Permille, Quantity,
     ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
 };
@@ -691,7 +691,10 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
-    with_txn_simple_set_components!(world_txn_component_setters);
+    with_component_schema_entries!(
+        select_txn_simple_set_components,
+        world_txn_component_setters
+    );
 
     fn record_created_entity(&mut self, entity: EntityId, kind: EntityKind) {
         self.deltas
@@ -1186,15 +1189,16 @@ impl Deref for WorldTxn<'_> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        CauseRef, CarryCapacity, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
-        EventLog, EventTag, InTransitOnEdge, QuantityDelta, RelationDelta, RelationKind,
-        RelationValue, ReservationDelta, StateDelta, TravelEdgeId, VisibilitySpec, WitnessData,
+        CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
+        EventLog, EventTag, InTransitOnEdge, KnownRecipes, QuantityDelta, RelationDelta,
+        RelationKind, RelationValue, ReservationDelta, StateDelta, TravelEdgeId, VisibilitySpec,
+        WitnessData,
     };
     use crate::{
-        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
-        FactId, HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, Topology,
-        UniqueItemKind, World, WorldError,
+        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind, FactId,
+        HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity, ReservationId,
+        ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
+        WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2081,6 +2085,40 @@ mod tests {
     }
 
     #[test]
+    fn set_component_known_recipes_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = KnownRecipes::with([crate::RecipeId(1), crate::RecipeId(4)]);
+        let after = KnownRecipes::with([crate::RecipeId(2), crate::RecipeId(7)]);
+        world
+            .insert_component_known_recipes(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_known_recipes(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::KnownRecipes,
+                before: Some(ComponentValue::KnownRecipes(before)),
+                after: ComponentValue::KnownRecipes(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_known_recipes(agent), Some(&after));
+    }
+
+    #[test]
     fn set_component_in_transit_on_edge_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -2155,6 +2193,37 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_carry_capacity(agent), None);
+    }
+
+    #[test]
+    fn clear_component_known_recipes_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = KnownRecipes::with([crate::RecipeId(6), crate::RecipeId(1)]);
+        world
+            .insert_component_known_recipes(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_known_recipes(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::KnownRecipes,
+                before: ComponentValue::KnownRecipes(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_known_recipes(agent), None);
     }
 
     #[test]

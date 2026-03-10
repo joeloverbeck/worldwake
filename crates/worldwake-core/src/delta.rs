@@ -1,10 +1,10 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_authoritative_components, AgentData, CarryCapacity, CommodityKind,
+    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
     Container, DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId,
-    HomeostaticNeeds, InTransitOnEdge, ItemLot, MetabolismProfile, Name, Permille, Quantity,
-    ReservationRecord, ResourceSource, UniqueItem, WoundList,
+    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MetabolismProfile, Name, Permille,
+    Quantity, ReservationRecord, ResourceSource, UniqueItem, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ macro_rules! define_component_kind {
         }
 
         impl ComponentKind {
-            pub const ALL: [Self; with_authoritative_components!(count_authoritative_components)] = [
+            pub const ALL: [Self; with_component_schema_entries!(forward_authoritative_components, count_authoritative_components)] = [
                 $(Self::$component_variant,)*
             ];
         }
@@ -48,8 +48,8 @@ macro_rules! count_authoritative_components {
     (@replace $component_variant:ident) => { () };
 }
 
-with_authoritative_components!(define_component_kind);
-with_authoritative_components!(define_component_value);
+with_component_schema_entries!(forward_authoritative_components, define_component_kind);
+with_component_schema_entries!(forward_authoritative_components, define_component_value);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum RelationKind {
@@ -216,7 +216,7 @@ mod tests {
     use crate::{
         AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
-        FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, LoadUnits, LotOperation,
+        FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
         MetabolismProfile, Name, Permille, ProvenanceEntry, Quantity, ReservationId,
         ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem,
         UniqueItemKind, Wound, WoundCause, WoundList,
@@ -271,6 +271,10 @@ mod tests {
             }),
             ComponentValue::MetabolismProfile(MetabolismProfile::default()),
             ComponentValue::CarryCapacity(CarryCapacity(LoadUnits(14))),
+            ComponentValue::KnownRecipes(KnownRecipes::with([
+                crate::RecipeId(2),
+                crate::RecipeId(7),
+            ])),
             ComponentValue::ResourceSource(ResourceSource {
                 commodity: CommodityKind::Apple,
                 available_quantity: Quantity(6),
@@ -393,6 +397,7 @@ mod tests {
                 ComponentKind::DeprivationExposure,
                 ComponentKind::MetabolismProfile,
                 ComponentKind::CarryCapacity,
+                ComponentKind::KnownRecipes,
                 ComponentKind::ResourceSource,
                 ComponentKind::InTransitOnEdge,
                 ComponentKind::ItemLot,

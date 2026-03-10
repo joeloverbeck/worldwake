@@ -1,12 +1,12 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
-    ComponentValue, Container, CarryCapacity, DeprivationExposure, DriveThresholds,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds,
-    InTransitOnEdge, ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name,
-    ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology, UniqueItem,
-    UniqueItemKind, WorldError, WoundList,
+    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
+    ComponentTables, ComponentValue, Container, DeprivationExposure, DriveThresholds,
+    EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge,
+    ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name, ProvenanceEntry,
+    Quantity, RelationTables, ResourceSource, Tick, Topology, UniqueItem, UniqueItemKind,
+    WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -547,8 +547,8 @@ impl World {
             .expect("newly created entity should purge during rollback");
     }
 
-    with_authoritative_components!(world_component_api);
-    with_authoritative_components!(world_component_value_api);
+    with_component_schema_entries!(forward_authoritative_components, world_component_api);
+    with_component_schema_entries!(forward_authoritative_components, world_component_value_api);
 }
 
 #[cfg(test)]
@@ -556,8 +556,8 @@ mod tests {
     use super::World;
     use crate::{
         build_prototype_world, AgentData, BodyPart, CarryCapacity, CommodityKind, Container,
-        ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, LoadUnits,
+        ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
         LotOperation, MetabolismProfile, Name, Permille, Place, PlaceTag, ProvenanceEntry,
         Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, Topology,
         TravelEdgeId, UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause, WoundList,
@@ -3958,6 +3958,35 @@ mod tests {
     }
 
     #[test]
+    fn known_recipes_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let known = KnownRecipes::with([crate::RecipeId(5), crate::RecipeId(1)]);
+
+        world
+            .insert_component_known_recipes(agent, known.clone())
+            .unwrap();
+        assert_eq!(world.get_component_known_recipes(agent), Some(&known));
+        assert!(world.has_component_known_recipes(agent));
+
+        let removed = world.remove_component_known_recipes(agent).unwrap();
+        assert_eq!(removed, Some(known));
+        assert_eq!(world.get_component_known_recipes(agent), None);
+    }
+
+    #[test]
+    fn insert_known_recipes_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_known_recipes(id, KnownRecipes::with([crate::RecipeId(2)]))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
     fn insert_carry_capacity_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Facility, Tick(1));
@@ -3984,7 +4013,10 @@ mod tests {
         world
             .insert_component_in_transit_on_edge(agent, transit.clone())
             .unwrap();
-        assert_eq!(world.get_component_in_transit_on_edge(agent), Some(&transit));
+        assert_eq!(
+            world.get_component_in_transit_on_edge(agent),
+            Some(&transit)
+        );
         assert!(world.has_component_in_transit_on_edge(agent));
 
         let removed = world.remove_component_in_transit_on_edge(agent).unwrap();

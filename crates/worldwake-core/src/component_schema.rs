@@ -1,8 +1,9 @@
 //! Shared authoritative component declarations for typed world storage.
 
-macro_rules! with_authoritative_components {
-    ($callback:ident) => {
-        $callback! {
+macro_rules! with_component_schema_entries {
+    (forward_authoritative_components, $forward_to:ident) => {
+        $crate::component_schema::forward_authoritative_components! {
+            $forward_to;
             {
                 names,
                 Name,
@@ -22,7 +23,11 @@ macro_rules! with_authoritative_components {
                 count_with_name,
                 "Name",
                 |_| true,
-                Name
+                Name,
+                crate::Name,
+                set_component_name,
+                clear_component_name,
+                txn_simple_set
             }
             {
                 agents,
@@ -43,7 +48,11 @@ macro_rules! with_authoritative_components {
                 count_with_agent_data,
                 "AgentData",
                 |kind| kind == EntityKind::Agent,
-                AgentData
+                AgentData,
+                crate::AgentData,
+                set_component_agent_data,
+                clear_component_agent_data,
+                txn_simple_set
             }
             {
                 wound_lists,
@@ -64,7 +73,11 @@ macro_rules! with_authoritative_components {
                 count_with_wound_list,
                 "WoundList",
                 |kind| kind == EntityKind::Agent,
-                WoundList
+                WoundList,
+                crate::WoundList,
+                set_component_wound_list,
+                clear_component_wound_list,
+                txn_simple_set
             }
             {
                 drive_thresholds,
@@ -85,7 +98,11 @@ macro_rules! with_authoritative_components {
                 count_with_drive_thresholds,
                 "DriveThresholds",
                 |kind| kind == EntityKind::Agent,
-                DriveThresholds
+                DriveThresholds,
+                crate::DriveThresholds,
+                set_component_drive_thresholds,
+                clear_component_drive_thresholds,
+                txn_simple_set
             }
             {
                 homeostatic_needs,
@@ -106,7 +123,11 @@ macro_rules! with_authoritative_components {
                 count_with_homeostatic_needs,
                 "HomeostaticNeeds",
                 |kind| kind == EntityKind::Agent,
-                HomeostaticNeeds
+                HomeostaticNeeds,
+                crate::HomeostaticNeeds,
+                set_component_homeostatic_needs,
+                clear_component_homeostatic_needs,
+                txn_simple_set
             }
             {
                 deprivation_exposures,
@@ -127,7 +148,11 @@ macro_rules! with_authoritative_components {
                 count_with_deprivation_exposure,
                 "DeprivationExposure",
                 |kind| kind == EntityKind::Agent,
-                DeprivationExposure
+                DeprivationExposure,
+                crate::DeprivationExposure,
+                set_component_deprivation_exposure,
+                clear_component_deprivation_exposure,
+                txn_simple_set
             }
             {
                 metabolism_profiles,
@@ -148,7 +173,11 @@ macro_rules! with_authoritative_components {
                 count_with_metabolism_profile,
                 "MetabolismProfile",
                 |kind| kind == EntityKind::Agent,
-                MetabolismProfile
+                MetabolismProfile,
+                crate::MetabolismProfile,
+                set_component_metabolism_profile,
+                clear_component_metabolism_profile,
+                txn_simple_set
             }
             {
                 carry_capacities,
@@ -169,7 +198,36 @@ macro_rules! with_authoritative_components {
                 count_with_carry_capacity,
                 "CarryCapacity",
                 |kind| kind == EntityKind::Agent,
-                CarryCapacity
+                CarryCapacity,
+                crate::CarryCapacity,
+                set_component_carry_capacity,
+                clear_component_carry_capacity,
+                txn_simple_set
+            }
+            {
+                known_recipes,
+                KnownRecipes,
+                insert_known_recipes,
+                get_known_recipes,
+                get_known_recipes_mut,
+                remove_known_recipes,
+                has_known_recipes,
+                iter_known_recipes,
+                insert_component_known_recipes,
+                get_component_known_recipes,
+                get_component_known_recipes_mut,
+                remove_component_known_recipes,
+                has_component_known_recipes,
+                entities_with_known_recipes,
+                query_known_recipes,
+                count_with_known_recipes,
+                "KnownRecipes",
+                |kind| kind == EntityKind::Agent,
+                KnownRecipes,
+                crate::KnownRecipes,
+                set_component_known_recipes,
+                clear_component_known_recipes,
+                txn_simple_set
             }
             {
                 resource_sources,
@@ -190,7 +248,11 @@ macro_rules! with_authoritative_components {
                 count_with_resource_source,
                 "ResourceSource",
                 |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
-                ResourceSource
+                ResourceSource,
+                crate::ResourceSource,
+                set_component_resource_source,
+                clear_component_resource_source,
+                txn_simple_set
             }
             {
                 in_transit_on_edges,
@@ -211,7 +273,11 @@ macro_rules! with_authoritative_components {
                 count_with_in_transit_on_edge,
                 "InTransitOnEdge",
                 |kind| kind == EntityKind::Agent,
-                InTransitOnEdge
+                InTransitOnEdge,
+                crate::InTransitOnEdge,
+                set_component_in_transit_on_edge,
+                clear_component_in_transit_on_edge,
+                txn_simple_set
             }
             {
                 item_lots,
@@ -232,7 +298,11 @@ macro_rules! with_authoritative_components {
                 count_with_item_lot,
                 "ItemLot",
                 |kind| kind == EntityKind::ItemLot,
-                ItemLot
+                ItemLot,
+                crate::ItemLot,
+                set_component_item_lot_unused,
+                clear_component_item_lot_unused,
+                no_txn_simple_set
             }
             {
                 unique_items,
@@ -253,7 +323,11 @@ macro_rules! with_authoritative_components {
                 count_with_unique_item,
                 "UniqueItem",
                 |kind| kind == EntityKind::UniqueItem,
-                UniqueItem
+                UniqueItem,
+                crate::UniqueItem,
+                set_component_unique_item_unused,
+                clear_component_unique_item_unused,
+                no_txn_simple_set
             }
             {
                 containers,
@@ -274,109 +348,477 @@ macro_rules! with_authoritative_components {
                 count_with_container,
                 "Container",
                 |kind| kind == EntityKind::Container,
-                Container
+                Container,
+                crate::Container,
+                set_component_container_unused,
+                clear_component_container_unused,
+                no_txn_simple_set
             }
         }
     };
-}
-
-pub(crate) use with_authoritative_components;
-
-macro_rules! with_txn_simple_set_components {
-    ($callback:ident) => {
-        $callback! {
+    (select_txn_simple_set_components, $forward_to:ident) => {
+        $crate::component_schema::select_txn_simple_set_components! {
+            $forward_to;
             {
-                crate::Name,
-                get_component_name,
-                remove_component_name,
+                names,
+                Name,
+                insert_name,
+                get_name,
+                get_name_mut,
+                remove_name,
+                has_name,
+                iter_names,
                 insert_component_name,
+                get_component_name,
+                get_component_name_mut,
+                remove_component_name,
+                has_component_name,
+                entities_with_name,
+                query_name,
+                count_with_name,
+                "Name",
+                |_| true,
+                Name,
+                crate::Name,
                 set_component_name,
                 clear_component_name,
-                Name
+                txn_simple_set
             }
             {
-                crate::AgentData,
-                get_component_agent_data,
-                remove_component_agent_data,
+                agents,
+                AgentData,
+                insert_agent_data,
+                get_agent_data,
+                get_agent_data_mut,
+                remove_agent_data,
+                has_agent_data,
+                iter_agent_data,
                 insert_component_agent_data,
+                get_component_agent_data,
+                get_component_agent_data_mut,
+                remove_component_agent_data,
+                has_component_agent_data,
+                entities_with_agent_data,
+                query_agent_data,
+                count_with_agent_data,
+                "AgentData",
+                |kind| kind == EntityKind::Agent,
+                AgentData,
+                crate::AgentData,
                 set_component_agent_data,
                 clear_component_agent_data,
-                AgentData
+                txn_simple_set
             }
             {
-                crate::WoundList,
-                get_component_wound_list,
-                remove_component_wound_list,
+                wound_lists,
+                WoundList,
+                insert_wound_list,
+                get_wound_list,
+                get_wound_list_mut,
+                remove_wound_list,
+                has_wound_list,
+                iter_wound_lists,
                 insert_component_wound_list,
+                get_component_wound_list,
+                get_component_wound_list_mut,
+                remove_component_wound_list,
+                has_component_wound_list,
+                entities_with_wound_list,
+                query_wound_list,
+                count_with_wound_list,
+                "WoundList",
+                |kind| kind == EntityKind::Agent,
+                WoundList,
+                crate::WoundList,
                 set_component_wound_list,
                 clear_component_wound_list,
-                WoundList
+                txn_simple_set
             }
             {
-                crate::DriveThresholds,
-                get_component_drive_thresholds,
-                remove_component_drive_thresholds,
+                drive_thresholds,
+                DriveThresholds,
+                insert_drive_thresholds,
+                get_drive_thresholds,
+                get_drive_thresholds_mut,
+                remove_drive_thresholds,
+                has_drive_thresholds,
+                iter_drive_thresholds,
                 insert_component_drive_thresholds,
+                get_component_drive_thresholds,
+                get_component_drive_thresholds_mut,
+                remove_component_drive_thresholds,
+                has_component_drive_thresholds,
+                entities_with_drive_thresholds,
+                query_drive_thresholds,
+                count_with_drive_thresholds,
+                "DriveThresholds",
+                |kind| kind == EntityKind::Agent,
+                DriveThresholds,
+                crate::DriveThresholds,
                 set_component_drive_thresholds,
                 clear_component_drive_thresholds,
-                DriveThresholds
+                txn_simple_set
             }
             {
-                crate::HomeostaticNeeds,
-                get_component_homeostatic_needs,
-                remove_component_homeostatic_needs,
+                homeostatic_needs,
+                HomeostaticNeeds,
+                insert_homeostatic_needs,
+                get_homeostatic_needs,
+                get_homeostatic_needs_mut,
+                remove_homeostatic_needs,
+                has_homeostatic_needs,
+                iter_homeostatic_needs,
                 insert_component_homeostatic_needs,
+                get_component_homeostatic_needs,
+                get_component_homeostatic_needs_mut,
+                remove_component_homeostatic_needs,
+                has_component_homeostatic_needs,
+                entities_with_homeostatic_needs,
+                query_homeostatic_needs,
+                count_with_homeostatic_needs,
+                "HomeostaticNeeds",
+                |kind| kind == EntityKind::Agent,
+                HomeostaticNeeds,
+                crate::HomeostaticNeeds,
                 set_component_homeostatic_needs,
                 clear_component_homeostatic_needs,
-                HomeostaticNeeds
+                txn_simple_set
             }
             {
-                crate::DeprivationExposure,
-                get_component_deprivation_exposure,
-                remove_component_deprivation_exposure,
+                deprivation_exposures,
+                DeprivationExposure,
+                insert_deprivation_exposure,
+                get_deprivation_exposure,
+                get_deprivation_exposure_mut,
+                remove_deprivation_exposure,
+                has_deprivation_exposure,
+                iter_deprivation_exposures,
                 insert_component_deprivation_exposure,
+                get_component_deprivation_exposure,
+                get_component_deprivation_exposure_mut,
+                remove_component_deprivation_exposure,
+                has_component_deprivation_exposure,
+                entities_with_deprivation_exposure,
+                query_deprivation_exposure,
+                count_with_deprivation_exposure,
+                "DeprivationExposure",
+                |kind| kind == EntityKind::Agent,
+                DeprivationExposure,
+                crate::DeprivationExposure,
                 set_component_deprivation_exposure,
                 clear_component_deprivation_exposure,
-                DeprivationExposure
+                txn_simple_set
             }
             {
-                crate::MetabolismProfile,
-                get_component_metabolism_profile,
-                remove_component_metabolism_profile,
+                metabolism_profiles,
+                MetabolismProfile,
+                insert_metabolism_profile,
+                get_metabolism_profile,
+                get_metabolism_profile_mut,
+                remove_metabolism_profile,
+                has_metabolism_profile,
+                iter_metabolism_profiles,
                 insert_component_metabolism_profile,
+                get_component_metabolism_profile,
+                get_component_metabolism_profile_mut,
+                remove_component_metabolism_profile,
+                has_component_metabolism_profile,
+                entities_with_metabolism_profile,
+                query_metabolism_profile,
+                count_with_metabolism_profile,
+                "MetabolismProfile",
+                |kind| kind == EntityKind::Agent,
+                MetabolismProfile,
+                crate::MetabolismProfile,
                 set_component_metabolism_profile,
                 clear_component_metabolism_profile,
-                MetabolismProfile
+                txn_simple_set
             }
             {
-                crate::CarryCapacity,
-                get_component_carry_capacity,
-                remove_component_carry_capacity,
+                carry_capacities,
+                CarryCapacity,
+                insert_carry_capacity,
+                get_carry_capacity,
+                get_carry_capacity_mut,
+                remove_carry_capacity,
+                has_carry_capacity,
+                iter_carry_capacities,
                 insert_component_carry_capacity,
+                get_component_carry_capacity,
+                get_component_carry_capacity_mut,
+                remove_component_carry_capacity,
+                has_component_carry_capacity,
+                entities_with_carry_capacity,
+                query_carry_capacity,
+                count_with_carry_capacity,
+                "CarryCapacity",
+                |kind| kind == EntityKind::Agent,
+                CarryCapacity,
+                crate::CarryCapacity,
                 set_component_carry_capacity,
                 clear_component_carry_capacity,
-                CarryCapacity
+                txn_simple_set
             }
             {
-                crate::ResourceSource,
-                get_component_resource_source,
-                remove_component_resource_source,
+                known_recipes,
+                KnownRecipes,
+                insert_known_recipes,
+                get_known_recipes,
+                get_known_recipes_mut,
+                remove_known_recipes,
+                has_known_recipes,
+                iter_known_recipes,
+                insert_component_known_recipes,
+                get_component_known_recipes,
+                get_component_known_recipes_mut,
+                remove_component_known_recipes,
+                has_component_known_recipes,
+                entities_with_known_recipes,
+                query_known_recipes,
+                count_with_known_recipes,
+                "KnownRecipes",
+                |kind| kind == EntityKind::Agent,
+                KnownRecipes,
+                crate::KnownRecipes,
+                set_component_known_recipes,
+                clear_component_known_recipes,
+                txn_simple_set
+            }
+            {
+                resource_sources,
+                ResourceSource,
+                insert_resource_source,
+                get_resource_source,
+                get_resource_source_mut,
+                remove_resource_source,
+                has_resource_source,
+                iter_resource_sources,
                 insert_component_resource_source,
+                get_component_resource_source,
+                get_component_resource_source_mut,
+                remove_component_resource_source,
+                has_component_resource_source,
+                entities_with_resource_source,
+                query_resource_source,
+                count_with_resource_source,
+                "ResourceSource",
+                |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
+                ResourceSource,
+                crate::ResourceSource,
                 set_component_resource_source,
                 clear_component_resource_source,
-                ResourceSource
+                txn_simple_set
             }
             {
-                crate::InTransitOnEdge,
-                get_component_in_transit_on_edge,
-                remove_component_in_transit_on_edge,
+                in_transit_on_edges,
+                InTransitOnEdge,
+                insert_in_transit_on_edge,
+                get_in_transit_on_edge,
+                get_in_transit_on_edge_mut,
+                remove_in_transit_on_edge,
+                has_in_transit_on_edge,
+                iter_in_transit_on_edges,
                 insert_component_in_transit_on_edge,
+                get_component_in_transit_on_edge,
+                get_component_in_transit_on_edge_mut,
+                remove_component_in_transit_on_edge,
+                has_component_in_transit_on_edge,
+                entities_with_in_transit_on_edge,
+                query_in_transit_on_edge,
+                count_with_in_transit_on_edge,
+                "InTransitOnEdge",
+                |kind| kind == EntityKind::Agent,
+                InTransitOnEdge,
+                crate::InTransitOnEdge,
                 set_component_in_transit_on_edge,
                 clear_component_in_transit_on_edge,
-                InTransitOnEdge
+                txn_simple_set
+            }
+            {
+                item_lots,
+                ItemLot,
+                insert_item_lot,
+                get_item_lot,
+                get_item_lot_mut,
+                remove_item_lot,
+                has_item_lot,
+                iter_item_lots,
+                insert_component_item_lot,
+                get_component_item_lot,
+                get_component_item_lot_mut,
+                remove_component_item_lot,
+                has_component_item_lot,
+                entities_with_item_lot,
+                query_item_lot,
+                count_with_item_lot,
+                "ItemLot",
+                |kind| kind == EntityKind::ItemLot,
+                ItemLot,
+                crate::ItemLot,
+                set_component_item_lot_unused,
+                clear_component_item_lot_unused,
+                no_txn_simple_set
+            }
+            {
+                unique_items,
+                UniqueItem,
+                insert_unique_item,
+                get_unique_item,
+                get_unique_item_mut,
+                remove_unique_item,
+                has_unique_item,
+                iter_unique_items,
+                insert_component_unique_item,
+                get_component_unique_item,
+                get_component_unique_item_mut,
+                remove_component_unique_item,
+                has_component_unique_item,
+                entities_with_unique_item,
+                query_unique_item,
+                count_with_unique_item,
+                "UniqueItem",
+                |kind| kind == EntityKind::UniqueItem,
+                UniqueItem,
+                crate::UniqueItem,
+                set_component_unique_item_unused,
+                clear_component_unique_item_unused,
+                no_txn_simple_set
+            }
+            {
+                containers,
+                Container,
+                insert_container,
+                get_container,
+                get_container_mut,
+                remove_container,
+                has_container,
+                iter_containers,
+                insert_component_container,
+                get_component_container,
+                get_component_container_mut,
+                remove_component_container,
+                has_component_container,
+                entities_with_container,
+                query_container,
+                count_with_container,
+                "Container",
+                |kind| kind == EntityKind::Container,
+                Container,
+                crate::Container,
+                set_component_container_unused,
+                clear_component_container_unused,
+                no_txn_simple_set
             }
         }
     };
 }
 
-pub(crate) use with_txn_simple_set_components;
+macro_rules! forward_authoritative_components {
+    ($callback:ident; $({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident, $txn_component_ty:ty, $set_fn:ident, $clear_fn:ident, $txn_marker:ident })*) => {
+        $callback! {
+            $(
+                {
+                    $field,
+                    $component_ty,
+                    $table_insert,
+                    $table_get,
+                    $table_get_mut,
+                    $table_remove,
+                    $table_has,
+                    $table_iter,
+                    $insert_fn,
+                    $get_fn,
+                    $get_mut_fn,
+                    $remove_fn,
+                    $has_fn,
+                    $entities_fn,
+                    $query_fn,
+                    $count_fn,
+                    $component_name,
+                    $kind_check,
+                    $component_variant
+                }
+            )*
+        }
+    };
+}
+
+macro_rules! select_txn_simple_set_components {
+    ($callback:ident; $($entries:tt)*) => {
+        $crate::component_schema::select_txn_simple_set_components!(@collect $callback [] $($entries)*);
+    };
+    (@collect $callback:ident [$($accum:tt)*]) => {
+        $callback! { $($accum)* }
+    };
+    (@collect $callback:ident [$($accum:tt)*] {
+        $field:ident,
+        $component_ty:ty,
+        $table_insert:ident,
+        $table_get:ident,
+        $table_get_mut:ident,
+        $table_remove:ident,
+        $table_has:ident,
+        $table_iter:ident,
+        $insert_fn:ident,
+        $get_fn:ident,
+        $get_mut_fn:ident,
+        $remove_fn:ident,
+        $has_fn:ident,
+        $entities_fn:ident,
+        $query_fn:ident,
+        $count_fn:ident,
+        $component_name:literal,
+        $kind_check:expr,
+        $component_variant:ident,
+        $txn_component_ty:ty,
+        $set_fn:ident,
+        $clear_fn:ident,
+        txn_simple_set
+    } $($rest:tt)*) => {
+        $crate::component_schema::select_txn_simple_set_components!(
+            @collect $callback [
+            $($accum)*
+            {
+                $txn_component_ty,
+                $get_fn,
+                $remove_fn,
+                $insert_fn,
+                $set_fn,
+                $clear_fn,
+                $component_variant
+            }
+            ]
+            $($rest)*
+        );
+    };
+    (@collect $callback:ident [$($accum:tt)*] {
+        $field:ident,
+        $component_ty:ty,
+        $table_insert:ident,
+        $table_get:ident,
+        $table_get_mut:ident,
+        $table_remove:ident,
+        $table_has:ident,
+        $table_iter:ident,
+        $insert_fn:ident,
+        $get_fn:ident,
+        $get_mut_fn:ident,
+        $remove_fn:ident,
+        $has_fn:ident,
+        $entities_fn:ident,
+        $query_fn:ident,
+        $count_fn:ident,
+        $component_name:literal,
+        $kind_check:expr,
+        $component_variant:ident,
+        $txn_component_ty:ty,
+        $set_fn:ident,
+        $clear_fn:ident,
+        no_txn_simple_set
+    } $($rest:tt)*) => {
+        $crate::component_schema::select_txn_simple_set_components!(@collect $callback [$($accum)*] $($rest)*);
+    };
+}
+pub(crate) use forward_authoritative_components;
+pub(crate) use select_txn_simple_set_components;
+pub(crate) use with_component_schema_entries;

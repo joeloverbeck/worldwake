@@ -1,12 +1,12 @@
 //! Explicit typed component storage.
 
 use crate::{
-    component_schema::with_authoritative_components,
+    component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     drives::DriveThresholds,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
-    production::{CarryCapacity, InTransitOnEdge, ResourceSource},
+    production::{CarryCapacity, InTransitOnEdge, KnownRecipes, ResourceSource},
     wounds::WoundList,
     EntityId,
 };
@@ -89,19 +89,25 @@ macro_rules! define_component_table_impls {
     };
 }
 
-with_authoritative_components!(define_component_tables_struct);
-with_authoritative_components!(define_component_table_impls);
+with_component_schema_entries!(
+    forward_authoritative_components,
+    define_component_tables_struct
+);
+with_component_schema_entries!(
+    forward_authoritative_components,
+    define_component_table_impls
+);
 
 #[cfg(test)]
 mod tests {
     use super::ComponentTables;
     use crate::{
         components::{AgentData, Name},
-        BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot, LoadUnits,
-        LotOperation, MetabolismProfile, Permille, ProvenanceEntry, Quantity, ResourceSource,
-        Tick, TravelEdgeId, UniqueItem, UniqueItemKind, Wound, WoundCause, WoundList,
-        CarryCapacity,
+        BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProvenanceEntry,
+        Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind, Wound,
+        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -125,6 +131,7 @@ mod tests {
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
+        assert_eq!(tables.iter_known_recipes().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
@@ -272,9 +279,22 @@ mod tests {
     }
 
     #[test]
-    fn insert_and_get_in_transit_on_edge() {
+    fn insert_and_get_known_recipes() {
         let mut tables = ComponentTables::default();
         let id = entity(21);
+        let recipes = KnownRecipes::with([crate::RecipeId(3), crate::RecipeId(1)]);
+
+        assert_eq!(tables.insert_known_recipes(id, recipes.clone()), None);
+        assert_eq!(tables.get_known_recipes(id), Some(&recipes));
+        assert!(tables.has_known_recipes(id));
+        assert_eq!(tables.remove_known_recipes(id), Some(recipes));
+        assert_eq!(tables.get_known_recipes(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_in_transit_on_edge() {
+        let mut tables = ComponentTables::default();
+        let id = entity(22);
         let transit = InTransitOnEdge {
             edge_id: TravelEdgeId(5),
             origin: entity(2),
@@ -357,6 +377,7 @@ mod tests {
         tables.insert_deprivation_exposure(id, DeprivationExposure::default());
         tables.insert_metabolism_profile(id, MetabolismProfile::default());
         tables.insert_carry_capacity(id, CarryCapacity(LoadUnits(7)));
+        tables.insert_known_recipes(id, KnownRecipes::with([crate::RecipeId(8)]));
         tables.insert_item_lot(
             id,
             ItemLot {
@@ -409,6 +430,7 @@ mod tests {
         assert_eq!(tables.get_deprivation_exposure(id), None);
         assert_eq!(tables.get_metabolism_profile(id), None);
         assert_eq!(tables.get_carry_capacity(id), None);
+        assert_eq!(tables.get_known_recipes(id), None);
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
         assert_eq!(tables.get_container(id), None);

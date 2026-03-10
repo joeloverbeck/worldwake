@@ -2,6 +2,7 @@
 
 use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 /// Tag identifying what kind of workstation an entity is.
@@ -31,6 +32,27 @@ impl WorkstationTag {
 /// Identifies a recipe definition in the recipe registry.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct RecipeId(pub u32);
+
+/// Per-agent set of recipes this agent knows how to perform.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct KnownRecipes {
+    pub recipes: BTreeSet<RecipeId>,
+}
+
+impl KnownRecipes {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with(recipes: impl IntoIterator<Item = RecipeId>) -> Self {
+        Self {
+            recipes: recipes.into_iter().collect(),
+        }
+    }
+}
+
+impl Component for KnownRecipes {}
 
 /// Maximum load an agent can carry.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -64,11 +86,12 @@ impl Component for InTransitOnEdge {}
 
 #[cfg(test)]
 mod tests {
-    use super::{CarryCapacity, InTransitOnEdge, RecipeId, ResourceSource, WorkstationTag};
-    use crate::{
-        CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId,
+    use super::{
+        CarryCapacity, InTransitOnEdge, KnownRecipes, RecipeId, ResourceSource, WorkstationTag,
     };
+    use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
     use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::BTreeSet;
     use std::num::NonZeroU32;
 
     fn assert_bounds<
@@ -89,6 +112,11 @@ mod tests {
     #[test]
     fn recipe_id_trait_bounds() {
         assert_bounds::<RecipeId>();
+    }
+
+    #[test]
+    fn known_recipes_trait_bounds() {
+        assert_component_bounds::<KnownRecipes>();
     }
 
     #[test]
@@ -145,6 +173,32 @@ mod tests {
     #[test]
     fn recipe_id_ordering_is_deterministic() {
         assert!(RecipeId(0) < RecipeId(1));
+    }
+
+    #[test]
+    fn known_recipes_new_starts_empty() {
+        assert_eq!(KnownRecipes::new(), KnownRecipes::default());
+        assert!(KnownRecipes::new().recipes.is_empty());
+    }
+
+    #[test]
+    fn known_recipes_with_deduplicates_and_sorts_recipe_ids() {
+        let known = KnownRecipes::with([RecipeId(3), RecipeId(1), RecipeId(3), RecipeId(2)]);
+
+        assert_eq!(
+            known.recipes,
+            BTreeSet::from([RecipeId(1), RecipeId(2), RecipeId(3)])
+        );
+    }
+
+    #[test]
+    fn known_recipes_roundtrips_through_bincode() {
+        let known = KnownRecipes::with([RecipeId(4), RecipeId(1), RecipeId(9)]);
+
+        let bytes = bincode::serialize(&known).unwrap();
+        let roundtrip: KnownRecipes = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, known);
     }
 
     #[test]
