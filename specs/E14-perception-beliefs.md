@@ -79,9 +79,21 @@ Phase 3: Information & Politics
 - Hard separation between world state and agent beliefs
 - Planner API enforces belief-only access
 
+## FND-01 Section B — Deferred Information Pipeline Requirements
+
+The following requirements were identified in `specs/FND-01-phase1-foundations-alignment.md` Section B and MUST be satisfied by this epic's implementation:
+
+1. **Time-per-hop propagation**: Any information propagation beyond direct perception MUST consume time per hop through the place graph. Instant multi-hop information spread is forbidden (Principle 7).
+2. **PublicRecord = consultable-at-location**: A `PublicRecord` means "a record exists at a place/entity and can be physically consulted." It does NOT mean "this becomes globally known." Agents must travel to the record's location or receive a report from someone who did.
+3. **AdjacentPlaces = immediate spillover only**: Adjacent-place perception MUST be limited to immediate physical spillover (e.g., loud sounds, visible fires) and MUST NOT serve as free multi-hop information spread.
+4. **Belief traceability**: Every agent belief MUST be traceable to one of: direct witness observation, report from a co-located agent, record consultation at a location, or prior belief state. Untraceable beliefs are forbidden.
+
+These constraints derive from Principle 7 (Locality of Interaction and Information) in `docs/FOUNDATIONS.md`.
+
 ## Spec References
 - Section 3.5 (separate world truth from agent belief)
 - Section 5.4 (knows_fact, believes_fact relations)
 - Section 6.3 (planner uses believed facts only)
 - Section 7.3 (informational propagation channel)
 - Section 9.11 (world/belief separation)
+- `specs/FND-01-phase1-foundations-alignment.md` Section B (deferred requirements)

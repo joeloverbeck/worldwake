@@ -1,6 +1,6 @@
 //! Deterministic topology primitives for the world place graph.
 
-use crate::{Component, EntityId, Permille, TravelEdgeId, WorldError};
+use crate::{Component, EntityId, TravelEdgeId, WorldError};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -43,8 +43,6 @@ pub struct TravelEdge {
     to: EntityId,
     travel_time_ticks: NonZeroU32,
     capacity: Option<NonZeroU16>,
-    danger: Permille,
-    visibility: Permille,
 }
 
 impl TravelEdge {
@@ -54,8 +52,6 @@ impl TravelEdge {
         to: EntityId,
         travel_time_ticks: u32,
         capacity: Option<NonZeroU16>,
-        danger: Permille,
-        visibility: Permille,
     ) -> Result<Self, WorldError> {
         let travel_time_ticks = NonZeroU32::new(travel_time_ticks).ok_or_else(|| {
             WorldError::InvariantViolation("travel edge travel_time_ticks must be >= 1".into())
@@ -67,8 +63,6 @@ impl TravelEdge {
             to,
             travel_time_ticks,
             capacity,
-            danger,
-            visibility,
         })
     }
 
@@ -90,14 +84,6 @@ impl TravelEdge {
 
     pub fn capacity(&self) -> Option<NonZeroU16> {
         self.capacity
-    }
-
-    pub fn danger(&self) -> Permille {
-        self.danger
-    }
-
-    pub fn visibility(&self) -> Permille {
-        self.visibility
     }
 }
 
@@ -286,7 +272,6 @@ impl Topology {
     pub fn edge_count(&self) -> usize {
         self.edges.len()
     }
-
 }
 
 pub fn build_prototype_world() -> Topology {
@@ -314,8 +299,6 @@ pub fn build_prototype_world() -> Topology {
                     prototype_entity(spec.to),
                     spec.travel_time_ticks,
                     None,
-                    prototype_permille(spec.danger),
-                    prototype_permille(spec.visibility),
                 )
                 .expect("prototype manifest must define valid travel edges"),
             )
@@ -338,8 +321,6 @@ struct PrototypeEdgeSpec {
     from: u32,
     to: u32,
     travel_time_ticks: u32,
-    danger: u16,
-    visibility: u16,
 }
 
 const PROTOTYPE_PLACE_SPECS: &[PrototypePlaceSpec] = &[
@@ -411,192 +392,144 @@ const PROTOTYPE_EDGE_SPECS: &[PrototypeEdgeSpec] = &[
         from: 0,
         to: 2,
         travel_time_ticks: 1,
-        danger: 20,
-        visibility: 950,
     },
     PrototypeEdgeSpec {
         id: 1,
         from: 2,
         to: 0,
         travel_time_ticks: 1,
-        danger: 20,
-        visibility: 950,
     },
     PrototypeEdgeSpec {
         id: 2,
         from: 0,
         to: 3,
         travel_time_ticks: 1,
-        danger: 15,
-        visibility: 930,
     },
     PrototypeEdgeSpec {
         id: 3,
         from: 3,
         to: 0,
         travel_time_ticks: 1,
-        danger: 15,
-        visibility: 930,
     },
     PrototypeEdgeSpec {
         id: 4,
         from: 0,
         to: 4,
         travel_time_ticks: 1,
-        danger: 10,
-        visibility: 940,
     },
     PrototypeEdgeSpec {
         id: 5,
         from: 4,
         to: 0,
         travel_time_ticks: 1,
-        danger: 10,
-        visibility: 940,
     },
     PrototypeEdgeSpec {
         id: 6,
         from: 0,
         to: 5,
         travel_time_ticks: 1,
-        danger: 15,
-        visibility: 920,
     },
     PrototypeEdgeSpec {
         id: 7,
         from: 5,
         to: 0,
         travel_time_ticks: 1,
-        danger: 15,
-        visibility: 920,
     },
     PrototypeEdgeSpec {
         id: 8,
         from: 0,
         to: 6,
         travel_time_ticks: 1,
-        danger: 10,
-        visibility: 900,
     },
     PrototypeEdgeSpec {
         id: 9,
         from: 6,
         to: 0,
         travel_time_ticks: 1,
-        danger: 10,
-        visibility: 900,
     },
     PrototypeEdgeSpec {
         id: 10,
         from: 0,
         to: 10,
         travel_time_ticks: 2,
-        danger: 25,
-        visibility: 900,
     },
     PrototypeEdgeSpec {
         id: 11,
         from: 10,
         to: 0,
         travel_time_ticks: 2,
-        danger: 25,
-        visibility: 900,
     },
     PrototypeEdgeSpec {
         id: 12,
         from: 10,
         to: 11,
         travel_time_ticks: 3,
-        danger: 50,
-        visibility: 820,
     },
     PrototypeEdgeSpec {
         id: 13,
         from: 11,
         to: 10,
         travel_time_ticks: 3,
-        danger: 50,
-        visibility: 820,
     },
     PrototypeEdgeSpec {
         id: 14,
         from: 11,
         to: 1,
         travel_time_ticks: 2,
-        danger: 35,
-        visibility: 840,
     },
     PrototypeEdgeSpec {
         id: 15,
         from: 1,
         to: 11,
         travel_time_ticks: 2,
-        danger: 35,
-        visibility: 840,
     },
     PrototypeEdgeSpec {
         id: 16,
         from: 11,
         to: 7,
         travel_time_ticks: 3,
-        danger: 70,
-        visibility: 760,
     },
     PrototypeEdgeSpec {
         id: 17,
         from: 7,
         to: 11,
         travel_time_ticks: 3,
-        danger: 70,
-        visibility: 760,
     },
     PrototypeEdgeSpec {
         id: 18,
         from: 7,
         to: 8,
         travel_time_ticks: 4,
-        danger: 300,
-        visibility: 420,
     },
     PrototypeEdgeSpec {
         id: 19,
         from: 8,
         to: 7,
         travel_time_ticks: 4,
-        danger: 280,
-        visibility: 450,
     },
     PrototypeEdgeSpec {
         id: 20,
         from: 8,
         to: 9,
         travel_time_ticks: 5,
-        danger: 650,
-        visibility: 250,
     },
     PrototypeEdgeSpec {
         id: 21,
         from: 9,
         to: 8,
         travel_time_ticks: 5,
-        danger: 700,
-        visibility: 200,
     },
     PrototypeEdgeSpec {
         id: 22,
         from: 0,
         to: 7,
         travel_time_ticks: 3,
-        danger: 60,
-        visibility: 780,
     },
     PrototypeEdgeSpec {
         id: 23,
         from: 7,
         to: 0,
         travel_time_ticks: 3,
-        danger: 60,
-        visibility: 780,
     },
 ];
 
@@ -605,10 +538,6 @@ fn prototype_entity(slot: u32) -> EntityId {
         slot,
         generation: 0,
     }
-}
-
-fn prototype_permille(value: u16) -> Permille {
-    Permille::new(value).expect("prototype manifest permille values must be within 0..=1000")
 }
 
 fn insert_sorted_edge_id(edge_ids: &mut Vec<TravelEdgeId>, edge_id: TravelEdgeId) {
@@ -663,7 +592,9 @@ impl Route {
 #[cfg(test)]
 mod tests {
     use super::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
-    use crate::{canonical_bytes, hash_serializable, traits::Component, EntityId, Permille, TravelEdgeId, WorldError};
+    use crate::{
+        canonical_bytes, hash_serializable, traits::Component, EntityId, TravelEdgeId, WorldError,
+    };
     use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeSet;
@@ -704,20 +635,7 @@ mod tests {
     }
 
     fn edge_with_ticks(id: u32, from: u32, to: u32, ticks: u32) -> TravelEdge {
-        TravelEdge::new(
-            TravelEdgeId(id),
-            entity(from),
-            entity(to),
-            ticks,
-            None,
-            Permille::new(0).unwrap(),
-            Permille::new(1000).unwrap(),
-        )
-        .unwrap()
-    }
-
-    fn place_has_tag(place: &Place, tag: PlaceTag) -> bool {
-        place.tags.contains(&tag)
+        TravelEdge::new(TravelEdgeId(id), entity(from), entity(to), ticks, None).unwrap()
     }
 
     #[test]
@@ -744,7 +662,10 @@ mod tests {
         };
 
         assert_eq!(place_a, place_b);
-        assert_eq!(canonical_bytes(&place_a).unwrap(), canonical_bytes(&place_b).unwrap());
+        assert_eq!(
+            canonical_bytes(&place_a).unwrap(),
+            canonical_bytes(&place_b).unwrap()
+        );
     }
 
     #[test]
@@ -791,8 +712,6 @@ mod tests {
             },
             0,
             None,
-            Permille::new(50).unwrap(),
-            Permille::new(900).unwrap(),
         )
         .unwrap_err();
 
@@ -817,8 +736,6 @@ mod tests {
             },
             1,
             NonZeroU16::new(6),
-            Permille::new(125).unwrap(),
-            Permille::new(875).unwrap(),
         )
         .unwrap();
 
@@ -839,12 +756,10 @@ mod tests {
         );
         assert_eq!(edge.travel_time_ticks(), 1);
         assert_eq!(edge.capacity(), NonZeroU16::new(6));
-        assert_eq!(edge.danger(), Permille::new(125).unwrap());
-        assert_eq!(edge.visibility(), Permille::new(875).unwrap());
     }
 
     #[test]
-    fn travel_edge_roundtrips_with_permille_fields() {
+    fn travel_edge_serde_roundtrip() {
         let edge = TravelEdge::new(
             TravelEdgeId(11),
             EntityId {
@@ -857,8 +772,6 @@ mod tests {
             },
             12,
             NonZeroU16::new(3),
-            Permille::new(0).unwrap(),
-            Permille::new(1000).unwrap(),
         )
         .unwrap();
 
@@ -866,8 +779,6 @@ mod tests {
         let roundtrip: TravelEdge = bincode::deserialize(&bytes).unwrap();
         assert_eq!(roundtrip, edge);
         assert_eq!(roundtrip.travel_time_ticks(), 12);
-        assert_eq!(roundtrip.danger(), Permille::new(0).unwrap());
-        assert_eq!(roundtrip.visibility(), Permille::new(1000).unwrap());
     }
 
     #[derive(Serialize, Deserialize)]
@@ -877,8 +788,6 @@ mod tests {
         to: EntityId,
         travel_time_ticks: u32,
         capacity: Option<NonZeroU16>,
-        danger: Permille,
-        visibility: Permille,
     }
 
     #[test]
@@ -895,8 +804,6 @@ mod tests {
             },
             travel_time_ticks: 0,
             capacity: None,
-            danger: Permille::new(200).unwrap(),
-            visibility: Permille::new(800).unwrap(),
         })
         .unwrap();
 
@@ -1110,8 +1017,14 @@ mod tests {
         let first = build_prototype_world();
         let second = build_prototype_world();
 
-        assert_eq!(hash_serializable(&first).unwrap(), hash_serializable(&first).unwrap());
-        assert_eq!(hash_serializable(&first).unwrap(), hash_serializable(&second).unwrap());
+        assert_eq!(
+            hash_serializable(&first).unwrap(),
+            hash_serializable(&first).unwrap()
+        );
+        assert_eq!(
+            hash_serializable(&first).unwrap(),
+            hash_serializable(&second).unwrap()
+        );
     }
 
     #[test]
@@ -1354,37 +1267,35 @@ mod tests {
     }
 
     #[test]
-    fn build_prototype_world_edges_have_valid_stats_and_risk_gradient() {
+    fn build_prototype_world_edges_have_valid_topology_invariants() {
         let topology = build_prototype_world();
-        let mut village_dangers = Vec::new();
-        let mut village_visibilities = Vec::new();
-        let mut forest_dangers = Vec::new();
-        let mut forest_visibilities = Vec::new();
 
         for edge in topology.edges.values() {
             assert!(edge.travel_time_ticks() >= 1);
-            assert!(edge.danger().value() <= 1000);
-            assert!(edge.visibility().value() <= 1000);
-
-            let from = topology.place(edge.from()).unwrap();
-            let to = topology.place(edge.to()).unwrap();
-            let touches_forest = place_has_tag(from, PlaceTag::Forest)
-                || place_has_tag(from, PlaceTag::Camp)
-                || place_has_tag(to, PlaceTag::Forest)
-                || place_has_tag(to, PlaceTag::Camp);
-
-            if touches_forest {
-                forest_dangers.push(edge.danger().value());
-                forest_visibilities.push(edge.visibility().value());
-            } else {
-                village_dangers.push(edge.danger().value());
-                village_visibilities.push(edge.visibility().value());
-            }
+            assert!(
+                topology.place(edge.from()).is_some(),
+                "expected edge {} from endpoint {} to exist",
+                edge.id(),
+                edge.from()
+            );
+            assert!(
+                topology.place(edge.to()).is_some(),
+                "expected edge {} to endpoint {} to exist",
+                edge.id(),
+                edge.to()
+            );
+            assert!(
+                topology.outgoing_edges(edge.from()).contains(&edge.id()),
+                "expected edge {} in outgoing adjacency for {}",
+                edge.id(),
+                edge.from()
+            );
+            assert!(
+                topology.incoming_edges(edge.to()).contains(&edge.id()),
+                "expected edge {} in incoming adjacency for {}",
+                edge.id(),
+                edge.to()
+            );
         }
-
-        assert!(!village_dangers.is_empty());
-        assert!(!forest_dangers.is_empty());
-        assert!(forest_dangers.iter().min() > village_dangers.iter().max());
-        assert!(forest_visibilities.iter().max() < village_visibilities.iter().min());
     }
 }

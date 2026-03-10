@@ -62,9 +62,58 @@ The foundation crate contains all authoritative types and the ECS world boundary
 | `conservation` | `total_commodity_quantity`, `verify_conservation` — enforces the conservation invariant |
 | `numerics` | Newtype wrappers: `Quantity`, `LoadUnits`, `Permille` |
 | `traits` | `Component` and `RelationRecord` trait definitions |
-| `world` | `World` struct — authoritative boundary over allocator, component tables, and topology |
+| `relations` | `RelationTables`, placement/ownership/reservation/social APIs, `ArchiveDependency` |
+| `event_log` | Append-only `EventLog` — authoritative causal record |
+| `event_record` | `PendingEvent` → committed `EventRecord` flow |
+| `event_tag` | `EventTag` — event classification |
+| `cause` | `CauseRef` — links events to prior causes in the log |
+| `witness` | `WitnessData`, `VisibilitySpec` — who observed an event |
+| `delta` | `ComponentDelta`, `RelationDelta`, `ReservationDelta` — immutable change records |
+| `world_txn` | `WorldTxn` — mutation journal with staged atomic commit |
+| `canonical` | `canonical_bytes()`, `hash_world()`, `hash_event_log()`, `StateHash` — deterministic hashing |
+| `verification` | `verify_conservation()`, `verify_completeness()` — invariant enforcement |
+| `visibility` | Event visibility and witness tracking |
+| `world` | `World` struct — authoritative boundary over allocator, component tables, topology, and relations |
 | `error` | `WorldError` enum |
 | `test_utils` | Shared test helpers |
+
+### worldwake-sim modules
+
+The simulation crate contains the action framework, scheduler, tick loop, and replay/persistence:
+
+| Module | Purpose |
+|--------|---------|
+| `action_def` | `ActionDef` — declarative action type definitions |
+| `action_def_registry` | Registry of all available action definitions |
+| `action_instance` | `ActionInstance`, `ActionInstanceId` — specific running action |
+| `action_state` | `ActionState` — action lifecycle state machine |
+| `action_status` | `ActionStatus` — outcome tracking |
+| `action_handler` | Action execution handler trait |
+| `action_handler_registry` | Registry mapping action defs to handlers |
+| `action_semantics` | `Constraint`, `Precondition`, `DurationExpr` — action preconditions and costs |
+| `action_execution` | `start_action()` — initiate actions with precondition/cost checks |
+| `action_ids` | Action-specific ID types |
+| `action_termination` | Action completion and interruption handling |
+| `scheduler` | `Scheduler` — manages tick loop, active actions, system execution order |
+| `tick_step` | `step_tick()` — execute one full tick (drain inputs → progress actions → run systems) |
+| `tick_action` | `tick_action()` — progress individual action state per tick |
+| `start_gate` | Action start precondition validation |
+| `interrupt_abort` | Action interruption and abort handling |
+| `replan_needed` | Signals for agent replanning |
+| `simulation_state` | `SimulationState` — root state: world + event log + scheduler + replay + rng |
+| `controller_state` | `ControllerState` — tracks human vs AI control per agent |
+| `input_event` | `InputEvent`, `InputKind` — player/AI input (RequestAction, CancelAction, SwitchControl) |
+| `input_queue` | `InputQueue` — deterministic input ordering by `(tick, sequence_no)` |
+| `deterministic_rng` | `DeterministicRng` — ChaCha8 wrapper for seeded randomness |
+| `knowledge_view` | `KnowledgeView` trait — agent belief interface |
+| `world_knowledge_view` | `WorldKnowledgeView` — percept-based query interface |
+| `affordance` | `Affordance` — available actions for an agent |
+| `affordance_query` | `get_affordances()` — query available actions |
+| `replay_state` | `ReplayState`, `ReplayCheckpoint` — record initial state, seed, inputs, per-tick hashes |
+| `replay_execution` | `replay_and_verify()` — deterministic replay validation |
+| `save_load` | `save()` / `load()` — serializable world snapshots (bincode format) |
+| `system_manifest` | `SystemManifest` — declares which systems run each tick |
+| `system_dispatch` | `SystemDispatch` — routes tick execution to registered systems |
 
 ## Critical Invariants
 
@@ -79,23 +128,34 @@ These are non-negotiable design rules enforced by tests:
 - **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`
 - **Unique location** — every entity exists in exactly one place
 
+## Future System Spec Requirements (FND-01 Section H)
+
+Every future system spec (E09+) MUST include the following analysis sections:
+
+1. **Information-path analysis**: How does each piece of information reach the agents who act on it? Trace the path from source event through perception, witnesses, reports, and belief updates. If information arrives at an agent without a traceable multi-hop path, the design violates Principle 7 (Locality).
+2. **Positive-feedback analysis**: Identify every amplifying loop (A increases B, B increases A) in the system. If no loops exist, state so explicitly.
+3. **Concrete dampeners**: For each positive-feedback loop, specify the physical world mechanism that limits amplification. Numerical clamps (e.g., `min(value, cap)`) are NOT acceptable dampeners — the dampener must be a physical world process (Principle 8).
+4. **Stored state vs. derived read-model list**: Explicitly enumerate what is authoritative stored state (components, relations) and what is a transient derived computation. No derived value may be stored as authoritative state (Principle 3).
+
+See `specs/FND-01-phase1-foundations-alignment.md` Section H and `docs/FOUNDATIONS.md` Principles 3, 7, 8 for rationale.
+
 ## Implementation Plan
 
 22 epics across 4 phases with strict gates. Specs live in `specs/`. Dependency graph and phase gates are in `specs/IMPLEMENTATION-ORDER.md`. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
 
-**Completed epics**: E01 (project scaffold), E02 (world topology), E03 (entity store), E04 (items & containers). These established the foundation crate with the ECS, topology graph, item/container model, and conservation invariants.
+**Completed epics (Phase 1 — World Legality)**: E01 (project scaffold), E02 (world topology), E03 (entity store), E04 (items & containers), E05 (relations & ownership), E06 (event log & causality), E07 (action framework), E08 (time, scheduler, replay & save/load). Phase 1 established the core and sim crates with the ECS, topology graph, item/container model, conservation invariants, relation system, append-only event log with causal linking, transactional world mutations, canonical state hashing, the action framework with preconditions, the tick-driven scheduler, deterministic replay, and save/load persistence.
 
 **Phase gates are blocking** — do not start a new phase until all gate tests for the previous phase pass.
 
 ## External Dependencies
 
-Minimal: `serde`, `bincode`, `rand_chacha`. No external ECS crate.
+Minimal: `serde`, `bincode`, `rand_chacha`, `blake3` (canonical state hashing). No external ECS crate.
 
 ## Key References
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Epic specs: `specs/E05-*.md` through `specs/E22-*.md` (E01–E04 archived in `archive/specs/`)
+- Epic specs: `specs/E09-*.md` through `specs/E22-*.md` (E01–E08 archived in `archive/specs/`)
 
 ## Commit Conventions
 
@@ -153,7 +213,7 @@ Do not duplicate or drift this procedure in other files; update `docs/archival-w
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (2087 symbols, 7165 relationships, 174 execution flows).
+This project is indexed by GitNexus as **worldwake** (2138 symbols, 7336 relationships, 178 execution flows).
 
 ## Always Start Here
 

@@ -100,8 +100,21 @@ Phase 2: Survival & Logistics
 - Corpses persist as interactive world entities
 - All combat outcomes traceable through event log
 
+## FND-01 Section D — Route Presence Gate
+
+**GATE**: Any route-based combat encounter, ambush, patrol, or interception logic in this epic MUST NOT proceed until a concrete route presence model exists in the codebase. This model must support:
+
+- Determining which entities are physically on a route or route segment
+- Determining which travelers can physically encounter each other
+- Determining which agents can witness route events locally
+
+It is **forbidden** to introduce stored route danger or visibility scores to compensate for missing route presence. All route risk/danger must be derived from concrete entity presence, never from stored abstract scores (Principle 3, `docs/FOUNDATIONS.md`).
+
+See `specs/FND-01-phase1-foundations-alignment.md` Section D for full context.
+
 ## Spec References
 - Section 3.4 (wounds as carriers of consequence)
 - Section 4.5 (combat/injury/death, healing)
 - Section 7.1 (material propagation: wounds, corpses)
 - Section 9.14 (death finality)
+- `specs/FND-01-phase1-foundations-alignment.md` Section D (route presence gate)

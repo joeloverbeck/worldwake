@@ -79,9 +79,22 @@ Phase 2: Survival & Logistics
 - Conservation maintained through all production and transport
 - No instant creation or teleportation of goods
 
+## FND-01 Section D — Route Presence Gate
+
+**GATE**: Any route-based encounter, risk assessment, interception, or witness-along-route logic in this epic MUST NOT proceed until a concrete route presence model exists in the codebase. This model must support:
+
+- Determining which entities are physically on a route or route segment
+- Determining which travelers can physically encounter each other
+- Determining which agents can witness route events locally
+
+It is **forbidden** to introduce stored route danger or visibility scores to compensate for missing route presence. All route risk/danger must be derived from concrete entity presence, never from stored abstract scores (Principle 3, `docs/FOUNDATIONS.md`).
+
+See `specs/FND-01-phase1-foundations-alignment.md` Section D for full context.
+
 ## Spec References
 - Section 4.5 (production/harvest, movement/travel)
 - Section 7.1 (material propagation channel)
 - Section 8 (no magical merchant restock)
 - Section 9.5 (conservation)
 - Section 9.10 (no teleportation)
+- `specs/FND-01-phase1-foundations-alignment.md` Section D (route presence gate)
