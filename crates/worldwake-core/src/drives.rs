@@ -118,9 +118,7 @@ mod tests {
 
     fn assert_component_bounds<T: Component>() {}
 
-    fn assert_threshold_band_bounds<
-        T: Copy + Clone + Eq + Debug + Serialize + DeserializeOwned,
-    >() {
+    fn assert_threshold_band_bounds<T: Copy + Clone + Eq + Debug + Serialize + DeserializeOwned>() {
     }
 
     #[test]

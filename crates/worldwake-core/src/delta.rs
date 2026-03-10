@@ -2,8 +2,8 @@
 
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, Container,
-    DriveThresholds, EntityId, EntityKind, FactId, ItemLot, Name, Permille, Quantity,
-    ReservationRecord, UniqueItem, WoundList,
+    DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds, ItemLot,
+    MetabolismProfile, Name, Permille, Quantity, ReservationRecord, UniqueItem, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -213,11 +213,11 @@ mod tests {
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind,
-        DriveThresholds, EntityId, EntityKind, EventId, FactId, ItemLot, LoadUnits,
-        LotOperation, Name, Permille,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, Tick, TickRange, UniqueItem,
-        UniqueItemKind, Wound, WoundCause, WoundList,
+        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, FactId, HomeostaticNeeds,
+        ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name, Permille, ProvenanceEntry,
+        Quantity, ReservationId, ReservationRecord, Tick, TickRange, UniqueItem, UniqueItemKind,
+        Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -254,6 +254,20 @@ mod tests {
                 }],
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
+            ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
+                Permille::new(100).unwrap(),
+                Permille::new(200).unwrap(),
+                Permille::new(300).unwrap(),
+                Permille::new(400).unwrap(),
+                Permille::new(500).unwrap(),
+            )),
+            ComponentValue::DeprivationExposure(DeprivationExposure {
+                hunger_critical_ticks: 1,
+                thirst_critical_ticks: 2,
+                fatigue_critical_ticks: 3,
+                bladder_critical_ticks: 4,
+            }),
+            ComponentValue::MetabolismProfile(MetabolismProfile::default()),
             ComponentValue::ItemLot(ItemLot {
                 commodity: CommodityKind::Grain,
                 quantity: Quantity(11),
@@ -358,6 +372,9 @@ mod tests {
                 ComponentKind::AgentData,
                 ComponentKind::WoundList,
                 ComponentKind::DriveThresholds,
+                ComponentKind::HomeostaticNeeds,
+                ComponentKind::DeprivationExposure,
+                ComponentKind::MetabolismProfile,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,

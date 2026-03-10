@@ -5,6 +5,7 @@ use crate::{
     components::{AgentData, Name},
     drives::DriveThresholds,
     items::{Container, ItemLot, UniqueItem},
+    needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     wounds::WoundList,
     EntityId,
 };
@@ -95,11 +96,13 @@ mod tests {
     use super::ComponentTables;
     use crate::{
         components::{AgentData, Name},
-        BodyPart, CommodityKind, Container, ControlSource, DeprivationKind, EntityId, ItemLot,
-        LoadUnits, LotOperation, Permille, ProvenanceEntry, Quantity, Tick, UniqueItem,
-        UniqueItemKind, Wound, WoundCause, WoundList, DriveThresholds,
+        BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation,
+        MetabolismProfile, Permille, ProvenanceEntry, Quantity, Tick, UniqueItem, UniqueItemKind,
+        Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -116,6 +119,9 @@ mod tests {
         assert_eq!(tables.iter_agent_data().count(), 0);
         assert_eq!(tables.iter_wound_lists().count(), 0);
         assert_eq!(tables.iter_drive_thresholds().count(), 0);
+        assert_eq!(tables.iter_homeostatic_needs().count(), 0);
+        assert_eq!(tables.iter_deprivation_exposures().count(), 0);
+        assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
         assert_eq!(tables.iter_containers().count(), 0);
@@ -169,6 +175,63 @@ mod tests {
         assert_eq!(tables.insert_drive_thresholds(id, thresholds), None);
         assert_eq!(tables.get_drive_thresholds(id), Some(&thresholds));
         assert!(tables.has_drive_thresholds(id));
+    }
+
+    #[test]
+    fn insert_and_get_homeostatic_needs() {
+        let mut tables = ComponentTables::default();
+        let id = entity(16);
+        let needs = HomeostaticNeeds::new(
+            Permille::new(10).unwrap(),
+            Permille::new(20).unwrap(),
+            Permille::new(30).unwrap(),
+            Permille::new(40).unwrap(),
+            Permille::new(50).unwrap(),
+        );
+
+        assert_eq!(tables.insert_homeostatic_needs(id, needs), None);
+        assert_eq!(tables.get_homeostatic_needs(id), Some(&needs));
+        assert!(tables.has_homeostatic_needs(id));
+    }
+
+    #[test]
+    fn insert_and_get_deprivation_exposure() {
+        let mut tables = ComponentTables::default();
+        let id = entity(17);
+        let exposure = DeprivationExposure {
+            hunger_critical_ticks: 4,
+            thirst_critical_ticks: 5,
+            fatigue_critical_ticks: 6,
+            bladder_critical_ticks: 7,
+        };
+
+        assert_eq!(tables.insert_deprivation_exposure(id, exposure), None);
+        assert_eq!(tables.get_deprivation_exposure(id), Some(&exposure));
+        assert!(tables.has_deprivation_exposure(id));
+    }
+
+    #[test]
+    fn insert_and_get_metabolism_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(18);
+        let profile = MetabolismProfile::new(
+            Permille::new(2).unwrap(),
+            Permille::new(3).unwrap(),
+            Permille::new(4).unwrap(),
+            Permille::new(5).unwrap(),
+            Permille::new(6).unwrap(),
+            Permille::new(30).unwrap(),
+            NonZeroU32::new(100).unwrap(),
+            NonZeroU32::new(90).unwrap(),
+            NonZeroU32::new(80).unwrap(),
+            NonZeroU32::new(70).unwrap(),
+            NonZeroU32::new(8).unwrap(),
+            NonZeroU32::new(10).unwrap(),
+        );
+
+        assert_eq!(tables.insert_metabolism_profile(id, profile), None);
+        assert_eq!(tables.get_metabolism_profile(id), Some(&profile));
+        assert!(tables.has_metabolism_profile(id));
     }
 
     #[test]
@@ -234,6 +297,9 @@ mod tests {
                 }],
             },
         );
+        tables.insert_homeostatic_needs(id, HomeostaticNeeds::default());
+        tables.insert_deprivation_exposure(id, DeprivationExposure::default());
+        tables.insert_metabolism_profile(id, MetabolismProfile::default());
         tables.insert_item_lot(
             id,
             ItemLot {
@@ -272,6 +338,9 @@ mod tests {
         assert_eq!(tables.get_agent_data(id), None);
         assert_eq!(tables.get_wound_list(id), None);
         assert_eq!(tables.get_drive_thresholds(id), None);
+        assert_eq!(tables.get_homeostatic_needs(id), None);
+        assert_eq!(tables.get_deprivation_exposure(id), None);
+        assert_eq!(tables.get_metabolism_profile(id), None);
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
         assert_eq!(tables.get_container(id), None);
@@ -302,6 +371,8 @@ mod tests {
             },
         );
         tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
+        tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
+        tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
         tables.insert_item_lot(
             entity(11),
             ItemLot {
@@ -336,6 +407,7 @@ mod tests {
                 allows_nested_containers: false,
             },
         );
+        tables.insert_metabolism_profile(entity(16), MetabolismProfile::default());
 
         let bytes = bincode::serialize(&tables).unwrap();
         let roundtrip: ComponentTables = bincode::deserialize(&bytes).unwrap();

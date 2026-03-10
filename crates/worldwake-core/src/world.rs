@@ -2,9 +2,10 @@
 
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
-    ComponentValue, Container, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EventId, ItemLot, LoadUnits, LotOperation, Name, ProvenanceEntry, Quantity, RelationTables,
-    Tick, Topology, UniqueItem, UniqueItemKind, WorldError, WoundList,
+    ComponentValue, Container, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId,
+    EntityKind, EntityMeta, EventId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation,
+    MetabolismProfile, Name, ProvenanceEntry, Quantity, RelationTables, Tick, Topology, UniqueItem,
+    UniqueItemKind, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -553,13 +554,14 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind,
-        DriveThresholds, EntityId, EntityKind, EventId, FactId, ItemLot, LoadUnits,
-        LotOperation, Name, Permille, Place, PlaceTag, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError,
-        Wound, WoundCause, WoundList,
+        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, FactId, HomeostaticNeeds,
+        ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name, Permille, Place, PlaceTag,
+        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, Tick, TickRange, Topology,
+        UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -615,6 +617,42 @@ mod tests {
 
     fn sample_drive_thresholds() -> DriveThresholds {
         DriveThresholds::default()
+    }
+
+    fn sample_homeostatic_needs() -> HomeostaticNeeds {
+        HomeostaticNeeds::new(
+            Permille::new(120).unwrap(),
+            Permille::new(140).unwrap(),
+            Permille::new(160).unwrap(),
+            Permille::new(180).unwrap(),
+            Permille::new(200).unwrap(),
+        )
+    }
+
+    fn sample_deprivation_exposure() -> DeprivationExposure {
+        DeprivationExposure {
+            hunger_critical_ticks: 3,
+            thirst_critical_ticks: 5,
+            fatigue_critical_ticks: 7,
+            bladder_critical_ticks: 11,
+        }
+    }
+
+    fn sample_metabolism_profile() -> MetabolismProfile {
+        MetabolismProfile::new(
+            Permille::new(2).unwrap(),
+            Permille::new(3).unwrap(),
+            Permille::new(4).unwrap(),
+            Permille::new(5).unwrap(),
+            Permille::new(6).unwrap(),
+            Permille::new(25).unwrap(),
+            NonZeroU32::new(100).unwrap(),
+            NonZeroU32::new(90).unwrap(),
+            NonZeroU32::new(80).unwrap(),
+            NonZeroU32::new(70).unwrap(),
+            NonZeroU32::new(8).unwrap(),
+            NonZeroU32::new(10).unwrap(),
+        )
     }
 
     struct PurgeRelationFixture {
@@ -3646,6 +3684,94 @@ mod tests {
 
         let err = world
             .insert_component_drive_thresholds(id, sample_drive_thresholds())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn homeostatic_needs_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let needs = sample_homeostatic_needs();
+
+        world.insert_component_homeostatic_needs(id, needs).unwrap();
+        assert_eq!(world.get_component_homeostatic_needs(id), Some(&needs));
+        assert!(world.has_component_homeostatic_needs(id));
+
+        let removed = world.remove_component_homeostatic_needs(id).unwrap();
+        assert_eq!(removed, Some(needs));
+        assert_eq!(world.get_component_homeostatic_needs(id), None);
+    }
+
+    #[test]
+    fn insert_homeostatic_needs_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_homeostatic_needs(id, sample_homeostatic_needs())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn deprivation_exposure_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let exposure = sample_deprivation_exposure();
+
+        world
+            .insert_component_deprivation_exposure(id, exposure)
+            .unwrap();
+        assert_eq!(
+            world.get_component_deprivation_exposure(id),
+            Some(&exposure)
+        );
+        assert!(world.has_component_deprivation_exposure(id));
+
+        let removed = world.remove_component_deprivation_exposure(id).unwrap();
+        assert_eq!(removed, Some(exposure));
+        assert_eq!(world.get_component_deprivation_exposure(id), None);
+    }
+
+    #[test]
+    fn insert_deprivation_exposure_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_deprivation_exposure(id, sample_deprivation_exposure())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn metabolism_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_metabolism_profile();
+
+        world
+            .insert_component_metabolism_profile(id, profile)
+            .unwrap();
+        assert_eq!(world.get_component_metabolism_profile(id), Some(&profile));
+        assert!(world.has_component_metabolism_profile(id));
+
+        let removed = world.remove_component_metabolism_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_metabolism_profile(id), None);
+    }
+
+    #[test]
+    fn insert_metabolism_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_metabolism_profile(id, sample_metabolism_profile())
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

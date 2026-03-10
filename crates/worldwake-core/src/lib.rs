@@ -42,6 +42,7 @@ pub mod event_tag;
 pub mod ids;
 pub mod items;
 pub mod load;
+pub mod needs;
 pub mod numerics;
 pub mod relations;
 pub mod test_utils;
@@ -84,6 +85,7 @@ pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
+pub use needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
 pub use numerics::{LoadUnits, Permille, Quantity};
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
