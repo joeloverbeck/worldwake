@@ -5,16 +5,7 @@ use crate::{
 use std::collections::BTreeSet;
 
 pub fn load_per_unit(commodity: CommodityKind) -> LoadUnits {
-    match commodity {
-        CommodityKind::Water => LoadUnits(2),
-        CommodityKind::Firewood => LoadUnits(3),
-        CommodityKind::Apple
-        | CommodityKind::Grain
-        | CommodityKind::Bread
-        | CommodityKind::Medicine
-        | CommodityKind::Coin
-        | CommodityKind::Waste => LoadUnits(1),
-    }
+    commodity.spec().physical_profile.load_per_unit
 }
 
 pub fn load_of_lot(lot: &ItemLot) -> LoadUnits {
@@ -28,13 +19,7 @@ pub fn load_of_lot(lot: &ItemLot) -> LoadUnits {
 }
 
 pub fn load_of_unique_item_kind(kind: UniqueItemKind) -> LoadUnits {
-    match kind {
-        UniqueItemKind::SimpleTool | UniqueItemKind::Artifact => LoadUnits(5),
-        UniqueItemKind::Weapon => LoadUnits(10),
-        UniqueItemKind::Contract => LoadUnits(1),
-        UniqueItemKind::OfficeInsignia => LoadUnits(2),
-        UniqueItemKind::Misc => LoadUnits(3),
-    }
+    kind.spec().physical_profile.load
 }
 
 pub fn load_of_unique_item(item: &UniqueItem) -> LoadUnits {
@@ -157,7 +142,14 @@ mod tests {
     }
 
     #[test]
-    fn commodity_load_table_matches_ticket_values() {
+    fn commodity_load_table_matches_item_physical_profiles() {
+        for commodity in CommodityKind::ALL {
+            assert_eq!(
+                load_per_unit(commodity),
+                commodity.spec().physical_profile.load_per_unit
+            );
+        }
+
         assert_eq!(load_per_unit(CommodityKind::Apple), LoadUnits(1));
         assert_eq!(load_per_unit(CommodityKind::Grain), LoadUnits(1));
         assert_eq!(load_per_unit(CommodityKind::Bread), LoadUnits(1));
@@ -169,7 +161,11 @@ mod tests {
     }
 
     #[test]
-    fn unique_item_load_table_matches_ticket_values() {
+    fn unique_item_load_table_matches_item_physical_profiles() {
+        for kind in UniqueItemKind::ALL {
+            assert_eq!(load_of_unique_item_kind(kind), kind.spec().physical_profile.load);
+        }
+
         assert_eq!(
             load_of_unique_item_kind(UniqueItemKind::SimpleTool),
             LoadUnits(5)

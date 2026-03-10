@@ -1,6 +1,6 @@
 //! Item-domain taxonomy types for stackable commodities, lots, and trade grouping.
 
-use crate::{Component, EntityId, EventId, Quantity, Tick};
+use crate::{Component, EntityId, EventId, LoadUnits, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,16 +29,57 @@ impl CommodityKind {
         Self::Waste,
     ];
 
-    pub const fn trade_category(self) -> TradeCategory {
+    pub const fn spec(self) -> CommodityKindSpec {
         match self {
-            Self::Apple | Self::Grain | Self::Bread => TradeCategory::Food,
-            Self::Water => TradeCategory::Water,
-            Self::Firewood => TradeCategory::Fuel,
-            Self::Medicine => TradeCategory::Medicine,
-            Self::Coin => TradeCategory::Coin,
-            Self::Waste => TradeCategory::Waste,
+            Self::Apple | Self::Grain | Self::Bread => CommodityKindSpec {
+                trade_category: TradeCategory::Food,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+            },
+            Self::Water => CommodityKindSpec {
+                trade_category: TradeCategory::Water,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(2),
+                },
+            },
+            Self::Firewood => CommodityKindSpec {
+                trade_category: TradeCategory::Fuel,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(3),
+                },
+            },
+            Self::Medicine => CommodityKindSpec {
+                trade_category: TradeCategory::Medicine,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+            },
+            Self::Coin => CommodityKindSpec {
+                trade_category: TradeCategory::Coin,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+            },
+            Self::Waste => CommodityKindSpec {
+                trade_category: TradeCategory::Waste,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+            },
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct CommodityKindSpec {
+    pub trade_category: TradeCategory,
+    pub physical_profile: CommodityPhysicalProfile,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct CommodityPhysicalProfile {
+    pub load_per_unit: LoadUnits,
 }
 
 /// Trade grouping that can later span both stackable and unique items.
@@ -113,6 +154,46 @@ impl UniqueItemKind {
         Self::OfficeInsignia,
         Self::Misc,
     ];
+
+    pub const fn spec(self) -> UniqueItemKindSpec {
+        match self {
+            Self::SimpleTool | Self::Artifact => UniqueItemKindSpec {
+                physical_profile: UniqueItemPhysicalProfile {
+                    load: LoadUnits(5),
+                },
+            },
+            Self::Weapon => UniqueItemKindSpec {
+                physical_profile: UniqueItemPhysicalProfile {
+                    load: LoadUnits(10),
+                },
+            },
+            Self::Contract => UniqueItemKindSpec {
+                physical_profile: UniqueItemPhysicalProfile {
+                    load: LoadUnits(1),
+                },
+            },
+            Self::OfficeInsignia => UniqueItemKindSpec {
+                physical_profile: UniqueItemPhysicalProfile {
+                    load: LoadUnits(2),
+                },
+            },
+            Self::Misc => UniqueItemKindSpec {
+                physical_profile: UniqueItemPhysicalProfile {
+                    load: LoadUnits(3),
+                },
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct UniqueItemKindSpec {
+    pub physical_profile: UniqueItemPhysicalProfile,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct UniqueItemPhysicalProfile {
+    pub load: LoadUnits,
 }
 
 /// Immutable lineage record for a lot change.
@@ -159,8 +240,9 @@ impl Component for Container {}
 #[cfg(test)]
 mod tests {
     use super::{
-        CommodityKind, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory,
-        UniqueItem, UniqueItemKind,
+        CommodityKind, CommodityKindSpec, CommodityPhysicalProfile, Container, ItemLot,
+        LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
+        UniqueItemKindSpec, UniqueItemPhysicalProfile,
     };
     use crate::{traits::Component, EntityId, EventId, LoadUnits, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
@@ -487,21 +569,160 @@ mod tests {
     }
 
     #[test]
-    fn commodity_kind_trade_category_mapping_matches_catalog() {
-        assert_eq!(CommodityKind::Apple.trade_category(), TradeCategory::Food);
-        assert_eq!(CommodityKind::Grain.trade_category(), TradeCategory::Food);
-        assert_eq!(CommodityKind::Bread.trade_category(), TradeCategory::Food);
-        assert_eq!(CommodityKind::Water.trade_category(), TradeCategory::Water);
+    fn commodity_kind_specs_match_catalog() {
+        let expected = [
+            (
+                CommodityKind::Apple,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Food,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(1),
+                    },
+                },
+            ),
+            (
+                CommodityKind::Grain,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Food,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(1),
+                    },
+                },
+            ),
+            (
+                CommodityKind::Bread,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Food,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(1),
+                    },
+                },
+            ),
+            (
+                CommodityKind::Water,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Water,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(2),
+                    },
+                },
+            ),
+            (
+                CommodityKind::Firewood,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Fuel,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(3),
+                    },
+                },
+            ),
+            (
+                CommodityKind::Medicine,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Medicine,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(1),
+                    },
+                },
+            ),
+            (
+                CommodityKind::Coin,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Coin,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(1),
+                    },
+                },
+            ),
+            (
+                CommodityKind::Waste,
+                CommodityKindSpec {
+                    trade_category: TradeCategory::Waste,
+                    physical_profile: CommodityPhysicalProfile {
+                        load_per_unit: LoadUnits(1),
+                    },
+                },
+            ),
+        ];
+
+        assert_eq!(expected.len(), CommodityKind::ALL.len());
+        for (kind, spec) in expected {
+            assert_eq!(kind.spec(), spec);
+        }
+    }
+
+    #[test]
+    fn unique_item_kind_specs_match_catalog() {
+        let expected = [
+            (
+                UniqueItemKind::SimpleTool,
+                UniqueItemKindSpec {
+                    physical_profile: UniqueItemPhysicalProfile {
+                        load: LoadUnits(5),
+                    },
+                },
+            ),
+            (
+                UniqueItemKind::Weapon,
+                UniqueItemKindSpec {
+                    physical_profile: UniqueItemPhysicalProfile {
+                        load: LoadUnits(10),
+                    },
+                },
+            ),
+            (
+                UniqueItemKind::Contract,
+                UniqueItemKindSpec {
+                    physical_profile: UniqueItemPhysicalProfile {
+                        load: LoadUnits(1),
+                    },
+                },
+            ),
+            (
+                UniqueItemKind::Artifact,
+                UniqueItemKindSpec {
+                    physical_profile: UniqueItemPhysicalProfile {
+                        load: LoadUnits(5),
+                    },
+                },
+            ),
+            (
+                UniqueItemKind::OfficeInsignia,
+                UniqueItemKindSpec {
+                    physical_profile: UniqueItemPhysicalProfile {
+                        load: LoadUnits(2),
+                    },
+                },
+            ),
+            (
+                UniqueItemKind::Misc,
+                UniqueItemKindSpec {
+                    physical_profile: UniqueItemPhysicalProfile {
+                        load: LoadUnits(3),
+                    },
+                },
+            ),
+        ];
+
+        assert_eq!(expected.len(), UniqueItemKind::ALL.len());
+        for (kind, spec) in expected {
+            assert_eq!(kind.spec(), spec);
+        }
+    }
+
+    #[test]
+    fn commodity_kind_specs_include_trade_category_mapping() {
+        assert_eq!(CommodityKind::Apple.spec().trade_category, TradeCategory::Food);
+        assert_eq!(CommodityKind::Grain.spec().trade_category, TradeCategory::Food);
+        assert_eq!(CommodityKind::Bread.spec().trade_category, TradeCategory::Food);
+        assert_eq!(CommodityKind::Water.spec().trade_category, TradeCategory::Water);
+        assert_eq!(CommodityKind::Firewood.spec().trade_category, TradeCategory::Fuel);
         assert_eq!(
-            CommodityKind::Firewood.trade_category(),
-            TradeCategory::Fuel
-        );
-        assert_eq!(
-            CommodityKind::Medicine.trade_category(),
+            CommodityKind::Medicine.spec().trade_category,
             TradeCategory::Medicine
         );
-        assert_eq!(CommodityKind::Coin.trade_category(), TradeCategory::Coin);
-        assert_eq!(CommodityKind::Waste.trade_category(), TradeCategory::Waste);
+        assert_eq!(CommodityKind::Coin.spec().trade_category, TradeCategory::Coin);
+        assert_eq!(CommodityKind::Waste.spec().trade_category, TradeCategory::Waste);
     }
 
     #[test]
