@@ -1,8 +1,8 @@
-# Implementation Order & Dependency Graph
+# Implementation Order & Dependency Graph (Revised for Phase 2 Foundations Alignment)
 
 ## Dependency Graph
 
-```
+```text
 E01 ──→ E02 (topology needs IDs/types)
 E01 ──→ E03 (entity store needs IDs/types)
 E03 ──→ E04 (items need entity store)
@@ -14,11 +14,12 @@ E07 ──→ E08 (scheduler drives actions, replay needs events)
 
 --- Phase 1 gate: E08 determinism + conservation tests green ---
 
-E08 ──→ E09 (needs use tick-driven progression)
-E08 ──→ E10 (production uses scheduler)
-E08 ──→ E11 (trade uses actions)
-E08 ──→ E12 (combat uses actions)
-E09,E10,E11,E12 ──→ E13 (AI needs all systems to plan over)
+E08 ──→ Phase 2 shared schema extraction
+Phase 2 shared schema ──→ E09
+Phase 2 shared schema ──→ E10
+Phase 2 shared schema ──→ E12
+E10 ──→ E11 (restock requires physical procurement / transport)
+E09,E10,E11,E12 ──→ E13
 
 --- Phase 2 gate: agents autonomously survive ---
 
@@ -36,7 +37,21 @@ E13 ──→ E21 (CLI uses affordance query)
 E18,E19,E20,E21 ──→ E22 (integration tests need everything)
 ```
 
-## Execution Steps (with parallelism)
+## Phase 2 Shared Schema Extraction
+Before the Phase 2 epics diverge, extract shared data definitions into `worldwake-core` / `worldwake-sim` as appropriate.
+
+Minimum shared schema:
+- `Wound`
+- `WoundCause`
+- `BodyPart`
+- `DriveThresholds`
+- commodity consumable profile / body-cost metadata
+- workstation marker types
+- `InTransitOnEdge`
+
+This prevents fake parallelism where multiple epics silently depend on types “owned” by later specs.
+
+## Execution Steps (with corrected parallelism)
 
 ### Step 1
 - **E01**: Project Scaffold & Core Types
@@ -71,20 +86,31 @@ Before proceeding, ALL must pass:
 - T09: Save/load round-trip
 - T13: Containment acyclic
 
-### Step 7 (parallel after E08)
-- **E09**: Needs & Metabolism
-- **E10**: Production & Transport
-- **E11**: Trade & Economy
-- **E12**: Combat & Health
+### Step 7a
+- **Phase 2 shared schema extraction**:
+  - wounds / deprivation-harm schema
+  - per-drive thresholds
+  - consumable profiles / body-cost metadata
+  - workstation / route-occupancy schema
 
-### Step 8 (needs E09-E12)
-- **E13**: Agent Decision Architecture
+### Step 7b (parallel after shared schema)
+- **E09**: Needs, Physiology & Metabolism
+- **E10**: Production, Transport & Route Occupancy
+- **E12**: Combat, Wounds & Healing
+
+### Step 7c (after E10; may begin partially earlier, but acceptance depends on E10)
+- **E11**: Trade, Exchange & Merchant Restock
+
+### Step 8 (needs E09-E12, plus E11 for trade/restock planning)
+- **E13**: Grounded Agent Decision Architecture
 
 ### Phase 2 Gate
 Before proceeding:
-- Agents autonomously eat, drink, sleep, trade
-- Merchants restock physically
-- Basic survival loop runs 24+ hours without deadlock
+- agents autonomously eat, drink, sleep, wash, and relieve themselves
+- merchants restock through physical procurement
+- basic survival loop runs 24+ hours without deadlock
+- no infinite harvest from empty source stocks
+- in-transit travelers occupy routes concretely
 - T12: No player branching
 - T14: Dead agents inactive
 - T15: Need progression
@@ -101,8 +127,8 @@ Before proceeding:
 
 ### Phase 3 Gate
 Before proceeding:
-- Information propagates through explicit channels
-- Offices transfer through succession
+- information propagates through explicit channels
+- offices transfer through succession
 - T10: Belief isolation
 - T11: Office uniqueness
 - T25: Unseen crime discovery
@@ -117,14 +143,14 @@ Before proceeding:
 - **E22**: Scenario Integration & Soak Tests
 
 ### Final Acceptance
-- All T20-T32 pass
+- all T20-T32 pass
 - 100-seed soak test with zero invariant violations
-- Replay consistency verified
-- Causal depth >= 4 across >= 3 subsystems for all 4 exemplar scenarios
+- replay consistency verified
+- causal depth >= 4 across >= 3 subsystems for all 4 exemplar scenarios
 
 ## Crate Dependency Graph
 
-```
+```text
 worldwake-core: (no internal deps)
 worldwake-sim: depends on worldwake-core
 worldwake-systems: depends on worldwake-core, worldwake-sim
@@ -137,6 +163,6 @@ worldwake-cli: depends on worldwake-core, worldwake-sim, worldwake-systems, worl
 | Phase | Epics | Goal | Gate Test |
 |-------|-------|------|-----------|
 | 1: World Legality | E01-E08 | Deterministic world with conservation | T01-T09, T13 |
-| 2: Survival & Logistics | E09-E13 | Agents autonomously survive | T12, T14, T15 |
+| 2: Survival & Logistics | E09-E13 | Agents autonomously survive through concrete physiology, logistics, trade, wounds, and grounded AI | T12, T14, T15 |
 | 3: Information & Politics | E14-E17 | Information propagates, offices transfer | T10, T11, T25 |
 | 4: Adaptation & CLI | E18-E22 | Full integration, all scenarios | T20-T32 |

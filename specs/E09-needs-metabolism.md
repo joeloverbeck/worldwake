@@ -1,7 +1,7 @@
-# E09: Needs & Metabolism
+# E09: Needs, Physiology & Metabolism
 
 ## Epic Summary
-Implement the agent needs system with tick-based progression, consumption actions, and urgency thresholds. All need values use `Permille` (0=satisfied, 1000=desperate) with unified polarity.
+Implement agent physiology as concrete body-state carriers with tick-based progression, explicit action body costs, consumable effects, deprivation consequences, and personal-care actions. In Phase 2, **danger/fear is not a stored need score**. Danger pressure is derived by E13 from believed threats. **Pain is derived from wounds, not stored as an authoritative component.**
 
 ## Phase
 Phase 2: Survival & Logistics
@@ -10,171 +10,311 @@ Phase 2: Survival & Logistics
 `worldwake-systems`
 
 ## Dependencies
-- E08 (scheduler drives tick-based progression)
+- E08 (scheduler drives tick-based progression and action progression)
+- Shared body-harm schema in `worldwake-core` (`Wound`, `WoundCause`, `BodyPart`) so deprivation harm and combat harm use the same carrier of consequence
+
+## Foundations Alignment Changes
+This revision makes five non-negotiable corrections:
+
+1. **No stored fear score.** A stored `fear: Permille` hides causality and duplicates the future belief/perception system. Phase 2 AI must derive danger from believed hostile presence, recent violence, and current wounds rather than reading a free-floating scalar.
+2. **Needs remain embodied state, not designer-authored mood bars.** `HomeostaticNeeds` is interpreted as concrete body state on the agent entity: caloric depletion, hydration depletion, sleep debt, bladder fullness, and grime load.
+3. **Critical unmet needs have bodily consequences.** Starvation and dehydration must eventually produce concrete harm through `WoundList`; exhaustion must eventually force collapse/sleep. Without this, the survival loop has no teeth.
+4. **Every active action has body cost.** Travel, combat, harvesting, crafting, negotiation, carrying, washing, and similar actions must expose deterministic physiology deltas per tick, not a hand-wavy “activity modifier.”
+5. **Action preconditions stay physical.** “Hungry enough” is a planning concern, not a physics gate. If an agent has food, they are physically able to eat even if the AI would not choose to.
 
 ## Deliverables
 
 ### HomeostaticNeeds Component
-Per-agent homeostatic drives that tick forward each simulation tick via the metabolism system:
-- `hunger: Permille` (0=full, 1000=starving)
-- `thirst: Permille` (0=hydrated, 1000=dehydrated)
-- `fatigue: Permille` (0=rested, 1000=exhausted)
-- `bladder: Permille` (0=empty, 1000=desperate)
-- `dirtiness: Permille` (0=clean, 1000=filthy)
+Per-agent embodied body state that progresses each simulation tick.
 
-These are the only needs ticked by the metabolism system. All five share unified polarity: 0 = satisfied, 1000 = desperate.
+- `hunger: Permille` — short-horizon caloric depletion (`0 = fully sated`, `1000 = starving`)
+- `thirst: Permille` — hydration depletion (`0 = hydrated`, `1000 = dehydrated`)
+- `fatigue: Permille` — accumulated sleep debt and exertion (`0 = rested`, `1000 = exhausted`)
+- `bladder: Permille` — bladder fullness (`0 = empty`, `1000 = desperate`)
+- `dirtiness: Permille` — accumulated grime on body/clothing (`0 = clean`, `1000 = filthy`)
 
-### AgentCondition Component
-Event-driven pressures that are NOT ticked by metabolism — they change only in response to specific world events:
-- `pain: Permille` (0=none, 1000=agony) — derived from `WoundList` (E12); increases when wounds are inflicted, decreases when wounds heal
-- `fear: Permille` (0=calm, 1000=terrified) — set by perception of threats; decays over time when no threat is present
+These values are authoritative body state on the agent entity. They are not “mood” scores and they are not designer-authored urgency flags.
 
-### Removed from Needs
-The following are NOT needs and are NOT tracked as need components:
-- **loyalty** — already exists as a `Permille` relation in `crates/worldwake-core/src/relations.rs` (`loyalty_from` field in `RelationTables`)
-- **social_standing** — derived from reputation events in a future system; no stored component
-- **wealth_pressure** — derivable from coin holdings vs. obligations; a transient read-model, not stored state
+### DeprivationExposure Component
+Per-agent counters for sustained time spent at critical physiological pressure.
+
+- `hunger_critical_ticks: u32`
+- `thirst_critical_ticks: u32`
+- `fatigue_critical_ticks: u32`
+- `bladder_critical_ticks: u32`
+
+These counters increment only while the corresponding drive is at or above that drive’s `critical` threshold and reset when the drive falls back below critical.
+
+This component is required because `Permille` saturates at `1000`; prolonged exposure beyond the cap must still have consequences.
 
 ### MetabolismProfile Component
-Per-agent metabolism rates enabling Principle 11 (agent diversity). All rates are `Permille` values representing per-tick increase:
-- `hunger_rate: Permille` — base hunger increase per tick
-- `thirst_rate: Permille` — base thirst increase per tick
-- `fatigue_rate: Permille` — base fatigue increase per tick (modified by activity level)
-- `bladder_rate: Permille` — base bladder increase per tick (modified by recent consumption)
-- `dirtiness_rate: Permille` — base dirtiness increase per tick
-- `rest_efficiency: Permille` — how quickly fatigue decreases during sleep (higher = faster recovery)
-- `fear_decay_rate: Permille` — how quickly fear decreases when no threat is present
+Per-agent physiological parameters enabling Principle 11 (agent diversity).
 
-Different agents have different `MetabolismProfile` values seeded at creation, so two agents of the same role may have different hunger rates, fatigue rates, etc.
+Per-tick basal progression:
+- `hunger_rate: Permille`
+- `thirst_rate: Permille`
+- `fatigue_rate: Permille`
+- `bladder_rate: Permille`
+- `dirtiness_rate: Permille`
+
+Recovery / tolerance:
+- `rest_efficiency: Permille` — fatigue reduction per sleep tick before sleep-site modifiers
+- `starvation_tolerance_ticks: NonZeroU32` — sustained critical-hunger time before deprivation harm is added
+- `dehydration_tolerance_ticks: NonZeroU32` — sustained critical-thirst time before deprivation harm is added
+- `exhaustion_collapse_ticks: NonZeroU32` — sustained critical-fatigue time before forced collapse / sleep
+- `bladder_accident_tolerance_ticks: NonZeroU32` — sustained critical-bladder time before involuntary relief
+- `toilet_ticks: NonZeroU32`
+- `wash_ticks: NonZeroU32`
+
+Different agents have different `MetabolismProfile` values seeded at creation.
+
+### Shared DriveThresholds Component
+`DriveThresholds` is **shared Phase 2 schema**, stored on the agent and consumed by both E09 and E13. It must **not** be owned solely by E13 because E09 also needs it for deprivation tracking and collapse behavior.
+
+```rust
+struct ThresholdBand {
+    low: Permille,
+    medium: Permille,
+    high: Permille,
+    critical: Permille,
+}
+
+struct DriveThresholds {
+    hunger: ThresholdBand,
+    thirst: ThresholdBand,
+    fatigue: ThresholdBand,
+    bladder: ThresholdBand,
+    dirtiness: ThresholdBand,
+    pain: ThresholdBand,
+    danger: ThresholdBand,
+}
+```
+
+The earlier “one global threshold set for everything” design is rejected. Thirst, fatigue, dirtiness, pain, and danger must be able to trigger at different levels.
+
+### Commodity Consumable Profile Extensions
+Consumable effects must come from data on the commodity, not from hardcoded action logic.
+
+Extend commodity data with a consumable profile (either by extending `CommodityPhysicalProfile` or by adding a dedicated `CommodityConsumableProfile`):
+
+- `consumption_ticks_per_unit: NonZeroU32`
+- `hunger_relief_per_unit: Permille`
+- `thirst_relief_per_unit: Permille`
+- `bladder_fill_per_unit: Permille`
+
+Examples:
+- Bread relieves hunger strongly, thirst weakly, and barely fills bladder.
+- Water relieves thirst strongly and fills bladder significantly.
+- Fruit can relieve both hunger and thirst.
+
+### Action Body Cost Metadata
+Every long-running action that can strain the body must expose deterministic per-tick body costs through action metadata or active action state.
+
+```rust
+struct BodyCostPerTick {
+    hunger_delta: Permille,
+    thirst_delta: Permille,
+    fatigue_delta: Permille,
+    dirtiness_delta: Permille,
+}
+```
+
+Examples:
+- Travel adds fatigue and thirst.
+- Combat adds significant fatigue.
+- Harvesting / crafting add fatigue and some dirtiness.
+- Washing has near-zero fatigue and reduces dirtiness via its explicit effect rather than a negative body cost.
+- Sleep has no positive exertion cost and instead applies recovery.
+
+This replaces the earlier vague “activity modifier if active” language.
 
 ### Metabolism System
-- Registered as `SystemId::Needs` handler in `SystemDispatch`
-- Per-tick processing for all agents with `HomeostaticNeeds` + `MetabolismProfile`:
-  - `hunger += profile.hunger_rate` per tick
-  - `thirst += profile.thirst_rate` per tick
-  - `fatigue += profile.fatigue_rate` per tick (multiplied by activity modifier if active)
-  - `bladder += profile.bladder_rate` per tick (multiplied by consumption modifier after eating/drinking)
-  - `dirtiness += profile.dirtiness_rate` per tick
-- All values clamped to `Permille` range (0–1000) by type safety
-- Rates are deterministic (no RNG in base metabolism)
-- AgentCondition fields (pain, fear) are NOT ticked by metabolism — they change only via events
+Registered as the physiology / needs handler in `SystemDispatch`.
 
-### Consumption Actions (ActionDef instances)
-All follow the E07 action framework:
+Per tick, for each living agent with `HomeostaticNeeds + MetabolismProfile + DriveThresholds`:
 
-- **Eat**: actor has food item → consume → reduce hunger, increase bladder slightly
-  - Precondition: actor possesses food, hunger above agent's urgency threshold
-  - Effect: remove/reduce food lot, decrease hunger
-  - Duration: `CommodityPhysicalProfile.consumption_ticks_per_unit` for the food type (from `crates/worldwake-core/src/items.rs`)
+1. Apply basal progression from `MetabolismProfile`
+2. Read active action state and apply any `BodyCostPerTick`
+3. Clamp all `Permille` values to the valid range
+4. Update `DeprivationExposure`
+5. Apply sustained-deprivation consequences
 
-- **Drink**: actor has water → consume → reduce thirst, increase bladder
-  - Precondition: actor possesses water
-  - Effect: remove/reduce water lot, decrease thirst
-  - Duration: `CommodityPhysicalProfile.consumption_ticks_per_unit` for water
+### Deprivation Consequences
+Critical unmet needs must create concrete downstream effects.
 
-- **Rest/Sleep**: actor at bed/shelter → sleep → reduce fatigue
-  - Precondition: actor at place with bed/shelter, fatigue above agent's urgency threshold
-  - Reservation: bed/sleeping spot
-  - Effect: decrease fatigue by `profile.rest_efficiency` per tick over duration
-  - Duration: derived from current fatigue level divided by `profile.rest_efficiency` (higher fatigue = longer sleep, faster recovery rate = shorter sleep)
-  - Interruptibility: ByDanger, ByUrgentNeed
+- **Critical hunger held too long**  
+  Add a wound with `WoundCause::Deprivation(Starvation)` to `WoundList`
+- **Critical thirst held too long**  
+  Add a wound with `WoundCause::Deprivation(Dehydration)` to `WoundList`
+- **Critical fatigue held too long**  
+  Force the agent into collapse / sleep if they are not already sleeping
+- **Critical bladder held too long**  
+  Trigger involuntary relief, create waste, and increase `dirtiness`
 
-- **Toilet**: actor at latrine/facility → relieve → reduce bladder, produce waste
-  - Precondition: actor at place with toilet OR wilderness
-  - Reservation: toilet stall (if facility)
-  - Effect: decrease bladder, create waste entity at location
-  - Duration: profile-driven (base from `MetabolismProfile`)
+Phase 2 does **not** model disease or infection yet, so dirtiness does not directly add wounds on its own. It does, however, feed into later healing quality and future social systems.
 
-- **Wash**: actor at water source → wash → improve dirtiness
-  - Precondition: actor at place with water source
-  - Effect: decrease dirtiness, consume small amount of water
-  - Duration: profile-driven (base from `MetabolismProfile`)
+### Consumption & Care Actions (`ActionDef` instances)
 
-### Need Thresholds & Urgency
-- Per-agent `UrgencyThresholds` struct (defined and owned by E13, referenced here):
-  - `low: Permille` — minor discomfort, may seek to address
-  - `medium: Permille` — significant pressure, will prioritize
-  - `high: Permille` — urgent, overrides most other goals
-  - `critical: Permille` — emergency, overrides everything except immediate danger
-- Different agents have different thresholds (Principle 11)
-- Urgency states feed into utility scoring (E13)
-- No hardcoded global threshold constants
+All actions follow the E07 action framework.  
+All action preconditions remain **physical**, not motivational.
+
+#### Eat
+- Precondition: actor can access an edible lot they are allowed to consume
+- Effect:
+  - reduce item quantity
+  - decrease `hunger` by commodity profile
+  - optionally decrease `thirst` if the food is hydrating
+  - increase `bladder` by commodity profile
+- Duration: `consumption_ticks_per_unit` from the consumable profile
+- Interruptibility: `ByDanger`, `ByMajorPain`
+- Notes: there is **no** “must already be hungry enough” precondition
+
+#### Drink
+- Precondition: actor can access drinkable water / beverage
+- Effect:
+  - reduce item quantity
+  - decrease `thirst`
+  - increase `bladder`
+- Duration: `consumption_ticks_per_unit` from the consumable profile
+- Interruptibility: `ByDanger`, `ByMajorPain`
+
+#### Sleep
+- Precondition: actor can occupy current location or a reservable sleep affordance there
+- Reservation: optional bed / cot / sleep spot entity if present
+- Effect: decrease `fatigue` each tick by `rest_efficiency` modified by sleep-site quality
+- Duration: derived from current `fatigue`, `rest_efficiency`, and sleep-site quality
+- Interruptibility: `ByDanger`, `ByAcutePain`
+- Important correction: sleep is allowed on the ground / wilderness if the agent has no bed. Beds and shelter improve recovery; they are **not** a binary gate.
+
+#### Toilet
+- Precondition: actor is at a latrine / toilet affordance **or** in wilderness
+- Reservation: toilet stall if a facility is used
+- Effect:
+  - decrease `bladder`
+  - create waste entity at location
+  - wilderness toileting may increase `dirtiness`
+- Duration: `MetabolismProfile.toilet_ticks`
+
+#### Wash
+- Precondition: actor can access water source, wash facility, or carried wash water
+- Effect:
+  - decrease `dirtiness`
+  - consume wash water if applicable
+- Duration: `MetabolismProfile.wash_ticks`
+
+### Sleep-Site Quality
+Sleep quality is a derived read-model from concrete affordances at the location:
+
+- bed / cot / bunk reserved by actor
+- shelter presence
+- bare ground
+- current local danger (read by AI, not the sleep action itself)
+
+Beds do not grant a magic “can sleep” permission. They provide better recovery and lower interruption risk.
 
 ## Component Registration
 New components to register in `component_schema.rs`:
+
 - `HomeostaticNeeds` — on `EntityKind::Agent`
-- `AgentCondition` — on `EntityKind::Agent`
+- `DeprivationExposure` — on `EntityKind::Agent`
 - `MetabolismProfile` — on `EntityKind::Agent`
+- `DriveThresholds` — on `EntityKind::Agent` (shared Phase 2 schema)
 
 ## SystemFn Integration
-- Implements the `SystemId::Needs` handler registered in `SystemDispatch`
 - Runs once per tick for all living agents
-- Reads: `HomeostaticNeeds`, `MetabolismProfile`, `WoundList` (E12, for pain derivation)
-- Writes: `HomeostaticNeeds` (tick forward), `AgentCondition` (pain from wounds, fear decay)
+- Reads:
+  - `HomeostaticNeeds`
+  - `DeprivationExposure`
+  - `MetabolismProfile`
+  - `DriveThresholds`
+  - active action state / `BodyCostPerTick`
+- Writes:
+  - `HomeostaticNeeds`
+  - `DeprivationExposure`
+  - `WoundList` (deprivation wounds only)
+  - waste entities / relief events
+  - collapse / forced sleep requests
+
+The needs system does **not** own danger, fear, or abstract “wellness” scores.
 
 ## Cross-System Interactions (Principle 12)
-All cross-system effects propagate through shared state, never through direct function calls:
-- **E12 → E09**: Combat writes `WoundList` on agent; needs system reads `WoundList` to derive `AgentCondition.pain` (sum of wound severities mapped to Permille)
-- **E09 → E13**: Decision architecture reads `HomeostaticNeeds` and `AgentCondition` via `BeliefView` to compute utility scores
-- **E09 → E12**: High fatigue (read from `HomeostaticNeeds`) affects combat effectiveness (E12 reads it independently)
+All cross-system effects propagate through shared state, never through direct system calls.
+
+- **E09 → E12**: sustained starvation / dehydration add deprivation wounds to `WoundList`
+- **E12 → E09**: natural healing and combat can read `fatigue` / `dirtiness` when determining recovery quality or combat effectiveness
+- **E09 → E13**: decision architecture reads `HomeostaticNeeds` and `DriveThresholds`
+- **E10 / E11 / E12 → E09**: long-running actions expose `BodyCostPerTick`; E09 reads the active action state and applies the cost
+- **E09 → future systems**: waste entities become discoverable material traces
 
 ## FND-01 Section H
 
 ### Information-Path Analysis
-- Metabolism is agent-local: each agent's `MetabolismProfile` drives their own `HomeostaticNeeds`. No external information required.
-- Pain derivation: `WoundList` (written by combat at the agent's location) → needs system reads wounds on same agent → updates `AgentCondition.pain`. Information is local to the agent entity.
-- Fear: perception events at agent's location → fear increases. Fear decays locally via `fear_decay_rate`. No global queries.
+- Basal metabolism is agent-local
+- Consumption requires co-location with the consumable or explicit possession
+- Toileting and washing require co-location with affordances or explicit carried water
+- Deprivation harm is generated from the agent’s own stored body state plus elapsed time
+- No agent receives remote physiology information through this system
 
 ### Positive-Feedback Analysis
-- **Fatigue → poor decisions → danger → fear → poor sleep → more fatigue**: fatigue impairs decision quality, leading to danger, which increases fear, which impairs sleep, which increases fatigue.
-- **Pain → inability to heal → more pain**: pain from wounds may prevent agents from seeking healing, worsening their condition.
+- **Fatigue → poor decisions → danger → lost sleep → more fatigue**
+- **Hunger / thirst → incapacity → failure to procure food/water → more hunger / thirst**
 
 ### Concrete Dampeners
-- **Fatigue loop**: exhausted agents eventually collapse (forced sleep at critical threshold), which reduces fatigue regardless of fear. Physical collapse is the dampener — the agent cannot stay awake past biological limits.
-- **Pain loop**: incapacitated agents (from wound severity, E12) can be healed by other co-located agents. The dampener is social: other agents observe and assist. Additionally, wounds that are not bleeding stabilize in severity over time.
+- **Fatigue loop dampener**: physical collapse / forced sleep after sustained critical exhaustion
+- **Hunger / thirst loop dampener**: co-located aid from other agents, carried provisions, and the fact that deprivation becomes a concrete wound that other systems can detect and react to
+- **Bladder loop dampener**: involuntary relief; the body eventually resolves the pressure at the cost of waste and dirtiness
 
 ### Stored State vs. Derived Read-Model
 **Stored (authoritative)**:
-- `HomeostaticNeeds` component (hunger, thirst, fatigue, bladder, dirtiness)
-- `AgentCondition` component (pain, fear)
-- `MetabolismProfile` component (per-agent rates)
+- `HomeostaticNeeds`
+- `DeprivationExposure`
+- `MetabolismProfile`
+- `DriveThresholds`
 
 **Derived (transient read-model)**:
-- Urgency level (computed from need value vs. agent's `UrgencyThresholds`)
-- Overall agent "wellness" (never stored; derived from needs + condition on demand)
-- Whether an agent "needs to eat" (derived from hunger vs. threshold)
+- pain (`WoundList` → pain pressure)
+- danger (believed hostile presence / recent violence)
+- urgency levels (drive value vs per-drive threshold band)
+- sleep-site quality
+- “does this agent need to eat now?” as a decision-layer conclusion
 
 ## Invariants Enforced
-- 9.16: Need continuity — needs change only through time, consumption, rest, toileting, washing, injury, healing, or defined effects. No silent resets.
-- 9.15: Off-camera continuity — needs progress regardless of visibility/camera
+- 9.15: Off-camera continuity — physiology progresses regardless of camera / visibility
+- 9.16: Need continuity — physiology changes only through time, action body cost, consumption, rest, toileting, washing, injury, healing, or other explicit effects
+- Principle 6: every active action that strains the body must expose body cost
+- Principle 3: no stored fear or wellness score
 
 ## Tests
-- [ ] T15: Need progression — `Permille` values evolve by metabolism and time, not frame rate or camera
-- [ ] T26: Camera independence — needs don't reset on visibility change
-- [ ] Eating reduces hunger and consumes food (conservation maintained)
-- [ ] Drinking reduces thirst and consumes water
-- [ ] Sleeping reduces fatigue over duration (rate controlled by `rest_efficiency`)
-- [ ] Toilet reduces bladder and produces waste entity
-- [ ] Washing reduces dirtiness
-- [ ] Need values stay within `Permille` range (0–1000) by type safety
-- [ ] Different `MetabolismProfile` values produce different need progression rates
-- [ ] Pain derived from `WoundList` severity sum, not independently ticked
-- [ ] Fear decays at `fear_decay_rate` when no threat present
-- [ ] No social_standing, loyalty, or wealth_pressure in needs
-- [ ] `UrgencyThresholds` are per-agent, not global constants
+- [ ] T15: Need progression — values evolve by simulation tick, not frame rate or camera
+- [ ] T26: Camera independence — physiology does not reset on visibility change
+- [ ] Eating consumes food and applies commodity-defined relief
+- [ ] Drinking consumes water and applies commodity-defined relief
+- [ ] Sleep reduces fatigue even without a bed; beds improve recovery rate
+- [ ] Toilet reduces bladder and creates waste entity
+- [ ] Wash reduces dirtiness and consumes water when applicable
+- [ ] Active action body costs increase fatigue / thirst deterministically
+- [ ] Sustained critical hunger adds deprivation wound(s)
+- [ ] Sustained critical thirst adds deprivation wound(s)
+- [ ] Sustained critical fatigue triggers forced collapse / sleep
+- [ ] Sustained critical bladder triggers involuntary relief
+- [ ] Need values stay within `Permille` range
+- [ ] Different `MetabolismProfile` values produce different progression / tolerance behavior
+- [ ] `DriveThresholds` are per-drive and per-agent, not global constants
+- [ ] There is no stored `fear` component and no stored `AgentCondition` component
 
 ## Acceptance Criteria
-- `HomeostaticNeeds` (5 fields) and `AgentCondition` (2 fields) tracked per agent
-- All consumption actions follow E07 action framework
-- Conservation maintained through consumption
-- All durations derived from profiles or `CommodityPhysicalProfile`, not hardcoded
-- Needs drive urgency that feeds into decision making (E13)
-- Different agents progress at different rates (Principle 11)
+- Physiology is tracked as concrete body state, not motivational fluff
+- Consumable effects come from commodity data, not hardcoded action logic
+- Critical unmet needs create concrete downstream effects
+- Sleep is possible without a bed; beds improve quality instead of acting as binary gates
+- Every strenuous action has explicit per-tick body cost
+- No stored fear score exists in Phase 2
+- Deprivation, combat, and AI all interact through shared state only
 
 ## Spec References
 - Section 4.4 (needs list)
-- Section 4.5 (core systems: consumption, rest, toilet, hygiene)
-- Section 7.5 (physiological/social propagation channel)
+- Section 4.5 (consumption, rest, toilet, hygiene)
+- Section 7.5 (physiological propagation)
 - Section 9.15 (off-camera continuity)
 - Section 9.16 (need continuity)
-- `docs/FOUNDATIONS.md` Principles 3, 7, 8, 11
+- `docs/FOUNDATIONS.md` Principles 3, 5, 6, 7, 8, 11, 12

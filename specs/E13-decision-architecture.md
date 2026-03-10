@@ -1,7 +1,7 @@
-# E13: Agent Decision Architecture
+# E13: Grounded Agent Decision Architecture
 
 ## Epic Summary
-Implement the unified agent AI: utility scoring with `Permille`, goal selection, GOAP-style planner, plan revalidation, reactive executor, and belief-only planning. All code MUST use `&dyn BeliefView` so E14 can substitute per-agent beliefs.
+Implement the unified AI pipeline for Phase 2: grounded candidate-goal generation, utility ranking, GOAP-style planning over **parameterized** action steps, plan revalidation, reactive execution, and belief-only decision making. All AI code must operate through `&dyn BeliefView`.
 
 ## Phase
 Phase 2: Survival & Logistics (final epic before Phase 2 gate)
@@ -10,212 +10,309 @@ Phase 2: Survival & Logistics (final epic before Phase 2 gate)
 `worldwake-ai`
 
 ## Dependencies
-- E09 (needs system: `HomeostaticNeeds`, `AgentCondition`, `MetabolismProfile`)
-- E10 (production: `RecipeDefinition`, `CarryCapacity` — goals to plan over)
-- E11 (trade: negotiation — goals to plan over)
-- E12 (combat: `WoundList`, `CombatProfile` — goals to plan over)
+- E09 (physiology: `HomeostaticNeeds`, `DriveThresholds`)
+- E10 (recipes, workstations, transport / route occupancy)
+- E11 (trade affordances, demand memory, merchandise profiles)
+- E12 (wounds, combat state, corpses)
+
+## Foundations Alignment Changes
+This revision fixes the largest architecture problems in the original spec:
+
+1. **Future-epic goals are removed from Phase 2.** `ClaimOffice`, `SupportClaimant`, `EstablishCamp`, and similar goals were not grounded by current systems.
+2. **Planning stores parameterized action steps, not bare `ActionDefId`s.** A plan step must know *which* seller, *which* item, *which* destination, and *which* workstation.
+3. **Danger is derived from beliefs about threats, not a stored fear score.**
+4. **Goal selection becomes grounded candidate generation + ranking**, not picking from a static prose wish list.
+5. **Replan loops gain a concrete dampener** via failure memory instead of hoping needs eventually change enough.
 
 ## Deliverables
 
 ### UtilityProfile Component
-Per-agent utility weights enabling Principle 11 (agent diversity). All weights are `Permille`:
-- `hunger_weight: Permille` — importance of addressing hunger
-- `thirst_weight: Permille` — importance of addressing thirst
-- `fatigue_weight: Permille` — importance of addressing fatigue
-- `bladder_weight: Permille` — importance of addressing bladder
-- `dirtiness_weight: Permille` — importance of addressing dirtiness
-- `pain_weight: Permille` — importance of addressing pain
-- `fear_weight: Permille` — importance of fleeing/avoiding danger
-- `greed_weight: Permille` — importance of acquiring coin (applied to coin deficit derived from holdings)
-- `sociability_weight: Permille` — importance of social interaction
+Per-agent utility / temperament weights enabling Principle 11.
 
-Different agents have different `UtilityProfile` values seeded at creation. Two guards with identical beliefs may choose different goals because their weights differ.
+- `hunger_weight: Permille`
+- `thirst_weight: Permille`
+- `fatigue_weight: Permille`
+- `bladder_weight: Permille`
+- `dirtiness_weight: Permille`
+- `pain_weight: Permille`
+- `danger_weight: Permille`
+- `enterprise_weight: Permille` — importance of maintaining saleable stock / pursuing profitable work when the agent has concrete commerce or production affordances
 
-### UrgencyThresholds Component
-Per-agent urgency thresholds (all `Permille`):
-- `low: Permille` — minor discomfort, may seek to address
-- `medium: Permille` — significant pressure, will prioritize
-- `high: Permille` — urgent, overrides most other goals
-- `critical: Permille` — emergency, overrides everything except immediate danger
+Removed from the Phase 2 profile:
+- `fear_weight` — replaced by `danger_weight`, because danger is derived from believed threats
+- `greed_weight` as “coin deficit” — too abstract / underspecified
+- `sociability_weight` — no grounded social system exists yet
 
-No hardcoded global threshold constants. Referenced by E09 consumption action preconditions.
+### Shared DriveThresholds Usage
+E13 consumes the shared `DriveThresholds` component introduced as Phase 2 schema. E13 does **not** own it.
+
+Important correction:
+- thresholds must be **per drive**
+- AI interrupts and urgency calculations use the relevant drive’s threshold band, not one generic number for every pressure
+
+### Grounded Candidate Goal Generation
+Goal selection is a two-stage process:
+
+1. **Generate grounded candidate goals** from current beliefs and concrete evidence
+2. **Rank those candidates** with utility scoring
+
+Candidate goals must arise from actual state, not from a static universal wishlist.
+
+Examples of grounded evidence:
+- hunger above threshold + owned food -> `ConsumeOwnedFood`
+- hunger above threshold + no owned food + visible sellers -> `BuyFood`
+- fatigue high + visible bed / sleep spot -> `Sleep`
+- merchant has `MerchandiseProfile` for bread + no bread in stock + recent demand memory -> `RestockCommodity(bread)`
+- known recipe + free workstation + available source stock -> `ProduceCommodity(recipe_id)`
+- nearby corpse with useful items -> `LootCorpse(corpse_id)`
+- self or co-located ally wounded + medicine available -> `Heal(target)`
+
+### Phase 2 Goal Kinds
+The allowed goal kinds in Phase 2 are:
+
+- `ConsumeOwnedCommodity { commodity }`
+- `AcquireCommodity { commodity, purpose }`
+- `Sleep`
+- `Relieve`
+- `Wash`
+- `ReduceDanger`
+- `Heal { target }`
+- `ProduceCommodity { recipe_id }`
+- `SellCommodity { commodity }`
+- `RestockCommodity { commodity }`
+- `MoveCargo { lot, destination }`
+- `LootCorpse { corpse }`
+- `BuryCorpse { corpse, burial_site }` (optional if burial affordances exist)
+
+Explicitly **deferred out of Phase 2**:
+- `ClaimOffice`
+- `SupportClaimant`
+- `Escort`
+- `Raid`
+- `EstablishCamp`
+
+Those require later epics to provide lawful grounding.
 
 ### Utility Scoring
-- `score(need: Permille, threshold: Permille) -> Permille`
-  - Higher score = more urgent
-- Each homeostatic need (hunger, thirst, fatigue, bladder, dirtiness) produces a score weighted by the agent's `UtilityProfile`
-- Each condition (pain, fear) produces a score weighted by the agent's `UtilityProfile`
-- Additional pressures:
-  - `greed_weight` applied to coin deficit (derived from holdings — not a stored need)
-  - `sociability_weight` applied to social interaction needs
-- **Loyalty is NOT a utility input** — it is a relation in `RelationTables`, not a pressure to be scored
-- **social_standing is NOT a utility input** — it is derived from reputation events (future system)
-- **wealth_pressure is NOT a utility input** — coin deficit is derived from holdings
+Utility scoring ranks candidate goals; it does not invent them.
+
+A compliant scoring pipeline must:
+- read `HomeostaticNeeds`
+- read `DriveThresholds`
+- derive pain from `WoundList`
+- derive danger from believed hostile presence / current attackers / recent local violence
+- read commerce / production affordances
+- read `DemandMemory` and `MerchandiseProfile` when evaluating restock / sell goals
+
+Example interface:
+
+```rust
+fn score_candidate(
+    agent: EntityId,
+    candidate: &GroundedGoal,
+    view: &dyn BeliefView,
+    profile: &UtilityProfile,
+) -> Permille
+```
 
 ### OmniscientBeliefView as Temporary P10 Violation
-`OmniscientBeliefView` (from `crates/worldwake-sim/src/omniscient_belief_view.rs`) is an explicit, documented temporary violation of Principle 10 (Intelligent Agency Over Behavioral Scripts). It provides omniscient world state access where per-agent beliefs should be used.
+`OmniscientBeliefView` remains an explicit temporary violation of the final intelligent-agency standard. It is permitted only as the adapter used at the call site while E14 is pending.
 
-**All E13 code MUST use `&dyn BeliefView`**, never `&World` or concrete types. This ensures E14 can substitute per-agent belief stores without changing E13 code. The `OmniscientBeliefView` adapter is used only at the call site in `tick_step.rs`.
+All E13 logic must still operate on `&dyn BeliefView`, never on `&World` or concrete world access.
 
 ### Required BeliefView Trait Extensions
-The existing `BeliefView` trait (in `crates/worldwake-sim/src/belief_view.rs`) must be extended with:
-- `homeostatic_needs(agent: EntityId) -> Option<HomeostaticNeeds>` — agent's believed needs
-- `agent_condition(agent: EntityId) -> Option<AgentCondition>` — agent's believed pain/fear
-- `wounds(agent: EntityId) -> Vec<Wound>` — agent's believed wound state
-- `agents_selling_at(place: EntityId, commodity: CommodityKind) -> Vec<EntityId>` — believed sellers at a location
-- `available_production_slots(facility: EntityId) -> Option<u32>` — believed open production slots
+The trait must support the data needed to generate and rank grounded goals.
 
-These extensions allow E13 to query agent state through beliefs, not world state.
+Required extensions include:
 
-### Goal Selection
-- `select_goal(agent: EntityId, view: &dyn BeliefView, profile: &UtilityProfile, thresholds: &UrgencyThresholds) -> Goal`
-- Highest-utility goal becomes current objective
-- Goal re-evaluation on: tick interval, replan signal, major state change
+- `homeostatic_needs(agent: EntityId) -> Option<HomeostaticNeeds>`
+- `drive_thresholds(agent: EntityId) -> Option<DriveThresholds>`
+- `wounds(agent: EntityId) -> Vec<Wound>`
+- `visible_hostiles_for(agent: EntityId) -> Vec<EntityId>`
+- `agents_selling_at(place: EntityId, commodity: CommodityKind) -> Vec<EntityId>`
+- `known_recipes(agent: EntityId) -> Vec<RecipeId>`
+- `matching_workstations_at(place: EntityId, tag: WorkstationTag) -> Vec<EntityId>`
+- `resource_sources_at(place: EntityId, commodity: CommodityKind) -> Vec<EntityId>`
+- `demand_memory(agent: EntityId) -> Vec<DemandObservation>`
+- `merchandise_profile(agent: EntityId) -> Option<MerchandiseProfile>`
+- `corpse_entities_at(place: EntityId) -> Vec<EntityId>`
+- `in_transit_state(entity: EntityId) -> Option<InTransitOnEdge>`
 
-### Goal Catalog
-Per spec section 6.2. Each goal references `ActionDefId` values, not prose descriptions:
-- `Eat` — address hunger → maps to `ActionDefId::Eat`
-- `Drink` — address thirst → maps to `ActionDefId::Drink`
-- `Sleep` — address fatigue → maps to `ActionDefId::Rest`
-- `Relieve` — address bladder → maps to `ActionDefId::Toilet`
-- `Wash` — address dirtiness → maps to `ActionDefId::Wash`
-- `Trade` — buy/sell goods → maps to `ActionDefId::Negotiate`
-- `Restock` — merchant restocking → maps to sequence: `Travel` → `Negotiate` → `Travel`
-- `Escort` — escort cargo/caravan → maps to sequence: `PickUp` → `Travel` → `PutDown`
-- `Raid` — raid caravan/travelers → maps to `ActionDefId::Attack`
-- `Flee` — escape danger → maps to `ActionDefId::Travel` (to safe location)
-- `ClaimOffice` — claim vacant office → maps to `ActionDefId::ClaimOffice`
-- `SupportClaimant` — support another's claim → maps to `ActionDefId::SupportClaimant`
-- `Heal` — seek or provide healing → maps to `ActionDefId::Heal`
-- `BuryCorpse` — handle dead body → maps to `ActionDefId::Bury`
-- `EstablishCamp` — set up new camp → maps to `ActionDefId::EstablishCamp`
+These are belief queries, not world queries.
+
+### Parameterized Planning
+The planner output must be parameterized.
+
+```rust
+struct PlannedAction {
+    action_id: ActionDefId,
+    target_entity: Option<EntityId>,
+    target_place: Option<EntityId>,
+    target_item: Option<EntityId>,
+    quantity: Option<Quantity>,
+    reservation_target: Option<EntityId>,
+}
+```
+
+Storing only `ActionDefId::Negotiate` or `ActionDefId::Travel` is insufficient.  
+A valid plan must remember *who* to negotiate with and *where* to travel.
 
 ### GOAP-Style Planner
-Per spec section 6.3:
-- Operates on compact `PlanningState` struct (derived from `BeliefView`, never stored as authoritative state)
-- `PlanningState` contains: agent's believed needs, condition, inventory, location, nearby entities — all queried from `&dyn BeliefView`
-- Input: goal + agent's `PlanningState`
-- Output: ordered sequence of `ActionDefId` values to achieve goal
-- Search: forward state-space search with action effects
-- Pruning: only consider actions whose preconditions are satisfiable in planning state
+- Operates on compact `PlanningState` derived from `BeliefView`
+- Forward state-space search with action effects
+- Only actions whose physical preconditions are satisfiable in planning state may be expanded
+- Multi-step goals such as restock and procurement are legal only when their intermediate steps are grounded
 
 ### Plan Revalidation
-- Before each step in the plan:
-  - Re-check preconditions against current beliefs (via `&dyn BeliefView`)
-  - If preconditions false → trigger replan
-  - Emit replan reason event
+Before each plan step:
+- re-check physical preconditions against current beliefs
+- if false, emit replan reason event
+- discard or revise invalid tail of plan
 
-### Broken Preconditions → Replan
-- When precondition fails:
-  - Record which precondition and why
-  - Discard remaining plan
-  - Re-run goal selection (goal may have changed)
-  - Generate new plan for selected goal
+### Failure Memory / BlockedIntent
+Repeated immediate replanning into the same impossible action is forbidden.
+
+Store concrete failure memory on the agent:
+
+```rust
+struct BlockedIntent {
+    goal_kind: GoalKind,
+    related_entity: Option<EntityId>,
+    blocking_fact: BlockingFact,
+    observed_tick: u64,
+}
+```
+
+Candidate generation and scoring must consult this memory. The agent should avoid retrying the same blocked target until:
+- the relevant believed state changes, or
+- the memory naturally expires
+
+This is the concrete dampener for replan loops.
 
 ### Reactive Executor
-- Handles interrupts between plan steps:
-  - Danger detection: flee if fear exceeds agent's `UrgencyThresholds.critical`
-  - Urgent need: override plan if any need exceeds agent's `UrgencyThresholds.critical`
-  - Interrupt current action if interruptible
-  - Resume or replan after interrupt handled
+Interrupt evaluation each tick uses:
+- derived danger pressure vs `DriveThresholds.danger`
+- physiology pressures vs relevant per-drive thresholds
+- current wound state
+- interruptibility of the active action
+
+Examples:
+- hostile appears / current attacker persists -> interrupt to `ReduceDanger`
+- critical thirst while hauling cargo -> interrupt to seek water if physically possible
+- acute wound / bleeding -> interrupt for `Heal` or escape
 
 ### Agent Tick Integration
-- Each tick, for each agent with `ControlSource::Ai`:
-  1. Check for interrupts (danger, critical needs) — using agent's own thresholds
-  2. If no current plan: select goal → plan
-  3. If current plan: validate next step → execute or replan
-  4. Progress current action if active
+Each tick, for each `ControlSource::Ai` agent:
+
+1. derive current candidate goals from beliefs
+2. rank candidates
+3. if no current plan or plan invalid -> plan
+4. if a reactive interrupt outranks current action -> interrupt
+5. execute / progress current step
+
+Human-controlled agents still use the same action legality and effect pipeline. `ControlSource` only changes the source of chosen inputs.
 
 ## Component Registration
 New components to register in `component_schema.rs`:
+
 - `UtilityProfile` — on `EntityKind::Agent`
-- `UrgencyThresholds` — on `EntityKind::Agent`
+- `BlockedIntentMemory` / stored blocked intents — on `EntityKind::Agent`
+- parameterized current plan / current goal state — on `EntityKind::Agent` if not already present in scheduler-owned state
+
+`DriveThresholds` is **not** introduced here; it is shared Phase 2 schema.
 
 ## Cross-System Interactions (Principle 12)
-- **E09 → E13**: Reads `HomeostaticNeeds` and `AgentCondition` via `BeliefView` for utility scoring
-- **E12 → E13**: Reads `WoundList` via `BeliefView` to assess danger and prioritize healing
-- **E10 → E13**: Reads available recipes/facilities via `BeliefView` for production planning
-- **E11 → E13**: Restock goals drive merchant planning; trade affordances inform goal selection
-- **E13 → all**: Emits `InputEvent::RequestAction` to scheduler, which routes to appropriate system handler
+- **E09 → E13**: reads physiology and per-drive thresholds
+- **E10 → E13**: reads recipes, workstations, sources, cargo, and transit state
+- **E11 → E13**: reads demand memory, visible sellers, and merchandise profiles
+- **E12 → E13**: reads wounds, corpses, and local hostile evidence
+- **E13 → all**: requests actions through the scheduler / action framework; it does not call other systems directly
 
 ## FND-01 Section H
 
 ### Information-Path Analysis
-- All decision inputs come through `&dyn BeliefView`, which queries the agent's beliefs (or world state via `OmniscientBeliefView` temporarily)
-- The agent does not query global state — it queries what it believes about the world
-- Goal selection is local: based on agent's own needs, condition, and beliefs
-- Plan generation uses only information available through `BeliefView`
-- In E14, `BeliefView` will be backed by per-agent belief stores updated through perception events, completing the information-path chain
+- all decision inputs come through `&dyn BeliefView`
+- danger is derived from believed threats, not from omniscient global danger scores
+- grounded goals arise from local or remembered evidence
+- future E14 replaces the omniscient adapter with actual per-agent beliefs without changing E13 logic
 
 ### Positive-Feedback Analysis
-- **Success → confidence → risk-taking → more success**: agents that succeed in trading/raiding might take on more ambitious goals. However, this is bounded by physical constraints (carry capacity, needs pressure, travel time).
-- **Failure → replanning → same failure**: an agent might repeatedly attempt an infeasible goal. The replan mechanism could loop.
+- **Success at procurement / trade → more opportunities → more enterprise behavior**
+- **Plan failure → repeated replanning → same failure**
 
 ### Concrete Dampeners
-- **Success amplification**: physical needs (hunger, thirst, fatigue) are the dampener — even a successful raider must eat and sleep. Homeostatic needs interrupt ambitious plans with biological imperatives.
-- **Replan loop**: the dampener is goal re-evaluation. When a plan fails, goal selection re-runs with updated beliefs. If the same goal is selected but keeps failing, the agent's needs will shift priority (hunger increasing while stuck in a loop) and eventually force a different goal. Biological time pressure prevents infinite replanning on the same failed goal.
+- **Enterprise amplification dampeners**:
+  - physiology pressures
+  - carry capacity
+  - travel time
+  - finite source stock
+- **Replan-loop dampener**:
+  - concrete `BlockedIntent` memory tied to a fact and related entity
+  - the memory fades only with time or observed world change
 
 ### Stored State vs. Derived Read-Model
 **Stored (authoritative)**:
-- `UtilityProfile` component (per-agent weights)
-- `UrgencyThresholds` component (per-agent thresholds)
-- Current plan (sequence of `ActionDefId` values — stored on agent, cleared on replan)
-- Current goal (stored on agent, cleared on goal re-evaluation)
+- `UtilityProfile`
+- `BlockedIntent` memory
+- current goal
+- current plan as parameterized steps
 
 **Derived (transient read-model)**:
-- `PlanningState` (derived from `BeliefView` at planning time — never stored as authoritative state)
-- Utility scores (computed per tick from needs × weights — never stored)
-- Urgency levels (computed from need value vs. threshold — never stored)
-- Available affordances (computed from `BeliefView` — never stored)
+- candidate goal set
+- utility scores
+- pain pressure
+- danger pressure
+- affordances available from current beliefs
+- `PlanningState`
 
 ## Invariants Enforced
-- 9.11: World/belief separation — planner uses beliefs only, not world state
-- 9.12: No player branching — same decision architecture regardless of `ControlSource`
+- 9.11: World / belief separation — planner uses beliefs only
+- 9.12: No player branching — same legality / execution pipeline regardless of `ControlSource`
 - 9.14: Dead agents skipped entirely
-- Principle 3: No stored utility scores or urgency levels — all derived on demand
-- Principle 11: Agent diversity via `UtilityProfile` and `UrgencyThresholds`
+- Principle 3: no stored utility scores, danger scores, or urgency scores
+- Principle 11: agent diversity through `UtilityProfile`, `DriveThresholds`, `KnownRecipes`, `MerchandiseProfile`, and concrete memory differences
 
 ## Tests
-- [ ] T12: No player branching — attach control to merchant, guard, bandit, claimant, farmer without changing rules
-- [ ] Plans use `&dyn BeliefView` only (mock: agent with false belief plans incorrectly, by design)
-- [ ] Goal selection picks highest utility using `Permille` scoring
-- [ ] Different `UtilityProfile` weights produce different goal selections for same needs
-- [ ] Different `UrgencyThresholds` produce different interrupt behavior
-- [ ] Replan triggers when precondition fails
-- [ ] Reactive executor interrupts for danger (fear > agent's critical threshold)
-- [ ] Dead agents generate no plans
-- [ ] GOAP planner finds valid action sequence for simple goals (eat when hungry)
+- [ ] T12: No player branching — switching `ControlSource` does not change available actions or effects
+- [ ] All planning / scoring uses `&dyn BeliefView` only
+- [ ] Goal generation creates only goals grounded in current believed evidence
+- [ ] Different `UtilityProfile` values produce different rankings for the same candidate set
+- [ ] Different per-drive thresholds produce different interrupt behavior
+- [ ] Danger interrupts derive from believed hostile presence, not a stored fear scalar
+- [ ] Parameterized planning stores target entities / places / quantities, not only `ActionDefId`
+- [ ] Replan triggers when a physical precondition fails
+- [ ] `BlockedIntent` memory suppresses immediate repeated retries against the same blocked target
+- [ ] Dead agents generate no goals or plans
+- [ ] Planner finds valid simple plans (eat, buy food, sleep, produce commodity)
 - [ ] Plan revalidation catches stale plans
-- [ ] Same agent type produces same plans regardless of `ControlSource`
-- [ ] `PlanningState` is never stored as authoritative state
-- [ ] No social_standing, loyalty, or wealth_pressure in utility scoring inputs
-- [ ] Greed weight applied to coin deficit (derived from holdings)
-- [ ] All thresholds from per-agent `UrgencyThresholds`, not global constants
+- [ ] Same agent type behaves lawfully under either `ControlSource`
+- [ ] No `sociability_weight`, no stored fear, and no “coin deficit” utility shortcut remain in Phase 2
+- [ ] `PlanningState` is never stored as authoritative world state
 
 ## Phase 2 Gate
 After E13, verify:
-- [ ] Agents autonomously eat, drink, sleep, trade without human input
-- [ ] Agents replan when actions fail
-- [ ] Merchants restock through physical procurement
+- [ ] Agents autonomously eat, drink, sleep, wash, and relieve themselves
+- [ ] Agents can buy needed goods when available
+- [ ] Merchants restock through physical procurement paths
 - [ ] Basic survival loop runs for 24+ in-world hours without deadlock
-- [ ] No agent starves with food available and reachable
+- [ ] No agent starves when food is available, reachable, and believed reachable
+- [ ] No agent loops forever on the same blocked target without either world change or memory expiry
 
 ## Acceptance Criteria
-- Unified decision hierarchy: pressures → utility → goal → plan → execute
-- All utility scoring uses `Permille`, not `f32`
-- GOAP planner produces valid action sequences using `&dyn BeliefView`
-- Plans revalidated at each step
-- Belief-only planning enforced (all queries through `BeliefView`)
-- Reactive interrupts for danger and urgent needs (per-agent thresholds)
-- Same pipeline for all agent types
-- Agent diversity via `UtilityProfile` and `UrgencyThresholds` (Principle 11)
-- `OmniscientBeliefView` documented as temporary P10 violation
+- Unified pipeline: beliefs -> grounded candidate goals -> utility ranking -> parameterized plan -> execution
+- All AI reads go through `&dyn BeliefView`
+- Plans are parameterized, not just action IDs
+- Future-epic goals are not smuggled into Phase 2
+- Reactive interrupts use derived danger and per-drive thresholds
+- Replan loops are damped by concrete failure memory
+- Same legal action / effect pipeline applies to human and AI agents
+- `OmniscientBeliefView` remains documented as temporary scaffolding only
 
 ## Spec References
 - Section 6.1 (one hierarchy, not three competing brains)
 - Section 6.2 (goal examples)
 - Section 6.3 (planning rules: compact state, revalidation, beliefs only)
 - Section 6.4 (human control uses same pipeline)
-- Section 9.11 (world/belief separation)
+- Section 9.11 (world / belief separation)
 - Section 9.12 (player symmetry)
-- `docs/FOUNDATIONS.md` Principles 2, 3, 10, 11, 12
+- `docs/FOUNDATIONS.md` Principles 2, 3, 7, 9, 10, 11, 12
