@@ -3984,7 +3984,10 @@ mod tests {
         world
             .insert_component_workstation_marker(facility, marker)
             .unwrap();
-        assert_eq!(world.get_component_workstation_marker(facility), Some(&marker));
+        assert_eq!(
+            world.get_component_workstation_marker(facility),
+            Some(&marker)
+        );
         assert!(world.has_component_workstation_marker(facility));
 
         let removed = world.remove_component_workstation_marker(facility).unwrap();

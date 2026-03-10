@@ -218,10 +218,9 @@ mod tests {
         AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
         FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-        MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
-        WoundList,
+        MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
+        ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};

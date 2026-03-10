@@ -5,6 +5,26 @@
 
 pub mod needs;
 pub mod needs_actions;
+pub mod production;
 
-pub use needs::{dispatch_table, needs_system};
+pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
+pub use production::resource_regeneration_system;
+
+use worldwake_sim::{SystemDispatchTable, SystemError, SystemExecutionContext};
+
+pub fn dispatch_table() -> SystemDispatchTable {
+    SystemDispatchTable::from_handlers([
+        needs_system,
+        resource_regeneration_system,
+        noop_system,
+        noop_system,
+        noop_system,
+        noop_system,
+    ])
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn noop_system(_ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
+    Ok(())
+}

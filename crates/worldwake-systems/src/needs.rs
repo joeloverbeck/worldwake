@@ -5,8 +5,7 @@ use worldwake_core::{
     WoundCause, WoundList,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionInstance, ActionInstanceId, SystemDispatchTable, SystemError,
-    SystemExecutionContext,
+    ActionDefRegistry, ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext,
 };
 
 pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -56,17 +55,6 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
 
     let _ = txn.commit(event_log);
     Ok(())
-}
-
-pub fn dispatch_table() -> SystemDispatchTable {
-    SystemDispatchTable::from_handlers([
-        needs_system,
-        noop_system,
-        noop_system,
-        noop_system,
-        noop_system,
-        noop_system,
-    ])
 }
 
 struct PendingUpdate {
@@ -305,14 +293,10 @@ fn critical_ticks(
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn noop_system(_ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{dispatch_table, needs_system};
+    use super::needs_system;
+    use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{

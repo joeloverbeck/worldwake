@@ -2129,7 +2129,8 @@ mod tests {
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_workstation_marker(facility, after).unwrap();
+        txn.set_component_workstation_marker(facility, after)
+            .unwrap();
 
         assert_eq!(
             txn.deltas(),
@@ -2146,7 +2147,10 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas.len(), 1);
-        assert_eq!(world.get_component_workstation_marker(facility), Some(&after));
+        assert_eq!(
+            world.get_component_workstation_marker(facility),
+            Some(&after)
+        );
     }
 
     #[test]
