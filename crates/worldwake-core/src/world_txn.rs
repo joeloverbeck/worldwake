@@ -1,4 +1,5 @@
 use crate::{
+    component_schema::with_txn_simple_set_components,
     ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
     EventId, FactId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World,
     WorldError,
@@ -30,6 +31,28 @@ struct PlacementSnapshot {
     located_in: Option<EntityId>,
     in_transit: bool,
     contained_by: Option<EntityId>,
+}
+
+macro_rules! world_txn_component_setters {
+    ($({ $component_ty:ty, $get_fn:ident, $remove_fn:ident, $insert_fn:ident, $set_fn:ident, $component_variant:ident })*) => {
+        $(
+            pub fn $set_fn(
+                &mut self,
+                entity: EntityId,
+                component: $component_ty,
+            ) -> Result<(), WorldError> {
+                self.replace_simple_component(
+                    entity,
+                    component,
+                    |world, entity| world.$get_fn(entity).cloned(),
+                    |world, entity| world.$remove_fn(entity),
+                    |world, entity, component: $component_ty| world.$insert_fn(entity, component),
+                    ComponentKind::$component_variant,
+                    ComponentValue::$component_variant,
+                )
+            }
+        )*
+    };
 }
 
 impl<'w> WorldTxn<'w> {
@@ -592,6 +615,44 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn replace_simple_component<T, Get, Remove, Insert, Wrap>(
+        &mut self,
+        entity: EntityId,
+        component: T,
+        get: Get,
+        remove: Remove,
+        insert: Insert,
+        component_kind: ComponentKind,
+        wrap: Wrap,
+    ) -> Result<(), WorldError>
+    where
+        T: Clone + Eq,
+        Get: Fn(&World, EntityId) -> Option<T>,
+        Remove: Fn(&mut World, EntityId) -> Result<Option<T>, WorldError>,
+        Insert: Fn(&mut World, EntityId, T) -> Result<(), WorldError>,
+        Wrap: Fn(T) -> ComponentValue,
+    {
+        let before = get(&self.staged_world, entity);
+        if before.as_ref() == Some(&component) {
+            return Ok(());
+        }
+
+        if before.is_some() {
+            let _ = remove(&mut self.staged_world, entity)?;
+        }
+        insert(&mut self.staged_world, entity, component.clone())?;
+        self.deltas.push(StateDelta::Component(ComponentDelta::Set {
+            entity,
+            component_kind,
+            before: before.map(&wrap),
+            after: wrap(component),
+        }));
+        Ok(())
+    }
+
+    with_txn_simple_set_components!(world_txn_component_setters);
+
     fn record_created_entity(&mut self, entity: EntityId, kind: EntityKind) {
         self.deltas
             .push(StateDelta::Entity(EntityDelta::Created { entity, kind }));
@@ -1090,9 +1151,10 @@ mod tests {
         VisibilitySpec, WitnessData,
     };
     use crate::{
-        CommodityKind, Container, ControlSource, EntityId, EntityKind, FactId, LoadUnits, Name,
-        Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord, Tick, TickRange,
-        Topology, UniqueItemKind, World, WorldError,
+        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
+        FactId, HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity,
+        ReservationId, ReservationRecord, Tick, TickRange, Topology, UniqueItemKind, World,
+        WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1803,6 +1865,92 @@ mod tests {
 
         assert_eq!(record.state_deltas, expected_deltas);
         assert_eq!(world.loyalty_to(subject, target), Some(new_strength));
+    }
+
+    #[test]
+    fn set_component_homeostatic_needs_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = HomeostaticNeeds::new(
+            Permille::new(100).unwrap(),
+            Permille::new(200).unwrap(),
+            Permille::new(300).unwrap(),
+            Permille::new(400).unwrap(),
+            Permille::new(500).unwrap(),
+        );
+        let after = HomeostaticNeeds::new(
+            Permille::new(101).unwrap(),
+            Permille::new(202).unwrap(),
+            Permille::new(303).unwrap(),
+            Permille::new(404).unwrap(),
+            Permille::new(505).unwrap(),
+        );
+        world.insert_component_homeostatic_needs(agent, before).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_homeostatic_needs(agent, after).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::HomeostaticNeeds,
+                before: Some(ComponentValue::HomeostaticNeeds(before)),
+                after: ComponentValue::HomeostaticNeeds(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_homeostatic_needs(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_deprivation_exposure_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = DeprivationExposure {
+            hunger_critical_ticks: 1,
+            thirst_critical_ticks: 2,
+            fatigue_critical_ticks: 3,
+            bladder_critical_ticks: 4,
+        };
+        let after = DeprivationExposure {
+            hunger_critical_ticks: 10,
+            thirst_critical_ticks: 20,
+            fatigue_critical_ticks: 30,
+            bladder_critical_ticks: 40,
+        };
+        world
+            .insert_component_deprivation_exposure(agent, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_deprivation_exposure(agent, after).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::DeprivationExposure,
+                before: Some(ComponentValue::DeprivationExposure(before)),
+                after: ComponentValue::DeprivationExposure(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_deprivation_exposure(agent), Some(&after));
     }
 
     #[test]

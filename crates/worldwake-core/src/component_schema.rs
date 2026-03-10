@@ -218,3 +218,68 @@ macro_rules! with_authoritative_components {
 }
 
 pub(crate) use with_authoritative_components;
+
+macro_rules! with_txn_simple_set_components {
+    ($callback:ident) => {
+        $callback! {
+            {
+                crate::Name,
+                get_component_name,
+                remove_component_name,
+                insert_component_name,
+                set_component_name,
+                Name
+            }
+            {
+                crate::AgentData,
+                get_component_agent_data,
+                remove_component_agent_data,
+                insert_component_agent_data,
+                set_component_agent_data,
+                AgentData
+            }
+            {
+                crate::WoundList,
+                get_component_wound_list,
+                remove_component_wound_list,
+                insert_component_wound_list,
+                set_component_wound_list,
+                WoundList
+            }
+            {
+                crate::DriveThresholds,
+                get_component_drive_thresholds,
+                remove_component_drive_thresholds,
+                insert_component_drive_thresholds,
+                set_component_drive_thresholds,
+                DriveThresholds
+            }
+            {
+                crate::HomeostaticNeeds,
+                get_component_homeostatic_needs,
+                remove_component_homeostatic_needs,
+                insert_component_homeostatic_needs,
+                set_component_homeostatic_needs,
+                HomeostaticNeeds
+            }
+            {
+                crate::DeprivationExposure,
+                get_component_deprivation_exposure,
+                remove_component_deprivation_exposure,
+                insert_component_deprivation_exposure,
+                set_component_deprivation_exposure,
+                DeprivationExposure
+            }
+            {
+                crate::MetabolismProfile,
+                get_component_metabolism_profile,
+                remove_component_metabolism_profile,
+                insert_component_metabolism_profile,
+                set_component_metabolism_profile,
+                MetabolismProfile
+            }
+        }
+    };
+}
+
+pub(crate) use with_txn_simple_set_components;

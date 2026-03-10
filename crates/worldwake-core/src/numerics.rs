@@ -48,6 +48,18 @@ impl Permille {
     pub const fn value(self) -> u16 {
         self.0
     }
+
+    /// Add another `Permille`, clamping at `1000`.
+    #[must_use]
+    pub fn saturating_add(self, other: Self) -> Self {
+        Self(self.0.saturating_add(other.0).min(1000))
+    }
+
+    /// Subtract another `Permille`, clamping at `0`.
+    #[must_use]
+    pub fn saturating_sub(self, other: Self) -> Self {
+        Self(self.0.saturating_sub(other.0))
+    }
 }
 
 impl fmt::Display for Permille {
@@ -103,6 +115,24 @@ mod tests {
     fn permille_unchecked_compile_time() {
         const P: Permille = Permille::new_unchecked(500);
         assert_eq!(P.value(), 500);
+    }
+
+    #[test]
+    fn permille_saturating_add_clamps_at_upper_bound() {
+        let result = Permille::new(995)
+            .unwrap()
+            .saturating_add(Permille::new(10).unwrap());
+
+        assert_eq!(result, Permille::new(1000).unwrap());
+    }
+
+    #[test]
+    fn permille_saturating_sub_clamps_at_zero() {
+        let result = Permille::new(4)
+            .unwrap()
+            .saturating_sub(Permille::new(10).unwrap());
+
+        assert_eq!(result, Permille::new(0).unwrap());
     }
 
     // --- Quantity ---

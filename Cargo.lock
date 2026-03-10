@@ -219,6 +219,7 @@ name = "worldwake-systems"
 version = "0.1.0"
 dependencies = [
  "worldwake-core",
+ "worldwake-sim",
 ]
 
 [[package]]

@@ -109,7 +109,7 @@ pub fn step_tick(
         process_inputs(&mut runtime, controller, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &services)?;
-    let systems_ran = run_systems(&mut runtime, rng, tick, services.systems)?;
+    let systems_ran = run_systems(&mut runtime, rng, tick, services)?;
     emit_end_of_tick_marker(runtime.event_log, tick);
     runtime.scheduler.increment_tick();
 
@@ -332,7 +332,7 @@ fn run_systems(
     runtime: &mut TickStepRuntime<'_>,
     rng: &mut DeterministicRng,
     tick: Tick,
-    systems: &SystemDispatchTable,
+    services: TickStepServices<'_>,
 ) -> Result<u32, TickStepError> {
     let mut systems_ran = 0u32;
 
@@ -344,10 +344,12 @@ fn run_systems(
         .copied()
     {
         let mut system_rng = rng.substream(tick, system_id, 0);
-        systems.get(system_id)(crate::SystemExecutionContext {
+        services.systems.get(system_id)(crate::SystemExecutionContext {
             world: runtime.world,
             event_log: runtime.event_log,
             rng: &mut system_rng,
+            active_actions: runtime.scheduler.active_actions(),
+            action_defs: services.action_defs,
             tick,
             system_id,
         })
@@ -380,7 +382,7 @@ mod tests {
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionState,
-        ControllerState, DeterministicRng, DurationExpr, Interruptibility, Scheduler,
+        ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility, Scheduler,
         SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest,
     };
     use std::collections::BTreeSet;
@@ -397,6 +399,8 @@ mod tests {
         ticks: Vec<ActionInstanceId>,
         aborts: Vec<ActionInstanceId>,
         systems: Vec<crate::SystemId>,
+        system_active_action_counts: Vec<usize>,
+        system_def_counts: Vec<usize>,
     }
 
     fn test_lock() -> &'static Mutex<()> {
@@ -483,7 +487,10 @@ mod tests {
 
     #[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
     fn record_system(context: SystemExecutionContext<'_>) -> Result<(), SystemError> {
-        hook_log().lock().unwrap().systems.push(context.system_id);
+        let mut log = hook_log().lock().unwrap();
+        log.systems.push(context.system_id);
+        log.system_active_action_counts.push(context.active_actions.len());
+        log.system_def_counts.push(context.action_defs.iter().count());
         let _ = context.world;
         let _ = context.event_log;
         let _ = context.tick;
@@ -905,6 +912,46 @@ mod tests {
         .unwrap();
 
         assert_eq!(hook_log().lock().unwrap().systems, crate::SystemId::ALL);
+    }
+
+    #[test]
+    fn systems_receive_active_actions_and_action_registry_through_context() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
+            build_state();
+        let actor = controlled_actor(&controller);
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(0),
+                targets: Vec::new(),
+            },
+        );
+
+        let _ = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                systems: &ordered_systems(),
+            },
+        )
+        .unwrap();
+
+        let log = hook_log().lock().unwrap().clone();
+        assert_eq!(log.systems, crate::SystemId::ALL);
+        assert_eq!(
+            log.system_active_action_counts,
+            vec![1; crate::SystemId::ALL.len()]
+        );
+        assert_eq!(log.system_def_counts, vec![defs.iter().count(); crate::SystemId::ALL.len()]);
     }
 
     #[test]

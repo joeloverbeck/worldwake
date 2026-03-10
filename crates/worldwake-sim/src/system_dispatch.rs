@@ -1,4 +1,5 @@
-use crate::{DeterministicRng, SystemId};
+use crate::{ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng, SystemId};
+use std::collections::BTreeMap;
 use std::fmt;
 use worldwake_core::{EventLog, Tick, World};
 
@@ -10,6 +11,8 @@ pub struct SystemExecutionContext<'a> {
     pub world: &'a mut World,
     pub event_log: &'a mut EventLog,
     pub rng: &'a mut DeterministicRng,
+    pub active_actions: &'a BTreeMap<ActionInstanceId, ActionInstance>,
+    pub action_defs: &'a ActionDefRegistry,
     pub tick: Tick,
     pub system_id: SystemId,
 }
@@ -65,7 +68,8 @@ fn noop_system(_context: SystemExecutionContext<'_>) -> Result<(), SystemError> 
 #[cfg(test)]
 mod tests {
     use super::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
-    use crate::{DeterministicRng, SystemId};
+    use crate::{ActionDefRegistry, DeterministicRng, SystemId};
+    use std::collections::BTreeMap;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{build_prototype_world, EventLog, Seed, Tick, World};
 
@@ -98,6 +102,8 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut event_log = EventLog::new();
         let mut rng = DeterministicRng::new(Seed([7; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
 
         reset_calls();
 
@@ -106,6 +112,8 @@ mod tests {
                 world: &mut world,
                 event_log: &mut event_log,
                 rng: &mut rng,
+                active_actions: &active_actions,
+                action_defs: &action_defs,
                 tick: Tick(3),
                 system_id,
             })
@@ -121,12 +129,16 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut event_log = EventLog::new();
         let mut rng = DeterministicRng::new(Seed([5; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
 
         for system_id in SystemId::ALL {
             table.get(system_id)(SystemExecutionContext {
                 world: &mut world,
                 event_log: &mut event_log,
                 rng: &mut rng,
+                active_actions: &active_actions,
+                action_defs: &action_defs,
                 tick: Tick(11),
                 system_id,
             })
