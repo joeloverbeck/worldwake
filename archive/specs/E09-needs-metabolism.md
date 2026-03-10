@@ -1,5 +1,7 @@
 # E09: Needs, Physiology & Metabolism
 
+**Status**: ⏸️ DEFERRED
+
 ## Epic Summary
 Implement agent physiology as concrete body-state carriers with tick-based progression, explicit action body costs, consumable effects, deprivation consequences, and personal-care actions. In Phase 2, **danger/fear is not a stored need score**. Danger pressure is derived by E13 from believed threats. **Pain is derived from wounds, not stored as an authoritative component.**
 
@@ -318,3 +320,19 @@ All cross-system effects propagate through shared state, never through direct sy
 - Section 9.15 (off-camera continuity)
 - Section 9.16 (need continuity)
 - `docs/FOUNDATIONS.md` Principles 3, 5, 6, 7, 8, 11, 12
+
+## Outcome
+
+- Completion date: 2026-03-10
+- What actually changed:
+  - implemented and verified the grounded E09 slice covering `HomeostaticNeeds`, `DeprivationExposure`, `MetabolismProfile`, `DriveThresholds`, basal metabolism, action body costs, starvation/dehydration wounds, involuntary bladder relief, and explicit `Eat` / `Drink` / `Sleep` / `Toilet` / `Wash` actions
+  - added scheduler-level integration tests for the shipped physiology and care-action path
+- Deviations from original plan:
+  - `Sleep` ships today as a repeatable one-tick rest action without bed or shelter quality bonuses
+  - `Toilet` and `Wash` do not yet use facility-aware affordances or reservations
+  - forced fatigue collapse / forced sleep is still not implemented
+  - the spec therefore remains partially deferred and should not be treated as fully implemented as written
+- Verification results:
+  - `cargo test -p worldwake-systems` passed on 2026-03-10
+  - `cargo test --workspace` passed on 2026-03-10
+  - `cargo clippy --workspace` passed on 2026-03-10
