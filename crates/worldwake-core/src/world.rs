@@ -554,11 +554,12 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, FactId, HomeostaticNeeds,
-        ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name, Permille, Place, PlaceTag,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, Tick, TickRange, Topology,
-        UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause, WoundList,
+        build_prototype_world, AgentData, BodyPart, CommodityKind, Container, ControlSource,
+        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
+        FactId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name,
+        Permille, Place, PlaceTag, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
+        Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause,
+        WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3147,6 +3148,38 @@ mod tests {
 
         let unrelated = world.can_exercise_control(stranger, item).unwrap_err();
         assert!(matches!(unrelated, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn can_exercise_control_flows_through_controlled_containers() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world
+            .topology()
+            .place_ids()
+            .next()
+            .expect("prototype world provides at least one place");
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let satchel = world
+            .create_container(Container {
+                capacity: LoadUnits(20),
+                allowed_commodities: None,
+                allows_unique_items: true,
+                allows_nested_containers: true,
+            }, Tick(2))
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_ground_location(actor, place).unwrap();
+        world.set_ground_location(satchel, place).unwrap();
+        world.set_possessor(satchel, actor).unwrap();
+        world.put_into_container(bread, satchel).unwrap();
+
+        assert!(world.can_exercise_control(actor, satchel).is_ok());
+        assert!(world.can_exercise_control(actor, bread).is_ok());
     }
 
     #[test]

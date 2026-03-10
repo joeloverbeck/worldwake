@@ -126,6 +126,10 @@ impl World {
         self.ensure_alive(actor)?;
         self.ensure_alive(entity)?;
 
+        if let Some(container) = self.direct_container(entity) {
+            return self.can_exercise_control(actor, container);
+        }
+
         if self.relations.possessed_by.get(&entity) == Some(&actor) {
             return Ok(());
         }

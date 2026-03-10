@@ -1,4 +1,7 @@
-use crate::{ActionDefRegistry, Affordance, BeliefView, Constraint, Precondition, TargetSpec};
+use crate::{
+    ActionDefRegistry, Affordance, BeliefView, ConsumableEffect, Constraint, Precondition,
+    TargetSpec,
+};
 use worldwake_core::EntityId;
 
 #[must_use]
@@ -62,6 +65,9 @@ fn evaluate_precondition(
 ) -> bool {
     match precondition {
         Precondition::ActorAlive => view.is_alive(actor),
+        Precondition::ActorCanControlTarget(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| view.can_control(actor, *target)),
         Precondition::TargetExists(index) => targets
             .get(usize::from(index))
             .is_some_and(|target| view.is_alive(*target)),
@@ -77,6 +83,16 @@ fn evaluate_precondition(
         Precondition::TargetKind { target_index, kind } => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.entity_kind(*target) == Some(kind)),
+        Precondition::TargetCommodity { target_index, kind } => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| view.item_lot_commodity(*target) == Some(kind)),
+        Precondition::TargetHasConsumableEffect { target_index, effect } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| view.item_lot_consumable_profile(*target))
+            .is_some_and(|profile| match effect {
+                ConsumableEffect::Hunger => profile.hunger_relief_per_unit.value() > 0,
+                ConsumableEffect::Thirst => profile.thirst_relief_per_unit.value() > 0,
+            }),
     }
 }
 
@@ -133,14 +149,16 @@ fn enumerate_bindings(
 mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, Constraint, DurationExpr,
-        Interruptibility, OmniscientBeliefView, Precondition, ReservationReq, TargetSpec,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, ConsumableEffect, Constraint,
+        DurationExpr, Interruptibility, OmniscientBeliefView, Precondition, ReservationReq,
+        TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EntityKind, EventLog, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityConsumableProfile,
+        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, Quantity, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Default)]
@@ -150,6 +168,9 @@ mod tests {
         places: BTreeMap<EntityId, EntityId>,
         colocated: BTreeMap<EntityId, Vec<EntityId>>,
         commodities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
+        controllable: BTreeMap<(EntityId, EntityId), bool>,
         control: BTreeMap<EntityId, bool>,
     }
 
@@ -177,6 +198,24 @@ mod tests {
                 .get(&(holder, kind))
                 .copied()
                 .unwrap_or(Quantity(0))
+        }
+
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.item_lot_commodities.get(&entity).copied()
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            self.consumable_profiles.get(&entity).copied()
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            self.controllable
+                .get(&(actor, entity))
+                .copied()
+                .unwrap_or(false)
         }
 
         fn has_control(&self, entity: EntityId) -> bool {
@@ -326,6 +365,59 @@ mod tests {
             &[entity(4)],
             &view,
         ));
+        assert!(!evaluate_precondition(
+            Precondition::ActorCanControlTarget(3),
+            actor,
+            &[entity(4)],
+            &view,
+        ));
+    }
+
+    #[test]
+    fn get_affordances_filters_by_control_and_consumable_effect() {
+        let actor = entity(1);
+        let place = entity(10);
+        let bread = entity(20);
+        let medicine = entity(30);
+
+        let mut view = StubBeliefView::default();
+        for entity in [actor, bread, medicine] {
+            view.alive.insert(entity, true);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.kinds.insert(medicine, EntityKind::ItemLot);
+        view.places.insert(actor, place);
+        view.places.insert(bread, place);
+        view.places.insert(medicine, place);
+        view.colocated.insert(place, vec![medicine, bread]);
+        view.item_lot_commodities.insert(bread, CommodityKind::Bread);
+        view.item_lot_commodities
+            .insert(medicine, CommodityKind::Medicine);
+        view.consumable_profiles
+            .insert(bread, CommodityKind::Bread.spec().consumable_profile.unwrap());
+        view.controllable.insert((actor, bread), true);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            vec![
+                Precondition::ActorCanControlTarget(0),
+                Precondition::TargetHasConsumableEffect {
+                    target_index: 0,
+                    effect: ConsumableEffect::Hunger,
+                },
+            ],
+        ));
+
+        let affordances = get_affordances(&view, actor, &registry);
+
+        assert_eq!(affordances.len(), 1);
+        assert_eq!(affordances[0].bound_targets, vec![bread]);
     }
 
     #[test]

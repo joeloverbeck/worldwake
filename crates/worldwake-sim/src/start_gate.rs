@@ -47,7 +47,10 @@ pub fn start_action(
 
     let actor_place = world.effective_place(affordance.actor);
 
-    let duration = def.duration.resolve();
+    let duration = def
+        .duration
+        .resolve_for(world, affordance.actor, &affordance.bound_targets)
+        .map_err(ActionError::PreconditionFailed)?;
     let mut txn = WorldTxn::new(
         world,
         context.tick,

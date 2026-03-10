@@ -1,6 +1,7 @@
 use crate::BeliefView;
 use worldwake_core::{
-    CommodityKind, ControlSource, EntityId, EntityKind, Quantity, TickRange, World,
+    CommodityConsumableProfile, CommodityKind, ControlSource, EntityId, EntityKind, Quantity,
+    TickRange, World,
 };
 
 /// Temporary stand-in until E14 provides per-agent belief stores.
@@ -39,6 +40,19 @@ impl BeliefView for OmniscientBeliefView<'_> {
 
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
         self.world.controlled_commodity_quantity(holder, kind)
+    }
+
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+        self.world.get_component_item_lot(entity).map(|lot| lot.commodity)
+    }
+
+    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
+        let commodity = self.item_lot_commodity(entity)?;
+        commodity.spec().consumable_profile
+    }
+
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        self.world.can_exercise_control(actor, entity).is_ok()
     }
 
     fn has_control(&self, entity: EntityId) -> bool {
@@ -215,6 +229,21 @@ mod tests {
             view.commodity_quantity(foreign_bread, CommodityKind::Bread),
             Quantity(8)
         );
+        assert_eq!(view.item_lot_commodity(loose_bread), Some(CommodityKind::Bread));
+        assert_eq!(
+            view.item_lot_consumable_profile(bag_water)
+                .unwrap()
+                .thirst_relief_per_unit
+                .value(),
+            CommodityKind::Water
+                .spec()
+                .consumable_profile
+                .unwrap()
+                .thirst_relief_per_unit
+                .value()
+        );
+        assert!(view.can_control(actor, bag_bread));
+        assert!(!view.can_control(actor, foreign_bread));
     }
 
     #[test]

@@ -4,118 +4,162 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — tests only
-**Deps**: E09NEEMET-001 through E09NEEMET-007 (all prior tickets)
+**Deps**: E09NEEMET-001 through E09NEEMET-007
 
 ## Problem
 
-E09 requires integration tests that verify the full physiology loop works end-to-end and negative assertions that confirm forbidden patterns (no stored fear, no stored wellness scores) are absent. This ticket also covers the spec's explicit test list items that span multiple subsystems.
+E09 needs a final integration-focused verification pass, but the prior ticket text assumed capabilities that do not exist in the current codebase. After reassessing `E09NEEMET-007`, this ticket should validate the physiology and care-action slice that is actually implemented today, plus the negative architectural assertions that E09 requires.
+
+This ticket should not reintroduce speculative expectations about bed-quality sleep, facility-aware toilet/wash affordances, or forced-collapse behavior that the current implementation does not yet model.
 
 ## Assumption Reassessment (2026-03-10)
 
-1. The spec lists 15 tests in its "Tests" section — some are unit-level (covered by prior tickets), some require integration across components + system + actions.
-2. Phase 2 gate test T15 ("Need progression") requires values evolve by simulation tick, not frame rate — needs integration with scheduler.
-3. T26 ("Camera independence") requires physiology not reset on visibility change — needs to verify no external reset path exists.
-4. The spec requires negative assertions: no stored `fear` component, no stored `AgentCondition` component.
+1. `E09NEEMET-007` landed:
+   - control-aware item targeting
+   - consumable-effect filtering
+   - profile-driven action durations
+   - explicit `Eat`, `Drink`, `Sleep`, `Toilet`, and `Wash` action registration
+2. `Sleep` currently exists as a repeatable one-tick rest action that reduces fatigue by `MetabolismProfile.rest_efficiency`. It is **not** a bed-aware or shelter-aware system.
+3. Voluntary `Toilet` currently resets bladder and creates waste. It does **not** use latrine facilities or toilet-stall reservations.
+4. `Wash` currently consumes actor-controlled water lots. It does **not** use water-source or wash-facility affordances.
+5. The needs system already covers:
+   - basal progression
+   - body-cost application from active actions
+   - starvation/dehydration wounds
+   - involuntary bladder relief
+6. The needs system still does **not** implement forced collapse / forced sleep for critical fatigue, even though the E09 spec expects that future behavior.
+7. There is still no stored `fear` component and no stored `AgentCondition` / wellness component in authoritative state.
 
 ## Architecture Check
 
-1. Integration tests live in `crates/worldwake-systems/tests/` or as `#[cfg(test)]` modules.
-2. Tests must create a minimal `World` + `EventLog` + `Scheduler` setup with agents that have all physiology components, then step ticks and verify outcomes.
-3. Negative assertions use grep-style compile-time or runtime checks that certain types/components do not exist.
+### What This Ticket Should Validate
 
-## What to Change
+1. End-to-end scheduler integration for the physiology loop that exists now.
+2. End-to-end action execution for the care actions that exist now.
+3. Negative assertions that prohibited stored state does not exist.
+4. Deterministic behavior and conservation across the implemented care-action slice.
+
+### What This Ticket Should Not Pretend To Validate
+
+1. Bed or shelter sleep-quality bonuses.
+2. Facility-aware toileting or washing.
+3. Forced collapse / forced sleep.
+4. AI planning behavior from E13.
+
+If those behaviors are required later, they should be added in dedicated tickets after the underlying world-state carriers exist.
+
+## Revised Scope
+
+Add integration tests for the currently implemented E09 slice:
+
+1. metabolism progression through scheduler/tick integration
+2. care-action execution through the actual action framework
+3. negative assertions for forbidden authoritative state
+
+Do not add or require new runtime behavior in this ticket.
+
+## What To Change
 
 ### 1. Integration test: full metabolism cycle
 
-Create an agent with `HomeostaticNeeds::new_sated()`, default `MetabolismProfile`, `DriveThresholds`, empty `WoundList`, zeroed `DeprivationExposure`. Run N ticks of the needs system. Assert:
-- All drives have increased from 0
-- Rates match `MetabolismProfile` * ticks
-- No wounds yet (not at critical long enough)
+Create an agent with `HomeostaticNeeds::new_sated()`, default `MetabolismProfile`, `DriveThresholds`, empty `WoundList`, and zeroed `DeprivationExposure`. Advance ticks through the actual system path. Assert:
 
-### 2. Integration test: eat-drink cycle restores needs
+- needs increase according to physiology progression
+- no deprivation wounds appear before tolerance windows are exceeded
+- results are deterministic
 
-Create hungry/thirsty agent with food + water at same location. Execute Eat action to completion. Assert hunger decreased by commodity profile amount. Execute Drink. Assert thirst decreased.
+### 2. Integration test: eat / drink cycle through action framework
 
-### 3. Integration test: starvation → wound
+Create a hungry/thirsty agent with controlled food and water. Use the action framework to start and tick `Eat` and `Drink` to completion. Assert:
 
-Create agent at max hunger. Run needs system for `starvation_tolerance_ticks`. Assert deprivation wound added to `WoundList`.
+- the action is discoverable as an affordance only when the actor controls the target
+- the target lot quantity drops by exactly 1
+- hunger/thirst/bladder change according to `CommodityConsumableProfile`
 
-### 4. Integration test: fatigue → forced collapse
+### 3. Integration test: sleep action through action framework
 
-Create agent at max fatigue. Run for `exhaustion_collapse_ticks`. Assert collapse signal emitted.
+Create a fatigued agent with no bed or special facility. Execute `Sleep` and assert:
 
-### 5. Integration test: bladder accident creates waste
+- fatigue decreases by `rest_efficiency`
+- no bed/facility requirement is present
 
-Create agent at max bladder. Run for `bladder_accident_tolerance_ticks`. Assert bladder reset, waste entity exists at location, dirtiness increased.
+### 4. Integration test: toilet and wash actions through action framework
 
-### 6. Integration test: different MetabolismProfiles diverge
+Assert:
 
-Create two agents with different `MetabolismProfile` values (e.g., hunger_rate 2 vs 5). Run same ticks. Assert hunger differs.
+- `Toilet` resets bladder and creates waste at the actor’s location
+- `Wash` consumes controlled water and reduces dirtiness
+
+### 5. Integration test: starvation / dehydration consequences
+
+Advance the needs system long enough to cross tolerance windows. Assert:
+
+- starvation adds deprivation wounds
+- dehydration adds deprivation wounds
+
+### 6. Integration test: divergent `MetabolismProfile` values
+
+Create two otherwise identical agents with different metabolism rates or duration parameters. Advance the same number of ticks. Assert their physiology diverges accordingly.
 
 ### 7. Negative assertion: no stored fear component
 
-Assert that `component_schema.rs` does not register a "fear" or "Fear" component. Assert no `struct Fear` or `fear: Permille` field exists in authoritative component types (excluding `DriveThresholds` which has a threshold band for danger/fear but that's a threshold, not stored state).
+Assert there is no authoritative stored `Fear` component or `fear: Permille` physiology field.
 
-### 8. Negative assertion: no stored AgentCondition component
+### 8. Negative assertion: no stored AgentCondition / wellness component
 
-Assert that no `AgentCondition` or `wellness` stored component exists.
+Assert there is no authoritative `AgentCondition`, `wellness`, or equivalent aggregate score component.
 
-### 9. Integration test: sleep without bed reduces fatigue
-
-Create fatigued agent at a location with no bed entity. Start Sleep action. Tick. Assert fatigue decreases.
-
-### 10. Integration test: sleep with bed is better
-
-Create fatigued agent with bed reservation. Start Sleep action. Tick same number. Assert fatigue is lower than ground-sleep variant.
-
-## Files to Touch
+## Files To Touch
 
 - `crates/worldwake-systems/tests/needs_integration.rs` (new)
 - `crates/worldwake-systems/tests/needs_negative_assertions.rs` (new)
 
-## Out of Scope
+## Out Of Scope
 
-- E12 combat wound tests
+- Bed-quality sleep tests
+- Toilet-facility or wash-facility tests
+- Forced-collapse / forced-sleep tests
 - E13 AI decision tests
-- Performance benchmarks
-- Save/load round-trip of physiology state (covered by existing E08 patterns)
-- Multi-agent interaction tests
+- E12 combat wound tests
+- performance benchmarks
 
 ## Acceptance Criteria
 
 ### Tests That Must Pass
 
-1. T15: Need progression — values evolve by simulation tick.
-2. T26: Camera independence — physiology does not reset on visibility change.
-3. Eating consumes food and applies commodity-defined relief.
-4. Drinking consumes water and applies commodity-defined relief.
-5. Sleep reduces fatigue even without a bed; beds improve recovery rate.
-6. Toilet reduces bladder and creates waste entity.
-7. Wash reduces dirtiness and consumes water when applicable.
-8. Active action body costs increase fatigue/thirst deterministically.
+1. Need progression evolves by simulation tick.
+2. Camera independence / visibility independence holds for physiology progression.
+3. Eating consumes one unit and applies commodity-defined effects.
+4. Drinking consumes one unit and applies commodity-defined effects.
+5. Sleep reduces fatigue without any bed requirement.
+6. Toilet resets bladder and creates waste.
+7. Wash reduces dirtiness and consumes controlled water.
+8. Active action body costs increase physiology pressure deterministically.
 9. Sustained critical hunger adds deprivation wound(s).
 10. Sustained critical thirst adds deprivation wound(s).
-11. Sustained critical fatigue triggers forced collapse/sleep.
-12. Sustained critical bladder triggers involuntary relief.
-13. Need values stay within Permille range.
-14. Different MetabolismProfile values produce different progression/tolerance behavior.
-15. DriveThresholds are per-drive and per-agent, not global constants.
-16. There is no stored fear component and no stored AgentCondition component.
-17. Existing suite: `cargo test --workspace`
+11. Different `MetabolismProfile` values produce divergent outcomes.
+12. There is no stored fear component and no stored AgentCondition / wellness component.
+13. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
-1. All spec-listed tests from E09 "Tests" section are covered.
-2. Conservation invariant holds through all eat/drink/toilet cycles.
-3. No floating-point in any test setup or assertion.
-4. Determinism: same seed + same inputs = same physiology outcomes.
+1. Integration coverage matches implemented behavior, not speculative future behavior.
+2. Conservation holds through eat/drink/wash flows.
+3. No floating-point values are introduced in setup or assertions.
+4. Deterministic seeds and identical inputs produce identical physiology outcomes.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-systems/tests/needs_integration.rs` — full cycle, eat/drink, starvation, collapse, bladder, divergent profiles, sleep variants
-2. `crates/worldwake-systems/tests/needs_negative_assertions.rs` — no stored fear, no stored wellness/condition
+1. `crates/worldwake-systems/tests/needs_integration.rs`
+   - scheduler/metabolism progression
+   - action-driven eat/drink/sleep/toilet/wash
+   - starvation/dehydration integration
+   - divergent metabolism-profile behavior
+2. `crates/worldwake-systems/tests/needs_negative_assertions.rs`
+   - no stored fear
+   - no stored AgentCondition / wellness
 
 ### Commands
 

@@ -1,6 +1,6 @@
 use worldwake_core::{ControlSource, EntityId, World, WorldTxn};
 
-use crate::{Constraint, Precondition};
+use crate::{ConsumableEffect, Constraint, Precondition};
 
 pub(crate) fn evaluate_constraint_authoritatively(
     world: &World,
@@ -26,6 +26,9 @@ pub(crate) fn evaluate_precondition_authoritatively(
 ) -> bool {
     match precondition {
         Precondition::ActorAlive => world.is_alive(actor),
+        Precondition::ActorCanControlTarget(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| world.can_exercise_control(actor, *target).is_ok()),
         Precondition::TargetExists(index) => targets
             .get(usize::from(index))
             .is_some_and(|target| world.is_alive(*target)),
@@ -41,6 +44,18 @@ pub(crate) fn evaluate_precondition_authoritatively(
         Precondition::TargetKind { target_index, kind } => targets
             .get(usize::from(target_index))
             .is_some_and(|target| world.entity_kind(*target) == Some(kind)),
+        Precondition::TargetCommodity { target_index, kind } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| world.get_component_item_lot(*target))
+            .is_some_and(|lot| lot.commodity == kind),
+        Precondition::TargetHasConsumableEffect { target_index, effect } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| world.get_component_item_lot(*target))
+            .and_then(|lot| lot.commodity.spec().consumable_profile)
+            .is_some_and(|profile| match effect {
+                ConsumableEffect::Hunger => profile.hunger_relief_per_unit.value() > 0,
+                ConsumableEffect::Thirst => profile.thirst_relief_per_unit.value() > 0,
+            }),
     }
 }
 
@@ -65,7 +80,7 @@ mod tests {
         evaluate_constraint_authoritatively, evaluate_precondition_authoritatively,
         evaluate_txn_precondition_authoritatively,
     };
-    use crate::{Constraint, Precondition};
+    use crate::{ConsumableEffect, Constraint, Precondition};
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityKind, EventLog,
         Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
@@ -121,6 +136,72 @@ mod tests {
             },
             actor,
         ));
+    }
+
+    #[test]
+    fn authoritative_preconditions_validate_control_and_consumable_requirements() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, bag, bread, medicine) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let bag = txn
+                .create_container(worldwake_core::Container {
+                    capacity: worldwake_core::LoadUnits(10),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                })
+                .unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            let medicine = txn
+                .create_item_lot(CommodityKind::Medicine, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(bag, place).unwrap();
+            txn.set_possessor(bag, actor).unwrap();
+            txn.put_into_container(bread, bag).unwrap();
+            txn.put_into_container(medicine, bag).unwrap();
+            commit_txn(txn);
+            (actor, bag, bread, medicine)
+        };
+
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::ActorCanControlTarget(0),
+            actor,
+            &[bread],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetCommodity {
+                target_index: 0,
+                kind: CommodityKind::Bread,
+            },
+            actor,
+            &[bread],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasConsumableEffect {
+                target_index: 0,
+                effect: ConsumableEffect::Hunger,
+            },
+            actor,
+            &[bread],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasConsumableEffect {
+                target_index: 0,
+                effect: ConsumableEffect::Thirst,
+            },
+            actor,
+            &[medicine],
+        ));
+        assert!(world.can_exercise_control(actor, bag).is_ok());
     }
 
     #[test]
