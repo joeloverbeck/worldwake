@@ -10,7 +10,7 @@ use crate::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
         WorkstationMarker,
     },
-    trade::{DemandMemory, MerchandiseProfile, TradeDispositionProfile},
+    trade::{DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile},
     wounds::WoundList,
     EntityId,
 };
@@ -108,7 +108,8 @@ mod tests {
     use crate::{
         components::{AgentData, Name},
         test_utils::{
-            sample_demand_memory, sample_merchandise_profile, sample_trade_disposition_profile,
+            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
+            sample_trade_disposition_profile,
         },
         BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DeprivationExposure,
         DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
@@ -142,6 +143,7 @@ mod tests {
         assert_eq!(tables.iter_demand_memories().count(), 0);
         assert_eq!(tables.iter_trade_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_merchandise_profiles().count(), 0);
+        assert_eq!(tables.iter_substitute_preferences().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
@@ -347,6 +349,22 @@ mod tests {
     }
 
     #[test]
+    fn substitute_preferences_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let id = entity(33);
+        let preferences = sample_substitute_preferences();
+
+        assert_eq!(
+            tables.insert_substitute_preferences(id, preferences.clone()),
+            None
+        );
+        assert_eq!(tables.get_substitute_preferences(id), Some(&preferences));
+        assert!(tables.has_substitute_preferences(id));
+        assert_eq!(tables.remove_substitute_preferences(id), Some(preferences));
+        assert_eq!(tables.get_substitute_preferences(id), None);
+    }
+
+    #[test]
     fn insert_and_get_workstation_marker() {
         let mut tables = ComponentTables::default();
         let id = entity(22);
@@ -464,6 +482,7 @@ mod tests {
         tables.insert_metabolism_profile(id, MetabolismProfile::default());
         tables.insert_carry_capacity(id, CarryCapacity(LoadUnits(7)));
         tables.insert_known_recipes(id, KnownRecipes::with([crate::RecipeId(8)]));
+        tables.insert_substitute_preferences(id, sample_substitute_preferences());
         tables.insert_workstation_marker(id, WorkstationMarker(WorkstationTag::Forge));
         tables.insert_production_job(
             id,
@@ -527,6 +546,7 @@ mod tests {
         assert_eq!(tables.get_metabolism_profile(id), None);
         assert_eq!(tables.get_carry_capacity(id), None);
         assert_eq!(tables.get_known_recipes(id), None);
+        assert_eq!(tables.get_substitute_preferences(id), None);
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
         assert_eq!(tables.get_container(id), None);
@@ -595,6 +615,7 @@ mod tests {
             },
         );
         tables.insert_metabolism_profile(entity(16), MetabolismProfile::default());
+        tables.insert_substitute_preferences(entity(17), sample_substitute_preferences());
 
         let bytes = bincode::serialize(&tables).unwrap();
         let roundtrip: ComponentTables = bincode::deserialize(&bytes).unwrap();

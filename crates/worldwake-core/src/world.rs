@@ -5,8 +5,9 @@ use crate::{
     ComponentTables, ComponentValue, Container, DemandMemory, DeprivationExposure, DriveThresholds,
     EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge,
     ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology,
-    TradeDispositionProfile, UniqueItem, UniqueItemKind, WorkstationMarker, WorldError, WoundList,
+    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource,
+    SubstitutePreferences, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -557,15 +558,17 @@ mod tests {
     use crate::{
         build_prototype_world,
         test_utils::{
-            sample_demand_memory, sample_merchandise_profile, sample_trade_disposition_profile,
+            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
+            sample_trade_disposition_profile,
         },
         AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DemandMemory,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
         FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
         MerchandiseProfile, MetabolismProfile, Name, Permille, Place, PlaceTag, ProductionJob,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
-        TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
+        SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
+        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -4027,6 +4030,33 @@ mod tests {
     }
 
     #[test]
+    fn substitute_preferences_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let preferences = sample_substitute_preferences();
+
+        world
+            .insert_component_substitute_preferences(agent, preferences.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_substitute_preferences(agent),
+            Some(&preferences)
+        );
+        assert!(world.has_component_substitute_preferences(agent));
+        assert_eq!(
+            world.query_substitute_preferences().collect::<Vec<_>>(),
+            vec![(agent, &preferences)]
+        );
+        assert_eq!(world.count_with_substitute_preferences(), 1);
+
+        let removed = world
+            .remove_component_substitute_preferences(agent)
+            .unwrap();
+        assert_eq!(removed, Some(preferences));
+        assert_eq!(world.get_component_substitute_preferences(agent), None);
+    }
+
+    #[test]
     fn trade_disposition_profile_component_roundtrip_on_agent() {
         let mut world = World::new(Topology::new()).unwrap();
         let agent = world.create_entity(EntityKind::Agent, Tick(1));
@@ -4133,6 +4163,26 @@ mod tests {
                     initial_offer_bias: Permille::new(500).unwrap(),
                     concession_rate: Permille::new(100).unwrap(),
                     demand_memory_retention_ticks: 60,
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_substitute_preferences_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_substitute_preferences(
+                id,
+                SubstitutePreferences {
+                    preferences: BTreeMap::from([(
+                        crate::TradeCategory::Food,
+                        vec![CommodityKind::Bread, CommodityKind::Apple],
+                    )]),
                 },
             )
             .unwrap_err();

@@ -1,8 +1,8 @@
 //! Trade-domain authoritative components and shared schema.
 
-use crate::{CommodityKind, Component, EntityId, Permille, Quantity, Tick};
+use crate::{CommodityKind, Component, EntityId, Permille, Quantity, Tick, TradeCategory};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 /// Concrete merchant sale intent for an agent.
@@ -33,6 +33,14 @@ pub struct TradeDispositionProfile {
 
 impl Component for TradeDispositionProfile {}
 
+/// Per-agent ordered substitute choices by trade category.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SubstitutePreferences {
+    pub preferences: BTreeMap<TradeCategory, Vec<CommodityKind>>,
+}
+
+impl Component for SubstitutePreferences {}
+
 /// A single unmet-demand or missed-sale observation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DemandObservation {
@@ -57,11 +65,12 @@ pub enum DemandObservationReason {
 mod tests {
     use super::{
         DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
-        TradeDispositionProfile,
+        SubstitutePreferences, TradeDispositionProfile,
     };
     use crate::{
         test_utils::{
-            sample_demand_observation, sample_merchandise_profile, sample_trade_disposition_profile,
+            sample_demand_observation, sample_merchandise_profile, sample_substitute_preferences,
+            sample_trade_disposition_profile,
         },
         traits::Component,
     };
@@ -128,5 +137,37 @@ mod tests {
         let roundtrip: TradeDispositionProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn substitute_preferences_component_bounds() {
+        assert_component_bounds::<SubstitutePreferences>();
+        assert_value_bounds::<SubstitutePreferences>();
+    }
+
+    #[test]
+    fn substitute_preferences_roundtrip_through_bincode() {
+        let preferences = sample_substitute_preferences();
+
+        let bytes = bincode::serialize(&preferences).unwrap();
+        let roundtrip: SubstitutePreferences = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, preferences);
+    }
+
+    #[test]
+    fn substitute_preferences_btreemap_order_is_deterministic() {
+        let preferences = sample_substitute_preferences();
+
+        let seen = preferences.preferences.keys().copied().collect::<Vec<_>>();
+
+        assert_eq!(
+            seen,
+            vec![
+                crate::TradeCategory::Food,
+                crate::TradeCategory::Fuel,
+                crate::TradeCategory::Medicine,
+            ]
+        );
     }
 }

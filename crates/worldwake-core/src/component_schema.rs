@@ -305,6 +305,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                substitute_preferences,
+                SubstitutePreferences,
+                insert_substitute_preferences,
+                get_substitute_preferences,
+                get_substitute_preferences_mut,
+                remove_substitute_preferences,
+                has_substitute_preferences,
+                iter_substitute_preferences,
+                insert_component_substitute_preferences,
+                get_component_substitute_preferences,
+                get_component_substitute_preferences_mut,
+                remove_component_substitute_preferences,
+                has_component_substitute_preferences,
+                entities_with_substitute_preferences,
+                query_substitute_preferences,
+                count_with_substitute_preferences,
+                "SubstitutePreferences",
+                |kind| kind == EntityKind::Agent,
+                SubstitutePreferences,
+                crate::SubstitutePreferences,
+                set_component_substitute_preferences,
+                clear_component_substitute_preferences,
+                txn_simple_set
+            }
+            {
                 workstation_markers,
                 WorkstationMarker,
                 insert_workstation_marker,

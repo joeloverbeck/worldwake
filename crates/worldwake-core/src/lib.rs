@@ -100,7 +100,7 @@ pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, Re
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use trade::{
     DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
-    TradeDispositionProfile,
+    SubstitutePreferences, TradeDispositionProfile,
 };
 pub use traits::{Component, RelationRecord};
 pub use verification::{verify_completeness, VerificationError};

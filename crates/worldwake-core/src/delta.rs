@@ -5,7 +5,7 @@ use crate::{
     Container, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, Name, Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
-    TradeDispositionProfile, UniqueItem, WorkstationMarker, WoundList,
+    SubstitutePreferences, TradeDispositionProfile, UniqueItem, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -216,7 +216,8 @@ mod tests {
     };
     use crate::{
         test_utils::{
-            sample_demand_memory, sample_merchandise_profile, sample_trade_disposition_profile,
+            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
+            sample_trade_disposition_profile,
         },
         AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
@@ -282,6 +283,7 @@ mod tests {
             ComponentValue::DemandMemory(sample_demand_memory()),
             ComponentValue::TradeDispositionProfile(sample_trade_disposition_profile()),
             ComponentValue::MerchandiseProfile(sample_merchandise_profile()),
+            ComponentValue::SubstitutePreferences(sample_substitute_preferences()),
             ComponentValue::WorkstationMarker(WorkstationMarker(WorkstationTag::Forge)),
             ComponentValue::ResourceSource(ResourceSource {
                 commodity: CommodityKind::Apple,
@@ -415,6 +417,7 @@ mod tests {
                 ComponentKind::DemandMemory,
                 ComponentKind::TradeDispositionProfile,
                 ComponentKind::MerchandiseProfile,
+                ComponentKind::SubstitutePreferences,
                 ComponentKind::WorkstationMarker,
                 ComponentKind::ResourceSource,
                 ComponentKind::ProductionJob,

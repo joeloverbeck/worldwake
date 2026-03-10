@@ -5,9 +5,10 @@
 
 use crate::{
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
-    MerchandiseProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile,
+    MerchandiseProfile, Permille, Quantity, Seed, SubstitutePreferences, Tick, TradeCategory,
+    TradeDispositionProfile,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 /// Returns a fixed, well-known seed for deterministic test scenarios.
@@ -55,5 +56,23 @@ pub fn sample_trade_disposition_profile() -> TradeDispositionProfile {
         initial_offer_bias: Permille::new(650).unwrap(),
         concession_rate: Permille::new(125).unwrap(),
         demand_memory_retention_ticks: 240,
+    }
+}
+
+/// Returns a representative substitute-preference fixture for trade-domain tests.
+pub fn sample_substitute_preferences() -> SubstitutePreferences {
+    SubstitutePreferences {
+        preferences: BTreeMap::from([
+            (TradeCategory::Medicine, vec![CommodityKind::Medicine]),
+            (
+                TradeCategory::Food,
+                vec![
+                    CommodityKind::Bread,
+                    CommodityKind::Apple,
+                    CommodityKind::Grain,
+                ],
+            ),
+            (TradeCategory::Fuel, vec![CommodityKind::Firewood]),
+        ]),
     }
 }
