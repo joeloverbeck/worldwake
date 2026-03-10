@@ -4,6 +4,7 @@ use crate::{
     component_schema::with_authoritative_components,
     components::{AgentData, Name},
     items::{Container, ItemLot, UniqueItem},
+    wounds::WoundList,
     EntityId,
 };
 use serde::{Deserialize, Serialize};
@@ -53,7 +54,7 @@ macro_rules! component_table_methods {
 }
 
 macro_rules! define_component_tables_struct {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
         /// Explicit typed component storage for non-topological authoritative components.
         #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
         pub struct ComponentTables {
@@ -63,7 +64,7 @@ macro_rules! define_component_tables_struct {
 }
 
 macro_rules! define_component_table_impls {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
         impl ComponentTables {
             $(
                 component_table_methods!(
@@ -93,8 +94,9 @@ mod tests {
     use super::ComponentTables;
     use crate::{
         components::{AgentData, Name},
-        CommodityKind, Container, ControlSource, EntityId, ItemLot, LoadUnits, LotOperation,
-        ProvenanceEntry, Quantity, Tick, UniqueItem, UniqueItemKind,
+        BodyPart, CommodityKind, Container, ControlSource, DeprivationKind, EntityId, ItemLot,
+        LoadUnits, LotOperation, Permille, ProvenanceEntry, Quantity, Tick, UniqueItem,
+        UniqueItemKind, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -111,6 +113,7 @@ mod tests {
 
         assert_eq!(tables.iter_names().count(), 0);
         assert_eq!(tables.iter_agent_data().count(), 0);
+        assert_eq!(tables.iter_wound_lists().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
         assert_eq!(tables.iter_containers().count(), 0);
@@ -136,6 +139,23 @@ mod tests {
 
         assert_eq!(tables.insert_agent_data(id, agent.clone()), None);
         assert_eq!(tables.get_agent_data(id), Some(&agent));
+    }
+
+    #[test]
+    fn insert_and_get_wound_list() {
+        let mut tables = ComponentTables::default();
+        let id = entity(5);
+        let wounds = WoundList {
+            wounds: vec![Wound {
+                body_part: BodyPart::Torso,
+                cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                severity: Permille::new(800).unwrap(),
+                inflicted_at: Tick(7),
+            }],
+        };
+
+        assert_eq!(tables.insert_wound_list(id, wounds.clone()), None);
+        assert_eq!(tables.get_wound_list(id), Some(&wounds));
     }
 
     #[test]
@@ -190,6 +210,17 @@ mod tests {
                 control_source: ControlSource::Ai,
             },
         );
+        tables.insert_wound_list(
+            id,
+            WoundList {
+                wounds: vec![Wound {
+                    body_part: BodyPart::Head,
+                    cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
+                    severity: Permille::new(550).unwrap(),
+                    inflicted_at: Tick(2),
+                }],
+            },
+        );
         tables.insert_item_lot(
             id,
             ItemLot {
@@ -226,6 +257,7 @@ mod tests {
 
         assert_eq!(tables.get_name(id), None);
         assert_eq!(tables.get_agent_data(id), None);
+        assert_eq!(tables.get_wound_list(id), None);
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
         assert_eq!(tables.get_container(id), None);
@@ -242,6 +274,17 @@ mod tests {
             agent_id,
             AgentData {
                 control_source: ControlSource::None,
+            },
+        );
+        tables.insert_wound_list(
+            entity(9),
+            WoundList {
+                wounds: vec![Wound {
+                    body_part: BodyPart::LeftArm,
+                    cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                    severity: Permille::new(300).unwrap(),
+                    inflicted_at: Tick(4),
+                }],
             },
         );
         tables.insert_item_lot(

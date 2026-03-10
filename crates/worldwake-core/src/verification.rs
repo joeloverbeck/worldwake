@@ -290,32 +290,8 @@ impl ActualWorldState {
         entity: EntityId,
         components: &mut BTreeMap<(EntityId, ComponentKind), ComponentValue>,
     ) {
-        if let Some(value) = world.get_component_name(entity).cloned() {
-            components.insert((entity, ComponentKind::Name), ComponentValue::Name(value));
-        }
-        if let Some(value) = world.get_component_agent_data(entity).cloned() {
-            components.insert(
-                (entity, ComponentKind::AgentData),
-                ComponentValue::AgentData(value),
-            );
-        }
-        if let Some(value) = world.get_component_item_lot(entity).cloned() {
-            components.insert(
-                (entity, ComponentKind::ItemLot),
-                ComponentValue::ItemLot(value),
-            );
-        }
-        if let Some(value) = world.get_component_unique_item(entity).cloned() {
-            components.insert(
-                (entity, ComponentKind::UniqueItem),
-                ComponentValue::UniqueItem(value),
-            );
-        }
-        if let Some(value) = world.get_component_container(entity).cloned() {
-            components.insert(
-                (entity, ComponentKind::Container),
-                ComponentValue::Container(value),
-            );
+        for value in world.component_values(entity) {
+            components.insert((entity, value.kind()), value);
         }
     }
 
@@ -489,10 +465,10 @@ fn diff_btree_set<T>(
 #[cfg(test)]
 mod tests {
     use super::{verify_completeness, verify_event_covers_world_state, VerificationError};
-    use crate::{CauseRef, EventLog, EventRecord, EventTag, VisibilitySpec, WitnessData, WorldTxn};
     use crate::{
-        CommodityKind, Container, ControlSource, EntityId, EventId, LoadUnits, Quantity, Tick,
-        TickRange, Topology, World,
+        BodyPart, CauseRef, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
+        EventId, EventLog, EventRecord, EventTag, LoadUnits, Quantity, Tick, TickRange, Topology,
+        VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause, WoundList,
     };
     use std::collections::BTreeSet;
 
@@ -772,6 +748,49 @@ mod tests {
             error,
             VerificationError::WorldStateMismatch { detail }
                 if detail.contains("relations has unexpected entry")
+        )));
+    }
+
+    #[test]
+    fn verify_event_covers_world_state_detects_out_of_band_wound_component_mutation() {
+        let mut world = test_world();
+        let mut log = EventLog::new();
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(5),
+            CauseRef::Bootstrap,
+            None,
+            Some(entity(10)),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::WorldMutation);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, entity(10)).unwrap();
+        txn.commit(&mut log);
+
+        world
+            .insert_component_wound_list(
+                agent,
+                WoundList {
+                    wounds: vec![Wound {
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                        severity: crate::Permille::new(600).unwrap(),
+                        inflicted_at: Tick(8),
+                    }],
+                },
+            )
+            .unwrap();
+
+        let errors = verify_event_covers_world_state(&world, &log).unwrap_err();
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            VerificationError::WorldStateMismatch { detail }
+                if detail.contains("components has unexpected entry")
+                    && detail.contains("WoundList")
         )));
     }
 }

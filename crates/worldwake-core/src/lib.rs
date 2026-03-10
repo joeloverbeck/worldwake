@@ -51,6 +51,7 @@ pub mod visibility;
 pub mod witness;
 pub mod world;
 pub mod world_txn;
+pub mod wounds;
 
 pub use allocator::EntityAllocator;
 pub use canonical::{
@@ -94,3 +95,4 @@ pub use world::lifecycle::{
 };
 pub use world::World;
 pub use world_txn::WorldTxn;
+pub use wounds::{BodyPart, DeprivationKind, Wound, WoundCause, WoundList};

@@ -41,11 +41,7 @@ pub fn get_affordances(
 }
 
 #[must_use]
-fn evaluate_constraint(
-    constraint: &Constraint,
-    actor: EntityId,
-    view: &dyn BeliefView,
-) -> bool {
+fn evaluate_constraint(constraint: &Constraint, actor: EntityId, view: &dyn BeliefView) -> bool {
     match constraint {
         Constraint::ActorAlive => view.is_alive(actor),
         Constraint::ActorHasControl => view.has_control(actor),
@@ -85,11 +81,7 @@ fn evaluate_precondition(
 }
 
 #[must_use]
-fn enumerate_targets(
-    spec: &TargetSpec,
-    actor: EntityId,
-    view: &dyn BeliefView,
-) -> Vec<EntityId> {
+fn enumerate_targets(spec: &TargetSpec, actor: EntityId, view: &dyn BeliefView) -> Vec<EntityId> {
     let mut targets = match spec {
         TargetSpec::SpecificEntity(entity) => view
             .is_alive(*entity)
@@ -465,8 +457,7 @@ mod tests {
 
         let human_affordances =
             get_affordances(&OmniscientBeliefView::new(&human_world), human, &registry);
-        let ai_affordances =
-            get_affordances(&OmniscientBeliefView::new(&ai_world), ai, &registry);
+        let ai_affordances = get_affordances(&OmniscientBeliefView::new(&ai_world), ai, &registry);
 
         assert_eq!(human_affordances.len(), 2);
         assert_eq!(ai_affordances.len(), 2);

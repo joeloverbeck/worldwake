@@ -64,7 +64,8 @@ pub fn load(path: &Path) -> Result<SimulationState, SaveError> {
 }
 
 pub fn save_to_bytes(state: &SimulationState) -> Result<Vec<u8>, SaveError> {
-    let payload = bincode::serialize(state).map_err(|error| SaveError::Serialization(error.to_string()))?;
+    let payload =
+        bincode::serialize(state).map_err(|error| SaveError::Serialization(error.to_string()))?;
     let mut bytes = Vec::with_capacity(SAVE_HEADER_LEN + payload.len());
     bytes.extend_from_slice(&SAVE_MAGIC);
     bytes.extend_from_slice(&SAVE_FORMAT_VERSION.to_le_bytes());
@@ -137,7 +138,12 @@ mod tests {
         )
     }
 
-    fn spawn_agent(world: &mut World, event_log: &mut EventLog, tick: Tick, name: &str) -> EntityId {
+    fn spawn_agent(
+        world: &mut World,
+        event_log: &mut EventLog,
+        tick: Tick,
+        name: &str,
+    ) -> EntityId {
         let mut txn = new_txn(world, tick, CauseRef::Bootstrap);
         let agent = txn.create_agent(name, ControlSource::Ai).unwrap();
         let _ = txn.commit(event_log);
@@ -151,7 +157,10 @@ mod tests {
     ) -> (EntityId, ReservationId) {
         let mut txn = new_txn(world, Tick(2), CauseRef::Bootstrap);
         let item = txn
-            .create_item_lot(worldwake_core::CommodityKind::Bread, worldwake_core::Quantity(2))
+            .create_item_lot(
+                worldwake_core::CommodityKind::Bread,
+                worldwake_core::Quantity(2),
+            )
             .unwrap();
         let reservation = txn
             .try_reserve(item, reserver, TickRange::new(Tick(3), Tick(8)).unwrap())
@@ -165,7 +174,8 @@ mod tests {
         let mut event_log = EventLog::new();
         let actor = spawn_agent(&mut world, &mut event_log, Tick(0), "save-actor");
         let target = spawn_agent(&mut world, &mut event_log, Tick(1), "save-target");
-        let (reserved_item, reservation) = spawn_item_with_reservation(&mut world, &mut event_log, actor);
+        let (reserved_item, reservation) =
+            spawn_item_with_reservation(&mut world, &mut event_log, actor);
         let _ = event_log.emit(PendingEvent::new(
             Tick(3),
             CauseRef::SystemTick(Tick(3)),
@@ -179,9 +189,13 @@ mod tests {
         ));
 
         let mut scheduler = Scheduler::new_with_tick(Tick(3), SystemManifest::canonical());
-        let _ = scheduler
-            .input_queue_mut()
-            .enqueue(Tick(3), InputKind::SwitchControl { from: None, to: Some(actor) });
+        let _ = scheduler.input_queue_mut().enqueue(
+            Tick(3),
+            InputKind::SwitchControl {
+                from: None,
+                to: Some(actor),
+            },
+        );
         let _ = scheduler.input_queue_mut().enqueue(
             Tick(5),
             InputKind::RequestAction {

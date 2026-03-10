@@ -1,51 +1,54 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    AgentData, CommodityKind, Container, EntityId, EntityKind, FactId, ItemLot, Name, Permille,
-    Quantity, ReservationRecord, UniqueItem,
+    component_schema::with_authoritative_components, AgentData, CommodityKind, Container, EntityId,
+    EntityKind, FactId, ItemLot, Name, Permille, Quantity, ReservationRecord, UniqueItem,
+    WoundList,
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub enum ComponentKind {
-    Name,
-    AgentData,
-    ItemLot,
-    UniqueItem,
-    Container,
-}
-
-impl ComponentKind {
-    pub const ALL: [Self; 5] = [
-        Self::Name,
-        Self::AgentData,
-        Self::ItemLot,
-        Self::UniqueItem,
-        Self::Container,
-    ];
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum ComponentValue {
-    Name(Name),
-    AgentData(AgentData),
-    ItemLot(ItemLot),
-    UniqueItem(UniqueItem),
-    Container(Container),
-}
-
-impl ComponentValue {
-    #[must_use]
-    pub const fn kind(&self) -> ComponentKind {
-        match self {
-            Self::Name(_) => ComponentKind::Name,
-            Self::AgentData(_) => ComponentKind::AgentData,
-            Self::ItemLot(_) => ComponentKind::ItemLot,
-            Self::UniqueItem(_) => ComponentKind::UniqueItem,
-            Self::Container(_) => ComponentKind::Container,
+macro_rules! define_component_kind {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+        #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+        pub enum ComponentKind {
+            $($component_variant,)*
         }
-    }
+
+        impl ComponentKind {
+            pub const ALL: [Self; with_authoritative_components!(count_authoritative_components)] = [
+                $(Self::$component_variant,)*
+            ];
+        }
+    };
 }
+
+macro_rules! define_component_value {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+        #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+        pub enum ComponentValue {
+            $($component_variant($component_ty),)*
+        }
+
+        impl ComponentValue {
+            #[must_use]
+            pub const fn kind(&self) -> ComponentKind {
+                match self {
+                    $(Self::$component_variant(_) => ComponentKind::$component_variant,)*
+                }
+            }
+        }
+    };
+}
+
+macro_rules! count_authoritative_components {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+        <[()]>::len(&[$(count_authoritative_components!(@replace $component_variant)),*])
+    };
+    (@replace $component_variant:ident) => { () };
+}
+
+with_authoritative_components!(define_component_kind);
+with_authoritative_components!(define_component_value);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum RelationKind {
@@ -210,9 +213,10 @@ mod tests {
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId, FactId,
-        ItemLot, LoadUnits, LotOperation, Name, Permille, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, Tick, TickRange, UniqueItem, UniqueItemKind,
+        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
+        EntityKind, EventId, FactId, ItemLot, LoadUnits, LotOperation, Name, Permille,
+        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, Tick, TickRange, UniqueItem,
+        UniqueItemKind, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -239,6 +243,14 @@ mod tests {
             ComponentValue::Name(Name("Aster".to_string())),
             ComponentValue::AgentData(AgentData {
                 control_source: ControlSource::Ai,
+            }),
+            ComponentValue::WoundList(WoundList {
+                wounds: vec![Wound {
+                    body_part: BodyPart::Head,
+                    cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                    severity: Permille::new(900).unwrap(),
+                    inflicted_at: Tick(5),
+                }],
             }),
             ComponentValue::ItemLot(ItemLot {
                 commodity: CommodityKind::Grain,
@@ -342,6 +354,7 @@ mod tests {
             [
                 ComponentKind::Name,
                 ComponentKind::AgentData,
+                ComponentKind::WoundList,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,

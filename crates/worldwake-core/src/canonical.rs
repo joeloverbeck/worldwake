@@ -97,7 +97,9 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         );
-        let _ = txn.create_agent("hash-agent", crate::ControlSource::Ai).unwrap();
+        let _ = txn
+            .create_agent("hash-agent", crate::ControlSource::Ai)
+            .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
         world
@@ -143,7 +145,10 @@ mod tests {
     fn hash_bytes_matches_direct_blake3_output() {
         let bytes = b"worldwake";
 
-        assert_eq!(hash_bytes(bytes), StateHash(*blake3::hash(bytes).as_bytes()));
+        assert_eq!(
+            hash_bytes(bytes),
+            StateHash(*blake3::hash(bytes).as_bytes())
+        );
     }
 
     #[test]
@@ -183,11 +188,16 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         );
-        let _ = txn.create_agent("second-agent", crate::ControlSource::Ai).unwrap();
+        let _ = txn
+            .create_agent("second-agent", crate::ControlSource::Ai)
+            .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
 
-        assert_ne!(hash_world(&original).unwrap(), hash_world(&changed).unwrap());
+        assert_ne!(
+            hash_world(&original).unwrap(),
+            hash_world(&changed).unwrap()
+        );
     }
 
     #[test]
@@ -195,7 +205,10 @@ mod tests {
         let left = populated_event_log();
         let right = left.clone();
 
-        assert_eq!(hash_event_log(&left).unwrap(), hash_event_log(&right).unwrap());
+        assert_eq!(
+            hash_event_log(&left).unwrap(),
+            hash_event_log(&right).unwrap()
+        );
     }
 
     #[test]

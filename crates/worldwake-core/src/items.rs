@@ -158,9 +158,7 @@ impl UniqueItemKind {
     pub const fn spec(self) -> UniqueItemKindSpec {
         match self {
             Self::SimpleTool | Self::Artifact => UniqueItemKindSpec {
-                physical_profile: UniqueItemPhysicalProfile {
-                    load: LoadUnits(5),
-                },
+                physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(5) },
             },
             Self::Weapon => UniqueItemKindSpec {
                 physical_profile: UniqueItemPhysicalProfile {
@@ -168,19 +166,13 @@ impl UniqueItemKind {
                 },
             },
             Self::Contract => UniqueItemKindSpec {
-                physical_profile: UniqueItemPhysicalProfile {
-                    load: LoadUnits(1),
-                },
+                physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(1) },
             },
             Self::OfficeInsignia => UniqueItemKindSpec {
-                physical_profile: UniqueItemPhysicalProfile {
-                    load: LoadUnits(2),
-                },
+                physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(2) },
             },
             Self::Misc => UniqueItemKindSpec {
-                physical_profile: UniqueItemPhysicalProfile {
-                    load: LoadUnits(3),
-                },
+                physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(3) },
             },
         }
     }
@@ -657,9 +649,7 @@ mod tests {
             (
                 UniqueItemKind::SimpleTool,
                 UniqueItemKindSpec {
-                    physical_profile: UniqueItemPhysicalProfile {
-                        load: LoadUnits(5),
-                    },
+                    physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(5) },
                 },
             ),
             (
@@ -673,33 +663,25 @@ mod tests {
             (
                 UniqueItemKind::Contract,
                 UniqueItemKindSpec {
-                    physical_profile: UniqueItemPhysicalProfile {
-                        load: LoadUnits(1),
-                    },
+                    physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(1) },
                 },
             ),
             (
                 UniqueItemKind::Artifact,
                 UniqueItemKindSpec {
-                    physical_profile: UniqueItemPhysicalProfile {
-                        load: LoadUnits(5),
-                    },
+                    physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(5) },
                 },
             ),
             (
                 UniqueItemKind::OfficeInsignia,
                 UniqueItemKindSpec {
-                    physical_profile: UniqueItemPhysicalProfile {
-                        load: LoadUnits(2),
-                    },
+                    physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(2) },
                 },
             ),
             (
                 UniqueItemKind::Misc,
                 UniqueItemKindSpec {
-                    physical_profile: UniqueItemPhysicalProfile {
-                        load: LoadUnits(3),
-                    },
+                    physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(3) },
                 },
             ),
         ];
@@ -712,17 +694,38 @@ mod tests {
 
     #[test]
     fn commodity_kind_specs_include_trade_category_mapping() {
-        assert_eq!(CommodityKind::Apple.spec().trade_category, TradeCategory::Food);
-        assert_eq!(CommodityKind::Grain.spec().trade_category, TradeCategory::Food);
-        assert_eq!(CommodityKind::Bread.spec().trade_category, TradeCategory::Food);
-        assert_eq!(CommodityKind::Water.spec().trade_category, TradeCategory::Water);
-        assert_eq!(CommodityKind::Firewood.spec().trade_category, TradeCategory::Fuel);
+        assert_eq!(
+            CommodityKind::Apple.spec().trade_category,
+            TradeCategory::Food
+        );
+        assert_eq!(
+            CommodityKind::Grain.spec().trade_category,
+            TradeCategory::Food
+        );
+        assert_eq!(
+            CommodityKind::Bread.spec().trade_category,
+            TradeCategory::Food
+        );
+        assert_eq!(
+            CommodityKind::Water.spec().trade_category,
+            TradeCategory::Water
+        );
+        assert_eq!(
+            CommodityKind::Firewood.spec().trade_category,
+            TradeCategory::Fuel
+        );
         assert_eq!(
             CommodityKind::Medicine.spec().trade_category,
             TradeCategory::Medicine
         );
-        assert_eq!(CommodityKind::Coin.spec().trade_category, TradeCategory::Coin);
-        assert_eq!(CommodityKind::Waste.spec().trade_category, TradeCategory::Waste);
+        assert_eq!(
+            CommodityKind::Coin.spec().trade_category,
+            TradeCategory::Coin
+        );
+        assert_eq!(
+            CommodityKind::Waste.spec().trade_category,
+            TradeCategory::Waste
+        );
     }
 
     #[test]

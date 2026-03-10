@@ -2,9 +2,9 @@
 
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
-    Container, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, ItemLot, LoadUnits,
-    LotOperation, Name, ProvenanceEntry, Quantity, RelationTables, Tick, Topology, UniqueItem,
-    UniqueItemKind, WorldError,
+    ComponentValue, Container, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, ItemLot,
+    LoadUnits, LotOperation, Name, ProvenanceEntry, Quantity, RelationTables, Tick, Topology,
+    UniqueItem, UniqueItemKind, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -17,8 +17,9 @@ mod reservations;
 mod social;
 
 macro_rules! world_component_api {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
         $(
+            #[allow(dead_code)]
             pub(crate) fn $insert_fn(
                 &mut self,
                 entity: EntityId,
@@ -79,6 +80,22 @@ macro_rules! world_component_api {
                 self.$query_fn().count()
             }
         )*
+    };
+}
+
+macro_rules! world_component_value_api {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+        pub(crate) fn component_values(&self, entity: EntityId) -> Vec<ComponentValue> {
+            let mut values = Vec::new();
+
+            $(
+                if let Some(value) = self.$get_fn(entity).cloned() {
+                    values.push(ComponentValue::$component_variant(value));
+                }
+            )*
+
+            values
+        }
     };
 }
 
@@ -529,16 +546,17 @@ impl World {
     }
 
     with_authoritative_components!(world_component_api);
+    with_authoritative_components!(world_component_value_api);
 }
 
 #[cfg(test)]
 mod tests {
     use super::World;
     use crate::{
-        AgentData, CommodityKind, Container, ControlSource, EntityId, EntityKind, EventId, FactId,
-        ItemLot, LoadUnits, LotOperation, Name, Permille, Place, PlaceTag, ProvenanceEntry,
-        Quantity, ReservationId, ReservationRecord, Tick, TickRange, Topology, UniqueItem,
-        UniqueItemKind, WorldError,
+        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
+        EntityKind, EventId, FactId, ItemLot, LoadUnits, LotOperation, Name, Permille, Place,
+        PlaceTag, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, Tick, TickRange,
+        Topology, UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -580,6 +598,17 @@ mod tests {
             allowed_commodities: None,
             allows_unique_items: true,
             allows_nested_containers: true,
+        }
+    }
+
+    fn sample_wound_list() -> WoundList {
+        WoundList {
+            wounds: vec![Wound {
+                body_part: BodyPart::Torso,
+                cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                severity: Permille::new(725).unwrap(),
+                inflicted_at: Tick(6),
+            }],
         }
     }
 
@@ -3577,6 +3606,18 @@ mod tests {
     }
 
     #[test]
+    fn insert_wound_list_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_wound_list(id, sample_wound_list())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
     fn insert_item_lot_on_non_item_lot_entity_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
@@ -3741,6 +3782,26 @@ mod tests {
     }
 
     #[test]
+    fn entities_with_wound_list_returns_live_entities() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let archived_agent = world.create_entity(EntityKind::Agent, Tick(2));
+
+        world
+            .insert_component_wound_list(agent, sample_wound_list())
+            .unwrap();
+        world
+            .insert_component_wound_list(archived_agent, sample_wound_list())
+            .unwrap();
+        world.archive_entity(archived_agent, Tick(3)).unwrap();
+
+        assert_eq!(
+            world.entities_with_wound_list().collect::<Vec<_>>(),
+            vec![agent]
+        );
+    }
+
+    #[test]
     fn query_agent_data_returns_sorted_pairs() {
         let mut world = World::new(Topology::new()).unwrap();
         let first = world.create_entity(EntityKind::Agent, Tick(1));
@@ -3772,6 +3833,37 @@ mod tests {
             pairs,
             vec![(first, ControlSource::Human), (second, ControlSource::Ai),]
         );
+    }
+
+    #[test]
+    fn query_wound_list_returns_sorted_pairs() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let first = world.create_entity(EntityKind::Agent, Tick(1));
+        let second = world.create_entity(EntityKind::Agent, Tick(2));
+
+        world
+            .insert_component_wound_list(first, sample_wound_list())
+            .unwrap();
+        world
+            .insert_component_wound_list(
+                second,
+                WoundList {
+                    wounds: vec![Wound {
+                        body_part: BodyPart::LeftLeg,
+                        cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
+                        severity: Permille::new(450).unwrap(),
+                        inflicted_at: Tick(8),
+                    }],
+                },
+            )
+            .unwrap();
+
+        let pairs = world
+            .query_wound_list()
+            .map(|(entity, wound_list)| (entity, wound_list.wounds.len()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(pairs, vec![(first, 1), (second, 1)]);
     }
 
     #[test]
@@ -3908,6 +4000,8 @@ mod tests {
         assert_eq!(world.query_name().count(), 0);
         assert_eq!(world.entities_with_agent_data().count(), 0);
         assert_eq!(world.query_agent_data().count(), 0);
+        assert_eq!(world.entities_with_wound_list().count(), 0);
+        assert_eq!(world.query_wound_list().count(), 0);
         assert_eq!(world.entities_with_item_lot().count(), 0);
         assert_eq!(world.query_item_lot().count(), 0);
         assert_eq!(world.entities_with_unique_item().count(), 0);
@@ -3948,6 +4042,12 @@ mod tests {
             )
             .unwrap();
         world
+            .insert_component_wound_list(live_named_agent, sample_wound_list())
+            .unwrap();
+        world
+            .insert_component_wound_list(archived_named_agent, sample_wound_list())
+            .unwrap();
+        world
             .insert_component_name(live_named_office, Name("Ledger Hall".to_string()))
             .unwrap();
         world.archive_entity(archived_named_agent, Tick(4)).unwrap();
@@ -3955,6 +4055,7 @@ mod tests {
         assert_eq!(world.entity_count(), 4);
         assert_eq!(world.count_with_name(), 2);
         assert_eq!(world.count_with_agent_data(), 1);
+        assert_eq!(world.count_with_wound_list(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
         assert_eq!(world.count_with_unique_item(), 0);
         assert_eq!(world.count_with_container(), 0);
@@ -4051,6 +4152,7 @@ mod tests {
         for place_id in [entity(2), entity(5)] {
             assert_eq!(world.get_component_name(place_id), None);
             assert_eq!(world.get_component_agent_data(place_id), None);
+            assert_eq!(world.get_component_wound_list(place_id), None);
             assert_eq!(world.get_component_item_lot(place_id), None);
             assert_eq!(world.get_component_unique_item(place_id), None);
         }

@@ -102,15 +102,14 @@ mod tests {
         reset_calls();
 
         for system_id in SystemId::ALL {
-            table
-                .get(system_id)(SystemExecutionContext {
-                    world: &mut world,
-                    event_log: &mut event_log,
-                    rng: &mut rng,
-                    tick: Tick(3),
-                    system_id,
-                })
-                .unwrap();
+            table.get(system_id)(SystemExecutionContext {
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+                tick: Tick(3),
+                system_id,
+            })
+            .unwrap();
         }
 
         assert_eq!(*calls().lock().unwrap(), SystemId::ALL);
@@ -124,15 +123,14 @@ mod tests {
         let mut rng = DeterministicRng::new(Seed([5; 32]));
 
         for system_id in SystemId::ALL {
-            table
-                .get(system_id)(SystemExecutionContext {
-                    world: &mut world,
-                    event_log: &mut event_log,
-                    rng: &mut rng,
-                    tick: Tick(11),
-                    system_id,
-                })
-                .unwrap();
+            table.get(system_id)(SystemExecutionContext {
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+                tick: Tick(11),
+                system_id,
+            })
+            .unwrap();
         }
 
         assert!(event_log.is_empty());

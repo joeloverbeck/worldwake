@@ -163,7 +163,10 @@ mod tests {
     #[test]
     fn unique_item_load_table_matches_item_physical_profiles() {
         for kind in UniqueItemKind::ALL {
-            assert_eq!(load_of_unique_item_kind(kind), kind.spec().physical_profile.load);
+            assert_eq!(
+                load_of_unique_item_kind(kind),
+                kind.spec().physical_profile.load
+            );
         }
 
         assert_eq!(

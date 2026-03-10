@@ -73,8 +73,7 @@ impl SystemManifest {
     }
 
     pub fn canonical() -> Self {
-        Self::new(SystemId::ALL)
-        .expect("canonical system order must not contain duplicates")
+        Self::new(SystemId::ALL).expect("canonical system order must not contain duplicates")
     }
 
     pub fn ordered_ids(&self) -> &[SystemId] {
@@ -161,8 +160,8 @@ mod tests {
 
     #[test]
     fn manifest_rejects_duplicate_system_ids() {
-        let err = SystemManifest::new([SystemId::Needs, SystemId::Trade, SystemId::Needs])
-            .unwrap_err();
+        let err =
+            SystemManifest::new([SystemId::Needs, SystemId::Trade, SystemId::Needs]).unwrap_err();
 
         assert_eq!(err, SystemManifestError::DuplicateSystemId(SystemId::Needs));
         assert_eq!(err.to_string(), "duplicate system id in manifest: needs");
@@ -171,8 +170,7 @@ mod tests {
     #[test]
     fn manifest_preserves_insertion_order() {
         let manifest =
-            SystemManifest::new([SystemId::Combat, SystemId::Needs, SystemId::Perception])
-                .unwrap();
+            SystemManifest::new([SystemId::Combat, SystemId::Needs, SystemId::Perception]).unwrap();
 
         assert_eq!(
             manifest.ordered_ids(),

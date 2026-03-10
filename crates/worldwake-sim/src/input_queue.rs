@@ -198,10 +198,7 @@ mod tests {
         assert_eq!(third.sequence_no, 2);
         assert_eq!(queue.len(), 3);
         assert_eq!(queue.next_sequence_no(), 3);
-        assert_eq!(
-            queue.peek_tick(Tick(5)),
-            &[first.clone(), second.clone()]
-        );
+        assert_eq!(queue.peek_tick(Tick(5)), &[first.clone(), second.clone()]);
         assert_eq!(queue.peek_tick(Tick(3)), &[third]);
     }
 
@@ -312,7 +309,10 @@ mod tests {
 
         let iterated = queue.iter().cloned().collect::<Vec<_>>();
 
-        assert_eq!(iterated, vec![early_tick_first, early_tick_second, late_tick]);
+        assert_eq!(
+            iterated,
+            vec![early_tick_first, early_tick_second, late_tick]
+        );
     }
 
     #[test]
@@ -348,7 +348,10 @@ mod tests {
 
         assert_eq!(queue.next_sequence_no(), 10);
         assert_eq!(queue.peek_tick(Tick(2)), &[recorded[1].clone()]);
-        assert_eq!(queue.peek_tick(Tick(4)), &[recorded[0].clone(), recorded[2].clone()]);
+        assert_eq!(
+            queue.peek_tick(Tick(4)),
+            &[recorded[0].clone(), recorded[2].clone()]
+        );
     }
 
     #[test]
@@ -410,6 +413,9 @@ mod tests {
 
         let iterated = queue.iter_in_sequence_order().cloned().collect::<Vec<_>>();
 
-        assert_eq!(iterated, vec![late_tick, early_tick_first, early_tick_second]);
+        assert_eq!(
+            iterated,
+            vec![late_tick, early_tick_first, early_tick_second]
+        );
     }
 }

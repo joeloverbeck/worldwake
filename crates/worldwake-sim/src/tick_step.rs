@@ -1,9 +1,9 @@
+use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     get_affordances, ActionDefId, ActionDefRegistry, ActionError, ActionExecutionContext,
-    ActionHandlerRegistry, ActionInstanceId, ControllerState, ControlError, DeterministicRng,
+    ActionHandlerRegistry, ActionInstanceId, ControlError, ControllerState, DeterministicRng,
     InputKind, Scheduler, SystemDispatchTable, SystemError, TickOutcome,
 };
-use crate::scheduler::SchedulerActionRuntime;
 use std::collections::BTreeSet;
 use std::fmt;
 use worldwake_core::{
@@ -141,7 +141,14 @@ fn process_inputs(
         inputs_processed = inputs_processed
             .checked_add(1)
             .expect("tick-step input counter overflowed");
-        let delta = apply_input(runtime, controller, tick, services, input.sequence_no, input.kind)?;
+        let delta = apply_input(
+            runtime,
+            controller,
+            tick,
+            services,
+            input.sequence_no,
+            input.kind,
+        )?;
         outcome.actions_started = outcome
             .actions_started
             .checked_add(delta.actions_started)
@@ -152,7 +159,11 @@ fn process_inputs(
             .expect("tick-step action-abort counter overflowed");
     }
 
-    Ok((inputs_processed, outcome.actions_started, outcome.actions_aborted))
+    Ok((
+        inputs_processed,
+        outcome.actions_started,
+        outcome.actions_aborted,
+    ))
 }
 
 fn apply_input(
@@ -175,21 +186,24 @@ fn apply_input(
             def_id,
             targets,
         } => {
-            let affordance = resolve_affordance(runtime.world, services.action_defs, actor, def_id, &targets)?;
-            runtime.scheduler.start_affordance(
-                &affordance,
-                SchedulerActionRuntime {
-                    action_defs: services.action_defs,
-                    action_handlers: services.action_handlers,
-                    world: runtime.world,
-                    event_log: runtime.event_log,
-                },
-                ActionExecutionContext {
-                    cause: CauseRef::ExternalInput(sequence_no),
-                    tick,
-                },
-            )
-            .map_err(TickStepError::Action)?;
+            let affordance =
+                resolve_affordance(runtime.world, services.action_defs, actor, def_id, &targets)?;
+            runtime
+                .scheduler
+                .start_affordance(
+                    &affordance,
+                    SchedulerActionRuntime {
+                        action_defs: services.action_defs,
+                        action_handlers: services.action_handlers,
+                        world: runtime.world,
+                        event_log: runtime.event_log,
+                    },
+                    ActionExecutionContext {
+                        cause: CauseRef::ExternalInput(sequence_no),
+                        tick,
+                    },
+                )
+                .map_err(TickStepError::Action)?;
             Ok(InputOutcome {
                 actions_started: 1,
                 actions_aborted: 0,
@@ -200,21 +214,23 @@ fn apply_input(
             action_instance_id,
         } => {
             validate_cancel_actor(runtime.scheduler, actor, action_instance_id)?;
-            runtime.scheduler.abort_active_action(
-                action_instance_id,
-                SchedulerActionRuntime {
-                    action_defs: services.action_defs,
-                    action_handlers: services.action_handlers,
-                    world: runtime.world,
-                    event_log: runtime.event_log,
-                },
-                ActionExecutionContext {
-                    cause: CauseRef::ExternalInput(sequence_no),
-                    tick,
-                },
-                format!("cancelled by input {sequence_no}"),
-            )
-            .map_err(TickStepError::Action)?;
+            runtime
+                .scheduler
+                .abort_active_action(
+                    action_instance_id,
+                    SchedulerActionRuntime {
+                        action_defs: services.action_defs,
+                        action_handlers: services.action_handlers,
+                        world: runtime.world,
+                        event_log: runtime.event_log,
+                    },
+                    ActionExecutionContext {
+                        cause: CauseRef::ExternalInput(sequence_no),
+                        tick,
+                    },
+                    format!("cancelled by input {sequence_no}"),
+                )
+                .map_err(TickStepError::Action)?;
             Ok(InputOutcome {
                 actions_started: 0,
                 actions_aborted: 1,
@@ -278,20 +294,22 @@ fn progress_active_actions(
     let mut actions_aborted = 0u32;
 
     for instance_id in active_action_ids {
-        match runtime.scheduler.tick_active_action(
-            instance_id,
-            SchedulerActionRuntime {
-                action_defs: services.action_defs,
-                action_handlers: services.action_handlers,
-                world: runtime.world,
-                event_log: runtime.event_log,
-            },
-            ActionExecutionContext {
-                cause: CauseRef::SystemTick(tick),
-                tick,
-            },
-        )
-        .map_err(TickStepError::Action)?
+        match runtime
+            .scheduler
+            .tick_active_action(
+                instance_id,
+                SchedulerActionRuntime {
+                    action_defs: services.action_defs,
+                    action_handlers: services.action_handlers,
+                    world: runtime.world,
+                    event_log: runtime.event_log,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(tick),
+                    tick,
+                },
+            )
+            .map_err(TickStepError::Action)?
         {
             TickOutcome::Continuing => {}
             TickOutcome::Committed => {
@@ -318,17 +336,22 @@ fn run_systems(
 ) -> Result<u32, TickStepError> {
     let mut systems_ran = 0u32;
 
-    for system_id in runtime.scheduler.system_manifest().ordered_ids().iter().copied() {
+    for system_id in runtime
+        .scheduler
+        .system_manifest()
+        .ordered_ids()
+        .iter()
+        .copied()
+    {
         let mut system_rng = rng.substream(tick, system_id, 0);
-        systems
-            .get(system_id)(crate::SystemExecutionContext {
-                world: runtime.world,
-                event_log: runtime.event_log,
-                rng: &mut system_rng,
-                tick,
-                system_id,
-            })
-            .map_err(|source| TickStepError::System { system_id, source })?;
+        systems.get(system_id)(crate::SystemExecutionContext {
+            world: runtime.world,
+            event_log: runtime.event_log,
+            rng: &mut system_rng,
+            tick,
+            system_id,
+        })
+        .map_err(|source| TickStepError::System { system_id, source })?;
         systems_ran = systems_ran
             .checked_add(1)
             .expect("tick-step system-run counter overflowed");
@@ -603,20 +626,22 @@ mod tests {
             build_state();
         let actor = controlled_actor(&controller);
 
-        scheduler
-            .input_queue_mut()
-            .enqueue(Tick(0), crate::InputKind::RequestAction {
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::RequestAction {
                 actor,
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
-            });
-        scheduler
-            .input_queue_mut()
-            .enqueue(Tick(0), crate::InputKind::RequestAction {
+            },
+        );
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::RequestAction {
                 actor,
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
-            });
+            },
+        );
 
         let result = step_tick(
             &mut world,
@@ -633,7 +658,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.inputs_processed, 2);
-        assert_eq!(hook_log().lock().unwrap().starts, vec![ActionDefId(1), ActionDefId(0)]);
+        assert_eq!(
+            hook_log().lock().unwrap().starts,
+            vec![ActionDefId(1), ActionDefId(0)]
+        );
     }
 
     #[test]
@@ -644,13 +672,14 @@ mod tests {
             build_state();
         let actor = controlled_actor(&controller);
 
-        scheduler
-            .input_queue_mut()
-            .enqueue(Tick(0), crate::InputKind::RequestAction {
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::RequestAction {
                 actor,
                 def_id: ActionDefId(99),
                 targets: Vec::new(),
-            });
+            },
+        );
 
         let error = step_tick(
             &mut world,
@@ -684,13 +713,14 @@ mod tests {
             build_state();
         let actor = controlled_actor(&controller);
 
-        scheduler
-            .input_queue_mut()
-            .enqueue(Tick(0), crate::InputKind::RequestAction {
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::RequestAction {
                 actor,
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
-            });
+            },
+        );
         step_tick(
             &mut world,
             &mut event_log,
@@ -706,12 +736,13 @@ mod tests {
         .unwrap();
         let action_id = *scheduler.active_actions().keys().next().unwrap();
 
-        scheduler
-            .input_queue_mut()
-            .enqueue(Tick(1), crate::InputKind::CancelAction {
+        scheduler.input_queue_mut().enqueue(
+            Tick(1),
+            crate::InputKind::CancelAction {
                 actor,
                 action_instance_id: action_id,
-            });
+            },
+        );
 
         let result = step_tick(
             &mut world,
@@ -741,12 +772,13 @@ mod tests {
         let wrong = entity(999);
         let replacement = entity(1000);
 
-        scheduler
-            .input_queue_mut()
-            .enqueue(Tick(0), crate::InputKind::SwitchControl {
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::SwitchControl {
                 from: Some(wrong),
                 to: Some(replacement),
-            });
+            },
+        );
 
         let error = step_tick(
             &mut world,
@@ -780,13 +812,14 @@ mod tests {
         let actor = controlled_actor(&controller);
 
         for _ in 0..3 {
-            scheduler
-                .input_queue_mut()
-                .enqueue(Tick(0), crate::InputKind::RequestAction {
+            scheduler.input_queue_mut().enqueue(
+                Tick(0),
+                crate::InputKind::RequestAction {
                     actor,
                     def_id: ActionDefId(0),
                     targets: Vec::new(),
-                });
+                },
+            );
         }
 
         step_tick(
@@ -805,7 +838,11 @@ mod tests {
 
         assert_eq!(
             hook_log().lock().unwrap().ticks,
-            vec![ActionInstanceId(0), ActionInstanceId(1), ActionInstanceId(2)]
+            vec![
+                ActionInstanceId(0),
+                ActionInstanceId(1),
+                ActionInstanceId(2)
+            ]
         );
     }
 
@@ -817,13 +854,14 @@ mod tests {
             build_state();
         let actor = controlled_actor(&controller);
 
-        scheduler
-            .input_queue_mut()
-            .enqueue(Tick(0), crate::InputKind::RequestAction {
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::RequestAction {
                 actor,
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
-            });
+            },
+        );
 
         let result = step_tick(
             &mut world,
@@ -874,13 +912,14 @@ mod tests {
         let (mut world_a, mut log_a, mut scheduler_a, mut controller_a, mut rng_a, defs, handlers) =
             build_state();
         let actor = controlled_actor(&controller_a);
-        scheduler_a
-            .input_queue_mut()
-            .enqueue(Tick(0), crate::InputKind::RequestAction {
+        scheduler_a.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::RequestAction {
                 actor,
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
-            });
+            },
+        );
 
         let mut world_b = world_a.clone();
         let mut log_b = log_a.clone();

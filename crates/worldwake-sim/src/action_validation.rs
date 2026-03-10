@@ -130,12 +130,14 @@ mod tests {
             let places = world.topology().place_ids().collect::<Vec<_>>();
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
-            let target = txn.create_container(worldwake_core::Container {
-                capacity: worldwake_core::LoadUnits(10),
-                allowed_commodities: None,
-                allows_unique_items: true,
-                allows_nested_containers: true,
-            }).unwrap();
+            let target = txn
+                .create_container(worldwake_core::Container {
+                    capacity: worldwake_core::LoadUnits(10),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                })
+                .unwrap();
             txn.set_ground_location(actor, places[0]).unwrap();
             txn.set_ground_location(target, places[0]).unwrap();
             commit_txn(txn);

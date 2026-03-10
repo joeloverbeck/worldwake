@@ -62,8 +62,12 @@ pub enum ReplayCheckpointError {
 impl fmt::Display for ReplayCheckpointError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Canonical(source) => write!(f, "failed to hash replay checkpoint state: {source}"),
-            Self::InputQueue(source) => write!(f, "failed to rebuild scheduler input queue: {source}"),
+            Self::Canonical(source) => {
+                write!(f, "failed to hash replay checkpoint state: {source}")
+            }
+            Self::InputQueue(source) => {
+                write!(f, "failed to rebuild scheduler input queue: {source}")
+            }
             Self::ReplayState(source) => write!(f, "failed to append replay checkpoint: {source}"),
         }
     }
@@ -156,11 +160,13 @@ pub fn record_tick_checkpoint(
 
     let event_log_hash = hash_event_log(state.event_log())?;
     let world_state_hash = hash_world(state.world())?;
-    state.replay_state_mut().record_checkpoint(ReplayCheckpoint {
-        tick,
-        event_log_hash,
-        world_state_hash,
-    })?;
+    state
+        .replay_state_mut()
+        .record_checkpoint(ReplayCheckpoint {
+            tick,
+            event_log_hash,
+            world_state_hash,
+        })?;
     Ok(true)
 }
 
@@ -371,20 +377,20 @@ mod tests {
         let mut state = initial_state.clone();
 
         if seed_initial_queue {
-            let _ = state
-                .scheduler_mut()
-                .input_queue_mut()
-                .enqueue(Tick(0), InputKind::SwitchControl {
+            let _ = state.scheduler_mut().input_queue_mut().enqueue(
+                Tick(0),
+                InputKind::SwitchControl {
                     from: Some(first),
                     to: Some(second),
-                });
-            let _ = state
-                .scheduler_mut()
-                .input_queue_mut()
-                .enqueue(Tick(0), InputKind::SwitchControl {
+                },
+            );
+            let _ = state.scheduler_mut().input_queue_mut().enqueue(
+                Tick(0),
+                InputKind::SwitchControl {
                     from: Some(second),
                     to: Some(first),
-                });
+                },
+            );
             *initial_state.scheduler_mut() = state.scheduler().clone();
             *initial_state.replay_state_mut() = ReplayState::new(
                 initial_state.replay_bootstrap_hash().unwrap(),
@@ -463,7 +469,10 @@ mod tests {
             .unwrap();
             let _ = record_tick_checkpoint(&mut state, result.tick).unwrap();
             let next_tick = state.scheduler().current_tick();
-            state.replay_state_mut().set_terminal_tick(next_tick).unwrap();
+            state
+                .replay_state_mut()
+                .set_terminal_tick(next_tick)
+                .unwrap();
         }
 
         let final_hash = state.replay_bootstrap_hash().unwrap();
@@ -480,7 +489,10 @@ mod tests {
         let action_handlers = ActionHandlerRegistry::new();
         let systems = deterministic_systems();
 
-        replay_and_verify(initial_state, services(&action_defs, &action_handlers, &systems))
+        replay_and_verify(
+            initial_state,
+            services(&action_defs, &action_handlers, &systems),
+        )
     }
 
     #[test]
@@ -553,7 +565,10 @@ mod tests {
         );
 
         assert!(!initial_state.scheduler().input_queue().is_empty());
-        assert_eq!(initial_state.scheduler().input_queue().next_sequence_no(), 2);
+        assert_eq!(
+            initial_state.scheduler().input_queue().next_sequence_no(),
+            2
+        );
 
         let final_hash = replay_with_recording(&initial_state).unwrap();
 
@@ -667,24 +682,33 @@ mod tests {
         let first_input = state
             .scheduler_mut()
             .input_queue_mut()
-            .enqueue(Tick(5), InputKind::SwitchControl {
-                from: Some(first),
-                to: Some(second),
-            })
+            .enqueue(
+                Tick(5),
+                InputKind::SwitchControl {
+                    from: Some(first),
+                    to: Some(second),
+                },
+            )
             .clone();
         let second_input = state
             .scheduler_mut()
             .input_queue_mut()
-            .enqueue(Tick(2), InputKind::SwitchControl {
-                from: Some(second),
-                to: Some(first),
-            })
+            .enqueue(
+                Tick(2),
+                InputKind::SwitchControl {
+                    from: Some(second),
+                    to: Some(first),
+                },
+            )
             .clone();
 
         let recorded = seed_replay_inputs_from_scheduler(&mut state).unwrap();
 
         assert_eq!(recorded, 2);
-        assert_eq!(state.replay_state().input_log(), &[first_input, second_input]);
+        assert_eq!(
+            state.replay_state().input_log(),
+            &[first_input, second_input]
+        );
     }
 
     #[test]

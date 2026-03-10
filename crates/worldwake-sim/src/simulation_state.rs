@@ -185,7 +185,9 @@ mod tests {
             VisibilitySpec::Hidden,
             WitnessData::default(),
         );
-        let _ = txn.create_agent("simulation-root-agent", ControlSource::Ai).unwrap();
+        let _ = txn
+            .create_agent("simulation-root-agent", ControlSource::Ai)
+            .unwrap();
         let _ = txn.commit(&mut event_log);
         (world, event_log)
     }
@@ -246,7 +248,10 @@ mod tests {
         assert_eq!(state.scheduler().current_tick(), Tick(4));
         assert_eq!(state.replay_state().terminal_tick(), Tick(4));
         assert_eq!(state.replay_state().input_log(), &[recordable_input(4, 0)]);
-        assert_eq!(state.controller_state().controlled_entity(), Some(entity(3)));
+        assert_eq!(
+            state.controller_state().controlled_entity(),
+            Some(entity(3))
+        );
         assert_eq!(state.rng_state(), &expected_rng);
     }
 

@@ -608,31 +608,7 @@ impl<'w> WorldTxn<'w> {
     fn component_deltas_after_create(&self, entity: EntityId) -> Vec<StateDelta> {
         let mut deltas = Vec::new();
 
-        for value in [
-            self.staged_world
-                .get_component_name(entity)
-                .cloned()
-                .map(ComponentValue::Name),
-            self.staged_world
-                .get_component_agent_data(entity)
-                .cloned()
-                .map(ComponentValue::AgentData),
-            self.staged_world
-                .get_component_item_lot(entity)
-                .cloned()
-                .map(ComponentValue::ItemLot),
-            self.staged_world
-                .get_component_unique_item(entity)
-                .cloned()
-                .map(ComponentValue::UniqueItem),
-            self.staged_world
-                .get_component_container(entity)
-                .cloned()
-                .map(ComponentValue::Container),
-        ]
-        .into_iter()
-        .flatten()
-        {
+        for value in self.staged_world.component_values(entity) {
             deltas.push(StateDelta::Component(ComponentDelta::Set {
                 entity,
                 component_kind: value.kind(),

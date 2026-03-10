@@ -21,7 +21,8 @@ macro_rules! with_authoritative_components {
                 query_name,
                 count_with_name,
                 "Name",
-                |_| true
+                |_| true,
+                Name
             }
             {
                 agents,
@@ -41,7 +42,29 @@ macro_rules! with_authoritative_components {
                 query_agent_data,
                 count_with_agent_data,
                 "AgentData",
-                |kind| kind == EntityKind::Agent
+                |kind| kind == EntityKind::Agent,
+                AgentData
+            }
+            {
+                wound_lists,
+                WoundList,
+                insert_wound_list,
+                get_wound_list,
+                get_wound_list_mut,
+                remove_wound_list,
+                has_wound_list,
+                iter_wound_lists,
+                insert_component_wound_list,
+                get_component_wound_list,
+                get_component_wound_list_mut,
+                remove_component_wound_list,
+                has_component_wound_list,
+                entities_with_wound_list,
+                query_wound_list,
+                count_with_wound_list,
+                "WoundList",
+                |kind| kind == EntityKind::Agent,
+                WoundList
             }
             {
                 item_lots,
@@ -61,7 +84,8 @@ macro_rules! with_authoritative_components {
                 query_item_lot,
                 count_with_item_lot,
                 "ItemLot",
-                |kind| kind == EntityKind::ItemLot
+                |kind| kind == EntityKind::ItemLot,
+                ItemLot
             }
             {
                 unique_items,
@@ -81,7 +105,8 @@ macro_rules! with_authoritative_components {
                 query_unique_item,
                 count_with_unique_item,
                 "UniqueItem",
-                |kind| kind == EntityKind::UniqueItem
+                |kind| kind == EntityKind::UniqueItem,
+                UniqueItem
             }
             {
                 containers,
@@ -101,7 +126,8 @@ macro_rules! with_authoritative_components {
                 query_container,
                 count_with_container,
                 "Container",
-                |kind| kind == EntityKind::Container
+                |kind| kind == EntityKind::Container,
+                Container
             }
         }
     };
