@@ -2,12 +2,11 @@
 
 use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
-    ComponentTables, ComponentValue, Container, DemandMemory, DeprivationExposure,
-    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
-    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-    MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry, Quantity,
-    RelationTables, ResourceSource, Tick, Topology, UniqueItem, UniqueItemKind,
-    WorkstationMarker, WorldError, WoundList,
+    ComponentTables, ComponentValue, Container, DemandMemory, DeprivationExposure, DriveThresholds,
+    EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge,
+    ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology,
+    TradeDispositionProfile, UniqueItem, UniqueItemKind, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -556,15 +555,17 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        build_prototype_world, AgentData, BodyPart, CarryCapacity, CommodityKind, Container,
-        ControlSource, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds,
-        EntityId, EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-        Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, ResourceSource,
-        test_utils::{sample_demand_memory, sample_merchandise_profile},
-        Tick, TickRange, Topology, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        build_prototype_world,
+        test_utils::{
+            sample_demand_memory, sample_merchandise_profile, sample_trade_disposition_profile,
+        },
+        AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DemandMemory,
+        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
+        FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+        MerchandiseProfile, MetabolismProfile, Name, Permille, Place, PlaceTag, ProductionJob,
+        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
+        TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -4026,6 +4027,33 @@ mod tests {
     }
 
     #[test]
+    fn trade_disposition_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_trade_disposition_profile();
+
+        world
+            .insert_component_trade_disposition_profile(agent, profile.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_trade_disposition_profile(agent),
+            Some(&profile)
+        );
+        assert!(world.has_component_trade_disposition_profile(agent));
+        assert_eq!(
+            world.query_trade_disposition_profile().collect::<Vec<_>>(),
+            vec![(agent, &profile)]
+        );
+        assert_eq!(world.count_with_trade_disposition_profile(), 1);
+
+        let removed = world
+            .remove_component_trade_disposition_profile(agent)
+            .unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_trade_disposition_profile(agent), None);
+    }
+
+    #[test]
     fn workstation_marker_component_roundtrip_on_facility() {
         let mut world = World::new(Topology::new()).unwrap();
         let facility = world.create_entity(EntityKind::Facility, Tick(1));
@@ -4085,6 +4113,26 @@ mod tests {
                 MerchandiseProfile {
                     sale_kinds: BTreeSet::from([CommodityKind::Bread]),
                     home_market: None,
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_trade_disposition_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_trade_disposition_profile(
+                id,
+                TradeDispositionProfile {
+                    negotiation_round_ticks: NonZeroU32::new(4).unwrap(),
+                    initial_offer_bias: Permille::new(500).unwrap(),
+                    concession_rate: Permille::new(100).unwrap(),
+                    demand_memory_retention_ticks: 60,
                 },
             )
             .unwrap_err();

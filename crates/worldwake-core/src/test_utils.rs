@@ -5,9 +5,10 @@
 
 use crate::{
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
-    MerchandiseProfile, Quantity, Seed, Tick,
+    MerchandiseProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile,
 };
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 /// Returns a fixed, well-known seed for deterministic test scenarios.
 pub fn deterministic_seed() -> Seed {
@@ -44,5 +45,15 @@ pub fn sample_merchandise_profile() -> MerchandiseProfile {
     MerchandiseProfile {
         sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Water]),
         home_market: Some(entity_id(7, 2)),
+    }
+}
+
+/// Returns a representative trade disposition fixture for authoritative component tests.
+pub fn sample_trade_disposition_profile() -> TradeDispositionProfile {
+    TradeDispositionProfile {
+        negotiation_round_ticks: NonZeroU32::new(6).unwrap(),
+        initial_offer_bias: Permille::new(650).unwrap(),
+        concession_rate: Permille::new(125).unwrap(),
+        demand_memory_retention_ticks: 240,
     }
 }

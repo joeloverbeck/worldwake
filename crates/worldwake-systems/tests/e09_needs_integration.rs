@@ -419,6 +419,7 @@ fn authoritative_schema_includes_expected_shared_and_e09_components_and_fields()
             ComponentKind::CarryCapacity,
             ComponentKind::KnownRecipes,
             ComponentKind::DemandMemory,
+            ComponentKind::TradeDispositionProfile,
             ComponentKind::MerchandiseProfile,
             ComponentKind::WorkstationMarker,
             ComponentKind::ResourceSource,

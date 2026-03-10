@@ -1,8 +1,9 @@
 //! Trade-domain authoritative components and shared schema.
 
-use crate::{CommodityKind, Component, EntityId, Quantity, Tick};
+use crate::{CommodityKind, Component, EntityId, Permille, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 /// Concrete merchant sale intent for an agent.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -20,6 +21,17 @@ pub struct DemandMemory {
 }
 
 impl Component for DemandMemory {}
+
+/// Per-agent negotiation pacing, opening stance, and demand-memory retention.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TradeDispositionProfile {
+    pub negotiation_round_ticks: NonZeroU32,
+    pub initial_offer_bias: Permille,
+    pub concession_rate: Permille,
+    pub demand_memory_retention_ticks: u32,
+}
+
+impl Component for TradeDispositionProfile {}
 
 /// A single unmet-demand or missed-sale observation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -45,9 +57,12 @@ pub enum DemandObservationReason {
 mod tests {
     use super::{
         DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
+        TradeDispositionProfile,
     };
     use crate::{
-        test_utils::{sample_demand_observation, sample_merchandise_profile},
+        test_utils::{
+            sample_demand_observation, sample_merchandise_profile, sample_trade_disposition_profile,
+        },
         traits::Component,
     };
     use serde::{de::DeserializeOwned, Serialize};
@@ -85,6 +100,12 @@ mod tests {
     }
 
     #[test]
+    fn trade_disposition_profile_component_bounds() {
+        assert_component_bounds::<TradeDispositionProfile>();
+        assert_value_bounds::<TradeDispositionProfile>();
+    }
+
+    #[test]
     fn demand_observation_roundtrips_through_bincode() {
         let observation = sample_demand_observation();
 
@@ -97,5 +118,15 @@ mod tests {
     #[test]
     fn demand_observation_reason_value_bounds() {
         assert_copy_value_bounds::<DemandObservationReason>();
+    }
+
+    #[test]
+    fn trade_disposition_profile_roundtrips_through_bincode() {
+        let profile = sample_trade_disposition_profile();
+
+        let bytes = bincode::serialize(&profile).unwrap();
+        let roundtrip: TradeDispositionProfile = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, profile);
     }
 }

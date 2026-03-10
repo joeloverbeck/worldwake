@@ -255,6 +255,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                trade_disposition_profiles,
+                TradeDispositionProfile,
+                insert_trade_disposition_profile,
+                get_trade_disposition_profile,
+                get_trade_disposition_profile_mut,
+                remove_trade_disposition_profile,
+                has_trade_disposition_profile,
+                iter_trade_disposition_profiles,
+                insert_component_trade_disposition_profile,
+                get_component_trade_disposition_profile,
+                get_component_trade_disposition_profile_mut,
+                remove_component_trade_disposition_profile,
+                has_component_trade_disposition_profile,
+                entities_with_trade_disposition_profile,
+                query_trade_disposition_profile,
+                count_with_trade_disposition_profile,
+                "TradeDispositionProfile",
+                |kind| kind == EntityKind::Agent,
+                TradeDispositionProfile,
+                crate::TradeDispositionProfile,
+                set_component_trade_disposition_profile,
+                clear_component_trade_disposition_profile,
+                txn_simple_set
+            }
+            {
                 merchandise_profiles,
                 MerchandiseProfile,
                 insert_merchandise_profile,
