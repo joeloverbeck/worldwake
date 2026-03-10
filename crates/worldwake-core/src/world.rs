@@ -4,9 +4,9 @@ use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
     ComponentTables, ComponentValue, Container, DeprivationExposure, DriveThresholds,
     EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge,
-    ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name, ProvenanceEntry,
-    Quantity, RelationTables, ResourceSource, Tick, Topology, UniqueItem, UniqueItemKind,
-    WorldError, WoundList,
+    ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name, ProductionJob,
+    ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology, UniqueItem,
+    UniqueItemKind, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -558,9 +558,10 @@ mod tests {
         build_prototype_world, AgentData, BodyPart, CarryCapacity, CommodityKind, Container,
         ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MetabolismProfile, Name, Permille, Place, PlaceTag, ProvenanceEntry,
-        Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, Topology,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause, WoundList,
+        LotOperation, MetabolismProfile, Name, Permille, Place, PlaceTag, ProductionJob,
+        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
+        TickRange, Topology, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3975,6 +3976,23 @@ mod tests {
     }
 
     #[test]
+    fn workstation_marker_component_roundtrip_on_facility() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let marker = WorkstationMarker(WorkstationTag::Forge);
+
+        world
+            .insert_component_workstation_marker(facility, marker)
+            .unwrap();
+        assert_eq!(world.get_component_workstation_marker(facility), Some(&marker));
+        assert!(world.has_component_workstation_marker(facility));
+
+        let removed = world.remove_component_workstation_marker(facility).unwrap();
+        assert_eq!(removed, Some(marker));
+        assert_eq!(world.get_component_workstation_marker(facility), None);
+    }
+
+    #[test]
     fn insert_known_recipes_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Facility, Tick(1));
@@ -3987,12 +4005,66 @@ mod tests {
     }
 
     #[test]
+    fn production_job_component_roundtrip_on_facility() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let job = ProductionJob {
+            recipe_id: crate::RecipeId(4),
+            worker: entity(7),
+            staged_inputs_container: entity(8),
+            progress_ticks: 12,
+        };
+
+        world
+            .insert_component_production_job(facility, job.clone())
+            .unwrap();
+        assert_eq!(world.get_component_production_job(facility), Some(&job));
+        assert!(world.has_component_production_job(facility));
+
+        let removed = world.remove_component_production_job(facility).unwrap();
+        assert_eq!(removed, Some(job));
+        assert_eq!(world.get_component_production_job(facility), None);
+    }
+
+    #[test]
     fn insert_carry_capacity_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Facility, Tick(1));
 
         let err = world
             .insert_component_carry_capacity(id, CarryCapacity(LoadUnits(9)))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_workstation_marker_on_non_facility_errors() {
+        let mut world = World::new(test_topology()).unwrap();
+        let id = entity(2);
+
+        let err = world
+            .insert_component_workstation_marker(id, WorkstationMarker(WorkstationTag::Mill))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_production_job_on_non_facility_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_production_job(
+                id,
+                ProductionJob {
+                    recipe_id: crate::RecipeId(6),
+                    worker: entity(3),
+                    staged_inputs_container: entity(4),
+                    progress_ticks: 2,
+                },
+            )
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

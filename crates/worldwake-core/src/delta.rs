@@ -4,7 +4,8 @@ use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
     Container, DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MetabolismProfile, Name, Permille,
-    Quantity, ReservationRecord, ResourceSource, UniqueItem, WoundList,
+    ProductionJob, Quantity, ReservationRecord, ResourceSource, UniqueItem, WorkstationMarker,
+    WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -217,9 +218,10 @@ mod tests {
         AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
         FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-        MetabolismProfile, Name, Permille, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem,
-        UniqueItemKind, Wound, WoundCause, WoundList,
+        MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity,
+        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
+        WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -275,12 +277,19 @@ mod tests {
                 crate::RecipeId(2),
                 crate::RecipeId(7),
             ])),
+            ComponentValue::WorkstationMarker(WorkstationMarker(WorkstationTag::Forge)),
             ComponentValue::ResourceSource(ResourceSource {
                 commodity: CommodityKind::Apple,
                 available_quantity: Quantity(6),
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(4).unwrap()),
                 last_regeneration_tick: Some(Tick(12)),
+            }),
+            ComponentValue::ProductionJob(ProductionJob {
+                recipe_id: crate::RecipeId(3),
+                worker: entity(24),
+                staged_inputs_container: entity(25),
+                progress_ticks: 9,
             }),
             ComponentValue::InTransitOnEdge(InTransitOnEdge {
                 edge_id: TravelEdgeId(4),
@@ -398,7 +407,9 @@ mod tests {
                 ComponentKind::MetabolismProfile,
                 ComponentKind::CarryCapacity,
                 ComponentKind::KnownRecipes,
+                ComponentKind::WorkstationMarker,
                 ComponentKind::ResourceSource,
+                ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,

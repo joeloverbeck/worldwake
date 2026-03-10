@@ -2119,6 +2119,37 @@ mod tests {
     }
 
     #[test]
+    fn set_component_workstation_marker_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let before = crate::WorkstationMarker(crate::WorkstationTag::Mill);
+        let after = crate::WorkstationMarker(crate::WorkstationTag::Forge);
+        world
+            .insert_component_workstation_marker(facility, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_workstation_marker(facility, after).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: facility,
+                component_kind: ComponentKind::WorkstationMarker,
+                before: Some(ComponentValue::WorkstationMarker(before)),
+                after: ComponentValue::WorkstationMarker(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_workstation_marker(facility), Some(&after));
+    }
+
+    #[test]
     fn set_component_in_transit_on_edge_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -2162,6 +2193,48 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_in_transit_on_edge(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_production_job_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let before = crate::ProductionJob {
+            recipe_id: crate::RecipeId(3),
+            worker: entity(9),
+            staged_inputs_container: entity(10),
+            progress_ticks: 4,
+        };
+        let after = crate::ProductionJob {
+            recipe_id: crate::RecipeId(7),
+            worker: entity(11),
+            staged_inputs_container: entity(12),
+            progress_ticks: 8,
+        };
+        world
+            .insert_component_production_job(facility, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_production_job(facility, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: facility,
+                component_kind: ComponentKind::ProductionJob,
+                before: Some(ComponentValue::ProductionJob(before)),
+                after: ComponentValue::ProductionJob(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_production_job(facility), Some(&after));
     }
 
     #[test]
@@ -2227,6 +2300,35 @@ mod tests {
     }
 
     #[test]
+    fn clear_component_workstation_marker_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let before = crate::WorkstationMarker(crate::WorkstationTag::Forge);
+        world
+            .insert_component_workstation_marker(facility, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_workstation_marker(facility).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: facility,
+                component_kind: ComponentKind::WorkstationMarker,
+                before: ComponentValue::WorkstationMarker(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_workstation_marker(facility), None);
+    }
+
+    #[test]
     fn clear_component_in_transit_on_edge_records_removed_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -2261,6 +2363,40 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_in_transit_on_edge(agent), None);
+    }
+
+    #[test]
+    fn clear_component_production_job_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let before = crate::ProductionJob {
+            recipe_id: crate::RecipeId(5),
+            worker: entity(13),
+            staged_inputs_container: entity(14),
+            progress_ticks: 6,
+        };
+        world
+            .insert_component_production_job(facility, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_production_job(facility).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: facility,
+                component_kind: ComponentKind::ProductionJob,
+                before: ComponentValue::ProductionJob(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_production_job(facility), None);
     }
 
     #[test]

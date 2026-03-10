@@ -6,7 +6,10 @@ use crate::{
     drives::DriveThresholds,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
-    production::{CarryCapacity, InTransitOnEdge, KnownRecipes, ResourceSource},
+    production::{
+        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
+        WorkstationMarker,
+    },
     wounds::WoundList,
     EntityId,
 };
@@ -105,9 +108,9 @@ mod tests {
         components::{AgentData, Name},
         BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DeprivationExposure,
         DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProvenanceEntry,
-        Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind, Wound,
-        WoundCause, WoundList,
+        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProductionJob,
+        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -132,7 +135,9 @@ mod tests {
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_known_recipes().count(), 0);
+        assert_eq!(tables.iter_workstation_markers().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
+        assert_eq!(tables.iter_production_jobs().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
@@ -292,9 +297,40 @@ mod tests {
     }
 
     #[test]
-    fn insert_and_get_in_transit_on_edge() {
+    fn insert_and_get_workstation_marker() {
         let mut tables = ComponentTables::default();
         let id = entity(22);
+        let marker = WorkstationMarker(WorkstationTag::Mill);
+
+        assert_eq!(tables.insert_workstation_marker(id, marker), None);
+        assert_eq!(tables.get_workstation_marker(id), Some(&marker));
+        assert!(tables.has_workstation_marker(id));
+        assert_eq!(tables.remove_workstation_marker(id), Some(marker));
+        assert_eq!(tables.get_workstation_marker(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_production_job() {
+        let mut tables = ComponentTables::default();
+        let id = entity(23);
+        let job = ProductionJob {
+            recipe_id: crate::RecipeId(6),
+            worker: entity(3),
+            staged_inputs_container: entity(8),
+            progress_ticks: 14,
+        };
+
+        assert_eq!(tables.insert_production_job(id, job.clone()), None);
+        assert_eq!(tables.get_production_job(id), Some(&job));
+        assert!(tables.has_production_job(id));
+        assert_eq!(tables.remove_production_job(id), Some(job));
+        assert_eq!(tables.get_production_job(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_in_transit_on_edge() {
+        let mut tables = ComponentTables::default();
+        let id = entity(24);
         let transit = InTransitOnEdge {
             edge_id: TravelEdgeId(5),
             origin: entity(2),
@@ -378,6 +414,16 @@ mod tests {
         tables.insert_metabolism_profile(id, MetabolismProfile::default());
         tables.insert_carry_capacity(id, CarryCapacity(LoadUnits(7)));
         tables.insert_known_recipes(id, KnownRecipes::with([crate::RecipeId(8)]));
+        tables.insert_workstation_marker(id, WorkstationMarker(WorkstationTag::Forge));
+        tables.insert_production_job(
+            id,
+            ProductionJob {
+                recipe_id: crate::RecipeId(9),
+                worker: entity(11),
+                staged_inputs_container: entity(12),
+                progress_ticks: 5,
+            },
+        );
         tables.insert_item_lot(
             id,
             ItemLot {

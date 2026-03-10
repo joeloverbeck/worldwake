@@ -230,6 +230,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                workstation_markers,
+                WorkstationMarker,
+                insert_workstation_marker,
+                get_workstation_marker,
+                get_workstation_marker_mut,
+                remove_workstation_marker,
+                has_workstation_marker,
+                iter_workstation_markers,
+                insert_component_workstation_marker,
+                get_component_workstation_marker,
+                get_component_workstation_marker_mut,
+                remove_component_workstation_marker,
+                has_component_workstation_marker,
+                entities_with_workstation_marker,
+                query_workstation_marker,
+                count_with_workstation_marker,
+                "WorkstationMarker",
+                |kind| kind == EntityKind::Facility,
+                WorkstationMarker,
+                crate::WorkstationMarker,
+                set_component_workstation_marker,
+                clear_component_workstation_marker,
+                txn_simple_set
+            }
+            {
                 resource_sources,
                 ResourceSource,
                 insert_resource_source,
@@ -252,6 +277,31 @@ macro_rules! with_component_schema_entries {
                 crate::ResourceSource,
                 set_component_resource_source,
                 clear_component_resource_source,
+                txn_simple_set
+            }
+            {
+                production_jobs,
+                ProductionJob,
+                insert_production_job,
+                get_production_job,
+                get_production_job_mut,
+                remove_production_job,
+                has_production_job,
+                iter_production_jobs,
+                insert_component_production_job,
+                get_component_production_job,
+                get_component_production_job_mut,
+                remove_component_production_job,
+                has_component_production_job,
+                entities_with_production_job,
+                query_production_job,
+                count_with_production_job,
+                "ProductionJob",
+                |kind| kind == EntityKind::Facility,
+                ProductionJob,
+                crate::ProductionJob,
+                set_component_production_job,
+                clear_component_production_job,
                 txn_simple_set
             }
             {
@@ -585,6 +635,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                workstation_markers,
+                WorkstationMarker,
+                insert_workstation_marker,
+                get_workstation_marker,
+                get_workstation_marker_mut,
+                remove_workstation_marker,
+                has_workstation_marker,
+                iter_workstation_markers,
+                insert_component_workstation_marker,
+                get_component_workstation_marker,
+                get_component_workstation_marker_mut,
+                remove_component_workstation_marker,
+                has_component_workstation_marker,
+                entities_with_workstation_marker,
+                query_workstation_marker,
+                count_with_workstation_marker,
+                "WorkstationMarker",
+                |kind| kind == EntityKind::Facility,
+                WorkstationMarker,
+                crate::WorkstationMarker,
+                set_component_workstation_marker,
+                clear_component_workstation_marker,
+                txn_simple_set
+            }
+            {
                 resource_sources,
                 ResourceSource,
                 insert_resource_source,
@@ -607,6 +682,31 @@ macro_rules! with_component_schema_entries {
                 crate::ResourceSource,
                 set_component_resource_source,
                 clear_component_resource_source,
+                txn_simple_set
+            }
+            {
+                production_jobs,
+                ProductionJob,
+                insert_production_job,
+                get_production_job,
+                get_production_job_mut,
+                remove_production_job,
+                has_production_job,
+                iter_production_jobs,
+                insert_component_production_job,
+                get_component_production_job,
+                get_component_production_job_mut,
+                remove_component_production_job,
+                has_component_production_job,
+                entities_with_production_job,
+                query_production_job,
+                count_with_production_job,
+                "ProductionJob",
+                |kind| kind == EntityKind::Facility,
+                ProductionJob,
+                crate::ProductionJob,
+                set_component_production_job,
+                clear_component_production_job,
                 txn_simple_set
             }
             {

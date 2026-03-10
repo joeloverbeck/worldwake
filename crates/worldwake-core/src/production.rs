@@ -54,6 +54,12 @@ impl KnownRecipes {
 
 impl Component for KnownRecipes {}
 
+/// Marks a Facility entity as a workstation of a specific type.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct WorkstationMarker(pub WorkstationTag);
+
+impl Component for WorkstationMarker {}
+
 /// Maximum load an agent can carry.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct CarryCapacity(pub LoadUnits);
@@ -72,6 +78,17 @@ pub struct ResourceSource {
 
 impl Component for ResourceSource {}
 
+/// Persistent work-in-progress state on a workstation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProductionJob {
+    pub recipe_id: RecipeId,
+    pub worker: EntityId,
+    pub staged_inputs_container: EntityId,
+    pub progress_ticks: u32,
+}
+
+impl Component for ProductionJob {}
+
 /// Concrete route occupancy for an agent traveling along a topology edge.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InTransitOnEdge {
@@ -87,7 +104,8 @@ impl Component for InTransitOnEdge {}
 #[cfg(test)]
 mod tests {
     use super::{
-        CarryCapacity, InTransitOnEdge, KnownRecipes, RecipeId, ResourceSource, WorkstationTag,
+        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, RecipeId, ResourceSource,
+        WorkstationMarker, WorkstationTag,
     };
     use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
     use serde::{de::DeserializeOwned, Serialize};
@@ -120,8 +138,19 @@ mod tests {
     }
 
     #[test]
+    fn workstation_marker_trait_bounds() {
+        assert_bounds::<WorkstationMarker>();
+        assert_component_bounds::<WorkstationMarker>();
+    }
+
+    #[test]
     fn resource_source_trait_bounds() {
         assert_component_bounds::<ResourceSource>();
+    }
+
+    #[test]
+    fn production_job_trait_bounds() {
+        assert_component_bounds::<ProductionJob>();
     }
 
     #[test]
@@ -202,6 +231,16 @@ mod tests {
     }
 
     #[test]
+    fn workstation_marker_roundtrips_through_bincode() {
+        let marker = WorkstationMarker(WorkstationTag::Forge);
+
+        let bytes = bincode::serialize(&marker).unwrap();
+        let roundtrip: WorkstationMarker = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, marker);
+    }
+
+    #[test]
     fn workstation_tag_ordering_is_deterministic() {
         let mut reversed = WorkstationTag::ALL;
         reversed.reverse();
@@ -239,6 +278,27 @@ mod tests {
         let roundtrip: ResourceSource = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, source);
+    }
+
+    #[test]
+    fn production_job_roundtrips_through_bincode() {
+        let job = ProductionJob {
+            recipe_id: RecipeId(8),
+            worker: EntityId {
+                slot: 3,
+                generation: 0,
+            },
+            staged_inputs_container: EntityId {
+                slot: 4,
+                generation: 1,
+            },
+            progress_ticks: 11,
+        };
+
+        let bytes = bincode::serialize(&job).unwrap();
+        let roundtrip: ProductionJob = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, job);
     }
 
     #[test]
