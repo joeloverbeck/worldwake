@@ -151,6 +151,27 @@ macro_rules! with_authoritative_components {
                 MetabolismProfile
             }
             {
+                carry_capacities,
+                CarryCapacity,
+                insert_carry_capacity,
+                get_carry_capacity,
+                get_carry_capacity_mut,
+                remove_carry_capacity,
+                has_carry_capacity,
+                iter_carry_capacities,
+                insert_component_carry_capacity,
+                get_component_carry_capacity,
+                get_component_carry_capacity_mut,
+                remove_component_carry_capacity,
+                has_component_carry_capacity,
+                entities_with_carry_capacity,
+                query_carry_capacity,
+                count_with_carry_capacity,
+                "CarryCapacity",
+                |kind| kind == EntityKind::Agent,
+                CarryCapacity
+            }
+            {
                 resource_sources,
                 ResourceSource,
                 insert_resource_source,
@@ -170,6 +191,27 @@ macro_rules! with_authoritative_components {
                 "ResourceSource",
                 |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
                 ResourceSource
+            }
+            {
+                in_transit_on_edges,
+                InTransitOnEdge,
+                insert_in_transit_on_edge,
+                get_in_transit_on_edge,
+                get_in_transit_on_edge_mut,
+                remove_in_transit_on_edge,
+                has_in_transit_on_edge,
+                iter_in_transit_on_edges,
+                insert_component_in_transit_on_edge,
+                get_component_in_transit_on_edge,
+                get_component_in_transit_on_edge_mut,
+                remove_component_in_transit_on_edge,
+                has_component_in_transit_on_edge,
+                entities_with_in_transit_on_edge,
+                query_in_transit_on_edge,
+                count_with_in_transit_on_edge,
+                "InTransitOnEdge",
+                |kind| kind == EntityKind::Agent,
+                InTransitOnEdge
             }
             {
                 item_lots,
@@ -249,6 +291,7 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_name,
                 insert_component_name,
                 set_component_name,
+                clear_component_name,
                 Name
             }
             {
@@ -257,6 +300,7 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_agent_data,
                 insert_component_agent_data,
                 set_component_agent_data,
+                clear_component_agent_data,
                 AgentData
             }
             {
@@ -265,6 +309,7 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_wound_list,
                 insert_component_wound_list,
                 set_component_wound_list,
+                clear_component_wound_list,
                 WoundList
             }
             {
@@ -273,6 +318,7 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_drive_thresholds,
                 insert_component_drive_thresholds,
                 set_component_drive_thresholds,
+                clear_component_drive_thresholds,
                 DriveThresholds
             }
             {
@@ -281,6 +327,7 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_homeostatic_needs,
                 insert_component_homeostatic_needs,
                 set_component_homeostatic_needs,
+                clear_component_homeostatic_needs,
                 HomeostaticNeeds
             }
             {
@@ -289,6 +336,7 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_deprivation_exposure,
                 insert_component_deprivation_exposure,
                 set_component_deprivation_exposure,
+                clear_component_deprivation_exposure,
                 DeprivationExposure
             }
             {
@@ -297,7 +345,17 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_metabolism_profile,
                 insert_component_metabolism_profile,
                 set_component_metabolism_profile,
+                clear_component_metabolism_profile,
                 MetabolismProfile
+            }
+            {
+                crate::CarryCapacity,
+                get_component_carry_capacity,
+                remove_component_carry_capacity,
+                insert_component_carry_capacity,
+                set_component_carry_capacity,
+                clear_component_carry_capacity,
+                CarryCapacity
             }
             {
                 crate::ResourceSource,
@@ -305,7 +363,17 @@ macro_rules! with_txn_simple_set_components {
                 remove_component_resource_source,
                 insert_component_resource_source,
                 set_component_resource_source,
+                clear_component_resource_source,
                 ResourceSource
+            }
+            {
+                crate::InTransitOnEdge,
+                get_component_in_transit_on_edge,
+                remove_component_in_transit_on_edge,
+                insert_component_in_transit_on_edge,
+                set_component_in_transit_on_edge,
+                clear_component_in_transit_on_edge,
+                InTransitOnEdge
             }
         }
     };

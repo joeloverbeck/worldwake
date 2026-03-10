@@ -33,7 +33,7 @@ struct PlacementSnapshot {
 }
 
 macro_rules! world_txn_component_setters {
-    ($({ $component_ty:ty, $get_fn:ident, $remove_fn:ident, $insert_fn:ident, $set_fn:ident, $component_variant:ident })*) => {
+    ($({ $component_ty:ty, $get_fn:ident, $remove_fn:ident, $insert_fn:ident, $set_fn:ident, $clear_fn:ident, $component_variant:ident })*) => {
         $(
             pub fn $set_fn(
                 &mut self,
@@ -46,6 +46,16 @@ macro_rules! world_txn_component_setters {
                     |world, entity| world.$get_fn(entity).cloned(),
                     |world, entity| world.$remove_fn(entity),
                     |world, entity, component: $component_ty| world.$insert_fn(entity, component),
+                    ComponentKind::$component_variant,
+                    ComponentValue::$component_variant,
+                )
+            }
+
+            pub fn $clear_fn(&mut self, entity: EntityId) -> Result<(), WorldError> {
+                self.clear_simple_component(
+                    entity,
+                    |world, entity| world.$get_fn(entity).cloned(),
+                    |world, entity| world.$remove_fn(entity),
                     ComponentKind::$component_variant,
                     ComponentValue::$component_variant,
                 )
@@ -650,6 +660,37 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    fn clear_simple_component<T, Get, Remove, Wrap>(
+        &mut self,
+        entity: EntityId,
+        get: Get,
+        remove: Remove,
+        component_kind: ComponentKind,
+        wrap: Wrap,
+    ) -> Result<(), WorldError>
+    where
+        T: Clone,
+        Get: Fn(&World, EntityId) -> Option<T>,
+        Remove: Fn(&mut World, EntityId) -> Result<Option<T>, WorldError>,
+        Wrap: Fn(T) -> ComponentValue,
+    {
+        let Some(before) = get(&self.staged_world, entity) else {
+            return Ok(());
+        };
+
+        let removed = remove(&mut self.staged_world, entity)?
+            .expect("component read before removal must still exist during clear");
+        self.deltas
+            .push(StateDelta::Component(ComponentDelta::Removed {
+                entity,
+                component_kind,
+                before: wrap(removed),
+            }));
+        debug_assert!(get(&self.staged_world, entity).is_none());
+        debug_assert!(matches!(wrap(before).kind(), kind if kind == component_kind));
+        Ok(())
+    }
+
     with_txn_simple_set_components!(world_txn_component_setters);
 
     fn record_created_entity(&mut self, entity: EntityId, kind: EntityKind) {
@@ -1145,15 +1186,15 @@ impl Deref for WorldTxn<'_> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
-        QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
-        VisibilitySpec, WitnessData,
+        CauseRef, CarryCapacity, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
+        EventLog, EventTag, InTransitOnEdge, QuantityDelta, RelationDelta, RelationKind,
+        RelationValue, ReservationDelta, StateDelta, TravelEdgeId, VisibilitySpec, WitnessData,
     };
     use crate::{
-        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind, FactId,
-        HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity, ReservationId,
-        ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
-        WorldError,
+        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
+        FactId, HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity,
+        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, Topology,
+        UniqueItemKind, World, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2004,6 +2045,173 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_resource_source(facility), Some(&after));
+    }
+
+    #[test]
+    fn set_component_carry_capacity_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = CarryCapacity(LoadUnits(12));
+        let after = CarryCapacity(LoadUnits(18));
+        world
+            .insert_component_carry_capacity(agent, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_carry_capacity(agent, after).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::CarryCapacity,
+                before: Some(ComponentValue::CarryCapacity(before)),
+                after: ComponentValue::CarryCapacity(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_carry_capacity(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_in_transit_on_edge_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = InTransitOnEdge {
+            edge_id: TravelEdgeId(3),
+            origin: entity(1),
+            destination: entity(2),
+            departure_tick: Tick(5),
+            arrival_tick: Tick(11),
+        };
+        let after = InTransitOnEdge {
+            edge_id: TravelEdgeId(4),
+            origin: entity(2),
+            destination: entity(3),
+            departure_tick: Tick(12),
+            arrival_tick: Tick(18),
+        };
+        world
+            .insert_component_in_transit_on_edge(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_in_transit_on_edge(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::InTransitOnEdge,
+                before: Some(ComponentValue::InTransitOnEdge(before)),
+                after: ComponentValue::InTransitOnEdge(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_in_transit_on_edge(agent), Some(&after));
+    }
+
+    #[test]
+    fn clear_component_carry_capacity_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = CarryCapacity(LoadUnits(12));
+        world
+            .insert_component_carry_capacity(agent, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_carry_capacity(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::CarryCapacity,
+                before: ComponentValue::CarryCapacity(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_carry_capacity(agent), None);
+    }
+
+    #[test]
+    fn clear_component_in_transit_on_edge_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = InTransitOnEdge {
+            edge_id: TravelEdgeId(3),
+            origin: entity(1),
+            destination: entity(2),
+            departure_tick: Tick(5),
+            arrival_tick: Tick(11),
+        };
+        world
+            .insert_component_in_transit_on_edge(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_in_transit_on_edge(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::InTransitOnEdge,
+                before: ComponentValue::InTransitOnEdge(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_in_transit_on_edge(agent), None);
+    }
+
+    #[test]
+    fn clear_component_in_transit_on_edge_is_noop_when_component_is_missing() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_in_transit_on_edge(agent).unwrap();
+
+        assert!(txn.deltas().is_empty());
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert!(record.state_deltas.is_empty());
+        assert_eq!(world.get_component_in_transit_on_edge(agent), None);
     }
 
     #[test]

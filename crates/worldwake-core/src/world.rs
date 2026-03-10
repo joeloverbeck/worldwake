@@ -2,10 +2,11 @@
 
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
-    ComponentValue, Container, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId,
-    EntityKind, EntityMeta, EventId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation,
-    MetabolismProfile, Name, ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick,
-    Topology, UniqueItem, UniqueItemKind, WorldError, WoundList,
+    ComponentValue, Container, CarryCapacity, DeprivationExposure, DriveThresholds,
+    EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds,
+    InTransitOnEdge, ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name,
+    ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology, UniqueItem,
+    UniqueItemKind, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -554,12 +555,12 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        build_prototype_world, AgentData, BodyPart, CommodityKind, Container, ControlSource,
-        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
-        FactId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name,
-        Permille, Place, PlaceTag, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
-        ResourceSource, Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError, Wound,
-        WoundCause, WoundList,
+        build_prototype_world, AgentData, BodyPart, CarryCapacity, CommodityKind, Container,
+        ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
+        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, LoadUnits,
+        LotOperation, MetabolismProfile, Name, Permille, Place, PlaceTag, ProvenanceEntry,
+        Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, Topology,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3934,6 +3935,79 @@ mod tests {
 
         let err = world
             .insert_component_resource_source(id, sample_resource_source())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn carry_capacity_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let capacity = CarryCapacity(LoadUnits(16));
+
+        world
+            .insert_component_carry_capacity(agent, capacity)
+            .unwrap();
+        assert_eq!(world.get_component_carry_capacity(agent), Some(&capacity));
+        assert!(world.has_component_carry_capacity(agent));
+
+        let removed = world.remove_component_carry_capacity(agent).unwrap();
+        assert_eq!(removed, Some(capacity));
+        assert_eq!(world.get_component_carry_capacity(agent), None);
+    }
+
+    #[test]
+    fn insert_carry_capacity_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_carry_capacity(id, CarryCapacity(LoadUnits(9)))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn in_transit_on_edge_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let transit = InTransitOnEdge {
+            edge_id: TravelEdgeId(6),
+            origin: entity(2),
+            destination: entity(3),
+            departure_tick: Tick(4),
+            arrival_tick: Tick(12),
+        };
+
+        world
+            .insert_component_in_transit_on_edge(agent, transit.clone())
+            .unwrap();
+        assert_eq!(world.get_component_in_transit_on_edge(agent), Some(&transit));
+        assert!(world.has_component_in_transit_on_edge(agent));
+
+        let removed = world.remove_component_in_transit_on_edge(agent).unwrap();
+        assert_eq!(removed, Some(transit));
+        assert_eq!(world.get_component_in_transit_on_edge(agent), None);
+    }
+
+    #[test]
+    fn insert_in_transit_on_edge_on_non_agent_errors() {
+        let mut world = World::new(test_topology()).unwrap();
+        let id = entity(2);
+
+        let err = world
+            .insert_component_in_transit_on_edge(
+                id,
+                InTransitOnEdge {
+                    edge_id: TravelEdgeId(1),
+                    origin: entity(2),
+                    destination: entity(3),
+                    departure_tick: Tick(5),
+                    arrival_tick: Tick(9),
+                },
+            )
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

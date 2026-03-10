@@ -1,10 +1,10 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_authoritative_components, AgentData, CommodityKind, Container,
-    DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds, ItemLot,
-    MetabolismProfile, Name, Permille, Quantity, ReservationRecord, ResourceSource, UniqueItem,
-    WoundList,
+    component_schema::with_authoritative_components, AgentData, CarryCapacity, CommodityKind,
+    Container, DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId,
+    HomeostaticNeeds, InTransitOnEdge, ItemLot, MetabolismProfile, Name, Permille, Quantity,
+    ReservationRecord, ResourceSource, UniqueItem, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -214,10 +214,11 @@ mod tests {
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, FactId, HomeostaticNeeds,
-        ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name, Permille, ProvenanceEntry,
-        Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, UniqueItem,
+        AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
+        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
+        FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, LoadUnits, LotOperation,
+        MetabolismProfile, Name, Permille, ProvenanceEntry, Quantity, ReservationId,
+        ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem,
         UniqueItemKind, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
@@ -269,12 +270,20 @@ mod tests {
                 bladder_critical_ticks: 4,
             }),
             ComponentValue::MetabolismProfile(MetabolismProfile::default()),
+            ComponentValue::CarryCapacity(CarryCapacity(LoadUnits(14))),
             ComponentValue::ResourceSource(ResourceSource {
                 commodity: CommodityKind::Apple,
                 available_quantity: Quantity(6),
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(4).unwrap()),
                 last_regeneration_tick: Some(Tick(12)),
+            }),
+            ComponentValue::InTransitOnEdge(InTransitOnEdge {
+                edge_id: TravelEdgeId(4),
+                origin: entity(30),
+                destination: entity(31),
+                departure_tick: Tick(13),
+                arrival_tick: Tick(21),
             }),
             ComponentValue::ItemLot(ItemLot {
                 commodity: CommodityKind::Grain,
@@ -383,7 +392,9 @@ mod tests {
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,
                 ComponentKind::MetabolismProfile,
+                ComponentKind::CarryCapacity,
                 ComponentKind::ResourceSource,
+                ComponentKind::InTransitOnEdge,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,

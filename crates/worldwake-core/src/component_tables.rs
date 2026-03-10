@@ -6,7 +6,7 @@ use crate::{
     drives::DriveThresholds,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
-    production::ResourceSource,
+    production::{CarryCapacity, InTransitOnEdge, ResourceSource},
     wounds::WoundList,
     EntityId,
 };
@@ -98,9 +98,10 @@ mod tests {
     use crate::{
         components::{AgentData, Name},
         BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation,
-        MetabolismProfile, Permille, ProvenanceEntry, Quantity, ResourceSource, Tick, UniqueItem,
-        UniqueItemKind, Wound, WoundCause, WoundList,
+        DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot, LoadUnits,
+        LotOperation, MetabolismProfile, Permille, ProvenanceEntry, Quantity, ResourceSource,
+        Tick, TravelEdgeId, UniqueItem, UniqueItemKind, Wound, WoundCause, WoundList,
+        CarryCapacity,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -123,7 +124,9 @@ mod tests {
         assert_eq!(tables.iter_homeostatic_needs().count(), 0);
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
+        assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
+        assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
         assert_eq!(tables.iter_containers().count(), 0);
@@ -256,6 +259,38 @@ mod tests {
     }
 
     #[test]
+    fn insert_and_get_carry_capacity() {
+        let mut tables = ComponentTables::default();
+        let id = entity(20);
+        let capacity = CarryCapacity(LoadUnits(18));
+
+        assert_eq!(tables.insert_carry_capacity(id, capacity), None);
+        assert_eq!(tables.get_carry_capacity(id), Some(&capacity));
+        assert!(tables.has_carry_capacity(id));
+        assert_eq!(tables.remove_carry_capacity(id), Some(capacity));
+        assert_eq!(tables.get_carry_capacity(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_in_transit_on_edge() {
+        let mut tables = ComponentTables::default();
+        let id = entity(21);
+        let transit = InTransitOnEdge {
+            edge_id: TravelEdgeId(5),
+            origin: entity(2),
+            destination: entity(3),
+            departure_tick: Tick(11),
+            arrival_tick: Tick(17),
+        };
+
+        assert_eq!(tables.insert_in_transit_on_edge(id, transit.clone()), None);
+        assert_eq!(tables.get_in_transit_on_edge(id), Some(&transit));
+        assert!(tables.has_in_transit_on_edge(id));
+        assert_eq!(tables.remove_in_transit_on_edge(id), Some(transit));
+        assert_eq!(tables.get_in_transit_on_edge(id), None);
+    }
+
+    #[test]
     fn remove_returns_value() {
         let mut tables = ComponentTables::default();
         let id = entity(5);
@@ -321,6 +356,7 @@ mod tests {
         tables.insert_homeostatic_needs(id, HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(id, DeprivationExposure::default());
         tables.insert_metabolism_profile(id, MetabolismProfile::default());
+        tables.insert_carry_capacity(id, CarryCapacity(LoadUnits(7)));
         tables.insert_item_lot(
             id,
             ItemLot {
@@ -352,6 +388,16 @@ mod tests {
                 allows_nested_containers: false,
             },
         );
+        tables.insert_in_transit_on_edge(
+            id,
+            InTransitOnEdge {
+                edge_id: TravelEdgeId(3),
+                origin: entity(1),
+                destination: entity(2),
+                departure_tick: Tick(3),
+                arrival_tick: Tick(9),
+            },
+        );
 
         tables.remove_all(id);
 
@@ -362,9 +408,11 @@ mod tests {
         assert_eq!(tables.get_homeostatic_needs(id), None);
         assert_eq!(tables.get_deprivation_exposure(id), None);
         assert_eq!(tables.get_metabolism_profile(id), None);
+        assert_eq!(tables.get_carry_capacity(id), None);
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
         assert_eq!(tables.get_container(id), None);
+        assert_eq!(tables.get_in_transit_on_edge(id), None);
     }
 
     #[test]

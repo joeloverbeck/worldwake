@@ -1,6 +1,6 @@
-//! Shared production-domain schema used by core components and sim registries.
+//! Shared production and transport schema used by core components and sim registries.
 
-use crate::{CommodityKind, Component, Quantity, Tick};
+use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -32,6 +32,12 @@ impl WorkstationTag {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct RecipeId(pub u32);
 
+/// Maximum load an agent can carry.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct CarryCapacity(pub LoadUnits);
+
+impl Component for CarryCapacity {}
+
 /// Concrete depletable stock of a commodity at a place or workstation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ResourceSource {
@@ -44,10 +50,24 @@ pub struct ResourceSource {
 
 impl Component for ResourceSource {}
 
+/// Concrete route occupancy for an agent traveling along a topology edge.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct InTransitOnEdge {
+    pub edge_id: TravelEdgeId,
+    pub origin: EntityId,
+    pub destination: EntityId,
+    pub departure_tick: Tick,
+    pub arrival_tick: Tick,
+}
+
+impl Component for InTransitOnEdge {}
+
 #[cfg(test)]
 mod tests {
-    use super::{RecipeId, ResourceSource, WorkstationTag};
-    use crate::{CommodityKind, Component, Quantity, Tick};
+    use super::{CarryCapacity, InTransitOnEdge, RecipeId, ResourceSource, WorkstationTag};
+    use crate::{
+        CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId,
+    };
     use serde::{de::DeserializeOwned, Serialize};
     use std::num::NonZeroU32;
 
@@ -74,6 +94,17 @@ mod tests {
     #[test]
     fn resource_source_trait_bounds() {
         assert_component_bounds::<ResourceSource>();
+    }
+
+    #[test]
+    fn carry_capacity_trait_bounds() {
+        assert_bounds::<CarryCapacity>();
+        assert_component_bounds::<CarryCapacity>();
+    }
+
+    #[test]
+    fn in_transit_on_edge_trait_bounds() {
+        assert_component_bounds::<InTransitOnEdge>();
     }
 
     #[test]
@@ -154,5 +185,37 @@ mod tests {
         let roundtrip: ResourceSource = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, source);
+    }
+
+    #[test]
+    fn carry_capacity_roundtrips_through_bincode() {
+        let capacity = CarryCapacity(LoadUnits(24));
+
+        let bytes = bincode::serialize(&capacity).unwrap();
+        let roundtrip: CarryCapacity = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, capacity);
+    }
+
+    #[test]
+    fn in_transit_on_edge_roundtrips_through_bincode() {
+        let transit = InTransitOnEdge {
+            edge_id: TravelEdgeId(7),
+            origin: EntityId {
+                slot: 1,
+                generation: 0,
+            },
+            destination: EntityId {
+                slot: 2,
+                generation: 0,
+            },
+            departure_tick: Tick(11),
+            arrival_tick: Tick(17),
+        };
+
+        let bytes = bincode::serialize(&transit).unwrap();
+        let roundtrip: InTransitOnEdge = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, transit);
     }
 }

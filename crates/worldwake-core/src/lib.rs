@@ -88,7 +88,9 @@ pub use load::{
 };
 pub use needs::{BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
 pub use numerics::{LoadUnits, Permille, Quantity};
-pub use production::{RecipeId, ResourceSource, WorkstationTag};
+pub use production::{
+    CarryCapacity, InTransitOnEdge, RecipeId, ResourceSource, WorkstationTag,
+};
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use traits::{Component, RelationRecord};
