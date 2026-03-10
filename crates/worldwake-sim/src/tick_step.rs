@@ -381,9 +381,10 @@ mod tests {
     use super::{step_tick, TickStepError, TickStepResult, TickStepServices};
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionState,
-        ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility, Scheduler,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest,
+        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
+        ActionState, ControllerState, DeterministicRng, DurationExpr, InputKind,
+        Interruptibility, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
+        SystemManifest,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -447,13 +448,17 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_record(instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_record(
+        _def: &ActionDef,
+        instance: &ActionInstance,
+    ) -> Result<Option<ActionState>, ActionError> {
         hook_log().lock().unwrap().starts.push(instance.def_id);
         Ok(Some(ActionState::Empty))
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn tick_continue(
+        _def: &ActionDef,
         instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -463,6 +468,7 @@ mod tests {
 
     #[allow(clippy::unnecessary_wraps)]
     fn tick_complete(
+        _def: &ActionDef,
         instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -471,12 +477,17 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn commit_noop(_instance: &ActionInstance, _txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    fn commit_noop(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
         Ok(())
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn abort_record(
+        _def: &ActionDef,
         instance: &ActionInstance,
         _reason: &crate::AbortReason,
         _txn: &mut WorldTxn<'_>,
@@ -535,6 +546,7 @@ mod tests {
             commit_conditions: vec![crate::Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
             handler: ActionHandlerId(0),
         });
         registry.register(ActionDef {
@@ -550,6 +562,7 @@ mod tests {
             commit_conditions: vec![crate::Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::from([EventTag::Travel]),
+            payload: ActionPayload::None,
             handler: ActionHandlerId(1),
         });
         registry

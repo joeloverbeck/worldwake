@@ -29,7 +29,7 @@ Data-driven production definitions analogous to `ActionDef`, but grounded in exp
 - `outputs: Vec<(CommodityKind, Quantity)>`
 - `work_ticks: NonZeroU32`
 - `required_workstation_tag: Option<WorkstationTag>`
-- `required_tool_kinds: Vec<CommodityKind>` — possessed, not consumed
+- `required_tool_kinds: Vec<UniqueItemKind>` — possessed unique tools, not consumed
 - `body_cost_per_tick: BodyCostPerTick`
 
 There is no hidden loss and no hidden creation. If a recipe should produce scrap, ash, chaff, or other leftovers, they must appear in `outputs`.
@@ -111,7 +111,7 @@ This removes “partial progress lost” hand-waving and replaces it with tracea
   - actor knows the recipe / capability
   - actor is co-located with a matching workstation or resource source
   - source has sufficient `available_quantity`
-  - required tool(s) are possessed
+  - required tool(s) are possessed as concrete unique items
 - Effect:
   - reduce `ResourceSource.available_quantity`
   - create / increase output lot at location or in staged container
@@ -123,7 +123,7 @@ This removes “partial progress lost” hand-waving and replaces it with tracea
   - actor knows recipe
   - actor is co-located with matching workstation
   - required inputs accessible
-  - required tools possessed
+  - required tools possessed as concrete unique items
 - Effect:
   - move inputs into staged WIP container
   - after work completes, create outputs defined by recipe
@@ -229,7 +229,7 @@ Writes:
   - finite source stock
   - finite workstation count
   - body costs (fatigue / thirst)
-  - tool requirements
+  - concrete tool requirements via possessed unique items
 - **Transport loop dampeners**:
   - route travel time
   - carry capacity

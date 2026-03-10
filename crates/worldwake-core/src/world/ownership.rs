@@ -1,5 +1,5 @@
 use super::World;
-use crate::{CommodityKind, EntityId, Quantity, WorldError};
+use crate::{CommodityKind, EntityId, Quantity, UniqueItemKind, WorldError};
 use std::collections::BTreeSet;
 
 impl World {
@@ -64,6 +64,33 @@ impl World {
         }
 
         Quantity(total)
+    }
+
+    #[must_use]
+    pub fn controlled_unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+        let mut total = 0u32;
+        let mut frontier = vec![holder];
+        let mut visited = BTreeSet::new();
+
+        while let Some(current) = frontier.pop() {
+            if !visited.insert(current) || !self.is_alive(current) {
+                continue;
+            }
+
+            if self
+                .get_component_unique_item(current)
+                .is_some_and(|item| item.kind == kind)
+            {
+                total = total
+                    .checked_add(1)
+                    .expect("controlled unique item count overflowed");
+            }
+
+            frontier.extend(self.direct_contents_of(current).into_iter().rev());
+            frontier.extend(self.possessions_of(current).into_iter().rev());
+        }
+
+        total
     }
 
     pub(crate) fn set_owner(

@@ -11,6 +11,12 @@ pub(crate) fn evaluate_constraint_authoritatively(
         Constraint::ActorAlive => world.is_alive(actor),
         Constraint::ActorHasControl => has_control(world, actor),
         Constraint::ActorAtPlace(place) => world.effective_place(actor) == Some(*place),
+        Constraint::ActorKnowsRecipe(recipe) => world
+            .get_component_known_recipes(actor)
+            .is_some_and(|known| known.recipes.contains(recipe)),
+        Constraint::ActorHasUniqueItemKind { kind, min_count } => {
+            world.controlled_unique_item_count(actor, *kind) >= *min_count
+        }
         Constraint::ActorHasCommodity { kind, min_qty } => {
             world.controlled_commodity_quantity(actor, *kind) >= *min_qty
         }
@@ -48,6 +54,20 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .get(usize::from(target_index))
             .and_then(|target| world.get_component_item_lot(*target))
             .is_some_and(|lot| lot.commodity == kind),
+        Precondition::TargetHasWorkstationTag { target_index, tag } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| world.get_component_workstation_marker(*target))
+            .is_some_and(|marker| marker.0 == tag),
+        Precondition::TargetHasResourceSource {
+            target_index,
+            commodity,
+            min_available,
+        } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| world.get_component_resource_source(*target))
+            .is_some_and(|source| {
+                source.commodity == commodity && source.available_quantity >= min_available
+            }),
         Precondition::TargetHasConsumableEffect {
             target_index,
             effect,
@@ -86,7 +106,8 @@ mod tests {
     use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityKind, EventLog,
-        Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -244,6 +265,74 @@ mod tests {
             Precondition::TargetAtActorPlace(0),
             actor,
             &[target],
+        ));
+    }
+
+    #[test]
+    fn authoritative_harvest_semantics_cover_recipe_workstation_and_source_checks() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, workstation) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let workstation = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(workstation, place).unwrap();
+            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([RecipeId(7)]))
+                .unwrap();
+            txn.set_component_workstation_marker(
+                workstation,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                workstation,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(3),
+                    max_quantity: Quantity(6),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, workstation)
+        };
+
+        assert!(evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorKnowsRecipe(RecipeId(7)),
+            actor,
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasWorkstationTag {
+                target_index: 0,
+                tag: WorkstationTag::OrchardRow,
+            },
+            actor,
+            &[workstation],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasResourceSource {
+                target_index: 0,
+                commodity: CommodityKind::Apple,
+                min_available: Quantity(2),
+            },
+            actor,
+            &[workstation],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasResourceSource {
+                target_index: 0,
+                commodity: CommodityKind::Apple,
+                min_available: Quantity(4),
+            },
+            actor,
+            &[workstation],
         ));
     }
 }

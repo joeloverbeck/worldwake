@@ -6,7 +6,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionProgress, ActionState,
+    ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
+    ActionState,
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
     Precondition, TargetSpec,
 };
@@ -110,6 +111,7 @@ fn register_def(
         commit_conditions: preconditions,
         visibility: VisibilitySpec::ParticipantsOnly,
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
+        payload: ActionPayload::None,
         handler,
     })
 }
@@ -223,12 +225,16 @@ fn consume_one_unit(txn: &mut WorldTxn<'_>, lot_id: EntityId) -> Result<(), Acti
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn start_noop(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+fn start_noop(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+) -> Result<Option<ActionState>, ActionError> {
     Ok(None)
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn tick_continue(
+    _def: &ActionDef,
     _instance: &ActionInstance,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -236,12 +242,17 @@ fn tick_continue(
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn commit_noop(_instance: &ActionInstance, _txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+fn commit_noop(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
     Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn abort_noop(
+    _def: &ActionDef,
     _instance: &ActionInstance,
     _reason: &AbortReason,
     _txn: &mut WorldTxn<'_>,
@@ -250,6 +261,7 @@ fn abort_noop(
 }
 
 fn tick_sleep(
+    _def: &ActionDef,
     instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -266,11 +278,19 @@ fn tick_sleep(
     Ok(ActionProgress::Continue)
 }
 
-fn commit_eat(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+fn commit_eat(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
     apply_consumable_effects(instance, txn, true)
 }
 
-fn commit_drink(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+fn commit_drink(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
     apply_consumable_effects(instance, txn, false)
 }
 
@@ -307,7 +327,11 @@ fn apply_consumable_effects(
     set_actor_needs(txn, instance.actor, next)
 }
 
-fn commit_toilet(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+fn commit_toilet(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
     let needs = actor_needs(txn, instance.actor)?;
     let place = txn.effective_place(instance.actor).ok_or_else(|| {
         ActionError::InternalError(format!("actor {} has no place", instance.actor))
@@ -330,7 +354,11 @@ fn commit_toilet(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<()
     )
 }
 
-fn commit_wash(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+fn commit_wash(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
     let target = *instance
         .targets
         .first()

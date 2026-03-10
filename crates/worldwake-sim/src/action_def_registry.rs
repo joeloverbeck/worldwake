@@ -47,8 +47,8 @@ impl ActionDefRegistry {
 mod tests {
     use super::ActionDefRegistry;
     use crate::{
-        ActionDef, ActionDefId, ActionHandlerId, Constraint, DurationExpr, Interruptibility,
-        Precondition, ReservationReq, TargetSpec,
+        ActionDef, ActionDefId, ActionHandlerId, ActionPayload, Constraint, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -82,6 +82,7 @@ mod tests {
             }],
             visibility: VisibilitySpec::ParticipantsOnly,
             causal_event_tags: BTreeSet::from([EventTag::ActionStarted, EventTag::ActionCommitted]),
+            payload: ActionPayload::None,
             handler: ActionHandlerId(id.0),
         }
     }

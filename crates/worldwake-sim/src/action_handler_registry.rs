@@ -41,12 +41,16 @@ impl ActionHandlerRegistry {
 mod tests {
     use super::ActionHandlerRegistry;
     use crate::{
-        AbortReason, ActionDefId, ActionError, ActionHandler, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionProgress, ActionState, ActionStatus,
+        AbortReason, ActionDef, ActionDefId, ActionError, ActionHandler, ActionHandlerId,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionProgress, ActionState,
+        ActionStatus, Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq,
+        TargetSpec,
     };
+    use std::collections::BTreeSet;
+    use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, ReservationId, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventTag,
+        ReservationId, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn sample_instance() -> ActionInstance {
@@ -66,18 +70,41 @@ mod tests {
         }
     }
 
+    fn sample_def() -> ActionDef {
+        ActionDef {
+            id: ActionDefId(1),
+            name: "sample".to_string(),
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::SpecificEntity(EntityId {
+                slot: 9,
+                generation: 1,
+            })],
+            preconditions: vec![Precondition::TargetExists(0)],
+            reservation_requirements: vec![ReservationReq { target_index: 0 }],
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        }
+    }
+
     #[allow(clippy::unnecessary_wraps)]
-    fn start_a(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_a(_def: &ActionDef, _instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_b(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_b(_def: &ActionDef, _instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn tick_a(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -85,12 +112,17 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn commit_a(_instance: &ActionInstance, _txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    fn commit_a(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
         Ok(())
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn abort_a(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         _reason: &AbortReason,
         _txn: &mut WorldTxn<'_>,
@@ -98,7 +130,11 @@ mod tests {
         Ok(())
     }
 
-    fn commit_b(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    fn commit_b(
+        _def: &ActionDef,
+        instance: &ActionInstance,
+        txn: &mut WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
         let _ = instance.instance_id;
         txn.create_agent("Bram", ControlSource::Ai)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -128,10 +164,11 @@ mod tests {
         let retrieved_first = registry.get(first_id).unwrap();
         let retrieved_second = registry.get(second_id).unwrap();
         let instance = sample_instance();
+        let def = sample_def();
 
-        assert_eq!((retrieved_first.on_start)(&instance).unwrap(), None);
+        assert_eq!((retrieved_first.on_start)(&def, &instance).unwrap(), None);
         assert_eq!(
-            (retrieved_second.on_start)(&instance).unwrap(),
+            (retrieved_second.on_start)(&def, &instance).unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -143,9 +180,10 @@ mod tests {
         registry.register(ActionHandler::new(start_b, tick_a, commit_b, abort_a));
 
         let instance = sample_instance();
+        let def = sample_def();
         let starts = registry
             .iter()
-            .map(|handler| (handler.on_start)(&instance).unwrap())
+            .map(|handler| (handler.on_start)(&def, &instance).unwrap())
             .collect::<Vec<_>>();
 
         assert_eq!(starts, vec![None, Some(ActionState::Empty)]);
@@ -156,6 +194,7 @@ mod tests {
         let mut registry = ActionHandlerRegistry::new();
         let handler_id = registry.register(ActionHandler::new(start_a, tick_a, commit_b, abort_a));
         let instance = sample_instance();
+        let def = sample_def();
         let mut world = World::new(build_prototype_world()).unwrap();
         let before = world.query_agent_data().count();
         let mut txn = WorldTxn::new(
@@ -168,7 +207,7 @@ mod tests {
             WitnessData::default(),
         );
 
-        (registry.get(handler_id).unwrap().on_commit)(&instance, &mut txn).unwrap();
+        (registry.get(handler_id).unwrap().on_commit)(&def, &instance, &mut txn).unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

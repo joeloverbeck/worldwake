@@ -49,6 +49,10 @@ fn evaluate_constraint(constraint: &Constraint, actor: EntityId, view: &dyn Beli
         Constraint::ActorAlive => view.is_alive(actor),
         Constraint::ActorHasControl => view.has_control(actor),
         Constraint::ActorAtPlace(place) => view.effective_place(actor) == Some(*place),
+        Constraint::ActorKnowsRecipe(recipe) => view.knows_recipe(actor, *recipe),
+        Constraint::ActorHasUniqueItemKind { kind, min_count } => {
+            view.unique_item_count(actor, *kind) >= *min_count
+        }
         Constraint::ActorHasCommodity { kind, min_qty } => {
             view.commodity_quantity(actor, *kind) >= *min_qty
         }
@@ -86,6 +90,19 @@ fn evaluate_precondition(
         Precondition::TargetCommodity { target_index, kind } => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.item_lot_commodity(*target) == Some(kind)),
+        Precondition::TargetHasWorkstationTag { target_index, tag } => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| view.workstation_tag(*target) == Some(tag)),
+        Precondition::TargetHasResourceSource {
+            target_index,
+            commodity,
+            min_available,
+        } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| view.resource_source(*target))
+            .is_some_and(|source| {
+                source.commodity == commodity && source.available_quantity >= min_available
+            }),
         Precondition::TargetHasConsumableEffect {
             target_index,
             effect,
@@ -152,16 +169,17 @@ fn enumerate_bindings(
 mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, Constraint, ConsumableEffect,
-        DurationExpr, Interruptibility, OmniscientBeliefView, Precondition, ReservationReq,
-        TargetSpec,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, ActionPayload, Constraint,
+        ConsumableEffect, DurationExpr, Interruptibility, OmniscientBeliefView, Precondition,
+        ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityConsumableProfile,
-        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, Quantity, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, Quantity, RecipeId,
+        ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
+        WorldTxn,
     };
 
     #[derive(Default)]
@@ -170,9 +188,13 @@ mod tests {
         kinds: BTreeMap<EntityId, EntityKind>,
         places: BTreeMap<EntityId, EntityId>,
         colocated: BTreeMap<EntityId, Vec<EntityId>>,
+        known_recipes: BTreeMap<EntityId, Vec<RecipeId>>,
+        unique_items: BTreeMap<(EntityId, UniqueItemKind), u32>,
         commodities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
+        workstation_tags: BTreeMap<EntityId, WorkstationTag>,
+        resource_sources: BTreeMap<EntityId, ResourceSource>,
         controllable: BTreeMap<(EntityId, EntityId), bool>,
         control: BTreeMap<EntityId, bool>,
     }
@@ -196,6 +218,16 @@ mod tests {
             self.colocated.get(&place).cloned().unwrap_or_default()
         }
 
+        fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+            self.known_recipes
+                .get(&actor)
+                .is_some_and(|recipes| recipes.contains(&recipe))
+        }
+
+        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
+        }
+
         fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
             self.commodities
                 .get(&(holder, kind))
@@ -212,6 +244,14 @@ mod tests {
             entity: EntityId,
         ) -> Option<CommodityConsumableProfile> {
             self.consumable_profiles.get(&entity).copied()
+        }
+
+        fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+            self.workstation_tags.get(&entity).copied()
+        }
+
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
         }
 
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
@@ -260,6 +300,7 @@ mod tests {
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
             handler: ActionHandlerId(id.0),
         }
     }
@@ -328,6 +369,16 @@ mod tests {
             &Constraint::ActorHasControl,
             actor,
             &view
+        ));
+        view.unique_items
+            .insert((actor, UniqueItemKind::SimpleTool), 1);
+        assert!(evaluate_constraint(
+            &Constraint::ActorHasUniqueItemKind {
+                kind: UniqueItemKind::SimpleTool,
+                min_count: 1,
+            },
+            actor,
+            &view,
         ));
         assert!(evaluate_constraint(
             &Constraint::ActorHasCommodity {

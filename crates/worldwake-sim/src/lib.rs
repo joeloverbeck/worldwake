@@ -13,6 +13,7 @@ pub mod action_handler;
 pub mod action_handler_registry;
 pub mod action_ids;
 pub mod action_instance;
+pub mod action_payload;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
@@ -49,6 +50,7 @@ pub use action_handler::{
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
+pub use action_payload::{ActionPayload, HarvestActionPayload};
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
     Precondition, ReservationReq, TargetSpec,

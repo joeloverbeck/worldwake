@@ -1,16 +1,17 @@
 use crate::{
-    ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState, ActionStatus,
-    Interruptibility,
+    ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState,
+    ActionStatus, Interruptibility,
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, WorldTxn};
 
-pub type ActionStartFn = fn(&ActionInstance) -> Result<Option<ActionState>, ActionError>;
+pub type ActionStartFn = fn(&ActionDef, &ActionInstance) -> Result<Option<ActionState>, ActionError>;
 pub type ActionTickFn =
-    for<'w> fn(&ActionInstance, &mut WorldTxn<'w>) -> Result<ActionProgress, ActionError>;
-pub type ActionCommitFn = for<'w> fn(&ActionInstance, &mut WorldTxn<'w>) -> Result<(), ActionError>;
+    for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>) -> Result<ActionProgress, ActionError>;
+pub type ActionCommitFn =
+    for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>) -> Result<(), ActionError>;
 pub type ActionAbortFn =
-    for<'w> fn(&ActionInstance, &AbortReason, &mut WorldTxn<'w>) -> Result<(), ActionError>;
+    for<'w> fn(&ActionDef, &ActionInstance, &AbortReason, &mut WorldTxn<'w>) -> Result<(), ActionError>;
 
 #[derive(Copy, Clone)]
 pub struct ActionHandler {
@@ -73,11 +74,17 @@ pub enum AbortReason {
 #[cfg(test)]
 mod tests {
     use super::{AbortReason, ActionError, ActionHandler, ActionProgress};
-    use crate::{ActionDefId, ActionInstance, ActionInstanceId, ActionState, ActionStatus};
+    use crate::{
+        ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionState, ActionStatus, Constraint, DurationExpr, Interruptibility, Precondition,
+        ReservationReq, TargetSpec,
+    };
     use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::BTreeSet;
+    use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, ReservationId, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventTag,
+        ReservationId, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn sample_instance() -> ActionInstance {
@@ -101,12 +108,39 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn noop_start(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn sample_def() -> ActionDef {
+        ActionDef {
+            id: ActionDefId(2),
+            name: "sample".to_string(),
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::SpecificEntity(EntityId {
+                slot: 7,
+                generation: 1,
+            })],
+            preconditions: vec![Precondition::TargetExists(0)],
+            reservation_requirements: vec![ReservationReq { target_index: 0 }],
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(1),
+        }
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_start(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+    ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn noop_tick(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -114,6 +148,7 @@ mod tests {
     }
 
     fn create_agent_on_commit(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
@@ -124,6 +159,7 @@ mod tests {
 
     #[allow(clippy::unnecessary_wraps)]
     fn noop_abort(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         _reason: &AbortReason,
         _txn: &mut WorldTxn<'_>,
@@ -147,6 +183,7 @@ mod tests {
         let handler = ActionHandler::new(noop_start, noop_tick, create_agent_on_commit, noop_abort);
         let mut world = World::new(build_prototype_world()).unwrap();
         let instance = sample_instance();
+        let def = sample_def();
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -158,14 +195,15 @@ mod tests {
         );
 
         assert_eq!(
-            (handler.on_start)(&instance).unwrap(),
+            (handler.on_start)(&def, &instance).unwrap(),
             Some(ActionState::Empty)
         );
         assert_eq!(
-            (handler.on_tick)(&instance, &mut txn).unwrap(),
+            (handler.on_tick)(&def, &instance, &mut txn).unwrap(),
             ActionProgress::Continue
         );
         (handler.on_abort)(
+            &def,
             &instance,
             &AbortReason::ExternalAbort("test".to_string()),
             &mut txn,
@@ -181,6 +219,7 @@ mod tests {
             .entities_of_kind(worldwake_core::EntityKind::Agent)
             .count();
         let instance = sample_instance();
+        let def = sample_def();
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -191,7 +230,7 @@ mod tests {
             WitnessData::default(),
         );
 
-        (handler.on_commit)(&instance, &mut txn).unwrap();
+        (handler.on_commit)(&def, &instance, &mut txn).unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

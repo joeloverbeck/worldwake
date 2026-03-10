@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
-use worldwake_core::{BodyCostPerTick, CommodityKind, Quantity, WorkstationTag};
+use worldwake_core::{BodyCostPerTick, CommodityKind, Quantity, UniqueItemKind, WorkstationTag};
 
 /// Data-driven production definition stored in simulation registry state.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -10,7 +10,7 @@ pub struct RecipeDefinition {
     pub outputs: Vec<(CommodityKind, Quantity)>,
     pub work_ticks: NonZeroU32,
     pub required_workstation_tag: Option<WorkstationTag>,
-    pub required_tool_kinds: Vec<CommodityKind>,
+    pub required_tool_kinds: Vec<UniqueItemKind>,
     pub body_cost_per_tick: BodyCostPerTick,
 }
 
@@ -19,7 +19,9 @@ mod tests {
     use super::RecipeDefinition;
     use serde::{de::DeserializeOwned, Serialize};
     use std::num::NonZeroU32;
-    use worldwake_core::{BodyCostPerTick, CommodityKind, Permille, Quantity, WorkstationTag};
+    use worldwake_core::{
+        BodyCostPerTick, CommodityKind, Permille, Quantity, UniqueItemKind, WorkstationTag,
+    };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 
@@ -34,7 +36,7 @@ mod tests {
             outputs: vec![(CommodityKind::Bread, Quantity(1))],
             work_ticks: NonZeroU32::new(4).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: vec![CommodityKind::Water],
+            required_tool_kinds: vec![UniqueItemKind::SimpleTool],
             body_cost_per_tick: BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(1)),
         }
     }

@@ -1,7 +1,7 @@
 use crate::BeliefView;
 use worldwake_core::{
     CommodityConsumableProfile, CommodityKind, ControlSource, EntityId, EntityKind, Quantity,
-    TickRange, World,
+    RecipeId, ResourceSource, TickRange, UniqueItemKind, WorkstationTag, World,
 };
 
 /// Temporary stand-in until E14 provides per-agent belief stores.
@@ -38,6 +38,16 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world.entities_effectively_at(place)
     }
 
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+        self.world
+            .get_component_known_recipes(actor)
+            .is_some_and(|known| known.recipes.contains(&recipe))
+    }
+
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+        self.world.controlled_unique_item_count(holder, kind)
+    }
+
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
         self.world.controlled_commodity_quantity(holder, kind)
     }
@@ -51,6 +61,16 @@ impl BeliefView for OmniscientBeliefView<'_> {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
         let commodity = self.item_lot_commodity(entity)?;
         commodity.spec().consumable_profile
+    }
+
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+        self.world
+            .get_component_workstation_marker(entity)
+            .map(|marker| marker.0)
+    }
+
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+        self.world.get_component_resource_source(entity).cloned()
     }
 
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
@@ -77,7 +97,8 @@ mod tests {
     use crate::BeliefView;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, Container, ControlSource, EventLog,
-        LoadUnits, Quantity, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
+        LoadUnits, Quantity, RecipeId, ResourceSource, Tick, TickRange, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -300,5 +321,53 @@ mod tests {
         assert!(view.reservation_conflicts(item, TickRange::new(Tick(7), Tick(10)).unwrap()));
         assert!(!view.reservation_conflicts(item, TickRange::new(Tick(1), Tick(4)).unwrap()));
         assert!(!view.reservation_conflicts(item, TickRange::new(Tick(9), Tick(12)).unwrap()));
+    }
+
+    #[test]
+    fn production_facts_reflect_known_recipes_workstations_and_sources() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, workstation) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let workstation = txn.create_entity(worldwake_core::EntityKind::Facility);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(workstation, place).unwrap();
+            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([RecipeId(3)]))
+                .unwrap();
+            txn.set_component_workstation_marker(
+                workstation,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                workstation,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(4),
+                    max_quantity: Quantity(6),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, workstation)
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert!(view.knows_recipe(actor, RecipeId(3)));
+        assert_eq!(view.workstation_tag(workstation), Some(WorkstationTag::OrchardRow));
+        assert_eq!(
+            view.resource_source(workstation),
+            Some(ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(4),
+                max_quantity: Quantity(6),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            })
+        );
     }
 }

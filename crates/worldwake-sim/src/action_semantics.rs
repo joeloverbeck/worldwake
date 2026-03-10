@@ -1,12 +1,19 @@
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
-use worldwake_core::{CommodityKind, EntityId, EntityKind, Quantity, World};
+use worldwake_core::{
+    CommodityKind, EntityId, EntityKind, Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
+};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum Constraint {
     ActorAlive,
     ActorHasControl,
     ActorAtPlace(EntityId),
+    ActorKnowsRecipe(RecipeId),
+    ActorHasUniqueItemKind {
+        kind: UniqueItemKind,
+        min_count: u32,
+    },
     ActorHasCommodity {
         kind: CommodityKind,
         min_qty: Quantity,
@@ -33,6 +40,15 @@ pub enum Precondition {
     TargetCommodity {
         target_index: u8,
         kind: CommodityKind,
+    },
+    TargetHasWorkstationTag {
+        target_index: u8,
+        tag: WorkstationTag,
+    },
+    TargetHasResourceSource {
+        target_index: u8,
+        commodity: CommodityKind,
+        min_available: Quantity,
     },
     TargetHasConsumableEffect {
         target_index: u8,
@@ -128,8 +144,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
-        EventLog, HomeostaticNeeds, MetabolismProfile, Permille, Quantity, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        EventLog, HomeostaticNeeds, MetabolismProfile, Permille, Quantity, RecipeId,
+        UniqueItemKind, VisibilitySpec, Tick, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -141,10 +157,15 @@ mod tests {
         generation: 2,
     };
 
-    const ALL_CONSTRAINTS: [Constraint; 5] = [
+    const ALL_CONSTRAINTS: [Constraint; 7] = [
         Constraint::ActorAlive,
         Constraint::ActorHasControl,
         Constraint::ActorAtPlace(ENTITY_A),
+        Constraint::ActorKnowsRecipe(RecipeId(3)),
+        Constraint::ActorHasUniqueItemKind {
+            kind: UniqueItemKind::SimpleTool,
+            min_count: 1,
+        },
         Constraint::ActorHasCommodity {
             kind: CommodityKind::Bread,
             min_qty: Quantity(3),
@@ -159,7 +180,7 @@ mod tests {
         },
     ];
 
-    const ALL_PRECONDITIONS: [Precondition; 7] = [
+    const ALL_PRECONDITIONS: [Precondition; 9] = [
         Precondition::ActorAlive,
         Precondition::ActorCanControlTarget(6),
         Precondition::TargetExists(0),
@@ -171,6 +192,15 @@ mod tests {
         Precondition::TargetCommodity {
             target_index: 3,
             kind: CommodityKind::Water,
+        },
+        Precondition::TargetHasWorkstationTag {
+            target_index: 1,
+            tag: WorkstationTag::Mill,
+        },
+        Precondition::TargetHasResourceSource {
+            target_index: 2,
+            commodity: CommodityKind::Apple,
+            min_available: Quantity(2),
         },
         Precondition::TargetHasConsumableEffect {
             target_index: 4,

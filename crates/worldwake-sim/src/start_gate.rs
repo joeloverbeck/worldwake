@@ -103,7 +103,7 @@ pub fn start_action(
         local_state: None,
     };
 
-    instance.local_state = match (handler.on_start)(&instance) {
+    instance.local_state = match (handler.on_start)(def, &instance) {
         Ok(local_state) => local_state,
         Err(err) => {
             release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -166,8 +166,9 @@ mod tests {
     use crate::{
         AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstanceId, ActionProgress, ActionState, Affordance,
-        Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress, ActionState,
+        Affordance, Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq,
+        TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -202,17 +203,24 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_empty(_instance: &crate::ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_empty(
+        _def: &ActionDef,
+        _instance: &crate::ActionInstance,
+    ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_none(_instance: &crate::ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_none(
+        _def: &ActionDef,
+        _instance: &crate::ActionInstance,
+    ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn tick_continue(
+        _def: &ActionDef,
         _instance: &crate::ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -221,6 +229,7 @@ mod tests {
 
     #[allow(clippy::unnecessary_wraps)]
     fn commit_noop(
+        _def: &ActionDef,
         _instance: &crate::ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
@@ -229,6 +238,7 @@ mod tests {
 
     #[allow(clippy::unnecessary_wraps)]
     fn abort_noop(
+        _def: &ActionDef,
         _instance: &crate::ActionInstance,
         _reason: &AbortReason,
         _txn: &mut WorldTxn<'_>,
@@ -257,6 +267,7 @@ mod tests {
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
+            payload: ActionPayload::None,
             handler,
         }
     }

@@ -1,6 +1,6 @@
 use crate::{
-    ActionDefId, ActionHandlerId, Constraint, DurationExpr, Interruptibility, Precondition,
-    ReservationReq, TargetSpec,
+    ActionDefId, ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility,
+    Precondition, ReservationReq, TargetSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -20,6 +20,7 @@ pub struct ActionDef {
     pub commit_conditions: Vec<Precondition>,
     pub visibility: VisibilitySpec,
     pub causal_event_tags: BTreeSet<EventTag>,
+    pub payload: ActionPayload,
     pub handler: ActionHandlerId,
 }
 
@@ -27,8 +28,8 @@ pub struct ActionDef {
 mod tests {
     use super::ActionDef;
     use crate::{
-        ActionDefId, ActionHandlerId, Constraint, DurationExpr, Interruptibility, Precondition,
-        ReservationReq, TargetSpec,
+        ActionDefId, ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
@@ -80,6 +81,7 @@ mod tests {
             }],
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
+            payload: ActionPayload::None,
             handler: ActionHandlerId(7),
         }
     }
@@ -106,6 +108,7 @@ mod tests {
             commit_conditions,
             visibility,
             causal_event_tags,
+            payload,
             handler,
         } = action_def;
 
@@ -121,6 +124,7 @@ mod tests {
         let _: Vec<Precondition> = commit_conditions;
         let _: VisibilitySpec = visibility;
         let _: BTreeSet<EventTag> = causal_event_tags;
+        let _: ActionPayload = payload;
         let _: ActionHandlerId = handler;
     }
 

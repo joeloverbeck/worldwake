@@ -167,8 +167,8 @@ mod tests {
     use std::num::NonZeroU64;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EventLog, PendingEvent, Quantity, Seed, StateHash, Tick, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn,
+        EventLog, PendingEvent, Quantity, Seed, StateHash, Tick, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -223,7 +223,7 @@ mod tests {
             outputs: vec![(CommodityKind::Bread, Quantity(1))],
             work_ticks: std::num::NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: vec![CommodityKind::Water],
+            required_tool_kinds: vec![UniqueItemKind::SimpleTool],
             body_cost_per_tick: BodyCostPerTick::zero(),
         });
         registry

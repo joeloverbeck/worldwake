@@ -143,7 +143,7 @@ fn transition_action_inner(
         WitnessData::default(),
     );
 
-    finalize_failed_action(instance, handler, txn, event_log, &termination)
+    finalize_failed_action(def, instance, handler, txn, event_log, &termination)
 }
 
 #[cfg(test)]
@@ -152,9 +152,9 @@ mod tests {
     use crate::{
         start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionState,
-        ActionStatus, Affordance, Constraint, DurationExpr, Interruptibility, Precondition,
-        ReservationReq, TargetSpec,
+        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
+        ActionState, ActionStatus, Affordance, Constraint, DurationExpr, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -209,12 +209,16 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_none(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_none(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+    ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn tick_continue(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -222,12 +226,17 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn commit_noop(_instance: &ActionInstance, _txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    fn commit_noop(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
         Ok(())
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn abort_hook(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         reason: &AbortReason,
         _txn: &mut WorldTxn<'_>,
@@ -259,6 +268,7 @@ mod tests {
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
             handler,
         }
     }

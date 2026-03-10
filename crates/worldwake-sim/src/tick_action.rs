@@ -103,7 +103,7 @@ fn tick_action_inner(
         instance.remaining_ticks -= 1;
     }
 
-    let progress = (handler.on_tick)(instance, &mut txn)?;
+    let progress = (handler.on_tick)(def, instance, &mut txn)?;
     let should_finalize =
         matches!(progress, ActionProgress::Complete) || instance.remaining_ticks == 0;
 
@@ -131,6 +131,7 @@ fn tick_action_inner(
 
     if let Some(reason) = failure_reason {
         let replan = finalize_failed_action(
+            def,
             instance,
             handler,
             txn,
@@ -144,7 +145,7 @@ fn tick_action_inner(
         Ok(TickOutcome::Aborted { reason, replan })
     } else {
         instance.status = ActionStatus::Committed;
-        (handler.on_commit)(instance, &mut txn)?;
+        (handler.on_commit)(def, instance, &mut txn)?;
         release_reservations(&mut txn, &instance.reservation_ids)?;
         txn.add_tag(EventTag::ActionCommitted);
         for tag in &def.causal_event_tags {
@@ -166,9 +167,9 @@ mod tests {
     use crate::{
         start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionState,
-        ActionStatus, Affordance, Constraint, DurationExpr, Interruptibility, Precondition,
-        ReplanNeeded, ReservationReq, TargetSpec,
+        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
+        ActionState, ActionStatus, Affordance, Constraint, DurationExpr, Interruptibility,
+        Precondition, ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -229,11 +230,15 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_none(_instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_none(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+    ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
     }
 
     fn tick_handler(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -258,6 +263,7 @@ mod tests {
 
     #[allow(clippy::unnecessary_wraps)]
     fn commit_handler(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
@@ -268,6 +274,7 @@ mod tests {
 
     #[allow(clippy::unnecessary_wraps)]
     fn abort_handler(
+        _def: &ActionDef,
         _instance: &ActionInstance,
         reason: &AbortReason,
         _txn: &mut WorldTxn<'_>,
@@ -302,6 +309,7 @@ mod tests {
             commit_conditions,
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags,
+            payload: ActionPayload::None,
             handler,
         }
     }
