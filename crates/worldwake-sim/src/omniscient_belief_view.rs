@@ -1,20 +1,23 @@
-use crate::KnowledgeView;
+use crate::BeliefView;
 use worldwake_core::{
     CommodityKind, ControlSource, EntityId, EntityKind, Quantity, TickRange, World,
 };
 
-pub struct WorldKnowledgeView<'w> {
+/// Temporary stand-in until E14 provides per-agent belief stores.
+/// MUST NOT be used in agent-facing code after E14 lands.
+/// Wraps `&World` directly and returns authoritative truth, not beliefs.
+pub struct OmniscientBeliefView<'w> {
     world: &'w World,
 }
 
-impl<'w> WorldKnowledgeView<'w> {
+impl<'w> OmniscientBeliefView<'w> {
     #[must_use]
     pub const fn new(world: &'w World) -> Self {
         Self { world }
     }
 }
 
-impl KnowledgeView for WorldKnowledgeView<'_> {
+impl BeliefView for OmniscientBeliefView<'_> {
     fn is_alive(&self, entity: EntityId) -> bool {
         self.world.is_alive(entity)
     }
@@ -54,14 +57,14 @@ impl KnowledgeView for WorldKnowledgeView<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::WorldKnowledgeView;
-    use crate::KnowledgeView;
+    use super::OmniscientBeliefView;
+    use crate::BeliefView;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, Container, ControlSource, EventLog,
         LoadUnits, Quantity, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
-    fn assert_knowledge_view<T: KnowledgeView>() {}
+    fn assert_belief_view<T: BeliefView>() {}
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
@@ -90,8 +93,8 @@ mod tests {
     }
 
     #[test]
-    fn world_knowledge_view_implements_knowledge_view() {
-        assert_knowledge_view::<WorldKnowledgeView<'_>>();
+    fn omniscient_belief_view_implements_belief_view() {
+        assert_belief_view::<OmniscientBeliefView<'_>>();
     }
 
     #[test]
@@ -113,7 +116,7 @@ mod tests {
         txn.archive_entity(archived).unwrap();
         commit_txn(txn);
 
-        let view = WorldKnowledgeView::new(&world);
+        let view = OmniscientBeliefView::new(&world);
 
         assert!(!view.is_alive(archived));
         assert!(view.is_alive(live));
@@ -151,7 +154,7 @@ mod tests {
             commit_txn(txn);
         }
 
-        let view = WorldKnowledgeView::new(&world);
+        let view = OmniscientBeliefView::new(&world);
 
         assert_eq!(view.effective_place(root), Some(other_place));
         assert_eq!(view.effective_place(inner), Some(other_place));
@@ -194,7 +197,7 @@ mod tests {
             commit_txn(txn);
         }
 
-        let view = WorldKnowledgeView::new(&world);
+        let view = OmniscientBeliefView::new(&world);
 
         assert_eq!(
             view.commodity_quantity(actor, CommodityKind::Bread),
@@ -229,7 +232,7 @@ mod tests {
             (human, ai, dormant, item)
         };
 
-        let view = WorldKnowledgeView::new(&world);
+        let view = OmniscientBeliefView::new(&world);
 
         assert!(view.has_control(human));
         assert!(view.has_control(ai));
@@ -257,7 +260,7 @@ mod tests {
             commit_txn(txn);
         }
 
-        let view = WorldKnowledgeView::new(&world);
+        let view = OmniscientBeliefView::new(&world);
 
         assert!(view.reservation_conflicts(item, TickRange::new(Tick(4), Tick(6)).unwrap()));
         assert!(view.reservation_conflicts(item, TickRange::new(Tick(7), Tick(10)).unwrap()));

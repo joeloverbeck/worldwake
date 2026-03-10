@@ -1,9 +1,9 @@
-use crate::{ActionDefRegistry, Affordance, Constraint, KnowledgeView, Precondition, TargetSpec};
+use crate::{ActionDefRegistry, Affordance, BeliefView, Constraint, Precondition, TargetSpec};
 use worldwake_core::EntityId;
 
 #[must_use]
 pub fn get_affordances(
-    view: &dyn KnowledgeView,
+    view: &dyn BeliefView,
     actor: EntityId,
     registry: &ActionDefRegistry,
 ) -> Vec<Affordance> {
@@ -30,7 +30,7 @@ pub fn get_affordances(
         affordances.retain(|affordance| {
             affordance.def_id != def.id
                 || def.preconditions.iter().all(|precondition| {
-                    evaluate_precondition(precondition, actor, &affordance.bound_targets, view)
+                    evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
                 })
         });
     }
@@ -41,10 +41,10 @@ pub fn get_affordances(
 }
 
 #[must_use]
-pub fn evaluate_constraint(
+fn evaluate_constraint(
     constraint: &Constraint,
     actor: EntityId,
-    view: &dyn KnowledgeView,
+    view: &dyn BeliefView,
 ) -> bool {
     match constraint {
         Constraint::ActorAlive => view.is_alive(actor),
@@ -58,19 +58,19 @@ pub fn evaluate_constraint(
 }
 
 #[must_use]
-pub fn evaluate_precondition(
-    precondition: &Precondition,
+fn evaluate_precondition(
+    precondition: Precondition,
     actor: EntityId,
     targets: &[EntityId],
-    view: &dyn KnowledgeView,
+    view: &dyn BeliefView,
 ) -> bool {
     match precondition {
         Precondition::ActorAlive => view.is_alive(actor),
         Precondition::TargetExists(index) => targets
-            .get(usize::from(*index))
+            .get(usize::from(index))
             .is_some_and(|target| view.is_alive(*target)),
         Precondition::TargetAtActorPlace(index) => {
-            let Some(target) = targets.get(usize::from(*index)).copied() else {
+            let Some(target) = targets.get(usize::from(index)).copied() else {
                 return false;
             };
             let Some(actor_place) = view.effective_place(actor) else {
@@ -79,16 +79,16 @@ pub fn evaluate_precondition(
             view.effective_place(target) == Some(actor_place)
         }
         Precondition::TargetKind { target_index, kind } => targets
-            .get(usize::from(*target_index))
-            .is_some_and(|target| view.entity_kind(*target) == Some(*kind)),
+            .get(usize::from(target_index))
+            .is_some_and(|target| view.entity_kind(*target) == Some(kind)),
     }
 }
 
 #[must_use]
-pub fn enumerate_targets(
+fn enumerate_targets(
     spec: &TargetSpec,
     actor: EntityId,
-    view: &dyn KnowledgeView,
+    view: &dyn BeliefView,
 ) -> Vec<EntityId> {
     let mut targets = match spec {
         TargetSpec::SpecificEntity(entity) => view
@@ -115,7 +115,7 @@ pub fn enumerate_targets(
 fn enumerate_bindings(
     specs: &[TargetSpec],
     actor: EntityId,
-    view: &dyn KnowledgeView,
+    view: &dyn BeliefView,
     current: &mut Vec<EntityId>,
     affordances: &mut Vec<Affordance>,
     def_id: crate::ActionDefId,
@@ -142,7 +142,7 @@ mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec, WorldKnowledgeView,
+        Interruptibility, OmniscientBeliefView, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -152,7 +152,7 @@ mod tests {
     };
 
     #[derive(Default)]
-    struct StubKnowledgeView {
+    struct StubBeliefView {
         alive: BTreeMap<EntityId, bool>,
         kinds: BTreeMap<EntityId, EntityKind>,
         places: BTreeMap<EntityId, EntityId>,
@@ -161,7 +161,7 @@ mod tests {
         control: BTreeMap<EntityId, bool>,
     }
 
-    impl crate::KnowledgeView for StubKnowledgeView {
+    impl crate::BeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
@@ -254,7 +254,7 @@ mod tests {
         let matching_b = entity(20);
         let other_kind = entity(40);
 
-        let mut view = StubKnowledgeView::default();
+        let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
         view.alive.insert(matching_a, true);
         view.alive.insert(matching_b, true);
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn evaluate_constraint_checks_control_and_commodity_requirements() {
         let actor = entity(1);
-        let mut view = StubKnowledgeView::default();
+        let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
         view.kinds.insert(actor, EntityKind::Agent);
         view.control.insert(actor, true);
@@ -315,17 +315,17 @@ mod tests {
     #[test]
     fn evaluate_precondition_returns_false_for_out_of_bounds_target_index() {
         let actor = entity(1);
-        let mut view = StubKnowledgeView::default();
+        let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
 
         assert!(!evaluate_precondition(
-            &Precondition::TargetExists(2),
+            Precondition::TargetExists(2),
             actor,
             &[entity(4)],
             &view,
         ));
         assert!(!evaluate_precondition(
-            &Precondition::TargetKind {
+            Precondition::TargetKind {
                 target_index: 1,
                 kind: EntityKind::Facility,
             },
@@ -342,7 +342,7 @@ mod tests {
         let target_a = entity(20);
         let target_b = entity(30);
 
-        let mut view = StubKnowledgeView::default();
+        let mut view = StubBeliefView::default();
         for entity in [actor, target_a, target_b] {
             view.alive.insert(entity, true);
         }
@@ -388,7 +388,7 @@ mod tests {
         let place = entity(10);
         let target = entity(20);
 
-        let mut view = StubKnowledgeView::default();
+        let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
         view.alive.insert(target, true);
         view.kinds.insert(actor, EntityKind::Agent);
@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn world_knowledge_view_affordances_match_for_human_and_ai_control() {
+    fn omniscient_belief_view_affordances_match_for_human_and_ai_control() {
         let mut human_world = World::new(build_prototype_world()).unwrap();
         let human = {
             let mut txn = new_txn(&mut human_world, 1);
@@ -464,8 +464,9 @@ mod tests {
         ));
 
         let human_affordances =
-            get_affordances(&WorldKnowledgeView::new(&human_world), human, &registry);
-        let ai_affordances = get_affordances(&WorldKnowledgeView::new(&ai_world), ai, &registry);
+            get_affordances(&OmniscientBeliefView::new(&human_world), human, &registry);
+        let ai_affordances =
+            get_affordances(&OmniscientBeliefView::new(&ai_world), ai, &registry);
 
         assert_eq!(human_affordances.len(), 2);
         assert_eq!(ai_affordances.len(), 2);
@@ -482,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn world_knowledge_view_none_control_only_changes_actor_has_control_actions() {
+    fn omniscient_belief_view_none_control_only_changes_actor_has_control_actions() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
@@ -505,9 +506,57 @@ mod tests {
             vec![Precondition::ActorAlive],
         ));
 
-        let affordances = get_affordances(&WorldKnowledgeView::new(&world), actor, &registry);
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &registry);
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].def_id, ActionDefId(0));
+    }
+
+    #[test]
+    fn divergent_belief_views_produce_different_affordances() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let target_a = entity(20);
+        let target_b = entity(21);
+
+        let mut view_a = StubBeliefView::default();
+        let mut view_b = StubBeliefView::default();
+
+        for view in [&mut view_a, &mut view_b] {
+            view.alive.insert(actor, true);
+            view.alive.insert(target_a, true);
+            view.alive.insert(target_b, true);
+            view.kinds.insert(actor, EntityKind::Agent);
+            view.kinds.insert(target_a, EntityKind::Facility);
+            view.kinds.insert(target_b, EntityKind::Facility);
+        }
+
+        view_a.places.insert(actor, place_a);
+        view_a.places.insert(target_a, place_a);
+        view_a.colocated.insert(place_a, vec![target_a]);
+
+        view_b.places.insert(actor, place_b);
+        view_b.places.insert(target_b, place_b);
+        view_b.colocated.insert(place_b, vec![target_b]);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Facility,
+            }],
+            vec![Precondition::TargetAtActorPlace(0)],
+        ));
+
+        let affordances_a = get_affordances(&view_a, actor, &registry);
+        let affordances_b = get_affordances(&view_b, actor, &registry);
+
+        assert_eq!(affordances_a.len(), 1);
+        assert_eq!(affordances_b.len(), 1);
+        assert_eq!(affordances_a[0].bound_targets, vec![target_a]);
+        assert_eq!(affordances_b[0].bound_targets, vec![target_b]);
+        assert_ne!(affordances_a, affordances_b);
     }
 }

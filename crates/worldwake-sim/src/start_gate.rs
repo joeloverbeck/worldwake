@@ -1,7 +1,10 @@
 use crate::{
-    evaluate_constraint, evaluate_precondition, ActionDefRegistry, ActionError,
+    action_validation::{
+        evaluate_constraint_authoritatively, evaluate_precondition_authoritatively,
+    },
+    ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-    ActionInstanceId, ActionStatus, Affordance, KnowledgeView, WorldKnowledgeView,
+    ActionInstanceId, ActionStatus, Affordance,
 };
 use worldwake_core::{EventTag, Tick, TickRange, WitnessData, WorldError, WorldTxn};
 
@@ -26,28 +29,24 @@ pub fn start_action(
         .get(def.handler)
         .ok_or(ActionError::UnknownActionHandler(def.handler))?;
 
-    let actor_place = {
-        let view = WorldKnowledgeView::new(world);
-
-        for constraint in &def.actor_constraints {
-            if !evaluate_constraint(constraint, affordance.actor, &view) {
-                return Err(ActionError::ConstraintFailed(format!("{constraint:?}")));
-            }
+    for constraint in &def.actor_constraints {
+        if !evaluate_constraint_authoritatively(world, constraint, affordance.actor) {
+            return Err(ActionError::ConstraintFailed(format!("{constraint:?}")));
         }
+    }
 
-        for precondition in &def.preconditions {
-            if !evaluate_precondition(
-                precondition,
-                affordance.actor,
-                &affordance.bound_targets,
-                &view,
-            ) {
-                return Err(ActionError::PreconditionFailed(format!("{precondition:?}")));
-            }
+    for precondition in &def.preconditions {
+        if !evaluate_precondition_authoritatively(
+            world,
+            *precondition,
+            affordance.actor,
+            &affordance.bound_targets,
+        ) {
+            return Err(ActionError::PreconditionFailed(format!("{precondition:?}")));
         }
+    }
 
-        view.effective_place(affordance.actor)
-    };
+    let actor_place = world.effective_place(affordance.actor);
 
     let duration = def.duration.resolve();
     let mut txn = WorldTxn::new(

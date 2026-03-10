@@ -1,11 +1,11 @@
 use crate::{
+    action_validation::evaluate_txn_precondition_authoritatively,
     ActionExecutionAuthority, ActionExecutionContext,
     action_termination::{
         add_targets, finalize_failed_action, release_reservations, FailedActionTermination,
     },
-    evaluate_precondition, AbortReason, ActionDefRegistry, ActionError, ActionHandlerRegistry,
-    ActionInstance, ActionInstanceId, ActionProgress, ActionStatus, KnowledgeView, ReplanNeeded,
-    WorldKnowledgeView,
+    AbortReason, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
+    ActionInstanceId, ActionProgress, ActionStatus, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
@@ -88,7 +88,7 @@ fn tick_action_inner(
         .get(def.handler)
         .ok_or(ActionError::UnknownActionHandler(def.handler))?;
 
-    let actor_place = WorldKnowledgeView::new(world).effective_place(instance.actor);
+    let actor_place = world.effective_place(instance.actor);
     let mut txn = WorldTxn::new(
         world,
         context.tick,
@@ -116,11 +116,15 @@ fn tick_action_inner(
     }
 
     let failure_reason = {
-        let view = WorldKnowledgeView::new(&txn);
         def.commit_conditions
             .iter()
             .find(|precondition| {
-                !evaluate_precondition(precondition, instance.actor, &instance.targets, &view)
+                !evaluate_txn_precondition_authoritatively(
+                    &txn,
+                    **precondition,
+                    instance.actor,
+                    &instance.targets,
+                )
             })
             .map(|precondition| AbortReason::CommitConditionFailed(format!("{precondition:?}")))
     };

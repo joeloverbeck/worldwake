@@ -1,6 +1,6 @@
 use worldwake_core::{CommodityKind, EntityId, EntityKind, Quantity, TickRange};
 
-pub trait KnowledgeView {
+pub trait BeliefView {
     fn is_alive(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;

@@ -94,6 +94,7 @@ The simulation crate contains the action framework, scheduler, tick loop, and re
 | `action_execution` | `start_action()` — initiate actions with precondition/cost checks |
 | `action_ids` | Action-specific ID types |
 | `action_termination` | Action completion and interruption handling |
+| `action_validation` | Authoritative action legality checks against `World` / `WorldTxn` |
 | `scheduler` | `Scheduler` — manages tick loop, active actions, system execution order |
 | `tick_step` | `step_tick()` — execute one full tick (drain inputs → progress actions → run systems) |
 | `tick_action` | `tick_action()` — progress individual action state per tick |
@@ -105,8 +106,8 @@ The simulation crate contains the action framework, scheduler, tick loop, and re
 | `input_event` | `InputEvent`, `InputKind` — player/AI input (RequestAction, CancelAction, SwitchControl) |
 | `input_queue` | `InputQueue` — deterministic input ordering by `(tick, sequence_no)` |
 | `deterministic_rng` | `DeterministicRng` — ChaCha8 wrapper for seeded randomness |
-| `knowledge_view` | `KnowledgeView` trait — agent belief interface |
-| `world_knowledge_view` | `WorldKnowledgeView` — percept-based query interface |
+| `belief_view` | `BeliefView` trait — agent belief interface |
+| `omniscient_belief_view` | `OmniscientBeliefView` — omniscient stand-in until E14 |
 | `affordance` | `Affordance` — available actions for an agent |
 | `affordance_query` | `get_affordances()` — query available actions |
 | `replay_state` | `ReplayState`, `ReplayCheckpoint` — record initial state, seed, inputs, per-tick hashes |
@@ -213,7 +214,7 @@ Do not duplicate or drift this procedure in other files; update `docs/archival-w
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (2130 symbols, 7292 relationships, 177 execution flows).
+This project is indexed by GitNexus as **worldwake** (2138 symbols, 7306 relationships, 178 execution flows).
 
 ## Always Start Here
 

@@ -4,6 +4,7 @@
 //! Depends on `worldwake-core`.
 
 mod action_termination;
+mod action_validation;
 
 pub mod action_def;
 pub mod action_def_registry;
@@ -17,12 +18,13 @@ pub mod action_state;
 pub mod action_status;
 pub mod affordance;
 pub mod affordance_query;
+pub mod belief_view;
 pub mod controller_state;
 pub mod deterministic_rng;
 pub mod input_event;
 pub mod input_queue;
 pub mod interrupt_abort;
-pub mod knowledge_view;
+pub mod omniscient_belief_view;
 pub mod replay_state;
 pub mod replay_execution;
 pub mod replan_needed;
@@ -34,7 +36,6 @@ pub mod system_manifest;
 pub mod system_dispatch;
 pub mod tick_step;
 pub mod tick_action;
-pub mod world_knowledge_view;
 
 pub use action_def::ActionDef;
 pub use action_def_registry::ActionDefRegistry;
@@ -52,15 +53,14 @@ pub use action_semantics::{
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
 pub use affordance::Affordance;
-pub use affordance_query::{
-    enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
-};
+pub use affordance_query::get_affordances;
+pub use belief_view::BeliefView;
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use input_event::{InputEvent, InputKind};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
-pub use knowledge_view::KnowledgeView;
+pub use omniscient_belief_view::OmniscientBeliefView;
 pub use replay_execution::{
     record_tick_checkpoint, replay_and_verify, seed_replay_inputs_from_scheduler,
     ReplayCheckpointError, ReplayError,
@@ -77,4 +77,3 @@ pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use tick_step::{step_tick, TickStepError, TickStepResult, TickStepServices};
 pub use tick_action::{tick_action, TickOutcome};
-pub use world_knowledge_view::WorldKnowledgeView;

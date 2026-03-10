@@ -2,7 +2,7 @@ use crate::{
     ActionExecutionAuthority, ActionExecutionContext,
     action_termination::{finalize_failed_action, FailedActionTermination},
     ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-    ActionStatus, Interruptibility, KnowledgeView, ReplanNeeded, WorldKnowledgeView,
+    ActionStatus, Interruptibility, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
@@ -132,7 +132,7 @@ fn transition_action_inner(
         },
     };
 
-    let actor_place = WorldKnowledgeView::new(world).effective_place(instance.actor);
+    let actor_place = world.effective_place(instance.actor);
     let txn = WorldTxn::new(
         world,
         context.tick,

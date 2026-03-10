@@ -230,7 +230,7 @@ fn resolve_affordance(
     def_id: ActionDefId,
     targets: &[EntityId],
 ) -> Result<crate::Affordance, TickStepError> {
-    let view = crate::WorldKnowledgeView::new(world);
+    let view = crate::OmniscientBeliefView::new(world);
     get_affordances(&view, actor, action_defs)
         .into_iter()
         .find(|affordance| {
