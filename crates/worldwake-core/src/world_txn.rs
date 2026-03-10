@@ -262,6 +262,10 @@ impl<'w> WorldTxn<'w> {
         })
     }
 
+    pub fn set_in_transit(&mut self, entity: EntityId) -> Result<(), WorldError> {
+        self.record_placement_operation(entity, |world| world.set_in_transit(entity))
+    }
+
     pub fn try_reserve(
         &mut self,
         entity: EntityId,

@@ -163,6 +163,29 @@ impl Topology {
         self.incoming.get(&place).map_or(&[], Vec::as_slice)
     }
 
+    pub fn unique_direct_edge(
+        &self,
+        from: EntityId,
+        to: EntityId,
+    ) -> Result<Option<&TravelEdge>, WorldError> {
+        let mut matches = self
+            .outgoing_edges(from)
+            .iter()
+            .filter_map(|edge_id| self.edge(*edge_id))
+            .filter(|edge| edge.to() == to);
+
+        let Some(first) = matches.next() else {
+            return Ok(None);
+        };
+        if matches.next().is_some() {
+            return Err(WorldError::InvariantViolation(format!(
+                "multiple directed travel edges connect {from} -> {to}"
+            )));
+        }
+
+        Ok(Some(first))
+    }
+
     pub fn neighbors(&self, place: EntityId) -> Vec<EntityId> {
         self.outgoing_edges(place)
             .iter()
@@ -928,6 +951,56 @@ mod tests {
         topology.add_edge(edge(20, 1, 2)).unwrap();
 
         assert_eq!(topology.neighbors(entity(1)), vec![entity(2), entity(3)]);
+    }
+
+    #[test]
+    fn unique_direct_edge_returns_matching_edge() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+        topology
+            .add_place(entity(2), place("B", &[PlaceTag::Farm]))
+            .unwrap();
+        topology.add_edge(edge_with_ticks(10, 1, 2, 4)).unwrap();
+
+        let edge = topology
+            .unique_direct_edge(entity(1), entity(2))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(edge.id(), TravelEdgeId(10));
+        assert_eq!(edge.travel_time_ticks(), 4);
+    }
+
+    #[test]
+    fn unique_direct_edge_returns_none_when_no_edge_exists() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+        topology
+            .add_place(entity(2), place("B", &[PlaceTag::Farm]))
+            .unwrap();
+
+        assert_eq!(topology.unique_direct_edge(entity(1), entity(2)).unwrap(), None);
+    }
+
+    #[test]
+    fn unique_direct_edge_errors_when_multiple_edges_share_endpoints() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(entity(1), place("A", &[PlaceTag::Village]))
+            .unwrap();
+        topology
+            .add_place(entity(2), place("B", &[PlaceTag::Farm]))
+            .unwrap();
+        topology.add_edge(edge_with_ticks(10, 1, 2, 2)).unwrap();
+        topology.add_edge(edge_with_ticks(20, 1, 2, 3)).unwrap();
+
+        let err = topology.unique_direct_edge(entity(1), entity(2)).unwrap_err();
+
+        assert!(matches!(err, WorldError::InvariantViolation(_)));
     }
 
     #[test]

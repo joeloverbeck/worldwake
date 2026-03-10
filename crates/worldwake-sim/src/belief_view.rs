@@ -7,7 +7,9 @@ pub trait BeliefView {
     fn is_alive(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
+    fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;

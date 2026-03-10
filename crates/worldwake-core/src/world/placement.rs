@@ -146,6 +146,28 @@ impl World {
         self.set_ground_location(container, new_place)
     }
 
+    pub(crate) fn set_in_transit(&mut self, entity: EntityId) -> Result<(), WorldError> {
+        let meta = self.ensure_alive(entity)?;
+        if !Self::requires_physical_placement(meta.kind) {
+            return Err(WorldError::InvalidOperation(format!(
+                "entity kind {:?} does not support physical transit placement: {}",
+                meta.kind, entity
+            )));
+        }
+
+        self.clear_located_in(entity);
+        self.relations.in_transit.insert(entity);
+        if self.get_component_container(entity).is_some() {
+            let descendants = self.collect_container_descendants(entity)?;
+            for descendant in descendants {
+                self.clear_located_in(descendant);
+                self.relations.in_transit.insert(descendant);
+            }
+        }
+
+        Ok(())
+    }
+
     fn require_place(&self, place: EntityId) -> Result<(), WorldError> {
         if self.topology.place(place).is_some() {
             return Ok(());
@@ -338,6 +360,14 @@ impl World {
         Self::clear_entity_relation(
             &mut self.relations.contained_by,
             &mut self.relations.contents_of,
+            entity,
+        );
+    }
+
+    fn clear_located_in(&mut self, entity: EntityId) {
+        Self::clear_entity_relation(
+            &mut self.relations.located_in,
+            &mut self.relations.entities_at,
             entity,
         );
     }

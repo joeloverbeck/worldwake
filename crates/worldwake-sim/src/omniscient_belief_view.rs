@@ -34,8 +34,16 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world.effective_place(entity)
     }
 
+    fn is_in_transit(&self, entity: EntityId) -> bool {
+        self.world.is_in_transit(entity)
+    }
+
     fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
         self.world.entities_effectively_at(place)
+    }
+
+    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+        self.world.topology().neighbors(place)
     }
 
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
@@ -202,6 +210,30 @@ mod tests {
         assert_eq!(view.effective_place(lot), Some(other_place));
         assert_eq!(view.entities_at(place), Vec::new());
         assert_eq!(view.entities_at(other_place), vec![root, inner, lot]);
+    }
+
+    #[test]
+    fn transit_and_adjacency_queries_reflect_world_topology_and_placement() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            commit_txn(txn);
+            actor
+        };
+
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_in_transit(actor).unwrap();
+        commit_txn(txn);
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert!(view.is_in_transit(actor));
+        assert_eq!(view.effective_place(actor), None);
+        assert_eq!(view.adjacent_places(place), world.topology().neighbors(place));
     }
 
     #[test]

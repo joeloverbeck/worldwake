@@ -48,6 +48,7 @@ fn evaluate_constraint(constraint: &Constraint, actor: EntityId, view: &dyn Beli
     match constraint {
         Constraint::ActorAlive => view.is_alive(actor),
         Constraint::ActorHasControl => view.has_control(actor),
+        Constraint::ActorNotInTransit => !view.is_in_transit(actor),
         Constraint::ActorAtPlace(place) => view.effective_place(actor) == Some(*place),
         Constraint::ActorKnowsRecipe(recipe) => view.knows_recipe(actor, *recipe),
         Constraint::ActorHasUniqueItemKind { kind, min_count } => {
@@ -83,6 +84,15 @@ fn evaluate_precondition(
                 return false;
             };
             view.effective_place(target) == Some(actor_place)
+        }
+        Precondition::TargetAdjacentToActor(index) => {
+            let Some(target) = targets.get(usize::from(index)).copied() else {
+                return false;
+            };
+            let Some(actor_place) = view.effective_place(actor) else {
+                return false;
+            };
+            view.adjacent_places(actor_place).contains(&target)
         }
         Precondition::TargetKind { target_index, kind } => targets
             .get(usize::from(target_index))
@@ -134,6 +144,15 @@ fn enumerate_targets(spec: &TargetSpec, actor: EntityId, view: &dyn BeliefView) 
             view.entities_at(place)
                 .into_iter()
                 .filter(|entity| view.entity_kind(*entity) == Some(*kind))
+                .collect::<Vec<_>>()
+        }
+        TargetSpec::AdjacentPlace => {
+            let Some(place) = view.effective_place(actor) else {
+                return Vec::new();
+            };
+            view.adjacent_places(place)
+                .into_iter()
+                .filter(|entity| view.entity_kind(*entity) == Some(worldwake_core::EntityKind::Place))
                 .collect::<Vec<_>>()
         }
     };
@@ -190,7 +209,9 @@ mod tests {
         alive: BTreeMap<EntityId, bool>,
         kinds: BTreeMap<EntityId, EntityKind>,
         places: BTreeMap<EntityId, EntityId>,
+        in_transit: BTreeMap<EntityId, bool>,
         colocated: BTreeMap<EntityId, Vec<EntityId>>,
+        adjacent_places: BTreeMap<EntityId, Vec<EntityId>>,
         known_recipes: BTreeMap<EntityId, Vec<RecipeId>>,
         unique_items: BTreeMap<(EntityId, UniqueItemKind), u32>,
         commodities: BTreeMap<(EntityId, CommodityKind), Quantity>,
@@ -218,8 +239,16 @@ mod tests {
             self.places.get(&entity).copied()
         }
 
+        fn is_in_transit(&self, entity: EntityId) -> bool {
+            self.in_transit.get(&entity).copied().unwrap_or(false)
+        }
+
         fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
             self.colocated.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+            self.adjacent_places.get(&place).cloned().unwrap_or_default()
         }
 
         fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
@@ -363,6 +392,29 @@ mod tests {
     }
 
     #[test]
+    fn enumerate_targets_returns_adjacent_places_for_travel_specs() {
+        let actor = entity(1);
+        let place = entity(10);
+        let dest_a = entity(20);
+        let dest_b = entity(30);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(dest_a, true);
+        view.alive.insert(dest_b, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(dest_a, EntityKind::Place);
+        view.kinds.insert(dest_b, EntityKind::Place);
+        view.places.insert(actor, place);
+        view.adjacent_places
+            .insert(place, vec![dest_b, dest_a, dest_a]);
+
+        let targets = enumerate_targets(&TargetSpec::AdjacentPlace, actor, &view);
+
+        assert_eq!(targets, vec![dest_a, dest_b]);
+    }
+
+    #[test]
     fn evaluate_constraint_checks_control_and_commodity_requirements() {
         let actor = entity(1);
         let mut view = StubBeliefView::default();
@@ -401,6 +453,17 @@ mod tests {
                 kind: CommodityKind::Water,
                 min_qty: Quantity(1),
             },
+            actor,
+            &view,
+        ));
+        assert!(evaluate_constraint(
+            &Constraint::ActorNotInTransit,
+            actor,
+            &view,
+        ));
+        view.in_transit.insert(actor, true);
+        assert!(!evaluate_constraint(
+            &Constraint::ActorNotInTransit,
             actor,
             &view,
         ));
@@ -579,6 +642,45 @@ mod tests {
         let affordances = get_affordances(&view, actor, &registry);
 
         assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn get_affordances_filters_out_travel_for_actors_already_in_transit() {
+        let actor = entity(1);
+        let place = entity(10);
+        let destination = entity(20);
+
+        let mut view = StubBeliefView::default();
+        for entity in [actor, destination] {
+            view.alive.insert(entity, true);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(destination, EntityKind::Place);
+        view.control.insert(actor, true);
+        view.places.insert(actor, place);
+        view.in_transit.insert(actor, true);
+        view.adjacent_places.insert(place, vec![destination]);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![
+                Constraint::ActorAlive,
+                Constraint::ActorHasControl,
+                Constraint::ActorNotInTransit,
+            ],
+            vec![TargetSpec::AdjacentPlace],
+            vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAdjacentToActor(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Place,
+                },
+            ],
+        ));
+
+        assert!(get_affordances(&view, actor, &registry).is_empty());
     }
 
     #[test]

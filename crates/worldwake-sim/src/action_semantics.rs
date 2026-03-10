@@ -8,6 +8,7 @@ use worldwake_core::{
 pub enum Constraint {
     ActorAlive,
     ActorHasControl,
+    ActorNotInTransit,
     ActorAtPlace(EntityId),
     ActorKnowsRecipe(RecipeId),
     ActorHasUniqueItemKind {
@@ -25,6 +26,7 @@ pub enum Constraint {
 pub enum TargetSpec {
     SpecificEntity(EntityId),
     EntityAtActorPlace { kind: EntityKind },
+    AdjacentPlace,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -33,6 +35,7 @@ pub enum Precondition {
     ActorCanControlTarget(u8),
     TargetExists(u8),
     TargetAtActorPlace(u8),
+    TargetAdjacentToActor(u8),
     TargetKind {
         target_index: u8,
         kind: EntityKind,
@@ -78,6 +81,7 @@ pub enum MetabolismDurationKind {
 pub enum DurationExpr {
     Fixed(NonZeroU32),
     TargetConsumable { target_index: u8 },
+    TravelToTarget { target_index: u8 },
     ActorMetabolism { kind: MetabolismDurationKind },
 }
 
@@ -86,7 +90,9 @@ impl DurationExpr {
     pub const fn fixed_ticks(self) -> Option<u32> {
         match self {
             Self::Fixed(ticks) => Some(ticks.get()),
-            Self::TargetConsumable { .. } | Self::ActorMetabolism { .. } => None,
+            Self::TargetConsumable { .. }
+            | Self::TravelToTarget { .. }
+            | Self::ActorMetabolism { .. } => None,
         }
     }
 
@@ -112,6 +118,23 @@ impl DurationExpr {
                     .consumable_profile
                     .ok_or_else(|| format!("target {target} commodity is not consumable"))?;
                 Ok(profile.consumption_ticks_per_unit.get())
+            }
+            Self::TravelToTarget { target_index } => {
+                let target = targets
+                    .get(usize::from(target_index))
+                    .copied()
+                    .ok_or_else(|| format!("missing target at index {target_index}"))?;
+                let origin = world
+                    .effective_place(actor)
+                    .ok_or_else(|| format!("actor {actor} has no effective place"))?;
+                let edge = world
+                    .topology()
+                    .unique_direct_edge(origin, target)
+                    .map_err(|err| err.to_string())?
+                    .ok_or_else(|| {
+                        format!("no directed travel edge connects {origin} -> {target}")
+                    })?;
+                Ok(edge.travel_time_ticks())
             }
             Self::ActorMetabolism { kind } => {
                 let profile = world
@@ -158,9 +181,10 @@ mod tests {
         generation: 2,
     };
 
-    const ALL_CONSTRAINTS: [Constraint; 7] = [
+    const ALL_CONSTRAINTS: [Constraint; 8] = [
         Constraint::ActorAlive,
         Constraint::ActorHasControl,
+        Constraint::ActorNotInTransit,
         Constraint::ActorAtPlace(ENTITY_A),
         Constraint::ActorKnowsRecipe(RecipeId(3)),
         Constraint::ActorHasUniqueItemKind {
@@ -174,18 +198,20 @@ mod tests {
         Constraint::ActorKind(EntityKind::Agent),
     ];
 
-    const ALL_TARGET_SPECS: [TargetSpec; 2] = [
+    const ALL_TARGET_SPECS: [TargetSpec; 3] = [
         TargetSpec::SpecificEntity(ENTITY_B),
         TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Facility,
         },
+        TargetSpec::AdjacentPlace,
     ];
 
-    const ALL_PRECONDITIONS: [Precondition; 10] = [
+    const ALL_PRECONDITIONS: [Precondition; 11] = [
         Precondition::ActorAlive,
         Precondition::ActorCanControlTarget(6),
         Precondition::TargetExists(0),
         Precondition::TargetAtActorPlace(1),
+        Precondition::TargetAdjacentToActor(7),
         Precondition::TargetKind {
             target_index: 2,
             kind: EntityKind::Container,
@@ -215,10 +241,11 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 4] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 5] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::TargetConsumable { target_index: 0 },
+        DurationExpr::TravelToTarget { target_index: 1 },
         DurationExpr::ActorMetabolism {
             kind: MetabolismDurationKind::Wash,
         },
@@ -258,6 +285,7 @@ mod tests {
             DurationExpr::TargetConsumable { target_index: 0 }.fixed_ticks(),
             None
         );
+        assert_eq!(DurationExpr::TravelToTarget { target_index: 0 }.fixed_ticks(), None);
     }
 
     #[test]
@@ -403,6 +431,33 @@ mod tests {
     }
 
     #[test]
+    fn duration_expr_resolves_travel_ticks_from_directed_edge() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, places[0]).unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let destination = world.topology().neighbors(places[0])[0];
+        let expected = world
+            .topology()
+            .unique_direct_edge(places[0], destination)
+            .unwrap()
+            .unwrap()
+            .travel_time_ticks();
+
+        assert_eq!(
+            DurationExpr::TravelToTarget { target_index: 0 }
+                .resolve_for(&world, actor, &[destination])
+                .unwrap(),
+            expected
+        );
+    }
+
+    #[test]
     fn target_and_precondition_indices_use_fixed_width_integers() {
         let reservation = ReservationReq { target_index: 4 };
         let _: u8 = reservation.target_index;
@@ -423,6 +478,13 @@ mod tests {
 
         match Precondition::TargetAtActorPlace(3) {
             Precondition::TargetAtActorPlace(index) => {
+                let _: u8 = index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetAdjacentToActor(4) {
+            Precondition::TargetAdjacentToActor(index) => {
                 let _: u8 = index;
             }
             _ => unreachable!(),

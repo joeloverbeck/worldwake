@@ -10,6 +10,7 @@ pub(crate) fn evaluate_constraint_authoritatively(
     match constraint {
         Constraint::ActorAlive => world.is_alive(actor),
         Constraint::ActorHasControl => has_control(world, actor),
+        Constraint::ActorNotInTransit => !world.is_in_transit(actor),
         Constraint::ActorAtPlace(place) => world.effective_place(actor) == Some(*place),
         Constraint::ActorKnowsRecipe(recipe) => world
             .get_component_known_recipes(actor)
@@ -46,6 +47,18 @@ pub(crate) fn evaluate_precondition_authoritatively(
                 return false;
             };
             world.effective_place(target) == Some(actor_place)
+        }
+        Precondition::TargetAdjacentToActor(index) => {
+            let Some(target) = targets.get(usize::from(index)).copied() else {
+                return false;
+            };
+            let Some(actor_place) = world.effective_place(actor) else {
+                return false;
+            };
+            world
+                .topology()
+                .unique_direct_edge(actor_place, target)
+                .is_ok_and(|edge| edge.is_some())
         }
         Precondition::TargetKind { target_index, kind } => targets
             .get(usize::from(target_index))
@@ -133,9 +146,11 @@ mod tests {
     #[test]
     fn authoritative_constraint_checks_read_world_state_directly() {
         let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
             commit_txn(txn);
             actor
         };
@@ -153,6 +168,11 @@ mod tests {
         assert!(evaluate_constraint_authoritatively(
             &world,
             &Constraint::ActorKind(EntityKind::Agent),
+            actor,
+        ));
+        assert!(evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorNotInTransit,
             actor,
         ));
         assert!(!evaluate_constraint_authoritatively(
@@ -268,6 +288,41 @@ mod tests {
             Precondition::TargetAtActorPlace(0),
             actor,
             &[target],
+        ));
+    }
+
+    #[test]
+    fn authoritative_travel_checks_cover_adjacency_and_transit_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, places[0]).unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let destination = world.topology().neighbors(places[0])[0];
+
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetAdjacentToActor(0),
+            actor,
+            &[destination],
+        ));
+
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_in_transit(actor).unwrap();
+        assert!(!evaluate_txn_precondition_authoritatively(
+            &txn,
+            Precondition::TargetAdjacentToActor(0),
+            actor,
+            &[destination],
+        ));
+        assert!(!evaluate_constraint_authoritatively(
+            &txn,
+            &Constraint::ActorNotInTransit,
+            actor,
         ));
     }
 
