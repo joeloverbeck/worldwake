@@ -33,6 +33,7 @@ pub mod components;
 pub mod conservation;
 pub mod control;
 pub mod delta;
+pub mod drives;
 pub mod entity;
 pub mod error;
 pub mod event_log;
@@ -67,6 +68,7 @@ pub use delta::{
     ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
+pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
 pub use event_log::EventLog;

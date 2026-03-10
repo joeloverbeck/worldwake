@@ -3,6 +3,7 @@
 use crate::{
     component_schema::with_authoritative_components,
     components::{AgentData, Name},
+    drives::DriveThresholds,
     items::{Container, ItemLot, UniqueItem},
     wounds::WoundList,
     EntityId,
@@ -96,7 +97,7 @@ mod tests {
         components::{AgentData, Name},
         BodyPart, CommodityKind, Container, ControlSource, DeprivationKind, EntityId, ItemLot,
         LoadUnits, LotOperation, Permille, ProvenanceEntry, Quantity, Tick, UniqueItem,
-        UniqueItemKind, Wound, WoundCause, WoundList,
+        UniqueItemKind, Wound, WoundCause, WoundList, DriveThresholds,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -114,6 +115,7 @@ mod tests {
         assert_eq!(tables.iter_names().count(), 0);
         assert_eq!(tables.iter_agent_data().count(), 0);
         assert_eq!(tables.iter_wound_lists().count(), 0);
+        assert_eq!(tables.iter_drive_thresholds().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
         assert_eq!(tables.iter_containers().count(), 0);
@@ -156,6 +158,17 @@ mod tests {
 
         assert_eq!(tables.insert_wound_list(id, wounds.clone()), None);
         assert_eq!(tables.get_wound_list(id), Some(&wounds));
+    }
+
+    #[test]
+    fn insert_and_get_drive_thresholds() {
+        let mut tables = ComponentTables::default();
+        let id = entity(6);
+        let thresholds = DriveThresholds::default();
+
+        assert_eq!(tables.insert_drive_thresholds(id, thresholds), None);
+        assert_eq!(tables.get_drive_thresholds(id), Some(&thresholds));
+        assert!(tables.has_drive_thresholds(id));
     }
 
     #[test]
@@ -258,6 +271,7 @@ mod tests {
         assert_eq!(tables.get_name(id), None);
         assert_eq!(tables.get_agent_data(id), None);
         assert_eq!(tables.get_wound_list(id), None);
+        assert_eq!(tables.get_drive_thresholds(id), None);
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
         assert_eq!(tables.get_container(id), None);
@@ -287,6 +301,7 @@ mod tests {
                 }],
             },
         );
+        tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
         tables.insert_item_lot(
             entity(11),
             ItemLot {

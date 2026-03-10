@@ -1,9 +1,9 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_authoritative_components, AgentData, CommodityKind, Container, EntityId,
-    EntityKind, FactId, ItemLot, Name, Permille, Quantity, ReservationRecord, UniqueItem,
-    WoundList,
+    component_schema::with_authoritative_components, AgentData, CommodityKind, Container,
+    DriveThresholds, EntityId, EntityKind, FactId, ItemLot, Name, Permille, Quantity,
+    ReservationRecord, UniqueItem, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -213,8 +213,9 @@ mod tests {
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
-        EntityKind, EventId, FactId, ItemLot, LoadUnits, LotOperation, Name, Permille,
+        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EventId, FactId, ItemLot, LoadUnits,
+        LotOperation, Name, Permille,
         ProvenanceEntry, Quantity, ReservationId, ReservationRecord, Tick, TickRange, UniqueItem,
         UniqueItemKind, Wound, WoundCause, WoundList,
     };
@@ -252,6 +253,7 @@ mod tests {
                     inflicted_at: Tick(5),
                 }],
             }),
+            ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::ItemLot(ItemLot {
                 commodity: CommodityKind::Grain,
                 quantity: Quantity(11),
@@ -355,6 +357,7 @@ mod tests {
                 ComponentKind::Name,
                 ComponentKind::AgentData,
                 ComponentKind::WoundList,
+                ComponentKind::DriveThresholds,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,

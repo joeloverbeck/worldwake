@@ -67,6 +67,27 @@ macro_rules! with_authoritative_components {
                 WoundList
             }
             {
+                drive_thresholds,
+                DriveThresholds,
+                insert_drive_thresholds,
+                get_drive_thresholds,
+                get_drive_thresholds_mut,
+                remove_drive_thresholds,
+                has_drive_thresholds,
+                iter_drive_thresholds,
+                insert_component_drive_thresholds,
+                get_component_drive_thresholds,
+                get_component_drive_thresholds_mut,
+                remove_component_drive_thresholds,
+                has_component_drive_thresholds,
+                entities_with_drive_thresholds,
+                query_drive_thresholds,
+                count_with_drive_thresholds,
+                "DriveThresholds",
+                |kind| kind == EntityKind::Agent,
+                DriveThresholds
+            }
+            {
                 item_lots,
                 ItemLot,
                 insert_item_lot,

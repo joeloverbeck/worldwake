@@ -2,9 +2,9 @@
 
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
-    ComponentValue, Container, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, ItemLot,
-    LoadUnits, LotOperation, Name, ProvenanceEntry, Quantity, RelationTables, Tick, Topology,
-    UniqueItem, UniqueItemKind, WorldError, WoundList,
+    ComponentValue, Container, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
+    EventId, ItemLot, LoadUnits, LotOperation, Name, ProvenanceEntry, Quantity, RelationTables,
+    Tick, Topology, UniqueItem, UniqueItemKind, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -553,10 +553,11 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
-        EntityKind, EventId, FactId, ItemLot, LoadUnits, LotOperation, Name, Permille, Place,
-        PlaceTag, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, Tick, TickRange,
-        Topology, UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause, WoundList,
+        AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EventId, FactId, ItemLot, LoadUnits,
+        LotOperation, Name, Permille, Place, PlaceTag, ProvenanceEntry, Quantity, ReservationId,
+        ReservationRecord, Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError,
+        Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -610,6 +611,10 @@ mod tests {
                 inflicted_at: Tick(6),
             }],
         }
+    }
+
+    fn sample_drive_thresholds() -> DriveThresholds {
+        DriveThresholds::default()
     }
 
     struct PurgeRelationFixture {
@@ -3618,6 +3623,35 @@ mod tests {
     }
 
     #[test]
+    fn drive_thresholds_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let thresholds = sample_drive_thresholds();
+
+        world
+            .insert_component_drive_thresholds(id, thresholds)
+            .unwrap();
+        assert_eq!(world.get_component_drive_thresholds(id), Some(&thresholds));
+        assert!(world.has_component_drive_thresholds(id));
+
+        let removed = world.remove_component_drive_thresholds(id).unwrap();
+        assert_eq!(removed, Some(thresholds));
+        assert_eq!(world.get_component_drive_thresholds(id), None);
+    }
+
+    #[test]
+    fn insert_drive_thresholds_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_drive_thresholds(id, sample_drive_thresholds())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
     fn insert_item_lot_on_non_item_lot_entity_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
@@ -3802,6 +3836,26 @@ mod tests {
     }
 
     #[test]
+    fn entities_with_drive_thresholds_returns_live_entities() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let archived_agent = world.create_entity(EntityKind::Agent, Tick(2));
+
+        world
+            .insert_component_drive_thresholds(agent, sample_drive_thresholds())
+            .unwrap();
+        world
+            .insert_component_drive_thresholds(archived_agent, sample_drive_thresholds())
+            .unwrap();
+        world.archive_entity(archived_agent, Tick(3)).unwrap();
+
+        assert_eq!(
+            world.entities_with_drive_thresholds().collect::<Vec<_>>(),
+            vec![agent]
+        );
+    }
+
+    #[test]
     fn query_agent_data_returns_sorted_pairs() {
         let mut world = World::new(Topology::new()).unwrap();
         let first = world.create_entity(EntityKind::Agent, Tick(1));
@@ -3864,6 +3918,36 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(pairs, vec![(first, 1), (second, 1)]);
+    }
+
+    #[test]
+    fn query_drive_thresholds_returns_sorted_pairs() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let first = world.create_entity(EntityKind::Agent, Tick(1));
+        let second = world.create_entity(EntityKind::Agent, Tick(2));
+
+        world
+            .insert_component_drive_thresholds(first, sample_drive_thresholds())
+            .unwrap();
+
+        let mut second_thresholds = sample_drive_thresholds();
+        second_thresholds.danger = second_thresholds.pain;
+        world
+            .insert_component_drive_thresholds(second, second_thresholds)
+            .unwrap();
+
+        let pairs = world
+            .query_drive_thresholds()
+            .map(|(entity, thresholds)| (entity, thresholds.danger.critical().value()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            pairs,
+            vec![
+                (first, sample_drive_thresholds().danger.critical().value()),
+                (second, second_thresholds.danger.critical().value()),
+            ]
+        );
     }
 
     #[test]
@@ -4002,6 +4086,8 @@ mod tests {
         assert_eq!(world.query_agent_data().count(), 0);
         assert_eq!(world.entities_with_wound_list().count(), 0);
         assert_eq!(world.query_wound_list().count(), 0);
+        assert_eq!(world.entities_with_drive_thresholds().count(), 0);
+        assert_eq!(world.query_drive_thresholds().count(), 0);
         assert_eq!(world.entities_with_item_lot().count(), 0);
         assert_eq!(world.query_item_lot().count(), 0);
         assert_eq!(world.entities_with_unique_item().count(), 0);
@@ -4048,6 +4134,12 @@ mod tests {
             .insert_component_wound_list(archived_named_agent, sample_wound_list())
             .unwrap();
         world
+            .insert_component_drive_thresholds(live_named_agent, sample_drive_thresholds())
+            .unwrap();
+        world
+            .insert_component_drive_thresholds(archived_named_agent, sample_drive_thresholds())
+            .unwrap();
+        world
             .insert_component_name(live_named_office, Name("Ledger Hall".to_string()))
             .unwrap();
         world.archive_entity(archived_named_agent, Tick(4)).unwrap();
@@ -4056,6 +4148,7 @@ mod tests {
         assert_eq!(world.count_with_name(), 2);
         assert_eq!(world.count_with_agent_data(), 1);
         assert_eq!(world.count_with_wound_list(), 1);
+        assert_eq!(world.count_with_drive_thresholds(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
         assert_eq!(world.count_with_unique_item(), 0);
         assert_eq!(world.count_with_container(), 0);
@@ -4153,8 +4246,10 @@ mod tests {
             assert_eq!(world.get_component_name(place_id), None);
             assert_eq!(world.get_component_agent_data(place_id), None);
             assert_eq!(world.get_component_wound_list(place_id), None);
+            assert_eq!(world.get_component_drive_thresholds(place_id), None);
             assert_eq!(world.get_component_item_lot(place_id), None);
             assert_eq!(world.get_component_unique_item(place_id), None);
+            assert_eq!(world.get_component_container(place_id), None);
         }
     }
 
