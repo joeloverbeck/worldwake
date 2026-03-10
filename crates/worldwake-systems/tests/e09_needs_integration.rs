@@ -135,8 +135,7 @@ fn commit_txn(txn: WorldTxn<'_>) {
 fn action_def_id(defs: &ActionDefRegistry, name: &str) -> ActionDefId {
     defs.iter()
         .find(|def| def.name == name)
-        .map(|def| def.id)
-        .unwrap_or_else(|| panic!("missing action def {name}"))
+        .map_or_else(|| panic!("missing action def {name}"), |def| def.id)
 }
 
 fn add_controlled_lot(
@@ -170,40 +169,27 @@ fn add_controlled_bread_in_satchel(harness: &mut Harness, quantity: u32) -> worl
     bread
 }
 
-fn metabolism_profile(
-    hunger_rate: u16,
-    thirst_rate: u16,
-    fatigue_rate: u16,
-    bladder_rate: u16,
-    dirtiness_rate: u16,
-    rest_efficiency: u16,
-    starvation_tolerance_ticks: u32,
-    dehydration_tolerance_ticks: u32,
-    exhaustion_collapse_ticks: u32,
-    bladder_accident_tolerance_ticks: u32,
-    toilet_ticks: u32,
-    wash_ticks: u32,
-) -> MetabolismProfile {
+fn metabolism_profile(rates: [u16; 6], timings: [u32; 6]) -> MetabolismProfile {
     MetabolismProfile::new(
-        pm(hunger_rate),
-        pm(thirst_rate),
-        pm(fatigue_rate),
-        pm(bladder_rate),
-        pm(dirtiness_rate),
-        pm(rest_efficiency),
-        nz(starvation_tolerance_ticks),
-        nz(dehydration_tolerance_ticks),
-        nz(exhaustion_collapse_ticks),
-        nz(bladder_accident_tolerance_ticks),
-        nz(toilet_ticks),
-        nz(wash_ticks),
+        pm(rates[0]),
+        pm(rates[1]),
+        pm(rates[2]),
+        pm(rates[3]),
+        pm(rates[4]),
+        pm(rates[5]),
+        nz(timings[0]),
+        nz(timings[1]),
+        nz(timings[2]),
+        nz(timings[3]),
+        nz(timings[4]),
+        nz(timings[5]),
     )
 }
 
 fn run_metabolism_progression_scenario() -> HomeostaticNeeds {
-    let mut harness = Harness::new(
+        let mut harness = Harness::new(
         HomeostaticNeeds::new_sated(),
-        metabolism_profile(2, 3, 4, 5, 6, 20, 10, 10, 10, 10, 2, 3),
+        metabolism_profile([2, 3, 4, 5, 6, 20], [10, 10, 10, 10, 2, 3]),
     );
     harness.step_ticks(3);
     *harness
@@ -222,7 +208,7 @@ fn scheduler_progresses_metabolism_deterministically_without_inputs() {
 
 #[test]
 fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
-    let profile = metabolism_profile(0, 0, 0, 0, 0, 40, 20, 20, 20, 20, 2, 3);
+    let profile = metabolism_profile([0, 0, 0, 0, 0, 40], [20, 20, 20, 20, 2, 3]);
     let mut harness = Harness::new(
         HomeostaticNeeds::new(pm(700), pm(650), pm(400), pm(200), pm(350)),
         profile,
@@ -327,7 +313,7 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
 fn scheduler_rejects_eat_request_for_uncontrolled_ground_item() {
     let mut harness = Harness::new(
         HomeostaticNeeds::new(pm(700), pm(650), pm(400), pm(200), pm(350)),
-        metabolism_profile(0, 0, 0, 0, 0, 40, 20, 20, 20, 20, 2, 3),
+        metabolism_profile([0, 0, 0, 0, 0, 40], [20, 20, 20, 20, 2, 3]),
     );
     let bread = {
         let mut txn = new_txn(&mut harness.world, 2);
@@ -361,7 +347,7 @@ fn scheduler_applies_starvation_and_dehydration_consequences_after_tolerance_win
             pm(0),
             pm(0),
         ),
-        metabolism_profile(0, 0, 0, 0, 0, 20, 1, 1, 10, 10, 2, 3),
+        metabolism_profile([0, 0, 0, 0, 0, 20], [1, 1, 10, 10, 2, 3]),
     );
 
     harness.step_once().unwrap();
@@ -382,11 +368,11 @@ fn scheduler_applies_starvation_and_dehydration_consequences_after_tolerance_win
 fn divergent_metabolism_profiles_produce_divergent_scheduler_outcomes() {
     let mut slow = Harness::new(
         HomeostaticNeeds::new_sated(),
-        metabolism_profile(1, 1, 1, 1, 1, 20, 10, 10, 10, 10, 2, 3),
+        metabolism_profile([1, 1, 1, 1, 1, 20], [10, 10, 10, 10, 2, 3]),
     );
     let mut fast = Harness::new(
         HomeostaticNeeds::new_sated(),
-        metabolism_profile(4, 5, 6, 7, 8, 20, 10, 10, 10, 10, 2, 3),
+        metabolism_profile([4, 5, 6, 7, 8, 20], [10, 10, 10, 10, 2, 3]),
     );
 
     slow.step_ticks(4);

@@ -44,6 +44,7 @@ pub mod items;
 pub mod load;
 pub mod needs;
 pub mod numerics;
+pub mod production;
 pub mod relations;
 pub mod test_utils;
 pub mod topology;
@@ -87,6 +88,7 @@ pub use load::{
 };
 pub use needs::{BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
 pub use numerics::{LoadUnits, Permille, Quantity};
+pub use production::{RecipeId, WorkstationTag};
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
 pub use traits::{Component, RelationRecord};
