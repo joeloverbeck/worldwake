@@ -129,6 +129,17 @@ These are non-negotiable design rules enforced by tests:
 - **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`
 - **Unique location** — every entity exists in exactly one place
 
+## Spec Drafting Rules
+
+All new spec drafts MUST:
+1. Use `Permille` for any [0,1] or [0,1000] range values — never `f32` or `f64`
+2. Include FND-01 Section H analyses (information-path, feedback loops, dampeners, stored vs derived)
+3. Use profile-driven parameters (per-agent structs) instead of hardcoded numeric constants
+4. Include SystemFn Integration and Component Registration sections
+5. Document cross-system interactions via Principle 12 (state-mediated, never direct calls)
+
+These rules prevent the recurring pattern of specs written with magic numbers, floats, and missing foundation analyses that then require correction before implementation.
+
 ## Future System Spec Requirements (FND-01 Section H)
 
 Every future system spec (E09+) MUST include the following analysis sections:
