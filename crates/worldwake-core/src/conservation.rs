@@ -121,32 +121,35 @@ mod tests {
             .unwrap();
         let mut txn = new_txn(&mut world, 2);
         txn.set_component_resource_source(
-                place,
-                ResourceSource {
-                    commodity: CommodityKind::Coin,
-                    available_quantity: Quantity(5),
-                    max_quantity: Quantity(9),
-                    regeneration_ticks_per_unit: None,
-                    last_regeneration_tick: None,
-                },
-            )
-            .unwrap();
+            place,
+            ResourceSource {
+                commodity: CommodityKind::Coin,
+                available_quantity: Quantity(5),
+                max_quantity: Quantity(9),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
         txn.set_component_resource_source(
-                archived_place,
-                ResourceSource {
-                    commodity: CommodityKind::Coin,
-                    available_quantity: Quantity(4),
-                    max_quantity: Quantity(9),
-                    regeneration_ticks_per_unit: None,
-                    last_regeneration_tick: None,
-                },
-            )
-            .unwrap();
+            archived_place,
+            ResourceSource {
+                commodity: CommodityKind::Coin,
+                available_quantity: Quantity(4),
+                max_quantity: Quantity(9),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
         let _ = txn.commit(&mut crate::EventLog::new());
         world.archive_entity(archived_place, Tick(3)).unwrap();
 
         assert_eq!(total_live_lot_quantity(&world, CommodityKind::Coin), 11);
-        assert_eq!(total_authoritative_commodity_quantity(&world, CommodityKind::Coin), 16);
+        assert_eq!(
+            total_authoritative_commodity_quantity(&world, CommodityKind::Coin),
+            16
+        );
     }
 
     #[test]
@@ -182,16 +185,16 @@ mod tests {
             .unwrap();
         let mut txn = new_txn(&mut world, 2);
         txn.set_component_resource_source(
-                place,
-                ResourceSource {
-                    commodity: CommodityKind::Apple,
-                    available_quantity: Quantity(7),
-                    max_quantity: Quantity(7),
-                    regeneration_ticks_per_unit: None,
-                    last_regeneration_tick: None,
-                },
-            )
-            .unwrap();
+            place,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(7),
+                max_quantity: Quantity(7),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
         let _ = txn.commit(&mut crate::EventLog::new());
 
         verify_authoritative_conservation(&world, CommodityKind::Apple, 10).unwrap();
@@ -204,7 +207,8 @@ mod tests {
     }
 
     #[test]
-    fn verify_live_lot_conservation_tracks_split_and_merge_without_double_counting_archived_sources() {
+    fn verify_live_lot_conservation_tracks_split_and_merge_without_double_counting_archived_sources(
+    ) {
         let mut world = test_world();
         let lot = world
             .create_item_lot(CommodityKind::Waste, Quantity(10), Tick(1))

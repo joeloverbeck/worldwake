@@ -245,7 +245,10 @@ mod tests {
 
         assert!(view.is_in_transit(actor));
         assert_eq!(view.effective_place(actor), None);
-        assert_eq!(view.adjacent_places(place), world.topology().neighbors(place));
+        assert_eq!(
+            view.adjacent_places(place),
+            world.topology().neighbors(place)
+        );
     }
 
     #[test]
@@ -381,8 +384,11 @@ mod tests {
             let workstation = txn.create_entity(worldwake_core::EntityKind::Facility);
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(workstation, place).unwrap();
-            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([RecipeId(3)]))
-                .unwrap();
+            txn.set_component_known_recipes(
+                actor,
+                worldwake_core::KnownRecipes::with([RecipeId(3)]),
+            )
+            .unwrap();
             txn.set_component_workstation_marker(
                 workstation,
                 WorkstationMarker(WorkstationTag::OrchardRow),
@@ -406,7 +412,10 @@ mod tests {
         let view = OmniscientBeliefView::new(&world);
 
         assert!(view.knows_recipe(actor, RecipeId(3)));
-        assert_eq!(view.workstation_tag(workstation), Some(WorkstationTag::OrchardRow));
+        assert_eq!(
+            view.workstation_tag(workstation),
+            Some(WorkstationTag::OrchardRow)
+        );
         assert_eq!(
             view.resource_source(workstation),
             Some(ResourceSource {

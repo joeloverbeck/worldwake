@@ -7,9 +7,8 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState,
-    Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
-    Precondition, TargetSpec,
+    ActionState, Constraint, ConsumableEffect, DurationExpr, Interruptibility,
+    MetabolismDurationKind, Precondition, TargetSpec,
 };
 
 pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut ActionHandlerRegistry) {

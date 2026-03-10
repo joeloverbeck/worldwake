@@ -375,8 +375,11 @@ mod tests {
             let workstation = txn.create_entity(EntityKind::Facility);
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(workstation, place).unwrap();
-            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([RecipeId(7)]))
-                .unwrap();
+            txn.set_component_known_recipes(
+                actor,
+                worldwake_core::KnownRecipes::with([RecipeId(7)]),
+            )
+            .unwrap();
             txn.set_component_workstation_marker(
                 workstation,
                 WorkstationMarker(WorkstationTag::OrchardRow),

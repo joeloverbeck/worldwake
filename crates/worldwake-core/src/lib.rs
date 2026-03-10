@@ -48,6 +48,7 @@ pub mod production;
 pub mod relations;
 pub mod test_utils;
 pub mod topology;
+pub mod trade;
 pub mod traits;
 pub mod verification;
 pub mod visibility;
@@ -97,6 +98,7 @@ pub use production::{
 };
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
+pub use trade::MerchandiseProfile;
 pub use traits::{Component, RelationRecord};
 pub use verification::{verify_completeness, VerificationError};
 pub use visibility::VisibilitySpec;

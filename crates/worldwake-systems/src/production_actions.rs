@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits, Quantity,
-    VisibilitySpec, WorkstationMarker, WorldTxn,
+    CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits, Quantity, VisibilitySpec,
+    WorkstationMarker, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
@@ -24,7 +24,8 @@ pub fn register_harvest_actions(
 
     let mut ids = Vec::new();
     for (recipe_id, recipe) in recipes.iter() {
-        let Some(def) = harvest_action_def(ActionDefId(defs.len() as u32), handler, recipe_id, recipe)
+        let Some(def) =
+            harvest_action_def(ActionDefId(defs.len() as u32), handler, recipe_id, recipe)
         else {
             continue;
         };
@@ -47,7 +48,8 @@ pub fn register_craft_actions(
 
     let mut ids = Vec::new();
     for (recipe_id, recipe) in recipes.iter() {
-        let Some(def) = craft_action_def(ActionDefId(defs.len() as u32), handler, recipe_id, recipe)
+        let Some(def) =
+            craft_action_def(ActionDefId(defs.len() as u32), handler, recipe_id, recipe)
         else {
             continue;
         };
@@ -73,9 +75,13 @@ fn harvest_action_def(
         Constraint::ActorAlive,
         Constraint::ActorKnowsRecipe(recipe_id),
     ];
-    actor_constraints.extend(recipe.required_tool_kinds.iter().copied().map(|kind| {
-        Constraint::ActorHasUniqueItemKind { kind, min_count: 1 }
-    }));
+    actor_constraints.extend(
+        recipe
+            .required_tool_kinds
+            .iter()
+            .copied()
+            .map(|kind| Constraint::ActorHasUniqueItemKind { kind, min_count: 1 }),
+    );
     let preconditions = vec![
         Precondition::TargetExists(0),
         Precondition::TargetAtActorPlace(0),
@@ -139,9 +145,13 @@ fn craft_action_def(
             .into_iter()
             .map(|(kind, min_qty)| Constraint::ActorHasCommodity { kind, min_qty }),
     );
-    actor_constraints.extend(recipe.required_tool_kinds.iter().copied().map(|kind| {
-        Constraint::ActorHasUniqueItemKind { kind, min_count: 1 }
-    }));
+    actor_constraints.extend(
+        recipe
+            .required_tool_kinds
+            .iter()
+            .copied()
+            .map(|kind| Constraint::ActorHasUniqueItemKind { kind, min_count: 1 }),
+    );
     let preconditions = vec![
         Precondition::TargetExists(0),
         Precondition::TargetAtActorPlace(0),
@@ -170,7 +180,9 @@ fn craft_action_def(
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: preconditions
             .into_iter()
-            .filter(|precondition| !matches!(precondition, Precondition::TargetLacksProductionJob(_)))
+            .filter(|precondition| {
+                !matches!(precondition, Precondition::TargetLacksProductionJob(_))
+            })
             .collect(),
         visibility: VisibilitySpec::ParticipantsOnly,
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
@@ -204,7 +216,9 @@ fn craft_payload(def: &ActionDef) -> Result<&CraftActionPayload, ActionError> {
     }
 }
 
-fn aggregate_recipe_entries(entries: &[(CommodityKind, Quantity)]) -> BTreeMap<CommodityKind, Quantity> {
+fn aggregate_recipe_entries(
+    entries: &[(CommodityKind, Quantity)],
+) -> BTreeMap<CommodityKind, Quantity> {
     let mut aggregated = BTreeMap::new();
     for (kind, quantity) in entries {
         aggregated
@@ -290,9 +304,9 @@ fn stage_inputs(
             }
 
             move_lot_into_container(txn, lot_id, container)?;
-            remaining = remaining
-                .checked_sub(lot_quantity)
-                .ok_or_else(|| ActionError::InternalError("staged input accounting underflowed".to_string()))?;
+            remaining = remaining.checked_sub(lot_quantity).ok_or_else(|| {
+                ActionError::InternalError("staged input accounting underflowed".to_string())
+            })?;
         }
 
         if remaining != Quantity(0) {
@@ -393,10 +407,12 @@ fn tick_craft(
     let mut job = txn
         .get_component_production_job(workstation)
         .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!(
-            "workstation {workstation} lacks craft job for recipe {:?}",
-            payload.recipe_id
-        )))?;
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "workstation {workstation} lacks craft job for recipe {:?}",
+                payload.recipe_id
+            ))
+        })?;
     if job.recipe_id != payload.recipe_id {
         return Err(ActionError::PreconditionFailed(format!(
             "workstation {workstation} job recipe {:?} does not match {:?}",
@@ -482,9 +498,11 @@ fn commit_craft(
     let job = txn
         .get_component_production_job(workstation)
         .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!(
-            "workstation {workstation} lacks craft job on commit"
-        )))?;
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "workstation {workstation} lacks craft job on commit"
+            ))
+        })?;
     if job.recipe_id != payload.recipe_id {
         return Err(ActionError::PreconditionFailed(format!(
             "workstation {workstation} job recipe {:?} does not match {:?}",
@@ -536,10 +554,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, Container,
-        ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog,
-        HomeostaticNeeds, LoadUnits, MetabolismProfile, Permille, Quantity, ResourceSource, Seed,
-        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, Container, ControlSource,
+        DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog, HomeostaticNeeds,
+        LoadUnits, MetabolismProfile, Permille, Quantity, ResourceSource, Seed, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -575,7 +593,9 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
-    fn harvest_recipe_registry(body_cost_per_tick: BodyCostPerTick) -> (RecipeRegistry, worldwake_core::RecipeId) {
+    fn harvest_recipe_registry(
+        body_cost_per_tick: BodyCostPerTick,
+    ) -> (RecipeRegistry, worldwake_core::RecipeId) {
         harvest_recipe_registry_with_tools(body_cost_per_tick, Vec::new())
     }
 
@@ -745,9 +765,7 @@ mod tests {
         quantity: u32,
     ) -> EntityId {
         let mut txn = new_txn(world, 3);
-        let lot = txn
-            .create_item_lot(commodity, Quantity(quantity))
-            .unwrap();
+        let lot = txn.create_item_lot(commodity, Quantity(quantity)).unwrap();
         txn.set_ground_location(lot, place).unwrap();
         txn.set_possessor(lot, actor).unwrap();
         commit_txn(txn);
@@ -770,9 +788,7 @@ mod tests {
                 allows_nested_containers: true,
             })
             .unwrap();
-        let lot = txn
-            .create_item_lot(commodity, Quantity(quantity))
-            .unwrap();
+        let lot = txn.create_item_lot(commodity, Quantity(quantity)).unwrap();
         txn.set_ground_location(container, place).unwrap();
         txn.set_possessor(container, actor).unwrap();
         txn.put_into_container(lot, container).unwrap();
@@ -915,13 +931,17 @@ mod tests {
         );
 
         assert_eq!(
-            world.get_component_resource_source(workstation).unwrap().available_quantity,
+            world
+                .get_component_resource_source(workstation)
+                .unwrap()
+                .available_quantity,
             Quantity(3)
         );
         let apple_lots = world
             .query_item_lot()
             .filter(|(entity, lot)| {
-                lot.commodity == CommodityKind::Apple && world.effective_place(*entity) == Some(place)
+                lot.commodity == CommodityKind::Apple
+                    && world.effective_place(*entity) == Some(place)
             })
             .collect::<Vec<_>>();
         assert_eq!(apple_lots.len(), 1);
@@ -958,12 +978,10 @@ mod tests {
         let (mut world_empty, actor_empty, _, _) =
             setup_world(false, WorkstationTag::OrchardRow, 1);
         grant_recipe(&mut world_empty, actor_empty, recipe_id);
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_empty),
-            actor_empty,
-            &defs
-        )
-        .is_empty());
+        assert!(
+            get_affordances(&OmniscientBeliefView::new(&world_empty), actor_empty, &defs)
+                .is_empty()
+        );
 
         let _ = &mut world_missing_recipe;
     }
@@ -979,12 +997,7 @@ mod tests {
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
 
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world),
-            actor,
-            &defs
-        )
-        .is_empty());
+        assert!(get_affordances(&OmniscientBeliefView::new(&world), actor, &defs).is_empty());
 
         let mut txn = new_txn(&mut world, 3);
         let tool = txn
@@ -1058,7 +1071,10 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert_eq!(second_start, ActionError::ReservationUnavailable(workstation));
+        assert_eq!(
+            second_start,
+            ActionError::ReservationUnavailable(workstation)
+        );
 
         abort_action(
             first_id,
@@ -1078,7 +1094,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_resource_source(workstation).unwrap().available_quantity,
+            world
+                .get_component_resource_source(workstation)
+                .unwrap()
+                .available_quantity,
             Quantity(5)
         );
     }
@@ -1088,8 +1107,7 @@ mod tests {
         let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
         let (recipes, recipe_id) = harvest_recipe_registry(body_cost);
         let (defs, handlers, _) = setup_registries(&recipes);
-        let (mut world, actor, _workstation, _) =
-            setup_world(false, WorkstationTag::OrchardRow, 5);
+        let (mut world, actor, _workstation, _) = setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
         let affordance = single_harvest_affordance(&world, actor, &defs);
         let mut active = BTreeMap::new();
@@ -1203,6 +1221,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn craft_stages_inputs_tracks_wip_and_produces_outputs() {
         let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
@@ -1231,7 +1250,10 @@ mod tests {
         )
         .unwrap();
 
-        let job = world.get_component_production_job(workstation).unwrap().clone();
+        let job = world
+            .get_component_production_job(workstation)
+            .unwrap()
+            .clone();
         assert_eq!(job.recipe_id, recipe_id);
         assert_eq!(job.worker, actor);
         assert_eq!(job.progress_ticks, 0);
@@ -1242,7 +1264,11 @@ mod tests {
         let staged_lots = world
             .recursive_contents_of(job.staged_inputs_container)
             .into_iter()
-            .filter_map(|entity| world.get_component_item_lot(entity).map(|lot| (entity, lot.clone())))
+            .filter_map(|entity| {
+                world
+                    .get_component_item_lot(entity)
+                    .map(|lot| (entity, lot.clone()))
+            })
             .collect::<Vec<_>>();
         assert_eq!(staged_lots.len(), 1);
         assert_eq!(staged_lots[0].1.commodity, CommodityKind::Grain);
@@ -1290,15 +1316,12 @@ mod tests {
         assert_eq!(second_tick, TickOutcome::Committed);
         assert!(world.get_component_production_job(workstation).is_none());
         assert!(world.is_archived(job.staged_inputs_container));
-        assert!(
-            world
-                .get_component_item_lot(staged_lots[0].0)
-                .is_none()
-        );
+        assert!(world.get_component_item_lot(staged_lots[0].0).is_none());
         let bread_lots = world
             .query_item_lot()
             .filter(|(entity, lot)| {
-                lot.commodity == CommodityKind::Bread && world.effective_place(*entity) == Some(place)
+                lot.commodity == CommodityKind::Bread
+                    && world.effective_place(*entity) == Some(place)
             })
             .collect::<Vec<_>>();
         assert_eq!(bread_lots.len(), 1);
@@ -1332,7 +1355,8 @@ mod tests {
         )
         .is_empty());
 
-        let (mut world_missing_tool, actor_missing_tool, _, place_missing_tool) = craft_fixture(false);
+        let (mut world_missing_tool, actor_missing_tool, _, place_missing_tool) =
+            craft_fixture(false);
         grant_recipe(&mut world_missing_tool, actor_missing_tool, recipe_id);
         add_possessed_lot(
             &mut world_missing_tool,
@@ -1375,12 +1399,10 @@ mod tests {
         )
         .unwrap();
         commit_txn(txn);
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_ready),
-            actor_ready,
-            &defs
-        )
-        .is_empty());
+        assert!(
+            get_affordances(&OmniscientBeliefView::new(&world_ready), actor_ready, &defs)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1442,7 +1464,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(staged_lots.len(), 1);
         assert_eq!(
-            world.get_component_item_lot(staged_lots[0]).unwrap().quantity,
+            world
+                .get_component_item_lot(staged_lots[0])
+                .unwrap()
+                .quantity,
             Quantity(2)
         );
     }

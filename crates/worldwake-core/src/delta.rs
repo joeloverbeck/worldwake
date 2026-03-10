@@ -3,9 +3,9 @@
 use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
     Container, DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId,
-    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MetabolismProfile, Name, Permille,
-    ProductionJob, Quantity, ReservationRecord, ResourceSource, UniqueItem, WorkstationMarker,
-    WoundList,
+    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
+    MetabolismProfile, Name, Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
+    UniqueItem, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -218,9 +218,10 @@ mod tests {
         AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
         FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-        MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry,
+        Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
+        WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -276,6 +277,10 @@ mod tests {
                 crate::RecipeId(2),
                 crate::RecipeId(7),
             ])),
+            ComponentValue::MerchandiseProfile(MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Water]),
+                home_market: Some(entity(27)),
+            }),
             ComponentValue::WorkstationMarker(WorkstationMarker(WorkstationTag::Forge)),
             ComponentValue::ResourceSource(ResourceSource {
                 commodity: CommodityKind::Apple,
@@ -406,6 +411,7 @@ mod tests {
                 ComponentKind::MetabolismProfile,
                 ComponentKind::CarryCapacity,
                 ComponentKind::KnownRecipes,
+                ComponentKind::MerchandiseProfile,
                 ComponentKind::WorkstationMarker,
                 ComponentKind::ResourceSource,
                 ComponentKind::ProductionJob,

@@ -5,15 +5,24 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, WorldTxn};
 
-pub type ActionStartFn =
-    for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>)
-        -> Result<Option<ActionState>, ActionError>;
-pub type ActionTickFn =
-    for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>) -> Result<ActionProgress, ActionError>;
+pub type ActionStartFn = for<'w> fn(
+    &ActionDef,
+    &ActionInstance,
+    &mut WorldTxn<'w>,
+) -> Result<Option<ActionState>, ActionError>;
+pub type ActionTickFn = for<'w> fn(
+    &ActionDef,
+    &ActionInstance,
+    &mut WorldTxn<'w>,
+) -> Result<ActionProgress, ActionError>;
 pub type ActionCommitFn =
     for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>) -> Result<(), ActionError>;
-pub type ActionAbortFn =
-    for<'w> fn(&ActionDef, &ActionInstance, &AbortReason, &mut WorldTxn<'w>) -> Result<(), ActionError>;
+pub type ActionAbortFn = for<'w> fn(
+    &ActionDef,
+    &ActionInstance,
+    &AbortReason,
+    &mut WorldTxn<'w>,
+) -> Result<(), ActionError>;
 
 #[derive(Copy, Clone)]
 pub struct ActionHandler {

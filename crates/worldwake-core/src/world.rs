@@ -4,9 +4,9 @@ use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
     ComponentTables, ComponentValue, Container, DeprivationExposure, DriveThresholds,
     EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge,
-    ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name, ProductionJob,
-    ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology, UniqueItem,
-    UniqueItemKind, WorkstationMarker, WorldError, WoundList,
+    ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology,
+    UniqueItem, UniqueItemKind, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -558,9 +558,9 @@ mod tests {
         build_prototype_world, AgentData, BodyPart, CarryCapacity, CommodityKind, Container,
         ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MetabolismProfile, Name, Permille, Place, PlaceTag, ProductionJob,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
-        TickRange, Topology, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, Permille, Place, PlaceTag,
+        ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
+        Tick, TickRange, Topology, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
         WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -3976,6 +3976,34 @@ mod tests {
     }
 
     #[test]
+    fn merchandise_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Water]),
+            home_market: Some(entity(2)),
+        };
+
+        world
+            .insert_component_merchandise_profile(agent, profile.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_merchandise_profile(agent),
+            Some(&profile)
+        );
+        assert!(world.has_component_merchandise_profile(agent));
+        assert_eq!(
+            world.query_merchandise_profile().collect::<Vec<_>>(),
+            vec![(agent, &profile)]
+        );
+        assert_eq!(world.count_with_merchandise_profile(), 1);
+
+        let removed = world.remove_component_merchandise_profile(agent).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_merchandise_profile(agent), None);
+    }
+
+    #[test]
     fn workstation_marker_component_roundtrip_on_facility() {
         let mut world = World::new(Topology::new()).unwrap();
         let facility = world.create_entity(EntityKind::Facility, Tick(1));
@@ -4002,6 +4030,24 @@ mod tests {
 
         let err = world
             .insert_component_known_recipes(id, KnownRecipes::with([crate::RecipeId(2)]))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_merchandise_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_merchandise_profile(
+                id,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                    home_market: None,
+                },
+            )
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

@@ -42,9 +42,8 @@ mod tests {
     use super::ActionHandlerRegistry;
     use crate::{
         AbortReason, ActionDef, ActionDefId, ActionError, ActionHandler, ActionHandlerId,
-        ActionInstance, ActionInstanceId, ActionPayload, ActionProgress, ActionState,
-        ActionStatus, Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq,
-        TargetSpec,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionProgress, ActionState, ActionStatus,
+        Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -184,7 +183,10 @@ mod tests {
             WitnessData::default(),
         );
 
-        assert_eq!((retrieved_first.on_start)(&def, &instance, &mut txn).unwrap(), None);
+        assert_eq!(
+            (retrieved_first.on_start)(&def, &instance, &mut txn).unwrap(),
+            None
+        );
         assert_eq!(
             (retrieved_second.on_start)(&def, &instance, &mut txn).unwrap(),
             Some(ActionState::Empty)

@@ -1,12 +1,11 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    BodyCostPerTick, EntityId, EntityKind, EventTag, Tick, TravelEdgeId, VisibilitySpec,
-    WorldTxn,
+    BodyCostPerTick, EntityId, EntityKind, EventTag, Tick, TravelEdgeId, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    Constraint, DurationExpr, Interruptibility, Precondition, TargetSpec,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState, Constraint,
+    DurationExpr, Interruptibility, Precondition, TargetSpec,
 };
 
 pub fn register_travel_actions(
@@ -55,7 +54,9 @@ pub fn register_travel_actions(
     })
 }
 
-fn travel_state(instance: &ActionInstance) -> Result<(TravelEdgeId, EntityId, EntityId, Tick, Tick), ActionError> {
+fn travel_state(
+    instance: &ActionInstance,
+) -> Result<(TravelEdgeId, EntityId, EntityId, Tick, Tick), ActionError> {
     match instance.local_state {
         Some(ActionState::Travel {
             edge_id,
@@ -112,7 +113,9 @@ fn start_travel(
         departure_tick
             .0
             .checked_add(u64::from(travel_time_ticks))
-            .ok_or_else(|| ActionError::InternalError("travel arrival tick overflowed".to_string()))?,
+            .ok_or_else(|| {
+                ActionError::InternalError("travel arrival tick overflowed".to_string())
+            })?,
     );
 
     txn.set_in_transit(instance.actor)
@@ -198,7 +201,8 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionExecutionContext, ActionInstance, ActionInstanceId, OmniscientBeliefView, TickOutcome,
+        ActionExecutionContext, ActionInstance, ActionInstanceId, OmniscientBeliefView,
+        TickOutcome,
     };
 
     use super::*;
@@ -333,7 +337,10 @@ mod tests {
                 Constraint::ActorNotInTransit,
             ]
         );
-        assert_eq!(def.duration, DurationExpr::TravelToTarget { target_index: 0 });
+        assert_eq!(
+            def.duration,
+            DurationExpr::TravelToTarget { target_index: 0 }
+        );
     }
 
     #[test]
@@ -378,7 +385,9 @@ mod tests {
                 arrival_tick: Tick(8),
             })
         );
-        let start_record = log.get(log.events_by_tag(EventTag::ActionStarted)[0]).unwrap();
+        let start_record = log
+            .get(log.events_by_tag(EventTag::ActionStarted)[0])
+            .unwrap();
         assert!(start_record.tags.contains(&EventTag::Travel));
 
         for tick in [6, 7] {
@@ -426,7 +435,9 @@ mod tests {
         assert!(!world.is_in_transit(bread));
         assert_eq!(world.get_component_in_transit_on_edge(actor), None);
 
-        let commit_record = log.get(log.events_by_tag(EventTag::ActionCommitted)[0]).unwrap();
+        let commit_record = log
+            .get(log.events_by_tag(EventTag::ActionCommitted)[0])
+            .unwrap();
         assert!(commit_record.tags.contains(&EventTag::Travel));
     }
 
@@ -515,7 +526,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(err, ActionError::ConstraintFailed("ActorNotInTransit".to_string()));
+        assert_eq!(
+            err,
+            ActionError::ConstraintFailed("ActorNotInTransit".to_string())
+        );
     }
 
     #[test]
@@ -556,7 +570,9 @@ mod tests {
         assert_eq!(world.effective_place(bread), Some(origin));
         assert_eq!(world.get_component_in_transit_on_edge(actor), None);
 
-        let record = log.get(log.events_by_tag(EventTag::ActionAborted)[0]).unwrap();
+        let record = log
+            .get(log.events_by_tag(EventTag::ActionAborted)[0])
+            .unwrap();
         assert!(record.tags.contains(&EventTag::Travel));
     }
 }

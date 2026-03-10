@@ -382,9 +382,8 @@ mod tests {
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ControllerState, DeterministicRng, DurationExpr, InputKind,
-        Interruptibility, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
-        SystemManifest,
+        ActionState, ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility,
+        Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;

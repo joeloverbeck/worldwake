@@ -10,6 +10,7 @@ use crate::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
         WorkstationMarker,
     },
+    trade::MerchandiseProfile,
     wounds::WoundList,
     EntityId,
 };
@@ -108,9 +109,9 @@ mod tests {
         components::{AgentData, Name},
         BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DeprivationExposure,
         DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProductionJob,
-        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Permille,
+        ProductionJob, ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -135,6 +136,7 @@ mod tests {
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_known_recipes().count(), 0);
+        assert_eq!(tables.iter_merchandise_profiles().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
@@ -294,6 +296,22 @@ mod tests {
         assert!(tables.has_known_recipes(id));
         assert_eq!(tables.remove_known_recipes(id), Some(recipes));
         assert_eq!(tables.get_known_recipes(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_merchandise_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(31);
+        let profile = MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Firewood]),
+            home_market: Some(entity(2)),
+        };
+
+        assert_eq!(tables.insert_merchandise_profile(id, profile.clone()), None);
+        assert_eq!(tables.get_merchandise_profile(id), Some(&profile));
+        assert!(tables.has_merchandise_profile(id));
+        assert_eq!(tables.remove_merchandise_profile(id), Some(profile));
+        assert_eq!(tables.get_merchandise_profile(id), None);
     }
 
     #[test]

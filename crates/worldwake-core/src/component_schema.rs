@@ -230,6 +230,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                merchandise_profiles,
+                MerchandiseProfile,
+                insert_merchandise_profile,
+                get_merchandise_profile,
+                get_merchandise_profile_mut,
+                remove_merchandise_profile,
+                has_merchandise_profile,
+                iter_merchandise_profiles,
+                insert_component_merchandise_profile,
+                get_component_merchandise_profile,
+                get_component_merchandise_profile_mut,
+                remove_component_merchandise_profile,
+                has_component_merchandise_profile,
+                entities_with_merchandise_profile,
+                query_merchandise_profile,
+                count_with_merchandise_profile,
+                "MerchandiseProfile",
+                |kind| kind == EntityKind::Agent,
+                MerchandiseProfile,
+                crate::MerchandiseProfile,
+                set_component_merchandise_profile,
+                clear_component_merchandise_profile,
+                txn_simple_set
+            }
+            {
                 workstation_markers,
                 WorkstationMarker,
                 insert_workstation_marker,

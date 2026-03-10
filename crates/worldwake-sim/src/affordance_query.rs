@@ -166,7 +166,9 @@ fn enumerate_targets(spec: &TargetSpec, actor: EntityId, view: &dyn BeliefView) 
             };
             view.adjacent_places(place)
                 .into_iter()
-                .filter(|entity| view.entity_kind(*entity) == Some(worldwake_core::EntityKind::Place))
+                .filter(|entity| {
+                    view.entity_kind(*entity) == Some(worldwake_core::EntityKind::Place)
+                })
                 .collect::<Vec<_>>()
         }
     };
@@ -272,7 +274,10 @@ mod tests {
         }
 
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places.get(&place).cloned().unwrap_or_default()
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {

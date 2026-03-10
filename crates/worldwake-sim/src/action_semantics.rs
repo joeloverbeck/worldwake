@@ -172,8 +172,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
-        EventLog, HomeostaticNeeds, MetabolismProfile, Permille, Quantity, RecipeId,
-        UniqueItemKind, VisibilitySpec, Tick, WitnessData, WorkstationTag, World, WorldTxn,
+        EventLog, HomeostaticNeeds, MetabolismProfile, Permille, Quantity, RecipeId, Tick,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -295,7 +295,10 @@ mod tests {
             DurationExpr::TargetConsumable { target_index: 0 }.fixed_ticks(),
             None
         );
-        assert_eq!(DurationExpr::TravelToTarget { target_index: 0 }.fixed_ticks(), None);
+        assert_eq!(
+            DurationExpr::TravelToTarget { target_index: 0 }.fixed_ticks(),
+            None
+        );
     }
 
     #[test]

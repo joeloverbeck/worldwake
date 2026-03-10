@@ -129,13 +129,19 @@ impl Harness {
                 .unwrap();
             txn.set_component_known_recipes(
                 actor,
-                worldwake_core::KnownRecipes::with([worldwake_core::RecipeId(0), worldwake_core::RecipeId(1)]),
+                worldwake_core::KnownRecipes::with([
+                    worldwake_core::RecipeId(0),
+                    worldwake_core::RecipeId(1),
+                ]),
             )
             .unwrap();
 
             txn.set_ground_location(orchard, orchard_place).unwrap();
-            txn.set_component_workstation_marker(orchard, WorkstationMarker(WorkstationTag::OrchardRow))
-                .unwrap();
+            txn.set_component_workstation_marker(
+                orchard,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
             txn.set_component_resource_source(orchard, source).unwrap();
 
             txn.set_ground_location(mill, orchard_place).unwrap();
@@ -221,11 +227,15 @@ impl Harness {
 
     fn affordances_for(&self, name: &str) -> Vec<Vec<worldwake_core::EntityId>> {
         let def_id = self.action_def_id(name);
-        get_affordances(&worldwake_sim::OmniscientBeliefView::new(&self.world), self.actor, &self.defs)
-            .into_iter()
-            .filter(|affordance| affordance.def_id == def_id)
-            .map(|affordance| affordance.bound_targets)
-            .collect()
+        get_affordances(
+            &worldwake_sim::OmniscientBeliefView::new(&self.world),
+            self.actor,
+            &self.defs,
+        )
+        .into_iter()
+        .filter(|affordance| affordance.def_id == def_id)
+        .map(|affordance| affordance.bound_targets)
+        .collect()
     }
 }
 
@@ -265,6 +275,7 @@ fn assert_transit_invariants(world: &World, entity: worldwake_core::EntityId) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn scheduler_multi_step_transport_preserves_stock_accounting_and_route_occupancy() {
     let mut harness = Harness::new(ResourceSource {
@@ -275,12 +286,18 @@ fn scheduler_multi_step_transport_preserves_stock_accounting_and_route_occupancy
         last_regeneration_tick: None,
     });
 
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 4);
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        4
+    );
 
     harness.queue_action("harvest:Harvest Apples", vec![harness.orchard_workstation]);
     harness.run_queued_action_to_completion(4);
 
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 4);
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        4
+    );
     assert_eq!(
         harness
             .world
@@ -295,8 +312,14 @@ fn scheduler_multi_step_transport_preserves_stock_accounting_and_route_occupancy
     harness.run_queued_action_to_completion(2);
 
     assert_eq!(harness.world.possessor_of(apples), Some(harness.actor));
-    assert_eq!(harness.world.effective_place(apples), Some(harness.orchard_place));
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 4);
+    assert_eq!(
+        harness.world.effective_place(apples),
+        Some(harness.orchard_place)
+    );
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        4
+    );
     assert_transit_invariants(&harness.world, harness.actor);
     assert_transit_invariants(&harness.world, apples);
 
@@ -312,16 +335,29 @@ fn scheduler_multi_step_transport_preserves_stock_accounting_and_route_occupancy
         .unwrap();
     assert_eq!(
         (first_leg.edge_id, first_leg.origin, first_leg.destination),
-        (TravelEdgeId(10), harness.orchard_place, harness.bridge_place)
+        (
+            TravelEdgeId(10),
+            harness.orchard_place,
+            harness.bridge_place
+        )
     );
     assert_eq!(first_leg.arrival_tick.0 - first_leg.departure_tick.0, 2);
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 4);
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        4
+    );
     assert_transit_invariants(&harness.world, harness.actor);
     assert_transit_invariants(&harness.world, apples);
 
     harness.run_queued_action_to_completion(3);
-    assert_eq!(harness.world.effective_place(harness.actor), Some(harness.bridge_place));
-    assert_eq!(harness.world.effective_place(apples), Some(harness.bridge_place));
+    assert_eq!(
+        harness.world.effective_place(harness.actor),
+        Some(harness.bridge_place)
+    );
+    assert_eq!(
+        harness.world.effective_place(apples),
+        Some(harness.bridge_place)
+    );
 
     harness.queue_action("travel", vec![harness.bakery_place]);
     let _ = harness.step_once().unwrap();
@@ -332,22 +368,41 @@ fn scheduler_multi_step_transport_preserves_stock_accounting_and_route_occupancy
         .get_component_in_transit_on_edge(harness.actor)
         .unwrap();
     assert_eq!(
-        (second_leg.edge_id, second_leg.origin, second_leg.destination),
+        (
+            second_leg.edge_id,
+            second_leg.origin,
+            second_leg.destination
+        ),
         (TravelEdgeId(12), harness.bridge_place, harness.bakery_place)
     );
     assert_eq!(second_leg.arrival_tick.0 - second_leg.departure_tick.0, 2);
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 4);
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        4
+    );
 
     harness.run_queued_action_to_completion(3);
-    assert_eq!(harness.world.effective_place(harness.actor), Some(harness.bakery_place));
-    assert_eq!(harness.world.effective_place(apples), Some(harness.bakery_place));
+    assert_eq!(
+        harness.world.effective_place(harness.actor),
+        Some(harness.bakery_place)
+    );
+    assert_eq!(
+        harness.world.effective_place(apples),
+        Some(harness.bakery_place)
+    );
 
     harness.queue_action("put_down", vec![apples]);
     harness.run_queued_action_to_completion(2);
 
     assert_eq!(harness.world.possessor_of(apples), None);
-    assert_eq!(harness.world.effective_place(apples), Some(harness.bakery_place));
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 4);
+    assert_eq!(
+        harness.world.effective_place(apples),
+        Some(harness.bakery_place)
+    );
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        4
+    );
 }
 
 #[test]
@@ -371,10 +426,11 @@ fn scheduler_harvest_depletion_and_regeneration_gate_affordances_on_concrete_sto
             .available_quantity,
         Quantity(0)
     );
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 2);
-    assert!(harness
-        .affordances_for("harvest:Harvest Apples")
-        .is_empty());
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        2
+    );
+    assert!(harness.affordances_for("harvest:Harvest Apples").is_empty());
 
     harness.step_once().unwrap();
     assert_eq!(
@@ -385,16 +441,18 @@ fn scheduler_harvest_depletion_and_regeneration_gate_affordances_on_concrete_sto
             .available_quantity,
         Quantity(1)
     );
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 3);
-    assert!(harness
-        .affordances_for("harvest:Harvest Apples")
-        .is_empty());
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        3
+    );
+    assert!(harness.affordances_for("harvest:Harvest Apples").is_empty());
 
     harness.step_once().unwrap();
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 3);
-    assert!(harness
-        .affordances_for("harvest:Harvest Apples")
-        .is_empty());
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        3
+    );
+    assert!(harness.affordances_for("harvest:Harvest Apples").is_empty());
 
     harness.step_once().unwrap();
     assert_eq!(
@@ -405,7 +463,10 @@ fn scheduler_harvest_depletion_and_regeneration_gate_affordances_on_concrete_sto
             .available_quantity,
         Quantity(2)
     );
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 4);
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        4
+    );
     assert_eq!(
         harness.affordances_for("harvest:Harvest Apples"),
         vec![vec![harness.orchard_workstation]]
@@ -421,10 +482,11 @@ fn scheduler_harvest_depletion_and_regeneration_gate_affordances_on_concrete_sto
             .available_quantity,
         Quantity(1)
     );
-    assert_eq!(apple_material_total(&harness.world, harness.orchard_workstation), 5);
-    assert!(harness
-        .affordances_for("harvest:Harvest Apples")
-        .is_empty());
+    assert_eq!(
+        apple_material_total(&harness.world, harness.orchard_workstation),
+        5
+    );
+    assert!(harness.affordances_for("harvest:Harvest Apples").is_empty());
 }
 
 #[test]
@@ -460,7 +522,10 @@ fn scheduler_craft_preserves_staged_inputs_and_applies_exact_recipe_deltas() {
 
     harness.run_queued_action_to_completion(3);
 
-    assert!(harness.world.get_component_production_job(harness.mill_workstation).is_none());
+    assert!(harness
+        .world
+        .get_component_production_job(harness.mill_workstation)
+        .is_none());
     verify_live_lot_conservation(&harness.world, CommodityKind::Grain, 0).unwrap();
     verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 1).unwrap();
 }

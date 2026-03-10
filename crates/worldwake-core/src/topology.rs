@@ -983,7 +983,10 @@ mod tests {
             .add_place(entity(2), place("B", &[PlaceTag::Farm]))
             .unwrap();
 
-        assert_eq!(topology.unique_direct_edge(entity(1), entity(2)).unwrap(), None);
+        assert_eq!(
+            topology.unique_direct_edge(entity(1), entity(2)).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -998,7 +1001,9 @@ mod tests {
         topology.add_edge(edge_with_ticks(10, 1, 2, 2)).unwrap();
         topology.add_edge(edge_with_ticks(20, 1, 2, 3)).unwrap();
 
-        let err = topology.unique_direct_edge(entity(1), entity(2)).unwrap_err();
+        let err = topology
+            .unique_direct_edge(entity(1), entity(2))
+            .unwrap_err();
 
         assert!(matches!(err, WorldError::InvariantViolation(_)));
     }

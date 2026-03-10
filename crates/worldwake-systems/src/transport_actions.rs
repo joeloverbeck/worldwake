@@ -132,21 +132,27 @@ fn carried_load(txn: &WorldTxn<'_>, actor: EntityId) -> Result<LoadUnits, Action
         .into_iter()
         .try_fold(0_u32, |total, entity| {
             total
-                .checked_add(load_of_entity(txn, entity).map_err(|err| {
-                    ActionError::InternalError(format!(
-                        "failed to compute carried load for {entity}: {err}"
-                    ))
-                })?
-                .0)
+                .checked_add(
+                    load_of_entity(txn, entity)
+                        .map_err(|err| {
+                            ActionError::InternalError(format!(
+                                "failed to compute carried load for {entity}: {err}"
+                            ))
+                        })?
+                        .0,
+                )
                 .ok_or_else(|| ActionError::InternalError("carried load overflowed".to_string()))
         })?;
     Ok(LoadUnits(total))
 }
 
 fn remaining_capacity(txn: &WorldTxn<'_>, actor: EntityId) -> Result<LoadUnits, ActionError> {
-    let CarryCapacity(capacity) = txn.get_component_carry_capacity(actor).copied().ok_or_else(|| {
-        ActionError::PreconditionFailed(format!("actor {actor} lacks CarryCapacity"))
-    })?;
+    let CarryCapacity(capacity) = txn
+        .get_component_carry_capacity(actor)
+        .copied()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("actor {actor} lacks CarryCapacity"))
+        })?;
     let current = carried_load(txn, actor)?;
     capacity
         .0
@@ -168,7 +174,11 @@ fn require_item_lot_target(instance: &ActionInstance) -> Result<EntityId, Action
         .ok_or(ActionError::InvalidTarget(instance.actor))
 }
 
-fn validate_pick_up(txn: &WorldTxn<'_>, actor: EntityId, target: EntityId) -> Result<(), ActionError> {
+fn validate_pick_up(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+) -> Result<(), ActionError> {
     let actor_place = txn
         .effective_place(actor)
         .ok_or_else(|| ActionError::PreconditionFailed(format!("actor {actor} has no place")))?;
@@ -204,7 +214,11 @@ fn validate_pick_up(txn: &WorldTxn<'_>, actor: EntityId, target: EntityId) -> Re
     Ok(())
 }
 
-fn execute_pick_up(txn: &mut WorldTxn<'_>, actor: EntityId, target: EntityId) -> Result<EntityId, ActionError> {
+fn execute_pick_up(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+) -> Result<EntityId, ActionError> {
     validate_pick_up(txn, actor, target)?;
     let actor_place = txn
         .effective_place(actor)
@@ -333,9 +347,9 @@ mod tests {
         WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        ActionDefRegistry, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-        ActionInstance, ActionInstanceId, OmniscientBeliefView, TickOutcome, get_affordances,
-        start_action, tick_action,
+        get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
+        ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        OmniscientBeliefView, TickOutcome,
     };
 
     use super::*;
@@ -407,7 +421,12 @@ mod tests {
         (world, actor, lot, place, other_place)
     }
 
-    fn setup_registries() -> (ActionDefRegistry, ActionHandlerRegistry, ActionDefId, ActionDefId) {
+    fn setup_registries() -> (
+        ActionDefRegistry,
+        ActionHandlerRegistry,
+        ActionDefId,
+        ActionDefId,
+    ) {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let ids = register_transport_actions(&mut defs, &mut handlers);
@@ -503,7 +522,9 @@ mod tests {
         assert_eq!(world.owner_of(lot), None);
         assert_eq!(world.effective_place(lot), Some(place));
 
-        let record = log.get(log.events_by_tag(EventTag::ActionCommitted)[0]).unwrap();
+        let record = log
+            .get(log.events_by_tag(EventTag::ActionCommitted)[0])
+            .unwrap();
         assert!(record.tags.contains(&EventTag::Inventory));
         assert!(record.tags.contains(&EventTag::Transfer));
     }
@@ -590,7 +611,9 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(err, ActionError::PreconditionFailed(message) if message.contains("insufficient carry capacity")));
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("insufficient carry capacity"))
+        );
     }
 
     #[test]
@@ -808,11 +831,15 @@ mod tests {
 
         let mut travel_defs = ActionDefRegistry::new();
         let mut travel_handlers = ActionHandlerRegistry::new();
-        let travel_id = crate::travel_actions::register_travel_actions(&mut travel_defs, &mut travel_handlers);
-        let travel_affordance = get_affordances(&OmniscientBeliefView::new(&world), actor, &travel_defs)
-            .into_iter()
-            .find(|affordance| affordance.def_id == travel_id && affordance.bound_targets == vec![destination])
-            .unwrap();
+        let travel_id =
+            crate::travel_actions::register_travel_actions(&mut travel_defs, &mut travel_handlers);
+        let travel_affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &travel_defs)
+                .into_iter()
+                .find(|affordance| {
+                    affordance.def_id == travel_id && affordance.bound_targets == vec![destination]
+                })
+                .unwrap();
         let mut next_instance_id = ActionInstanceId(2);
         let travel_instance = start_action(
             &travel_affordance,
@@ -895,7 +922,11 @@ mod tests {
             .filter(|affordance| affordance.def_id == pick_up_id)
             .collect::<Vec<_>>();
 
-        assert!(affordances.iter().any(|affordance| affordance.bound_targets == vec![ground_lot]));
-        assert!(!affordances.iter().any(|affordance| affordance.bound_targets == vec![contained_lot]));
+        assert!(affordances
+            .iter()
+            .any(|affordance| affordance.bound_targets == vec![ground_lot]));
+        assert!(!affordances
+            .iter()
+            .any(|affordance| affordance.bound_targets == vec![contained_lot]));
     }
 }
