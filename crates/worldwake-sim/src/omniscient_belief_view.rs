@@ -42,6 +42,10 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world.entities_effectively_at(place)
     }
 
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+        self.world.possessions_of(holder)
+    }
+
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
         self.world.topology().neighbors(place)
     }
@@ -69,6 +73,14 @@ impl BeliefView for OmniscientBeliefView<'_> {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
         let commodity = self.item_lot_commodity(entity)?;
         commodity.spec().consumable_profile
+    }
+
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        self.world.direct_container(entity)
+    }
+
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+        self.world.possessor_of(entity)
     }
 
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {

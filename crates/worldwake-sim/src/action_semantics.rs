@@ -26,6 +26,7 @@ pub enum Constraint {
 pub enum TargetSpec {
     SpecificEntity(EntityId),
     EntityAtActorPlace { kind: EntityKind },
+    EntityDirectlyPossessedByActor { kind: EntityKind },
     AdjacentPlace,
 }
 
@@ -53,6 +54,9 @@ pub enum Precondition {
         commodity: CommodityKind,
         min_available: Quantity,
     },
+    TargetNotInContainer(u8),
+    TargetUnpossessed(u8),
+    TargetDirectlyPossessedByActor(u8),
     TargetLacksProductionJob(u8),
     TargetHasConsumableEffect {
         target_index: u8,
@@ -198,15 +202,18 @@ mod tests {
         Constraint::ActorKind(EntityKind::Agent),
     ];
 
-    const ALL_TARGET_SPECS: [TargetSpec; 3] = [
+    const ALL_TARGET_SPECS: [TargetSpec; 4] = [
         TargetSpec::SpecificEntity(ENTITY_B),
         TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Facility,
         },
+        TargetSpec::EntityDirectlyPossessedByActor {
+            kind: EntityKind::ItemLot,
+        },
         TargetSpec::AdjacentPlace,
     ];
 
-    const ALL_PRECONDITIONS: [Precondition; 11] = [
+    const ALL_PRECONDITIONS: [Precondition; 14] = [
         Precondition::ActorAlive,
         Precondition::ActorCanControlTarget(6),
         Precondition::TargetExists(0),
@@ -229,6 +236,9 @@ mod tests {
             commodity: CommodityKind::Apple,
             min_available: Quantity(2),
         },
+        Precondition::TargetNotInContainer(4),
+        Precondition::TargetUnpossessed(5),
+        Precondition::TargetDirectlyPossessedByActor(6),
         Precondition::TargetLacksProductionJob(3),
         Precondition::TargetHasConsumableEffect {
             target_index: 4,
@@ -520,7 +530,28 @@ mod tests {
             _ => unreachable!(),
         }
 
-        match Precondition::TargetLacksProductionJob(10) {
+        match Precondition::TargetNotInContainer(10) {
+            Precondition::TargetNotInContainer(target_index) => {
+                let _: u8 = target_index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetUnpossessed(11) {
+            Precondition::TargetUnpossessed(target_index) => {
+                let _: u8 = target_index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetDirectlyPossessedByActor(12) {
+            Precondition::TargetDirectlyPossessedByActor(target_index) => {
+                let _: u8 = target_index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetLacksProductionJob(13) {
             Precondition::TargetLacksProductionJob(target_index) => {
                 let _: u8 = target_index;
             }

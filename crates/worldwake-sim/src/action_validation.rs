@@ -81,6 +81,15 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .is_some_and(|source| {
                 source.commodity == commodity && source.available_quantity >= min_available
             }),
+        Precondition::TargetNotInContainer(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| world.direct_container(*target).is_none()),
+        Precondition::TargetUnpossessed(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| world.possessor_of(*target).is_none()),
+        Precondition::TargetDirectlyPossessedByActor(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| world.possessor_of(*target) == Some(actor)),
         Precondition::TargetLacksProductionJob(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| !world.has_component_production_job(*target)),
@@ -247,6 +256,36 @@ mod tests {
             },
             actor,
             &[medicine],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetDirectlyPossessedByActor(0),
+            actor,
+            &[bag],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetUnpossessed(0),
+            actor,
+            &[bread],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetNotInContainer(0),
+            actor,
+            &[bread],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetNotInContainer(0),
+            actor,
+            &[bag],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetUnpossessed(0),
+            actor,
+            &[bag],
         ));
         assert!(world.can_exercise_control(actor, bag).is_ok());
     }

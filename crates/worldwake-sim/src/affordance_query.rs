@@ -113,6 +113,15 @@ fn evaluate_precondition(
             .is_some_and(|source| {
                 source.commodity == commodity && source.available_quantity >= min_available
             }),
+        Precondition::TargetNotInContainer(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| view.direct_container(*target).is_none()),
+        Precondition::TargetUnpossessed(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| view.direct_possessor(*target).is_none()),
+        Precondition::TargetDirectlyPossessedByActor(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| view.direct_possessor(*target) == Some(actor)),
         Precondition::TargetLacksProductionJob(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| !view.has_production_job(*target)),
@@ -146,6 +155,11 @@ fn enumerate_targets(spec: &TargetSpec, actor: EntityId, view: &dyn BeliefView) 
                 .filter(|entity| view.entity_kind(*entity) == Some(*kind))
                 .collect::<Vec<_>>()
         }
+        TargetSpec::EntityDirectlyPossessedByActor { kind } => view
+            .direct_possessions(actor)
+            .into_iter()
+            .filter(|entity| view.entity_kind(*entity) == Some(*kind))
+            .collect::<Vec<_>>(),
         TargetSpec::AdjacentPlace => {
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
@@ -211,12 +225,15 @@ mod tests {
         places: BTreeMap<EntityId, EntityId>,
         in_transit: BTreeMap<EntityId, bool>,
         colocated: BTreeMap<EntityId, Vec<EntityId>>,
+        direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         adjacent_places: BTreeMap<EntityId, Vec<EntityId>>,
         known_recipes: BTreeMap<EntityId, Vec<RecipeId>>,
         unique_items: BTreeMap<(EntityId, UniqueItemKind), u32>,
         commodities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
+        direct_containers: BTreeMap<EntityId, EntityId>,
+        direct_possessors: BTreeMap<EntityId, EntityId>,
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         production_jobs: BTreeMap<EntityId, bool>,
@@ -245,6 +262,13 @@ mod tests {
 
         fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
             self.colocated.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
@@ -277,6 +301,14 @@ mod tests {
             entity: EntityId,
         ) -> Option<CommodityConsumableProfile> {
             self.consumable_profiles.get(&entity).copied()
+        }
+
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
+        }
+
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
         }
 
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
