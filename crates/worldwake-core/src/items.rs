@@ -186,10 +186,11 @@ pub enum LotOperation {
     Destroyed,
     Spoiled,
     Transformed,
+    Traded,
 }
 
 impl LotOperation {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Created,
         Self::Split,
         Self::Merge,
@@ -198,6 +199,7 @@ impl LotOperation {
         Self::Destroyed,
         Self::Spoiled,
         Self::Transformed,
+        Self::Traded,
     ];
 }
 
@@ -416,6 +418,7 @@ mod tests {
                 LotOperation::Destroyed,
                 LotOperation::Spoiled,
                 LotOperation::Transformed,
+                LotOperation::Traded,
             ]
         );
     }
@@ -476,7 +479,7 @@ mod tests {
         let with_links = ProvenanceEntry {
             tick: Tick(11),
             event_id: Some(EventId(4)),
-            operation: LotOperation::Split,
+            operation: LotOperation::Traded,
             related_lot: Some(EntityId {
                 slot: 7,
                 generation: 1,
