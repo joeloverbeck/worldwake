@@ -134,7 +134,7 @@ No change is expected in `crates/worldwake-core/src/event_tag.rs`; `EventTag::Tr
 
 ## Spec References
 
-1. `specs/E10-production-transport.md`
+1. `archive/specs/E10-production-transport.md`
 2. `specs/IMPLEMENTATION-ORDER.md`
 3. `docs/FOUNDATIONS.md`
 

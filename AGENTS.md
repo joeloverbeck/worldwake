@@ -84,7 +84,7 @@ These rules exist to prevent specs from drifting into magic numbers, float-based
 ## Delivery Planning
 
 - The implementation plan spans 22 epics across 4 phases.
-- Active epic specs live in `specs/E09-*.md` through `specs/E22-*.md`; completed phase-1 specs are archived under `archive/specs/`.
+- Active epic specs live in `specs/E11-*.md` through `specs/E22-*.md`; completed or archived specs live under `archive/specs/`.
 - Phase ordering and gates live in `specs/IMPLEMENTATION-ORDER.md`.
 - Do not treat phase gates as advisory. New phase work should not begin until the prior gate conditions pass.
 
@@ -102,7 +102,7 @@ Avoid introducing a third-party ECS crate.
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Active epic specs: `specs/E09-*.md` through `specs/E22-*.md`
+- Active epic specs: `specs/E11-*.md` through `specs/E22-*.md`
 - Archived phase-1 specs: `archive/specs/`
 - Archival workflow: `docs/archival-workflow.md`
 

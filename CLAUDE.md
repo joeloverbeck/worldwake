@@ -59,7 +59,7 @@ The foundation crate contains all authoritative types and the ECS world boundary
 | `topology` | `Place`, `PlaceTag`, `TravelEdge`, `Route`, `Topology`, Dijkstra pathfinding, `build_prototype_world` |
 | `items` | `CommodityKind`, `ItemLot`, `UniqueItem`, `UniqueItemKind`, `Container`, `LotOperation`, `ProvenanceEntry`, `TradeCategory` |
 | `load` | Weight/load accounting: per-unit loads, container capacity checks |
-| `conservation` | `total_commodity_quantity`, `verify_conservation` — enforces the conservation invariant |
+| `conservation` | `total_live_lot_quantity`, `total_authoritative_commodity_quantity`, `verify_live_lot_conservation`, `verify_authoritative_conservation` — explicit lot-only vs authoritative material accounting |
 | `numerics` | Newtype wrappers: `Quantity`, `LoadUnits`, `Permille` |
 | `traits` | `Component` and `RelationRecord` trait definitions |
 | `relations` | `RelationTables`, placement/ownership/reservation/social APIs, `ArchiveDependency` |
@@ -71,7 +71,7 @@ The foundation crate contains all authoritative types and the ECS world boundary
 | `delta` | `ComponentDelta`, `RelationDelta`, `ReservationDelta` — immutable change records |
 | `world_txn` | `WorldTxn` — mutation journal with staged atomic commit |
 | `canonical` | `canonical_bytes()`, `hash_world()`, `hash_event_log()`, `StateHash` — deterministic hashing |
-| `verification` | `verify_conservation()`, `verify_completeness()` — invariant enforcement |
+| `verification` | `verify_live_lot_conservation()`, `verify_authoritative_conservation()`, `verify_completeness()` — invariant enforcement |
 | `visibility` | Event visibility and witness tracking |
 | `world` | `World` struct — authoritative boundary over allocator, component tables, topology, and relations |
 | `error` | `WorldError` enum |
@@ -167,7 +167,7 @@ Minimal: `serde`, `bincode`, `rand_chacha`, `blake3` (canonical state hashing). 
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Epic specs: `specs/E09-*.md` through `specs/E22-*.md` (E01–E08 archived in `archive/specs/`)
+- Epic specs: `specs/E11-*.md` through `specs/E22-*.md` (`archive/specs/` contains archived or completed specs, including E01–E10)
 
 ## Commit Conventions
 

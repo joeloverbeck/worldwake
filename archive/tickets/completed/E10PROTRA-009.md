@@ -19,7 +19,7 @@ Craft transforms input materials into output products through a work-in-progress
 5. Workstation reservation should reuse the existing generic reservation pipeline that `start_action` and `ReservationReq` already use; craft should not add workstation-specific reservation logic.
 6. `RecipeDefinition` intentionally allows empty `inputs` and empty `outputs` at the schema level. Craft action registration must therefore filter for recipes that are actually craft-shaped instead of assuming the registry enforces that invariant.
 7. There is no craft-specific `EventTag` today, and the current action/event architecture already records `ActionStarted`, `ActionCommitted`, `ActionAborted`, plus recipe/action-specific causal tags. Add a new tag only if the broader event taxonomy truly needs it.
-8. The ticket originally referenced `specs/E10-PROTRA-economic-production-trade.md`, but the active epic spec is `specs/E10-production-transport.md`.
+8. The ticket originally referenced `specs/E10-PROTRA-economic-production-trade.md`, but the implemented epic spec is `archive/specs/E10-production-transport.md`.
 
 ## Architecture Check
 

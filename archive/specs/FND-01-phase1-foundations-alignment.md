@@ -139,7 +139,7 @@ Before any system can implement route-based encounters, ambushes, patrols, or in
 
 ### Action
 
-**No code changes in this spec.** Gate notes are added to `specs/E10-production-transport.md`, `specs/E11-trade-economy.md`, and `specs/E12-combat-health.md` (see below) requiring:
+**No code changes in this spec.** Gate notes are added to `archive/specs/E10-production-transport.md`, `specs/E11-trade-economy.md`, and `specs/E12-combat-health.md` (see below) requiring:
 
 1. A concrete route presence model MUST exist before any route-based encounter/risk/interception logic is implemented.
 2. It is **forbidden** to reintroduce stored route danger or visibility scores to compensate for missing route presence.
@@ -313,7 +313,7 @@ Tickets 1–3 are independent and can be parallelized. Ticket 4 is a larger rena
 - `docs/FOUNDATIONS.md` — Principles 1, 2, 3, 6, 7, 10
 - `brainstorming/phase-1-foundations-alignment-correction.md` — original analysis
 - `specs/E14-perception-beliefs.md` — Section B deferral target
-- `specs/E10-production-transport.md` — Section D gate target
+- `archive/specs/E10-production-transport.md` — Section D gate target
 - `specs/E11-trade-economy.md` — Section D gate target
 - `specs/E12-combat-health.md` — Section D gate target
 

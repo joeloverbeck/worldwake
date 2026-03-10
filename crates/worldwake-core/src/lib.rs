@@ -64,7 +64,10 @@ pub use canonical::{
 pub use cause::CauseRef;
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
-pub use conservation::{total_commodity_quantity, verify_conservation};
+pub use conservation::{
+    total_authoritative_commodity_quantity, total_live_lot_quantity,
+    verify_authoritative_conservation, verify_live_lot_conservation,
+};
 pub use control::ControlSource;
 pub use delta::{
     ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,

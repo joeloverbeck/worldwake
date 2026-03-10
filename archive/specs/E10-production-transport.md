@@ -1,5 +1,7 @@
 # E10: Production, Transport & Route Occupancy
 
+**Status**: COMPLETED
+
 ## Epic Summary
 Implement production from concrete resource sources, work-in-progress jobs, carry-capacity transport, and physical travel with explicit in-transit occupancy. Harvesting must transfer goods out of a real source stock; it may not conjure infinite goods from a place tag.
 
@@ -257,6 +259,25 @@ Writes:
 - 9.10: No teleportation — goods move only through containment and travel
 - Principle 3: no abstract facility slot count
 - Principle 7: route presence is concrete occupancy, not a score
+
+## Outcome
+
+- Completion date: 2026-03-10
+- What actually changed:
+  - implemented the shared E10 schema in `worldwake-core` and `worldwake-sim`, including `KnownRecipes`, `ResourceSource`, `ProductionJob`, `InTransitOnEdge`, `CarryCapacity`, and `RecipeRegistry`
+  - implemented `harvest`, `craft`, `pick_up`, `put_down`, and generic adjacent-place `travel` actions in `worldwake-systems`
+  - implemented resource regeneration, workstation reservation behavior, explicit WIP staging, carried-load enforcement, and route occupancy on the traveling actor
+  - added focused action-level tests plus scheduler-driven integration coverage for multi-step transport, depletion/regeneration gating, and craft accounting
+  - refined material accounting so the codebase now distinguishes live-lot conservation from authoritative commodity accounting that includes `ResourceSource` stock
+- Deviations from original plan:
+  - “deliver” is not a standalone action; transport remains the cleaner `pick_up -> travel -> put_down` composition
+  - carried goods do not each receive their own `InTransitOnEdge`; the actor carries route occupancy while possessions/contained items follow through placement and containment
+  - the conservation surface was clarified after implementation into separate lot-only and authoritative helpers rather than one ambiguous helper
+- Verification results:
+  - `cargo test -p worldwake-core conservation` passed on 2026-03-10
+  - `cargo test -p worldwake-systems` passed on 2026-03-10
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed on 2026-03-10
+  - `cargo test --workspace` passed on 2026-03-10
 
 ## Tests
 - [ ] Harvest reduces `ResourceSource.available_quantity`
