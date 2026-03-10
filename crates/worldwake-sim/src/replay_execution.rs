@@ -223,14 +223,15 @@ mod tests {
     };
     use crate::{
         ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind,
-        ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemId, SystemManifest,
-        TickStepServices,
+        RecipeDefinition, RecipeRegistry, ReplayCheckpoint, ReplayRecordingConfig, ReplayState,
+        Scheduler, SimulationState, SystemDispatchTable, SystemError, SystemExecutionContext,
+        SystemId, SystemManifest, TickStepServices,
     };
     use std::num::NonZeroU64;
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, Seed, StateHash, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
+        EventLog, Quantity, Seed, StateHash, Tick, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -259,6 +260,20 @@ mod tests {
             .unwrap();
         let _ = txn.commit(event_log);
         agent
+    }
+
+    fn populated_recipe_registry() -> RecipeRegistry {
+        let mut registry = RecipeRegistry::new();
+        registry.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: std::num::NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: vec![CommodityKind::Water],
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+        registry
     }
 
     #[allow(clippy::needless_pass_by_value)]
@@ -315,11 +330,13 @@ mod tests {
         if advance_initial_rng {
             let _ = rng.next_u32();
         }
+        let recipe_registry = populated_recipe_registry();
 
         let initial_hash = SimulationState::replay_bootstrap_hash_parts(
             &world,
             &event_log,
             &scheduler,
+            &recipe_registry,
             &controller,
             &rng,
         )
@@ -332,7 +349,15 @@ mod tests {
         );
 
         (
-            SimulationState::new(world, event_log, scheduler, replay, controller, rng),
+            SimulationState::new(
+                world,
+                event_log,
+                scheduler,
+                recipe_registry,
+                replay,
+                controller,
+                rng,
+            ),
             first,
             second,
         )

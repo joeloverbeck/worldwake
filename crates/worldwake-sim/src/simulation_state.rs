@@ -1,4 +1,4 @@
-use crate::{ControllerState, DeterministicRng, ReplayState, Scheduler};
+use crate::{ControllerState, DeterministicRng, RecipeRegistry, ReplayState, Scheduler};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{hash_serializable, CanonicalError, EventLog, StateHash, World};
 
@@ -7,6 +7,7 @@ pub struct SimulationState {
     world: World,
     event_log: EventLog,
     scheduler: Scheduler,
+    recipe_registry: RecipeRegistry,
     replay_state: ReplayState,
     controller_state: ControllerState,
     rng_state: DeterministicRng,
@@ -18,6 +19,7 @@ impl SimulationState {
         world: World,
         event_log: EventLog,
         scheduler: Scheduler,
+        recipe_registry: RecipeRegistry,
         replay_state: ReplayState,
         controller_state: ControllerState,
         rng_state: DeterministicRng,
@@ -26,6 +28,7 @@ impl SimulationState {
             world,
             event_log,
             scheduler,
+            recipe_registry,
             replay_state,
             controller_state,
             rng_state,
@@ -57,6 +60,15 @@ impl SimulationState {
 
     pub fn scheduler_mut(&mut self) -> &mut Scheduler {
         &mut self.scheduler
+    }
+
+    #[must_use]
+    pub const fn recipe_registry(&self) -> &RecipeRegistry {
+        &self.recipe_registry
+    }
+
+    pub fn recipe_registry_mut(&mut self) -> &mut RecipeRegistry {
+        &mut self.recipe_registry
     }
 
     #[must_use]
@@ -95,6 +107,7 @@ impl SimulationState {
             &self.world,
             &self.event_log,
             &self.scheduler,
+            &self.recipe_registry,
             &self.controller_state,
             &self.rng_state,
         )
@@ -104,10 +117,18 @@ impl SimulationState {
         world: &World,
         event_log: &EventLog,
         scheduler: &Scheduler,
+        recipe_registry: &RecipeRegistry,
         controller_state: &ControllerState,
         rng_state: &DeterministicRng,
     ) -> Result<StateHash, CanonicalError> {
-        hash_serializable(&(world, event_log, scheduler, controller_state, rng_state))
+        hash_serializable(&(
+            world,
+            event_log,
+            scheduler,
+            recipe_registry,
+            controller_state,
+            rng_state,
+        ))
     }
 
     pub(crate) fn runtime_parts_mut(
@@ -138,14 +159,16 @@ impl SimulationState {
 mod tests {
     use super::SimulationState;
     use crate::{
-        ActionDefId, ControllerState, DeterministicRng, InputEvent, InputKind, ReplayCheckpoint,
-        ReplayRecordingConfig, ReplayState, Scheduler, SystemManifest,
+        ActionDefId, ControllerState, DeterministicRng, InputEvent, InputKind, RecipeDefinition,
+        RecipeRegistry, ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler,
+        SystemManifest,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::num::NonZeroU64;
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, PendingEvent, Seed,
-        StateHash, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
+        EventLog, PendingEvent, Quantity, Seed, StateHash, Tick, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -192,6 +215,20 @@ mod tests {
         (world, event_log)
     }
 
+    fn populated_recipe_registry() -> RecipeRegistry {
+        let mut registry = RecipeRegistry::new();
+        registry.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: std::num::NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: vec![CommodityKind::Water],
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+        registry
+    }
+
     fn populated_state() -> SimulationState {
         let (world, event_log) = populated_world_and_event_log();
         let mut scheduler = Scheduler::new_with_tick(Tick(4), SystemManifest::canonical());
@@ -225,6 +262,7 @@ mod tests {
             world,
             event_log,
             scheduler,
+            populated_recipe_registry(),
             replay_state,
             ControllerState::with_entity(entity(3)),
             rng_state,
@@ -246,6 +284,7 @@ mod tests {
         assert_eq!(state.world(), &expected_world);
         assert_eq!(state.event_log(), &expected_event_log);
         assert_eq!(state.scheduler().current_tick(), Tick(4));
+        assert_eq!(state.recipe_registry().len(), 1);
         assert_eq!(state.replay_state().terminal_tick(), Tick(4));
         assert_eq!(state.replay_state().input_log(), &[recordable_input(4, 0)]);
         assert_eq!(
@@ -260,6 +299,15 @@ mod tests {
         let mut state = populated_state();
 
         state.scheduler_mut().increment_tick();
+        let recipe_id = state.recipe_registry_mut().register(RecipeDefinition {
+            name: "Rest".to_string(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            work_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            required_workstation_tag: None,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
         state.controller_state_mut().clear();
         let _ = state.rng_state_mut().next_u32();
         state.replay_state_mut().set_terminal_tick(Tick(5)).unwrap();
@@ -276,6 +324,8 @@ mod tests {
         ));
 
         assert_eq!(state.scheduler().current_tick(), Tick(5));
+        assert_eq!(recipe_id.0, 1);
+        assert_eq!(state.recipe_registry().len(), 2);
         assert_eq!(state.controller_state().controlled_entity(), None);
         assert_eq!(state.replay_state().terminal_tick(), Tick(5));
         assert_eq!(state.event_log().len(), 2);
@@ -320,6 +370,23 @@ mod tests {
             original.replay_bootstrap_hash().unwrap(),
             changed_rng.replay_bootstrap_hash().unwrap()
         );
+
+        let mut changed_recipe_registry = original.clone();
+        changed_recipe_registry
+            .recipe_registry_mut()
+            .register(RecipeDefinition {
+                name: "Harvest Apples".to_string(),
+                inputs: Vec::new(),
+                outputs: vec![(CommodityKind::Apple, Quantity(2))],
+                work_ticks: std::num::NonZeroU32::new(2).unwrap(),
+                required_workstation_tag: Some(WorkstationTag::OrchardRow),
+                required_tool_kinds: Vec::new(),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+            });
+        assert_ne!(
+            original.replay_bootstrap_hash().unwrap(),
+            changed_recipe_registry.replay_bootstrap_hash().unwrap()
+        );
     }
 
     #[test]
@@ -359,6 +426,19 @@ mod tests {
         let mut changed_scheduler = original.clone();
         changed_scheduler.scheduler_mut().increment_tick();
 
+        let mut changed_recipe_registry = original.clone();
+        changed_recipe_registry
+            .recipe_registry_mut()
+            .register(RecipeDefinition {
+                name: "Harvest Apples".to_string(),
+                inputs: Vec::new(),
+                outputs: vec![(CommodityKind::Apple, Quantity(2))],
+                work_ticks: std::num::NonZeroU32::new(2).unwrap(),
+                required_workstation_tag: Some(WorkstationTag::OrchardRow),
+                required_tool_kinds: Vec::new(),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+            });
+
         let mut changed_replay = original.clone();
         changed_replay
             .replay_state_mut()
@@ -375,6 +455,7 @@ mod tests {
         assert_ne!(changed_world.hash().unwrap(), original_hash);
         assert_ne!(changed_event_log.hash().unwrap(), original_hash);
         assert_ne!(changed_scheduler.hash().unwrap(), original_hash);
+        assert_ne!(changed_recipe_registry.hash().unwrap(), original_hash);
         assert_ne!(changed_replay.hash().unwrap(), original_hash);
         assert_ne!(changed_controller.hash().unwrap(), original_hash);
         assert_ne!(changed_rng.hash().unwrap(), original_hash);

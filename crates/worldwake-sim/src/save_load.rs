@@ -109,17 +109,17 @@ mod tests {
     use crate::{
         step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ActionInstance,
         ActionInstanceId, ActionState, ActionStatus, ControllerState, DeterministicRng, InputKind,
-        ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemId, SystemManifest,
-        TickStepServices,
+        RecipeDefinition, RecipeRegistry, ReplayCheckpoint, ReplayRecordingConfig, ReplayState,
+        Scheduler, SimulationState, SystemDispatchTable, SystemError, SystemExecutionContext,
+        SystemId, SystemManifest, TickStepServices,
     };
     use std::num::NonZeroU64;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, PendingEvent,
-        ReservationId, Seed, StateHash, Tick, TickRange, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
+        EventLog, PendingEvent, Quantity, ReservationId, Seed, StateHash, Tick, TickRange,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     fn state_hash(byte: u8) -> StateHash {
@@ -167,6 +167,20 @@ mod tests {
             .unwrap();
         let _ = txn.commit(event_log);
         (item, reservation)
+    }
+
+    fn populated_recipe_registry() -> RecipeRegistry {
+        let mut registry = RecipeRegistry::new();
+        registry.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: std::num::NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: vec![CommodityKind::Water],
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+        registry
     }
 
     fn populated_state() -> (SimulationState, EntityId, EntityId) {
@@ -219,11 +233,13 @@ mod tests {
         let mut rng = DeterministicRng::new(Seed([0x44; 32]));
         let _ = rng.next_u32();
         let _ = rng.next_u64();
+        let recipe_registry = populated_recipe_registry();
 
         let initial_hash = SimulationState::replay_bootstrap_hash_parts(
             &world,
             &event_log,
             &scheduler,
+            &recipe_registry,
             &ControllerState::with_entity(actor),
             &rng,
         )
@@ -257,6 +273,7 @@ mod tests {
                 world,
                 event_log,
                 scheduler,
+                recipe_registry,
                 replay_state,
                 ControllerState::with_entity(actor),
                 rng,
@@ -336,10 +353,12 @@ mod tests {
         let mut rng = DeterministicRng::new(Seed([0x77; 32]));
         let _ = rng.next_u32();
         let controller = ControllerState::with_entity(first);
+        let recipe_registry = populated_recipe_registry();
         let initial_hash = SimulationState::replay_bootstrap_hash_parts(
             &world,
             &event_log,
             &scheduler,
+            &recipe_registry,
             &controller,
             &rng,
         )
@@ -353,7 +372,15 @@ mod tests {
         replay_state.record_input(first_input).unwrap();
         replay_state.record_input(second_input).unwrap();
 
-        SimulationState::new(world, event_log, scheduler, replay_state, controller, rng)
+        SimulationState::new(
+            world,
+            event_log,
+            scheduler,
+            recipe_registry,
+            replay_state,
+            controller,
+            rng,
+        )
     }
 
     fn advance_state(state: &mut SimulationState, ticks: u64) {
@@ -405,6 +432,7 @@ mod tests {
         assert_eq!(restored, state);
         assert_eq!(restored.scheduler().active_actions().len(), 1);
         assert_eq!(restored.scheduler().input_queue().len(), 2);
+        assert_eq!(restored.recipe_registry().len(), 1);
         assert_eq!(restored.replay_state().checkpoints().len(), 1);
         assert_eq!(restored.controller_state().controlled_entity(), Some(actor));
         assert!(!restored.world().reservations_for(reserved_item).is_empty());

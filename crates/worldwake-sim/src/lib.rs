@@ -25,6 +25,8 @@ pub mod input_event;
 pub mod input_queue;
 pub mod interrupt_abort;
 pub mod omniscient_belief_view;
+pub mod recipe_def;
+pub mod recipe_registry;
 pub mod replan_needed;
 pub mod replay_execution;
 pub mod replay_state;
@@ -62,6 +64,8 @@ pub use input_event::{InputEvent, InputKind};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use omniscient_belief_view::OmniscientBeliefView;
+pub use recipe_def::RecipeDefinition;
+pub use recipe_registry::RecipeRegistry;
 pub use replan_needed::ReplanNeeded;
 pub use replay_execution::{
     record_tick_checkpoint, replay_and_verify, seed_replay_inputs_from_scheduler,
