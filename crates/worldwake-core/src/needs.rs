@@ -129,6 +129,43 @@ impl Default for MetabolismProfile {
     }
 }
 
+/// Deterministic per-tick physiology cost applied by long-running actions.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BodyCostPerTick {
+    pub hunger_delta: Permille,
+    pub thirst_delta: Permille,
+    pub fatigue_delta: Permille,
+    pub dirtiness_delta: Permille,
+}
+
+impl BodyCostPerTick {
+    #[must_use]
+    pub const fn new(
+        hunger_delta: Permille,
+        thirst_delta: Permille,
+        fatigue_delta: Permille,
+        dirtiness_delta: Permille,
+    ) -> Self {
+        Self {
+            hunger_delta,
+            thirst_delta,
+            fatigue_delta,
+            dirtiness_delta,
+        }
+    }
+
+    #[must_use]
+    pub const fn zero() -> Self {
+        Self::new(pm(0), pm(0), pm(0), pm(0))
+    }
+}
+
+impl Default for BodyCostPerTick {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
 const fn pm(value: u16) -> Permille {
     Permille::new_unchecked(value)
 }
@@ -142,7 +179,9 @@ const fn nz(value: u32) -> NonZeroU32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{nz, pm, DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
+    use super::{
+        nz, pm, BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile,
+    };
     use crate::{traits::Component, Permille};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
@@ -230,9 +269,31 @@ mod tests {
         assert_component_bounds::<HomeostaticNeeds>();
         assert_component_bounds::<DeprivationExposure>();
         assert_component_bounds::<MetabolismProfile>();
+        assert_value_bounds::<BodyCostPerTick>();
         assert_value_bounds::<HomeostaticNeeds>();
         assert_value_bounds::<DeprivationExposure>();
         assert_value_bounds::<MetabolismProfile>();
+    }
+
+    #[test]
+    fn body_cost_per_tick_zero_is_all_zero() {
+        let cost = BodyCostPerTick::zero();
+
+        assert_eq!(cost.hunger_delta, Permille::new(0).unwrap());
+        assert_eq!(cost.thirst_delta, Permille::new(0).unwrap());
+        assert_eq!(cost.fatigue_delta, Permille::new(0).unwrap());
+        assert_eq!(cost.dirtiness_delta, Permille::new(0).unwrap());
+        assert_eq!(cost, BodyCostPerTick::default());
+    }
+
+    #[test]
+    fn body_cost_per_tick_new_stores_every_field() {
+        let cost = BodyCostPerTick::new(pm(3), pm(5), pm(8), pm(2));
+
+        assert_eq!(cost.hunger_delta, pm(3));
+        assert_eq!(cost.thirst_delta, pm(5));
+        assert_eq!(cost.fatigue_delta, pm(8));
+        assert_eq!(cost.dirtiness_delta, pm(2));
     }
 
     #[test]
@@ -245,18 +306,22 @@ mod tests {
             bladder_critical_ticks: 4,
         };
         let profile = MetabolismProfile::default();
+        let cost = BodyCostPerTick::new(pm(4), pm(6), pm(9), pm(3));
 
         let needs_bytes = bincode::serialize(&needs).unwrap();
         let exposure_bytes = bincode::serialize(&exposure).unwrap();
         let profile_bytes = bincode::serialize(&profile).unwrap();
+        let cost_bytes = bincode::serialize(&cost).unwrap();
 
         let roundtrip_needs: HomeostaticNeeds = bincode::deserialize(&needs_bytes).unwrap();
         let roundtrip_exposure: DeprivationExposure =
             bincode::deserialize(&exposure_bytes).unwrap();
         let roundtrip_profile: MetabolismProfile = bincode::deserialize(&profile_bytes).unwrap();
+        let roundtrip_cost: BodyCostPerTick = bincode::deserialize(&cost_bytes).unwrap();
 
         assert_eq!(roundtrip_needs, needs);
         assert_eq!(roundtrip_exposure, exposure);
         assert_eq!(roundtrip_profile, profile);
+        assert_eq!(roundtrip_cost, cost);
     }
 }

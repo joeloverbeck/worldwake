@@ -1,8 +1,9 @@
 //! Item-domain taxonomy types for stackable commodities, lots, and trade grouping.
 
-use crate::{Component, EntityId, EventId, LoadUnits, Quantity, Tick};
+use crate::{Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 /// Stackable commodity kinds available in Phase 1.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -31,41 +32,81 @@ impl CommodityKind {
 
     pub const fn spec(self) -> CommodityKindSpec {
         match self {
-            Self::Apple | Self::Grain | Self::Bread => CommodityKindSpec {
+            Self::Apple => CommodityKindSpec {
                 trade_category: TradeCategory::Food,
                 physical_profile: CommodityPhysicalProfile {
                     load_per_unit: LoadUnits(1),
                 },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    nz(2),
+                    pm(220),
+                    pm(120),
+                    pm(40),
+                )),
+            },
+            Self::Grain => CommodityKindSpec {
+                trade_category: TradeCategory::Food,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    nz(4),
+                    pm(180),
+                    pm(0),
+                    pm(20),
+                )),
+            },
+            Self::Bread => CommodityKindSpec {
+                trade_category: TradeCategory::Food,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    nz(3),
+                    pm(260),
+                    pm(0),
+                    pm(20),
+                )),
             },
             Self::Water => CommodityKindSpec {
                 trade_category: TradeCategory::Water,
                 physical_profile: CommodityPhysicalProfile {
                     load_per_unit: LoadUnits(2),
                 },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    nz(1),
+                    pm(0),
+                    pm(320),
+                    pm(220),
+                )),
             },
             Self::Firewood => CommodityKindSpec {
                 trade_category: TradeCategory::Fuel,
                 physical_profile: CommodityPhysicalProfile {
                     load_per_unit: LoadUnits(3),
                 },
+                consumable_profile: None,
             },
             Self::Medicine => CommodityKindSpec {
                 trade_category: TradeCategory::Medicine,
                 physical_profile: CommodityPhysicalProfile {
                     load_per_unit: LoadUnits(1),
                 },
+                consumable_profile: None,
             },
             Self::Coin => CommodityKindSpec {
                 trade_category: TradeCategory::Coin,
                 physical_profile: CommodityPhysicalProfile {
                     load_per_unit: LoadUnits(1),
                 },
+                consumable_profile: None,
             },
             Self::Waste => CommodityKindSpec {
                 trade_category: TradeCategory::Waste,
                 physical_profile: CommodityPhysicalProfile {
                     load_per_unit: LoadUnits(1),
                 },
+                consumable_profile: None,
             },
         }
     }
@@ -75,11 +116,37 @@ impl CommodityKind {
 pub struct CommodityKindSpec {
     pub trade_category: TradeCategory,
     pub physical_profile: CommodityPhysicalProfile,
+    pub consumable_profile: Option<CommodityConsumableProfile>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct CommodityPhysicalProfile {
     pub load_per_unit: LoadUnits,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommodityConsumableProfile {
+    pub consumption_ticks_per_unit: NonZeroU32,
+    pub hunger_relief_per_unit: Permille,
+    pub thirst_relief_per_unit: Permille,
+    pub bladder_fill_per_unit: Permille,
+}
+
+impl CommodityConsumableProfile {
+    #[must_use]
+    pub const fn new(
+        consumption_ticks_per_unit: NonZeroU32,
+        hunger_relief_per_unit: Permille,
+        thirst_relief_per_unit: Permille,
+        bladder_fill_per_unit: Permille,
+    ) -> Self {
+        Self {
+            consumption_ticks_per_unit,
+            hunger_relief_per_unit,
+            thirst_relief_per_unit,
+            bladder_fill_per_unit,
+        }
+    }
 }
 
 /// Trade grouping that can later span both stackable and unique items.
@@ -229,16 +296,28 @@ pub struct Container {
 
 impl Component for Container {}
 
+const fn pm(value: u16) -> Permille {
+    Permille::new_unchecked(value)
+}
+
+const fn nz(value: u32) -> NonZeroU32 {
+    match NonZeroU32::new(value) {
+        Some(value) => value,
+        None => panic!("NonZeroU32 value must be greater than zero"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CommodityKind, CommodityKindSpec, CommodityPhysicalProfile, Container, ItemLot,
-        LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
-        UniqueItemKindSpec, UniqueItemPhysicalProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityKindSpec, CommodityPhysicalProfile,
+        Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
+        UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
     };
-    use crate::{traits::Component, EntityId, EventId, LoadUnits, Quantity, Tick};
+    use crate::{traits::Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
 
     fn assert_enum_bounds<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
@@ -560,87 +639,144 @@ mod tests {
         assert_eq!(reversed, UniqueItemKind::ALL);
     }
 
+    fn expected_commodity_spec(kind: CommodityKind) -> CommodityKindSpec {
+        match kind {
+            CommodityKind::Apple => CommodityKindSpec {
+                trade_category: TradeCategory::Food,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    NonZeroU32::new(2).unwrap(),
+                    Permille::new_unchecked(220),
+                    Permille::new_unchecked(120),
+                    Permille::new_unchecked(40),
+                )),
+            },
+            CommodityKind::Grain => CommodityKindSpec {
+                trade_category: TradeCategory::Food,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    NonZeroU32::new(4).unwrap(),
+                    Permille::new_unchecked(180),
+                    Permille::new_unchecked(0),
+                    Permille::new_unchecked(20),
+                )),
+            },
+            CommodityKind::Bread => CommodityKindSpec {
+                trade_category: TradeCategory::Food,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    NonZeroU32::new(3).unwrap(),
+                    Permille::new_unchecked(260),
+                    Permille::new_unchecked(0),
+                    Permille::new_unchecked(20),
+                )),
+            },
+            CommodityKind::Water => CommodityKindSpec {
+                trade_category: TradeCategory::Water,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(2),
+                },
+                consumable_profile: Some(CommodityConsumableProfile::new(
+                    NonZeroU32::new(1).unwrap(),
+                    Permille::new_unchecked(0),
+                    Permille::new_unchecked(320),
+                    Permille::new_unchecked(220),
+                )),
+            },
+            CommodityKind::Firewood => CommodityKindSpec {
+                trade_category: TradeCategory::Fuel,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(3),
+                },
+                consumable_profile: None,
+            },
+            CommodityKind::Medicine => CommodityKindSpec {
+                trade_category: TradeCategory::Medicine,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: None,
+            },
+            CommodityKind::Coin => CommodityKindSpec {
+                trade_category: TradeCategory::Coin,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: None,
+            },
+            CommodityKind::Waste => CommodityKindSpec {
+                trade_category: TradeCategory::Waste,
+                physical_profile: CommodityPhysicalProfile {
+                    load_per_unit: LoadUnits(1),
+                },
+                consumable_profile: None,
+            },
+        }
+    }
+
     #[test]
     fn commodity_kind_specs_match_catalog() {
-        let expected = [
-            (
-                CommodityKind::Apple,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Food,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(1),
-                    },
-                },
-            ),
-            (
-                CommodityKind::Grain,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Food,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(1),
-                    },
-                },
-            ),
-            (
-                CommodityKind::Bread,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Food,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(1),
-                    },
-                },
-            ),
-            (
-                CommodityKind::Water,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Water,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(2),
-                    },
-                },
-            ),
-            (
-                CommodityKind::Firewood,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Fuel,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(3),
-                    },
-                },
-            ),
-            (
-                CommodityKind::Medicine,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Medicine,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(1),
-                    },
-                },
-            ),
-            (
-                CommodityKind::Coin,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Coin,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(1),
-                    },
-                },
-            ),
-            (
-                CommodityKind::Waste,
-                CommodityKindSpec {
-                    trade_category: TradeCategory::Waste,
-                    physical_profile: CommodityPhysicalProfile {
-                        load_per_unit: LoadUnits(1),
-                    },
-                },
-            ),
-        ];
+        const APPLE_SPEC: CommodityKindSpec = CommodityKind::Apple.spec();
 
-        assert_eq!(expected.len(), CommodityKind::ALL.len());
-        for (kind, spec) in expected {
-            assert_eq!(kind.spec(), spec);
+        assert_eq!(APPLE_SPEC.trade_category, TradeCategory::Food);
+        for kind in CommodityKind::ALL {
+            assert_eq!(kind.spec(), expected_commodity_spec(kind));
         }
+    }
+
+    #[test]
+    fn food_and_water_commodities_have_consumable_profiles_with_non_zero_duration() {
+        for kind in [
+            CommodityKind::Apple,
+            CommodityKind::Grain,
+            CommodityKind::Bread,
+            CommodityKind::Water,
+        ] {
+            let profile = kind.spec().consumable_profile.unwrap();
+            assert!(profile.consumption_ticks_per_unit.get() > 0);
+        }
+    }
+
+    #[test]
+    fn non_consumable_commodities_have_no_consumable_profile() {
+        for kind in [
+            CommodityKind::Firewood,
+            CommodityKind::Medicine,
+            CommodityKind::Coin,
+            CommodityKind::Waste,
+        ] {
+            assert_eq!(kind.spec().consumable_profile, None);
+        }
+    }
+
+    #[test]
+    fn water_consumable_profile_prioritizes_thirst_relief_and_bladder_fill() {
+        let profile = CommodityKind::Water.spec().consumable_profile.unwrap();
+
+        assert_eq!(profile.hunger_relief_per_unit, Permille::new(0).unwrap());
+        assert!(profile.thirst_relief_per_unit.value() > 0);
+        assert!(profile.bladder_fill_per_unit.value() >= 200);
+    }
+
+    #[test]
+    fn commodity_consumable_profile_roundtrips_through_bincode() {
+        let profile = CommodityConsumableProfile::new(
+            NonZeroU32::new(3).unwrap(),
+            Permille::new(210).unwrap(),
+            Permille::new(90).unwrap(),
+            Permille::new(30).unwrap(),
+        );
+
+        let bytes = bincode::serialize(&profile).unwrap();
+        let roundtrip: CommodityConsumableProfile = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, profile);
     }
 
     #[test]

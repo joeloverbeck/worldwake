@@ -52,7 +52,9 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
-    use worldwake_core::{CommodityKind, EntityId, EntityKind, EventTag, Quantity, VisibilitySpec};
+    use worldwake_core::{
+        BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, Quantity, VisibilitySpec,
+    };
 
     fn sample_action_def(id: ActionDefId, name: &str) -> ActionDef {
         ActionDef {
@@ -72,6 +74,7 @@ mod tests {
             preconditions: vec![Precondition::TargetExists(0)],
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(id.0 + 1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::TargetKind {
                 target_index: 0,
@@ -131,6 +134,24 @@ mod tests {
         let roundtrip: ActionDefRegistry = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, registry);
+    }
+
+    #[test]
+    fn registry_preserves_body_cost_metadata() {
+        let mut registry = ActionDefRegistry::new();
+        let mut def = sample_action_def(ActionDefId(0), "work");
+        def.body_cost_per_tick = BodyCostPerTick::new(
+            worldwake_core::Permille::new(1).unwrap(),
+            worldwake_core::Permille::new(4).unwrap(),
+            worldwake_core::Permille::new(7).unwrap(),
+            worldwake_core::Permille::new(2).unwrap(),
+        );
+        let id = registry.register(def.clone());
+
+        assert_eq!(
+            registry.get(id).unwrap().body_cost_per_tick,
+            def.body_cost_per_tick
+        );
     }
 
     #[test]

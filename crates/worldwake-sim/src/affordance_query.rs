@@ -139,8 +139,8 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
-        EventLog, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
+        EntityKind, EventLog, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Default)]
@@ -213,6 +213,7 @@ mod tests {
             preconditions,
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,

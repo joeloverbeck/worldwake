@@ -4,7 +4,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use worldwake_core::{EventTag, VisibilitySpec};
+use worldwake_core::{BodyCostPerTick, EventTag, VisibilitySpec};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionDef {
@@ -15,6 +15,7 @@ pub struct ActionDef {
     pub preconditions: Vec<Precondition>,
     pub reservation_requirements: Vec<ReservationReq>,
     pub duration: DurationExpr,
+    pub body_cost_per_tick: BodyCostPerTick,
     pub interruptibility: Interruptibility,
     pub commit_conditions: Vec<Precondition>,
     pub visibility: VisibilitySpec,
@@ -32,7 +33,10 @@ mod tests {
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
-    use worldwake_core::{CommodityKind, EntityId, EntityKind, EventTag, Quantity, VisibilitySpec};
+    use worldwake_core::{
+        BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, Permille, Quantity,
+        VisibilitySpec,
+    };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 
@@ -63,6 +67,12 @@ mod tests {
             ],
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::new(
+                Permille::new(2).unwrap(),
+                Permille::new(3).unwrap(),
+                Permille::new(5).unwrap(),
+                Permille::new(1).unwrap(),
+            ),
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![Precondition::TargetKind {
                 target_index: 0,
@@ -91,6 +101,7 @@ mod tests {
             preconditions,
             reservation_requirements,
             duration,
+            body_cost_per_tick,
             interruptibility,
             commit_conditions,
             visibility,
@@ -105,6 +116,7 @@ mod tests {
         let _: Vec<Precondition> = preconditions;
         let _: Vec<ReservationReq> = reservation_requirements;
         let _: DurationExpr = duration;
+        let _: BodyCostPerTick = body_cost_per_tick;
         let _: Interruptibility = interruptibility;
         let _: Vec<Precondition> = commit_conditions;
         let _: VisibilitySpec = visibility;
@@ -120,5 +132,13 @@ mod tests {
         let roundtrip: ActionDef = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, action_def);
+    }
+
+    #[test]
+    fn action_def_body_cost_is_explicit_even_for_zero_cost_actions() {
+        let mut action_def = sample_action_def(ActionDefId(3));
+        action_def.body_cost_per_tick = BodyCostPerTick::zero();
+
+        assert_eq!(action_def.body_cost_per_tick, BodyCostPerTick::zero());
     }
 }

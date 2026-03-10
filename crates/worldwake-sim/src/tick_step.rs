@@ -387,8 +387,8 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventLog,
+        EventTag, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -521,6 +521,7 @@ mod tests {
             preconditions: vec![crate::Precondition::ActorAlive],
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![crate::Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -535,6 +536,7 @@ mod tests {
             preconditions: vec![crate::Precondition::ActorAlive],
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![crate::Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,

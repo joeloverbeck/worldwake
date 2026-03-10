@@ -77,15 +77,15 @@ pub use event_record::{EventRecord, PendingEvent};
 pub use event_tag::EventTag;
 pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{
-    CommodityKind, CommodityKindSpec, CommodityPhysicalProfile, Container, ItemLot, LotOperation,
-    ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
-    UniqueItemPhysicalProfile,
+    CommodityConsumableProfile, CommodityKind, CommodityKindSpec, CommodityPhysicalProfile,
+    Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
+    UniqueItemKindSpec, UniqueItemPhysicalProfile,
 };
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
-pub use needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
+pub use needs::{BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
 pub use numerics::{LoadUnits, Permille, Quantity};
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
