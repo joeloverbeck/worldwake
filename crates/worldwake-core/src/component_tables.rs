@@ -10,7 +10,7 @@ use crate::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
         WorkstationMarker,
     },
-    trade::MerchandiseProfile,
+    trade::{DemandMemory, MerchandiseProfile},
     wounds::WoundList,
     EntityId,
 };
@@ -107,11 +107,13 @@ mod tests {
     use super::ComponentTables;
     use crate::{
         components::{AgentData, Name},
+        test_utils::{sample_demand_memory, sample_merchandise_profile},
         BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Permille,
-        ProductionJob, ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds,
+        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
+        Permille, ProductionJob, ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
+        WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -136,6 +138,7 @@ mod tests {
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_known_recipes().count(), 0);
+        assert_eq!(tables.iter_demand_memories().count(), 0);
         assert_eq!(tables.iter_merchandise_profiles().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
@@ -299,13 +302,24 @@ mod tests {
     }
 
     #[test]
+    fn insert_and_get_demand_memory() {
+        let mut tables = ComponentTables::default();
+        let id = entity(30);
+        let memory = sample_demand_memory();
+
+        assert_eq!(tables.insert_demand_memory(id, memory.clone()), None);
+        assert_eq!(tables.get_demand_memory(id), Some(&memory));
+        assert!(tables.has_demand_memory(id));
+        assert_eq!(tables.remove_demand_memory(id), Some(memory));
+        assert_eq!(tables.get_demand_memory(id), None);
+    }
+
+    #[test]
     fn insert_and_get_merchandise_profile() {
         let mut tables = ComponentTables::default();
         let id = entity(31);
-        let profile = MerchandiseProfile {
-            sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Firewood]),
-            home_market: Some(entity(2)),
-        };
+        let mut profile = sample_merchandise_profile();
+        profile.sale_kinds.insert(CommodityKind::Firewood);
 
         assert_eq!(tables.insert_merchandise_profile(id, profile.clone()), None);
         assert_eq!(tables.get_merchandise_profile(id), Some(&profile));

@@ -2,11 +2,12 @@
 
 use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
-    ComponentTables, ComponentValue, Container, DeprivationExposure, DriveThresholds,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge,
-    ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick, Topology,
-    UniqueItem, UniqueItemKind, WorkstationMarker, WorldError, WoundList,
+    ComponentTables, ComponentValue, Container, DemandMemory, DeprivationExposure,
+    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
+    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+    MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry, Quantity,
+    RelationTables, ResourceSource, Tick, Topology, UniqueItem, UniqueItemKind,
+    WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -556,10 +557,12 @@ mod tests {
     use super::World;
     use crate::{
         build_prototype_world, AgentData, BodyPart, CarryCapacity, CommodityKind, Container,
-        ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, Permille, Place, PlaceTag,
-        ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
+        ControlSource, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds,
+        EntityId, EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+        KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+        Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
+        ReservationRecord, ResourceSource,
+        test_utils::{sample_demand_memory, sample_merchandise_profile},
         Tick, TickRange, Topology, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
         WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
@@ -3976,13 +3979,32 @@ mod tests {
     }
 
     #[test]
+    fn demand_memory_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let memory = sample_demand_memory();
+
+        world
+            .insert_component_demand_memory(agent, memory.clone())
+            .unwrap();
+        assert_eq!(world.get_component_demand_memory(agent), Some(&memory));
+        assert!(world.has_component_demand_memory(agent));
+        assert_eq!(
+            world.query_demand_memory().collect::<Vec<_>>(),
+            vec![(agent, &memory)]
+        );
+        assert_eq!(world.count_with_demand_memory(), 1);
+
+        let removed = world.remove_component_demand_memory(agent).unwrap();
+        assert_eq!(removed, Some(memory));
+        assert_eq!(world.get_component_demand_memory(agent), None);
+    }
+
+    #[test]
     fn merchandise_profile_component_roundtrip_on_agent() {
         let mut world = World::new(Topology::new()).unwrap();
         let agent = world.create_entity(EntityKind::Agent, Tick(1));
-        let profile = MerchandiseProfile {
-            sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Water]),
-            home_market: Some(entity(2)),
-        };
+        let profile = sample_merchandise_profile();
 
         world
             .insert_component_merchandise_profile(agent, profile.clone())
@@ -4030,6 +4052,23 @@ mod tests {
 
         let err = world
             .insert_component_known_recipes(id, KnownRecipes::with([crate::RecipeId(2)]))
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_demand_memory_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_demand_memory(
+                id,
+                DemandMemory {
+                    observations: vec![],
+                },
+            )
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

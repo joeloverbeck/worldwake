@@ -230,6 +230,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                demand_memories,
+                DemandMemory,
+                insert_demand_memory,
+                get_demand_memory,
+                get_demand_memory_mut,
+                remove_demand_memory,
+                has_demand_memory,
+                iter_demand_memories,
+                insert_component_demand_memory,
+                get_component_demand_memory,
+                get_component_demand_memory_mut,
+                remove_component_demand_memory,
+                has_component_demand_memory,
+                entities_with_demand_memory,
+                query_demand_memory,
+                count_with_demand_memory,
+                "DemandMemory",
+                |kind| kind == EntityKind::Agent,
+                DemandMemory,
+                crate::DemandMemory,
+                set_component_demand_memory,
+                clear_component_demand_memory,
+                txn_simple_set
+            }
+            {
                 merchandise_profiles,
                 MerchandiseProfile,
                 insert_merchandise_profile,
