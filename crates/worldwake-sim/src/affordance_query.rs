@@ -1,5 +1,5 @@
 use crate::{
-    ActionDefRegistry, Affordance, BeliefView, ConsumableEffect, Constraint, Precondition,
+    ActionDefRegistry, Affordance, BeliefView, Constraint, ConsumableEffect, Precondition,
     TargetSpec,
 };
 use worldwake_core::EntityId;
@@ -86,7 +86,10 @@ fn evaluate_precondition(
         Precondition::TargetCommodity { target_index, kind } => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.item_lot_commodity(*target) == Some(kind)),
-        Precondition::TargetHasConsumableEffect { target_index, effect } => targets
+        Precondition::TargetHasConsumableEffect {
+            target_index,
+            effect,
+        } => targets
             .get(usize::from(target_index))
             .and_then(|target| view.item_lot_consumable_profile(*target))
             .is_some_and(|profile| match effect {
@@ -149,7 +152,7 @@ fn enumerate_bindings(
 mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, ConsumableEffect, Constraint,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, Constraint, ConsumableEffect,
         DurationExpr, Interruptibility, OmniscientBeliefView, Precondition, ReservationReq,
         TargetSpec,
     };
@@ -391,11 +394,14 @@ mod tests {
         view.places.insert(bread, place);
         view.places.insert(medicine, place);
         view.colocated.insert(place, vec![medicine, bread]);
-        view.item_lot_commodities.insert(bread, CommodityKind::Bread);
+        view.item_lot_commodities
+            .insert(bread, CommodityKind::Bread);
         view.item_lot_commodities
             .insert(medicine, CommodityKind::Medicine);
-        view.consumable_profiles
-            .insert(bread, CommodityKind::Bread.spec().consumable_profile.unwrap());
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
         view.controllable.insert((actor, bread), true);
 
         let mut registry = ActionDefRegistry::new();

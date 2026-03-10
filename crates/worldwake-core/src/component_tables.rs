@@ -6,6 +6,7 @@ use crate::{
     drives::DriveThresholds,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
+    production::ResourceSource,
     wounds::WoundList,
     EntityId,
 };
@@ -98,8 +99,8 @@ mod tests {
         components::{AgentData, Name},
         BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation,
-        MetabolismProfile, Permille, ProvenanceEntry, Quantity, Tick, UniqueItem, UniqueItemKind,
-        Wound, WoundCause, WoundList,
+        MetabolismProfile, Permille, ProvenanceEntry, Quantity, ResourceSource, Tick, UniqueItem,
+        UniqueItemKind, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -122,6 +123,7 @@ mod tests {
         assert_eq!(tables.iter_homeostatic_needs().count(), 0);
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
+        assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
         assert_eq!(tables.iter_containers().count(), 0);
@@ -232,6 +234,25 @@ mod tests {
         assert_eq!(tables.insert_metabolism_profile(id, profile), None);
         assert_eq!(tables.get_metabolism_profile(id), Some(&profile));
         assert!(tables.has_metabolism_profile(id));
+    }
+
+    #[test]
+    fn insert_and_get_resource_source() {
+        let mut tables = ComponentTables::default();
+        let id = entity(19);
+        let source = ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(7),
+            max_quantity: Quantity(12),
+            regeneration_ticks_per_unit: Some(NonZeroU32::new(5).unwrap()),
+            last_regeneration_tick: Some(Tick(9)),
+        };
+
+        assert_eq!(tables.insert_resource_source(id, source.clone()), None);
+        assert_eq!(tables.get_resource_source(id), Some(&source));
+        assert!(tables.has_resource_source(id));
+        assert_eq!(tables.remove_resource_source(id), Some(source));
+        assert_eq!(tables.get_resource_source(id), None);
     }
 
     #[test]

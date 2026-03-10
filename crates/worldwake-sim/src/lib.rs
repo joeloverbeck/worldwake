@@ -48,7 +48,7 @@ pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_semantics::{
-    ConsumableEffect, Constraint, DurationExpr, Interruptibility, MetabolismDurationKind,
+    Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
     Precondition, ReservationReq, TargetSpec,
 };
 pub use action_state::ActionState;

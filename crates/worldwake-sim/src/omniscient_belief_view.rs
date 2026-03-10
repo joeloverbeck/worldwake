@@ -43,7 +43,9 @@ impl BeliefView for OmniscientBeliefView<'_> {
     }
 
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        self.world.get_component_item_lot(entity).map(|lot| lot.commodity)
+        self.world
+            .get_component_item_lot(entity)
+            .map(|lot| lot.commodity)
     }
 
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
@@ -229,7 +231,10 @@ mod tests {
             view.commodity_quantity(foreign_bread, CommodityKind::Bread),
             Quantity(8)
         );
-        assert_eq!(view.item_lot_commodity(loose_bread), Some(CommodityKind::Bread));
+        assert_eq!(
+            view.item_lot_commodity(loose_bread),
+            Some(CommodityKind::Bread)
+        );
         assert_eq!(
             view.item_lot_consumable_profile(bag_water)
                 .unwrap()

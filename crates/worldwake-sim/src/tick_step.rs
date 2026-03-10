@@ -489,8 +489,10 @@ mod tests {
     fn record_system(context: SystemExecutionContext<'_>) -> Result<(), SystemError> {
         let mut log = hook_log().lock().unwrap();
         log.systems.push(context.system_id);
-        log.system_active_action_counts.push(context.active_actions.len());
-        log.system_def_counts.push(context.action_defs.iter().count());
+        log.system_active_action_counts
+            .push(context.active_actions.len());
+        log.system_def_counts
+            .push(context.action_defs.iter().count());
         let _ = context.world;
         let _ = context.event_log;
         let _ = context.tick;
@@ -951,7 +953,10 @@ mod tests {
             log.system_active_action_counts,
             vec![1; crate::SystemId::ALL.len()]
         );
-        assert_eq!(log.system_def_counts, vec![defs.iter().count(); crate::SystemId::ALL.len()]);
+        assert_eq!(
+            log.system_def_counts,
+            vec![defs.iter().count(); crate::SystemId::ALL.len()]
+        );
     }
 
     #[test]

@@ -5,16 +5,13 @@ use worldwake_core::{
     Quantity, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
-    AbortReason, ActionDef, ActionDefId, ActionError, ActionHandler, ActionHandlerId,
-    ActionHandlerRegistry, ActionInstance, ActionProgress, ActionState, ActionDefRegistry,
-    ConsumableEffect, Constraint, DurationExpr, Interruptibility,
-    MetabolismDurationKind, Precondition, TargetSpec,
+    AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
+    ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionProgress, ActionState,
+    Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
+    Precondition, TargetSpec,
 };
 
-pub fn register_needs_actions(
-    defs: &mut ActionDefRegistry,
-    handlers: &mut ActionHandlerRegistry,
-) {
+pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut ActionHandlerRegistry) {
     let eat_handler = handlers.register(ActionHandler::new(
         start_noop,
         tick_continue,
@@ -46,9 +43,13 @@ pub fn register_needs_actions(
         abort_noop,
     ));
 
-    register_def(defs, "eat", eat_handler, eat_preconditions(), DurationExpr::TargetConsumable {
-        target_index: 0,
-    });
+    register_def(
+        defs,
+        "eat",
+        eat_handler,
+        eat_preconditions(),
+        DurationExpr::TargetConsumable { target_index: 0 },
+    );
     register_def(
         defs,
         "drink",
@@ -164,7 +165,10 @@ fn wash_preconditions() -> Vec<Precondition> {
     ]
 }
 
-fn lot_profile(txn: &WorldTxn<'_>, lot_id: EntityId) -> Result<worldwake_core::CommodityConsumableProfile, ActionError> {
+fn lot_profile(
+    txn: &WorldTxn<'_>,
+    lot_id: EntityId,
+) -> Result<worldwake_core::CommodityConsumableProfile, ActionError> {
     let lot = lot(txn, lot_id)?;
     lot.commodity
         .spec()
@@ -187,7 +191,9 @@ fn actor_needs(txn: &WorldTxn<'_>, actor: EntityId) -> Result<HomeostaticNeeds, 
 fn actor_profile(txn: &WorldTxn<'_>, actor: EntityId) -> Result<MetabolismProfile, ActionError> {
     txn.get_component_metabolism_profile(actor)
         .copied()
-        .ok_or_else(|| ActionError::InternalError(format!("actor {actor} lacks metabolism profile")))
+        .ok_or_else(|| {
+            ActionError::InternalError(format!("actor {actor} lacks metabolism profile"))
+        })
 }
 
 fn set_actor_needs(
@@ -243,7 +249,10 @@ fn abort_noop(
     Ok(())
 }
 
-fn tick_sleep(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<ActionProgress, ActionError> {
+fn tick_sleep(
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
     let needs = actor_needs(txn, instance.actor)?;
     let profile = actor_profile(txn, instance.actor)?;
     let next = HomeostaticNeeds::new(
@@ -300,9 +309,9 @@ fn apply_consumable_effects(
 
 fn commit_toilet(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
     let needs = actor_needs(txn, instance.actor)?;
-    let place = txn
-        .effective_place(instance.actor)
-        .ok_or_else(|| ActionError::InternalError(format!("actor {} has no place", instance.actor)))?;
+    let place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::InternalError(format!("actor {} has no place", instance.actor))
+    })?;
     let waste = txn
         .create_item_lot(CommodityKind::Waste, Quantity(1))
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -331,7 +340,13 @@ fn commit_wash(instance: &ActionInstance, txn: &mut WorldTxn<'_>) -> Result<(), 
     set_actor_needs(
         txn,
         instance.actor,
-        HomeostaticNeeds::new(needs.hunger, needs.thirst, needs.fatigue, needs.bladder, pm(0)),
+        HomeostaticNeeds::new(
+            needs.hunger,
+            needs.thirst,
+            needs.fatigue,
+            needs.bladder,
+            pm(0),
+        ),
     )
 }
 
@@ -347,8 +362,7 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, Container, ControlSource,
         DeprivationExposure, DriveThresholds, EntityId, EventLog, HomeostaticNeeds, LoadUnits,
-        MetabolismProfile, Permille, Quantity, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        MetabolismProfile, Permille, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -481,7 +495,10 @@ mod tests {
         assert_eq!(defs.len(), 5);
         assert_eq!(handlers.len(), 5);
         assert_eq!(defs.get(worldwake_sim::ActionDefId(0)).unwrap().name, "eat");
-        assert_eq!(defs.get(worldwake_sim::ActionDefId(4)).unwrap().name, "wash");
+        assert_eq!(
+            defs.get(worldwake_sim::ActionDefId(4)).unwrap().name,
+            "wash"
+        );
     }
 
     #[test]
@@ -490,7 +507,9 @@ mod tests {
         let (actor, place) = setup_actor(&mut world);
         let bread = {
             let mut txn = new_txn(&mut world, 2);
-            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             let satchel = txn
                 .create_container(Container {
                     capacity: LoadUnits(20),
@@ -514,9 +533,18 @@ mod tests {
         let lot = world.get_component_item_lot(bread).unwrap();
         let profile = CommodityKind::Bread.spec().consumable_profile.unwrap();
         assert_eq!(lot.quantity, Quantity(1));
-        assert_eq!(needs.hunger, pm(700).saturating_sub(profile.hunger_relief_per_unit));
-        assert_eq!(needs.thirst, pm(650).saturating_sub(profile.thirst_relief_per_unit));
-        assert_eq!(needs.bladder, pm(200).saturating_add(profile.bladder_fill_per_unit));
+        assert_eq!(
+            needs.hunger,
+            pm(700).saturating_sub(profile.hunger_relief_per_unit)
+        );
+        assert_eq!(
+            needs.thirst,
+            pm(650).saturating_sub(profile.thirst_relief_per_unit)
+        );
+        assert_eq!(
+            needs.bladder,
+            pm(200).saturating_add(profile.bladder_fill_per_unit)
+        );
     }
 
     #[test]
@@ -525,7 +553,9 @@ mod tests {
         let (actor, place) = setup_actor(&mut world);
         let water = {
             let mut txn = new_txn(&mut world, 2);
-            let water = txn.create_item_lot(CommodityKind::Water, Quantity(2)).unwrap();
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(2))
+                .unwrap();
             txn.set_ground_location(water, place).unwrap();
             txn.set_possessor(water, actor).unwrap();
             commit_txn(txn);
@@ -545,8 +575,14 @@ mod tests {
         let lot = world.get_component_item_lot(water).unwrap();
         let profile = CommodityKind::Water.spec().consumable_profile.unwrap();
         assert_eq!(lot.quantity, Quantity(1));
-        assert_eq!(needs.thirst, pm(650).saturating_sub(profile.thirst_relief_per_unit));
-        assert_eq!(needs.bladder, pm(200).saturating_add(profile.bladder_fill_per_unit));
+        assert_eq!(
+            needs.thirst,
+            pm(650).saturating_sub(profile.thirst_relief_per_unit)
+        );
+        assert_eq!(
+            needs.bladder,
+            pm(200).saturating_add(profile.bladder_fill_per_unit)
+        );
     }
 
     #[test]
@@ -555,7 +591,9 @@ mod tests {
         let (actor, place) = setup_actor(&mut world);
         let bread = {
             let mut txn = new_txn(&mut world, 2);
-            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
             txn.set_ground_location(bread, place).unwrap();
             txn.set_possessor(bread, actor).unwrap();
             commit_txn(txn);
@@ -565,7 +603,8 @@ mod tests {
         let mut log = EventLog::new();
         let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
         let mut next_id = ActionInstanceId(0);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs)[0].clone();
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs)[0].clone();
         let instance_id = start_action(
             &affordance,
             &defs,
@@ -600,7 +639,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(world.get_component_item_lot(bread).unwrap().quantity, Quantity(1));
+        assert_eq!(
+            world.get_component_item_lot(bread).unwrap().quantity,
+            Quantity(1)
+        );
     }
 
     #[test]
@@ -618,7 +660,10 @@ mod tests {
         run_action_to_completion(actor, sleep_index, &mut world, &mut log, &defs, &handlers);
 
         assert_eq!(
-            world.get_component_homeostatic_needs(actor).unwrap().fatigue,
+            world
+                .get_component_homeostatic_needs(actor)
+                .unwrap()
+                .fatigue,
             pm(400).saturating_sub(pm(40))
         );
     }
@@ -638,7 +683,10 @@ mod tests {
         run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
 
         assert_eq!(
-            world.get_component_homeostatic_needs(actor).unwrap().bladder,
+            world
+                .get_component_homeostatic_needs(actor)
+                .unwrap()
+                .bladder,
             pm(0)
         );
         let waste_count = world
@@ -659,7 +707,9 @@ mod tests {
         let (actor, place) = setup_actor(&mut world);
         let water = {
             let mut txn = new_txn(&mut world, 2);
-            let water = txn.create_item_lot(CommodityKind::Water, Quantity(2)).unwrap();
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(2))
+                .unwrap();
             txn.set_ground_location(water, place).unwrap();
             txn.set_possessor(water, actor).unwrap();
             commit_txn(txn);
@@ -675,9 +725,15 @@ mod tests {
             .unwrap();
         run_action_to_completion(actor, wash_index, &mut world, &mut log, &defs, &handlers);
 
-        assert_eq!(world.get_component_item_lot(water).unwrap().quantity, Quantity(1));
         assert_eq!(
-            world.get_component_homeostatic_needs(actor).unwrap().dirtiness,
+            world.get_component_item_lot(water).unwrap().quantity,
+            Quantity(1)
+        );
+        assert_eq!(
+            world
+                .get_component_homeostatic_needs(actor)
+                .unwrap()
+                .dirtiness,
             pm(0)
         );
     }
@@ -688,7 +744,9 @@ mod tests {
         let (actor, place) = setup_actor(&mut world);
         {
             let mut txn = new_txn(&mut world, 2);
-            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
             txn.set_ground_location(bread, place).unwrap();
             commit_txn(txn);
         }

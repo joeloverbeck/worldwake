@@ -26,7 +26,10 @@ pub enum Precondition {
     ActorCanControlTarget(u8),
     TargetExists(u8),
     TargetAtActorPlace(u8),
-    TargetKind { target_index: u8, kind: EntityKind },
+    TargetKind {
+        target_index: u8,
+        kind: EntityKind,
+    },
     TargetCommodity {
         target_index: u8,
         kind: CommodityKind,

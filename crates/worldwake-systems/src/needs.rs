@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BodyPart, BodyCostPerTick, CauseRef, CommodityKind, DeprivationExposure, DeprivationKind,
+    BodyCostPerTick, BodyPart, CauseRef, CommodityKind, DeprivationExposure, DeprivationKind,
     EventTag, HomeostaticNeeds, Quantity, Tick, VisibilitySpec, WitnessData, WorldTxn, Wound,
     WoundCause, WoundList,
 };
@@ -33,7 +33,8 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
         VisibilitySpec::Hidden,
         WitnessData::default(),
     );
-    txn.add_tag(EventTag::System).add_tag(EventTag::WorldMutation);
+    txn.add_tag(EventTag::System)
+        .add_tag(EventTag::WorldMutation);
 
     for update in updates {
         txn.set_component_homeostatic_needs(update.entity, update.needs)
@@ -270,7 +271,10 @@ fn apply_deprivation_consequences(
             None
         };
 
-    Ok((wounds_changed.then_some(wound_list.unwrap_or_default()), waste_place))
+    Ok((
+        wounds_changed.then_some(wound_list.unwrap_or_default()),
+        waste_place,
+    ))
 }
 
 fn append_deprivation_wound(
@@ -355,7 +359,11 @@ mod tests {
         world.topology().place_ids().next().unwrap()
     }
 
-    fn place_agent(world: &mut World, agent: worldwake_core::EntityId, place: worldwake_core::EntityId) {
+    fn place_agent(
+        world: &mut World,
+        agent: worldwake_core::EntityId,
+        place: worldwake_core::EntityId,
+    ) {
         let mut txn = new_txn(world, 2);
         txn.set_ground_location(agent, place).unwrap();
         let mut log = EventLog::new();
@@ -372,9 +380,12 @@ mod tests {
     ) {
         let mut txn = new_txn(world, 2);
         txn.set_component_homeostatic_needs(agent, needs).unwrap();
-        txn.set_component_deprivation_exposure(agent, exposure).unwrap();
-        txn.set_component_metabolism_profile(agent, profile).unwrap();
-        txn.set_component_drive_thresholds(agent, thresholds).unwrap();
+        txn.set_component_deprivation_exposure(agent, exposure)
+            .unwrap();
+        txn.set_component_metabolism_profile(agent, profile)
+            .unwrap();
+        txn.set_component_drive_thresholds(agent, thresholds)
+            .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
     }
@@ -466,7 +477,13 @@ mod tests {
 
         assert_eq!(
             world.get_component_homeostatic_needs(agent),
-            Some(&HomeostaticNeeds::new(pm(12), pm(23), pm(34), pm(45), pm(56)))
+            Some(&HomeostaticNeeds::new(
+                pm(12),
+                pm(23),
+                pm(34),
+                pm(45),
+                pm(56)
+            ))
         );
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
         assert!(record.tags.contains(&EventTag::System));
@@ -519,7 +536,13 @@ mod tests {
 
         assert_eq!(
             world.get_component_homeostatic_needs(agent),
-            Some(&HomeostaticNeeds::new(pm(103), pm(104), pm(106), pm(0), pm(105)))
+            Some(&HomeostaticNeeds::new(
+                pm(103),
+                pm(104),
+                pm(106),
+                pm(0),
+                pm(105)
+            ))
         );
     }
 
@@ -680,7 +703,10 @@ mod tests {
         );
         assert_eq!(wounds.wounds[0].severity, thresholds.hunger.critical());
         assert_eq!(
-            world.get_component_deprivation_exposure(agent).unwrap().hunger_critical_ticks,
+            world
+                .get_component_deprivation_exposure(agent)
+                .unwrap()
+                .hunger_critical_ticks,
             0
         );
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
@@ -726,7 +752,10 @@ mod tests {
         );
         assert_eq!(wounds.wounds[0].severity, thresholds.thirst.critical());
         assert_eq!(
-            world.get_component_deprivation_exposure(agent).unwrap().thirst_critical_ticks,
+            world
+                .get_component_deprivation_exposure(agent)
+                .unwrap()
+                .thirst_critical_ticks,
             0
         );
     }
@@ -772,7 +801,10 @@ mod tests {
         let wounds = world.get_component_wound_list(agent).unwrap();
         assert_eq!(wounds.wounds.len(), 1);
         assert_eq!(
-            world.get_component_deprivation_exposure(agent).unwrap().hunger_critical_ticks,
+            world
+                .get_component_deprivation_exposure(agent)
+                .unwrap()
+                .hunger_critical_ticks,
             1
         );
     }
@@ -820,7 +852,8 @@ mod tests {
             ))
         );
         assert_eq!(
-            world.get_component_deprivation_exposure(agent)
+            world
+                .get_component_deprivation_exposure(agent)
                 .unwrap()
                 .bladder_critical_ticks,
             0
@@ -856,32 +889,30 @@ mod tests {
         let mut rng = DeterministicRng::new(Seed([5; 32]));
         let systems = dispatch_table();
 
-        systems
-            .get(SystemId::Needs)(system_context(
-                &mut world,
-                &mut event_log,
-                &mut rng,
-                &active_actions,
-                &action_defs,
-            ))
-            .unwrap();
+        systems.get(SystemId::Needs)(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
 
         assert_eq!(
             world.get_component_homeostatic_needs(agent),
             Some(&HomeostaticNeeds::new(pm(1), pm(0), pm(0), pm(0), pm(0)))
         );
 
-        systems
-            .get(SystemId::Trade)(SystemExecutionContext {
-                world: &mut world,
-                event_log: &mut event_log,
-                rng: &mut rng,
-                active_actions: &active_actions,
-                action_defs: &action_defs,
-                tick: Tick(8),
-                system_id: SystemId::Trade,
-            })
-            .unwrap();
+        systems.get(SystemId::Trade)(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(8),
+            system_id: SystemId::Trade,
+        })
+        .unwrap();
 
         assert_eq!(event_log.len(), 1);
     }

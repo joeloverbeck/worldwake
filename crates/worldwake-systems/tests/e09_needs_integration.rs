@@ -7,8 +7,8 @@ use worldwake_core::{
     WorldTxn, WoundCause,
 };
 use worldwake_sim::{
-    ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng,
-    InputKind, Scheduler, SystemManifest, TickStepError, TickStepServices, step_tick,
+    step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
+    DeterministicRng, InputKind, Scheduler, SystemManifest, TickStepError, TickStepServices,
 };
 use worldwake_systems::{dispatch_table, register_needs_actions};
 
@@ -45,7 +45,8 @@ impl Harness {
                 .unwrap();
             txn.set_component_drive_thresholds(actor, DriveThresholds::default())
                 .unwrap();
-            txn.set_component_metabolism_profile(actor, profile).unwrap();
+            txn.set_component_metabolism_profile(actor, profile)
+                .unwrap();
             commit_txn(txn);
             actor
         };
@@ -151,9 +152,14 @@ fn add_controlled_lot(
     lot
 }
 
-fn add_controlled_bread_in_satchel(harness: &mut Harness, quantity: u32) -> worldwake_core::EntityId {
+fn add_controlled_bread_in_satchel(
+    harness: &mut Harness,
+    quantity: u32,
+) -> worldwake_core::EntityId {
     let mut txn = new_txn(&mut harness.world, 2);
-    let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(quantity)).unwrap();
+    let bread = txn
+        .create_item_lot(CommodityKind::Bread, Quantity(quantity))
+        .unwrap();
     let satchel = txn
         .create_container(Container {
             capacity: LoadUnits(20),
@@ -186,8 +192,37 @@ fn metabolism_profile(rates: [u16; 6], timings: [u32; 6]) -> MetabolismProfile {
     )
 }
 
+fn actor_needs(harness: &Harness) -> HomeostaticNeeds {
+    *harness
+        .world
+        .get_component_homeostatic_needs(harness.actor)
+        .unwrap()
+}
+
+fn lot_quantity(harness: &Harness, entity: worldwake_core::EntityId) -> Quantity {
+    harness
+        .world
+        .get_component_item_lot(entity)
+        .unwrap()
+        .quantity
+}
+
+fn waste_count_at_place(harness: &Harness) -> usize {
+    harness
+        .world
+        .ground_entities_at(harness.place)
+        .into_iter()
+        .filter(|entity| {
+            harness
+                .world
+                .get_component_item_lot(*entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+        })
+        .count()
+}
+
 fn run_metabolism_progression_scenario() -> HomeostaticNeeds {
-        let mut harness = Harness::new(
+    let mut harness = Harness::new(
         HomeostaticNeeds::new_sated(),
         metabolism_profile([2, 3, 4, 5, 6, 20], [10, 10, 10, 10, 2, 3]),
     );
@@ -220,13 +255,10 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
     harness.run_queued_action_to_completion(10);
 
     let bread_profile = CommodityKind::Bread.spec().consumable_profile.unwrap();
-    let needs_after_eat = harness
-        .world
-        .get_component_homeostatic_needs(harness.actor)
-        .unwrap();
-    assert_eq!(harness.world.get_component_item_lot(bread).unwrap().quantity, Quantity(1));
+    let needs_after_eat = actor_needs(&harness);
+    assert_eq!(lot_quantity(&harness, bread), Quantity(1));
     assert_eq!(
-        *needs_after_eat,
+        needs_after_eat,
         HomeostaticNeeds::new(
             pm(700).saturating_sub(bread_profile.hunger_relief_per_unit),
             pm(650).saturating_sub(bread_profile.thirst_relief_per_unit),
@@ -240,13 +272,10 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
     harness.run_queued_action_to_completion(10);
 
     let water_profile = CommodityKind::Water.spec().consumable_profile.unwrap();
-    let needs_after_drink = harness
-        .world
-        .get_component_homeostatic_needs(harness.actor)
-        .unwrap();
-    assert_eq!(harness.world.get_component_item_lot(water).unwrap().quantity, Quantity(2));
+    let needs_after_drink = actor_needs(&harness);
+    assert_eq!(lot_quantity(&harness, water), Quantity(2));
     assert_eq!(
-        *needs_after_drink,
+        needs_after_drink,
         HomeostaticNeeds::new(
             pm(700)
                 .saturating_sub(bread_profile.hunger_relief_per_unit)
@@ -265,48 +294,19 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
     harness.queue_action("sleep", Vec::new());
     harness.run_queued_action_to_completion(2);
     assert_eq!(
-        harness
-            .world
-            .get_component_homeostatic_needs(harness.actor)
-            .unwrap()
-            .fatigue,
+        actor_needs(&harness).fatigue,
         pm(400).saturating_sub(profile.rest_efficiency)
     );
 
     harness.queue_action("toilet", Vec::new());
     harness.run_queued_action_to_completion(5);
-    assert_eq!(
-        harness
-            .world
-            .get_component_homeostatic_needs(harness.actor)
-            .unwrap()
-            .bladder,
-        pm(0)
-    );
-    let waste_count = harness
-        .world
-        .ground_entities_at(harness.place)
-        .into_iter()
-        .filter(|entity| {
-            harness
-                .world
-                .get_component_item_lot(*entity)
-                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
-        })
-        .count();
-    assert_eq!(waste_count, 1);
+    assert_eq!(actor_needs(&harness).bladder, pm(0));
+    assert_eq!(waste_count_at_place(&harness), 1);
 
     harness.queue_action("wash", vec![water]);
     harness.run_queued_action_to_completion(5);
-    assert_eq!(harness.world.get_component_item_lot(water).unwrap().quantity, Quantity(1));
-    assert_eq!(
-        harness
-            .world
-            .get_component_homeostatic_needs(harness.actor)
-            .unwrap()
-            .dirtiness,
-        pm(0)
-    );
+    assert_eq!(lot_quantity(&harness, water), Quantity(1));
+    assert_eq!(actor_needs(&harness).dirtiness, pm(0));
 }
 
 #[test]
@@ -317,7 +317,9 @@ fn scheduler_rejects_eat_request_for_uncontrolled_ground_item() {
     );
     let bread = {
         let mut txn = new_txn(&mut harness.world, 2);
-        let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+        let bread = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(1))
+            .unwrap();
         txn.set_ground_location(bread, harness.place).unwrap();
         commit_txn(txn);
         bread
@@ -352,7 +354,10 @@ fn scheduler_applies_starvation_and_dehydration_consequences_after_tolerance_win
 
     harness.step_once().unwrap();
 
-    let wounds = harness.world.get_component_wound_list(harness.actor).unwrap();
+    let wounds = harness
+        .world
+        .get_component_wound_list(harness.actor)
+        .unwrap();
     assert_eq!(wounds.wounds.len(), 2);
     assert_eq!(
         wounds.wounds[0].cause,
@@ -388,12 +393,18 @@ fn divergent_metabolism_profiles_produce_divergent_scheduler_outcomes() {
     );
     assert_eq!(
         fast.world.get_component_homeostatic_needs(fast.actor),
-        Some(&HomeostaticNeeds::new(pm(16), pm(20), pm(24), pm(28), pm(32)))
+        Some(&HomeostaticNeeds::new(
+            pm(16),
+            pm(20),
+            pm(24),
+            pm(28),
+            pm(32)
+        ))
     );
 }
 
 #[test]
-fn authoritative_schema_has_only_expected_e09_components_and_fields() {
+fn authoritative_schema_includes_expected_shared_and_e09_components_and_fields() {
     let component_kinds = ComponentKind::ALL;
     assert_eq!(
         component_kinds,
@@ -405,6 +416,7 @@ fn authoritative_schema_has_only_expected_e09_components_and_fields() {
             ComponentKind::HomeostaticNeeds,
             ComponentKind::DeprivationExposure,
             ComponentKind::MetabolismProfile,
+            ComponentKind::ResourceSource,
             ComponentKind::ItemLot,
             ComponentKind::UniqueItem,
             ComponentKind::Container,

@@ -3,7 +3,8 @@
 use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, Container,
     DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds, ItemLot,
-    MetabolismProfile, Name, Permille, Quantity, ReservationRecord, UniqueItem, WoundList,
+    MetabolismProfile, Name, Permille, Quantity, ReservationRecord, ResourceSource, UniqueItem,
+    WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -216,8 +217,8 @@ mod tests {
         AgentData, BodyPart, CommodityKind, Container, ControlSource, DeprivationExposure,
         DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, FactId, HomeostaticNeeds,
         ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name, Permille, ProvenanceEntry,
-        Quantity, ReservationId, ReservationRecord, Tick, TickRange, UniqueItem, UniqueItemKind,
-        Wound, WoundCause, WoundList,
+        Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, UniqueItem,
+        UniqueItemKind, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -268,6 +269,13 @@ mod tests {
                 bladder_critical_ticks: 4,
             }),
             ComponentValue::MetabolismProfile(MetabolismProfile::default()),
+            ComponentValue::ResourceSource(ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(6),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(4).unwrap()),
+                last_regeneration_tick: Some(Tick(12)),
+            }),
             ComponentValue::ItemLot(ItemLot {
                 commodity: CommodityKind::Grain,
                 quantity: Quantity(11),
@@ -375,6 +383,7 @@ mod tests {
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,
                 ComponentKind::MetabolismProfile,
+                ComponentKind::ResourceSource,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,

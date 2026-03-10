@@ -1,6 +1,6 @@
 use worldwake_core::{ControlSource, EntityId, World, WorldTxn};
 
-use crate::{ConsumableEffect, Constraint, Precondition};
+use crate::{Constraint, ConsumableEffect, Precondition};
 
 pub(crate) fn evaluate_constraint_authoritatively(
     world: &World,
@@ -48,7 +48,10 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .get(usize::from(target_index))
             .and_then(|target| world.get_component_item_lot(*target))
             .is_some_and(|lot| lot.commodity == kind),
-        Precondition::TargetHasConsumableEffect { target_index, effect } => targets
+        Precondition::TargetHasConsumableEffect {
+            target_index,
+            effect,
+        } => targets
             .get(usize::from(target_index))
             .and_then(|target| world.get_component_item_lot(*target))
             .and_then(|lot| lot.commodity.spec().consumable_profile)
@@ -80,7 +83,7 @@ mod tests {
         evaluate_constraint_authoritatively, evaluate_precondition_authoritatively,
         evaluate_txn_precondition_authoritatively,
     };
-    use crate::{ConsumableEffect, Constraint, Precondition};
+    use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityKind, EventLog,
         Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,

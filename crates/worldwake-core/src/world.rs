@@ -4,8 +4,8 @@ use crate::{
     component_schema::with_authoritative_components, AgentData, CommodityKind, ComponentTables,
     ComponentValue, Container, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId,
     EntityKind, EntityMeta, EventId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation,
-    MetabolismProfile, Name, ProvenanceEntry, Quantity, RelationTables, Tick, Topology, UniqueItem,
-    UniqueItemKind, WorldError, WoundList,
+    MetabolismProfile, Name, ProvenanceEntry, Quantity, RelationTables, ResourceSource, Tick,
+    Topology, UniqueItem, UniqueItemKind, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -558,8 +558,8 @@ mod tests {
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
         FactId, HomeostaticNeeds, ItemLot, LoadUnits, LotOperation, MetabolismProfile, Name,
         Permille, Place, PlaceTag, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
-        Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError, Wound, WoundCause,
-        WoundList,
+        ResourceSource, Tick, TickRange, Topology, UniqueItem, UniqueItemKind, WorldError, Wound,
+        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -654,6 +654,16 @@ mod tests {
             NonZeroU32::new(8).unwrap(),
             NonZeroU32::new(10).unwrap(),
         )
+    }
+
+    fn sample_resource_source() -> ResourceSource {
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(9),
+            max_quantity: Quantity(15),
+            regeneration_ticks_per_unit: Some(NonZeroU32::new(4).unwrap()),
+            last_regeneration_tick: Some(Tick(7)),
+        }
     }
 
     struct PurgeRelationFixture {
@@ -3162,12 +3172,15 @@ mod tests {
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
         let satchel = world
-            .create_container(Container {
-                capacity: LoadUnits(20),
-                allowed_commodities: None,
-                allows_unique_items: true,
-                allows_nested_containers: true,
-            }, Tick(2))
+            .create_container(
+                Container {
+                    capacity: LoadUnits(20),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                },
+                Tick(2),
+            )
             .unwrap();
         let bread = world
             .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
@@ -3869,6 +3882,58 @@ mod tests {
                     allows_nested_containers: false,
                 },
             )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn resource_source_component_roundtrip_on_facility() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+        let source = sample_resource_source();
+
+        world
+            .insert_component_resource_source(id, source.clone())
+            .unwrap();
+        assert_eq!(world.get_component_resource_source(id), Some(&source));
+        assert!(world.has_component_resource_source(id));
+
+        let removed = world.remove_component_resource_source(id).unwrap();
+        assert_eq!(removed, Some(source));
+        assert_eq!(world.get_component_resource_source(id), None);
+    }
+
+    #[test]
+    fn resource_source_component_roundtrip_on_place() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let source = ResourceSource {
+            commodity: CommodityKind::Grain,
+            available_quantity: Quantity(5),
+            max_quantity: Quantity(18),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        };
+
+        world
+            .insert_component_resource_source(place, source.clone())
+            .unwrap();
+        assert_eq!(world.get_component_resource_source(place), Some(&source));
+        assert!(world.has_component_resource_source(place));
+
+        let removed = world.remove_component_resource_source(place).unwrap();
+        assert_eq!(removed, Some(source));
+        assert_eq!(world.get_component_resource_source(place), None);
+    }
+
+    #[test]
+    fn insert_resource_source_on_non_matching_entity_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_resource_source(id, sample_resource_source())
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

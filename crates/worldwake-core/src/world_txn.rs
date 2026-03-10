@@ -1,8 +1,7 @@
 use crate::{
-    component_schema::with_txn_simple_set_components,
-    ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
-    EventId, FactId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World,
-    WorldError,
+    component_schema::with_txn_simple_set_components, ArchiveMutationSnapshot, CommodityKind,
+    Container, ControlSource, EntityId, EntityKind, EventId, FactId, Permille, Quantity,
+    ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
@@ -1151,9 +1150,9 @@ mod tests {
         VisibilitySpec, WitnessData,
     };
     use crate::{
-        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
-        FactId, HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity,
-        ReservationId, ReservationRecord, Tick, TickRange, Topology, UniqueItemKind, World,
+        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind, FactId,
+        HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity, ReservationId,
+        ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
         WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -1196,6 +1195,16 @@ mod tests {
             allowed_commodities: None,
             allows_unique_items: true,
             allows_nested_containers: true,
+        }
+    }
+
+    fn sample_resource_source() -> ResourceSource {
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(9),
+            regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(6).unwrap()),
+            last_regeneration_tick: Some(Tick(3)),
         }
     }
 
@@ -1887,7 +1896,9 @@ mod tests {
             Permille::new(404).unwrap(),
             Permille::new(505).unwrap(),
         );
-        world.insert_component_homeostatic_needs(agent, before).unwrap();
+        world
+            .insert_component_homeostatic_needs(agent, before)
+            .unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.set_component_homeostatic_needs(agent, after).unwrap();
@@ -1933,7 +1944,8 @@ mod tests {
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_deprivation_exposure(agent, after).unwrap();
+        txn.set_component_deprivation_exposure(agent, after)
+            .unwrap();
 
         assert_eq!(
             txn.deltas(),
@@ -1950,7 +1962,48 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas.len(), 1);
-        assert_eq!(world.get_component_deprivation_exposure(agent), Some(&after));
+        assert_eq!(
+            world.get_component_deprivation_exposure(agent),
+            Some(&after)
+        );
+    }
+
+    #[test]
+    fn set_component_resource_source_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let before = sample_resource_source();
+        let after = ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(5),
+            max_quantity: Quantity(9),
+            regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(6).unwrap()),
+            last_regeneration_tick: Some(Tick(9)),
+        };
+        world
+            .insert_component_resource_source(facility, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_resource_source(facility, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: facility,
+                component_kind: ComponentKind::ResourceSource,
+                before: Some(ComponentValue::ResourceSource(before)),
+                after: ComponentValue::ResourceSource(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_resource_source(facility), Some(&after));
     }
 
     #[test]

@@ -151,6 +151,27 @@ macro_rules! with_authoritative_components {
                 MetabolismProfile
             }
             {
+                resource_sources,
+                ResourceSource,
+                insert_resource_source,
+                get_resource_source,
+                get_resource_source_mut,
+                remove_resource_source,
+                has_resource_source,
+                iter_resource_sources,
+                insert_component_resource_source,
+                get_component_resource_source,
+                get_component_resource_source_mut,
+                remove_component_resource_source,
+                has_component_resource_source,
+                entities_with_resource_source,
+                query_resource_source,
+                count_with_resource_source,
+                "ResourceSource",
+                |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
+                ResourceSource
+            }
+            {
                 item_lots,
                 ItemLot,
                 insert_item_lot,
@@ -277,6 +298,14 @@ macro_rules! with_txn_simple_set_components {
                 insert_component_metabolism_profile,
                 set_component_metabolism_profile,
                 MetabolismProfile
+            }
+            {
+                crate::ResourceSource,
+                get_component_resource_source,
+                remove_component_resource_source,
+                insert_component_resource_source,
+                set_component_resource_source,
+                ResourceSource
             }
         }
     };
