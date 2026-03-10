@@ -437,6 +437,10 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    /// Sets loyalty through the event-sourced transaction boundary.
+    ///
+    /// Loyalty changes reuse the shared weighted relation delta semantics: unchanged values emit
+    /// no delta, new values emit `Added`, and updates emit `Removed(old)` then `Added(new)`.
     pub fn set_loyalty(
         &mut self,
         subject: EntityId,
@@ -450,6 +454,10 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    /// Clears loyalty through the event-sourced transaction boundary.
+    ///
+    /// This records the canonical loyalty removal delta via the shared weighted relation helper
+    /// rather than introducing loyalty-specific event plumbing.
     pub fn clear_loyalty(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
         let before = self.staged_world.loyalty_to(subject, target);
         self.staged_world.clear_loyalty(subject, target)?;
@@ -1733,6 +1741,92 @@ mod tests {
                 relation: RelationValue::BelievesFact { agent, fact: actual_fact },
             }) if *agent == member && *actual_fact == fact
         )));
+    }
+
+    #[test]
+    fn clear_loyalty_records_removed_relation_delta() {
+        let mut world = World::new(test_topology()).unwrap();
+        let subject = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let target = world.create_faction("River Pact", Tick(2)).unwrap();
+        let strength = Permille::new(700).unwrap();
+        world.set_loyalty(subject, target, strength).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_loyalty(subject, target).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: RelationKind::LoyalTo,
+                relation: RelationValue::LoyalTo {
+                    subject,
+                    target,
+                    strength,
+                },
+            })]
+        );
+    }
+
+    #[test]
+    fn updating_loyalty_strength_records_removed_and_added_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let subject = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let target = world.create_office("Granary Chair", Tick(2)).unwrap();
+        let old_strength = Permille::new(250).unwrap();
+        let new_strength = Permille::new(900).unwrap();
+        world.set_loyalty(subject, target, old_strength).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_loyalty(subject, target, new_strength).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[
+                StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::LoyalTo,
+                    relation: RelationValue::LoyalTo {
+                        subject,
+                        target,
+                        strength: old_strength,
+                    },
+                }),
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::LoyalTo,
+                    relation: RelationValue::LoyalTo {
+                        subject,
+                        target,
+                        strength: new_strength,
+                    },
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn commit_preserves_loyalty_relation_deltas_in_event_log() {
+        let mut world = World::new(test_topology()).unwrap();
+        let subject = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let target = world.create_office("Granary Chair", Tick(2)).unwrap();
+        let old_strength = Permille::new(300).unwrap();
+        let new_strength = Permille::new(800).unwrap();
+        world.set_loyalty(subject, target, old_strength).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_loyalty(subject, target, new_strength).unwrap();
+        let expected_deltas = txn.deltas().to_vec();
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas, expected_deltas);
+        assert_eq!(world.loyalty_to(subject, target), Some(new_strength));
     }
 
     #[test]

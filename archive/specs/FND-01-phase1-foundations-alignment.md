@@ -1,6 +1,6 @@
 # FND-01: Phase 1 Foundations Alignment Corrections
 
-**Status**: APPROVED
+**Status**: ARCHIVED
 **Priority**: BLOCKER — must complete before Phase 2 implementation begins
 **Scope**: Amend Phase 1 code (E02, E04, E05, E07) to align with `docs/FOUNDATIONS.md`
 **Source**: `brainstorming/phase-1-foundations-alignment-correction.md`
@@ -326,3 +326,13 @@ Tickets 1–3 are independent and can be parallelized. Ticket 4 is a larger rena
 | FND01-003 | exhaustive coverage | Every commodity/unique-item kind has a non-zero physical profile |
 | FND01-004 | divergent beliefs | Two stub belief views produce different affordances |
 | FND01-005 | delta recording | Loyalty set/clear via `WorldTxn` produces `RelationDelta` entries |
+
+## Archive Note (2026-03-10)
+
+Archived after completion of the five FND01 Phase 1 alignment tickets:
+
+- `FND01PHA1FOUALI-001`
+- `FND01PHA1FOUALI-002`
+- `FND01PHA1FOUALI-003`
+- `FND01PHA1FOUALI-004`
+- `FND01PHA1FOUALI-005`

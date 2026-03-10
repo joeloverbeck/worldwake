@@ -75,6 +75,11 @@ impl World {
             .unwrap_or_default()
     }
 
+    /// Sets the internal loyalty relation row from `subject` to `target`.
+    ///
+    /// This is a low-level world mutation helper over the canonical weighted relation tables.
+    /// Event-sourced simulation mutations should go through `WorldTxn::set_loyalty`, and loyalty
+    /// strength must remain input state for agent reasoning rather than a scripted threshold.
     pub(crate) fn set_loyalty(
         &mut self,
         subject: EntityId,
@@ -93,6 +98,11 @@ impl World {
         Ok(())
     }
 
+    /// Clears the internal loyalty relation row from `subject` to `target`.
+    ///
+    /// This preserves the same low-level weighted relation semantics as `set_loyalty`.
+    /// Event-sourced simulation mutations should go through `WorldTxn::clear_loyalty` so the
+    /// append-only event log records the canonical removal delta.
     pub(crate) fn clear_loyalty(
         &mut self,
         subject: EntityId,
