@@ -51,6 +51,7 @@ mod tests {
         Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
+    use std::num::NonZeroU32;
     use worldwake_core::{CommodityKind, EntityId, EntityKind, EventTag, Quantity, VisibilitySpec};
 
     fn sample_action_def(id: ActionDefId, name: &str) -> ActionDef {
@@ -70,7 +71,7 @@ mod tests {
             })],
             preconditions: vec![Precondition::TargetExists(0)],
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
-            duration: DurationExpr::Fixed(id.0 + 1),
+            duration: DurationExpr::Fixed(NonZeroU32::new(id.0 + 1).unwrap()),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::TargetKind {
                 target_index: 0,

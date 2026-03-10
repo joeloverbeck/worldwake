@@ -145,6 +145,7 @@ mod tests {
         Interruptibility, Precondition, ReservationReq, TargetSpec, WorldKnowledgeView,
     };
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
         EventLog, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
@@ -219,7 +220,7 @@ mod tests {
             targets,
             preconditions,
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
-            duration: DurationExpr::Fixed(3),
+            duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,

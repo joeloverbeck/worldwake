@@ -167,6 +167,7 @@ mod tests {
         ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
@@ -275,7 +276,7 @@ mod tests {
     fn sample_def(
         id: ActionDefId,
         handler: ActionHandlerId,
-        duration: u32,
+        duration: NonZeroU32,
         reservation_requirements: Vec<ReservationReq>,
         commit_conditions: Vec<Precondition>,
         causal_event_tags: BTreeSet<EventTag>,
@@ -320,7 +321,7 @@ mod tests {
     }
 
     fn start_sample_action(
-        duration: u32,
+        duration: NonZeroU32,
         reservation_requirements: Vec<ReservationReq>,
         commit_conditions: Vec<Precondition>,
         causal_event_tags: BTreeSet<EventTag>,
@@ -399,7 +400,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_sample_action(
-                3,
+                NonZeroU32::new(3).unwrap(),
                 vec![ReservationReq { target_index: 0 }],
                 vec![Precondition::ActorAlive],
                 BTreeSet::from([EventTag::Travel]),
@@ -435,7 +436,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, target) =
             start_sample_action(
-                1,
+                NonZeroU32::MIN,
                 vec![ReservationReq { target_index: 0 }],
                 vec![Precondition::ActorAlive, Precondition::TargetExists(0)],
                 BTreeSet::from([EventTag::Travel]),
@@ -474,41 +475,12 @@ mod tests {
     }
 
     #[test]
-    fn tick_action_zero_duration_action_reaches_commit_without_underflow() {
-        let _guard = test_lock().lock().unwrap();
-        reset_hooks();
-        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, target) =
-            start_sample_action(0, vec![], vec![Precondition::ActorAlive], BTreeSet::new());
-
-        let outcome = tick_action(
-            instance_id,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active_actions,
-                world: &mut world,
-                event_log: &mut log,
-            },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(outcome, TickOutcome::Committed);
-        assert!(!active_actions.contains_key(&instance_id));
-        assert!(world.reservations_for(target).is_empty());
-        assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
-    }
-
-    #[test]
     fn tick_action_aborts_and_releases_reservations_when_commit_conditions_fail() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, target) =
             start_sample_action(
-                1,
+                NonZeroU32::MIN,
                 vec![ReservationReq { target_index: 0 }],
                 vec![Precondition::TargetKind {
                     target_index: 0,
@@ -579,7 +551,7 @@ mod tests {
         hook_state().lock().unwrap().mutate_on_tick = true;
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, _) =
             start_sample_action(
-                3,
+                NonZeroU32::new(3).unwrap(),
                 vec![ReservationReq { target_index: 0 }],
                 vec![Precondition::ActorAlive],
                 BTreeSet::new(),
@@ -617,7 +589,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_sample_action(
-                3,
+                NonZeroU32::new(3).unwrap(),
                 vec![ReservationReq { target_index: 0 }],
                 vec![Precondition::ActorAlive],
                 BTreeSet::new(),
@@ -655,7 +627,7 @@ mod tests {
 
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_sample_action(
-                3,
+                NonZeroU32::new(3).unwrap(),
                 vec![ReservationReq { target_index: 0 }],
                 vec![Precondition::ActorAlive],
                 BTreeSet::new(),
@@ -728,7 +700,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_sample_action(
-                3,
+                NonZeroU32::new(3).unwrap(),
                 vec![ReservationReq { target_index: 0 }],
                 vec![Precondition::ActorAlive],
                 BTreeSet::new(),

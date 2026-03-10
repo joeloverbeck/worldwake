@@ -169,6 +169,7 @@ mod tests {
         Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EventLog,
         EventTag, Quantity, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
@@ -239,7 +240,7 @@ mod tests {
         actor_constraints: Vec<Constraint>,
         preconditions: Vec<Precondition>,
         reservation_requirements: Vec<ReservationReq>,
-        duration: u32,
+        duration: NonZeroU32,
     ) -> ActionDef {
         ActionDef {
             id,
@@ -297,7 +298,7 @@ mod tests {
                 Precondition::TargetAtActorPlace(0),
             ],
             vec![ReservationReq { target_index: 0 }],
-            3,
+            NonZeroU32::new(3).unwrap(),
         ));
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(
@@ -373,7 +374,7 @@ mod tests {
             vec![Constraint::ActorHasControl],
             vec![Precondition::ActorAlive],
             Vec::new(),
-            2,
+            NonZeroU32::new(2).unwrap(),
         ));
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(
@@ -435,7 +436,7 @@ mod tests {
             vec![Constraint::ActorAlive],
             vec![Precondition::TargetAtActorPlace(0)],
             Vec::new(),
-            2,
+            NonZeroU32::new(2).unwrap(),
         ));
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(
@@ -525,7 +526,7 @@ mod tests {
                 ReservationReq { target_index: 0 },
                 ReservationReq { target_index: 1 },
             ],
-            3,
+            NonZeroU32::new(3).unwrap(),
         );
         def.targets = vec![
             TargetSpec::SpecificEntity(first_target),
@@ -569,87 +570,6 @@ mod tests {
     }
 
     #[test]
-    fn start_action_zero_duration_skips_reservations_and_still_starts() {
-        let mut world = World::new(build_prototype_world()).unwrap();
-        let place = world.topology().place_ids().next().unwrap();
-        let (actor, blocker, target, place) = {
-            let mut txn = new_txn(&mut world, 1);
-            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
-            let blocker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
-            let target = txn
-                .create_item_lot(CommodityKind::Bread, Quantity(1))
-                .unwrap();
-            commit_txn(txn);
-            (actor, blocker, target, place)
-        };
-        {
-            let mut txn = new_txn(&mut world, 2);
-            txn.set_ground_location(actor, place).unwrap();
-            txn.set_ground_location(blocker, place).unwrap();
-            txn.set_ground_location(target, place).unwrap();
-            commit_txn(txn);
-        }
-        {
-            let mut txn = new_txn(&mut world, 3);
-            txn.try_reserve(target, blocker, TickRange::new(Tick(5), Tick(8)).unwrap())
-                .unwrap();
-            commit_txn(txn);
-        }
-
-        let affordance = Affordance {
-            def_id: ActionDefId(0),
-            actor,
-            bound_targets: vec![target],
-            explanation: None,
-        };
-        let mut defs = ActionDefRegistry::new();
-        defs.register(sample_def(
-            ActionDefId(0),
-            ActionHandlerId(0),
-            vec![Constraint::ActorAlive],
-            vec![
-                Precondition::TargetExists(0),
-                Precondition::TargetAtActorPlace(0),
-            ],
-            vec![ReservationReq { target_index: 0 }],
-            0,
-        ));
-        let mut handlers = ActionHandlerRegistry::new();
-        handlers.register(ActionHandler::new(
-            start_none,
-            tick_continue,
-            commit_noop,
-            abort_noop,
-        ));
-        let mut active_actions = BTreeMap::new();
-        let mut log = EventLog::new();
-        let mut next_instance_id = ActionInstanceId(9);
-
-        let instance_id = start_action(
-            &affordance,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active_actions,
-                world: &mut world,
-                event_log: &mut log,
-            },
-            &mut next_instance_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
-        )
-        .unwrap();
-
-        let instance = active_actions.get(&instance_id).unwrap();
-        assert_eq!(instance.remaining_ticks, 0);
-        assert!(instance.reservation_ids.is_empty());
-        assert_eq!(world.reservations_for(target).len(), 1);
-        assert_eq!(log.events_by_tag(EventTag::ActionStarted).len(), 1);
-    }
-
-    #[test]
     fn start_action_assigns_instance_ids_monotonically_across_calls() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
@@ -671,7 +591,7 @@ mod tests {
             vec![Constraint::ActorAlive],
             vec![Precondition::ActorAlive],
             Vec::new(),
-            1,
+            NonZeroU32::MIN,
         ));
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(
@@ -779,7 +699,7 @@ mod tests {
             vec![Constraint::ActorAlive],
             vec![Precondition::ActorAlive],
             Vec::new(),
-            1,
+            NonZeroU32::MIN,
         ));
 
         let missing_handler = start_action(
@@ -829,7 +749,7 @@ mod tests {
             vec![Constraint::ActorAlive],
             vec![Precondition::ActorAlive],
             Vec::new(),
-            1,
+            NonZeroU32::MIN,
         ));
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(

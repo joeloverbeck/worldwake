@@ -361,6 +361,7 @@ mod tests {
         SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest,
     };
     use std::collections::BTreeSet;
+    use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, Seed, Tick,
@@ -496,7 +497,7 @@ mod tests {
             targets: Vec::new(),
             preconditions: vec![crate::Precondition::ActorAlive],
             reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(2),
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![crate::Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -510,7 +511,7 @@ mod tests {
             targets: Vec::new(),
             preconditions: vec![crate::Precondition::ActorAlive],
             reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(1),
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![crate::Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,

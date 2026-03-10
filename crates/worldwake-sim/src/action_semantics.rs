@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 use worldwake_core::{CommodityKind, EntityId, EntityKind, Quantity};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -34,14 +35,14 @@ pub struct ReservationReq {
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum DurationExpr {
-    Fixed(u32),
+    Fixed(NonZeroU32),
 }
 
 impl DurationExpr {
     #[must_use]
     pub const fn resolve(self) -> u32 {
         match self {
-            Self::Fixed(ticks) => ticks,
+            Self::Fixed(ticks) => ticks.get(),
         }
     }
 }
@@ -60,6 +61,7 @@ mod tests {
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::mem;
+    use std::num::NonZeroU32;
     use worldwake_core::{CommodityKind, EntityId, EntityKind, Quantity};
 
     const ENTITY_A: EntityId = EntityId {
@@ -104,7 +106,10 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 2] = [DurationExpr::Fixed(0), DurationExpr::Fixed(5)];
+    const ALL_DURATION_EXPRS: [DurationExpr; 2] = [
+        DurationExpr::Fixed(NonZeroU32::MIN),
+        DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
+    ];
 
     const ALL_INTERRUPTIBILITY: [Interruptibility; 3] = [
         Interruptibility::NonInterruptible,
@@ -129,8 +134,16 @@ mod tests {
 
     #[test]
     fn duration_expr_resolves_fixed_ticks() {
-        assert_eq!(DurationExpr::Fixed(5).resolve(), 5);
-        assert_eq!(DurationExpr::Fixed(0).resolve(), 0);
+        assert_eq!(DurationExpr::Fixed(NonZeroU32::MIN).resolve(), 1);
+        assert_eq!(
+            DurationExpr::Fixed(NonZeroU32::new(5).unwrap()).resolve(),
+            5
+        );
+    }
+
+    #[test]
+    fn zero_duration_is_unrepresentable() {
+        assert!(NonZeroU32::new(0).is_none());
     }
 
     #[test]

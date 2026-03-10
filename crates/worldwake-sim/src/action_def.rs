@@ -31,6 +31,7 @@ mod tests {
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
+    use std::num::NonZeroU32;
     use worldwake_core::{CommodityKind, EntityId, EntityKind, EventTag, Quantity, VisibilitySpec};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -61,7 +62,7 @@ mod tests {
                 Precondition::TargetAtActorPlace(1),
             ],
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
-            duration: DurationExpr::Fixed(3),
+            duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![Precondition::TargetKind {
                 target_index: 0,
