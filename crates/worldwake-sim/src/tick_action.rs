@@ -233,6 +233,7 @@ mod tests {
     fn start_none(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
     }

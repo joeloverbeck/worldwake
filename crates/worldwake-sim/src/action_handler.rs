@@ -5,7 +5,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, WorldTxn};
 
-pub type ActionStartFn = fn(&ActionDef, &ActionInstance) -> Result<Option<ActionState>, ActionError>;
+pub type ActionStartFn =
+    for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>)
+        -> Result<Option<ActionState>, ActionError>;
 pub type ActionTickFn =
     for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>) -> Result<ActionProgress, ActionError>;
 pub type ActionCommitFn =
@@ -134,6 +136,7 @@ mod tests {
     fn noop_start(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
@@ -195,7 +198,7 @@ mod tests {
         );
 
         assert_eq!(
-            (handler.on_start)(&def, &instance).unwrap(),
+            (handler.on_start)(&def, &instance, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
         assert_eq!(

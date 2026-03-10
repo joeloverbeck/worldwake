@@ -73,6 +73,10 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world.get_component_resource_source(entity).cloned()
     }
 
+    fn has_production_job(&self, entity: EntityId) -> bool {
+        self.world.has_component_production_job(entity)
+    }
+
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
         self.world.can_exercise_control(actor, entity).is_ok()
     }

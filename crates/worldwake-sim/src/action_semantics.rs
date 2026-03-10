@@ -50,6 +50,7 @@ pub enum Precondition {
         commodity: CommodityKind,
         min_available: Quantity,
     },
+    TargetLacksProductionJob(u8),
     TargetHasConsumableEffect {
         target_index: u8,
         effect: ConsumableEffect,
@@ -180,7 +181,7 @@ mod tests {
         },
     ];
 
-    const ALL_PRECONDITIONS: [Precondition; 9] = [
+    const ALL_PRECONDITIONS: [Precondition; 10] = [
         Precondition::ActorAlive,
         Precondition::ActorCanControlTarget(6),
         Precondition::TargetExists(0),
@@ -202,6 +203,7 @@ mod tests {
             commodity: CommodityKind::Apple,
             min_available: Quantity(2),
         },
+        Precondition::TargetLacksProductionJob(3),
         Precondition::TargetHasConsumableEffect {
             target_index: 4,
             effect: ConsumableEffect::Thirst,
@@ -451,6 +453,13 @@ mod tests {
             effect: ConsumableEffect::Hunger,
         }) {
             Precondition::TargetHasConsumableEffect { target_index, .. } => {
+                let _: u8 = target_index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetLacksProductionJob(10) {
+            Precondition::TargetLacksProductionJob(target_index) => {
                 let _: u8 = target_index;
             }
             _ => unreachable!(),

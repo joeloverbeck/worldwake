@@ -1,12 +1,13 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    EntityKind, EventTag, VisibilitySpec, WorkstationMarker, WorldTxn,
+    CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits, Quantity,
+    VisibilitySpec, WorkstationMarker, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, Constraint, DurationExpr, HarvestActionPayload, Interruptibility, Precondition,
-    RecipeDefinition, RecipeRegistry, ReservationReq, TargetSpec,
+    ActionState, Constraint, CraftActionPayload, DurationExpr, HarvestActionPayload,
+    Interruptibility, Precondition, RecipeDefinition, RecipeRegistry, ReservationReq, TargetSpec,
 };
 
 pub fn register_harvest_actions(
@@ -24,6 +25,29 @@ pub fn register_harvest_actions(
     let mut ids = Vec::new();
     for (recipe_id, recipe) in recipes.iter() {
         let Some(def) = harvest_action_def(ActionDefId(defs.len() as u32), handler, recipe_id, recipe)
+        else {
+            continue;
+        };
+        ids.push(defs.register(def));
+    }
+    ids
+}
+
+pub fn register_craft_actions(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+    recipes: &RecipeRegistry,
+) -> Vec<ActionDefId> {
+    let handler = handlers.register(ActionHandler::new(
+        start_craft,
+        tick_craft,
+        commit_craft,
+        abort_craft,
+    ));
+
+    let mut ids = Vec::new();
+    for (recipe_id, recipe) in recipes.iter() {
+        let Some(def) = craft_action_def(ActionDefId(defs.len() as u32), handler, recipe_id, recipe)
         else {
             continue;
         };
@@ -96,20 +120,203 @@ fn harvest_action_def(
     })
 }
 
+fn craft_action_def(
+    id: ActionDefId,
+    handler: ActionHandlerId,
+    recipe_id: worldwake_core::RecipeId,
+    recipe: &RecipeDefinition,
+) -> Option<ActionDef> {
+    if recipe.inputs.is_empty() || recipe.outputs.is_empty() {
+        return None;
+    }
+    let workstation_tag = recipe.required_workstation_tag?;
+    let mut actor_constraints = vec![
+        Constraint::ActorAlive,
+        Constraint::ActorKnowsRecipe(recipe_id),
+    ];
+    actor_constraints.extend(
+        aggregate_recipe_entries(&recipe.inputs)
+            .into_iter()
+            .map(|(kind, min_qty)| Constraint::ActorHasCommodity { kind, min_qty }),
+    );
+    actor_constraints.extend(recipe.required_tool_kinds.iter().copied().map(|kind| {
+        Constraint::ActorHasUniqueItemKind { kind, min_count: 1 }
+    }));
+    let preconditions = vec![
+        Precondition::TargetExists(0),
+        Precondition::TargetAtActorPlace(0),
+        Precondition::TargetKind {
+            target_index: 0,
+            kind: EntityKind::Facility,
+        },
+        Precondition::TargetHasWorkstationTag {
+            target_index: 0,
+            tag: workstation_tag,
+        },
+        Precondition::TargetLacksProductionJob(0),
+    ];
+
+    Some(ActionDef {
+        id,
+        name: format!("craft:{}", recipe.name),
+        actor_constraints,
+        targets: vec![TargetSpec::EntityAtActorPlace {
+            kind: EntityKind::Facility,
+        }],
+        preconditions: preconditions.clone(),
+        reservation_requirements: vec![ReservationReq { target_index: 0 }],
+        duration: DurationExpr::Fixed(recipe.work_ticks),
+        body_cost_per_tick: recipe.body_cost_per_tick,
+        interruptibility: Interruptibility::InterruptibleWithPenalty,
+        commit_conditions: preconditions
+            .into_iter()
+            .filter(|precondition| !matches!(precondition, Precondition::TargetLacksProductionJob(_)))
+            .collect(),
+        visibility: VisibilitySpec::ParticipantsOnly,
+        causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
+        payload: ActionPayload::Craft(CraftActionPayload {
+            recipe_id,
+            required_workstation_tag: workstation_tag,
+            inputs: recipe.inputs.clone(),
+            outputs: recipe.outputs.clone(),
+            required_tool_kinds: recipe.required_tool_kinds.clone(),
+        }),
+        handler,
+    })
+}
+
 fn harvest_payload(def: &ActionDef) -> Result<&HarvestActionPayload, ActionError> {
     match &def.payload {
         ActionPayload::Harvest(payload) => Ok(payload),
-        ActionPayload::None => Err(ActionError::InternalError(format!(
+        ActionPayload::Craft(_) | ActionPayload::None => Err(ActionError::InternalError(format!(
             "action def {} is missing harvest payload",
             def.id
         ))),
     }
 }
 
+fn craft_payload(def: &ActionDef) -> Result<&CraftActionPayload, ActionError> {
+    match &def.payload {
+        ActionPayload::Craft(payload) => Ok(payload),
+        ActionPayload::Harvest(_) | ActionPayload::None => Err(ActionError::InternalError(
+            format!("action def {} is missing craft payload", def.id),
+        )),
+    }
+}
+
+fn aggregate_recipe_entries(entries: &[(CommodityKind, Quantity)]) -> BTreeMap<CommodityKind, Quantity> {
+    let mut aggregated = BTreeMap::new();
+    for (kind, quantity) in entries {
+        aggregated
+            .entry(*kind)
+            .and_modify(|existing: &mut Quantity| *existing = *existing + *quantity)
+            .or_insert(*quantity);
+    }
+    aggregated
+}
+
+fn staging_container(payload: &CraftActionPayload) -> Container {
+    let capacity = payload
+        .inputs
+        .iter()
+        .fold(0_u32, |total, (commodity, quantity)| {
+            total + commodity.spec().physical_profile.load_per_unit.0 * quantity.0
+        })
+        .max(1);
+    Container {
+        capacity: LoadUnits(capacity),
+        allowed_commodities: Some(payload.inputs.iter().map(|(kind, _)| *kind).collect()),
+        allows_unique_items: false,
+        allows_nested_containers: false,
+    }
+}
+
+fn controlled_lots_for(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+) -> Vec<(EntityId, Quantity)> {
+    let mut lots = txn
+        .query_item_lot()
+        .filter_map(|(entity, lot)| {
+            (lot.commodity == commodity
+                && txn.can_exercise_control(actor, entity).is_ok()
+                && txn.effective_place(entity) == Some(place))
+            .then_some((entity, lot.quantity))
+        })
+        .collect::<Vec<_>>();
+    lots.sort_by_key(|(entity, _)| *entity);
+    lots
+}
+
+fn move_lot_into_container(
+    txn: &mut WorldTxn<'_>,
+    lot: EntityId,
+    container: EntityId,
+) -> Result<(), ActionError> {
+    if txn.direct_container(lot).is_some() {
+        txn.remove_from_container(lot)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    if txn.possessor_of(lot).is_some() {
+        txn.clear_possessor(lot)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    txn.put_into_container(lot, container)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
+}
+
+fn stage_inputs(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    place: EntityId,
+    container: EntityId,
+    payload: &CraftActionPayload,
+) -> Result<(), ActionError> {
+    for (commodity, required_quantity) in aggregate_recipe_entries(&payload.inputs) {
+        let mut remaining = required_quantity;
+        for (lot_id, lot_quantity) in controlled_lots_for(txn, actor, commodity, place) {
+            if remaining == Quantity(0) {
+                break;
+            }
+            if lot_quantity > remaining {
+                let (_, split_off) = txn
+                    .split_lot(lot_id, remaining)
+                    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+                move_lot_into_container(txn, split_off, container)?;
+                remaining = Quantity(0);
+                break;
+            }
+
+            move_lot_into_container(txn, lot_id, container)?;
+            remaining = remaining
+                .checked_sub(lot_quantity)
+                .ok_or_else(|| ActionError::InternalError("staged input accounting underflowed".to_string()))?;
+        }
+
+        if remaining != Quantity(0) {
+            return Err(ActionError::PreconditionFailed(format!(
+                "actor {actor} lacks accessible {required_quantity:?} units of {commodity:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn consume_staged_inputs(txn: &mut WorldTxn<'_>, container: EntityId) -> Result<(), ActionError> {
+    for entity in txn.recursive_contents_of(container) {
+        txn.archive_entity(entity)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn start_harvest(
     def: &ActionDef,
     _instance: &ActionInstance,
+    _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let _ = harvest_payload(def)?;
     Ok(None)
@@ -121,6 +328,87 @@ fn tick_harvest(
     _instance: &ActionInstance,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn start_craft(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let payload = craft_payload(def)?;
+    let workstation = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    if txn.has_component_production_job(workstation) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "workstation {workstation} already has production job"
+        )));
+    }
+    let place = txn.effective_place(workstation).ok_or_else(|| {
+        ActionError::InternalError(format!("workstation {workstation} has no effective place"))
+    })?;
+    let marker = txn
+        .get_component_workstation_marker(workstation)
+        .copied()
+        .ok_or(ActionError::InvalidTarget(workstation))?;
+    if marker != WorkstationMarker(payload.required_workstation_tag) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "workstation {workstation} tag {:?} does not match {:?}",
+            marker.0, payload.required_workstation_tag
+        )));
+    }
+
+    let staged_inputs_container = txn
+        .create_container(staging_container(payload))
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.set_ground_location(staged_inputs_container, place)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    stage_inputs(txn, instance.actor, place, staged_inputs_container, payload)?;
+    txn.set_component_production_job(
+        workstation,
+        worldwake_core::ProductionJob {
+            recipe_id: payload.recipe_id,
+            worker: instance.actor,
+            staged_inputs_container,
+            progress_ticks: 0,
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.add_target(staged_inputs_container);
+    Ok(None)
+}
+
+fn tick_craft(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    let payload = craft_payload(def)?;
+    let workstation = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    let mut job = txn
+        .get_component_production_job(workstation)
+        .cloned()
+        .ok_or_else(|| ActionError::PreconditionFailed(format!(
+            "workstation {workstation} lacks craft job for recipe {:?}",
+            payload.recipe_id
+        )))?;
+    if job.recipe_id != payload.recipe_id {
+        return Err(ActionError::PreconditionFailed(format!(
+            "workstation {workstation} job recipe {:?} does not match {:?}",
+            job.recipe_id, payload.recipe_id
+        )));
+    }
+    job.progress_ticks = job
+        .progress_ticks
+        .checked_add(1)
+        .ok_or_else(|| ActionError::InternalError("craft progress overflowed".to_string()))?;
+    txn.set_component_production_job(workstation, job)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
     Ok(ActionProgress::Continue)
 }
 
@@ -178,6 +466,49 @@ fn commit_harvest(
     Ok(())
 }
 
+fn commit_craft(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let payload = craft_payload(def)?;
+    let workstation = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    let place = txn.effective_place(workstation).ok_or_else(|| {
+        ActionError::InternalError(format!("workstation {workstation} has no effective place"))
+    })?;
+    let job = txn
+        .get_component_production_job(workstation)
+        .cloned()
+        .ok_or_else(|| ActionError::PreconditionFailed(format!(
+            "workstation {workstation} lacks craft job on commit"
+        )))?;
+    if job.recipe_id != payload.recipe_id {
+        return Err(ActionError::PreconditionFailed(format!(
+            "workstation {workstation} job recipe {:?} does not match {:?}",
+            job.recipe_id, payload.recipe_id
+        )));
+    }
+
+    consume_staged_inputs(txn, job.staged_inputs_container)?;
+    txn.archive_entity(job.staged_inputs_container)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.clear_component_production_job(workstation)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    for (commodity, quantity) in &payload.outputs {
+        let lot = txn
+            .create_item_lot(*commodity, *quantity)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        txn.set_ground_location(lot, place)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        txn.add_target(lot);
+    }
+    Ok(())
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn abort_harvest(
     _def: &ActionDef,
@@ -188,17 +519,27 @@ fn abort_harvest(
     Ok(())
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn abort_craft(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::register_harvest_actions;
+    use super::{register_craft_actions, register_harvest_actions};
     use crate::needs::needs_system;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource,
-        DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog, HomeostaticNeeds,
-        MetabolismProfile, Permille, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, Container,
+        ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog,
+        HomeostaticNeeds, LoadUnits, MetabolismProfile, Permille, Quantity, ResourceSource, Seed,
+        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -328,6 +669,15 @@ mod tests {
         (defs, handlers, ids)
     }
 
+    fn setup_craft_registries(
+        recipes: &RecipeRegistry,
+    ) -> (ActionDefRegistry, ActionHandlerRegistry, Vec<ActionDefId>) {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let ids = register_craft_actions(&mut defs, &mut handlers, recipes);
+        (defs, handlers, ids)
+    }
+
     fn single_harvest_affordance(
         world: &World,
         actor: EntityId,
@@ -336,6 +686,112 @@ mod tests {
         let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs);
         assert_eq!(affordances.len(), 1);
         affordances.into_iter().next().unwrap()
+    }
+
+    fn single_craft_affordance(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+    ) -> worldwake_sim::Affordance {
+        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs);
+        assert_eq!(affordances.len(), 1);
+        affordances.into_iter().next().unwrap()
+    }
+
+    fn craft_recipe_registry(
+        body_cost_per_tick: BodyCostPerTick,
+        required_tool_kinds: Vec<worldwake_core::UniqueItemKind>,
+    ) -> (RecipeRegistry, worldwake_core::RecipeId) {
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: nz(2),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds,
+            body_cost_per_tick,
+        });
+        (recipes, recipe_id)
+    }
+
+    fn craft_fixture(with_recipe: bool) -> (World, EntityId, EntityId, EntityId) {
+        let (mut world, actor, workstation, place) = setup_world(false, WorkstationTag::Mill, 0);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_resource_source(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Grain,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(0),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        if with_recipe {
+            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::new())
+                .unwrap();
+        }
+        commit_txn(txn);
+        (world, actor, workstation, place)
+    }
+
+    fn add_possessed_lot(
+        world: &mut World,
+        actor: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+        quantity: u32,
+    ) -> EntityId {
+        let mut txn = new_txn(world, 3);
+        let lot = txn
+            .create_item_lot(commodity, Quantity(quantity))
+            .unwrap();
+        txn.set_ground_location(lot, place).unwrap();
+        txn.set_possessor(lot, actor).unwrap();
+        commit_txn(txn);
+        lot
+    }
+
+    fn add_possessed_container_with_lot(
+        world: &mut World,
+        actor: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+        quantity: u32,
+    ) -> EntityId {
+        let mut txn = new_txn(world, 3);
+        let container = txn
+            .create_container(Container {
+                capacity: LoadUnits(20),
+                allowed_commodities: None,
+                allows_unique_items: true,
+                allows_nested_containers: true,
+            })
+            .unwrap();
+        let lot = txn
+            .create_item_lot(commodity, Quantity(quantity))
+            .unwrap();
+        txn.set_ground_location(container, place).unwrap();
+        txn.set_possessor(container, actor).unwrap();
+        txn.put_into_container(lot, container).unwrap();
+        commit_txn(txn);
+        lot
+    }
+
+    fn add_tool(world: &mut World, actor: EntityId, place: EntityId) {
+        let mut txn = new_txn(world, 3);
+        let tool = txn
+            .create_unique_item(
+                worldwake_core::UniqueItemKind::SimpleTool,
+                Some("Mill Paddle"),
+                std::collections::BTreeMap::new(),
+            )
+            .unwrap();
+        txn.set_ground_location(tool, place).unwrap();
+        txn.set_possessor(tool, actor).unwrap();
+        commit_txn(txn);
     }
 
     fn run_to_completion(
@@ -657,6 +1113,370 @@ mod tests {
         .unwrap();
 
         let mut rng = worldwake_sim::DeterministicRng::new(Seed([7; 32]));
+        for tick in [10_u64, 11_u64] {
+            let _ = tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut event_log,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(Tick(tick)),
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
+
+            needs_system(SystemExecutionContext {
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+                active_actions: &active,
+                action_defs: &defs,
+                tick: Tick(tick),
+                system_id: SystemId::Needs,
+            })
+            .unwrap();
+        }
+
+        let needs = world.get_component_homeostatic_needs(actor).unwrap();
+        assert_eq!(
+            *needs,
+            HomeostaticNeeds::new(pm(4), pm(5), pm(7), pm(2), pm(9))
+        );
+    }
+
+    #[test]
+    fn register_craft_actions_creates_recipe_backed_defs_and_filters_invalid_shapes() {
+        let (mut recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        recipes.register(RecipeDefinition {
+            name: "Bad Harvest".to_string(),
+            inputs: Vec::new(),
+            outputs: vec![(CommodityKind::Apple, Quantity(1))],
+            work_ticks: nz(1),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+        recipes.register(RecipeDefinition {
+            name: "Bad Disposal".to_string(),
+            inputs: vec![(CommodityKind::Waste, Quantity(1))],
+            outputs: Vec::new(),
+            work_ticks: nz(1),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
+
+        assert_eq!(handlers.len(), 1);
+        assert_eq!(ids.len(), 1);
+        let def = defs.get(ids[0]).unwrap();
+        assert_eq!(def.name, "craft:Bake Bread");
+        assert_eq!(
+            def.actor_constraints,
+            vec![
+                Constraint::ActorAlive,
+                Constraint::ActorKnowsRecipe(recipe_id),
+                Constraint::ActorHasCommodity {
+                    kind: CommodityKind::Grain,
+                    min_qty: Quantity(2),
+                },
+            ]
+        );
+        assert!(def
+            .preconditions
+            .contains(&Precondition::TargetLacksProductionJob(0)));
+        assert_eq!(
+            def.payload,
+            ActionPayload::Craft(CraftActionPayload {
+                recipe_id,
+                required_workstation_tag: WorkstationTag::Mill,
+                inputs: vec![(CommodityKind::Grain, Quantity(2))],
+                outputs: vec![(CommodityKind::Bread, Quantity(1))],
+                required_tool_kinds: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn craft_stages_inputs_tracks_wip_and_produces_outputs() {
+        let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        let (defs, handlers, _) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
+        grant_recipe(&mut world, actor, recipe_id);
+        let source_lot = add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
+        let affordance = single_craft_affordance(&world, actor, &defs);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        let job = world.get_component_production_job(workstation).unwrap().clone();
+        assert_eq!(job.recipe_id, recipe_id);
+        assert_eq!(job.worker, actor);
+        assert_eq!(job.progress_ticks, 0);
+        assert_eq!(
+            world.get_component_item_lot(source_lot).unwrap().quantity,
+            Quantity(1)
+        );
+        let staged_lots = world
+            .recursive_contents_of(job.staged_inputs_container)
+            .into_iter()
+            .filter_map(|entity| world.get_component_item_lot(entity).map(|lot| (entity, lot.clone())))
+            .collect::<Vec<_>>();
+        assert_eq!(staged_lots.len(), 1);
+        assert_eq!(staged_lots[0].1.commodity, CommodityKind::Grain);
+        assert_eq!(staged_lots[0].1.quantity, Quantity(2));
+
+        let first_tick = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::SystemTick(Tick(11)),
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+        assert_eq!(first_tick, TickOutcome::Continuing);
+        assert_eq!(
+            world
+                .get_component_production_job(workstation)
+                .unwrap()
+                .progress_ticks,
+            1
+        );
+
+        let second_tick = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::SystemTick(Tick(12)),
+                tick: Tick(12),
+            },
+        )
+        .unwrap();
+        assert_eq!(second_tick, TickOutcome::Committed);
+        assert!(world.get_component_production_job(workstation).is_none());
+        assert!(world.is_archived(job.staged_inputs_container));
+        assert!(
+            world
+                .get_component_item_lot(staged_lots[0].0)
+                .is_none()
+        );
+        let bread_lots = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Bread && world.effective_place(*entity) == Some(place)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(bread_lots.len(), 1);
+        assert_eq!(bread_lots[0].1.quantity, Quantity(1));
+        let record = event_log.get(EventId(event_log.len() as u64 - 1)).unwrap();
+        assert!(record.tags.contains(&EventTag::ActionCommitted));
+        assert!(record.tags.contains(&EventTag::WorldMutation));
+    }
+
+    #[test]
+    fn craft_affordance_requires_recipe_tools_inputs_and_open_workstation() {
+        let (recipes, recipe_id) = craft_recipe_registry(
+            BodyCostPerTick::zero(),
+            vec![worldwake_core::UniqueItemKind::SimpleTool],
+        );
+        let (defs, _handlers, _) = setup_craft_registries(&recipes);
+
+        let (mut world_missing_recipe, actor_missing_recipe, _, place_missing_recipe) =
+            craft_fixture(false);
+        add_possessed_lot(
+            &mut world_missing_recipe,
+            actor_missing_recipe,
+            place_missing_recipe,
+            CommodityKind::Grain,
+            2,
+        );
+        assert!(get_affordances(
+            &OmniscientBeliefView::new(&world_missing_recipe),
+            actor_missing_recipe,
+            &defs
+        )
+        .is_empty());
+
+        let (mut world_missing_tool, actor_missing_tool, _, place_missing_tool) = craft_fixture(false);
+        grant_recipe(&mut world_missing_tool, actor_missing_tool, recipe_id);
+        add_possessed_lot(
+            &mut world_missing_tool,
+            actor_missing_tool,
+            place_missing_tool,
+            CommodityKind::Grain,
+            2,
+        );
+        assert!(get_affordances(
+            &OmniscientBeliefView::new(&world_missing_tool),
+            actor_missing_tool,
+            &defs
+        )
+        .is_empty());
+
+        let (mut world_ready, actor_ready, workstation_ready, place_ready) = craft_fixture(false);
+        grant_recipe(&mut world_ready, actor_ready, recipe_id);
+        add_possessed_container_with_lot(
+            &mut world_ready,
+            actor_ready,
+            place_ready,
+            CommodityKind::Grain,
+            2,
+        );
+        add_tool(&mut world_ready, actor_ready, place_ready);
+        assert_eq!(
+            get_affordances(&OmniscientBeliefView::new(&world_ready), actor_ready, &defs).len(),
+            1
+        );
+
+        let mut txn = new_txn(&mut world_ready, 4);
+        txn.set_component_production_job(
+            workstation_ready,
+            worldwake_core::ProductionJob {
+                recipe_id,
+                worker: actor_ready,
+                staged_inputs_container: workstation_ready,
+                progress_ticks: 1,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        assert!(get_affordances(
+            &OmniscientBeliefView::new(&world_ready),
+            actor_ready,
+            &defs
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn interrupted_craft_preserves_job_and_staged_inputs() {
+        let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        let (defs, handlers, _) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
+        grant_recipe(&mut world, actor, recipe_id);
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 2);
+        let affordance = single_craft_affordance(&world, actor, &defs);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        let staged_container = world
+            .get_component_production_job(workstation)
+            .unwrap()
+            .staged_inputs_container;
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+            "reprioritized".to_string(),
+        )
+        .unwrap();
+
+        let job = world.get_component_production_job(workstation).unwrap();
+        assert_eq!(job.recipe_id, recipe_id);
+        assert_eq!(job.staged_inputs_container, staged_container);
+        let staged_lots = world
+            .recursive_contents_of(staged_container)
+            .into_iter()
+            .filter(|entity| world.get_component_item_lot(*entity).is_some())
+            .collect::<Vec<_>>();
+        assert_eq!(staged_lots.len(), 1);
+        assert_eq!(
+            world.get_component_item_lot(staged_lots[0]).unwrap().quantity,
+            Quantity(2)
+        );
+    }
+
+    #[test]
+    fn craft_body_cost_flows_through_needs_system() {
+        let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
+        let (recipes, recipe_id) = craft_recipe_registry(body_cost, Vec::new());
+        let (defs, handlers, _) = setup_craft_registries(&recipes);
+        let (mut world, actor, _workstation, place) = craft_fixture(false);
+        grant_recipe(&mut world, actor, recipe_id);
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 2);
+        let affordance = single_craft_affordance(&world, actor, &defs);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        let mut rng = worldwake_sim::DeterministicRng::new(Seed([9; 32]));
         for tick in [10_u64, 11_u64] {
             let _ = tick_action(
                 instance_id,

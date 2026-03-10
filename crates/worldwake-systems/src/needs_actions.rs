@@ -228,6 +228,7 @@ fn consume_one_unit(txn: &mut WorldTxn<'_>, lot_id: EntityId) -> Result<(), Acti
 fn start_noop(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     Ok(None)
 }

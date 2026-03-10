@@ -50,7 +50,7 @@ pub use action_handler::{
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
-pub use action_payload::{ActionPayload, HarvestActionPayload};
+pub use action_payload::{ActionPayload, CraftActionPayload, HarvestActionPayload};
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
     Precondition, ReservationReq, TargetSpec,

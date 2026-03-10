@@ -103,6 +103,9 @@ fn evaluate_precondition(
             .is_some_and(|source| {
                 source.commodity == commodity && source.available_quantity >= min_available
             }),
+        Precondition::TargetLacksProductionJob(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| !view.has_production_job(*target)),
         Precondition::TargetHasConsumableEffect {
             target_index,
             effect,
@@ -195,6 +198,7 @@ mod tests {
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
+        production_jobs: BTreeMap<EntityId, bool>,
         controllable: BTreeMap<(EntityId, EntityId), bool>,
         control: BTreeMap<EntityId, bool>,
     }
@@ -252,6 +256,10 @@ mod tests {
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
             self.resource_sources.get(&entity).cloned()
+        }
+
+        fn has_production_job(&self, entity: EntityId) -> bool {
+            self.production_jobs.get(&entity).copied().unwrap_or(false)
         }
 
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {

@@ -6,6 +6,7 @@ pub enum ActionPayload {
     #[default]
     None,
     Harvest(HarvestActionPayload),
+    Craft(CraftActionPayload),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -17,9 +18,18 @@ pub struct HarvestActionPayload {
     pub required_tool_kinds: Vec<UniqueItemKind>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CraftActionPayload {
+    pub recipe_id: RecipeId,
+    pub required_workstation_tag: WorkstationTag,
+    pub inputs: Vec<(CommodityKind, Quantity)>,
+    pub outputs: Vec<(CommodityKind, Quantity)>,
+    pub required_tool_kinds: Vec<UniqueItemKind>,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ActionPayload, HarvestActionPayload};
+    use super::{ActionPayload, CraftActionPayload, HarvestActionPayload};
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{CommodityKind, Quantity, RecipeId, UniqueItemKind, WorkstationTag};
 
@@ -35,10 +45,21 @@ mod tests {
         }
     }
 
+    fn sample_craft_payload() -> CraftActionPayload {
+        CraftActionPayload {
+            recipe_id: RecipeId(7),
+            required_workstation_tag: WorkstationTag::Mill,
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            required_tool_kinds: vec![UniqueItemKind::SimpleTool],
+        }
+    }
+
     #[test]
     fn action_payload_satisfies_required_traits() {
         assert_traits::<ActionPayload>();
         assert_traits::<HarvestActionPayload>();
+        assert_traits::<CraftActionPayload>();
     }
 
     #[test]
@@ -49,6 +70,16 @@ mod tests {
     #[test]
     fn action_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::Harvest(sample_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn craft_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::Craft(sample_craft_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

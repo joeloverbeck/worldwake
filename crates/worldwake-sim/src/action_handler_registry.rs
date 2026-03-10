@@ -93,12 +93,20 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_a(_def: &ActionDef, _instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_a(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn start_b(_def: &ActionDef, _instance: &ActionInstance) -> Result<Option<ActionState>, ActionError> {
+    fn start_b(
+        _def: &ActionDef,
+        _instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
 
@@ -165,10 +173,20 @@ mod tests {
         let retrieved_second = registry.get(second_id).unwrap();
         let instance = sample_instance();
         let def = sample_def();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
 
-        assert_eq!((retrieved_first.on_start)(&def, &instance).unwrap(), None);
+        assert_eq!((retrieved_first.on_start)(&def, &instance, &mut txn).unwrap(), None);
         assert_eq!(
-            (retrieved_second.on_start)(&def, &instance).unwrap(),
+            (retrieved_second.on_start)(&def, &instance, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -181,9 +199,19 @@ mod tests {
 
         let instance = sample_instance();
         let def = sample_def();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
         let starts = registry
             .iter()
-            .map(|handler| (handler.on_start)(&def, &instance).unwrap())
+            .map(|handler| (handler.on_start)(&def, &instance, &mut txn).unwrap())
             .collect::<Vec<_>>();
 
         assert_eq!(starts, vec![None, Some(ActionState::Empty)]);

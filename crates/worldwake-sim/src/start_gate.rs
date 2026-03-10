@@ -103,7 +103,7 @@ pub fn start_action(
         local_state: None,
     };
 
-    instance.local_state = match (handler.on_start)(def, &instance) {
+    instance.local_state = match (handler.on_start)(def, &instance, &mut txn) {
         Ok(local_state) => local_state,
         Err(err) => {
             release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -206,6 +206,7 @@ mod tests {
     fn start_empty(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
     }
@@ -214,6 +215,7 @@ mod tests {
     fn start_none(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
     }

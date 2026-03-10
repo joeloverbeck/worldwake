@@ -451,6 +451,7 @@ mod tests {
     fn start_record(
         _def: &ActionDef,
         instance: &ActionInstance,
+        _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         hook_log().lock().unwrap().starts.push(instance.def_id);
         Ok(Some(ActionState::Empty))

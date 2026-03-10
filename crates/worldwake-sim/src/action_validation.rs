@@ -68,6 +68,9 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .is_some_and(|source| {
                 source.commodity == commodity && source.available_quantity >= min_available
             }),
+        Precondition::TargetLacksProductionJob(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| !world.has_component_production_job(*target)),
         Precondition::TargetHasConsumableEffect {
             target_index,
             effect,

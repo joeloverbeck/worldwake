@@ -15,6 +15,7 @@ pub trait BeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn has_production_job(&self, entity: EntityId) -> bool;
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
     fn has_control(&self, entity: EntityId) -> bool;
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;

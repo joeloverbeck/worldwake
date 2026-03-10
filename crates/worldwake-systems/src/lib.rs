@@ -11,7 +11,7 @@ pub mod production_actions;
 pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
 pub use production::resource_regeneration_system;
-pub use production_actions::register_harvest_actions;
+pub use production_actions::{register_craft_actions, register_harvest_actions};
 
 use worldwake_sim::{SystemDispatchTable, SystemError, SystemExecutionContext};
 
