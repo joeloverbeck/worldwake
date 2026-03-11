@@ -6,7 +6,8 @@ use worldwake_core::{
 use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, DurationExpr, Interruptibility, OmniscientBeliefView,
+    ActionProgress, ActionState, DeterministicRng, DurationExpr, Interruptibility,
+    OmniscientBeliefView,
     Precondition, TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
@@ -88,6 +89,7 @@ pub struct SubstituteTradeCandidate {
 fn start_trade(
     def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let _ = trade_payload(def, instance)?;
@@ -98,6 +100,7 @@ fn start_trade(
 fn tick_trade(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     Ok(ActionProgress::Continue)
@@ -106,6 +109,7 @@ fn tick_trade(
 fn commit_trade(
     def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let payload = trade_payload(def, instance)?;
@@ -131,6 +135,7 @@ fn abort_trade(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
@@ -478,14 +483,14 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, CauseRef, CommodityKind,
         ControlSource, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
-        EventLog, EventTag, HomeostaticNeeds, LotOperation, Permille, Quantity,
+        EventLog, EventTag, HomeostaticNeeds, LotOperation, Permille, Quantity, Seed,
         SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
         WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         start_action, tick_action, ActionDefId, ActionDefRegistry, ActionExecutionAuthority,
         ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload,
-        ActionStatus, Affordance, TickOutcome, TradeActionPayload,
+        ActionStatus, Affordance, DeterministicRng, TickOutcome, TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -520,6 +525,10 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
+    fn test_rng() -> DeterministicRng {
+        DeterministicRng::new(Seed([0x72; 32]))
+    }
+
     fn food_substitutes(kinds: Vec<CommodityKind>) -> SubstitutePreferences {
         SubstitutePreferences {
             preferences: BTreeMap::from([(TradeCategory::Food, kinds)]),
@@ -544,6 +553,7 @@ mod tests {
         defs: ActionDefRegistry,
         handlers: ActionHandlerRegistry,
         log: EventLog,
+        rng: DeterministicRng,
         next_instance_id: ActionInstanceId,
         actor: EntityId,
         counterparty: EntityId,
@@ -623,6 +633,7 @@ mod tests {
                 defs,
                 handlers,
                 log: EventLog::new(),
+                rng: test_rng(),
                 next_instance_id: ActionInstanceId(0),
                 actor,
                 counterparty,
@@ -656,6 +667,7 @@ mod tests {
                     active_actions: &mut active,
                     world: &mut self.world,
                     event_log: &mut self.log,
+                    rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
                 ActionExecutionContext {
@@ -716,6 +728,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut harness.world,
                 event_log: &mut harness.log,
+                rng: &mut harness.rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -801,6 +814,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut harness.world,
                 event_log: &mut harness.log,
+                rng: &mut harness.rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -844,6 +858,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut harness.world,
                 event_log: &mut harness.log,
+                rng: &mut harness.rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -876,6 +891,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut harness.world,
                 event_log: &mut harness.log,
+                rng: &mut harness.rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,

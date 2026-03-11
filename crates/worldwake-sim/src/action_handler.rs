@@ -1,6 +1,6 @@
 use crate::{
     ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState,
-    ActionStatus, Interruptibility,
+    ActionStatus, DeterministicRng, Interruptibility,
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, WorldTxn};
@@ -8,19 +8,27 @@ use worldwake_core::{EntityId, WorldTxn};
 pub type ActionStartFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
+    &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<Option<ActionState>, ActionError>;
 pub type ActionTickFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
+    &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<ActionProgress, ActionError>;
 pub type ActionCommitFn =
-    for<'w> fn(&ActionDef, &ActionInstance, &mut WorldTxn<'w>) -> Result<(), ActionError>;
+    for<'w> fn(
+        &ActionDef,
+        &ActionInstance,
+        &mut DeterministicRng,
+        &mut WorldTxn<'w>,
+    ) -> Result<(), ActionError>;
 pub type ActionAbortFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
     &AbortReason,
+    &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<(), ActionError>;
 
@@ -88,15 +96,15 @@ mod tests {
     use super::{AbortReason, ActionError, ActionHandler, ActionProgress};
     use crate::{
         ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DeterministicRng,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventTag,
-        ReservationId, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn sample_instance() -> ActionInstance {
@@ -148,6 +156,7 @@ mod tests {
     fn noop_start(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
@@ -157,6 +166,7 @@ mod tests {
     fn noop_tick(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         Ok(ActionProgress::Continue)
@@ -165,6 +175,7 @@ mod tests {
     fn create_agent_on_commit(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         txn.create_agent("Aster", ControlSource::Ai)
@@ -177,6 +188,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         _reason: &AbortReason,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         Ok(())
@@ -199,6 +211,7 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let instance = sample_instance();
         let def = sample_def();
+        let mut rng = DeterministicRng::new(Seed([0x11; 32]));
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -210,17 +223,18 @@ mod tests {
         );
 
         assert_eq!(
-            (handler.on_start)(&def, &instance, &mut txn).unwrap(),
+            (handler.on_start)(&def, &instance, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
         assert_eq!(
-            (handler.on_tick)(&def, &instance, &mut txn).unwrap(),
+            (handler.on_tick)(&def, &instance, &mut rng, &mut txn).unwrap(),
             ActionProgress::Continue
         );
         (handler.on_abort)(
             &def,
             &instance,
             &AbortReason::ExternalAbort("test".to_string()),
+            &mut rng,
             &mut txn,
         )
         .unwrap();
@@ -235,6 +249,7 @@ mod tests {
             .count();
         let instance = sample_instance();
         let def = sample_def();
+        let mut rng = DeterministicRng::new(Seed([0x22; 32]));
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -245,7 +260,7 @@ mod tests {
             WitnessData::default(),
         );
 
-        (handler.on_commit)(&def, &instance, &mut txn).unwrap();
+        (handler.on_commit)(&def, &instance, &mut rng, &mut txn).unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

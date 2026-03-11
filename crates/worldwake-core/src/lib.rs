@@ -64,7 +64,7 @@ pub use canonical::{
     StateHash,
 };
 pub use cause::CauseRef;
-pub use combat::{CombatProfile, DeadAt};
+pub use combat::{CombatProfile, CombatStance, DeadAt};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
 pub use conservation::{

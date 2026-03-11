@@ -6,8 +6,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, Constraint, DurationExpr,
-    Interruptibility, Precondition, TargetSpec,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, Constraint,
+    DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
 };
 
 pub fn register_transport_actions(
@@ -280,6 +280,7 @@ fn validate_put_down(
 fn start_pick_up(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
     validate_pick_up(txn, instance.actor, require_item_lot_target(instance)?)?;
@@ -289,6 +290,7 @@ fn start_pick_up(
 fn commit_pick_up(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let target = require_item_lot_target(instance)?;
@@ -299,6 +301,7 @@ fn commit_pick_up(
 fn start_put_down(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
     validate_put_down(txn, instance.actor, require_item_lot_target(instance)?)?;
@@ -308,6 +311,7 @@ fn start_put_down(
 fn commit_put_down(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let target = require_item_lot_target(instance)?;
@@ -324,6 +328,7 @@ fn commit_put_down(
 fn tick_transport(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     Ok(ActionProgress::Continue)
@@ -334,6 +339,7 @@ fn abort_transport(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
@@ -345,13 +351,13 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, Container, ControlSource, EventLog,
-        LoadUnits, Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        LoadUnits, Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
         ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        OmniscientBeliefView, TickOutcome,
+        DeterministicRng, OmniscientBeliefView, TickOutcome,
     };
 
     use super::*;
@@ -403,6 +409,10 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
+    fn test_rng() -> DeterministicRng {
+        DeterministicRng::new(Seed([0x73; 32]))
+    }
+
     fn setup_world() -> (World, EntityId, EntityId, EntityId, EntityId) {
         let mut world = World::new(transport_topology()).unwrap();
         let place = entity(1);
@@ -435,10 +445,12 @@ mod tests {
         (defs, handlers, ids[0], ids[1])
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_action_for_target(
         world: &mut World,
         log: &mut EventLog,
         active_actions: &mut BTreeMap<ActionInstanceId, ActionInstance>,
+        rng: &mut DeterministicRng,
         defs: &ActionDefRegistry,
         handlers: &ActionHandlerRegistry,
         actor: EntityId,
@@ -457,6 +469,7 @@ mod tests {
                 active_actions,
                 world,
                 event_log: log,
+                rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -492,11 +505,13 @@ mod tests {
         let (defs, handlers, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
 
         let instance_id = start_action_for_target(
             &mut world,
             &mut log,
             &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
             actor,
@@ -511,6 +526,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -551,6 +567,7 @@ mod tests {
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
         let err = start_action(
             &affordance,
             &defs,
@@ -559,6 +576,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -598,6 +616,7 @@ mod tests {
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
         let err = start_action(
             &affordance,
             &defs,
@@ -606,6 +625,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -640,11 +660,13 @@ mod tests {
         let (defs, handlers, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
 
         let instance_id = start_action_for_target(
             &mut world,
             &mut log,
             &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
             actor,
@@ -658,6 +680,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -694,11 +717,13 @@ mod tests {
         let (defs, handlers, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
 
         let instance_id = start_action_for_target(
             &mut world,
             &mut log,
             &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
             actor,
@@ -712,6 +737,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -779,6 +805,7 @@ mod tests {
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
         let err = start_action(
             &affordance,
             &defs,
@@ -787,6 +814,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -808,11 +836,13 @@ mod tests {
         let (defs, handlers, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
 
         let pick_up_instance = start_action_for_target(
             &mut world,
             &mut log,
             &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
             actor,
@@ -826,6 +856,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -854,6 +885,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -871,6 +903,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -886,6 +919,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,

@@ -89,16 +89,18 @@ Minimal handler — Defend's effect is passive (checked by hit resolution). Hand
 
 ## Outcome
 
+- Outcome amended: 2026-03-11
 - Completion date: 2026-03-11
 - What actually changed:
   - added `register_defend_action()` in `crates/worldwake-systems/src/combat.rs`
   - defined Defend as an indefinite, freely interruptible, no-target, no-payload action with the intended combat/liveness constraints
-  - implemented a minimal no-op Defend handler whose effect is its continued presence in active actions
+  - implemented Defend so it projects `CombatStance::Defending` into authoritative state on start and clears that stance on abort/termination
   - exported the registration helper from `crates/worldwake-systems/src/lib.rs`
   - added lifecycle tests covering affordance availability, indefinite runtime behavior, cancellation, and dead/incapacitated rejection
 - Deviations from original plan:
   - registration was implemented as a combat-module helper rather than by hardwiring Defend into generic sim registries, which keeps combat action ownership localized and more extensible
   - the ticket now relies on the first-class indefinite duration lifecycle rather than the earlier placeholder design
+  - the original archived outcome described Defend as passive scheduler presence only; after E12COMHEA-010, Defend's authoritative effect carrier is the combat stance component instead
 - Verification results:
   - `cargo test -p worldwake-systems -- combat` passed
   - `cargo test --workspace` passed

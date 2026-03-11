@@ -2,7 +2,7 @@
 
 use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CombatProfile,
-    CommodityKind, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
+    CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
     DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry, Quantity,

@@ -21,6 +21,7 @@ struct TickStepRuntime<'a> {
     world: &'a mut World,
     event_log: &'a mut EventLog,
     scheduler: &'a mut Scheduler,
+    rng: &'a mut DeterministicRng,
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -104,6 +105,7 @@ pub fn step_tick(
         world,
         event_log,
         scheduler,
+        rng,
     };
     let tick = runtime.scheduler.current_tick();
     let events_before = runtime.event_log.len();
@@ -112,7 +114,7 @@ pub fn step_tick(
         process_inputs(&mut runtime, controller, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &services)?;
-    let systems_ran = run_systems(&mut runtime, rng, tick, services)?;
+    let systems_ran = run_systems(&mut runtime, tick, services)?;
     let post_system_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     emit_end_of_tick_marker(runtime.event_log, tick);
     runtime.scheduler.increment_tick();
@@ -212,6 +214,7 @@ fn apply_input(
                         action_handlers: services.action_handlers,
                         world: runtime.world,
                         event_log: runtime.event_log,
+                        rng: runtime.rng,
                     },
                     ActionExecutionContext {
                         cause: CauseRef::ExternalInput(sequence_no),
@@ -238,6 +241,7 @@ fn apply_input(
                         action_handlers: services.action_handlers,
                         world: runtime.world,
                         event_log: runtime.event_log,
+                        rng: runtime.rng,
                     },
                     ActionExecutionContext {
                         cause: CauseRef::ExternalInput(sequence_no),
@@ -322,6 +326,7 @@ fn progress_active_actions(
                     action_handlers: services.action_handlers,
                     world: runtime.world,
                     event_log: runtime.event_log,
+                    rng: runtime.rng,
                 },
                 ActionExecutionContext {
                     cause: CauseRef::SystemTick(tick),
@@ -376,6 +381,7 @@ fn abort_actions_for_dead_actors(
                     action_handlers: services.action_handlers,
                     world: runtime.world,
                     event_log: runtime.event_log,
+                    rng: runtime.rng,
                 },
                 ActionExecutionContext {
                     cause: CauseRef::SystemTick(tick),
@@ -394,7 +400,6 @@ fn abort_actions_for_dead_actors(
 
 fn run_systems(
     runtime: &mut TickStepRuntime<'_>,
-    rng: &mut DeterministicRng,
     tick: Tick,
     services: TickStepServices<'_>,
 ) -> Result<u32, TickStepError> {
@@ -407,7 +412,7 @@ fn run_systems(
         .iter()
         .copied()
     {
-        let mut system_rng = rng.substream(tick, system_id, 0);
+        let mut system_rng = runtime.rng.substream(tick, system_id, 0);
         services.systems.get(system_id)(crate::SystemExecutionContext {
             world: runtime.world,
             event_log: runtime.event_log,
@@ -515,6 +520,7 @@ mod tests {
     fn start_record(
         _def: &ActionDef,
         instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         hook_log().lock().unwrap().starts.push(instance.def_id);
@@ -525,6 +531,7 @@ mod tests {
     fn tick_continue(
         _def: &ActionDef,
         instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         hook_log().lock().unwrap().ticks.push(instance.instance_id);
@@ -535,6 +542,7 @@ mod tests {
     fn tick_complete(
         _def: &ActionDef,
         instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         hook_log().lock().unwrap().ticks.push(instance.instance_id);
@@ -545,6 +553,7 @@ mod tests {
     fn commit_noop(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         Ok(())
@@ -555,6 +564,7 @@ mod tests {
         _def: &ActionDef,
         instance: &ActionInstance,
         _reason: &crate::AbortReason,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         hook_log().lock().unwrap().aborts.push(instance.instance_id);
@@ -1026,6 +1036,7 @@ mod tests {
         assert!(hook_log().lock().unwrap().ticks.is_empty());
     }
 
+    #[allow(clippy::items_after_statements)]
     #[test]
     fn actions_for_agents_who_die_in_systems_are_culled_before_tick_ends() {
         let _guard = test_lock().lock().unwrap();
@@ -1048,6 +1059,7 @@ mod tests {
         });
         reset_hooks();
 
+        #[allow(clippy::needless_pass_by_value)]
         fn kill_actor_system(context: SystemExecutionContext<'_>) -> Result<(), SystemError> {
             let actor = context
                 .active_actions

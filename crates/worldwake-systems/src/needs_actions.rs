@@ -7,7 +7,7 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, Constraint, ConsumableEffect, DurationExpr, Interruptibility,
+    ActionState, Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
     MetabolismDurationKind, Precondition, TargetSpec,
 };
 
@@ -228,6 +228,7 @@ fn consume_one_unit(txn: &mut WorldTxn<'_>, lot_id: EntityId) -> Result<(), Acti
 fn start_noop(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     Ok(None)
@@ -237,6 +238,7 @@ fn start_noop(
 fn tick_continue(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     Ok(ActionProgress::Continue)
@@ -246,6 +248,7 @@ fn tick_continue(
 fn commit_noop(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
@@ -256,6 +259,7 @@ fn abort_noop(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
@@ -264,6 +268,7 @@ fn abort_noop(
 fn tick_sleep(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     let needs = actor_needs(txn, instance.actor)?;
@@ -282,6 +287,7 @@ fn tick_sleep(
 fn commit_eat(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     apply_consumable_effects(instance, txn, true)
@@ -290,6 +296,7 @@ fn commit_eat(
 fn commit_drink(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     apply_consumable_effects(instance, txn, false)
@@ -331,6 +338,7 @@ fn apply_consumable_effects(
 fn commit_toilet(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let needs = actor_needs(txn, instance.actor)?;
@@ -358,6 +366,7 @@ fn commit_toilet(
 fn commit_wash(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let target = *instance
@@ -391,12 +400,13 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, Container, ControlSource,
         DeprivationExposure, DriveThresholds, EntityId, EventLog, HomeostaticNeeds, LoadUnits,
-        MetabolismProfile, Permille, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        MetabolismProfile, Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, OmniscientBeliefView, TickOutcome,
+        ActionInstanceId, DeterministicRng, OmniscientBeliefView, TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -418,6 +428,10 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn test_rng() -> DeterministicRng {
+        DeterministicRng::new(Seed([0x41; 32]))
     }
 
     fn setup_actor(world: &mut World) -> (EntityId, EntityId) {
@@ -473,6 +487,7 @@ mod tests {
     ) -> ActionInstanceId {
         let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
         let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
         let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs);
         let affordance = affordances[affordance_index].clone();
         let instance_id = start_action(
@@ -483,6 +498,7 @@ mod tests {
                 active_actions: &mut active,
                 world,
                 event_log: log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -501,6 +517,7 @@ mod tests {
                     active_actions: &mut active,
                     world,
                     event_log: log,
+                    rng: &mut rng,
                 },
                 ActionExecutionContext {
                     cause: CauseRef::Bootstrap,
@@ -632,6 +649,7 @@ mod tests {
         let mut log = EventLog::new();
         let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
         let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
         let affordance =
             get_affordances(&OmniscientBeliefView::new(&world), actor, &defs)[0].clone();
         let instance_id = start_action(
@@ -642,6 +660,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -659,6 +678,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,

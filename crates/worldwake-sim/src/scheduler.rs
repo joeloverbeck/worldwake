@@ -1,7 +1,8 @@
 use crate::{
     abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-    ActionInstanceId, Affordance, InputEvent, InputQueue, SystemManifest, TickOutcome,
+    ActionInstanceId, Affordance, DeterministicRng, InputEvent, InputQueue, SystemManifest,
+    TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -12,6 +13,7 @@ pub(crate) struct SchedulerActionRuntime<'a> {
     pub(crate) action_handlers: &'a ActionHandlerRegistry,
     pub(crate) world: &'a mut World,
     pub(crate) event_log: &'a mut EventLog,
+    pub(crate) rng: &'a mut DeterministicRng,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -106,6 +108,7 @@ impl Scheduler {
             action_handlers,
             world,
             event_log,
+            rng,
         } = runtime;
         start_action(
             affordance,
@@ -115,6 +118,7 @@ impl Scheduler {
                 active_actions: &mut self.active_actions,
                 world,
                 event_log,
+                rng,
             },
             &mut self.next_instance_id,
             context,
@@ -133,6 +137,7 @@ impl Scheduler {
             action_handlers,
             world,
             event_log,
+            rng,
         } = runtime;
         abort_action(
             id,
@@ -142,6 +147,7 @@ impl Scheduler {
                 active_actions: &mut self.active_actions,
                 world,
                 event_log,
+                rng,
             },
             context,
             reason,
@@ -159,6 +165,7 @@ impl Scheduler {
             action_handlers,
             world,
             event_log,
+            rng,
         } = runtime;
         tick_action(
             id,
@@ -168,6 +175,7 @@ impl Scheduler {
                 active_actions: &mut self.active_actions,
                 world,
                 event_log,
+                rng,
             },
             context,
         )

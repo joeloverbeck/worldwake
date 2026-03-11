@@ -130,6 +130,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                combat_stances,
+                CombatStance,
+                insert_combat_stance,
+                get_combat_stance,
+                get_combat_stance_mut,
+                remove_combat_stance,
+                has_combat_stance,
+                iter_combat_stances,
+                insert_component_combat_stance,
+                get_component_combat_stance,
+                get_component_combat_stance_mut,
+                remove_component_combat_stance,
+                has_component_combat_stance,
+                entities_with_combat_stance,
+                query_combat_stance,
+                count_with_combat_stance,
+                "CombatStance",
+                |kind| kind == EntityKind::Agent,
+                CombatStance,
+                crate::CombatStance,
+                set_component_combat_stance,
+                clear_component_combat_stance,
+                txn_simple_set
+            }
+            {
                 drive_thresholds,
                 DriveThresholds,
                 insert_drive_thresholds,
@@ -682,6 +707,31 @@ macro_rules! with_component_schema_entries {
                 crate::DeadAt,
                 set_component_dead_at,
                 clear_component_dead_at,
+                txn_simple_set
+            }
+            {
+                combat_stances,
+                CombatStance,
+                insert_combat_stance,
+                get_combat_stance,
+                get_combat_stance_mut,
+                remove_combat_stance,
+                has_combat_stance,
+                iter_combat_stances,
+                insert_component_combat_stance,
+                get_component_combat_stance,
+                get_component_combat_stance_mut,
+                remove_component_combat_stance,
+                has_component_combat_stance,
+                entities_with_combat_stance,
+                query_combat_stance,
+                count_with_combat_stance,
+                "CombatStance",
+                |kind| kind == EntityKind::Agent,
+                CombatStance,
+                crate::CombatStance,
+                set_component_combat_stance,
+                clear_component_combat_stance,
                 txn_simple_set
             }
             {

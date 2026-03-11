@@ -20,6 +20,7 @@ pub fn start_action(
         active_actions,
         world,
         event_log,
+        rng,
     } = authority;
 
     let def = registry
@@ -98,7 +99,7 @@ pub fn start_action(
         reservation_ids,
     );
 
-    instance.local_state = match (handler.on_start)(def, &instance, &mut txn) {
+    instance.local_state = match (handler.on_start)(def, &instance, rng, &mut txn) {
         Ok(local_state) => local_state,
         Err(err) => {
             release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -213,15 +214,15 @@ mod tests {
         AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, Affordance, CombatActionPayload, Constraint, DurationExpr, Interruptibility,
-        Precondition, ReservationReq, TargetSpec,
+        ActionState, Affordance, CombatActionPayload, Constraint, DeterministicRng,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile, CombatWeaponRef,
-        CommodityKind, ControlSource, EntityId, EventLog, EventTag, Quantity, Tick, TickRange,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        CommodityKind, ControlSource, EntityId, EventLog, EventTag, Quantity, Seed, Tick,
+        TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -252,6 +253,7 @@ mod tests {
     fn start_empty(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
@@ -261,6 +263,7 @@ mod tests {
     fn start_none(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
@@ -270,6 +273,7 @@ mod tests {
     fn tick_continue(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         Ok(ActionProgress::Continue)
@@ -279,6 +283,7 @@ mod tests {
     fn commit_noop(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         Ok(())
@@ -289,9 +294,14 @@ mod tests {
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
         _reason: &AbortReason,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         Ok(())
+    }
+
+    fn test_rng() -> DeterministicRng {
+        DeterministicRng::new(Seed([0x33; 32]))
     }
 
     fn sample_def(
@@ -374,6 +384,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(12);
+        let mut rng = test_rng();
 
         let instance_id = start_action(
             &affordance,
@@ -383,6 +394,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -483,6 +495,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let action_id = start_action(
             &affordance,
@@ -492,6 +505,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -562,6 +576,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let action_id = start_action(
             &affordance,
@@ -571,6 +586,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -621,6 +637,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let err = start_action(
             &affordance,
@@ -630,6 +647,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -683,6 +701,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let err = start_action(
             &affordance,
@@ -692,6 +711,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -746,6 +766,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let err = start_action(
             &affordance,
@@ -755,6 +776,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -842,6 +864,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let err = start_action(
             &affordance,
@@ -851,6 +874,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -903,6 +927,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(7);
+        let mut rng = test_rng();
 
         let first = start_action(
             &affordance,
@@ -912,6 +937,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -928,6 +954,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -967,6 +994,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let missing_def = start_action(
             &affordance,
@@ -976,6 +1004,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -1012,6 +1041,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -1078,6 +1108,7 @@ mod tests {
         )]);
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(4);
+        let mut rng = test_rng();
 
         let err = start_action(
             &affordance,
@@ -1087,6 +1118,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {

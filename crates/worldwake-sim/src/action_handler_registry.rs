@@ -43,14 +43,14 @@ mod tests {
     use crate::{
         AbortReason, ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionError,
         ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionState, ActionStatus, Constraint, DurationExpr, Interruptibility,
-        Precondition, ReservationReq, TargetSpec,
+        ActionProgress, ActionState, ActionStatus, Constraint, DeterministicRng, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventTag,
-        ReservationId, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn sample_instance() -> ActionInstance {
@@ -98,6 +98,7 @@ mod tests {
     fn start_a(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
@@ -107,6 +108,7 @@ mod tests {
     fn start_b(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(Some(ActionState::Empty))
@@ -116,6 +118,7 @@ mod tests {
     fn tick_a(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         Ok(ActionProgress::Continue)
@@ -125,6 +128,7 @@ mod tests {
     fn commit_a(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         Ok(())
@@ -135,6 +139,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         _reason: &AbortReason,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         Ok(())
@@ -143,6 +148,7 @@ mod tests {
     fn commit_b(
         _def: &ActionDef,
         instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         let _ = instance.instance_id;
@@ -176,6 +182,7 @@ mod tests {
         let instance = sample_instance();
         let def = sample_def();
         let mut world = World::new(build_prototype_world()).unwrap();
+        let mut rng = DeterministicRng::new(Seed([0x66; 32]));
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -187,11 +194,11 @@ mod tests {
         );
 
         assert_eq!(
-            (retrieved_first.on_start)(&def, &instance, &mut txn).unwrap(),
+            (retrieved_first.on_start)(&def, &instance, &mut rng, &mut txn).unwrap(),
             None
         );
         assert_eq!(
-            (retrieved_second.on_start)(&def, &instance, &mut txn).unwrap(),
+            (retrieved_second.on_start)(&def, &instance, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -205,6 +212,7 @@ mod tests {
         let instance = sample_instance();
         let def = sample_def();
         let mut world = World::new(build_prototype_world()).unwrap();
+        let mut rng = DeterministicRng::new(Seed([0x67; 32]));
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -216,7 +224,7 @@ mod tests {
         );
         let starts = registry
             .iter()
-            .map(|handler| (handler.on_start)(&def, &instance, &mut txn).unwrap())
+            .map(|handler| (handler.on_start)(&def, &instance, &mut rng, &mut txn).unwrap())
             .collect::<Vec<_>>();
 
         assert_eq!(starts, vec![None, Some(ActionState::Empty)]);
@@ -230,6 +238,7 @@ mod tests {
         let def = sample_def();
         let mut world = World::new(build_prototype_world()).unwrap();
         let before = world.query_agent_data().count();
+        let mut rng = DeterministicRng::new(Seed([0x68; 32]));
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -240,7 +249,8 @@ mod tests {
             WitnessData::default(),
         );
 
-        (registry.get(handler_id).unwrap().on_commit)(&def, &instance, &mut txn).unwrap();
+        (registry.get(handler_id).unwrap().on_commit)(&def, &instance, &mut rng, &mut txn)
+            .unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

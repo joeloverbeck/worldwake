@@ -2,12 +2,12 @@
 
 use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CombatProfile,
-    CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId,
-    EntityKind, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
-    MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob, Quantity,
-    ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile, UniqueItem,
-    WorkstationMarker, WoundList,
-};
+    CombatStance, CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure,
+    DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+    KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob, Quantity,
+        ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
+        UniqueItem, WorkstationMarker, WoundList,
+    };
 use serde::{Deserialize, Serialize};
 
 macro_rules! define_component_kind {
@@ -220,8 +220,9 @@ mod tests {
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
             sample_trade_disposition_profile,
         },
-        AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource,
-        DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
+        Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
+        EntityId, EntityKind,
         EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
         LotOperation, MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity,
         ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
@@ -277,6 +278,7 @@ mod tests {
                 std::num::NonZeroU32::new(6).unwrap(),
             )),
             ComponentValue::DeadAt(DeadAt(Tick(18))),
+            ComponentValue::CombatStance(CombatStance::Defending),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
                 Permille::new(100).unwrap(),
@@ -427,6 +429,7 @@ mod tests {
                 ComponentKind::WoundList,
                 ComponentKind::CombatProfile,
                 ComponentKind::DeadAt,
+                ComponentKind::CombatStance,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,

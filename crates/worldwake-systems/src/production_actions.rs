@@ -6,7 +6,8 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, Constraint, CraftActionPayload, DurationExpr, HarvestActionPayload,
+    ActionState, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
+    HarvestActionPayload,
     Interruptibility, Precondition, RecipeDefinition, RecipeRegistry, ReservationReq, TargetSpec,
 };
 
@@ -331,6 +332,7 @@ fn consume_staged_inputs(txn: &mut WorldTxn<'_>, container: EntityId) -> Result<
 fn start_harvest(
     def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let _ = harvest_payload(def, instance)?;
@@ -341,6 +343,7 @@ fn start_harvest(
 fn tick_harvest(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     Ok(ActionProgress::Continue)
@@ -349,6 +352,7 @@ fn tick_harvest(
 fn start_craft(
     def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let payload = craft_payload(def, instance)?;
@@ -398,6 +402,7 @@ fn start_craft(
 fn tick_craft(
     def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     let payload = craft_payload(def, instance)?;
@@ -432,6 +437,7 @@ fn tick_craft(
 fn commit_harvest(
     def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let payload = harvest_payload(def, instance)?;
@@ -486,6 +492,7 @@ fn commit_harvest(
 fn commit_craft(
     def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let payload = craft_payload(def, instance)?;
@@ -533,6 +540,7 @@ fn abort_harvest(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
@@ -543,6 +551,7 @@ fn abort_craft(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
@@ -563,7 +572,7 @@ mod tests {
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, OmniscientBeliefView, RecipeRegistry,
+        ActionInstanceId, ActionPayload, DeterministicRng, OmniscientBeliefView, RecipeRegistry,
         SystemExecutionContext, SystemId, TickOutcome, TradeActionPayload,
     };
 
@@ -592,6 +601,10 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn test_rng(byte: u8) -> DeterministicRng {
+        DeterministicRng::new(Seed([byte; 32]))
     }
 
     fn harvest_recipe_registry(
@@ -811,9 +824,11 @@ mod tests {
         commit_txn(txn);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn run_to_completion(
         world: &mut World,
         event_log: &mut EventLog,
+        rng: &mut DeterministicRng,
         defs: &ActionDefRegistry,
         handlers: &ActionHandlerRegistry,
         instance_id: ActionInstanceId,
@@ -829,6 +844,7 @@ mod tests {
                     active_actions: active,
                     world,
                     event_log,
+                    rng,
                 },
                 ActionExecutionContext {
                     cause: CauseRef::SystemTick(Tick(tick)),
@@ -955,6 +971,7 @@ mod tests {
         let affordance = single_harvest_affordance(&world, actor, &defs);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x81);
         let mut next_id = ActionInstanceId(0);
         let instance_id = start_action(
             &affordance,
@@ -964,6 +981,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -976,6 +994,7 @@ mod tests {
         run_to_completion(
             &mut world,
             &mut event_log,
+            &mut rng,
             &defs,
             &handlers,
             instance_id,
@@ -1090,6 +1109,7 @@ mod tests {
         let affordance_b = single_harvest_affordance(&world, actor_b, &defs);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x82);
         let mut next_id = ActionInstanceId(0);
         let first_id = start_action(
             &affordance_a,
@@ -1099,6 +1119,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -1116,6 +1137,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -1137,6 +1159,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -1165,6 +1188,7 @@ mod tests {
         let affordance = single_harvest_affordance(&world, actor, &defs);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x83);
         let mut next_id = ActionInstanceId(0);
         let instance_id = start_action(
             &affordance,
@@ -1174,6 +1198,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -1183,7 +1208,6 @@ mod tests {
         )
         .unwrap();
 
-        let mut rng = worldwake_sim::DeterministicRng::new(Seed([7; 32]));
         for tick in [10_u64, 11_u64] {
             let _ = tick_action(
                 instance_id,
@@ -1193,6 +1217,7 @@ mod tests {
                     active_actions: &mut active,
                     world: &mut world,
                     event_log: &mut event_log,
+                    rng: &mut rng,
                 },
                 ActionExecutionContext {
                     cause: CauseRef::SystemTick(Tick(tick)),
@@ -1337,6 +1362,7 @@ mod tests {
         let affordance = single_craft_affordance(&world, actor, &defs);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x84);
         let mut next_id = ActionInstanceId(0);
         let instance_id = start_action(
             &affordance,
@@ -1346,6 +1372,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -1387,6 +1414,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::SystemTick(Tick(11)),
@@ -1411,6 +1439,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::SystemTick(Tick(12)),
@@ -1520,6 +1549,7 @@ mod tests {
         let affordance = single_craft_affordance(&world, actor, &defs);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x85);
         let mut next_id = ActionInstanceId(0);
         let instance_id = start_action(
             &affordance,
@@ -1529,6 +1559,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -1550,6 +1581,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -1588,6 +1620,7 @@ mod tests {
         let affordance = single_craft_affordance(&world, actor, &defs);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x86);
         let mut next_id = ActionInstanceId(0);
         let instance_id = start_action(
             &affordance,
@@ -1597,6 +1630,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut event_log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -1606,7 +1640,6 @@ mod tests {
         )
         .unwrap();
 
-        let mut rng = worldwake_sim::DeterministicRng::new(Seed([9; 32]));
         for tick in [10_u64, 11_u64] {
             let _ = tick_action(
                 instance_id,
@@ -1616,6 +1649,7 @@ mod tests {
                     active_actions: &mut active,
                     world: &mut world,
                     event_log: &mut event_log,
+                    rng: &mut rng,
                 },
                 ActionExecutionContext {
                     cause: CauseRef::SystemTick(Tick(tick)),

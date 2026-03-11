@@ -1,5 +1,6 @@
 use crate::{
-    AbortReason, ActionDef, ActionError, ActionHandler, ActionInstance, ActionStatus, ReplanNeeded,
+    AbortReason, ActionDef, ActionError, ActionHandler, ActionInstance, ActionStatus,
+    DeterministicRng, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WorldTxn};
 
@@ -15,9 +16,10 @@ pub(crate) fn finalize_failed_action(
     handler: &ActionHandler,
     mut txn: WorldTxn<'_>,
     event_log: &mut EventLog,
+    rng: &mut DeterministicRng,
     termination: &FailedActionTermination,
 ) -> Result<ReplanNeeded, ActionError> {
-    (handler.on_abort)(def, instance, &termination.reason, &mut txn)?;
+    (handler.on_abort)(def, instance, &termination.reason, rng, &mut txn)?;
     release_reservations(&mut txn, &instance.reservation_ids)?;
     instance.status = termination.status;
     txn.add_tag(termination.event_tag);

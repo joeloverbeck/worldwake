@@ -5,7 +5,7 @@ use crate::{
     action_validation::evaluate_txn_precondition_authoritatively,
     AbortReason, ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
     ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionStatus,
-    ReplanNeeded,
+    DeterministicRng, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
@@ -30,6 +30,7 @@ pub fn tick_action(
         active_actions,
         world,
         event_log,
+        rng,
     } = authority;
 
     let mut instance = active_actions
@@ -42,6 +43,7 @@ pub fn tick_action(
         handler_registry,
         world,
         event_log,
+        rng,
         context,
     );
 
@@ -72,6 +74,7 @@ fn tick_action_inner(
     handler_registry: &ActionHandlerRegistry,
     world: &mut World,
     event_log: &mut EventLog,
+    rng: &mut DeterministicRng,
     context: ActionExecutionContext,
 ) -> Result<TickOutcome, ActionError> {
     if instance.status != ActionStatus::Active {
@@ -100,7 +103,7 @@ fn tick_action_inner(
     );
 
     let duration_elapsed = instance.remaining_duration.advance();
-    let progress = (handler.on_tick)(def, instance, &mut txn)?;
+    let progress = (handler.on_tick)(def, instance, rng, &mut txn)?;
     let should_finalize = matches!(progress, ActionProgress::Complete) || duration_elapsed;
 
     if !should_finalize {
@@ -132,6 +135,7 @@ fn tick_action_inner(
             handler,
             txn,
             event_log,
+            rng,
             &FailedActionTermination {
                 status: ActionStatus::Aborted,
                 reason: reason.clone(),
@@ -140,7 +144,7 @@ fn tick_action_inner(
         )?;
         Ok(TickOutcome::Aborted { reason, replan })
     } else {
-        match (handler.on_commit)(def, instance, &mut txn) {
+        match (handler.on_commit)(def, instance, rng, &mut txn) {
             Ok(()) => {
                 instance.status = ActionStatus::Committed;
                 release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -160,6 +164,7 @@ fn tick_action_inner(
                     handler,
                     txn,
                     event_log,
+                    rng,
                     &FailedActionTermination {
                         status: ActionStatus::Aborted,
                         reason: reason.clone(),
@@ -185,14 +190,15 @@ mod tests {
         ActionDuration, ActionError, ActionExecutionAuthority, ActionExecutionContext,
         ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
         ActionPayload, ActionProgress, ActionState, ActionStatus, Affordance, Constraint,
-        DurationExpr, Interruptibility, Precondition, ReplanNeeded, ReservationReq, TargetSpec,
+        DeterministicRng, DurationExpr, Interruptibility, Precondition, ReplanNeeded,
+        ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EntityKind, EventLog, EventTag, Quantity, Tick, VisibilitySpec, WitnessData, World,
+        EntityKind, EventLog, EventTag, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
         WorldTxn,
     };
 
@@ -245,10 +251,15 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
+    fn test_rng() -> DeterministicRng {
+        DeterministicRng::new(Seed([0x44; 32]))
+    }
+
     #[allow(clippy::unnecessary_wraps)]
     fn start_none(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
@@ -257,6 +268,7 @@ mod tests {
     fn tick_handler(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         let mut state = hook_state().lock().unwrap();
@@ -282,6 +294,7 @@ mod tests {
     fn commit_handler(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         let mut state = hook_state().lock().unwrap();
@@ -294,6 +307,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         reason: &AbortReason,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         let mut state = hook_state().lock().unwrap();
@@ -398,6 +412,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(5);
+        let mut rng = test_rng();
         let instance_id = start_action(
             &affordance,
             &defs,
@@ -406,6 +421,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -480,6 +496,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(5);
+        let mut rng = test_rng();
         let instance_id = start_action(
             &affordance,
             &defs,
@@ -488,6 +505,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -520,6 +538,7 @@ mod tests {
                 vec![Precondition::ActorAlive],
                 BTreeSet::from([EventTag::Travel]),
             );
+        let mut rng = test_rng();
 
         let outcome = tick_action(
             instance_id,
@@ -529,6 +548,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -556,6 +576,7 @@ mod tests {
                 vec![Precondition::ActorAlive, Precondition::TargetExists(0)],
                 BTreeSet::from([EventTag::Travel]),
             );
+        let mut rng = test_rng();
 
         let outcome = tick_action(
             instance_id,
@@ -565,6 +586,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -595,6 +617,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_indefinite_sample_action();
+        let mut rng = test_rng();
 
         let outcome = tick_action(
             instance_id,
@@ -604,6 +627,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -627,6 +651,7 @@ mod tests {
         hook_state().lock().unwrap().complete_on_tick = true;
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_indefinite_sample_action();
+        let mut rng = test_rng();
 
         let outcome = tick_action(
             instance_id,
@@ -636,6 +661,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -664,6 +690,7 @@ mod tests {
                 }],
                 BTreeSet::from([EventTag::Travel]),
             );
+        let mut rng = test_rng();
 
         let outcome = tick_action(
             instance_id,
@@ -673,6 +700,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -733,6 +761,7 @@ mod tests {
                 BTreeSet::new(),
             );
         let before_agents = world.query_agent_data().count();
+        let mut rng = test_rng();
 
         let outcome = tick_action(
             instance_id,
@@ -742,6 +771,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -770,6 +800,7 @@ mod tests {
                 vec![Precondition::ActorAlive],
                 BTreeSet::new(),
             );
+        let mut rng = test_rng();
 
         let outcome = tick_action(
             instance_id,
@@ -779,6 +810,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -809,6 +841,7 @@ mod tests {
                 BTreeSet::new(),
             );
         let before_agents = world.query_agent_data().count();
+        let mut rng = test_rng();
 
         let err = tick_action(
             instance_id,
@@ -818,6 +851,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -847,6 +881,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let defs = ActionDefRegistry::new();
         let handlers = ActionHandlerRegistry::new();
+        let mut rng = test_rng();
 
         let err = tick_action(
             ActionInstanceId(77),
@@ -856,6 +891,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -882,6 +918,7 @@ mod tests {
                 BTreeSet::new(),
             );
         active_actions.get_mut(&instance_id).unwrap().status = ActionStatus::Committed;
+        let mut rng = test_rng();
 
         let err = tick_action(
             instance_id,
@@ -891,6 +928,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,

@@ -57,9 +57,17 @@ pub struct DeadAt(pub Tick);
 
 impl Component for DeadAt {}
 
+/// Active combat posture projected into authoritative state.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum CombatStance {
+    Defending,
+}
+
+impl Component for CombatStance {}
+
 #[cfg(test)]
 mod tests {
-    use super::{CombatProfile, DeadAt};
+    use super::{CombatProfile, CombatStance, DeadAt};
     use crate::{traits::Component, Permille, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
@@ -92,12 +100,26 @@ mod tests {
 
     fn assert_value_bounds<T: Copy + Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
+    fn assert_ordinal_value_bounds<
+        T: Copy
+            + Clone
+            + Eq
+            + Ord
+            + std::hash::Hash
+            + Debug
+            + Serialize
+            + DeserializeOwned,
+    >() {
+    }
+
     #[test]
     fn combat_components_satisfy_required_traits() {
         assert_component_bounds::<CombatProfile>();
         assert_component_bounds::<DeadAt>();
+        assert_component_bounds::<CombatStance>();
         assert_value_bounds::<CombatProfile>();
         assert_value_bounds::<DeadAt>();
+        assert_ordinal_value_bounds::<CombatStance>();
     }
 
     #[test]
@@ -134,5 +156,15 @@ mod tests {
         let roundtrip: DeadAt = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, dead_at);
+    }
+
+    #[test]
+    fn combat_stance_roundtrips_through_bincode() {
+        let stance = CombatStance::Defending;
+
+        let bytes = bincode::serialize(&stance).unwrap();
+        let roundtrip: CombatStance = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, stance);
     }
 }

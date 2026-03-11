@@ -1,7 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
-    combat::{CombatProfile, DeadAt},
+    combat::{CombatProfile, CombatStance, DeadAt},
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     drives::DriveThresholds,

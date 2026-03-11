@@ -47,6 +47,12 @@ enum TransitionKind {
     Abort(String),
 }
 
+struct TransitionRuntime<'a> {
+    world: &'a mut World,
+    event_log: &'a mut EventLog,
+    rng: &'a mut crate::DeterministicRng,
+}
+
 fn transition_action(
     instance_id: ActionInstanceId,
     registry: &ActionDefRegistry,
@@ -59,6 +65,7 @@ fn transition_action(
         active_actions,
         world,
         event_log,
+        rng,
     } = authority;
 
     let mut instance = active_actions
@@ -69,8 +76,11 @@ fn transition_action(
         &mut instance,
         registry,
         handler_registry,
-        world,
-        event_log,
+        TransitionRuntime {
+            world,
+            event_log,
+            rng,
+        },
         context,
         kind,
     );
@@ -92,11 +102,16 @@ fn transition_action_inner(
     instance: &mut ActionInstance,
     registry: &ActionDefRegistry,
     handler_registry: &ActionHandlerRegistry,
-    world: &mut World,
-    event_log: &mut EventLog,
+    runtime: TransitionRuntime<'_>,
     context: ActionExecutionContext,
     kind: TransitionKind,
 ) -> Result<ReplanNeeded, ActionError> {
+    let TransitionRuntime {
+        world,
+        event_log,
+        rng,
+    } = runtime;
+
     if instance.status != ActionStatus::Active {
         return Err(ActionError::InvalidActionStatus {
             instance_id: instance.instance_id,
@@ -143,7 +158,7 @@ fn transition_action_inner(
         WitnessData::default(),
     );
 
-    finalize_failed_action(def, instance, handler, txn, event_log, &termination)
+    finalize_failed_action(def, instance, handler, txn, event_log, rng, &termination)
 }
 
 #[cfg(test)]
@@ -153,15 +168,15 @@ mod tests {
         start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain,
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionState, ActionStatus, Affordance, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionProgress, ActionState, ActionStatus, Affordance, Constraint, DeterministicRng,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EventLog, EventTag, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        EventLog, EventTag, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -212,6 +227,7 @@ mod tests {
     fn start_none(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
         Ok(None)
@@ -221,6 +237,7 @@ mod tests {
     fn tick_continue(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         Ok(ActionProgress::Continue)
@@ -230,6 +247,7 @@ mod tests {
     fn commit_noop(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         Ok(())
@@ -240,6 +258,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         reason: &AbortReason,
+        _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         let mut state = hook_state().lock().unwrap();
@@ -273,6 +292,10 @@ mod tests {
             payload: ActionPayload::None,
             handler,
         }
+    }
+
+    fn test_rng() -> DeterministicRng {
+        DeterministicRng::new(Seed([0x55; 32]))
     }
 
     fn setup_actor_and_target(world: &mut World) -> (EntityId, EntityId) {
@@ -335,6 +358,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_instance_id = ActionInstanceId(5);
+        let mut rng = test_rng();
         let instance_id = start_action(
             &affordance,
             &defs,
@@ -343,6 +367,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -370,6 +395,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, target) =
             start_sample_action(Interruptibility::NonInterruptible);
+        let mut rng = test_rng();
 
         let err = interrupt_action(
             instance_id,
@@ -379,6 +405,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -410,6 +437,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, target) =
             start_sample_action(Interruptibility::FreelyInterruptible);
+        let mut rng = test_rng();
 
         let replan = interrupt_action(
             instance_id,
@@ -419,6 +447,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -454,6 +483,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, target) =
             start_sample_action(Interruptibility::InterruptibleWithPenalty);
+        let mut rng = test_rng();
 
         let replan = interrupt_action(
             instance_id,
@@ -463,6 +493,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -487,6 +518,7 @@ mod tests {
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, target) =
             start_sample_action(Interruptibility::NonInterruptible);
+        let mut rng = test_rng();
 
         let replan = abort_action(
             instance_id,
@@ -496,6 +528,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,

@@ -5,7 +5,7 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState, Constraint,
-    DurationExpr, Interruptibility, Precondition, TargetSpec,
+    DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
 };
 
 pub fn register_travel_actions(
@@ -102,6 +102,7 @@ fn resolve_travel(
 fn start_travel(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let destination = *instance
@@ -151,6 +152,7 @@ fn start_travel(
 fn tick_travel(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     Ok(ActionProgress::Continue)
@@ -159,6 +161,7 @@ fn tick_travel(
 fn commit_travel(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let (_, _, destination, _, _) = travel_state(instance)?;
@@ -177,6 +180,7 @@ fn abort_travel(
     _def: &ActionDef,
     instance: &ActionInstance,
     _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     let (_, origin, _, _, _) = travel_state(instance)?;
@@ -198,12 +202,12 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         CauseRef, Container, ControlSource, EventLog, InTransitOnEdge, LoadUnits, Place, Quantity,
-        Topology, TravelEdge, WitnessData, World,
+        Seed, Topology, TravelEdge, WitnessData, World,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionExecutionContext, ActionInstance, ActionInstanceId, OmniscientBeliefView,
-        TickOutcome,
+        ActionExecutionContext, ActionInstance, ActionInstanceId, DeterministicRng,
+        OmniscientBeliefView, TickOutcome,
     };
 
     use super::*;
@@ -258,6 +262,10 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
+    fn test_rng() -> DeterministicRng {
+        DeterministicRng::new(Seed([0x71; 32]))
+    }
+
     fn setup_world() -> (World, EntityId, EntityId, EntityId, EntityId, EntityId) {
         let mut world = World::new(travel_topology()).unwrap();
         let (actor, bag, bread) = {
@@ -291,10 +299,12 @@ mod tests {
         (defs, handlers, id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_travel_action(
         world: &mut World,
         log: &mut EventLog,
         active_actions: &mut BTreeMap<ActionInstanceId, ActionInstance>,
+        rng: &mut DeterministicRng,
         defs: &ActionDefRegistry,
         handlers: &ActionHandlerRegistry,
         actor: EntityId,
@@ -313,6 +323,7 @@ mod tests {
                 active_actions,
                 world,
                 event_log: log,
+                rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -360,10 +371,12 @@ mod tests {
         let (defs, handlers, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
         let instance_id = start_travel_action(
             &mut world,
             &mut log,
             &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
             actor,
@@ -400,6 +413,7 @@ mod tests {
                     active_actions: &mut active_actions,
                     world: &mut world,
                     event_log: &mut log,
+                    rng: &mut rng,
                 },
                 ActionExecutionContext {
                     cause: CauseRef::Bootstrap,
@@ -419,6 +433,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -456,6 +471,7 @@ mod tests {
             explanation: None,
         };
         let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
 
         let err = start_action(
             &affordance,
@@ -465,6 +481,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -511,6 +528,7 @@ mod tests {
             explanation: None,
         };
         let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
 
         let err = start_action(
             &affordance,
@@ -520,6 +538,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_instance_id,
             ActionExecutionContext {
@@ -541,10 +560,12 @@ mod tests {
         let (defs, handlers, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
         let instance_id = start_travel_action(
             &mut world,
             &mut log,
             &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
             actor,
@@ -559,6 +580,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,

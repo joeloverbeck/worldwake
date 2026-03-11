@@ -1,15 +1,38 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    is_wound_load_fatal, BodyCostPerTick, CauseRef, ComponentDelta, ComponentKind, DeadAt,
-    DriveThresholds, EventLog, EventTag, EvidenceRef, HomeostaticNeeds, StateDelta, VisibilitySpec,
-    WitnessData, WorldTxn, WoundList,
+    is_wound_load_fatal, BodyCostPerTick, BodyPart, CauseRef, CombatStance, CombatWeaponProfile,
+    CombatWeaponRef, ComponentDelta, ComponentKind, DeadAt, DriveThresholds, EventLog, EventTag,
+    EvidenceRef, HomeostaticNeeds, Permille, StateDelta, VisibilitySpec, WitnessData, WorldTxn,
+    Wound, WoundCause, WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, Constraint, DurationExpr, Interruptibility, Precondition,
-    SystemError, SystemExecutionContext,
+    ActionProgress, ActionState, CombatActionPayload, Constraint, DeterministicRng, DurationExpr,
+    Interruptibility, Precondition, SystemError, SystemExecutionContext, TargetSpec,
 };
+
+const BODY_PARTS: [BodyPart; 6] = [
+    BodyPart::Head,
+    BodyPart::Torso,
+    BodyPart::LeftArm,
+    BodyPart::RightArm,
+    BodyPart::LeftLeg,
+    BodyPart::RightLeg,
+];
+
+pub fn register_attack_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(ActionHandler::new(
+        start_attack,
+        tick_attack,
+        commit_attack,
+        abort_attack,
+    ));
+    defs.register(attack_action_def(ActionDefId(defs.len() as u32), handler))
+}
 
 pub fn register_defend_action(
     defs: &mut ActionDefRegistry,
@@ -247,7 +270,43 @@ fn latest_wound_event(
                     )
                 })
             })
-        })
+    })
+}
+
+fn attack_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    let preconditions = vec![
+        Precondition::ActorAlive,
+        Precondition::TargetExists(0),
+        Precondition::TargetAtActorPlace(0),
+        Precondition::TargetAlive(0),
+        Precondition::TargetIsAgent(0),
+    ];
+
+    ActionDef {
+        id,
+        name: "attack".to_string(),
+        domain: ActionDomain::Combat,
+        actor_constraints: vec![
+            Constraint::ActorAlive,
+            Constraint::ActorNotDead,
+            Constraint::ActorNotIncapacitated,
+            Constraint::ActorNotInTransit,
+            Constraint::ActorHasControl,
+        ],
+        targets: vec![TargetSpec::EntityAtActorPlace {
+            kind: worldwake_core::EntityKind::Agent,
+        }],
+        preconditions: preconditions.clone(),
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::CombatWeapon,
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: preconditions,
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::Combat, EventTag::WorldMutation]),
+        payload: ActionPayload::None,
+        handler,
+    }
 }
 
 fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
@@ -279,9 +338,19 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
 #[allow(clippy::unnecessary_wraps)]
 fn start_defend(
     _def: &ActionDef,
-    _instance: &ActionInstance,
-    _txn: &mut WorldTxn<'_>,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
+    if txn.get_component_combat_stance(instance.actor).is_some() {
+        return Err(ActionError::AbortRequested(format!(
+            "actor {} already has an active combat stance",
+            instance.actor
+        )));
+    }
+
+    txn.set_component_combat_stance(instance.actor, CombatStance::Defending)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
     Ok(None)
 }
 
@@ -289,6 +358,7 @@ fn start_defend(
 fn tick_defend(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     Ok(ActionProgress::Continue)
@@ -297,17 +367,304 @@ fn tick_defend(
 #[allow(clippy::unnecessary_wraps)]
 fn commit_defend(
     _def: &ActionDef,
-    _instance: &ActionInstance,
-    _txn: &mut WorldTxn<'_>,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
+    txn.clear_component_combat_stance(instance.actor)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
     Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn abort_defend(
     _def: &ActionDef,
+    instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    txn.clear_component_combat_stance(instance.actor)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    Ok(())
+}
+
+fn combat_payload<'a>(
+    def: &ActionDef,
+    instance: &'a ActionInstance,
+) -> Result<&'a CombatActionPayload, ActionError> {
+    instance.payload.as_combat().ok_or_else(|| {
+        ActionError::InternalError(format!(
+            "action instance for def {} is missing combat payload",
+            def.id
+        ))
+    })
+}
+
+fn validate_attack_context(
+    txn: &WorldTxn<'_>,
+    instance: &ActionInstance,
+    payload: &CombatActionPayload,
+) -> Result<worldwake_core::EntityId, ActionError> {
+    let target = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    if target != payload.target {
+        return Err(ActionError::AbortRequested(format!(
+            "attack payload target {} does not match bound target {target}",
+            payload.target
+        )));
+    }
+    if target == instance.actor {
+        return Err(ActionError::AbortRequested(format!(
+            "actor {} cannot attack itself",
+            instance.actor
+        )));
+    }
+    let place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::AbortRequested(format!("actor {} is not placed", instance.actor))
+    })?;
+    if txn.effective_place(target) != Some(place) {
+        return Err(ActionError::AbortRequested(format!(
+            "target {target} is no longer co-located with actor {}",
+            instance.actor
+        )));
+    }
+    Ok(target)
+}
+
+fn validate_selected_weapon(
+    txn: &WorldTxn<'_>,
+    actor: worldwake_core::EntityId,
+    weapon: CombatWeaponRef,
+) -> Result<(), ActionError> {
+    match weapon {
+        CombatWeaponRef::Unarmed => Ok(()),
+        CombatWeaponRef::Commodity(kind) => {
+            if txn.controlled_commodity_quantity(actor, kind).0 > 0 {
+                Ok(())
+            } else {
+                Err(ActionError::AbortRequested(format!(
+                    "actor {actor} lacks selected weapon commodity {kind:?}"
+                )))
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct AttackWeaponStats {
+    severity: Permille,
+    bleed_rate: Permille,
+}
+
+fn weapon_stats(
+    profile: worldwake_core::CombatProfile,
+    weapon: CombatWeaponRef,
+) -> Result<AttackWeaponStats, ActionError> {
+    match weapon {
+        CombatWeaponRef::Unarmed => Ok(AttackWeaponStats {
+            severity: profile.unarmed_wound_severity,
+            bleed_rate: profile.unarmed_bleed_rate,
+        }),
+        CombatWeaponRef::Commodity(kind) => {
+            let CombatWeaponProfile {
+                base_wound_severity,
+                base_bleed_rate,
+                ..
+            } = kind.spec().combat_weapon_profile.ok_or_else(|| {
+                ActionError::AbortRequested(format!("commodity {kind:?} is not a combat weapon"))
+            })?;
+            Ok(AttackWeaponStats {
+                severity: base_wound_severity,
+                bleed_rate: base_bleed_rate,
+            })
+        }
+    }
+}
+
+fn wound_penalty(wounds: Option<&WoundList>) -> Permille {
+    let penalty = wounds
+        .map_or(0, |wounds| wounds.wound_load().min(u32::from(u16::MAX)))
+        .min(1000) as u16;
+    Permille::new(penalty).unwrap()
+}
+
+fn fatigue_penalty(needs: Option<&HomeostaticNeeds>) -> Permille {
+    needs.map_or(Permille::new_unchecked(0), |needs| needs.fatigue)
+}
+
+fn effective_attack_skill(
+    profile: worldwake_core::CombatProfile,
+    needs: Option<&HomeostaticNeeds>,
+    wounds: Option<&WoundList>,
+) -> Permille {
+    profile
+        .attack_skill
+        .saturating_sub(fatigue_penalty(needs))
+        .saturating_sub(wound_penalty(wounds))
+}
+
+fn effective_guard_skill(
+    profile: worldwake_core::CombatProfile,
+    stance: Option<CombatStance>,
+    needs: Option<&HomeostaticNeeds>,
+    wounds: Option<&WoundList>,
+) -> Permille {
+    let boosted = if stance == Some(CombatStance::Defending) {
+        profile.guard_skill.saturating_add(profile.defend_bonus)
+    } else {
+        profile.guard_skill
+    };
+    boosted
+        .saturating_sub(fatigue_penalty(needs))
+        .saturating_sub(wound_penalty(wounds))
+}
+
+#[derive(Clone, Copy)]
+struct AttackResolutionActor<'a> {
+    entity: worldwake_core::EntityId,
+    profile: worldwake_core::CombatProfile,
+    needs: Option<&'a HomeostaticNeeds>,
+    wounds: Option<&'a WoundList>,
+}
+
+#[derive(Clone, Copy)]
+struct AttackResolutionTarget<'a> {
+    profile: worldwake_core::CombatProfile,
+    stance: Option<CombatStance>,
+    needs: Option<&'a HomeostaticNeeds>,
+    wounds: &'a WoundList,
+}
+
+#[derive(Clone, Copy)]
+struct AttackResolutionContext {
+    weapon: CombatWeaponRef,
+    tick: worldwake_core::Tick,
+}
+
+fn resolve_attack_wound(
+    attacker: AttackResolutionActor<'_>,
+    target: AttackResolutionTarget<'_>,
+    context: AttackResolutionContext,
+    rng: &mut DeterministicRng,
+) -> Result<Option<Wound>, ActionError> {
+    let attack_skill = effective_attack_skill(attacker.profile, attacker.needs, attacker.wounds);
+    let guard_skill = effective_guard_skill(
+        target.profile,
+        target.stance,
+        target.needs,
+        Some(target.wounds),
+    );
+    let attack_roll = rng.next_range(0, u32::from(attack_skill.value()) + 1);
+    let guard_roll = rng.next_range(0, u32::from(guard_skill.value()) + 1);
+    if attack_roll < guard_roll {
+        return Ok(None);
+    }
+
+    let body_part = BODY_PARTS[rng.next_range(0, BODY_PARTS.len() as u32) as usize];
+    let weapon_stats = weapon_stats(attacker.profile, context.weapon)?;
+
+    Ok(Some(Wound {
+        id: target.wounds.next_wound_id(),
+        body_part,
+        cause: WoundCause::Combat {
+            attacker: attacker.entity,
+            weapon: context.weapon,
+        },
+        severity: weapon_stats.severity,
+        inflicted_at: context.tick,
+        bleed_rate_per_tick: weapon_stats.bleed_rate,
+    }))
+}
+
+fn start_attack(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let payload = combat_payload(def, instance)?;
+    let _ = validate_attack_context(txn, instance, payload)?;
+    validate_selected_weapon(txn, instance.actor, payload.weapon)?;
+    Ok(None)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_attack(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_attack(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let payload = combat_payload(def, instance)?;
+    let target = validate_attack_context(txn, instance, payload)?;
+    validate_selected_weapon(txn, instance.actor, payload.weapon)?;
+
+    let attacker_profile = txn
+        .get_component_combat_profile(instance.actor)
+        .copied()
+        .ok_or_else(|| {
+            ActionError::AbortRequested(format!(
+                "attacker {} lacks combat profile",
+                instance.actor
+            ))
+        })?;
+    let target_profile = txn.get_component_combat_profile(target).copied().ok_or_else(|| {
+        ActionError::AbortRequested(format!("target {target} lacks combat profile"))
+    })?;
+    let attacker_needs = txn.get_component_homeostatic_needs(instance.actor);
+    let target_needs = txn.get_component_homeostatic_needs(target);
+    let attacker_wounds = txn.get_component_wound_list(instance.actor);
+    let target_wounds = txn.get_component_wound_list(target).cloned().unwrap_or_default();
+    let target_stance = txn.get_component_combat_stance(target).copied();
+
+    let Some(wound) = resolve_attack_wound(
+        AttackResolutionActor {
+            entity: instance.actor,
+            profile: attacker_profile,
+            needs: attacker_needs,
+            wounds: attacker_wounds,
+        },
+        AttackResolutionTarget {
+            profile: target_profile,
+            stance: target_stance,
+            needs: target_needs,
+            wounds: &target_wounds,
+        },
+        AttackResolutionContext {
+            weapon: payload.weapon,
+            tick: txn.tick(),
+        },
+        rng,
+    )?
+    else {
+        return Ok(());
+    };
+
+    let mut next_wounds = target_wounds;
+    next_wounds.wounds.push(wound);
+    txn.set_component_wound_list(target, next_wounds)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_attack(
+    _def: &ActionDef,
     _instance: &ActionInstance,
     _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
@@ -315,21 +672,26 @@ fn abort_defend(
 
 #[cfg(test)]
 mod tests {
-    use super::{combat_system, register_defend_action};
+    use super::{
+        combat_system, effective_guard_skill, register_attack_action, register_defend_action,
+        resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
+        AttackResolutionTarget,
+    };
     use crate::dispatch_table;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyPart, CauseRef, CombatProfile, ControlSource, DeadAt,
-        DeprivationKind, DriveThresholds, EventLog, EventTag, EvidenceRef, HomeostaticNeeds,
-        Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, Wound,
-        WoundCause, WoundId, WoundList,
+        build_prototype_world, BodyPart, CauseRef, CombatProfile, CombatStance, CombatWeaponRef,
+        CommodityKind, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EventLog,
+        EventTag, EvidenceRef, HomeostaticNeeds, Permille, Quantity, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
-        ActionPayload, ActionStatus, Affordance, DeterministicRng, DurationExpr, Interruptibility,
-        OmniscientBeliefView, SystemExecutionContext, SystemId, TickOutcome,
+        ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
+        DurationExpr, Interruptibility, OmniscientBeliefView, SystemExecutionContext, SystemId,
+        TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -355,6 +717,10 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn test_rng(seed: u8) -> DeterministicRng {
+        DeterministicRng::new(Seed([seed; 32]))
     }
 
     fn defend_profile() -> CombatProfile {
@@ -390,6 +756,41 @@ mod tests {
             actor
         };
         actor
+    }
+
+    fn spawn_guard_with_profile(
+        world: &mut World,
+        tick: u64,
+        control: ControlSource,
+        profile: CombatProfile,
+    ) -> worldwake_core::EntityId {
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(world, tick);
+            let actor = txn.create_agent("Guard", control).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_combat_profile(actor, profile).unwrap();
+            txn.set_component_wound_list(actor, WoundList::default())
+                .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        actor
+    }
+
+    fn arm_actor(
+        world: &mut World,
+        actor: worldwake_core::EntityId,
+        tick: u64,
+        kind: CommodityKind,
+        quantity: u32,
+    ) {
+        let place = world.effective_place(actor).unwrap();
+        let mut txn = new_txn(world, tick);
+        let lot = txn.create_item_lot(kind, Quantity(quantity)).unwrap();
+        txn.set_ground_location(lot, place).unwrap();
+        txn.set_possessor(lot, actor).unwrap();
+        commit_txn(txn);
     }
 
     fn set_recovery_state(
@@ -435,6 +836,152 @@ mod tests {
     }
 
     #[test]
+    fn register_attack_action_creates_public_combat_definition() {
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let attack_id = register_attack_action(&mut defs, &mut handlers);
+        let attack = defs.get(attack_id).unwrap();
+
+        assert_eq!(attack.name, "attack");
+        assert_eq!(attack.duration, DurationExpr::CombatWeapon);
+        assert_eq!(attack.interruptibility, Interruptibility::FreelyInterruptible);
+        assert_eq!(attack.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(attack.payload, ActionPayload::None);
+        assert_eq!(attack.targets.len(), 1);
+        assert!(attack.preconditions.contains(&worldwake_sim::Precondition::TargetAlive(0)));
+        assert!(attack
+            .actor_constraints
+            .contains(&worldwake_sim::Constraint::ActorNotIncapacitated));
+    }
+
+    #[allow(clippy::too_many_lines)]
+    #[test]
+    fn attack_lifecycle_applies_wound_and_emits_same_place_combat_event() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let attacker = spawn_guard_with_profile(
+            &mut world,
+            1,
+            ControlSource::Ai,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(1000),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(120),
+                pm(30),
+                nz(6),
+            ),
+        );
+        let target = spawn_guard_with_profile(
+            &mut world,
+            2,
+            ControlSource::Ai,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(80),
+                pm(10),
+                nz(6),
+            ),
+        );
+        arm_actor(&mut world, attacker, 3, CommodityKind::Sword, 1);
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let attack_id = register_attack_action(&mut defs, &mut handlers);
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), attacker, &defs)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == attack_id && affordance.bound_targets == vec![target]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0);
+
+        let action_id = start_action(
+            &Affordance {
+                payload_override: Some(ActionPayload::Combat(CombatActionPayload {
+                    target,
+                    weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                })),
+                ..affordance
+            },
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            active.get(&action_id).unwrap().remaining_duration,
+            ActionDuration::Finite(4)
+        );
+
+        let mut outcome = TickOutcome::Continuing;
+        for tick in 6..=10 {
+            outcome = tick_action(
+                action_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
+            if outcome != TickOutcome::Continuing {
+                break;
+            }
+        }
+
+        assert_eq!(outcome, TickOutcome::Committed);
+        let wounds = world.get_component_wound_list(target).unwrap();
+        assert_eq!(wounds.wounds.len(), 1);
+        assert_eq!(
+            wounds.wounds[0].cause,
+            WoundCause::Combat {
+                attacker,
+                weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+            }
+        );
+        assert_eq!(wounds.wounds[0].inflicted_at, Tick(9));
+
+        let record = log
+            .get(*log.events_by_tag(EventTag::ActionCommitted).last().unwrap())
+            .unwrap();
+        assert_eq!(record.visibility, VisibilitySpec::SamePlace);
+        assert!(record.tags.contains(&EventTag::Combat));
+        assert!(record.tags.contains(&EventTag::WorldMutation));
+        assert!(record.target_ids.contains(&target));
+    }
+
+    #[test]
     fn defend_affordance_starts_and_stays_active_until_cancelled() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = spawn_guard(&mut world, 1, ControlSource::Ai);
@@ -449,6 +996,7 @@ mod tests {
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x11);
 
         let action_id = start_action(
             &affordance,
@@ -458,6 +1006,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -472,6 +1021,10 @@ mod tests {
             ActionDuration::Indefinite
         );
         assert_eq!(active.get(&action_id).unwrap().status, ActionStatus::Active);
+        assert_eq!(
+            world.get_component_combat_stance(actor),
+            Some(&CombatStance::Defending)
+        );
 
         let outcome = tick_action(
             action_id,
@@ -481,6 +1034,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -503,6 +1057,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
@@ -514,6 +1069,258 @@ mod tests {
 
         assert_eq!(replan.agent, actor);
         assert!(!active.contains_key(&action_id));
+        assert_eq!(world.get_component_combat_stance(actor), None);
+    }
+
+    #[test]
+    fn effective_guard_skill_applies_defend_bonus_through_authoritative_stance() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(500),
+            pm(200),
+            pm(300),
+            pm(0),
+            pm(0),
+            pm(50),
+            pm(10),
+            nz(1),
+        );
+
+        assert_eq!(
+            effective_guard_skill(profile, None, None, None),
+            pm(200)
+        );
+        assert_eq!(
+            effective_guard_skill(profile, Some(CombatStance::Defending), None, None),
+            pm(500)
+        );
+    }
+
+    #[test]
+    fn resolve_attack_wound_changes_outcome_when_target_is_defending() {
+        let attacker_profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(500),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(1),
+        );
+        let defending_target_profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(0),
+            pm(0),
+            pm(1000),
+            pm(0),
+            pm(0),
+            pm(80),
+            pm(10),
+            nz(1),
+        );
+        let wounds = WoundList::default();
+
+        let mut undefended_rng = DeterministicRng::new(Seed([3; 32]));
+        let undefended = resolve_attack_wound(
+            AttackResolutionActor {
+                entity: worldwake_core::EntityId {
+                    slot: 1,
+                    generation: 1,
+                },
+                profile: attacker_profile,
+                needs: None,
+                wounds: None,
+            },
+            AttackResolutionTarget {
+                profile: defending_target_profile,
+                stance: None,
+                needs: None,
+                wounds: &wounds,
+            },
+            AttackResolutionContext {
+                weapon: CombatWeaponRef::Unarmed,
+                tick: Tick(9),
+            },
+            &mut undefended_rng,
+        )
+        .unwrap();
+
+        let mut defending_rng = DeterministicRng::new(Seed([3; 32]));
+        let defending = resolve_attack_wound(
+            AttackResolutionActor {
+                entity: worldwake_core::EntityId {
+                    slot: 1,
+                    generation: 1,
+                },
+                profile: attacker_profile,
+                needs: None,
+                wounds: None,
+            },
+            AttackResolutionTarget {
+                profile: defending_target_profile,
+                stance: Some(CombatStance::Defending),
+                needs: None,
+                wounds: &wounds,
+            },
+            AttackResolutionContext {
+                weapon: CombatWeaponRef::Unarmed,
+                tick: Tick(9),
+            },
+            &mut defending_rng,
+        )
+        .unwrap();
+
+        assert!(undefended.is_some());
+        assert_eq!(defending, None);
+    }
+
+    #[test]
+    fn resolve_attack_wound_is_deterministic_for_same_seed_and_inputs() {
+        let profile = defend_profile();
+        let wounds = WoundList::default();
+
+        let mut left_rng = DeterministicRng::new(Seed([19; 32]));
+        let left = resolve_attack_wound(
+            AttackResolutionActor {
+                entity: worldwake_core::EntityId {
+                    slot: 1,
+                    generation: 1,
+                },
+                profile,
+                needs: None,
+                wounds: None,
+            },
+            AttackResolutionTarget {
+                profile,
+                stance: None,
+                needs: None,
+                wounds: &wounds,
+            },
+            AttackResolutionContext {
+                weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                tick: Tick(11),
+            },
+            &mut left_rng,
+        )
+        .unwrap();
+
+        let mut right_rng = DeterministicRng::new(Seed([19; 32]));
+        let right = resolve_attack_wound(
+            AttackResolutionActor {
+                entity: worldwake_core::EntityId {
+                    slot: 1,
+                    generation: 1,
+                },
+                profile,
+                needs: None,
+                wounds: None,
+            },
+            AttackResolutionTarget {
+                profile,
+                stance: None,
+                needs: None,
+                wounds: &wounds,
+            },
+            AttackResolutionContext {
+                weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                tick: Tick(11),
+            },
+            &mut right_rng,
+        )
+        .unwrap();
+
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn resolve_attack_wound_uses_weapon_profiles_for_severity_and_bleed_rate() {
+        let attacker_profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(1000),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(90),
+            pm(12),
+            nz(1),
+        );
+        let target_profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(10),
+            pm(0),
+            nz(1),
+        );
+        let wounds = WoundList::default();
+
+        let mut sword_rng = DeterministicRng::new(Seed([0; 32]));
+        let sword = resolve_attack_wound(
+            AttackResolutionActor {
+                entity: worldwake_core::EntityId {
+                    slot: 1,
+                    generation: 1,
+                },
+                profile: attacker_profile,
+                needs: None,
+                wounds: None,
+            },
+            AttackResolutionTarget {
+                profile: target_profile,
+                stance: None,
+                needs: None,
+                wounds: &wounds,
+            },
+            AttackResolutionContext {
+                weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                tick: Tick(3),
+            },
+            &mut sword_rng,
+        )
+        .unwrap()
+        .unwrap();
+
+        let mut unarmed_rng = DeterministicRng::new(Seed([0; 32]));
+        let unarmed = resolve_attack_wound(
+            AttackResolutionActor {
+                entity: worldwake_core::EntityId {
+                    slot: 1,
+                    generation: 1,
+                },
+                profile: attacker_profile,
+                needs: None,
+                wounds: None,
+            },
+            AttackResolutionTarget {
+                profile: target_profile,
+                stance: None,
+                needs: None,
+                wounds: &wounds,
+            },
+            AttackResolutionContext {
+                weapon: CombatWeaponRef::Unarmed,
+                tick: Tick(3),
+            },
+            &mut unarmed_rng,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(sword.severity, CommodityKind::Sword.spec().combat_weapon_profile.unwrap().base_wound_severity);
+        assert_eq!(sword.bleed_rate_per_tick, CommodityKind::Sword.spec().combat_weapon_profile.unwrap().base_bleed_rate);
+        assert_eq!(unarmed.severity, attacker_profile.unarmed_wound_severity);
+        assert_eq!(unarmed.bleed_rate_per_tick, attacker_profile.unarmed_bleed_rate);
     }
 
     #[test]
@@ -592,6 +1399,7 @@ mod tests {
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x12);
 
         let dead_err = start_action(
             &Affordance {
@@ -607,6 +1415,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -634,6 +1443,7 @@ mod tests {
                 active_actions: &mut active,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut rng,
             },
             &mut next_id,
             ActionExecutionContext {
@@ -958,6 +1768,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
+        let mut action_rng = test_rng(0x13);
 
         let _ = start_action(
             &affordance,
@@ -967,6 +1778,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 world: &mut world,
                 event_log: &mut log,
+                rng: &mut action_rng,
             },
             &mut next_id,
             ActionExecutionContext {
