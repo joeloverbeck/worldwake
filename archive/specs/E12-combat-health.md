@@ -1,5 +1,7 @@
 # E12: Combat, Wounds & Healing
 
+**Status**: COMPLETED
+
 ## Epic Summary
 Implement combat actions, a unified wound system, natural stabilization / healing, death with finality, and corpse handling. There is **no stored Health component**. Agent bodily condition is derived from `WoundList` plus current physiological state.
 
@@ -343,7 +345,7 @@ E12 does **not** call E09 or E13 directly.
 - [ ] `Sword` and `Bow` exist in `CommodityKind` with `TradeCategory::Weapon`
 - [ ] Natural clotting reduces `bleed_rate_per_tick` over time based on `natural_clot_resistance`
 - [ ] Recovery only occurs when not bleeding and physiological conditions acceptable
-- [ ] `BodyCostPerTick` (E09) still accrues for dead agents (no special-case, corpse weight persists)
+- [ ] Dead agents stop accruing new physiological `BodyCostPerTick`; corpse load/inventory persistence remains enforced through the existing inventory/load model
 - [ ] `DurationExpr::Indefinite` keeps Defend running until cancelled
 - [ ] `CombatWeaponRef::Commodity(Sword)` produces different wound profile than `Unarmed`
 
@@ -368,3 +370,17 @@ Route combat is deferred to a future epic. Combat in E12 only occurs where co-pr
 - Section 7.1 (material propagation: wounds, corpses)
 - Section 9.14 (death finality)
 - `docs/FOUNDATIONS.md` Principles 3, 6, 8, 11, 12
+
+## Outcome
+
+- Completion date: 2026-03-11
+- What actually changed:
+  - Combat, wounds, healing, death, corpse persistence, and loot are implemented across `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
+  - Scheduler-level E12 integration coverage was added in `crates/worldwake-systems/tests/e12_combat_integration.rs`.
+  - This archived spec corrects the prior assumption that dead agents should continue accruing physiological `BodyCostPerTick`; death finality instead stops new physiological accrual while corpse load/inventory persistence remains modeled through state.
+- Deviations from original plan:
+  - Verification is split across focused combat tests, generic scheduler/death tests in `worldwake-sim`, and the final E12 integration file rather than one giant combat-only suite.
+- Verification results:
+  - `cargo test -p worldwake-systems --test e12_combat_integration`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace`
