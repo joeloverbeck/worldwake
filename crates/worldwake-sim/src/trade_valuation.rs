@@ -268,10 +268,11 @@ mod tests {
     use crate::BeliefView;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        BodyPart, CommodityConsumableProfile, CommodityKind, DemandMemory, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundList,
+        BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandMemory,
+        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille,
+        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundList,
     };
 
     #[derive(Default)]
@@ -366,6 +367,10 @@ mod tests {
             false
         }
 
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
         fn is_dead(&self, _entity: EntityId) -> bool {
             false
         }
@@ -383,6 +388,18 @@ mod tests {
         }
 
         fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
 

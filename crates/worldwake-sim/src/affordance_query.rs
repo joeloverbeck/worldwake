@@ -229,11 +229,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityConsumableProfile,
-        CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
-        EventLog, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, Quantity, RecipeId,
-        ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
-        WorldTxn, Wound,
+        build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, Wound,
     };
 
     #[derive(Default)]
@@ -364,6 +365,10 @@ mod tests {
             false
         }
 
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
+            Vec::new()
+        }
+
         fn is_dead(&self, entity: EntityId) -> bool {
             !self.is_alive(entity)
         }
@@ -381,6 +386,18 @@ mod tests {
         }
 
         fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
 

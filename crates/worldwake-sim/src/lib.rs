@@ -67,7 +67,7 @@ pub use action_state::ActionState;
 pub use action_status::ActionStatus;
 pub use affordance::Affordance;
 pub use affordance_query::get_affordances;
-pub use belief_view::BeliefView;
+pub use belief_view::{estimate_duration_from_beliefs, BeliefView};
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use input_event::{InputEvent, InputKind};

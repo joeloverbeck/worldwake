@@ -1,0 +1,637 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::num::NonZeroU32;
+use worldwake_core::{
+    CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile,
+    MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
+};
+use worldwake_sim::BeliefView;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SnapshotEntity {
+    pub(crate) kind: Option<EntityKind>,
+    pub(crate) effective_place: Option<EntityId>,
+    pub(crate) in_transit_state: Option<InTransitOnEdge>,
+    pub(crate) direct_container: Option<EntityId>,
+    pub(crate) direct_possessor: Option<EntityId>,
+    pub(crate) direct_possessions: BTreeSet<EntityId>,
+    pub(crate) known_recipes: Vec<RecipeId>,
+    pub(crate) unique_item_counts: BTreeMap<UniqueItemKind, u32>,
+    pub(crate) commodity_quantities: BTreeMap<CommodityKind, Quantity>,
+    pub(crate) item_lot_commodity: Option<CommodityKind>,
+    pub(crate) item_lot_consumable_profile: Option<CommodityConsumableProfile>,
+    pub(crate) workstation_tag: Option<WorkstationTag>,
+    pub(crate) resource_source: Option<ResourceSource>,
+    pub(crate) action_flags: SnapshotActionFlags,
+    pub(crate) lifecycle: SnapshotLifecycle,
+    pub(crate) wounds: Vec<Wound>,
+    pub(crate) homeostatic_needs: Option<HomeostaticNeeds>,
+    pub(crate) drive_thresholds: Option<DriveThresholds>,
+    pub(crate) metabolism_profile: Option<MetabolismProfile>,
+    pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
+    pub(crate) combat_profile: Option<CombatProfile>,
+    pub(crate) visible_hostiles: Vec<EntityId>,
+    pub(crate) current_attackers: Vec<EntityId>,
+    pub(crate) demand_memory: Vec<DemandObservation>,
+    pub(crate) merchandise_profile: Option<MerchandiseProfile>,
+    pub(crate) reservation_ranges: Vec<TickRange>,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SnapshotActionFlags {
+    pub(crate) has_production_job: bool,
+    pub(crate) controllable_by_actor: bool,
+    pub(crate) has_control: bool,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SnapshotLifecycle {
+    pub(crate) alive: bool,
+    pub(crate) dead: bool,
+    pub(crate) incapacitated: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SnapshotPlace {
+    pub(crate) entities: BTreeSet<EntityId>,
+    pub(crate) adjacent_places_with_travel_ticks: Vec<(EntityId, NonZeroU32)>,
+}
+
+pub struct PlanningSnapshot {
+    pub(crate) actor: EntityId,
+    pub(crate) entities: BTreeMap<EntityId, SnapshotEntity>,
+    pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
+}
+
+impl PlanningSnapshot {
+    #[must_use]
+    pub fn build(
+        view: &dyn BeliefView,
+        actor: EntityId,
+        evidence_entities: &BTreeSet<EntityId>,
+        evidence_places: &BTreeSet<EntityId>,
+        travel_horizon: u8,
+    ) -> Self {
+        let included_places = collect_places(
+            view,
+            actor,
+            evidence_entities,
+            evidence_places,
+            travel_horizon,
+        );
+        let included_entities = collect_entities(view, actor, evidence_entities, &included_places);
+        let places = build_snapshot_places(view, &included_places, &included_entities);
+        let entities = included_entities
+            .iter()
+            .copied()
+            .map(|entity| {
+                (
+                    entity,
+                    build_snapshot_entity(
+                        view,
+                        actor,
+                        entity,
+                        evidence_entities,
+                        &included_places,
+                    ),
+                )
+            })
+            .collect();
+
+        Self {
+            actor,
+            entities,
+            places,
+        }
+    }
+
+    #[must_use]
+    pub fn actor(&self) -> EntityId {
+        self.actor
+    }
+}
+
+fn build_snapshot_places(
+    view: &dyn BeliefView,
+    included_places: &BTreeSet<EntityId>,
+    included_entities: &BTreeSet<EntityId>,
+) -> BTreeMap<EntityId, SnapshotPlace> {
+    included_places
+        .iter()
+        .copied()
+        .map(|place| {
+            let entities = included_entities
+                .iter()
+                .copied()
+                .filter(|entity| view.effective_place(*entity) == Some(place))
+                .collect();
+            let adjacent_places_with_travel_ticks = view
+                .adjacent_places_with_travel_ticks(place)
+                .into_iter()
+                .filter(|(adjacent, _)| included_places.contains(adjacent))
+                .collect();
+            (
+                place,
+                SnapshotPlace {
+                    entities,
+                    adjacent_places_with_travel_ticks,
+                },
+            )
+        })
+        .collect()
+}
+
+fn build_snapshot_entity(
+    view: &dyn BeliefView,
+    actor: EntityId,
+    entity: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    included_places: &BTreeSet<EntityId>,
+) -> SnapshotEntity {
+    SnapshotEntity {
+        kind: view.entity_kind(entity),
+        effective_place: view.effective_place(entity),
+        in_transit_state: view.in_transit_state(entity),
+        direct_container: view.direct_container(entity),
+        direct_possessor: view.direct_possessor(entity),
+        direct_possessions: view
+            .direct_possessions(entity)
+            .into_iter()
+            .filter(|possessed| {
+                included_entities_contains(
+                    view,
+                    *possessed,
+                    actor,
+                    evidence_entities,
+                    included_places,
+                )
+            })
+            .collect(),
+        known_recipes: view.known_recipes(entity),
+        unique_item_counts: collect_unique_item_counts(view, entity),
+        commodity_quantities: collect_commodity_quantities(view, entity),
+        item_lot_commodity: view.item_lot_commodity(entity),
+        item_lot_consumable_profile: view.item_lot_consumable_profile(entity),
+        workstation_tag: view.workstation_tag(entity),
+        resource_source: view.resource_source(entity),
+        action_flags: SnapshotActionFlags {
+            has_production_job: view.has_production_job(entity),
+            controllable_by_actor: view.can_control(actor, entity),
+            has_control: view.has_control(entity),
+        },
+        lifecycle: SnapshotLifecycle {
+            alive: view.is_alive(entity),
+            dead: view.is_dead(entity),
+            incapacitated: view.is_incapacitated(entity),
+        },
+        wounds: view.wounds(entity),
+        homeostatic_needs: view.homeostatic_needs(entity),
+        drive_thresholds: view.drive_thresholds(entity),
+        metabolism_profile: view.metabolism_profile(entity),
+        trade_disposition_profile: view.trade_disposition_profile(entity),
+        combat_profile: view.combat_profile(entity),
+        visible_hostiles: view.visible_hostiles_for(entity),
+        current_attackers: view.current_attackers_of(entity),
+        demand_memory: view.demand_memory(entity),
+        merchandise_profile: view.merchandise_profile(entity),
+        reservation_ranges: view.reservation_ranges(entity),
+    }
+}
+
+fn collect_unique_item_counts(
+    view: &dyn BeliefView,
+    entity: EntityId,
+) -> BTreeMap<UniqueItemKind, u32> {
+    UniqueItemKind::ALL
+        .into_iter()
+        .filter_map(|kind| {
+            let count = view.unique_item_count(entity, kind);
+            (count > 0).then_some((kind, count))
+        })
+        .collect()
+}
+
+fn collect_commodity_quantities(
+    view: &dyn BeliefView,
+    entity: EntityId,
+) -> BTreeMap<CommodityKind, Quantity> {
+    CommodityKind::ALL
+        .into_iter()
+        .filter_map(|kind| {
+            let quantity = view.commodity_quantity(entity, kind);
+            (quantity > Quantity(0)).then_some((kind, quantity))
+        })
+        .collect()
+}
+
+#[must_use]
+pub fn build_planning_snapshot(
+    view: &dyn BeliefView,
+    actor: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    evidence_places: &BTreeSet<EntityId>,
+    travel_horizon: u8,
+) -> PlanningSnapshot {
+    PlanningSnapshot::build(
+        view,
+        actor,
+        evidence_entities,
+        evidence_places,
+        travel_horizon,
+    )
+}
+
+fn collect_places(
+    view: &dyn BeliefView,
+    actor: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    evidence_places: &BTreeSet<EntityId>,
+    travel_horizon: u8,
+) -> BTreeSet<EntityId> {
+    let mut included = evidence_places.clone();
+
+    if let Some(actor_place) = view.effective_place(actor) {
+        included.insert(actor_place);
+        let mut frontier = VecDeque::from([(actor_place, 0u8)]);
+        let mut visited = BTreeSet::from([actor_place]);
+        while let Some((place, depth)) = frontier.pop_front() {
+            if depth >= travel_horizon {
+                continue;
+            }
+            for (adjacent, _) in view.adjacent_places_with_travel_ticks(place) {
+                if visited.insert(adjacent) {
+                    included.insert(adjacent);
+                    frontier.push_back((adjacent, depth.saturating_add(1)));
+                }
+            }
+        }
+    }
+
+    for entity in evidence_entities {
+        if let Some(place) = view.effective_place(*entity) {
+            included.insert(place);
+        }
+        if let Some(transit) = view.in_transit_state(*entity) {
+            included.insert(transit.origin);
+            included.insert(transit.destination);
+        }
+    }
+
+    included
+}
+
+fn collect_entities(
+    view: &dyn BeliefView,
+    actor: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    included_places: &BTreeSet<EntityId>,
+) -> BTreeSet<EntityId> {
+    let mut included = BTreeSet::from([actor]);
+    included.extend(evidence_entities.iter().copied());
+
+    for place in included_places {
+        included.extend(view.entities_at(*place));
+    }
+
+    let mut frontier: VecDeque<_> = included.iter().copied().collect();
+    while let Some(entity) = frontier.pop_front() {
+        for related in view.direct_possessions(entity) {
+            if included.insert(related) {
+                frontier.push_back(related);
+            }
+        }
+        if let Some(container) = view.direct_container(entity) {
+            if included.insert(container) {
+                frontier.push_back(container);
+            }
+        }
+        if let Some(possessor) = view.direct_possessor(entity) {
+            if included.insert(possessor) {
+                frontier.push_back(possessor);
+            }
+        }
+    }
+
+    included
+}
+
+fn included_entities_contains(
+    view: &dyn BeliefView,
+    entity: EntityId,
+    actor: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    included_places: &BTreeSet<EntityId>,
+) -> bool {
+    entity == actor
+        || evidence_entities.contains(&entity)
+        || view
+            .effective_place(entity)
+            .is_some_and(|place| included_places.contains(&place))
+        || view.direct_possessor(entity).is_some()
+        || view.direct_container(entity).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_planning_snapshot;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
+    use worldwake_core::{
+        CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    };
+    use worldwake_sim::{ActionDuration, ActionPayload, BeliefView, DurationExpr};
+
+    #[derive(Default)]
+    struct StubBeliefView {
+        alive: BTreeMap<EntityId, bool>,
+        kinds: BTreeMap<EntityId, EntityKind>,
+        effective_places: BTreeMap<EntityId, EntityId>,
+        entities_at: BTreeMap<EntityId, Vec<EntityId>>,
+        adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
+    }
+
+    impl BeliefView for StubBeliefView {
+        fn is_alive(&self, entity: EntityId) -> bool {
+            self.alive.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.kinds.get(&entity).copied()
+        }
+
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places.get(&entity).copied()
+        }
+
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+            self.adjacent_places_with_travel_ticks(place)
+                .into_iter()
+                .map(|(adjacent, _)| adjacent)
+                .collect()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+            Quantity(0)
+        }
+
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            actor == entity
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            None
+        }
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 1,
+        }
+    }
+
+    #[test]
+    fn build_snapshot_includes_actor_evidence_and_places_within_horizon() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+        let remote_place = entity(19);
+        let evidence_entity = entity(2);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(evidence_entity, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(evidence_entity, EntityKind::Agent);
+        view.effective_places.insert(actor, place_a);
+        view.effective_places.insert(evidence_entity, remote_place);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.entities_at.insert(place_b, vec![]);
+        view.entities_at.insert(place_c, vec![]);
+        view.entities_at.insert(remote_place, vec![evidence_entity]);
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(3).unwrap())]);
+        view.adjacent.insert(
+            place_b,
+            vec![
+                (place_a, NonZeroU32::new(3).unwrap()),
+                (place_c, NonZeroU32::new(5).unwrap()),
+            ],
+        );
+        view.adjacent
+            .insert(place_c, vec![(place_b, NonZeroU32::new(5).unwrap())]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([evidence_entity]),
+            &BTreeSet::new(),
+            1,
+        );
+
+        assert!(snapshot.entities.contains_key(&actor));
+        assert!(snapshot.entities.contains_key(&evidence_entity));
+        assert!(snapshot.places.contains_key(&place_a));
+        assert!(snapshot.places.contains_key(&place_b));
+        assert!(snapshot.places.contains_key(&remote_place));
+        assert!(!snapshot.places.contains_key(&place_c));
+    }
+
+    #[test]
+    fn build_snapshot_does_not_pull_in_unreachable_places_without_evidence() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place_a);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.entities_at.insert(place_b, vec![]);
+        view.entities_at.insert(place_c, vec![]);
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(1).unwrap())]);
+        view.adjacent.insert(
+            place_b,
+            vec![
+                (place_a, NonZeroU32::new(1).unwrap()),
+                (place_c, NonZeroU32::new(1).unwrap()),
+            ],
+        );
+        view.adjacent
+            .insert(place_c, vec![(place_b, NonZeroU32::new(1).unwrap())]);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        assert!(snapshot.places.contains_key(&place_a));
+        assert!(snapshot.places.contains_key(&place_b));
+        assert!(!snapshot.places.contains_key(&place_c));
+    }
+}

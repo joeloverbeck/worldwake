@@ -593,11 +593,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, DemandObservation, DemandObservationReason,
-        DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
+        DemandObservationReason, DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille,
+        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -728,6 +729,10 @@ mod tests {
             false
         }
 
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
         fn is_dead(&self, entity: EntityId) -> bool {
             self.dead.contains(&entity)
         }
@@ -746,6 +751,18 @@ mod tests {
 
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.drive_thresholds.get(&agent).copied()
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
         }
 
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {

@@ -1,14 +1,14 @@
 use crate::{
-    ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
-    BeliefView, DurationExpr,
+    estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionInstance,
+    ActionInstanceId, ActionPayload, BeliefView, DurationExpr,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    is_incapacitated, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
-    DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-    MerchandiseProfile, Quantity, RecipeId, ResourceSource, TickRange, UniqueItemKind,
-    WorkstationTag, World, Wound,
+    is_incapacitated, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+    MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange,
+    TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -176,6 +176,14 @@ impl BeliefView for OmniscientBeliefView<'_> {
             .any(|reservation| reservation.range.overlaps(&range))
     }
 
+    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+        self.world
+            .reservations_for(entity)
+            .into_iter()
+            .map(|reservation| reservation.range)
+            .collect()
+    }
+
     fn is_dead(&self, entity: EntityId) -> bool {
         self.world.get_component_dead_at(entity).is_some()
     }
@@ -202,6 +210,18 @@ impl BeliefView for OmniscientBeliefView<'_> {
 
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
         self.world.get_component_drive_thresholds(agent).copied()
+    }
+
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+        self.world.get_component_metabolism_profile(agent).copied()
+    }
+
+    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+        self.world.get_component_trade_disposition_profile(agent).cloned()
+    }
+
+    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+        self.world.get_component_combat_profile(agent).copied()
     }
 
     fn wounds(&self, agent: EntityId) -> Vec<Wound> {
@@ -324,7 +344,7 @@ impl BeliefView for OmniscientBeliefView<'_> {
         targets: &[EntityId],
         payload: &ActionPayload,
     ) -> Option<ActionDuration> {
-        duration.resolve_for(self.world, actor, targets, payload).ok()
+        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
     }
 }
 

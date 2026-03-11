@@ -341,11 +341,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BodyCostPerTick, BodyPart, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId,
-        DeprivationKind,
+        BodyCostPerTick, BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
+        EntityKind, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry};
 
@@ -391,6 +391,7 @@ mod tests {
         fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool { false }
         fn has_control(&self, _entity: EntityId) -> bool { false }
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool { false }
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> { Vec::new() }
         fn is_dead(&self, _entity: EntityId) -> bool { false }
         fn is_incapacitated(&self, _entity: EntityId) -> bool { false }
         fn has_wounds(&self, entity: EntityId) -> bool {
@@ -402,6 +403,11 @@ mod tests {
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
         }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> { None }
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> { None }
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }

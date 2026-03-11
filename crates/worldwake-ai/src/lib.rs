@@ -9,23 +9,30 @@ pub mod decision_runtime;
 mod enterprise;
 pub mod goal_model;
 pub mod planner_ops;
+pub mod planning_snapshot;
+pub mod planning_state;
 pub mod pressure;
 pub mod ranking;
 
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::AgentDecisionRuntime;
-pub use goal_model::{GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal};
+pub use goal_model::{
+    GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
+};
 pub use planner_ops::{
     build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
     PlannerOpSemantics,
 };
+pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
+pub use planning_state::PlanningState;
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
 pub use ranking::rank_candidates;
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
 
 #[cfg(test)]
 mod tests {
+    use crate::{PlanningSnapshot, PlanningState};
     use std::any::type_name;
     use worldwake_sim::{
         ActionDefId, ActionDefRegistry, ActionPayload, Affordance, BeliefView, InputEvent,
@@ -73,5 +80,7 @@ mod tests {
         );
 
         let _: Option<&dyn BeliefView> = None;
+        let _ = assert_type_is_available::<PlanningSnapshot>();
+        let _ = assert_type_is_available::<PlanningState<'static>>();
     }
 }
