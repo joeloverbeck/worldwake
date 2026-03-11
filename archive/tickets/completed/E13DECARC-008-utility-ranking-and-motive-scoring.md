@@ -1,10 +1,10 @@
 # E13DECARC-008: Priority class assignment, motive scoring, and candidate ranking
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — AI-layer logic
-**Deps**: E13DECARC-004, E13DECARC-006, E13DECARC-007
+**Deps**: E13DECARC-002, E13DECARC-004, E13DECARC-006, E13DECARC-007
 
 ## Problem
 
@@ -12,18 +12,20 @@ After candidate generation, goals must be ranked by priority class and motive sc
 
 ## Assumption Reassessment (2026-03-11)
 
-1. `GoalPriorityClass` and `RankedGoal` live in `worldwake-ai`; `GroundedGoal` is now evidence-only.
-2. `UtilityProfile` with per-drive weights from E13DECARC-002 — dependency.
-3. `classify_band()` from E13DECARC-006 — dependency.
-4. `DemandMemory`, `MerchandiseProfile` exist in `worldwake-core` — confirmed.
-5. `Permille.value()` exists for extracting `u16`.
+1. `GoalPriorityClass`, `GroundedGoal`, and `RankedGoal` live in `worldwake-ai`; `GroundedGoal` is evidence-only.
+2. `UtilityProfile` already exists in `worldwake-core` and must be consumed by the AI layer rather than redefined there.
+3. `classify_band()` already exists in `worldwake-ai::pressure` from E13DECARC-006.
+4. `DemandMemory` and `MerchandiseProfile` already exist in `worldwake-core`, and `BeliefView` already exposes both.
+5. `Permille.value()` exists for extracting `u16` without introducing floats.
+6. `GoalKey` stores `recipe_id` for `ProduceCommodity` but not derived output commodities, so lawful enterprise scoring for production still needs `RecipeRegistry`.
 
 ## Architecture Check
 
-1. Ranking is deterministic: priority class -> motive score -> cheapest ticks -> GoalKind discriminant -> entity/commodity/place ids.
+1. Candidate ranking is deterministic: priority class -> motive score -> `GoalKind` discriminant -> entity/commodity/place ids.
 2. No `HashMap`/`HashSet` — `BTreeMap` or sorted `Vec`.
 3. `opportunity_signal` is derived per-candidate from stock deficit, demand memory, and reachable paths — never a stored global score.
-4. Hard cap rules are explicit: Critical survival/danger blocks enterprise/loot/burial from outranking.
+4. Hard cap rules are explicit: critical survival/danger blocks enterprise/loot/burial from outranking, and high survival/danger suppresses loot/burial.
+5. Cheapest-plan-ticks tie-breaking belongs to plan selection in E13DECARC-012, not this ticket’s candidate-ranking pass.
 
 ## What to Change
 
@@ -37,10 +39,12 @@ pub fn rank_candidates(
     view: &dyn BeliefView,
     agent: EntityId,
     utility: &UtilityProfile,
+    recipes: &RecipeRegistry,
 ) -> Vec<RankedGoal>
 ```
 
 This pass consumes grounded candidates and returns ranked candidates. Candidate generation must remain evidence-only.
+It should rank any `GoalKind` variant lawfully, even if current candidate generation does not emit every Phase 2 goal yet.
 
 ### 2. Implement priority class assignment
 
@@ -96,14 +100,16 @@ Sort candidates by:
 ## Files to Touch
 
 - `crates/worldwake-ai/src/ranking.rs` (new — ranking pass over grounded candidates)
-- `crates/worldwake-ai/src/lib.rs` (modify — export `RankedGoal` / ranking API if needed)
+- `crates/worldwake-ai/src/lib.rs` (modify — export ranking API)
 - `crates/worldwake-ai/src/pressure.rs` (modify only if a reusable helper belongs there)
+- `crates/worldwake-ai/src/candidate_generation.rs` (modify only if a reusable enterprise-evidence helper should be shared rather than duplicated)
 
 ## Out of Scope
 
-- Plan cost (`total_estimated_ticks`) as a tiebreaker — that requires plan search (E13DECARC-012)
+- Plan cost (`total_estimated_ticks`) as a candidate-ranking tiebreaker — that requires plan search output from E13DECARC-012
 - Plan search itself — E13DECARC-012
 - Plan selection logic — E13DECARC-012
+- Expanding candidate generation to emit currently deferred `SellCommodity`, `MoveCargo`, or `BuryCorpse` goals
 
 ## Acceptance Criteria
 
@@ -119,8 +125,9 @@ Sort candidates by:
 8. Two candidates in same priority class sort by motive_score descending
 9. Identical motive scores break ties by `GoalKind` discriminant
 10. Opportunity signal is `Permille(0)` when no demand memory and no stock deficit
-11. Ranking is fully deterministic (same inputs -> same output order)
-12. Existing suite: `cargo test --workspace`
+11. Identical goal kinds with identical motive scores break ties by canonical commodity/entity/place ids
+12. Ranking is fully deterministic (same inputs -> same output order)
+13. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
@@ -134,9 +141,18 @@ Sort candidates by:
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/src/ranking.rs` — tests for priority assignment, hard caps, motive scoring, tie-breaking, and opportunity signal
+2. `crates/worldwake-ai/src/lib.rs` — export-level smoke coverage if the public ranking API is re-exported there
 
 ### Commands
 
 1. `cargo test -p worldwake-ai`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- Outcome amended: 2026-03-11
+- Completion date: 2026-03-11
+- What actually changed: corrected the ticket assumptions first, then implemented a dedicated `worldwake-ai::ranking` pass with deterministic candidate ordering, self-care/danger/heal priority assignment, loot suppression under high pressure, and enterprise opportunity scoring derived from demand memory and recipe outputs. Follow-up refinement extracted the shared enterprise read-model into `worldwake-ai/src/enterprise.rs` so candidate generation and ranking consume the same market/restock logic.
+- Deviations from original plan: `rank_candidates()` now also takes `&RecipeRegistry` so `ProduceCommodity` can be scored lawfully from concrete recipe outputs; candidate ranking intentionally does not use plan-cost tie-breaking because that belongs to E13DECARC-012.
+- Verification results: `cargo test -p worldwake-ai`, `cargo test --workspace`, and `cargo clippy --workspace` all passed.

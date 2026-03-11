@@ -4,12 +4,15 @@
 //! Depends on `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
 
 pub mod candidate_generation;
+mod enterprise;
 pub mod goal_model;
 pub mod pressure;
+pub mod ranking;
 
 pub use candidate_generation::generate_candidates;
 pub use goal_model::{GoalPriorityClass, GroundedGoal, RankedGoal};
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
+pub use ranking::rank_candidates;
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
 
 #[cfg(test)]

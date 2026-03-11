@@ -1,8 +1,8 @@
-use crate::{derive_danger_pressure, GroundedGoal};
+use crate::{derive_danger_pressure, enterprise::restock_gap, GroundedGoal};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use worldwake_core::{
-    BlockedIntentMemory, CommodityKind, CommodityPurpose, DemandObservation, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
+    BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey,
+    GoalKind, HomeostaticNeeds, Quantity, Tick,
 };
 use worldwake_sim::{BeliefView, RecipeDefinition, RecipeRegistry};
 
@@ -525,40 +525,6 @@ fn local_wounded_targets(
         }
     }
     targets.into_iter().collect()
-}
-
-fn restock_gap(
-    view: &dyn BeliefView,
-    agent: EntityId,
-    place: Option<EntityId>,
-    commodity: CommodityKind,
-) -> Option<Quantity> {
-    let profile = view.merchandise_profile(agent)?;
-    if !profile.sale_kinds.contains(&commodity) {
-        return None;
-    }
-    let market = profile.home_market.or(place)?;
-    let observed_quantity = relevant_demand_memory(view, agent, market, commodity)
-        .iter()
-        .fold(0u32, |sum, observation| sum.saturating_add(observation.quantity.0));
-    if observed_quantity == 0 {
-        return None;
-    }
-
-    let current_stock = view.commodity_quantity(agent, commodity).0;
-    (current_stock < observed_quantity).then_some(Quantity(observed_quantity - current_stock))
-}
-
-fn relevant_demand_memory(
-    view: &dyn BeliefView,
-    agent: EntityId,
-    market: EntityId,
-    commodity: CommodityKind,
-) -> Vec<DemandObservation> {
-    view.demand_memory(agent)
-        .into_iter()
-        .filter(|observation| observation.place == market && observation.commodity == commodity)
-        .collect()
 }
 
 fn local_controlled_commodity_exists(
