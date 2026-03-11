@@ -2,7 +2,7 @@ use crate::{
     build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
     generate_candidates, handle_plan_failure, rank_candidates, revalidate_next_step,
     search_plan, select_best_plan, AgentDecisionRuntime, InterruptDecision, PlanFailureContext,
-    PlannedStep, PlannerOpSemantics, PlanningBudget,
+    PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -352,17 +352,37 @@ fn reconcile_in_flight_state(
     }
 
     runtime.step_in_flight = false;
+    advance_completed_step(runtime);
+    Ok(())
+}
+
+fn advance_completed_step(runtime: &mut AgentDecisionRuntime) {
     runtime.current_step_index = runtime
         .current_step_index
         .checked_add(1)
         .expect("agent decision runtime step index overflowed");
-    if plan_finished(runtime) {
-        runtime.current_goal = None;
-        runtime.current_plan = None;
-        runtime.current_step_index = 0;
-        runtime.dirty = true;
+
+    let Some(plan) = runtime.current_plan.as_ref() else {
+        return;
+    };
+    if runtime.current_step_index < plan.steps.len() {
+        return;
     }
-    Ok(())
+
+    match plan.terminal_kind {
+        PlanTerminalKind::ProgressBarrier => {
+            runtime.current_goal = Some(plan.goal);
+            runtime.current_plan = None;
+            runtime.current_step_index = 0;
+            runtime.dirty = true;
+        }
+        PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
+            runtime.current_goal = None;
+            runtime.current_plan = None;
+            runtime.current_step_index = 0;
+            runtime.dirty = true;
+        }
+    }
 }
 
 fn handle_current_step_failure(
@@ -494,15 +514,18 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 
 #[cfg(test)]
 mod tests {
-    use super::AgentTickDriver;
+    use super::{advance_completed_step, AgentTickDriver};
     use crate::PlanningBudget;
+    use crate::{CommodityPurpose, GoalKey, GoalKind, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
+    use std::fs;
+    use std::path::PathBuf;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DriveThresholds, EventLog, HomeostaticNeeds, MetabolismProfile, Quantity, Seed, Tick,
+        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile, Quantity, Seed, Tick,
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
+        step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
         ControllerState, DeterministicRng, RecipeRegistry, Scheduler, SystemDispatchTable,
         SystemManifest, TickStepServices,
     };
@@ -609,6 +632,24 @@ mod tests {
         let _ = txn.commit(&mut event_log);
     }
 
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 1,
+        }
+    }
+
+    fn barrier_step() -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(8),
+            targets: vec![entity(11)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Trade,
+            estimated_ticks: 3,
+            is_materialization_barrier: true,
+        }
+    }
+
     #[test]
     fn hungry_ai_agent_emits_request_and_starts_consume_action() {
         let mut harness = Harness::new(ControlSource::Ai);
@@ -685,5 +726,73 @@ mod tests {
                 .controlled_commodity_quantity(harness.actor, CommodityKind::Bread),
             Quantity(1)
         );
+    }
+
+    #[test]
+    fn progress_barrier_completion_preserves_goal_and_forces_replan() {
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(PlannedPlan::new(
+                goal,
+                vec![barrier_step()],
+                PlanTerminalKind::ProgressBarrier,
+            )),
+            current_step_index: 0,
+            step_in_flight: false,
+            dirty: false,
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        advance_completed_step(&mut runtime);
+
+        assert_eq!(runtime.current_goal, Some(goal));
+        assert_eq!(runtime.current_plan, None);
+        assert_eq!(runtime.current_step_index, 0);
+        assert!(runtime.dirty);
+    }
+
+    #[test]
+    fn belief_read_modules_do_not_depend_on_world_directly() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|path| path.parent())
+            .expect("workspace layout should place crate under crates/")
+            .to_path_buf();
+        let modules = [
+            "crates/worldwake-ai/src/candidate_generation.rs",
+            "crates/worldwake-ai/src/enterprise.rs",
+            "crates/worldwake-ai/src/failure_handling.rs",
+            "crates/worldwake-ai/src/plan_revalidation.rs",
+            "crates/worldwake-ai/src/planning_snapshot.rs",
+            "crates/worldwake-ai/src/planning_state.rs",
+            "crates/worldwake-ai/src/pressure.rs",
+            "crates/worldwake-ai/src/ranking.rs",
+            "crates/worldwake-ai/src/search.rs",
+        ];
+
+        for relative in modules {
+            let source = fs::read_to_string(repo_root.join(relative))
+                .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
+            let production_source = source
+                .split("\n#[cfg(test)]")
+                .next()
+                .expect("split always returns at least one segment");
+            assert!(
+                !production_source.contains("worldwake_core::World"),
+                "{relative} should read through BeliefView instead of depending on World"
+            );
+            assert!(
+                !production_source.contains("&World"),
+                "{relative} should not take &World directly"
+            );
+            assert!(
+                !production_source.contains("WorldTxn"),
+                "{relative} should not mutate authoritative state directly"
+            );
+        }
     }
 }
