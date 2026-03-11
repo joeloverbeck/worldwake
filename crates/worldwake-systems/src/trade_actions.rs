@@ -7,8 +7,7 @@ use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, DeterministicRng, DurationExpr, Interruptibility,
-    OmniscientBeliefView,
-    Precondition, TargetSpec, TradeAcceptance, TradeActionPayload,
+    OmniscientBeliefView, Precondition, TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
 pub fn register_trade_action(

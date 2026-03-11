@@ -1,15 +1,20 @@
+use crate::inventory::{
+    controlled_entity_load, move_entity_to_direct_possession, remaining_capacity,
+};
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 use worldwake_core::{
-    is_wound_load_fatal, BodyCostPerTick, BodyPart, CauseRef, CombatStance, CombatWeaponProfile,
-    CombatWeaponRef, ComponentDelta, ComponentKind, DeadAt, DriveThresholds, EventLog, EventTag,
-    EvidenceRef, HomeostaticNeeds, Permille, StateDelta, VisibilitySpec, WitnessData, WorldTxn,
-    Wound, WoundCause, WoundList,
+    is_wound_load_fatal, load_per_unit, BodyCostPerTick, BodyPart, CauseRef, CombatStance,
+    CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, DeadAt, DriveThresholds,
+    EntityId, EntityKind, EventLog, EventTag, EvidenceRef, HomeostaticNeeds, Permille, Quantity,
+    StateDelta, VisibilitySpec, WitnessData, WorldTxn, Wound, WoundCause, WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CombatActionPayload, Constraint, DeterministicRng, DurationExpr,
-    Interruptibility, Precondition, SystemError, SystemExecutionContext, TargetSpec,
+    Interruptibility, LootActionPayload, Precondition, SystemError, SystemExecutionContext,
+    TargetSpec,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -45,6 +50,19 @@ pub fn register_defend_action(
         abort_defend,
     ));
     defs.register(defend_action_def(ActionDefId(defs.len() as u32), handler))
+}
+
+pub fn register_loot_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(ActionHandler::new(
+        start_loot,
+        tick_loot,
+        commit_loot,
+        abort_loot,
+    ));
+    defs.register(loot_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
 pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -270,7 +288,7 @@ fn latest_wound_event(
                     )
                 })
             })
-    })
+        })
 }
 
 fn attack_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
@@ -330,6 +348,46 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         commit_conditions: vec![Precondition::ActorAlive],
         visibility: VisibilitySpec::SamePlace,
         causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
+fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    let preconditions = vec![
+        Precondition::ActorAlive,
+        Precondition::TargetExists(0),
+        Precondition::TargetAtActorPlace(0),
+        Precondition::TargetDead(0),
+        Precondition::TargetIsAgent(0),
+    ];
+
+    ActionDef {
+        id,
+        name: "loot".to_string(),
+        domain: ActionDomain::Loot,
+        actor_constraints: vec![
+            Constraint::ActorAlive,
+            Constraint::ActorNotDead,
+            Constraint::ActorNotIncapacitated,
+            Constraint::ActorNotInTransit,
+            Constraint::ActorHasControl,
+        ],
+        targets: vec![TargetSpec::EntityAtActorPlace {
+            kind: EntityKind::Agent,
+        }],
+        preconditions: preconditions.clone(),
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::Fixed(NonZeroU32::MIN),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: preconditions,
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([
+            EventTag::WorldMutation,
+            EventTag::Inventory,
+            EventTag::Transfer,
+        ]),
         payload: ActionPayload::None,
         handler,
     }
@@ -399,6 +457,46 @@ fn combat_payload<'a>(
             def.id
         ))
     })
+}
+
+fn loot_payload(instance: &ActionInstance) -> Option<&LootActionPayload> {
+    instance.payload.as_loot()
+}
+
+fn validate_loot_context(
+    txn: &WorldTxn<'_>,
+    instance: &ActionInstance,
+) -> Result<(EntityId, EntityId), ActionError> {
+    let target = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    if let Some(payload) = loot_payload(instance) {
+        if payload.target != target {
+            return Err(ActionError::AbortRequested(format!(
+                "loot payload target {} does not match bound target {target}",
+                payload.target
+            )));
+        }
+    }
+    let place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::AbortRequested(format!("actor {} is not placed", instance.actor))
+    })?;
+    if txn.entity_kind(target) != Some(EntityKind::Agent) {
+        return Err(ActionError::InvalidTarget(target));
+    }
+    if txn.effective_place(target) != Some(place) {
+        return Err(ActionError::AbortRequested(format!(
+            "corpse target {target} is no longer co-located with actor {}",
+            instance.actor
+        )));
+    }
+    if txn.get_component_dead_at(target).is_none() {
+        return Err(ActionError::AbortRequested(format!(
+            "corpse target {target} is no longer dead"
+        )));
+    }
+    Ok((target, place))
 }
 
 fn validate_attack_context(
@@ -591,6 +689,95 @@ fn start_attack(
     Ok(None)
 }
 
+fn direct_loot_entities(txn: &WorldTxn<'_>, corpse: EntityId) -> Vec<EntityId> {
+    let mut entities = txn.possessions_of(corpse);
+    entities.sort();
+    entities.dedup();
+    entities
+}
+
+fn transferable_loot_entity(
+    txn: &mut WorldTxn<'_>,
+    looter: EntityId,
+    corpse: EntityId,
+    entity: EntityId,
+    place: EntityId,
+) -> Result<Option<EntityId>, ActionError> {
+    let remaining = remaining_capacity(txn, looter)?.0;
+    let subtree_load = controlled_entity_load(txn, entity)?.0;
+    if subtree_load <= remaining {
+        move_entity_to_direct_possession(txn, entity, looter, place)?;
+        return Ok(Some(entity));
+    }
+
+    let Some(lot) = txn.get_component_item_lot(entity).cloned() else {
+        return Ok(None);
+    };
+    let per_unit = load_per_unit(lot.commodity).0;
+    if per_unit == 0 || remaining < per_unit {
+        return Ok(None);
+    }
+
+    let max_quantity = remaining / per_unit;
+    if max_quantity == 0 || max_quantity >= lot.quantity.0 {
+        return Ok(None);
+    }
+
+    let (_, split_off) = txn
+        .split_lot(entity, Quantity(max_quantity))
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    if let Some(owner) = txn.owner_of(entity) {
+        txn.set_owner(split_off, owner)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    txn.set_ground_location(split_off, place)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    move_entity_to_direct_possession(txn, split_off, looter, place)?;
+
+    if txn.possessor_of(entity) != Some(corpse) {
+        return Err(ActionError::InternalError(format!(
+            "corpse {corpse} lost possession of source lot {entity} during loot split"
+        )));
+    }
+
+    Ok(Some(split_off))
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn start_loot(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let _ = validate_loot_context(txn, instance)?;
+    let _ = remaining_capacity(txn, instance.actor)?;
+    Ok(None)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_loot(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_loot(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let (corpse, place) = validate_loot_context(txn, instance)?;
+    for entity in direct_loot_entities(txn, corpse) {
+        let _ = transferable_loot_entity(txn, instance.actor, corpse, entity, place)?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn tick_attack(
     _def: &ActionDef,
@@ -615,18 +802,21 @@ fn commit_attack(
         .get_component_combat_profile(instance.actor)
         .copied()
         .ok_or_else(|| {
-            ActionError::AbortRequested(format!(
-                "attacker {} lacks combat profile",
-                instance.actor
-            ))
+            ActionError::AbortRequested(format!("attacker {} lacks combat profile", instance.actor))
         })?;
-    let target_profile = txn.get_component_combat_profile(target).copied().ok_or_else(|| {
-        ActionError::AbortRequested(format!("target {target} lacks combat profile"))
-    })?;
+    let target_profile = txn
+        .get_component_combat_profile(target)
+        .copied()
+        .ok_or_else(|| {
+            ActionError::AbortRequested(format!("target {target} lacks combat profile"))
+        })?;
     let attacker_needs = txn.get_component_homeostatic_needs(instance.actor);
     let target_needs = txn.get_component_homeostatic_needs(target);
     let attacker_wounds = txn.get_component_wound_list(instance.actor);
-    let target_wounds = txn.get_component_wound_list(target).cloned().unwrap_or_default();
+    let target_wounds = txn
+        .get_component_wound_list(target)
+        .cloned()
+        .unwrap_or_default();
     let target_stance = txn.get_component_combat_stance(target).copied();
 
     let Some(wound) = resolve_attack_wound(
@@ -670,21 +860,33 @@ fn abort_attack(
     Ok(())
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn abort_loot(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         combat_system, effective_guard_skill, register_attack_action, register_defend_action,
-        resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
+        register_loot_action, resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
         AttackResolutionTarget,
     };
     use crate::dispatch_table;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyPart, CauseRef, CombatProfile, CombatStance, CombatWeaponRef,
-        CommodityKind, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EventLog,
-        EventTag, EvidenceRef, HomeostaticNeeds, Permille, Quantity, Seed, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        build_prototype_world, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance,
+        CombatWeaponRef, CommodityKind, Container, ControlSource, DeadAt, DeprivationKind,
+        DriveThresholds, EventLog, EventTag, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille,
+        Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause,
+        WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
@@ -793,6 +995,59 @@ mod tests {
         commit_txn(txn);
     }
 
+    fn set_carry_capacity(
+        world: &mut World,
+        actor: worldwake_core::EntityId,
+        tick: u64,
+        load: u32,
+    ) {
+        let mut txn = new_txn(world, tick);
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(load)))
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    fn add_carried_lot(
+        world: &mut World,
+        actor: worldwake_core::EntityId,
+        tick: u64,
+        commodity: CommodityKind,
+        quantity: u32,
+    ) -> worldwake_core::EntityId {
+        let place = world.effective_place(actor).unwrap();
+        let mut txn = new_txn(world, tick);
+        let lot = txn.create_item_lot(commodity, Quantity(quantity)).unwrap();
+        txn.set_ground_location(lot, place).unwrap();
+        txn.set_possessor(lot, actor).unwrap();
+        commit_txn(txn);
+        lot
+    }
+
+    fn add_carried_container_with_lot(
+        world: &mut World,
+        actor: worldwake_core::EntityId,
+        tick: u64,
+        commodity: CommodityKind,
+        quantity: u32,
+    ) -> (worldwake_core::EntityId, worldwake_core::EntityId) {
+        let place = world.effective_place(actor).unwrap();
+        let mut txn = new_txn(world, tick);
+        let container = txn
+            .create_container(Container {
+                capacity: LoadUnits(20),
+                allowed_commodities: None,
+                allows_unique_items: true,
+                allows_nested_containers: true,
+            })
+            .unwrap();
+        let lot = txn.create_item_lot(commodity, Quantity(quantity)).unwrap();
+        txn.set_ground_location(container, place).unwrap();
+        txn.set_possessor(container, actor).unwrap();
+        txn.put_into_container(lot, container).unwrap();
+        commit_txn(txn);
+        (container, lot)
+    }
+
     fn set_recovery_state(
         world: &mut World,
         entity: worldwake_core::EntityId,
@@ -844,14 +1099,433 @@ mod tests {
 
         assert_eq!(attack.name, "attack");
         assert_eq!(attack.duration, DurationExpr::CombatWeapon);
-        assert_eq!(attack.interruptibility, Interruptibility::FreelyInterruptible);
+        assert_eq!(
+            attack.interruptibility,
+            Interruptibility::FreelyInterruptible
+        );
         assert_eq!(attack.visibility, VisibilitySpec::SamePlace);
         assert_eq!(attack.payload, ActionPayload::None);
         assert_eq!(attack.targets.len(), 1);
-        assert!(attack.preconditions.contains(&worldwake_sim::Precondition::TargetAlive(0)));
+        assert!(attack
+            .preconditions
+            .contains(&worldwake_sim::Precondition::TargetAlive(0)));
         assert!(attack
             .actor_constraints
             .contains(&worldwake_sim::Constraint::ActorNotIncapacitated));
+    }
+
+    #[test]
+    fn register_loot_action_creates_public_loot_definition() {
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let loot = defs.get(loot_id).unwrap();
+
+        assert_eq!(loot.name, "loot");
+        assert_eq!(loot.domain, worldwake_sim::ActionDomain::Loot);
+        assert_eq!(loot.duration, DurationExpr::Fixed(NonZeroU32::MIN));
+        assert_eq!(loot.interruptibility, Interruptibility::FreelyInterruptible);
+        assert_eq!(loot.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(loot.payload, ActionPayload::None);
+        assert!(loot
+            .actor_constraints
+            .contains(&worldwake_sim::Constraint::ActorNotIncapacitated));
+        assert!(loot
+            .preconditions
+            .contains(&worldwake_sim::Precondition::TargetDead(0)));
+        assert!(loot
+            .preconditions
+            .contains(&worldwake_sim::Precondition::TargetIsAgent(0)));
+        assert!(loot.causal_event_tags.contains(&EventTag::Inventory));
+        assert!(loot.causal_event_tags.contains(&EventTag::Transfer));
+    }
+
+    #[test]
+    fn loot_transfers_corpse_possessions_and_emits_public_inventory_event() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let looter = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
+        set_carry_capacity(&mut world, looter, 3, 10);
+        let bread = add_carried_lot(&mut world, corpse, 4, CommodityKind::Bread, 3);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x21);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(7),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Committed);
+        assert_eq!(world.possessor_of(bread), Some(looter));
+        assert_eq!(
+            world.controlled_commodity_quantity(looter, CommodityKind::Bread),
+            Quantity(3)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(corpse, CommodityKind::Bread),
+            Quantity(0)
+        );
+        assert_eq!(world.get_component_dead_at(corpse), Some(&DeadAt(Tick(5))));
+
+        let record = log
+            .get(*log.events_by_tag(EventTag::ActionCommitted).last().unwrap())
+            .unwrap();
+        assert_eq!(record.visibility, VisibilitySpec::SamePlace);
+        assert!(record.tags.contains(&EventTag::Inventory));
+        assert!(record.tags.contains(&EventTag::Transfer));
+        assert!(record.target_ids.contains(&bread));
+    }
+
+    #[test]
+    fn loot_splits_lot_when_only_partial_quantity_fits() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let looter = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
+        set_carry_capacity(&mut world, looter, 3, 2);
+        let bread = add_carried_lot(&mut world, corpse, 4, CommodityKind::Bread, 3);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x22);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(7),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Committed);
+        assert_eq!(
+            world.get_component_item_lot(bread).unwrap().quantity,
+            Quantity(1)
+        );
+        assert_eq!(world.possessor_of(bread), Some(corpse));
+        assert_eq!(
+            world.controlled_commodity_quantity(looter, CommodityKind::Bread),
+            Quantity(2)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(corpse, CommodityKind::Bread),
+            Quantity(1)
+        );
+
+        let transferred = world
+            .possessions_of(looter)
+            .into_iter()
+            .find(|entity| *entity != bread)
+            .unwrap();
+        assert_eq!(
+            world.get_component_item_lot(transferred).unwrap().quantity,
+            Quantity(2)
+        );
+        assert_eq!(
+            world.effective_place(transferred),
+            world.effective_place(looter)
+        );
+    }
+
+    #[test]
+    fn loot_transfers_possessed_container_with_nested_contents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let looter = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
+        set_carry_capacity(&mut world, looter, 3, 10);
+        let (satchel, bread) =
+            add_carried_container_with_lot(&mut world, corpse, 4, CommodityKind::Bread, 2);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x23);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(7),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Committed);
+        assert_eq!(world.possessor_of(satchel), Some(looter));
+        assert_eq!(world.direct_container(bread), Some(satchel));
+        assert_eq!(
+            world.controlled_commodity_quantity(looter, CommodityKind::Bread),
+            Quantity(2)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(corpse, CommodityKind::Bread),
+            Quantity(0)
+        );
+    }
+
+    #[allow(clippy::too_many_lines)]
+    #[test]
+    fn loot_requires_dead_colocated_target_and_capable_looter() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let looter = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let incapacitated_looter = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let alive_target = spawn_guard(&mut world, 3, ControlSource::Ai);
+        let dead_target = spawn_guard(&mut world, 4, ControlSource::Ai);
+        let place = world.effective_place(looter).unwrap();
+        let other_place = world.topology().place_ids().nth(1).unwrap();
+        set_carry_capacity(&mut world, looter, 5, 10);
+        set_carry_capacity(&mut world, incapacitated_looter, 6, 10);
+        {
+            let mut txn = new_txn(&mut world, 7);
+            txn.set_component_dead_at(dead_target, DeadAt(Tick(7)))
+                .unwrap();
+            txn.set_ground_location(incapacitated_looter, place)
+                .unwrap();
+            txn.set_component_wound_list(
+                incapacitated_looter,
+                WoundList {
+                    wounds: vec![deprivation_wound(77, 700, 0, 7)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+
+        let alive_affordances = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs);
+        assert!(!alive_affordances.iter().any(|affordance| {
+            affordance.def_id == loot_id && affordance.bound_targets == vec![alive_target]
+        }));
+
+        {
+            let mut txn = new_txn(&mut world, 8);
+            txn.set_ground_location(dead_target, other_place).unwrap();
+            commit_txn(txn);
+        }
+        let moved_affordance = Affordance {
+            def_id: loot_id,
+            actor: looter,
+            bound_targets: vec![dead_target],
+            payload_override: None,
+            explanation: None,
+        };
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x24);
+        let moved_err = start_action(
+            &moved_affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(9),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            moved_err,
+            ActionError::PreconditionFailed("TargetAtActorPlace(0)".to_string())
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 10);
+            txn.set_ground_location(dead_target, place).unwrap();
+            txn.set_component_dead_at(looter, DeadAt(Tick(10))).unwrap();
+            commit_txn(txn);
+        }
+        let dead_actor_err = start_action(
+            &Affordance {
+                def_id: loot_id,
+                actor: looter,
+                bound_targets: vec![dead_target],
+                payload_override: None,
+                explanation: None,
+            },
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            dead_actor_err,
+            ActionError::ConstraintFailed("ActorNotDead".to_string())
+        );
+
+        let incapacitated_err = start_action(
+            &Affordance {
+                def_id: loot_id,
+                actor: incapacitated_looter,
+                bound_targets: vec![dead_target],
+                payload_override: None,
+                explanation: None,
+            },
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(12),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            incapacitated_err,
+            ActionError::ConstraintFailed("ActorNotIncapacitated".to_string())
+        );
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1087,10 +1761,7 @@ mod tests {
             nz(1),
         );
 
-        assert_eq!(
-            effective_guard_skill(profile, None, None, None),
-            pm(200)
-        );
+        assert_eq!(effective_guard_skill(profile, None, None, None), pm(200));
         assert_eq!(
             effective_guard_skill(profile, Some(CombatStance::Defending), None, None),
             pm(500)
@@ -1317,10 +1988,27 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(sword.severity, CommodityKind::Sword.spec().combat_weapon_profile.unwrap().base_wound_severity);
-        assert_eq!(sword.bleed_rate_per_tick, CommodityKind::Sword.spec().combat_weapon_profile.unwrap().base_bleed_rate);
+        assert_eq!(
+            sword.severity,
+            CommodityKind::Sword
+                .spec()
+                .combat_weapon_profile
+                .unwrap()
+                .base_wound_severity
+        );
+        assert_eq!(
+            sword.bleed_rate_per_tick,
+            CommodityKind::Sword
+                .spec()
+                .combat_weapon_profile
+                .unwrap()
+                .base_bleed_rate
+        );
         assert_eq!(unarmed.severity, attacker_profile.unarmed_wound_severity);
-        assert_eq!(unarmed.bleed_rate_per_tick, attacker_profile.unarmed_bleed_rate);
+        assert_eq!(
+            unarmed.bleed_rate_per_tick,
+            attacker_profile.unarmed_bleed_rate
+        );
     }
 
     #[test]

@@ -1,14 +1,16 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    load_of_entity, load_per_unit, BodyCostPerTick, CarryCapacity, EntityId, EntityKind, EventTag,
-    LoadUnits, Quantity, VisibilitySpec, WorldTxn,
+    load_of_entity, load_per_unit, BodyCostPerTick, EntityId, EntityKind, EventTag, Quantity,
+    VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, Constraint,
     DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
 };
+
+use crate::inventory::{move_entity_to_direct_possession, remaining_capacity};
 
 pub fn register_transport_actions(
     defs: &mut ActionDefRegistry,
@@ -114,60 +116,6 @@ pub fn register_transport_actions(
     ]
 }
 
-fn carried_entities(txn: &WorldTxn<'_>, actor: EntityId) -> BTreeSet<EntityId> {
-    let mut carried = BTreeSet::new();
-    let mut frontier = txn.possessions_of(actor);
-
-    while let Some(entity) = frontier.pop() {
-        if !carried.insert(entity) {
-            continue;
-        }
-        frontier.extend(txn.possessions_of(entity));
-        frontier.extend(txn.direct_contents_of(entity));
-    }
-
-    carried
-}
-
-fn carried_load(txn: &WorldTxn<'_>, actor: EntityId) -> Result<LoadUnits, ActionError> {
-    let total = carried_entities(txn, actor)
-        .into_iter()
-        .try_fold(0_u32, |total, entity| {
-            total
-                .checked_add(
-                    load_of_entity(txn, entity)
-                        .map_err(|err| {
-                            ActionError::InternalError(format!(
-                                "failed to compute carried load for {entity}: {err}"
-                            ))
-                        })?
-                        .0,
-                )
-                .ok_or_else(|| ActionError::InternalError("carried load overflowed".to_string()))
-        })?;
-    Ok(LoadUnits(total))
-}
-
-fn remaining_capacity(txn: &WorldTxn<'_>, actor: EntityId) -> Result<LoadUnits, ActionError> {
-    let CarryCapacity(capacity) = txn
-        .get_component_carry_capacity(actor)
-        .copied()
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("actor {actor} lacks CarryCapacity"))
-        })?;
-    let current = carried_load(txn, actor)?;
-    capacity
-        .0
-        .checked_sub(current.0)
-        .map(LoadUnits)
-        .ok_or_else(|| {
-            ActionError::InternalError(format!(
-                "actor {actor} is over carry capacity: load {} exceeds capacity {}",
-                current.0, capacity.0
-            ))
-        })
-}
-
 fn require_item_lot_target(instance: &ActionInstance) -> Result<EntityId, ActionError> {
     instance
         .targets
@@ -245,11 +193,7 @@ fn execute_pick_up(
         split_off
     };
 
-    txn.set_possessor(moved_entity, actor)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    txn.set_ground_location(moved_entity, actor_place)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    txn.add_target(moved_entity);
+    move_entity_to_direct_possession(txn, moved_entity, actor, actor_place)?;
     Ok(moved_entity)
 }
 
@@ -350,8 +294,8 @@ mod tests {
     use super::register_transport_actions;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, Container, ControlSource, EventLog,
-        LoadUnits, Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
+        build_prototype_world, CarryCapacity, CauseRef, CommodityKind, Container, ControlSource,
+        EventLog, LoadUnits, Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{

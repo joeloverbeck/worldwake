@@ -7,8 +7,8 @@ use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
     ActionState, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
-    HarvestActionPayload,
-    Interruptibility, Precondition, RecipeDefinition, RecipeRegistry, ReservationReq, TargetSpec,
+    HarvestActionPayload, Interruptibility, Precondition, RecipeDefinition, RecipeRegistry,
+    ReservationReq, TargetSpec,
 };
 
 pub fn register_harvest_actions(
