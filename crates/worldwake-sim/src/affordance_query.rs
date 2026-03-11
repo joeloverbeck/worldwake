@@ -2,7 +2,7 @@ use crate::{
     ActionDefRegistry, Affordance, BeliefView, Constraint, ConsumableEffect, Precondition,
     TargetSpec,
 };
-use worldwake_core::EntityId;
+use worldwake_core::{EntityId, EntityKind};
 
 #[must_use]
 pub fn get_affordances(
@@ -47,6 +47,8 @@ pub fn get_affordances(
 fn evaluate_constraint(constraint: &Constraint, actor: EntityId, view: &dyn BeliefView) -> bool {
     match constraint {
         Constraint::ActorAlive => view.is_alive(actor),
+        Constraint::ActorNotIncapacitated => !view.is_incapacitated(actor),
+        Constraint::ActorNotDead => !view.is_dead(actor),
         Constraint::ActorHasControl => view.has_control(actor),
         Constraint::ActorNotInTransit => !view.is_in_transit(actor),
         Constraint::ActorAtPlace(place) => view.effective_place(actor) == Some(*place),
@@ -76,6 +78,15 @@ fn evaluate_precondition(
         Precondition::TargetExists(index) => targets
             .get(usize::from(index))
             .is_some_and(|target| view.is_alive(*target)),
+        Precondition::TargetAlive(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| !view.is_dead(*target)),
+        Precondition::TargetDead(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| view.is_dead(*target)),
+        Precondition::TargetIsAgent(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| view.entity_kind(*target) == Some(EntityKind::Agent)),
         Precondition::TargetAtActorPlace(index) => {
             let Some(target) = targets.get(usize::from(index)).copied() else {
                 return false;
@@ -345,6 +356,14 @@ mod tests {
             _entity: EntityId,
             _range: worldwake_core::TickRange,
         ) -> bool {
+            false
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
             false
         }
     }

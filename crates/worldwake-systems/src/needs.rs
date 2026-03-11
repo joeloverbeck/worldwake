@@ -308,9 +308,9 @@ mod tests {
         World, WorldTxn, WoundCause,
     };
     use worldwake_sim::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr,
-        Interruptibility, SystemExecutionContext, SystemId,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerId,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
+        DeterministicRng, DurationExpr, Interruptibility, SystemExecutionContext, SystemId,
     };
 
     fn pm(value: u16) -> Permille {
@@ -537,7 +537,7 @@ mod tests {
                 actor: agent,
                 targets: Vec::new(),
                 start_tick: Tick(6),
-                remaining_ticks: 2,
+                remaining_duration: ActionDuration::Finite(2),
                 status: ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: Some(ActionState::Empty),

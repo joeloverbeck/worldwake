@@ -365,6 +365,14 @@ mod tests {
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
             false
         }
+
+        fn is_dead(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
     }
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug>() {}

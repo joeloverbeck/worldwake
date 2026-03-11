@@ -684,7 +684,10 @@ mod tests {
         let (_instance_id, active) = harness.start_with_active();
         let instance = active.values().next().unwrap();
 
-        assert_eq!(instance.remaining_ticks, 3);
+        assert_eq!(
+            instance.remaining_duration,
+            worldwake_sim::ActionDuration::Finite(3)
+        );
         assert_eq!(instance.status, ActionStatus::Active);
     }
 

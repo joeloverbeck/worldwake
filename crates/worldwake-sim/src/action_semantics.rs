@@ -1,12 +1,16 @@
+use crate::{ActionDuration, ActionPayload};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CommodityKind, EntityId, EntityKind, Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
+    CombatWeaponRef, CommodityKind, EntityId, EntityKind, Quantity, RecipeId, UniqueItemKind,
+    WorkstationTag, World,
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum Constraint {
     ActorAlive,
+    ActorNotIncapacitated,
+    ActorNotDead,
     ActorHasControl,
     ActorNotInTransit,
     ActorAtPlace(EntityId),
@@ -35,6 +39,9 @@ pub enum Precondition {
     ActorAlive,
     ActorCanControlTarget(u8),
     TargetExists(u8),
+    TargetAlive(u8),
+    TargetDead(u8),
+    TargetIsAgent(u8),
     TargetAtActorPlace(u8),
     TargetAdjacentToActor(u8),
     TargetKind {
@@ -88,6 +95,8 @@ pub enum DurationExpr {
     TravelToTarget { target_index: u8 },
     ActorMetabolism { kind: MetabolismDurationKind },
     ActorTradeDisposition,
+    Indefinite,
+    CombatWeapon,
 }
 
 impl DurationExpr {
@@ -98,7 +107,9 @@ impl DurationExpr {
             Self::TargetConsumable { .. }
             | Self::TravelToTarget { .. }
             | Self::ActorMetabolism { .. }
-            | Self::ActorTradeDisposition => None,
+            | Self::ActorTradeDisposition
+            | Self::Indefinite
+            | Self::CombatWeapon => None,
         }
     }
 
@@ -107,9 +118,10 @@ impl DurationExpr {
         world: &World,
         actor: EntityId,
         targets: &[EntityId],
-    ) -> Result<u32, String> {
+        payload: &ActionPayload,
+    ) -> Result<ActionDuration, String> {
         match self {
-            Self::Fixed(ticks) => Ok(ticks.get()),
+            Self::Fixed(ticks) => Ok(ActionDuration::Finite(ticks.get())),
             Self::TargetConsumable { target_index } => {
                 let target = targets
                     .get(usize::from(target_index))
@@ -123,7 +135,9 @@ impl DurationExpr {
                     .spec()
                     .consumable_profile
                     .ok_or_else(|| format!("target {target} commodity is not consumable"))?;
-                Ok(profile.consumption_ticks_per_unit.get())
+                Ok(ActionDuration::Finite(
+                    profile.consumption_ticks_per_unit.get(),
+                ))
             }
             Self::TravelToTarget { target_index } => {
                 let target = targets
@@ -140,7 +154,7 @@ impl DurationExpr {
                     .ok_or_else(|| {
                         format!("no directed travel edge connects {origin} -> {target}")
                     })?;
-                Ok(edge.travel_time_ticks())
+                Ok(ActionDuration::Finite(edge.travel_time_ticks()))
             }
             Self::ActorMetabolism { kind } => {
                 let profile = world
@@ -150,12 +164,29 @@ impl DurationExpr {
                     MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                     MetabolismDurationKind::Wash => profile.wash_ticks.get(),
                 };
-                Ok(ticks)
+                Ok(ActionDuration::Finite(ticks))
             }
             Self::ActorTradeDisposition => world
                 .get_component_trade_disposition_profile(actor)
-                .map(|profile| profile.negotiation_round_ticks.get())
+                .map(|profile| ActionDuration::Finite(profile.negotiation_round_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
+            Self::Indefinite => Ok(ActionDuration::Indefinite),
+            Self::CombatWeapon => {
+                let combat = payload.as_combat().ok_or_else(|| {
+                    "combat weapon duration requires ActionPayload::Combat".to_string()
+                })?;
+                match combat.weapon {
+                    CombatWeaponRef::Unarmed => world
+                        .get_component_combat_profile(actor)
+                        .map(|profile| ActionDuration::Finite(profile.unarmed_attack_ticks.get()))
+                        .ok_or_else(|| format!("actor {actor} lacks combat profile")),
+                    CombatWeaponRef::Commodity(kind) => kind
+                        .spec()
+                        .combat_weapon_profile
+                        .map(|profile| ActionDuration::Finite(profile.attack_duration_ticks.get()))
+                        .ok_or_else(|| format!("commodity {kind:?} is not a combat weapon")),
+                }
+            }
         }
     }
 }
@@ -173,13 +204,15 @@ mod tests {
         Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
         Precondition, ReservationReq, TargetSpec,
     };
+    use crate::{ActionDuration, ActionPayload, CombatActionPayload, TradeActionPayload};
     use serde::{de::DeserializeOwned, Serialize};
     use std::mem;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityId, EntityKind,
-        EventLog, HomeostaticNeeds, MetabolismProfile, Permille, Quantity, RecipeId, Tick,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world, CauseRef, CombatProfile, CombatWeaponRef, CommodityKind,
+        ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds, MetabolismProfile,
+        Permille, Quantity, RecipeId, Tick, TradeDispositionProfile, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -191,8 +224,10 @@ mod tests {
         generation: 2,
     };
 
-    const ALL_CONSTRAINTS: [Constraint; 8] = [
+    const ALL_CONSTRAINTS: [Constraint; 10] = [
         Constraint::ActorAlive,
+        Constraint::ActorNotIncapacitated,
+        Constraint::ActorNotDead,
         Constraint::ActorHasControl,
         Constraint::ActorNotInTransit,
         Constraint::ActorAtPlace(ENTITY_A),
@@ -219,10 +254,13 @@ mod tests {
         TargetSpec::AdjacentPlace,
     ];
 
-    const ALL_PRECONDITIONS: [Precondition; 14] = [
+    const ALL_PRECONDITIONS: [Precondition; 17] = [
         Precondition::ActorAlive,
         Precondition::ActorCanControlTarget(6),
         Precondition::TargetExists(0),
+        Precondition::TargetAlive(8),
+        Precondition::TargetDead(9),
+        Precondition::TargetIsAgent(10),
         Precondition::TargetAtActorPlace(1),
         Precondition::TargetAdjacentToActor(7),
         Precondition::TargetKind {
@@ -257,7 +295,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 5] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 8] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::TargetConsumable { target_index: 0 },
@@ -265,6 +303,9 @@ mod tests {
         DurationExpr::ActorMetabolism {
             kind: MetabolismDurationKind::Wash,
         },
+        DurationExpr::ActorTradeDisposition,
+        DurationExpr::Indefinite,
+        DurationExpr::CombatWeapon,
     ];
 
     const ALL_INTERRUPTIBILITY: [Interruptibility; 3] = [
@@ -305,6 +346,16 @@ mod tests {
             DurationExpr::TravelToTarget { target_index: 0 }.fixed_ticks(),
             None
         );
+        assert_eq!(
+            DurationExpr::ActorMetabolism {
+                kind: MetabolismDurationKind::Toilet,
+            }
+            .fixed_ticks(),
+            None
+        );
+        assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
+        assert_eq!(DurationExpr::Indefinite.fixed_ticks(), None);
+        assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
     }
 
     #[test]
@@ -370,6 +421,10 @@ mod tests {
         Permille::new(value).unwrap()
     }
 
+    fn nz(value: u32) -> NonZeroU32 {
+        NonZeroU32::new(value).unwrap()
+    }
+
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
             world,
@@ -422,30 +477,32 @@ mod tests {
 
         assert_eq!(
             DurationExpr::TargetConsumable { target_index: 0 }
-                .resolve_for(&world, actor, &[target])
+                .resolve_for(&world, actor, &[target], &ActionPayload::None)
                 .unwrap(),
-            CommodityKind::Bread
+            ActionDuration::Finite(
+                CommodityKind::Bread
                 .spec()
                 .consumable_profile
                 .unwrap()
                 .consumption_ticks_per_unit
                 .get()
+            )
         );
         assert_eq!(
             DurationExpr::ActorMetabolism {
                 kind: MetabolismDurationKind::Toilet,
             }
-            .resolve_for(&world, actor, &[target])
+            .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
-            7
+            ActionDuration::Finite(7)
         );
         assert_eq!(
             DurationExpr::ActorMetabolism {
                 kind: MetabolismDurationKind::Wash,
             }
-            .resolve_for(&world, actor, &[target])
+            .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
-            9
+            ActionDuration::Finite(9)
         );
     }
 
@@ -470,9 +527,151 @@ mod tests {
 
         assert_eq!(
             DurationExpr::TravelToTarget { target_index: 0 }
-                .resolve_for(&world, actor, &[destination])
+                .resolve_for(&world, actor, &[destination], &ActionPayload::None)
                 .unwrap(),
-            expected
+            ActionDuration::Finite(expected)
+        );
+    }
+
+    #[test]
+    fn duration_expr_resolves_trade_and_combat_driven_ticks_from_authoritative_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_component_trade_disposition_profile(
+                actor,
+                TradeDispositionProfile {
+                    negotiation_round_ticks: nz(11),
+                    initial_offer_bias: pm(40),
+                    concession_rate: pm(25),
+                    demand_memory_retention_ticks: 180,
+                },
+            )
+            .unwrap();
+            txn.set_component_combat_profile(
+                actor,
+                CombatProfile::new(
+                    pm(1000),
+                    pm(700),
+                    pm(600),
+                    pm(550),
+                    pm(75),
+                    pm(20),
+                    pm(15),
+                    pm(120),
+                    pm(30),
+                    nz(6),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+
+        assert_eq!(
+            DurationExpr::ActorTradeDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::Finite(11)
+        );
+        assert_eq!(
+            DurationExpr::CombatWeapon
+                .resolve_for(
+                    &world,
+                    actor,
+                    &[],
+                    &ActionPayload::Combat(CombatActionPayload {
+                        target: ENTITY_B,
+                        weapon: CombatWeaponRef::Unarmed,
+                    }),
+                )
+                .unwrap(),
+            ActionDuration::Finite(6)
+        );
+        assert_eq!(
+            DurationExpr::CombatWeapon
+                .resolve_for(
+                    &world,
+                    actor,
+                    &[],
+                    &ActionPayload::Combat(CombatActionPayload {
+                        target: ENTITY_B,
+                        weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                    }),
+                )
+                .unwrap(),
+            ActionDuration::Finite(
+                CommodityKind::Sword
+                .spec()
+                .combat_weapon_profile
+                .unwrap()
+                .attack_duration_ticks
+                .get()
+            )
+        );
+    }
+
+    #[test]
+    fn duration_expr_reports_clear_errors_for_invalid_dynamic_durations() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            actor
+        };
+
+        assert_eq!(
+            DurationExpr::Indefinite
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::Indefinite
+        );
+        assert_eq!(
+            DurationExpr::CombatWeapon
+                .resolve_for(
+                    &world,
+                    actor,
+                    &[],
+                    &ActionPayload::Trade(TradeActionPayload {
+                        counterparty: ENTITY_B,
+                        offered_commodity: CommodityKind::Bread,
+                        offered_quantity: Quantity(1),
+                        requested_commodity: CommodityKind::Water,
+                        requested_quantity: Quantity(1),
+                    }),
+                )
+                .unwrap_err(),
+            "combat weapon duration requires ActionPayload::Combat"
+        );
+        assert_eq!(
+            DurationExpr::CombatWeapon
+                .resolve_for(
+                    &world,
+                    actor,
+                    &[],
+                    &ActionPayload::Combat(CombatActionPayload {
+                        target: ENTITY_B,
+                        weapon: CombatWeaponRef::Unarmed,
+                    }),
+                )
+                .unwrap_err(),
+            format!("actor {actor} lacks combat profile")
+        );
+        assert_eq!(
+            DurationExpr::CombatWeapon
+                .resolve_for(
+                    &world,
+                    actor,
+                    &[],
+                    &ActionPayload::Combat(CombatActionPayload {
+                        target: ENTITY_B,
+                        weapon: CombatWeaponRef::Commodity(CommodityKind::Bread),
+                    }),
+                )
+                .unwrap_err(),
+            "commodity Bread is not a combat weapon"
         );
     }
 
@@ -483,6 +682,27 @@ mod tests {
 
         match Precondition::TargetExists(2) {
             Precondition::TargetExists(index) => {
+                let _: u8 = index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetAlive(3) {
+            Precondition::TargetAlive(index) => {
+                let _: u8 = index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetDead(4) {
+            Precondition::TargetDead(index) => {
+                let _: u8 = index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetIsAgent(5) {
+            Precondition::TargetIsAgent(index) => {
                 let _: u8 = index;
             }
             _ => unreachable!(),

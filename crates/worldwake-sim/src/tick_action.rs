@@ -99,13 +99,9 @@ fn tick_action_inner(
         WitnessData::default(),
     );
 
-    if instance.remaining_ticks > 0 {
-        instance.remaining_ticks -= 1;
-    }
-
+    let duration_elapsed = instance.remaining_duration.advance();
     let progress = (handler.on_tick)(def, instance, &mut txn)?;
-    let should_finalize =
-        matches!(progress, ActionProgress::Complete) || instance.remaining_ticks == 0;
+    let should_finalize = matches!(progress, ActionProgress::Complete) || duration_elapsed;
 
     if !should_finalize {
         if txn_has_effects(&txn) {
@@ -185,11 +181,11 @@ fn txn_has_effects(txn: &WorldTxn<'_>) -> bool {
 mod tests {
     use super::{tick_action, TickOutcome};
     use crate::{
-        start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ActionStatus, Affordance, Constraint, DurationExpr, Interruptibility,
-        Precondition, ReplanNeeded, ReservationReq, TargetSpec,
+        start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
+        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionProgress, ActionState, ActionStatus, Affordance, Constraint, DurationExpr,
+        Interruptibility, Precondition, ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -430,8 +426,89 @@ mod tests {
         )
     }
 
+    fn start_indefinite_sample_action() -> (
+        World,
+        EventLog,
+        BTreeMap<ActionInstanceId, ActionInstance>,
+        ActionDefRegistry,
+        ActionHandlerRegistry,
+        ActionInstanceId,
+        EntityId,
+        EntityId,
+    ) {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, target) = setup_actor_and_target(&mut world);
+        let affordance = Affordance {
+            def_id: ActionDefId(0),
+            actor,
+            bound_targets: vec![target],
+            payload_override: None,
+            explanation: None,
+        };
+
+        let mut defs = ActionDefRegistry::new();
+        defs.register(ActionDef {
+            id: ActionDefId(0),
+            name: "defend".to_string(),
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::SpecificEntity(entity(99))],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Indefinite,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(
+            start_none,
+            tick_handler,
+            commit_handler,
+            abort_handler,
+        ));
+
+        let mut active_actions = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_instance_id = ActionInstanceId(5);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        (
+            world,
+            log,
+            active_actions,
+            defs,
+            handlers,
+            instance_id,
+            actor,
+            target,
+        )
+    }
+
     #[test]
-    fn tick_action_decrements_remaining_ticks_and_reinserts_active_instance() {
+    fn tick_action_decrements_finite_duration_and_reinserts_active_instance() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
@@ -460,14 +537,14 @@ mod tests {
 
         assert_eq!(outcome, TickOutcome::Continuing);
         let instance = active_actions.get(&instance_id).unwrap();
-        assert_eq!(instance.remaining_ticks, 2);
+        assert_eq!(instance.remaining_duration, ActionDuration::Finite(2));
         assert_eq!(instance.status, ActionStatus::Active);
         assert_eq!(log.len(), 1);
         assert_eq!(hook_state().lock().unwrap().tick_calls, 1);
     }
 
     #[test]
-    fn tick_action_commits_when_remaining_ticks_reach_zero() {
+    fn tick_action_commits_when_finite_duration_reaches_zero() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, target) =
@@ -508,6 +585,67 @@ mod tests {
         assert_eq!(state.tick_calls, 1);
         assert_eq!(state.commit_calls, 1);
         assert_eq!(state.abort_calls, 0);
+    }
+
+    #[test]
+    fn tick_action_keeps_indefinite_actions_active_until_handler_completes() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
+            start_indefinite_sample_action();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Continuing);
+        assert_eq!(
+            active_actions.get(&instance_id).unwrap().remaining_duration,
+            ActionDuration::Indefinite
+        );
+        assert_eq!(hook_state().lock().unwrap().tick_calls, 1);
+    }
+
+    #[test]
+    fn tick_action_commits_indefinite_actions_when_handler_reports_completion() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        hook_state().lock().unwrap().complete_on_tick = true;
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
+            start_indefinite_sample_action();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(!active_actions.contains_key(&instance_id));
+        assert_eq!(hook_state().lock().unwrap().commit_calls, 1);
+        assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
     }
 
     #[test]

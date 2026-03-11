@@ -87,9 +87,9 @@ pub enum AbortReason {
 mod tests {
     use super::{AbortReason, ActionError, ActionHandler, ActionProgress};
     use crate::{
-        ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionState, ActionStatus, Constraint, DurationExpr, Interruptibility, Precondition,
-        ReservationReq, TargetSpec,
+        ActionDef, ActionDefId, ActionDuration, ActionHandlerId, ActionInstance,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
@@ -113,7 +113,7 @@ mod tests {
                 generation: 1,
             }],
             start_tick: Tick(12),
-            remaining_ticks: 3,
+            remaining_duration: ActionDuration::Finite(3),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(5)],
             local_state: Some(ActionState::Empty),

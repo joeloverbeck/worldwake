@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 1;
+pub const SAVE_FORMAT_VERSION: u32 = 2;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 
@@ -107,7 +107,7 @@ mod tests {
         load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
     };
     use crate::{
-        step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ActionInstance,
+        step_tick, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance,
         ActionInstanceId, ActionPayload, ActionState, ActionStatus, ControllerState,
         DeterministicRng, InputKind, RecipeDefinition, RecipeRegistry, ReplayCheckpoint,
         ReplayRecordingConfig, ReplayState, Scheduler, SimulationState, SystemDispatchTable,
@@ -226,7 +226,7 @@ mod tests {
             actor,
             targets: vec![target],
             start_tick: Tick(2),
-            remaining_ticks: 5,
+            remaining_duration: ActionDuration::Finite(5),
             status: ActionStatus::Active,
             reservation_ids: vec![reservation],
             local_state: Some(ActionState::Empty),

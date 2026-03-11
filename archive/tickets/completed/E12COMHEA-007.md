@@ -1,6 +1,6 @@
 # E12COMHEA-007: Constraint/Precondition validation for new variants in start_gate
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-sim start_gate / action_validation
@@ -12,10 +12,10 @@ The new `Constraint` and `Precondition` variants added in E12COMHEA-005 need val
 
 ## Assumption Reassessment (2026-03-11)
 
-1. Constraint validation happens in `action_validation.rs` — need to verify exact file and function name.
+1. Constraint validation happens in `action_validation.rs` — confirmed.
 2. `start_gate.rs` checks preconditions before allowing an action to start — confirmed pattern exists.
 3. `ActorNotDead` checks for absence of `DeadAt` component on actor.
-4. `ActorNotIncapacitated` checks wound_load < incapacitation_threshold (needs wound helpers from E12COMHEA-006).
+4. `ActorNotIncapacitated` checks wound load against `CombatProfile.incapacitation_threshold` using the wound helpers from E12COMHEA-006 when both `WoundList` and `CombatProfile` are present.
 5. `TargetAlive(u8)` checks target lacks `DeadAt`.
 6. `TargetDead(u8)` checks target has `DeadAt` (used by Loot action).
 7. `TargetIsAgent(u8)` checks target's `EntityKind` is `Agent`.
@@ -23,8 +23,9 @@ The new `Constraint` and `Precondition` variants added in E12COMHEA-005 need val
 ## Architecture Check
 
 1. Follows existing validation patterns exactly — each Constraint/Precondition variant gets a match arm in the validation function.
-2. `ActorNotIncapacitated` needs access to `WoundList` and `CombatProfile` — these are read from World.
-3. This ticket does NOT implement `DurationExpr::Indefinite` or `CombatWeapon` resolution in the scheduler — that's covered by E12COMHEA-005's `resolve_for()` updates and E12COMHEA-008/014.
+2. `ActorNotIncapacitated` needs access to `WoundList` and `CombatProfile` — these are read from `World`.
+3. Missing combat data should fail gracefully rather than inventing fallback combat thresholds. The implemented behavior is permissive unless both required components are present.
+4. This ticket does NOT implement `DurationExpr::Indefinite` or `CombatWeapon` resolution in the scheduler — that lifecycle work has since landed separately.
 
 ## What to Change
 
@@ -75,7 +76,7 @@ In the precondition validation function:
 
 1. All existing constraint/precondition validations unchanged
 2. No false positives: constraints only reject when the condition is actually violated
-3. Agents without `CombatProfile` are treated as if they have wound_capacity=0 (or validation fails gracefully)
+3. Missing wound/combat data is handled gracefully without fabricating thresholds
 
 ## Test Plan
 
@@ -88,3 +89,21 @@ In the precondition validation function:
 1. `cargo test -p worldwake-sim -- start_gate`
 2. `cargo test -p worldwake-sim -- action_validation`
 3. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-11
+- What actually changed:
+  - implemented authoritative validation for `Constraint::ActorNotDead`
+  - implemented authoritative validation for `Constraint::ActorNotIncapacitated`
+  - implemented authoritative validation for `Precondition::TargetAlive`, `TargetDead`, and `TargetIsAgent`
+  - implemented matching affordance-time belief checks in `BeliefView`, `OmniscientBeliefView`, and `affordance_query`
+  - added direct tests for dead/incapacitated actor constraints and alive/dead/agent target preconditions
+- Deviations from original plan:
+  - the work was centered in `action_validation.rs` and the belief-side affordance path; `start_gate.rs` itself did not need separate new match logic
+  - missing `CombatProfile` or `WoundList` does not fabricate zero thresholds; validation stays graceful unless both components are present
+- Verification results:
+  - `cargo test -p worldwake-sim -- action_validation` passed
+  - `cargo test -p worldwake-sim -- affordance_query` passed
+  - `cargo test --workspace` passed
+  - `cargo clippy --workspace` passed

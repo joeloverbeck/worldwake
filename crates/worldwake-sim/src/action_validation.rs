@@ -1,4 +1,4 @@
-use worldwake_core::{ControlSource, EntityId, World, WorldTxn};
+use worldwake_core::{is_incapacitated, ControlSource, EntityId, EntityKind, World, WorldTxn};
 
 use crate::{Constraint, ConsumableEffect, Precondition};
 
@@ -9,6 +9,11 @@ pub(crate) fn evaluate_constraint_authoritatively(
 ) -> bool {
     match constraint {
         Constraint::ActorAlive => world.is_alive(actor),
+        Constraint::ActorNotIncapacitated => world
+            .get_component_wound_list(actor)
+            .zip(world.get_component_combat_profile(actor))
+            .is_none_or(|(wounds, profile)| !is_incapacitated(wounds, profile)),
+        Constraint::ActorNotDead => world.get_component_dead_at(actor).is_none(),
         Constraint::ActorHasControl => has_control(world, actor),
         Constraint::ActorNotInTransit => !world.is_in_transit(actor),
         Constraint::ActorAtPlace(place) => world.effective_place(actor) == Some(*place),
@@ -39,6 +44,15 @@ pub(crate) fn evaluate_precondition_authoritatively(
         Precondition::TargetExists(index) => targets
             .get(usize::from(index))
             .is_some_and(|target| world.is_alive(*target)),
+        Precondition::TargetAlive(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| world.get_component_dead_at(*target).is_none()),
+        Precondition::TargetDead(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| world.get_component_dead_at(*target).is_some()),
+        Precondition::TargetIsAgent(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| world.entity_kind(*target) == Some(EntityKind::Agent)),
         Precondition::TargetAtActorPlace(index) => {
             let Some(target) = targets.get(usize::from(index)).copied() else {
                 return false;
@@ -131,8 +145,8 @@ mod tests {
     use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityKind, EventLog,
-        Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -191,6 +205,81 @@ mod tests {
                 min_qty: Quantity(1),
             },
             actor,
+        ));
+    }
+
+    #[test]
+    fn authoritative_combat_liveness_checks_cover_dead_and_incapacitated_variants() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (healthy, incapacitated, dead) = {
+            let mut txn = new_txn(&mut world, 1);
+            let healthy = txn.create_agent("Healthy", ControlSource::Ai).unwrap();
+            let incapacitated = txn.create_agent("Incapacitated", ControlSource::Ai).unwrap();
+            let dead = txn.create_agent("Dead", ControlSource::Ai).unwrap();
+            for entity in [healthy, incapacitated, dead] {
+                txn.set_ground_location(entity, place).unwrap();
+                txn.set_component_combat_profile(
+                    entity,
+                    worldwake_core::CombatProfile::new(
+                        Permille::new(1000).unwrap(),
+                        Permille::new(700).unwrap(),
+                        Permille::new(600).unwrap(),
+                        Permille::new(550).unwrap(),
+                        Permille::new(75).unwrap(),
+                        Permille::new(20).unwrap(),
+                        Permille::new(15).unwrap(),
+                        Permille::new(120).unwrap(),
+                        Permille::new(30).unwrap(),
+                        std::num::NonZeroU32::new(6).unwrap(),
+                    ),
+                )
+                .unwrap();
+            }
+            txn.set_component_wound_list(healthy, worldwake_core::WoundList::default())
+                .unwrap();
+            txn.set_component_wound_list(
+                incapacitated,
+                worldwake_core::WoundList {
+                    wounds: vec![worldwake_core::Wound {
+                        body_part: worldwake_core::BodyPart::Torso,
+                        cause: worldwake_core::WoundCause::Deprivation(
+                            worldwake_core::DeprivationKind::Starvation,
+                        ),
+                        severity: Permille::new(700).unwrap(),
+                        inflicted_at: Tick(1),
+                        bleed_rate_per_tick: Permille::new(0).unwrap(),
+                    }],
+                },
+            )
+            .unwrap();
+            txn.set_component_wound_list(dead, worldwake_core::WoundList::default())
+                .unwrap();
+            txn.set_component_dead_at(dead, worldwake_core::DeadAt(Tick(2)))
+                .unwrap();
+            commit_txn(txn);
+            (healthy, incapacitated, dead)
+        };
+
+        assert!(evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorNotDead,
+            healthy,
+        ));
+        assert!(evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorNotIncapacitated,
+            healthy,
+        ));
+        assert!(!evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorNotIncapacitated,
+            incapacitated,
+        ));
+        assert!(!evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorNotDead,
+            dead,
         ));
     }
 
@@ -288,6 +377,63 @@ mod tests {
             &[bag],
         ));
         assert!(world.can_exercise_control(actor, bag).is_ok());
+    }
+
+    #[test]
+    fn authoritative_target_liveness_and_agent_preconditions_check_entity_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, living_agent, dead_agent, facility) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let living_agent = txn.create_agent("Living", ControlSource::Ai).unwrap();
+            let dead_agent = txn.create_agent("Dead", ControlSource::Ai).unwrap();
+            let facility = txn.create_entity(EntityKind::Facility);
+            for entity in [actor, living_agent, dead_agent, facility] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_dead_at(dead_agent, worldwake_core::DeadAt(Tick(2)))
+                .unwrap();
+            commit_txn(txn);
+            (actor, living_agent, dead_agent, facility)
+        };
+
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetAlive(0),
+            actor,
+            &[living_agent],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetAlive(0),
+            actor,
+            &[dead_agent],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetDead(0),
+            actor,
+            &[dead_agent],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetDead(0),
+            actor,
+            &[living_agent],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetIsAgent(0),
+            actor,
+            &[living_agent],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetIsAgent(0),
+            actor,
+            &[facility],
+        ));
     }
 
     #[test]

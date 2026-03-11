@@ -187,8 +187,8 @@ impl Scheduler {
 mod tests {
     use super::Scheduler;
     use crate::{
-        ActionDefId, ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
-        InputKind, SystemManifest,
+        ActionDefId, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionState, ActionStatus, InputKind, SystemManifest,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{EntityId, ReservationId, Tick};
@@ -210,7 +210,7 @@ mod tests {
             actor: entity(2),
             targets: vec![entity(3)],
             start_tick: Tick(11),
-            remaining_ticks: 4,
+            remaining_duration: ActionDuration::Finite(4),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(9)],
             local_state: Some(ActionState::Empty),

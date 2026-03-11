@@ -42,8 +42,9 @@ mod tests {
     use super::ActionHandlerRegistry;
     use crate::{
         AbortReason, ActionDef, ActionDefId, ActionError, ActionHandler, ActionHandlerId,
-        ActionInstance, ActionInstanceId, ActionPayload, ActionProgress, ActionState, ActionStatus,
-        Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
+        ActionState, ActionStatus, Constraint, DurationExpr, Interruptibility, Precondition,
+        ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -63,7 +64,7 @@ mod tests {
             },
             targets: vec![],
             start_tick: Tick(9),
-            remaining_ticks: 2,
+            remaining_duration: ActionDuration::Finite(2),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(8)],
             local_state: None,

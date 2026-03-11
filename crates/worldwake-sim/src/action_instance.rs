@@ -1,4 +1,6 @@
-use crate::{ActionDefId, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
+use crate::{
+    ActionDefId, ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
+};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, ReservationId, Tick};
 
@@ -10,7 +12,7 @@ pub struct ActionInstance {
     pub actor: EntityId,
     pub targets: Vec<EntityId>,
     pub start_tick: Tick,
-    pub remaining_ticks: u32,
+    pub remaining_duration: ActionDuration,
     pub status: ActionStatus,
     pub reservation_ids: Vec<ReservationId>,
     pub local_state: Option<ActionState>,
@@ -19,7 +21,9 @@ pub struct ActionInstance {
 #[cfg(test)]
 mod tests {
     use super::ActionInstance;
-    use crate::{ActionDefId, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
+    use crate::{
+        ActionDefId, ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
+    };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{CommodityKind, Quantity};
     use worldwake_core::{EntityId, ReservationId, Tick};
@@ -55,7 +59,7 @@ mod tests {
                 },
             ],
             start_tick: Tick(11),
-            remaining_ticks: 4,
+            remaining_duration: ActionDuration::Finite(4),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(13), ReservationId(21)],
             local_state,

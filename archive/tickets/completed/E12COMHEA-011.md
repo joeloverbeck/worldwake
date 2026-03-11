@@ -1,6 +1,6 @@
 # E12COMHEA-011: Defend action definition + handler
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — worldwake-sim (action def) + worldwake-systems (handler)
@@ -12,17 +12,18 @@ The Defend action is an indefinite-duration stance that boosts the agent's effec
 
 ## Assumption Reassessment (2026-03-11)
 
-1. `DurationExpr::Indefinite` will exist after E12COMHEA-005 — runs until cancelled or interrupted.
+1. `DurationExpr::Indefinite` exists after E12COMHEA-005, and the action runtime now supports first-class `ActionDuration::Indefinite` instead of a fake countdown.
 2. `Interruptibility::FreelyInterruptible` already exists — confirmed.
 3. `ActionPayload::None` is the default — Defend has no special payload.
 4. Hit resolution in E12COMHEA-010 will need to check active actions for Defend on the target — this is a read from the scheduler's active action list, state-mediated per Principle 12.
-5. Active actions are queryable through `SystemExecutionContext.active_actions`.
+5. Active actions are queryable through the scheduler/action execution context.
 
 ## Architecture Check
 
 1. Defend is a "passive" action — no handler effect on start/tick. Its presence in active actions is what matters.
 2. The handler can be a no-op or minimal (just maintain the action state). The guard_skill bonus is applied by the hit resolution function in E12COMHEA-010 when it detects an active Defend action on the target.
 3. `ActionPayload::None` — no combat-specific payload needed.
+4. Registration belongs in the combat systems module, which owns combat action definitions and handlers. It does not need a special-case slot in generic sim registries.
 
 ## What to Change
 
@@ -35,19 +36,18 @@ The Defend action is an indefinite-duration stance that boosts the agent's effec
 - Interruptibility: `FreelyInterruptible`
 - Payload: `ActionPayload::None`
 
-### 2. Register Defend in ActionDefRegistry
+### 2. Expose Defend registration through the combat systems module
 
 ### 3. Implement Defend handler
 
 Minimal handler — Defend's effect is passive (checked by hit resolution). Handler may simply maintain the action without producing events.
 
-### 4. Register handler in ActionHandlerRegistry
+### 4. Register the handler alongside the action definition in the combat systems module
 
 ## Files to Touch
 
-- `crates/worldwake-sim/src/action_def_registry.rs` (modify — register Defend def)
-- `crates/worldwake-systems/src/combat.rs` (modify — Defend handler)
-- `crates/worldwake-sim/src/action_handler_registry.rs` (modify — register handler)
+- `crates/worldwake-systems/src/combat.rs` (modify — Defend action def + handler + registration helper)
+- `crates/worldwake-systems/src/lib.rs` (modify — export registration helper)
 
 ## Out of Scope
 
@@ -55,7 +55,7 @@ Minimal handler — Defend's effect is passive (checked by hit resolution). Hand
 - Hit resolution logic that reads Defend status (E12COMHEA-010 responsibility)
 - Loot/Heal actions (E12COMHEA-012/013)
 - AI deciding when to defend (E13)
-- How Indefinite durations interact with scheduler tick — must be handled in E12COMHEA-005 or E12COMHEA-014
+- Combat hit resolution that consumes active Defend state (E12COMHEA-010 responsibility)
 
 ## Acceptance Criteria
 
@@ -86,3 +86,20 @@ Minimal handler — Defend's effect is passive (checked by hit resolution). Hand
 
 1. `cargo test -p worldwake-systems -- combat`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-11
+- What actually changed:
+  - added `register_defend_action()` in `crates/worldwake-systems/src/combat.rs`
+  - defined Defend as an indefinite, freely interruptible, no-target, no-payload action with the intended combat/liveness constraints
+  - implemented a minimal no-op Defend handler whose effect is its continued presence in active actions
+  - exported the registration helper from `crates/worldwake-systems/src/lib.rs`
+  - added lifecycle tests covering affordance availability, indefinite runtime behavior, cancellation, and dead/incapacitated rejection
+- Deviations from original plan:
+  - registration was implemented as a combat-module helper rather than by hardwiring Defend into generic sim registries, which keeps combat action ownership localized and more extensible
+  - the ticket now relies on the first-class indefinite duration lifecycle rather than the earlier placeholder design
+- Verification results:
+  - `cargo test -p worldwake-systems -- combat` passed
+  - `cargo test --workspace` passed
+  - `cargo clippy --workspace` passed

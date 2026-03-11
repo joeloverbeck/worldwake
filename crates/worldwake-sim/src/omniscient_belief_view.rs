@@ -1,7 +1,8 @@
 use crate::BeliefView;
 use worldwake_core::{
-    CommodityConsumableProfile, CommodityKind, ControlSource, EntityId, EntityKind, Quantity,
-    RecipeId, ResourceSource, TickRange, UniqueItemKind, WorkstationTag, World,
+    is_incapacitated, CommodityConsumableProfile, CommodityKind, ControlSource, EntityId,
+    EntityKind, Quantity, RecipeId, ResourceSource, TickRange, UniqueItemKind, WorkstationTag,
+    World,
 };
 
 /// Temporary stand-in until E14 provides per-agent belief stores.
@@ -112,6 +113,20 @@ impl BeliefView for OmniscientBeliefView<'_> {
             .reservations_for(entity)
             .into_iter()
             .any(|reservation| reservation.range.overlaps(&range))
+    }
+
+    fn is_dead(&self, entity: EntityId) -> bool {
+        self.world.get_component_dead_at(entity).is_some()
+    }
+
+    fn is_incapacitated(&self, entity: EntityId) -> bool {
+        let Some(wounds) = self.world.get_component_wound_list(entity) else {
+            return false;
+        };
+        let Some(profile) = self.world.get_component_combat_profile(entity) else {
+            return false;
+        };
+        is_incapacitated(wounds, profile)
     }
 }
 

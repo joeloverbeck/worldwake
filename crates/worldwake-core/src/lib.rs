@@ -114,4 +114,7 @@ pub use world::lifecycle::{
 };
 pub use world::World;
 pub use world_txn::WorldTxn;
-pub use wounds::{BodyPart, CombatWeaponRef, DeprivationKind, Wound, WoundCause, WoundList};
+pub use wounds::{
+    is_incapacitated, is_wound_load_fatal, BodyPart, CombatWeaponRef, DeprivationKind, Wound,
+    WoundCause, WoundList,
+};

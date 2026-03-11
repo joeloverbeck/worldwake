@@ -1,6 +1,6 @@
 //! Shared body-harm schema for deprivation and combat consequences.
 
-use crate::{CommodityKind, Component, EntityId, Permille, Tick};
+use crate::{CombatProfile, CommodityKind, Component, EntityId, Permille, Tick};
 use serde::{Deserialize, Serialize};
 
 /// Body part targeted by a wound.
@@ -54,14 +54,45 @@ pub struct WoundList {
     pub wounds: Vec<Wound>,
 }
 
+impl WoundList {
+    #[must_use]
+    pub fn wound_load(&self) -> u32 {
+        self.wounds
+            .iter()
+            .map(|wound| u32::from(wound.severity.value()))
+            .sum()
+    }
+
+    #[must_use]
+    pub fn has_bleeding_wounds(&self) -> bool {
+        self.wounds
+            .iter()
+            .any(|wound| wound.bleed_rate_per_tick.value() > 0)
+    }
+}
+
+#[must_use]
+pub fn is_incapacitated(wounds: &WoundList, profile: &CombatProfile) -> bool {
+    wounds.wound_load() >= u32::from(profile.incapacitation_threshold.value())
+}
+
+#[must_use]
+pub fn is_wound_load_fatal(wounds: &WoundList, profile: &CombatProfile) -> bool {
+    wounds.wound_load() >= u32::from(profile.wound_capacity.value())
+}
+
 impl Component for WoundList {}
 
 #[cfg(test)]
 mod tests {
-    use super::{BodyPart, CombatWeaponRef, DeprivationKind, Wound, WoundCause, WoundList};
-    use crate::{traits::Component, CommodityKind, EntityId, Permille, Tick};
+    use super::{
+        is_incapacitated, is_wound_load_fatal, BodyPart, CombatWeaponRef, DeprivationKind, Wound,
+        WoundCause, WoundList,
+    };
+    use crate::{traits::Component, CombatProfile, CommodityKind, EntityId, Permille, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
+    use std::num::NonZeroU32;
 
     fn sample_wound() -> Wound {
         Wound {
@@ -87,6 +118,21 @@ mod tests {
             inflicted_at: Tick(11),
             bleed_rate_per_tick: Permille::new(35).unwrap(),
         }
+    }
+
+    fn sample_combat_profile() -> CombatProfile {
+        CombatProfile::new(
+            Permille::new(1000).unwrap(),
+            Permille::new(700).unwrap(),
+            Permille::new(600).unwrap(),
+            Permille::new(550).unwrap(),
+            Permille::new(75).unwrap(),
+            Permille::new(20).unwrap(),
+            Permille::new(15).unwrap(),
+            Permille::new(120).unwrap(),
+            Permille::new(30).unwrap(),
+            NonZeroU32::new(6).unwrap(),
+        )
     }
 
     fn assert_component_bounds<T: Component>() {}
@@ -165,5 +211,83 @@ mod tests {
         let roundtrip: WoundList = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, wound_list);
+    }
+
+    #[test]
+    fn wound_load_is_zero_for_empty_list_and_sums_all_wounds() {
+        let empty = WoundList::default();
+        assert_eq!(empty.wound_load(), 0);
+
+        let wound_list = WoundList {
+            wounds: vec![
+                sample_wound(),
+                sample_combat_wound(),
+                Wound {
+                    body_part: BodyPart::LeftArm,
+                    cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
+                    severity: Permille::new(150).unwrap(),
+                    inflicted_at: Tick(13),
+                    bleed_rate_per_tick: Permille::new(0).unwrap(),
+                },
+            ],
+        };
+
+        assert_eq!(wound_list.wound_load(), 1600);
+    }
+
+    #[test]
+    fn wound_load_helpers_derive_incapacitation_and_fatality_from_profile_thresholds() {
+        let profile = sample_combat_profile();
+        let light = WoundList {
+            wounds: vec![Wound {
+                body_part: BodyPart::Torso,
+                cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                severity: Permille::new(300).unwrap(),
+                inflicted_at: Tick(1),
+                bleed_rate_per_tick: Permille::new(0).unwrap(),
+            }],
+        };
+        let incapacitated = WoundList {
+            wounds: vec![Wound {
+                body_part: BodyPart::Torso,
+                cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                severity: Permille::new(700).unwrap(),
+                inflicted_at: Tick(1),
+                bleed_rate_per_tick: Permille::new(0).unwrap(),
+            }],
+        };
+        let fatal = WoundList {
+            wounds: vec![Wound {
+                body_part: BodyPart::Head,
+                cause: WoundCause::Combat {
+                    attacker: EntityId {
+                        slot: 1,
+                        generation: 0,
+                    },
+                    weapon: CombatWeaponRef::Unarmed,
+                },
+                severity: Permille::new(1000).unwrap(),
+                inflicted_at: Tick(2),
+                bleed_rate_per_tick: Permille::new(20).unwrap(),
+            }],
+        };
+
+        assert!(!is_incapacitated(&light, &profile));
+        assert!(is_incapacitated(&incapacitated, &profile));
+        assert!(!is_wound_load_fatal(&incapacitated, &profile));
+        assert!(is_wound_load_fatal(&fatal, &profile));
+    }
+
+    #[test]
+    fn has_bleeding_wounds_detects_any_positive_bleed_rate() {
+        assert!(!WoundList::default().has_bleeding_wounds());
+        assert!(!WoundList {
+            wounds: vec![sample_wound()]
+        }
+        .has_bleeding_wounds());
+        assert!(WoundList {
+            wounds: vec![sample_wound(), sample_combat_wound()]
+        }
+        .has_bleeding_wounds());
     }
 }

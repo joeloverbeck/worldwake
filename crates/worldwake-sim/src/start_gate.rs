@@ -3,7 +3,8 @@ use crate::{
         evaluate_constraint_authoritatively, evaluate_precondition_authoritatively,
     },
     ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
-    ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus, Affordance,
+    ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus,
+    Affordance,
 };
 use worldwake_core::{EventTag, Tick, TickRange, WitnessData, WorldError, WorldTxn};
 
@@ -47,10 +48,7 @@ pub fn start_action(
 
     let actor_place = world.effective_place(affordance.actor);
 
-    let duration = def
-        .duration
-        .resolve_for(world, affordance.actor, &affordance.bound_targets)
-        .map_err(ActionError::PreconditionFailed)?;
+    let duration = resolve_action_duration(world, def, affordance)?;
     let mut txn = WorldTxn::new(
         world,
         context.tick,
@@ -129,7 +127,7 @@ fn build_action_instance(
     def: &crate::ActionDef,
     affordance: &Affordance,
     start_tick: Tick,
-    remaining_ticks: u32,
+    remaining_duration: ActionDuration,
     reservation_ids: Vec<worldwake_core::ReservationId>,
 ) -> ActionInstance {
     ActionInstance {
@@ -142,25 +140,51 @@ fn build_action_instance(
         actor: affordance.actor,
         targets: affordance.bound_targets.clone(),
         start_tick,
-        remaining_ticks,
+        remaining_duration,
         status: ActionStatus::Active,
         reservation_ids,
         local_state: None,
     }
 }
 
-fn reservation_range(current_tick: Tick, duration: u32) -> Result<Option<TickRange>, ActionError> {
-    if duration == 0 {
-        return Ok(None);
-    }
+fn resolve_action_duration(
+    world: &worldwake_core::World,
+    def: &crate::ActionDef,
+    affordance: &Affordance,
+) -> Result<ActionDuration, ActionError> {
+    let effective_payload = affordance.payload_override.as_ref().unwrap_or(&def.payload);
+    def.duration
+        .resolve_for(
+            world,
+            affordance.actor,
+            &affordance.bound_targets,
+            effective_payload,
+        )
+        .map_err(ActionError::PreconditionFailed)
+}
 
-    let end = current_tick
-        .0
-        .checked_add(u64::from(duration))
-        .ok_or_else(|| ActionError::InternalError("reservation range overflowed".to_string()))?;
-    TickRange::new(current_tick, Tick(end))
-        .map(Some)
-        .map_err(|err| ActionError::InternalError(err.to_string()))
+fn reservation_range(
+    current_tick: Tick,
+    duration: ActionDuration,
+) -> Result<Option<TickRange>, ActionError> {
+    match duration {
+        ActionDuration::Finite(0) => Ok(None),
+        ActionDuration::Finite(duration) => {
+            let end = current_tick
+                .0
+                .checked_add(u64::from(duration))
+                .ok_or_else(|| {
+                    ActionError::InternalError("reservation range overflowed".to_string())
+                })?;
+            TickRange::new(current_tick, Tick(end))
+                .map(Some)
+                .map_err(|err| ActionError::InternalError(err.to_string()))
+        }
+        ActionDuration::Indefinite => Err(ActionError::PreconditionFailed(
+            "indefinite actions cannot reserve targets until reservation lifecycle support exists"
+                .to_string(),
+        )),
+    }
 }
 
 fn release_reservations(
@@ -187,17 +211,17 @@ mod tests {
     use super::start_action;
     use crate::{
         AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress, ActionState,
-        Affordance, Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq,
-        TargetSpec,
+        ActionDuration, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress,
+        ActionState, Affordance, CombatActionPayload, Constraint, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EventLog, EventTag, Quantity, Tick, TickRange, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile, CombatWeaponRef,
+        CommodityKind, ControlSource, EntityId, EventLog, EventTag, Quantity, Tick, TickRange,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -374,7 +398,7 @@ mod tests {
         assert_eq!(instance.actor, actor);
         assert_eq!(instance.targets, vec![target]);
         assert_eq!(instance.start_tick, Tick(5));
-        assert_eq!(instance.remaining_ticks, 3);
+        assert_eq!(instance.remaining_duration, ActionDuration::Finite(3));
         assert_eq!(instance.status, crate::ActionStatus::Active);
         assert_eq!(instance.local_state, Some(ActionState::Empty));
         assert_eq!(instance.reservation_ids.len(), 1);
@@ -390,6 +414,232 @@ mod tests {
         assert_eq!(record.target_ids, vec![target]);
         assert!(record.tags.contains(&EventTag::ActionStarted));
         assert_eq!(record.state_deltas.len(), 1);
+    }
+
+    #[test]
+    fn start_action_uses_payload_override_when_resolving_combat_duration() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_component_combat_profile(
+                actor,
+                CombatProfile::new(
+                    worldwake_core::Permille::new(1000).unwrap(),
+                    worldwake_core::Permille::new(700).unwrap(),
+                    worldwake_core::Permille::new(600).unwrap(),
+                    worldwake_core::Permille::new(550).unwrap(),
+                    worldwake_core::Permille::new(75).unwrap(),
+                    worldwake_core::Permille::new(20).unwrap(),
+                    worldwake_core::Permille::new(15).unwrap(),
+                    worldwake_core::Permille::new(120).unwrap(),
+                    worldwake_core::Permille::new(30).unwrap(),
+                    NonZeroU32::new(6).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let affordance = Affordance {
+            def_id: ActionDefId(0),
+            actor,
+            bound_targets: Vec::new(),
+            payload_override: Some(ActionPayload::Combat(CombatActionPayload {
+                target: entity(55),
+                weapon: CombatWeaponRef::Commodity(CommodityKind::Bow),
+            })),
+            explanation: None,
+        };
+        let mut defs = ActionDefRegistry::new();
+        defs.register(ActionDef {
+            id: ActionDefId(0),
+            name: "attack".to_string(),
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: Vec::new(),
+            preconditions: vec![Precondition::ActorAlive],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::CombatWeapon,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
+            payload: ActionPayload::Combat(CombatActionPayload {
+                target: entity(56),
+                weapon: CombatWeaponRef::Unarmed,
+            }),
+            handler: ActionHandlerId(0),
+        });
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(
+            start_none,
+            tick_continue,
+            commit_noop,
+            abort_noop,
+        ));
+        let mut active_actions = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_instance_id = ActionInstanceId(0);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(2),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            active_actions.get(&action_id).unwrap().remaining_duration,
+            ActionDuration::Finite(
+                CommodityKind::Bow
+                    .spec()
+                    .combat_weapon_profile
+                    .unwrap()
+                    .attack_duration_ticks
+                    .get()
+            )
+        );
+        assert_eq!(
+            active_actions.get(&action_id).unwrap().payload,
+            affordance.payload_override.unwrap()
+        );
+    }
+
+    #[test]
+    fn start_action_supports_indefinite_duration_when_no_reservations_are_needed() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let affordance = Affordance {
+            def_id: ActionDefId(0),
+            actor,
+            bound_targets: Vec::new(),
+            payload_override: None,
+            explanation: None,
+        };
+        let mut defs = ActionDefRegistry::new();
+        defs.register(ActionDef {
+            id: ActionDefId(0),
+            name: "defend".to_string(),
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: Vec::new(),
+            preconditions: vec![Precondition::ActorAlive],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Indefinite,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(
+            start_none,
+            tick_continue,
+            commit_noop,
+            abort_noop,
+        ));
+        let mut active_actions = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_instance_id = ActionInstanceId(0);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(2),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            active_actions.get(&action_id).unwrap().remaining_duration,
+            ActionDuration::Indefinite
+        );
+    }
+
+    #[test]
+    fn start_action_rejects_indefinite_duration_when_reservations_are_required() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, target, _place) = setup_actor_and_target(&mut world);
+        let affordance = Affordance {
+            def_id: ActionDefId(0),
+            actor,
+            bound_targets: vec![target],
+            payload_override: None,
+            explanation: None,
+        };
+        let mut defs = ActionDefRegistry::new();
+        let mut def = sample_def(
+            ActionDefId(0),
+            ActionHandlerId(0),
+            vec![Constraint::ActorAlive],
+            vec![Precondition::TargetExists(0), Precondition::TargetAtActorPlace(0)],
+            vec![ReservationReq { target_index: 0 }],
+            NonZeroU32::MIN,
+        );
+        def.duration = DurationExpr::Indefinite;
+        defs.register(def);
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(
+            start_none,
+            tick_continue,
+            commit_noop,
+            abort_noop,
+        ));
+        let mut active_actions = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_instance_id = ActionInstanceId(0);
+
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(2),
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            ActionError::PreconditionFailed(
+                "indefinite actions cannot reserve targets until reservation lifecycle support exists"
+                    .to_string()
+            )
+        );
     }
 
     #[test]
@@ -814,7 +1064,7 @@ mod tests {
                 actor,
                 targets: Vec::new(),
                 start_tick: Tick(0),
-                remaining_ticks: 1,
+                remaining_duration: ActionDuration::Finite(1),
                 status: crate::ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: None,

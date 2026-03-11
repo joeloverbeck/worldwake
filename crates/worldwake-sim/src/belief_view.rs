@@ -24,4 +24,6 @@ pub trait BeliefView {
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
     fn has_control(&self, entity: EntityId) -> bool;
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
+    fn is_dead(&self, entity: EntityId) -> bool;
+    fn is_incapacitated(&self, entity: EntityId) -> bool;
 }
