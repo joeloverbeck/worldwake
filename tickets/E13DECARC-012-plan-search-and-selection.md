@@ -8,7 +8,7 @@
 
 ## Problem
 
-For each top-ranked grounded candidate, the planner must run a deterministic bounded best-first search over `PlanningState`, using `get_affordances()` as the sole successor generator, filtering to relevant `PlannerOpKind`s, and honoring budget limits. Plan selection then chooses the best valid plan using deterministic lexicographic ordering with anti-thrashing rules.
+For each top-ranked grounded candidate, the planner must run a deterministic bounded best-first search over `PlanningState`, using `get_affordances()` as the sole successor generator, filtering to relevant `PlannerOpKind`s, and honoring budget limits. Plan selection then chooses the best valid plan using ranked candidates and deterministic lexicographic ordering with anti-thrashing rules.
 
 ## Assumption Reassessment (2026-03-11)
 
@@ -74,7 +74,7 @@ Full implementations of `GoalSemantics` for each `GoalKind`:
 
 ```rust
 pub fn select_best_plan(
-    candidates: &[GroundedGoal],
+    candidates: &[RankedGoal],
     plans: &[(GoalKey, Option<PlannedPlan>)],
     current: &AgentDecisionRuntime,
     budget: &PlanningBudget,

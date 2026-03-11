@@ -126,6 +126,8 @@ All AI-owned types: `Clone`, `Debug`, `Eq`, `PartialEq`, `Serialize`, `Deseriali
 
 ## Outcome
 
+Outcome amended: 2026-03-11
+
 - Completion date: 2026-03-11
 - What actually changed:
   - Corrected the ticket scope to reflect that the canonical shared goal identity (`CommodityPurpose`, `GoalKind`, `GoalKey`) was already implemented in `worldwake-core`.
@@ -137,6 +139,7 @@ All AI-owned types: `Clone`, `Debug`, `Eq`, `PartialEq`, `Serialize`, `Deseriali
   - Did not re-implement or modify the shared goal identity in `worldwake-core`; that work was already completed by E13DECARC-003 and reopening it would have been redundant architectural churn.
   - Created `goal_model.rs` as a new module instead of modifying a nonexistent stub file.
   - Kept the `worldwake-ai` crate surface thin and direct: simple re-exports only, with no wrapper types or compatibility aliasing.
+  - A later 2026-03-11 architecture refinement narrowed `GroundedGoal` to evidence-only data and introduced `RankedGoal` as the separate ranking-layer read model. This preserved the ticket's layering goal while removing cross-phase coupling between grounding and scoring.
 - Verification results:
   - `cargo test -p worldwake-ai` passed.
   - `cargo test --workspace` passed.

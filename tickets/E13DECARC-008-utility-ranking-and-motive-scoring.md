@@ -12,11 +12,11 @@ After candidate generation, goals must be ranked by priority class and motive sc
 
 ## Assumption Reassessment (2026-03-11)
 
-1. `GoalPriorityClass` with `Ord` from E13DECARC-004 — dependency.
+1. `GoalPriorityClass` and `RankedGoal` live in `worldwake-ai`; `GroundedGoal` is now evidence-only.
 2. `UtilityProfile` with per-drive weights from E13DECARC-002 — dependency.
 3. `classify_band()` from E13DECARC-006 — dependency.
 4. `DemandMemory`, `MerchandiseProfile` exist in `worldwake-core` — confirmed.
-5. `Permille.raw()` or `.value()` exists for extracting u16 — need to confirm method name.
+5. `Permille.value()` exists for extracting `u16`.
 
 ## Architecture Check
 
@@ -27,9 +27,24 @@ After candidate generation, goals must be ranked by priority class and motive sc
 
 ## What to Change
 
-### 1. Implement priority class assignment
+### 1. Implement ranking as a separate pass
 
-In `worldwake-ai/src/candidate_generation.rs` or a new helper module, add priority class logic:
+In a new `worldwake-ai/src/ranking.rs` module, add:
+
+```rust
+pub fn rank_candidates(
+    candidates: &[GroundedGoal],
+    view: &dyn BeliefView,
+    agent: EntityId,
+    utility: &UtilityProfile,
+) -> Vec<RankedGoal>
+```
+
+This pass consumes grounded candidates and returns ranked candidates. Candidate generation must remain evidence-only.
+
+### 2. Implement priority class assignment
+
+Add priority class logic:
 
 - Self-care goals: use `classify_band(drive_value, threshold_band)`
 - `ReduceDanger`: use `classify_band(danger_pressure, thresholds.danger)`
@@ -37,13 +52,13 @@ In `worldwake-ai/src/candidate_generation.rs` or a new helper module, add priori
 - Enterprise goals (`RestockCommodity`, `ProduceCommodity`, `SellCommodity`, `MoveCargo`): capped at `Medium`
 - `LootCorpse`, `BuryCorpse`: capped at `Low`
 
-### 2. Implement hard cap rules
+### 3. Implement hard cap rules
 
 - If any self-care drive or danger is `Critical`, enterprise/loot/burial goals may not outrank it
 - If danger is `High`, loot and burial candidates are suppressed entirely
 - If any self-care drive is `High`, loot and burial are suppressed entirely
 
-### 3. Implement motive scoring
+### 4. Implement motive scoring
 
 ```rust
 // Self-care:
@@ -60,7 +75,7 @@ motive_score = pain_weight.value() as u32 * pain_pressure.value() as u32
 motive_score = enterprise_weight.value() as u32 * opportunity_signal.value() as u32
 ```
 
-### 4. Implement opportunity_signal derivation
+### 5. Implement opportunity_signal derivation
 
 Per-candidate, derived from:
 - current stock deficit at sale point
@@ -70,7 +85,7 @@ Per-candidate, derived from:
 
 Returns `Permille` — no stored global enterprise score.
 
-### 5. Implement deterministic tie-breaking
+### 6. Implement deterministic tie-breaking
 
 Sort candidates by:
 1. `GoalPriorityClass` (highest first)
@@ -80,8 +95,9 @@ Sort candidates by:
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/candidate_generation.rs` (modify — add scoring/ranking to generated candidates)
-- `crates/worldwake-ai/src/pressure.rs` (modify — add `opportunity_signal` if colocated, or keep in candidate_generation)
+- `crates/worldwake-ai/src/ranking.rs` (new — ranking pass over grounded candidates)
+- `crates/worldwake-ai/src/lib.rs` (modify — export `RankedGoal` / ranking API if needed)
+- `crates/worldwake-ai/src/pressure.rs` (modify only if a reusable helper belongs there)
 
 ## Out of Scope
 
@@ -117,7 +133,7 @@ Sort candidates by:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/candidate_generation.rs` — tests for priority assignment, hard caps, motive scoring, tie-breaking, opportunity signal
+1. `crates/worldwake-ai/src/ranking.rs` — tests for priority assignment, hard caps, motive scoring, tie-breaking, and opportunity signal
 
 ### Commands
 

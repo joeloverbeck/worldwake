@@ -14,15 +14,20 @@ pub enum GoalPriorityClass {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GroundedGoal {
     pub key: GoalKey,
-    pub priority_class: GoalPriorityClass,
-    pub motive_score: u32,
     pub evidence_entities: BTreeSet<EntityId>,
     pub evidence_places: BTreeSet<EntityId>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RankedGoal {
+    pub grounded: GroundedGoal,
+    pub priority_class: GoalPriorityClass,
+    pub motive_score: u32,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{GoalPriorityClass, GroundedGoal};
+    use super::{GoalPriorityClass, GroundedGoal, RankedGoal};
     use crate::{CommodityPurpose, GoalKey, GoalKind};
     use serde::{de::DeserializeOwned, Serialize};
     use std::{collections::BTreeSet, fmt::Debug};
@@ -42,6 +47,7 @@ mod tests {
     #[test]
     fn grounded_goal_satisfies_required_bounds() {
         assert_value_bounds::<GroundedGoal>();
+        assert_value_bounds::<RankedGoal>();
     }
 
     #[test]
@@ -62,14 +68,32 @@ mod tests {
             key: GoalKey::from(GoalKind::Heal {
                 target: entity_id(7, 1),
             }),
-            priority_class: GoalPriorityClass::High,
-            motive_score: 900,
             evidence_entities: BTreeSet::from([entity_id(3, 0), entity_id(3, 1)]),
             evidence_places: BTreeSet::from([entity_id(10, 0)]),
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
         let roundtrip: GroundedGoal = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn ranked_goal_roundtrips_through_bincode() {
+        let goal = RankedGoal {
+            grounded: GroundedGoal {
+                key: GoalKey::from(GoalKind::Heal {
+                    target: entity_id(7, 1),
+                }),
+                evidence_entities: BTreeSet::from([entity_id(3, 0), entity_id(3, 1)]),
+                evidence_places: BTreeSet::from([entity_id(10, 0)]),
+            },
+            priority_class: GoalPriorityClass::High,
+            motive_score: 900,
+        };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: RankedGoal = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
     }

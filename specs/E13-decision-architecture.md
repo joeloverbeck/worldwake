@@ -232,10 +232,14 @@ Normalize goal identity for planning, switching, and failure memory:
 
     pub struct GroundedGoal {
         pub key: GoalKey,
-        pub priority_class: GoalPriorityClass,
-        pub motive_score: u32,
         pub evidence_entities: BTreeSet<EntityId>,
         pub evidence_places: BTreeSet<EntityId>,
+    }
+
+    pub struct RankedGoal {
+        pub grounded: GroundedGoal,
+        pub priority_class: GoalPriorityClass,
+        pub motive_score: u32,
     }
 
 `GroundedGoal` must be built from concrete current beliefs only.
@@ -419,7 +423,7 @@ It is a causally grounded preference for “use what you already control before 
 ## Utility and Priority Ranking
 
 ### Priority Class
-Candidates are ordered first by `GoalPriorityClass`.
+Ranked candidates are ordered first by `GoalPriorityClass`.
 
 Mapping:
 - self-care goals (`ConsumeOwnedCommodity`, `AcquireCommodity(SelfConsume)`, `Sleep`, `Relieve`, `Wash`) use the corresponding drive band
@@ -900,7 +904,7 @@ After E13, verify:
 
 ## Acceptance Criteria
 - Unified loop:
-  beliefs -> grounded candidates -> priority ranking -> bounded plan search -> exact affordance-keyed execution
+  beliefs -> grounded candidates -> ranked candidates -> bounded plan search -> exact affordance-keyed execution
 - All AI reads go through `&dyn BeliefView`
 - `get_affordances()` is the only legality / successor source
 - Plans store exact ordered targets, not semantic placeholders
