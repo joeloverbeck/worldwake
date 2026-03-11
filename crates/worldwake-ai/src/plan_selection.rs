@@ -191,6 +191,7 @@ mod tests {
             current_plan: Some(current_plan.clone()),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
         };
 
         let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();

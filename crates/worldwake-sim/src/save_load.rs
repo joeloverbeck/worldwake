@@ -318,12 +318,15 @@ mod tests {
     fn services<'a>(
         action_defs: &'a ActionDefRegistry,
         action_handlers: &'a ActionHandlerRegistry,
+        recipe_registry: &'a RecipeRegistry,
         systems: &'a SystemDispatchTable,
     ) -> TickStepServices<'a> {
         TickStepServices {
             action_defs,
             action_handlers,
+            recipe_registry,
             systems,
+            input_producer: None,
         }
     }
 
@@ -392,6 +395,7 @@ mod tests {
         let systems = deterministic_systems();
 
         for _ in 0..ticks {
+            let recipe_registry = state.recipe_registry().clone();
             let (world, event_log, scheduler, controller, rng) = state.runtime_parts_mut();
             step_tick(
                 world,
@@ -399,7 +403,7 @@ mod tests {
                 scheduler,
                 controller,
                 rng,
-                services(&action_defs, &action_handlers, &systems),
+                services(&action_defs, &action_handlers, &recipe_registry, &systems),
             )
             .unwrap();
         }

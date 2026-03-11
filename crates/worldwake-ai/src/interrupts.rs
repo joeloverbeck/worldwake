@@ -223,6 +223,7 @@ mod tests {
             current_plan: None,
             dirty: false,
             last_priority_class: Some(last_priority_class),
+            ..AgentDecisionRuntime::default()
         }
     }
 

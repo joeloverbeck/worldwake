@@ -105,6 +105,7 @@ struct Harness {
     rng: DeterministicRng,
     defs: ActionDefRegistry,
     handlers: ActionHandlerRegistry,
+    recipes: RecipeRegistry,
     actor: worldwake_core::EntityId,
     orchard_place: worldwake_core::EntityId,
     bridge_place: worldwake_core::EntityId,
@@ -168,6 +169,7 @@ impl Harness {
             rng: DeterministicRng::new(Seed([7; 32])),
             defs,
             handlers,
+            recipes,
             actor,
             orchard_place,
             bridge_place,
@@ -187,7 +189,9 @@ impl Harness {
             TickStepServices {
                 action_defs: &self.defs,
                 action_handlers: &self.handlers,
+                recipe_registry: &self.recipes,
                 systems: &dispatch_table(),
+                input_producer: None,
             },
         )
     }

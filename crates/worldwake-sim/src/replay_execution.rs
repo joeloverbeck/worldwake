@@ -97,6 +97,17 @@ pub fn replay_and_verify(
     initial_state: &SimulationState,
     services: TickStepServices<'_>,
 ) -> Result<StateHash, Vec<ReplayError>> {
+    let TickStepServices {
+        action_defs,
+        action_handlers,
+        recipe_registry,
+        systems,
+        input_producer,
+    } = services;
+    assert!(
+        input_producer.is_none(),
+        "replay_and_verify does not support stateful tick input producers"
+    );
     let mut errors = Vec::new();
     let initial_hash = match initial_state.replay_bootstrap_hash() {
         Ok(hash) => hash,
@@ -126,7 +137,20 @@ pub fn replay_and_verify(
     while state.scheduler().current_tick() < state.replay_state().terminal_tick() {
         let result = {
             let (world, event_log, scheduler, controller, rng) = state.runtime_parts_mut();
-            step_tick(world, event_log, scheduler, controller, rng, services)
+            step_tick(
+                world,
+                event_log,
+                scheduler,
+                controller,
+                rng,
+                TickStepServices {
+                    action_defs,
+                    action_handlers,
+                    recipe_registry,
+                    systems,
+                    input_producer: None,
+                },
+            )
         }
         .unwrap_or_else(|error| panic!("replay tick stepping failed unexpectedly: {error}"));
 
@@ -366,12 +390,15 @@ mod tests {
     fn services<'a>(
         action_defs: &'a ActionDefRegistry,
         action_handlers: &'a ActionHandlerRegistry,
+        recipe_registry: &'a RecipeRegistry,
         systems: &'a SystemDispatchTable,
     ) -> TickStepServices<'a> {
         TickStepServices {
             action_defs,
             action_handlers,
+            recipe_registry,
             systems,
+            input_producer: None,
         }
     }
 
@@ -480,6 +507,7 @@ mod tests {
         let systems = deterministic_systems();
 
         for _ in 0..total_ticks {
+            let recipe_registry = state.recipe_registry().clone();
             let result = {
                 let (world, event_log, scheduler, controller, rng) = state.runtime_parts_mut();
                 crate::step_tick(
@@ -488,7 +516,7 @@ mod tests {
                     scheduler,
                     controller,
                     rng,
-                    services(&action_defs, &action_handlers, &systems),
+                    services(&action_defs, &action_handlers, &recipe_registry, &systems),
                 )
             }
             .unwrap();
@@ -516,7 +544,12 @@ mod tests {
 
         replay_and_verify(
             initial_state,
-            services(&action_defs, &action_handlers, &systems),
+            services(
+                &action_defs,
+                &action_handlers,
+                initial_state.recipe_registry(),
+                &systems,
+            ),
         )
     }
 
@@ -758,6 +791,7 @@ mod tests {
         let systems = deterministic_systems();
 
         for _ in 0..3 {
+            let recipe_registry = state.recipe_registry().clone();
             let (world, event_log, scheduler, controller, rng) = state.runtime_parts_mut();
             crate::step_tick(
                 world,
@@ -765,7 +799,7 @@ mod tests {
                 scheduler,
                 controller,
                 rng,
-                services(&action_defs, &action_handlers, &systems),
+                services(&action_defs, &action_handlers, &recipe_registry, &systems),
             )
             .unwrap();
         }

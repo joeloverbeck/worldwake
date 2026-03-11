@@ -19,6 +19,7 @@ pub mod action_payload;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
+pub mod autonomous_controller;
 pub mod affordance;
 pub mod affordance_query;
 pub mod belief_view;
@@ -40,6 +41,7 @@ pub mod start_gate;
 pub mod system_dispatch;
 pub mod system_manifest;
 pub mod tick_action;
+pub mod tick_input_producer;
 pub mod tick_step;
 pub mod trade_valuation;
 
@@ -66,6 +68,9 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
+pub use autonomous_controller::{
+    AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
+};
 pub use affordance::Affordance;
 pub use affordance_query::get_affordances;
 pub use belief_view::{estimate_duration_from_beliefs, BeliefView};
@@ -86,11 +91,12 @@ pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Rep
 pub use save_load::{
     load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
 };
-pub use scheduler::Scheduler;
+pub use scheduler::{Scheduler, SchedulerActionRuntime};
 pub use simulation_state::SimulationState;
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use tick_action::{tick_action, TickOutcome};
+pub use tick_input_producer::{TickInputContext, TickInputError, TickInputProducer};
 pub use tick_step::{step_tick, TickStepError, TickStepResult, TickStepServices};
 pub use trade_valuation::{evaluate_trade_bundle, TradeAcceptance, TradeRejectionReason};

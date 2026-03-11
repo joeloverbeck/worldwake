@@ -2,7 +2,8 @@ use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     get_affordances, ActionDefId, ActionDefRegistry, ActionError, ActionExecutionContext,
     ActionHandlerRegistry, ActionInstanceId, ControlError, ControllerState, DeterministicRng,
-    ExternalAbortReason, InputKind, Scheduler, SystemDispatchTable, SystemError, TickOutcome,
+    ExternalAbortReason, InputKind, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
+    TickInputContext, TickInputError, TickInputProducer, TickOutcome,
 };
 use std::collections::BTreeSet;
 use std::fmt;
@@ -10,11 +11,12 @@ use worldwake_core::{
     CauseRef, EntityId, EventLog, EventTag, PendingEvent, Tick, VisibilitySpec, WitnessData, World,
 };
 
-#[derive(Copy, Clone)]
 pub struct TickStepServices<'a> {
     pub action_defs: &'a ActionDefRegistry,
     pub action_handlers: &'a ActionHandlerRegistry,
+    pub recipe_registry: &'a RecipeRegistry,
     pub systems: &'a SystemDispatchTable,
+    pub input_producer: Option<&'a mut dyn TickInputProducer>,
 }
 
 struct TickStepRuntime<'a> {
@@ -45,6 +47,7 @@ pub struct TickStepResult {
 pub enum TickStepError {
     Control(ControlError),
     Action(ActionError),
+    InputProducer(TickInputError),
     RequestedAffordanceUnavailable {
         actor: EntityId,
         def_id: ActionDefId,
@@ -67,6 +70,9 @@ impl fmt::Display for TickStepError {
         match self {
             Self::Control(err) => write!(f, "control switch failed: {err:?}"),
             Self::Action(err) => write!(f, "action execution failed: {err:?}"),
+            Self::InputProducer(err) => {
+                write!(f, "tick input producer failed before input drain: {err}")
+            }
             Self::RequestedAffordanceUnavailable {
                 actor,
                 def_id,
@@ -99,7 +105,7 @@ pub fn step_tick(
     scheduler: &mut Scheduler,
     controller: &mut ControllerState,
     rng: &mut DeterministicRng,
-    services: TickStepServices<'_>,
+    mut services: TickStepServices<'_>,
 ) -> Result<TickStepResult, TickStepError> {
     let mut runtime = TickStepRuntime {
         world,
@@ -109,12 +115,13 @@ pub fn step_tick(
     };
     let tick = runtime.scheduler.current_tick();
     let events_before = runtime.event_log.len();
+    produce_tick_inputs(&mut runtime, tick, &mut services)?;
     let pre_progress_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     let (inputs_processed, actions_started, actions_aborted) =
         process_inputs(&mut runtime, controller, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &services)?;
-    let systems_ran = run_systems(&mut runtime, tick, services)?;
+    let systems_ran = run_systems(&mut runtime, tick, &services)?;
     let post_system_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     emit_end_of_tick_marker(runtime.event_log, tick);
     runtime.scheduler.increment_tick();
@@ -233,7 +240,7 @@ fn apply_input(
             action_instance_id,
         } => {
             validate_cancel_actor(runtime.scheduler, actor, action_instance_id)?;
-            runtime
+            let replan = runtime
                 .scheduler
                 .abort_active_action(
                     action_instance_id,
@@ -251,6 +258,7 @@ fn apply_input(
                     ExternalAbortReason::CancelledByInput { sequence_no },
                 )
                 .map_err(TickStepError::Action)?;
+            runtime.scheduler.retain_replan(replan);
             Ok(InputOutcome {
                 actions_started: 0,
                 actions_aborted: 1,
@@ -349,7 +357,8 @@ fn progress_active_actions(
                     .checked_add(1)
                     .expect("tick-step action-complete counter overflowed");
             }
-            TickOutcome::Aborted { .. } => {
+            TickOutcome::Aborted { replan, .. } => {
+                runtime.scheduler.retain_replan(replan);
                 actions_aborted = actions_aborted
                     .checked_add(1)
                     .expect("tick-step action-abort counter overflowed");
@@ -380,7 +389,7 @@ fn abort_actions_for_dead_actors(
     let mut aborted = 0u32;
 
     for instance_id in action_ids {
-        runtime
+        let replan = runtime
             .scheduler
             .abort_active_action(
                 instance_id,
@@ -398,6 +407,7 @@ fn abort_actions_for_dead_actors(
                 ExternalAbortReason::ActorMarkedDead,
             )
             .map_err(TickStepError::Action)?;
+        runtime.scheduler.retain_replan(replan);
         aborted = aborted
             .checked_add(1)
             .expect("tick-step action-abort counter overflowed");
@@ -409,7 +419,7 @@ fn abort_actions_for_dead_actors(
 fn run_systems(
     runtime: &mut TickStepRuntime<'_>,
     tick: Tick,
-    services: TickStepServices<'_>,
+    services: &TickStepServices<'_>,
 ) -> Result<u32, TickStepError> {
     let mut systems_ran = 0u32;
 
@@ -439,6 +449,31 @@ fn run_systems(
     Ok(systems_ran)
 }
 
+fn produce_tick_inputs(
+    runtime: &mut TickStepRuntime<'_>,
+    tick: Tick,
+    services: &mut TickStepServices<'_>,
+) -> Result<(), TickStepError> {
+    let Some(input_producer) = services.input_producer.as_deref_mut() else {
+        return Ok(());
+    };
+    let pending_replans = runtime.scheduler.drain_pending_replans();
+
+    input_producer
+        .produce_inputs(TickInputContext {
+            world: runtime.world,
+            event_log: runtime.event_log,
+            scheduler: runtime.scheduler,
+            rng: runtime.rng,
+            action_defs: services.action_defs,
+            action_handlers: services.action_handlers,
+            recipe_registry: services.recipe_registry,
+            pending_replans: &pending_replans,
+            tick,
+        })
+        .map_err(TickStepError::InputProducer)
+}
+
 fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
     let _ = event_log.emit(PendingEvent::new(
         tick,
@@ -460,8 +495,9 @@ mod tests {
         ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
         ActionProgress, ActionState, ActionStatus, ControllerState, DeterministicRng, DurationExpr,
-        InputKind, Interruptibility, Scheduler, SystemDispatchTable, SystemError,
-        SystemExecutionContext, SystemManifest,
+        InputKind, Interruptibility, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
+        SystemExecutionContext, SystemManifest, TickInputContext, TickInputError,
+        TickInputProducer,
         get_affordances,
     };
     use std::collections::BTreeSet;
@@ -664,6 +700,7 @@ mod tests {
         Scheduler,
         ControllerState,
         DeterministicRng,
+        RecipeRegistry,
         ActionDefRegistry,
         ActionHandlerRegistry,
     ) {
@@ -679,9 +716,47 @@ mod tests {
             scheduler,
             controller,
             rng,
+            RecipeRegistry::new(),
             action_registry(),
             handler_registry(),
         )
+    }
+
+    fn services<'a>(
+        defs: &'a ActionDefRegistry,
+        handlers: &'a ActionHandlerRegistry,
+        recipes: &'a RecipeRegistry,
+        systems: &'a SystemDispatchTable,
+    ) -> TickStepServices<'a> {
+        TickStepServices {
+            action_defs: defs,
+            action_handlers: handlers,
+            recipe_registry: recipes,
+            systems,
+            input_producer: None,
+        }
+    }
+
+    struct QueueingProducer {
+        actor: EntityId,
+        def_id: ActionDefId,
+        observed_pending_replans: Vec<usize>,
+    }
+
+    impl TickInputProducer for QueueingProducer {
+        fn produce_inputs(&mut self, ctx: TickInputContext<'_>) -> Result<(), TickInputError> {
+            self.observed_pending_replans.push(ctx.pending_replans.len());
+            ctx.scheduler.input_queue_mut().enqueue(
+                ctx.tick,
+                InputKind::RequestAction {
+                    actor: self.actor,
+                    def_id: self.def_id,
+                    targets: Vec::new(),
+                    payload_override: None,
+                },
+            );
+            Ok(())
+        }
     }
 
     fn controlled_actor(controller: &ControllerState) -> EntityId {
@@ -692,20 +767,27 @@ mod tests {
     fn empty_tick_increments_and_emits_end_of_tick_event() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) =
             build_state();
 
+        let systems = SystemDispatchTable::canonical_noop();
+        let services = services(&defs, &handlers, &recipes, &systems);
         let result = step_tick(
             &mut world,
             &mut event_log,
             &mut scheduler,
             &mut controller,
             &mut rng,
-            TickStepServices {
-                action_defs: &defs,
-                action_handlers: &handlers,
-                systems: &SystemDispatchTable::canonical_noop(),
-            },
+            services,
         )
         .unwrap();
 
@@ -732,8 +814,16 @@ mod tests {
     fn request_inputs_are_processed_in_sequence_order() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
 
         scheduler.input_queue_mut().enqueue(
@@ -764,7 +854,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -780,8 +872,16 @@ mod tests {
     fn unavailable_request_returns_structured_error() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
 
         scheduler.input_queue_mut().enqueue(
@@ -803,7 +903,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap_err();
@@ -823,7 +925,8 @@ mod tests {
     fn resolve_affordance_uses_shared_request_binding_rule() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (world, _event_log, _scheduler, controller, _rng, defs, handlers) = build_state();
+        let (world, _event_log, _scheduler, controller, _rng, _recipes, defs, handlers) =
+            build_state();
         let actor = controlled_actor(&controller);
         let view = crate::OmniscientBeliefView::new(&world);
         let def = defs.get(ActionDefId(0)).unwrap();
@@ -869,8 +972,16 @@ mod tests {
     fn cancel_action_aborts_and_removes_matching_active_action() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
 
         scheduler.input_queue_mut().enqueue(
@@ -891,7 +1002,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -914,7 +1027,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -928,8 +1043,16 @@ mod tests {
     fn switch_control_mismatch_returns_structured_error() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let wrong = entity(999);
         let replacement = entity(1000);
 
@@ -950,7 +1073,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap_err();
@@ -968,8 +1093,16 @@ mod tests {
     fn active_actions_tick_in_sorted_instance_id_order() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
 
         for _ in 0..3 {
@@ -993,7 +1126,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -1012,8 +1147,16 @@ mod tests {
     fn completed_actions_are_removed_after_tick_progress() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
 
         scheduler.input_queue_mut().enqueue(
@@ -1035,7 +1178,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -1048,8 +1193,16 @@ mod tests {
     fn dead_actor_actions_are_aborted_before_tick_progress() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
         let action_id = ActionInstanceId(77);
         scheduler.insert_action(ActionInstance {
@@ -1080,7 +1233,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -1096,8 +1251,16 @@ mod tests {
     fn actions_for_agents_who_die_in_systems_are_culled_before_tick_ends() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
         let action_id = ActionInstanceId(88);
         scheduler.insert_action(ActionInstance {
@@ -1147,9 +1310,11 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::from_handlers(
                     [kill_actor_system; crate::SystemId::ALL.len()],
                 ),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -1163,8 +1328,16 @@ mod tests {
     fn systems_run_in_manifest_order() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
 
         step_tick(
             &mut world,
@@ -1175,7 +1348,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &ordered_systems(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -1187,8 +1362,16 @@ mod tests {
     fn systems_receive_active_actions_and_action_registry_through_context() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
-            build_state();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller);
 
         scheduler.input_queue_mut().enqueue(
@@ -1210,7 +1393,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &ordered_systems(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -1228,11 +1413,141 @@ mod tests {
     }
 
     #[test]
+    fn input_producer_runs_before_current_tick_input_drain() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+        let mut producer = QueueingProducer {
+            actor,
+            def_id: ActionDefId(1),
+            observed_pending_replans: Vec::new(),
+        };
+        let systems = SystemDispatchTable::canonical_noop();
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &systems,
+                input_producer: Some(&mut producer),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.inputs_processed, 1);
+        assert_eq!(result.actions_started, 1);
+        assert_eq!(producer.observed_pending_replans, vec![0]);
+    }
+
+    #[test]
+    fn retained_replans_are_visible_to_next_tick_input_producer() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+        let action_id = ActionInstanceId(42);
+        scheduler.insert_action(ActionInstance {
+            instance_id: action_id,
+            def_id: ActionDefId(0),
+            payload: ActionPayload::None,
+            actor,
+            targets: Vec::new(),
+            start_tick: Tick(0),
+            remaining_duration: crate::ActionDuration::Finite(5),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: Some(ActionState::Empty),
+        });
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::CancelAction {
+                actor,
+                action_instance_id: action_id,
+            },
+        );
+        let systems = SystemDispatchTable::canonical_noop();
+
+        let _ = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &systems,
+                input_producer: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(scheduler.pending_replans().len(), 1);
+
+        let mut producer = QueueingProducer {
+            actor,
+            def_id: ActionDefId(1),
+            observed_pending_replans: Vec::new(),
+        };
+        let _ = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &systems,
+                input_producer: Some(&mut producer),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(producer.observed_pending_replans, vec![1]);
+        assert!(scheduler.pending_replans().is_empty());
+    }
+
+    #[test]
     fn identical_runs_produce_identical_results_and_logs() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        let (mut world_a, mut log_a, mut scheduler_a, mut controller_a, mut rng_a, defs, handlers) =
-            build_state();
+        let (
+            mut world_a,
+            mut log_a,
+            mut scheduler_a,
+            mut controller_a,
+            mut rng_a,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
         let actor = controlled_actor(&controller_a);
         scheduler_a.input_queue_mut().enqueue(
             Tick(0),
@@ -1259,7 +1574,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();
@@ -1272,7 +1589,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
+                recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
             },
         )
         .unwrap();

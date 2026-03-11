@@ -173,7 +173,9 @@ impl CombatHarness {
         TickStepServices {
             action_defs: &self.defs,
             action_handlers: &self.handlers,
+            recipe_registry: &self.recipe_registry,
             systems: &self.systems,
+            input_producer: None,
         }
     }
 
@@ -270,7 +272,9 @@ impl CombatHarness {
         let services = TickStepServices {
             action_defs: &self.defs,
             action_handlers: &self.handlers,
+            recipe_registry: &self.recipe_registry,
             systems: &self.systems,
+            input_producer: None,
         };
         step_tick(
             &mut self.world,

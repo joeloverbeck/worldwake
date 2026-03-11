@@ -2,18 +2,18 @@ use crate::{
     abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
     ActionInstanceId, Affordance, DeterministicRng, InputEvent, InputQueue, SystemManifest,
-    ExternalAbortReason, TickOutcome,
+    ExternalAbortReason, InterruptReason, ReplanNeeded, TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{EntityId, EventLog, Tick, World};
 
-pub(crate) struct SchedulerActionRuntime<'a> {
-    pub(crate) action_defs: &'a ActionDefRegistry,
-    pub(crate) action_handlers: &'a ActionHandlerRegistry,
-    pub(crate) world: &'a mut World,
-    pub(crate) event_log: &'a mut EventLog,
-    pub(crate) rng: &'a mut DeterministicRng,
+pub struct SchedulerActionRuntime<'a> {
+    pub action_defs: &'a ActionDefRegistry,
+    pub action_handlers: &'a ActionHandlerRegistry,
+    pub world: &'a mut World,
+    pub event_log: &'a mut EventLog,
+    pub rng: &'a mut DeterministicRng,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -22,6 +22,7 @@ pub struct Scheduler {
     active_actions: BTreeMap<ActionInstanceId, ActionInstance>,
     system_manifest: SystemManifest,
     input_queue: InputQueue,
+    pending_replans: Vec<ReplanNeeded>,
     next_instance_id: ActionInstanceId,
 }
 
@@ -38,6 +39,7 @@ impl Scheduler {
             active_actions: BTreeMap::new(),
             system_manifest,
             input_queue: InputQueue::new(),
+            pending_replans: Vec::new(),
             next_instance_id: ActionInstanceId(0),
         }
     }
@@ -64,6 +66,19 @@ impl Scheduler {
 
     pub fn input_queue_mut(&mut self) -> &mut InputQueue {
         &mut self.input_queue
+    }
+
+    #[must_use]
+    pub fn pending_replans(&self) -> &[ReplanNeeded] {
+        &self.pending_replans
+    }
+
+    pub fn drain_pending_replans(&mut self) -> Vec<ReplanNeeded> {
+        std::mem::take(&mut self.pending_replans)
+    }
+
+    pub fn retain_replan(&mut self, replan: ReplanNeeded) {
+        self.pending_replans.push(replan);
     }
 
     pub(crate) fn drain_current_tick_inputs(&mut self) -> Vec<InputEvent> {
@@ -140,6 +155,35 @@ impl Scheduler {
             rng,
         } = runtime;
         abort_action(
+            id,
+            action_defs,
+            action_handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut self.active_actions,
+                world,
+                event_log,
+                rng,
+            },
+            context,
+            reason,
+        )
+    }
+
+    pub fn interrupt_active_action(
+        &mut self,
+        id: ActionInstanceId,
+        runtime: SchedulerActionRuntime<'_>,
+        context: ActionExecutionContext,
+        reason: InterruptReason,
+    ) -> Result<crate::ReplanNeeded, ActionError> {
+        let SchedulerActionRuntime {
+            action_defs,
+            action_handlers,
+            world,
+            event_log,
+            rng,
+        } = runtime;
+        crate::interrupt_action(
             id,
             action_defs,
             action_handlers,

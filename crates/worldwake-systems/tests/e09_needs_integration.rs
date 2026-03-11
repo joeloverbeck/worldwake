@@ -8,7 +8,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
-    DeterministicRng, InputKind, Scheduler, SystemManifest, TickStepError, TickStepServices,
+    DeterministicRng, InputKind, RecipeRegistry, Scheduler, SystemManifest, TickStepError,
+    TickStepServices,
 };
 use worldwake_systems::{dispatch_table, register_needs_actions};
 
@@ -28,6 +29,7 @@ struct Harness {
     rng: DeterministicRng,
     defs: ActionDefRegistry,
     handlers: ActionHandlerRegistry,
+    recipes: RecipeRegistry,
     actor: worldwake_core::EntityId,
     place: worldwake_core::EntityId,
 }
@@ -63,6 +65,7 @@ impl Harness {
             rng: DeterministicRng::new(Seed([7; 32])),
             defs,
             handlers,
+            recipes: RecipeRegistry::new(),
             actor,
             place,
         }
@@ -78,7 +81,9 @@ impl Harness {
             TickStepServices {
                 action_defs: &self.defs,
                 action_handlers: &self.handlers,
+                recipe_registry: &self.recipes,
                 systems: &dispatch_table(),
+                input_producer: None,
             },
         )
     }

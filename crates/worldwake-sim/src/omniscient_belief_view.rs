@@ -724,6 +724,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn extended_component_queries_reflect_local_components_and_filter_remote_entities() {
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -917,6 +918,7 @@ mod tests {
         assert_eq!(view.corpse_entities_at(remote_place), vec![remote_corpse]);
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn runtime_attackers_transit_state_and_duration_queries_use_runtime_and_world_semantics() {
         let mut world = World::new(build_prototype_world()).unwrap();

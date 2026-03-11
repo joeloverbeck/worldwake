@@ -672,6 +672,7 @@ mod tests {
             )),
             dirty: false,
             last_priority_class: None,
+            ..AgentDecisionRuntime::default()
         }
     }
 

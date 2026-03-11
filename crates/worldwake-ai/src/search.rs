@@ -714,8 +714,10 @@ mod tests {
         view.thresholds.insert(actor, DriveThresholds::default());
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
-        let mut budget = PlanningBudget::default();
-        budget.max_plan_depth = 1;
+        let budget = PlanningBudget {
+            max_plan_depth: 1,
+            ..PlanningBudget::default()
+        };
         let plan = search_plan(
             &snapshot,
             &consume_goal(CommodityKind::Bread),
@@ -759,8 +761,10 @@ mod tests {
         view.thresholds.insert(actor, DriveThresholds::default());
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
-        let mut budget = PlanningBudget::default();
-        budget.max_node_expansions = 0;
+        let budget = PlanningBudget {
+            max_node_expansions: 0,
+            ..PlanningBudget::default()
+        };
         let plan = search_plan(
             &snapshot,
             &consume_goal(CommodityKind::Bread),

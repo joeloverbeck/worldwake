@@ -3,6 +3,7 @@
 //! GOAP planner, utility scoring, and decision architecture.
 //! Depends on `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
 
+pub mod agent_tick;
 pub mod budget;
 pub mod candidate_generation;
 pub mod decision_runtime;
@@ -20,6 +21,7 @@ pub mod pressure;
 pub mod ranking;
 pub mod search;
 
+pub use agent_tick::AgentTickDriver;
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::AgentDecisionRuntime;
