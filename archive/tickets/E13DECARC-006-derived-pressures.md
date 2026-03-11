@@ -1,6 +1,6 @@
 # E13DECARC-006: Derived pressure functions (pain, danger)
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — AI-layer pure functions
@@ -15,14 +15,19 @@ Pain and danger are transient derived values, never stored as authoritative stat
 1. `Wound.severity` is `Permille` — confirmed in `worldwake-core::wounds`.
 2. `DriveThresholds` has `pain` and `danger` fields, each a `ThresholdBand` — confirmed.
 3. `ThresholdBand` exposes `.low()`, `.medium()`, `.high()`, `.critical()` — confirmed.
-4. `BeliefView` will have `wounds()`, `visible_hostiles_for()`, `current_attackers_of()`, `has_wounds()`, `is_incapacitated()` after E13DECARC-005 — dependency.
-5. `Permille::new_unchecked()` and `Permille(u16)` exist for construction — confirmed.
+4. `BeliefView` already has `wounds()`, `visible_hostiles_for()`, `current_attackers_of()`, `has_wounds()`, and `is_incapacitated()` in `worldwake-sim::belief_view`; this ticket does not need to add or wait on those APIs.
+5. `OmniscientBeliefView` already implements those belief queries with the locality semantics described in the E13 spec.
+6. `worldwake-ai` already depends on `worldwake-sim`; this ticket does not need any Cargo dependency change.
+7. `Permille::new_unchecked()` exists and is the appropriate zero-allocation constructor for fixed literals in this layer.
+8. `worldwake-ai/src/pressure.rs` does not exist yet. This ticket should add that module rather than treat it as an existing stub.
 
 ## Architecture Check
 
 1. These are pure functions `(view, agent) -> Permille`, not stored components. Correct per Principle 3.
 2. Danger derivation uses monotone bands from the agent's own `DriveThresholds`, not arbitrary numbers.
 3. No stored "fear scalar" or "danger score" — derived fresh each decision pass.
+4. Centralizing these derivations in one AI module is better than duplicating threshold math across future candidate generation and ranking code. It improves determinism and keeps E13 extensible without introducing a new abstract state layer.
+5. This ticket should stay narrow. Do not generalize into a trait-heavy "pressure engine" before more derived pressures exist; that would add indirection without present benefit.
 
 ## What to Change
 
@@ -61,8 +66,8 @@ This maps any pressure + threshold band to a `GoalPriorityClass` for use in cand
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/pressure.rs` (modify — was empty stub)
-- `crates/worldwake-ai/src/lib.rs` (modify — re-exports if needed)
+- `crates/worldwake-ai/src/pressure.rs` (new)
+- `crates/worldwake-ai/src/lib.rs` (modify — export the new module and helpers)
 
 ## Out of Scope
 
@@ -70,6 +75,7 @@ This maps any pressure + threshold band to a `GoalPriorityClass` for use in cand
 - Homeostatic pressure derivation (those already exist as `HomeostaticNeeds` fields)
 - Candidate generation logic — E13DECARC-007
 - Enterprise opportunity signal derivation — E13DECARC-008
+- Any change to `BeliefView`, `OmniscientBeliefView`, or `worldwake-sim` threat-locality behavior unless implementation proves the current APIs are insufficient
 
 ## Acceptance Criteria
 
@@ -85,7 +91,8 @@ This maps any pressure + threshold band to a `GoalPriorityClass` for use in cand
 8. `derive_danger_pressure()` returns at least danger critical band when one attacker and agent is wounded
 9. `derive_danger_pressure()` returns `Permille(0)` when agent has no `DriveThresholds`
 10. `classify_band()` correctly maps values to priority classes against a threshold band
-11. Existing suite: `cargo test --workspace`
+11. `worldwake-ai` publicly re-exports the new pressure helpers needed by follow-up E13 tickets
+12. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
@@ -98,10 +105,28 @@ This maps any pressure + threshold band to a `GoalPriorityClass` for use in cand
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/pressure.rs` — unit tests using mock `BeliefView` implementations
+1. `crates/worldwake-ai/src/pressure.rs` — new unit tests using a minimal mock `BeliefView`
+2. `crates/worldwake-ai/src/lib.rs` — update crate-surface test only if needed for re-exports
 
 ### Commands
 
 1. `cargo test -p worldwake-ai`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-11
+- What actually changed:
+  - Added `crates/worldwake-ai/src/pressure.rs` with pure `derive_pain_pressure()`, `derive_danger_pressure()`, and `classify_band()` helpers.
+  - Re-exported the pressure helpers from `crates/worldwake-ai/src/lib.rs` for follow-up E13 work.
+  - Added focused unit coverage for pain aggregation, danger band derivation, wounded/incapacitated escalation, and threshold-band classification.
+  - Corrected this ticket's assumptions before implementation to match the current codebase: `BeliefView` and `OmniscientBeliefView` already had the required APIs, `worldwake-ai` already depended on `worldwake-sim`, and `pressure.rs` had to be added rather than modified.
+- Deviations from original plan:
+  - No `worldwake-sim` or Cargo dependency changes were needed.
+  - No pre-existing stub file was modified; the pressure module was created fresh.
+  - The work stayed narrowly scoped to shared pure derivations rather than introducing a broader abstraction layer.
+- Verification results:
+  - `cargo test -p worldwake-ai` passed.
+  - `cargo test --workspace` passed.
+  - `cargo clippy --workspace` passed.
