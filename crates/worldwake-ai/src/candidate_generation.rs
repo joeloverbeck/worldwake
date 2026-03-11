@@ -1,4 +1,8 @@
-use crate::{derive_danger_pressure, enterprise::restock_gap, GroundedGoal};
+use crate::{
+    derive_danger_pressure,
+    enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
+    GroundedGoal,
+};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use worldwake_core::{
     BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey,
@@ -41,6 +45,7 @@ struct GenerationContext<'a> {
     view: &'a dyn BeliefView,
     agent: EntityId,
     place: Option<EntityId>,
+    enterprise: EnterpriseSignals,
     blocked: &'a BlockedIntentMemory,
     recipes: &'a RecipeRegistry,
     current_tick: Tick,
@@ -61,10 +66,12 @@ pub fn generate_candidates(
     let mut candidates = BTreeMap::new();
     let needs = view.homeostatic_needs(agent);
     let thresholds = view.drive_thresholds(agent);
+    let place = view.effective_place(agent);
     let ctx = GenerationContext {
         view,
         agent,
-        place: view.effective_place(agent),
+        place,
+        enterprise: analyze_candidate_enterprise(view, agent, place),
         blocked,
         recipes,
         current_tick,
@@ -351,7 +358,7 @@ fn emit_produce_goals(
                 && !local_wounded_targets(ctx.view, ctx.agent, ctx.place).is_empty()
         });
         let serves_restock = recipe.outputs.iter().any(|(commodity, _)| {
-            restock_gap(ctx.view, ctx.agent, ctx.place, *commodity).is_some()
+            ctx.enterprise.restock_gap(*commodity).is_some()
         });
 
         if !(serves_self_consume || serves_treatment || serves_restock) {
@@ -380,7 +387,7 @@ fn emit_restock_goals(
     };
 
     for commodity in profile.sale_kinds {
-        if restock_gap(ctx.view, ctx.agent, ctx.place, commodity).is_none() {
+        if ctx.enterprise.restock_gap(commodity).is_none() {
             continue;
         }
         if let Some(evidence) =
@@ -642,7 +649,10 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::generate_candidates;
+    use super::{
+        emit_produce_goals, emit_restock_goals, generate_candidates, GenerationContext,
+    };
+    use crate::enterprise::{analyze_candidate_enterprise, EnterpriseSignals};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1342,6 +1352,95 @@ mod tests {
             &candidates,
             GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
+            }
+        ));
+    }
+
+    #[test]
+    fn enterprise_emitters_use_precomputed_restock_signals() {
+        let agent = entity(1);
+        let place = entity(10);
+        let seller = entity(2);
+        let workstation = entity(3);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.effective_places.insert(agent, place);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(place),
+            },
+        );
+        view.demand_memory.insert(
+            agent,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place,
+                tick: Tick(2),
+                counterparty: Some(seller),
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        );
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::Mill), vec![workstation]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Bread, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(2))],
+            WorkstationTag::Mill,
+        ));
+        let blocked = BlockedIntentMemory::default();
+
+        let ctx = GenerationContext {
+            view: &view,
+            agent,
+            place: Some(place),
+            enterprise: EnterpriseSignals::default(),
+            blocked: &blocked,
+            recipes: &recipes,
+            current_tick: Tick(5),
+        };
+        let mut candidates = BTreeMap::new();
+
+        emit_restock_goals(&mut candidates, &ctx);
+        emit_produce_goals(&mut candidates, &ctx, None, None);
+        assert!(!contains_goal(
+            &candidates.into_values().collect::<Vec<_>>(),
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        ));
+
+        let ctx = GenerationContext {
+            enterprise: analyze_candidate_enterprise(&view, agent, Some(place)),
+            ..ctx
+        };
+        let mut candidates = BTreeMap::new();
+
+        emit_restock_goals(&mut candidates, &ctx);
+        emit_produce_goals(&mut candidates, &ctx, None, None);
+        let candidates = candidates.into_values().collect::<Vec<_>>();
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(0)
             }
         ));
     }

@@ -1,25 +1,38 @@
+use std::collections::BTreeMap;
 use worldwake_core::{CommodityKind, EntityId, Permille, Quantity};
 use worldwake_sim::BeliefView;
 
-pub(crate) fn restock_gap(
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct EnterpriseSignals {
+    restock_gaps: BTreeMap<CommodityKind, Quantity>,
+}
+
+impl EnterpriseSignals {
+    pub(crate) fn restock_gap(&self, commodity: CommodityKind) -> Option<Quantity> {
+        self.restock_gaps.get(&commodity).copied()
+    }
+}
+
+pub(crate) fn analyze_candidate_enterprise(
     view: &dyn BeliefView,
     agent: EntityId,
     fallback_place: Option<EntityId>,
-    commodity: CommodityKind,
-) -> Option<Quantity> {
-    let profile = view.merchandise_profile(agent)?;
-    if !profile.sale_kinds.contains(&commodity) {
-        return None;
+) -> EnterpriseSignals {
+    let Some(profile) = view.merchandise_profile(agent) else {
+        return EnterpriseSignals::default();
+    };
+    let Some(market) = profile.home_market.or(fallback_place) else {
+        return EnterpriseSignals::default();
+    };
+
+    let mut restock_gaps = BTreeMap::new();
+    for commodity in profile.sale_kinds {
+        if let Some(gap) = restock_gap_for_market(view, agent, market, commodity) {
+            restock_gaps.insert(commodity, gap);
+        }
     }
 
-    let market = profile.home_market.or(fallback_place)?;
-    let observed_quantity = relevant_demand_quantity(view, agent, market, commodity);
-    if observed_quantity == 0 {
-        return None;
-    }
-
-    let current_stock = view.commodity_quantity(agent, commodity).0;
-    (current_stock < observed_quantity).then_some(Quantity(observed_quantity - current_stock))
+    EnterpriseSignals { restock_gaps }
 }
 
 pub(crate) fn opportunity_signal(
@@ -68,6 +81,21 @@ fn relevant_demand_quantity(
         .fold(0u32, |sum, observation| {
             sum.saturating_add(observation.quantity.0)
         })
+}
+
+fn restock_gap_for_market(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    market: EntityId,
+    commodity: CommodityKind,
+) -> Option<Quantity> {
+    let observed_quantity = relevant_demand_quantity(view, agent, market, commodity);
+    if observed_quantity == 0 {
+        return None;
+    }
+
+    let current_stock = view.commodity_quantity(agent, commodity).0;
+    (current_stock < observed_quantity).then_some(Quantity(observed_quantity - current_stock))
 }
 
 fn permille_ratio(numerator: u32, denominator: u32) -> Permille {
