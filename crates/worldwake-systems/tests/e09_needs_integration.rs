@@ -408,7 +408,7 @@ fn divergent_metabolism_profiles_produce_divergent_scheduler_outcomes() {
 }
 
 #[test]
-fn authoritative_schema_includes_expected_shared_and_e09_components_and_fields() {
+fn authoritative_schema_includes_expected_shared_e09_and_e12_components_and_fields() {
     let component_kinds = ComponentKind::ALL;
     assert_eq!(
         component_kinds,
@@ -416,6 +416,8 @@ fn authoritative_schema_includes_expected_shared_and_e09_components_and_fields()
             ComponentKind::Name,
             ComponentKind::AgentData,
             ComponentKind::WoundList,
+            ComponentKind::CombatProfile,
+            ComponentKind::DeadAt,
             ComponentKind::DriveThresholds,
             ComponentKind::HomeostaticNeeds,
             ComponentKind::DeprivationExposure,

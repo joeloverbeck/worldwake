@@ -27,6 +27,7 @@
 pub mod allocator;
 pub mod canonical;
 pub mod cause;
+pub mod combat;
 pub mod component_schema;
 pub mod component_tables;
 pub mod components;
@@ -63,6 +64,7 @@ pub use canonical::{
     StateHash,
 };
 pub use cause::CauseRef;
+pub use combat::{CombatProfile, DeadAt};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
 pub use conservation::{
@@ -82,9 +84,9 @@ pub use event_record::{EventRecord, PendingEvent};
 pub use event_tag::EventTag;
 pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{
-    CommodityConsumableProfile, CommodityKind, CommodityKindSpec, CommodityPhysicalProfile,
-    Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
-    UniqueItemKindSpec, UniqueItemPhysicalProfile,
+    CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
+    CommodityPhysicalProfile, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory,
+    UniqueItem, UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
 };
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,

@@ -1,6 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
+    combat::{CombatProfile, DeadAt},
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     drives::DriveThresholds,
@@ -111,11 +112,12 @@ mod tests {
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
             sample_trade_disposition_profile,
         },
-        BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProductionJob,
-        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
+        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds,
+        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
+        Permille, ProductionJob, ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
+        WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -134,6 +136,8 @@ mod tests {
         assert_eq!(tables.iter_names().count(), 0);
         assert_eq!(tables.iter_agent_data().count(), 0);
         assert_eq!(tables.iter_wound_lists().count(), 0);
+        assert_eq!(tables.iter_combat_profiles().count(), 0);
+        assert_eq!(tables.iter_dead_ats().count(), 0);
         assert_eq!(tables.iter_drive_thresholds().count(), 0);
         assert_eq!(tables.iter_homeostatic_needs().count(), 0);
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
@@ -191,6 +195,39 @@ mod tests {
 
         assert_eq!(tables.insert_wound_list(id, wounds.clone()), None);
         assert_eq!(tables.get_wound_list(id), Some(&wounds));
+    }
+
+    #[test]
+    fn insert_and_get_combat_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(19);
+        let profile = CombatProfile::new(
+            Permille::new(1000).unwrap(),
+            Permille::new(700).unwrap(),
+            Permille::new(620).unwrap(),
+            Permille::new(580).unwrap(),
+            Permille::new(80).unwrap(),
+            Permille::new(25).unwrap(),
+            Permille::new(18).unwrap(),
+            Permille::new(120).unwrap(),
+            Permille::new(35).unwrap(),
+            NonZeroU32::new(6).unwrap(),
+        );
+
+        assert_eq!(tables.insert_combat_profile(id, profile), None);
+        assert_eq!(tables.get_combat_profile(id), Some(&profile));
+        assert!(tables.has_combat_profile(id));
+    }
+
+    #[test]
+    fn insert_and_get_dead_at() {
+        let mut tables = ComponentTables::default();
+        let id = entity(20);
+        let dead_at = DeadAt(Tick(33));
+
+        assert_eq!(tables.insert_dead_at(id, dead_at), None);
+        assert_eq!(tables.get_dead_at(id), Some(&dead_at));
+        assert!(tables.has_dead_at(id));
     }
 
     #[test]
@@ -512,9 +549,9 @@ mod tests {
         tables.insert_unique_item(
             id,
             UniqueItem {
-                kind: UniqueItemKind::Weapon,
-                name: Some("Rusty Sword".to_string()),
-                metadata: BTreeMap::from([("quality".to_string(), "poor".to_string())]),
+                kind: UniqueItemKind::SimpleTool,
+                name: Some("Hammer".to_string()),
+                metadata: BTreeMap::from([("quality".to_string(), "worn".to_string())]),
             },
         );
         tables.insert_container(
@@ -542,6 +579,8 @@ mod tests {
         assert_eq!(tables.get_name(id), None);
         assert_eq!(tables.get_agent_data(id), None);
         assert_eq!(tables.get_wound_list(id), None);
+        assert_eq!(tables.get_combat_profile(id), None);
+        assert_eq!(tables.get_dead_at(id), None);
         assert_eq!(tables.get_drive_thresholds(id), None);
         assert_eq!(tables.get_homeostatic_needs(id), None);
         assert_eq!(tables.get_deprivation_exposure(id), None);
@@ -580,6 +619,22 @@ mod tests {
                 }],
             },
         );
+        tables.insert_combat_profile(
+            entity(18),
+            CombatProfile::new(
+                Permille::new(1000).unwrap(),
+                Permille::new(750).unwrap(),
+                Permille::new(650).unwrap(),
+                Permille::new(600).unwrap(),
+                Permille::new(50).unwrap(),
+                Permille::new(20).unwrap(),
+                Permille::new(15).unwrap(),
+                Permille::new(140).unwrap(),
+                Permille::new(30).unwrap(),
+                NonZeroU32::new(7).unwrap(),
+            ),
+        );
+        tables.insert_dead_at(entity(19), DeadAt(Tick(14)));
         tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
         tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
@@ -600,9 +655,9 @@ mod tests {
         tables.insert_unique_item(
             entity(12),
             UniqueItem {
-                kind: UniqueItemKind::Artifact,
-                name: None,
-                metadata: BTreeMap::from([("origin".to_string(), "vault".to_string())]),
+                kind: UniqueItemKind::SimpleTool,
+                name: Some("Hammer".to_string()),
+                metadata: BTreeMap::from([("origin".to_string(), "workshop".to_string())]),
             },
         );
         tables.insert_container(

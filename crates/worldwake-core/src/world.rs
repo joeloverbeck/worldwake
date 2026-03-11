@@ -1,13 +1,13 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
-    ComponentTables, ComponentValue, Container, DemandMemory, DeprivationExposure, DriveThresholds,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge,
-    ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource,
-    SubstitutePreferences, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CombatProfile,
+    CommodityKind, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
+    DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
+    EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+    MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry, Quantity,
+    RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology,
+    TradeDispositionProfile, UniqueItem, UniqueItemKind, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -561,14 +561,14 @@ mod tests {
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
             sample_trade_disposition_profile,
         },
-        AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource, DemandMemory,
-        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
-        FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-        MerchandiseProfile, MetabolismProfile, Name, Permille, Place, PlaceTag, ProductionJob,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList,
+        AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
+        ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EventId, FactId, HomeostaticNeeds,
+        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+        MetabolismProfile, Name, Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry,
+        Quantity, ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences, Tick,
+        TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -628,6 +628,25 @@ mod tests {
 
     fn sample_drive_thresholds() -> DriveThresholds {
         DriveThresholds::default()
+    }
+
+    fn sample_combat_profile() -> CombatProfile {
+        CombatProfile::new(
+            Permille::new(1000).unwrap(),
+            Permille::new(700).unwrap(),
+            Permille::new(630).unwrap(),
+            Permille::new(590).unwrap(),
+            Permille::new(70).unwrap(),
+            Permille::new(20).unwrap(),
+            Permille::new(15).unwrap(),
+            Permille::new(125).unwrap(),
+            Permille::new(30).unwrap(),
+            NonZeroU32::new(6).unwrap(),
+        )
+    }
+
+    fn sample_dead_at() -> DeadAt {
+        DeadAt(Tick(21))
     }
 
     fn sample_homeostatic_needs() -> HomeostaticNeeds {
@@ -1248,8 +1267,8 @@ mod tests {
 
         let id = world
             .create_unique_item(
-                UniqueItemKind::Weapon,
-                Some("Rusty Sword"),
+                UniqueItemKind::SimpleTool,
+                Some("Hammer"),
                 BTreeMap::from([("condition".to_string(), "worn".to_string())]),
                 Tick(5),
             )
@@ -1260,8 +1279,8 @@ mod tests {
         assert_eq!(
             world.get_component_unique_item(id),
             Some(&UniqueItem {
-                kind: UniqueItemKind::Weapon,
-                name: Some("Rusty Sword".to_string()),
+                kind: UniqueItemKind::SimpleTool,
+                name: Some("Hammer".to_string()),
                 metadata: BTreeMap::from([("condition".to_string(), "worn".to_string())]),
             })
         );
@@ -2117,8 +2136,8 @@ mod tests {
         let mut world = World::new(Topology::new()).unwrap();
         let live = world
             .create_unique_item(
-                UniqueItemKind::Weapon,
-                Some("Rusty Sword"),
+                UniqueItemKind::SimpleTool,
+                Some("Hammer"),
                 BTreeMap::new(),
                 Tick(1),
             )
@@ -2143,7 +2162,7 @@ mod tests {
                 .query_unique_item()
                 .map(|(entity, item)| (entity, item.kind))
                 .collect::<Vec<_>>(),
-            vec![(live, UniqueItemKind::Weapon)]
+            vec![(live, UniqueItemKind::SimpleTool)]
         );
     }
 
@@ -3624,8 +3643,8 @@ mod tests {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world
             .create_unique_item(
-                UniqueItemKind::Weapon,
-                Some("Rusty Sword"),
+                UniqueItemKind::SimpleTool,
+                Some("Hammer"),
                 BTreeMap::new(),
                 Tick(1),
             )
@@ -3635,8 +3654,8 @@ mod tests {
             .insert_component_unique_item(
                 id,
                 UniqueItem {
-                    kind: UniqueItemKind::Weapon,
-                    name: Some("Rusty Sword".to_string()),
+                    kind: UniqueItemKind::SimpleTool,
+                    name: Some("Hammer".to_string()),
                     metadata: BTreeMap::new(),
                 },
             )
@@ -3711,6 +3730,60 @@ mod tests {
 
         let err = world
             .insert_component_wound_list(id, sample_wound_list())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn combat_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_combat_profile();
+
+        world.insert_component_combat_profile(id, profile).unwrap();
+        assert_eq!(world.get_component_combat_profile(id), Some(&profile));
+        assert!(world.has_component_combat_profile(id));
+
+        let removed = world.remove_component_combat_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_combat_profile(id), None);
+    }
+
+    #[test]
+    fn insert_combat_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_combat_profile(id, sample_combat_profile())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn dead_at_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let dead_at = sample_dead_at();
+
+        world.insert_component_dead_at(id, dead_at).unwrap();
+        assert_eq!(world.get_component_dead_at(id), Some(&dead_at));
+        assert!(world.has_component_dead_at(id));
+
+        let removed = world.remove_component_dead_at(id).unwrap();
+        assert_eq!(removed, Some(dead_at));
+        assert_eq!(world.get_component_dead_at(id), None);
+    }
+
+    #[test]
+    fn insert_dead_at_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_dead_at(id, sample_dead_at())
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

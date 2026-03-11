@@ -81,7 +81,7 @@ mod tests {
                     slot: 4,
                     generation: 1,
                 },
-                weapon: CombatWeaponRef::Commodity(CommodityKind::Medicine),
+                weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
             },
             severity: Permille::new(800).unwrap(),
             inflicted_at: Tick(11),

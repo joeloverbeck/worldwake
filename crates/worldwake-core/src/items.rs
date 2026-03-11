@@ -13,18 +13,22 @@ pub enum CommodityKind {
     Bread,
     Water,
     Firewood,
+    Sword,
+    Bow,
     Medicine,
     Coin,
     Waste,
 }
 
 impl CommodityKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::Apple,
         Self::Grain,
         Self::Bread,
         Self::Water,
         Self::Firewood,
+        Self::Sword,
+        Self::Bow,
         Self::Medicine,
         Self::Coin,
         Self::Waste,
@@ -32,83 +36,61 @@ impl CommodityKind {
 
     pub const fn spec(self) -> CommodityKindSpec {
         match self {
-            Self::Apple => CommodityKindSpec {
-                trade_category: TradeCategory::Food,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
-                    nz(2),
-                    pm(220),
-                    pm(120),
-                    pm(40),
-                )),
-            },
-            Self::Grain => CommodityKindSpec {
-                trade_category: TradeCategory::Food,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
-                    nz(4),
-                    pm(180),
-                    pm(0),
-                    pm(20),
-                )),
-            },
-            Self::Bread => CommodityKindSpec {
-                trade_category: TradeCategory::Food,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
-                    nz(3),
-                    pm(260),
-                    pm(0),
-                    pm(20),
-                )),
-            },
-            Self::Water => CommodityKindSpec {
-                trade_category: TradeCategory::Water,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(2),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
-                    nz(1),
-                    pm(0),
-                    pm(320),
-                    pm(220),
-                )),
-            },
-            Self::Firewood => CommodityKindSpec {
-                trade_category: TradeCategory::Fuel,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(3),
-                },
-                consumable_profile: None,
-            },
-            Self::Medicine => CommodityKindSpec {
-                trade_category: TradeCategory::Medicine,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: None,
-            },
-            Self::Coin => CommodityKindSpec {
-                trade_category: TradeCategory::Coin,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: None,
-            },
-            Self::Waste => CommodityKindSpec {
-                trade_category: TradeCategory::Waste,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: None,
-            },
+            Self::Apple => commodity_spec(
+                TradeCategory::Food,
+                LoadUnits(1),
+                Some(CommodityConsumableProfile::new(nz(2), pm(220), pm(120), pm(40))),
+                None,
+            ),
+            Self::Grain => commodity_spec(
+                TradeCategory::Food,
+                LoadUnits(1),
+                Some(CommodityConsumableProfile::new(nz(4), pm(180), pm(0), pm(20))),
+                None,
+            ),
+            Self::Bread => commodity_spec(
+                TradeCategory::Food,
+                LoadUnits(1),
+                Some(CommodityConsumableProfile::new(nz(3), pm(260), pm(0), pm(20))),
+                None,
+            ),
+            Self::Water => commodity_spec(
+                TradeCategory::Water,
+                LoadUnits(2),
+                Some(CommodityConsumableProfile::new(nz(1), pm(0), pm(320), pm(220))),
+                None,
+            ),
+            Self::Firewood => commodity_spec(TradeCategory::Fuel, LoadUnits(3), None, None),
+            Self::Sword => commodity_spec(
+                TradeCategory::Weapon,
+                LoadUnits(4),
+                None,
+                Some(CombatWeaponProfile::new(nz(4), pm(180), pm(55))),
+            ),
+            Self::Bow => commodity_spec(
+                TradeCategory::Weapon,
+                LoadUnits(3),
+                None,
+                Some(CombatWeaponProfile::new(nz(5), pm(140), pm(30))),
+            ),
+            Self::Medicine => commodity_spec(TradeCategory::Medicine, LoadUnits(1), None, None),
+            Self::Coin => commodity_spec(TradeCategory::Coin, LoadUnits(1), None, None),
+            Self::Waste => commodity_spec(TradeCategory::Waste, LoadUnits(1), None, None),
         }
+    }
+}
+
+const fn commodity_spec(
+    trade_category: TradeCategory,
+    load_per_unit: LoadUnits,
+    consumable_profile: Option<CommodityConsumableProfile>,
+    combat_weapon_profile: Option<CombatWeaponProfile>,
+) -> CommodityKindSpec {
+    CommodityKindSpec {
+        trade_category,
+        physical_profile: CommodityPhysicalProfile { load_per_unit },
+        consumable_profile,
+        combat_weapon_profile,
     }
 }
 
@@ -117,6 +99,7 @@ pub struct CommodityKindSpec {
     pub trade_category: TradeCategory,
     pub physical_profile: CommodityPhysicalProfile,
     pub consumable_profile: Option<CommodityConsumableProfile>,
+    pub combat_weapon_profile: Option<CombatWeaponProfile>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -145,6 +128,28 @@ impl CommodityConsumableProfile {
             hunger_relief_per_unit,
             thirst_relief_per_unit,
             bladder_fill_per_unit,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CombatWeaponProfile {
+    pub attack_duration_ticks: NonZeroU32,
+    pub base_wound_severity: Permille,
+    pub base_bleed_rate: Permille,
+}
+
+impl CombatWeaponProfile {
+    #[must_use]
+    pub const fn new(
+        attack_duration_ticks: NonZeroU32,
+        base_wound_severity: Permille,
+        base_bleed_rate: Permille,
+    ) -> Self {
+        Self {
+            attack_duration_ticks,
+            base_wound_severity,
+            base_bleed_rate,
         }
     }
 }
@@ -207,7 +212,6 @@ impl LotOperation {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum UniqueItemKind {
     SimpleTool,
-    Weapon,
     Contract,
     Artifact,
     OfficeInsignia,
@@ -215,9 +219,8 @@ pub enum UniqueItemKind {
 }
 
 impl UniqueItemKind {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::SimpleTool,
-        Self::Weapon,
         Self::Contract,
         Self::Artifact,
         Self::OfficeInsignia,
@@ -228,11 +231,6 @@ impl UniqueItemKind {
         match self {
             Self::SimpleTool | Self::Artifact => UniqueItemKindSpec {
                 physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(5) },
-            },
-            Self::Weapon => UniqueItemKindSpec {
-                physical_profile: UniqueItemPhysicalProfile {
-                    load: LoadUnits(10),
-                },
             },
             Self::Contract => UniqueItemKindSpec {
                 physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(1) },
@@ -312,9 +310,9 @@ const fn nz(value: u32) -> NonZeroU32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommodityConsumableProfile, CommodityKind, CommodityKindSpec, CommodityPhysicalProfile,
-        Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
-        UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
+        CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
+        CommodityPhysicalProfile, Container, ItemLot, LotOperation, ProvenanceEntry,
+        TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
     };
     use crate::{traits::Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
@@ -381,6 +379,8 @@ mod tests {
                 CommodityKind::Bread,
                 CommodityKind::Water,
                 CommodityKind::Firewood,
+                CommodityKind::Sword,
+                CommodityKind::Bow,
                 CommodityKind::Medicine,
                 CommodityKind::Coin,
                 CommodityKind::Waste,
@@ -429,7 +429,6 @@ mod tests {
             UniqueItemKind::ALL,
             [
                 UniqueItemKind::SimpleTool,
-                UniqueItemKind::Weapon,
                 UniqueItemKind::Contract,
                 UniqueItemKind::Artifact,
                 UniqueItemKind::OfficeInsignia,
@@ -536,11 +535,11 @@ mod tests {
     #[test]
     fn unique_item_roundtrips_through_bincode() {
         let item = UniqueItem {
-            kind: UniqueItemKind::Weapon,
-            name: Some("Rusty Sword".to_string()),
+            kind: UniqueItemKind::SimpleTool,
+            name: Some("Hammer".to_string()),
             metadata: BTreeMap::from([
                 ("condition".to_string(), "worn".to_string()),
-                ("material".to_string(), "iron".to_string()),
+                ("material".to_string(), "oak".to_string()),
             ]),
         };
 
@@ -642,84 +641,90 @@ mod tests {
         assert_eq!(reversed, UniqueItemKind::ALL);
     }
 
+    fn expected_spec(
+        trade_category: TradeCategory,
+        load_per_unit: LoadUnits,
+        consumable_profile: Option<CommodityConsumableProfile>,
+        combat_weapon_profile: Option<CombatWeaponProfile>,
+    ) -> CommodityKindSpec {
+        CommodityKindSpec {
+            trade_category,
+            physical_profile: CommodityPhysicalProfile { load_per_unit },
+            consumable_profile,
+            combat_weapon_profile,
+        }
+    }
+
     fn expected_commodity_spec(kind: CommodityKind) -> CommodityKindSpec {
         match kind {
-            CommodityKind::Apple => CommodityKindSpec {
-                trade_category: TradeCategory::Food,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
+            CommodityKind::Apple => expected_spec(
+                TradeCategory::Food,
+                LoadUnits(1),
+                Some(CommodityConsumableProfile::new(
                     NonZeroU32::new(2).unwrap(),
                     Permille::new_unchecked(220),
                     Permille::new_unchecked(120),
                     Permille::new_unchecked(40),
                 )),
-            },
-            CommodityKind::Grain => CommodityKindSpec {
-                trade_category: TradeCategory::Food,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
+                None,
+            ),
+            CommodityKind::Grain => expected_spec(
+                TradeCategory::Food,
+                LoadUnits(1),
+                Some(CommodityConsumableProfile::new(
                     NonZeroU32::new(4).unwrap(),
                     Permille::new_unchecked(180),
                     Permille::new_unchecked(0),
                     Permille::new_unchecked(20),
                 )),
-            },
-            CommodityKind::Bread => CommodityKindSpec {
-                trade_category: TradeCategory::Food,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
+                None,
+            ),
+            CommodityKind::Bread => expected_spec(
+                TradeCategory::Food,
+                LoadUnits(1),
+                Some(CommodityConsumableProfile::new(
                     NonZeroU32::new(3).unwrap(),
                     Permille::new_unchecked(260),
                     Permille::new_unchecked(0),
                     Permille::new_unchecked(20),
                 )),
-            },
-            CommodityKind::Water => CommodityKindSpec {
-                trade_category: TradeCategory::Water,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(2),
-                },
-                consumable_profile: Some(CommodityConsumableProfile::new(
+                None,
+            ),
+            CommodityKind::Water => expected_spec(
+                TradeCategory::Water,
+                LoadUnits(2),
+                Some(CommodityConsumableProfile::new(
                     NonZeroU32::new(1).unwrap(),
                     Permille::new_unchecked(0),
                     Permille::new_unchecked(320),
                     Permille::new_unchecked(220),
                 )),
-            },
-            CommodityKind::Firewood => CommodityKindSpec {
-                trade_category: TradeCategory::Fuel,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(3),
-                },
-                consumable_profile: None,
-            },
-            CommodityKind::Medicine => CommodityKindSpec {
-                trade_category: TradeCategory::Medicine,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: None,
-            },
-            CommodityKind::Coin => CommodityKindSpec {
-                trade_category: TradeCategory::Coin,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: None,
-            },
-            CommodityKind::Waste => CommodityKindSpec {
-                trade_category: TradeCategory::Waste,
-                physical_profile: CommodityPhysicalProfile {
-                    load_per_unit: LoadUnits(1),
-                },
-                consumable_profile: None,
-            },
+                None,
+            ),
+            CommodityKind::Firewood => expected_spec(TradeCategory::Fuel, LoadUnits(3), None, None),
+            CommodityKind::Sword => expected_spec(
+                TradeCategory::Weapon,
+                LoadUnits(4),
+                None,
+                Some(CombatWeaponProfile::new(
+                    NonZeroU32::new(4).unwrap(),
+                    Permille::new_unchecked(180),
+                    Permille::new_unchecked(55),
+                )),
+            ),
+            CommodityKind::Bow => expected_spec(
+                TradeCategory::Weapon,
+                LoadUnits(3),
+                None,
+                Some(CombatWeaponProfile::new(
+                    NonZeroU32::new(5).unwrap(),
+                    Permille::new_unchecked(140),
+                    Permille::new_unchecked(30),
+                )),
+            ),
+            CommodityKind::Medicine => expected_spec(TradeCategory::Medicine, LoadUnits(1), None, None),
+            CommodityKind::Coin => expected_spec(TradeCategory::Coin, LoadUnits(1), None, None),
+            CommodityKind::Waste => expected_spec(TradeCategory::Waste, LoadUnits(1), None, None),
         }
     }
 
@@ -750,6 +755,8 @@ mod tests {
     fn non_consumable_commodities_have_no_consumable_profile() {
         for kind in [
             CommodityKind::Firewood,
+            CommodityKind::Sword,
+            CommodityKind::Bow,
             CommodityKind::Medicine,
             CommodityKind::Coin,
             CommodityKind::Waste,
@@ -783,20 +790,26 @@ mod tests {
     }
 
     #[test]
+    fn combat_weapon_profile_roundtrips_through_bincode() {
+        let profile = CombatWeaponProfile::new(
+            NonZeroU32::new(6).unwrap(),
+            Permille::new(150).unwrap(),
+            Permille::new(40).unwrap(),
+        );
+
+        let bytes = bincode::serialize(&profile).unwrap();
+        let roundtrip: CombatWeaponProfile = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
     fn unique_item_kind_specs_match_catalog() {
         let expected = [
             (
                 UniqueItemKind::SimpleTool,
                 UniqueItemKindSpec {
                     physical_profile: UniqueItemPhysicalProfile { load: LoadUnits(5) },
-                },
-            ),
-            (
-                UniqueItemKind::Weapon,
-                UniqueItemKindSpec {
-                    physical_profile: UniqueItemPhysicalProfile {
-                        load: LoadUnits(10),
-                    },
                 },
             ),
             (
@@ -854,6 +867,11 @@ mod tests {
             TradeCategory::Fuel
         );
         assert_eq!(
+            CommodityKind::Sword.spec().trade_category,
+            TradeCategory::Weapon
+        );
+        assert_eq!(CommodityKind::Bow.spec().trade_category, TradeCategory::Weapon);
+        assert_eq!(
             CommodityKind::Medicine.spec().trade_category,
             TradeCategory::Medicine
         );
@@ -865,6 +883,42 @@ mod tests {
             CommodityKind::Waste.spec().trade_category,
             TradeCategory::Waste
         );
+    }
+
+    #[test]
+    fn weapon_commodities_expose_combat_profiles() {
+        assert_eq!(
+            CommodityKind::Sword.spec().combat_weapon_profile,
+            Some(CombatWeaponProfile::new(
+                NonZeroU32::new(4).unwrap(),
+                Permille::new(180).unwrap(),
+                Permille::new(55).unwrap(),
+            ))
+        );
+        assert_eq!(
+            CommodityKind::Bow.spec().combat_weapon_profile,
+            Some(CombatWeaponProfile::new(
+                NonZeroU32::new(5).unwrap(),
+                Permille::new(140).unwrap(),
+                Permille::new(30).unwrap(),
+            ))
+        );
+    }
+
+    #[test]
+    fn non_weapon_commodities_have_no_combat_profile() {
+        for kind in [
+            CommodityKind::Apple,
+            CommodityKind::Grain,
+            CommodityKind::Bread,
+            CommodityKind::Water,
+            CommodityKind::Firewood,
+            CommodityKind::Medicine,
+            CommodityKind::Coin,
+            CommodityKind::Waste,
+        ] {
+            assert_eq!(kind.spec().combat_weapon_profile, None);
+        }
     }
 
     #[test]

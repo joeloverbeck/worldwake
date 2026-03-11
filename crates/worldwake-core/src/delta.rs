@@ -1,11 +1,12 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CommodityKind,
-    Container, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId,
-    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, Name, Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
-    SubstitutePreferences, TradeDispositionProfile, UniqueItem, WorkstationMarker, WoundList,
+    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CombatProfile,
+    CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds,
+    EntityId, EntityKind, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
+    MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob, Quantity,
+    ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
+    UniqueItem, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -220,11 +221,12 @@ mod tests {
             sample_trade_disposition_profile,
         },
         AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
-        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId,
-        FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-        MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        CombatProfile, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
+        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
+        LoadUnits, LotOperation, MetabolismProfile, Name, Permille, ProductionJob,
+        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
+        TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag,
+        Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -261,6 +263,19 @@ mod tests {
                     bleed_rate_per_tick: Permille::new(0).unwrap(),
                 }],
             }),
+            ComponentValue::CombatProfile(CombatProfile::new(
+                Permille::new(1000).unwrap(),
+                Permille::new(700).unwrap(),
+                Permille::new(640).unwrap(),
+                Permille::new(590).unwrap(),
+                Permille::new(75).unwrap(),
+                Permille::new(22).unwrap(),
+                Permille::new(17).unwrap(),
+                Permille::new(130).unwrap(),
+                Permille::new(28).unwrap(),
+                std::num::NonZeroU32::new(6).unwrap(),
+            )),
+            ComponentValue::DeadAt(DeadAt(Tick(18))),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
                 Permille::new(100).unwrap(),
@@ -409,6 +424,8 @@ mod tests {
                 ComponentKind::Name,
                 ComponentKind::AgentData,
                 ComponentKind::WoundList,
+                ComponentKind::CombatProfile,
+                ComponentKind::DeadAt,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,

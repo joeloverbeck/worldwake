@@ -174,10 +174,6 @@ mod tests {
             LoadUnits(5)
         );
         assert_eq!(
-            load_of_unique_item_kind(UniqueItemKind::Weapon),
-            LoadUnits(10)
-        );
-        assert_eq!(
             load_of_unique_item_kind(UniqueItemKind::Contract),
             LoadUnits(1)
         );
@@ -211,13 +207,13 @@ mod tests {
 
     #[test]
     fn load_of_unique_item_uses_kind_weight() {
-        let weapon = UniqueItem {
-            kind: UniqueItemKind::Weapon,
-            name: Some("Rusty Sword".to_string()),
+        let tool = UniqueItem {
+            kind: UniqueItemKind::SimpleTool,
+            name: Some("Hammer".to_string()),
             metadata: BTreeMap::from([("condition".to_string(), "worn".to_string())]),
         };
 
-        assert_eq!(load_of_unique_item(&weapon), LoadUnits(10));
+        assert_eq!(load_of_unique_item(&tool), LoadUnits(5));
     }
 
     #[test]
@@ -275,8 +271,8 @@ mod tests {
             .unwrap();
         let item = world
             .create_unique_item(
-                UniqueItemKind::Weapon,
-                Some("Rusty Sword"),
+                UniqueItemKind::Artifact,
+                Some("Court Seal"),
                 BTreeMap::new(),
                 Tick(3),
             )
@@ -285,7 +281,7 @@ mod tests {
 
         assert_eq!(
             current_container_load(&world, container, [lot, item, office]).unwrap(),
-            LoadUnits(18)
+            LoadUnits(13)
         );
     }
 
@@ -352,11 +348,11 @@ mod tests {
     #[test]
     fn remaining_container_capacity_rejects_over_capacity_contents() {
         let mut world = test_world();
-        let container = world.create_container(test_container(10), Tick(1)).unwrap();
+        let container = world.create_container(test_container(7), Tick(1)).unwrap();
         let item = world
             .create_unique_item(
-                UniqueItemKind::Weapon,
-                Some("Rusty Sword"),
+                UniqueItemKind::Artifact,
+                Some("Court Seal"),
                 BTreeMap::new(),
                 Tick(2),
             )
