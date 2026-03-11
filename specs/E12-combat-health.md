@@ -11,6 +11,8 @@ Phase 2: Survival & Logistics
 
 ## Dependencies
 - E08 (actions and scheduler)
+- E09 (HomeostaticNeeds, WoundList/Wound shared schema in `worldwake-core` — combat wounds and deprivation wounds use the same data model)
+- E10 (InTransitOnEdge — used for transit checks in co-location preconditions)
 - Shared body-harm schema in `worldwake-core` so combat wounds and deprivation wounds use the same data model
 
 ## Foundations Alignment Changes
@@ -25,31 +27,70 @@ This revision fixes three important gaps:
 ### CombatProfile Component
 Per-agent combat / bodily resilience parameters enabling Principle 11.
 
-- `wound_capacity: Permille` — total wound load before death
-- `incapacitation_threshold: Permille` — wound load before new actions are blocked
-- `attack_skill: Permille`
-- `guard_skill: Permille`
+```rust
+pub struct CombatProfile {
+    pub wound_capacity: Permille,
+    pub incapacitation_threshold: Permille,
+    pub attack_skill: Permille,
+    pub guard_skill: Permille,
+    pub defend_bonus: Permille,            // added to guard_skill when Defend active
+    pub natural_clot_resistance: Permille, // how quickly bleed_rate decreases per tick
+    pub natural_recovery_rate: Permille,   // severity reduction per tick under recovery conditions
+    pub unarmed_wound_severity: Permille,  // base wound from unarmed attacks
+    pub unarmed_bleed_rate: Permille,      // bleed rate from unarmed attacks
+    pub unarmed_attack_ticks: NonZeroU32,  // duration for unarmed attack action
+}
+```
 
 `attack_skill` / `guard_skill` replace the earlier `base_attack` / `base_defense` wording. They are still numeric, but they are explicitly traits of the body / training rather than floating anonymous formula knobs.
 
 ### WoundList Component
-`WoundList` is a `Vec<Wound>` stored on the agent entity.
+`WoundList` is a `Vec<Wound>` stored on the agent entity. It already exists in `crates/worldwake-core/src/wounds.rs` (registered in E09). E12 extends the `Wound` struct with a bleeding field.
 
 ```rust
 struct Wound {
-    severity: Permille,
-    location: BodyPart,          // Head, Torso, Arms, Legs
-    bleed_rate_per_tick: Permille,
-    ticks_since_inflicted: u32,
-    cause: WoundCause,
+    pub body_part: BodyPart,              // Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg
+    pub cause: WoundCause,
+    pub severity: Permille,
+    pub inflicted_at: Tick,
+    pub bleed_rate_per_tick: Permille,    // 0 for non-bleeding wounds, 0 once clotted/treated
 }
 ```
 
-`WoundCause` must include at least:
-- `Combat { attacker: Option<EntityId>, weapon: Option<CommodityKind> }`
-- `Deprivation(Starvation | Dehydration)`
+E09 deprivation wounds pass `Permille(0)` for `bleed_rate_per_tick`. Elapsed time is derived as `current_tick - inflicted_at`, so no `ticks_since_inflicted` field is stored.
 
-Future-compatible causes may include accident, exposure, illness, etc.
+### WoundCause Extension
+`WoundCause` currently has `Deprivation(DeprivationKind)` (from E09 shared schema). E12 adds:
+- `Combat { attacker: EntityId, weapon: CombatWeaponRef }`
+
+New enum `CombatWeaponRef`:
+
+```rust
+pub enum CombatWeaponRef {
+    Unarmed,
+    Commodity(CommodityKind),     // Sword, Bow
+}
+```
+
+All types derive `Copy + Clone + Eq + Ord + Hash + Serialize + Deserialize`.
+
+### Weapon Commodities
+Add to `CommodityKind` in `crates/worldwake-core/src/items.rs`:
+- `Sword` -- trade_category: `TradeCategory::Weapon`, melee weapon
+- `Bow` -- trade_category: `TradeCategory::Weapon`, ranged weapon (for Phase 2, still requires Place co-location)
+
+Each weapon needs a `CombatWeaponProfile` (new struct in `worldwake-core`):
+
+```rust
+pub struct CombatWeaponProfile {
+    pub base_wound_severity: Permille,
+    pub base_bleed_rate: Permille,
+    pub attack_duration_ticks: NonZeroU32,
+}
+```
+
+Access via `CommodityKind::combat_weapon_profile() -> Option<CombatWeaponProfile>`.
+Unarmed combat uses per-agent parameters from `CombatProfile`.
 
 ### No Stored Health Component
 Authoritative checks are always derived:
@@ -64,7 +105,7 @@ No `health`, `hit_points`, or duplicate aggregate score may be stored.
 
 #### Attack
 - Precondition:
-  - attacker and target co-located at the same place **or** the same route-occupancy entity
+  - attacker and target co-located at the same Place (neither in transit)
   - attacker alive
   - attacker not incapacitated
   - attacker has weapon or can fight unarmed
@@ -73,13 +114,16 @@ No `health`, `hit_points`, or duplicate aggregate score may be stored.
   - resolve hit / guard outcome
   - append wound(s) to target
   - emit public combat event
-- Visibility: public at place / route occupancy
+- Visibility: public at the Place where combat occurs
 - Witnesses: all co-located agents there
 
 #### Defend
-- Precondition: actor alive and capable
-- Effect: raises effective guard during the stance
-- Duration: action-defined and matched against incoming attack resolution window
+- Precondition: actor alive, not incapacitated, at a Place (not in transit)
+- Effect: while active, agent's effective `guard_skill` is boosted by `CombatProfile.defend_bonus`. Hit resolution checks for active Defend action on target.
+- Duration: `DurationExpr::Indefinite` -- runs until cancelled or interrupted
+- Interruptibility: `FreelyInterruptible`
+- Payload: `ActionPayload::None`
+- Visibility: public at Place
 
 ### Hit Resolution
 Deterministic given RNG state.
@@ -88,18 +132,17 @@ Inputs may include:
 - weapon wound profile
 - `attack_skill`
 - `guard_skill`
-- armor coverage / mitigation
 - fatigue from E09
 - existing wound penalties from `WoundList`
 
-The output is not “health damage.” It is one or more new `Wound` values appended to `WoundList`.
+The output is not "health damage." It is one or more new `Wound` values appended to `WoundList`.
 
 ### Per-Wound Progression
 Each wound progresses independently each tick.
 
-- `ticks_since_inflicted += 1`
 - if `bleed_rate_per_tick > 0`, increase `severity` by that rate
 - once clotting / treatment occurs, `bleed_rate_per_tick` becomes `0`
+- elapsed time is derived as `current_tick - wound.inflicted_at`
 - non-bleeding wounds can slowly recover if recovery conditions are met
 
 This must be implemented per wound, not as a global health drain.
@@ -113,6 +156,8 @@ A wound may naturally improve when:
 - the agent is not in immediate combat
 - the agent has at least minimally tolerable hunger / thirst / fatigue
 
+Natural clotting reduces `bleed_rate_per_tick` based on elapsed time (`current_tick - wound.inflicted_at`) and `CombatProfile.natural_clot_resistance`. This is a physical world process (blood coagulation), not a numerical clamp. Higher `natural_clot_resistance` means faster natural clotting. Once `bleed_rate_per_tick` reaches zero, the wound transitions to the recovery phase where `severity` decreases at `CombatProfile.natural_recovery_rate` per tick under acceptable conditions.
+
 Medicine accelerates and improves this process, but medicine is not the sole path to recovery.
 
 This is the physical dampener for the wound-spiral loop.
@@ -120,12 +165,12 @@ This is the physical dampener for the wound-spiral loop.
 ### Wound Consequences (Cross-System via State)
 Wound effects propagate through shared state.
 
-- **Pain**: derived by E13 from `WoundList`; not stored as a separate component
+- **Pain**: not stored; future systems may derive pain from `WoundList` as a read-model
 - **Bleeding**: wound severity increases per wound
 - **Movement restriction**: severe leg wounds restrict travel and pursuit
 - **Action restriction**: severe arm wounds hinder weapon use / crafting
 - **Incapacitation**: wound load beyond threshold blocks new actions
-- **Fatigue interaction**: combat reads `HomeostaticNeeds.fatigue` directly
+- **Fatigue interaction**: the combat system reads the `HomeostaticNeeds` component from world state (state-mediated per Principle 12)
 
 ### Healing Action
 - **Heal**: agent treats wounded target
@@ -144,29 +189,69 @@ Wound effects propagate through shared state.
 Triggered when wound load reaches `wound_capacity`.
 
 When death triggers:
-- agent state changes to dead
-- remove from planning / acting schedule
-- body persists with:
-  - inventory intact
-  - `WoundList` intact
-  - location or route occupancy preserved until later handling
+- attach `DeadAt(Tick)` component to the agent
+- agent is NOT archived -- retains all components, remains in the world
+- scheduler excludes agents with `DeadAt` from planning and action starts
+- body persists with inventory (lootable), WoundList, CombatProfile, location
 - emit death event with cause chain
 
+New component:
+
+```rust
+pub struct DeadAt(pub Tick);
+impl Component for DeadAt {}
+```
+
+Registered on `EntityKind::Agent`.
+
 ### Corpse Handling
-Bodies remain in the world and are interactive.
+Bodies remain in the world (have `DeadAt` but are not archived).
 
-Possible actions:
-- **Loot**
-- **Bury**
-- **Discover / inspect**
+Actions on corpses:
+- **Loot** -- transfer items from dead agent to looter
+  - Precondition: co-located, target has `DeadAt`, looter alive and not incapacitated
+  - Effect: transfer item ownership, subject to carry capacity
+  - Duration: derived from item weight
+  - Visibility: public at Place
 
-No corpse auto-cleanup is allowed in Phase 2.
+Deferred: Bury, Discover/inspect. No corpse auto-cleanup in Phase 2.
+
+## ActionPayload Extension
+Add to `ActionPayload` in `action_payload.rs`:
+- `Combat(CombatActionPayload)` -- for Attack action
+- `Loot(LootActionPayload)` -- for Loot action
+
+```rust
+pub struct CombatActionPayload {
+    pub target: EntityId,
+    pub weapon: CombatWeaponRef,
+}
+pub struct LootActionPayload {
+    pub target: EntityId,
+}
+```
+
+## Constraint and Precondition Extensions
+New `Constraint` variants (in `action_semantics.rs`):
+- `ActorNotIncapacitated` -- wound load below incapacitation_threshold
+- `ActorNotDead` -- no `DeadAt` component
+
+New `Precondition` variants (in `action_semantics.rs`):
+- `TargetAlive(u8)` -- target lacks `DeadAt`
+- `TargetDead(u8)` -- target has `DeadAt` (for Loot)
+- `TargetIsAgent(u8)` -- target is `EntityKind::Agent`
+
+## DurationExpr Extensions
+New variants in `action_semantics.rs`:
+- `Indefinite` -- action runs until cancelled/interrupted (for Defend)
+- `CombatWeapon` -- resolves to weapon's `attack_duration_ticks` from `CombatWeaponProfile`, falling back to actor's `CombatProfile.unarmed_attack_ticks` for unarmed
 
 ## Component Registration
-New components to register in `component_schema.rs`:
+Components to register in `component_schema.rs`:
 
-- `WoundList` — on `EntityKind::Agent`
-- `CombatProfile` — on `EntityKind::Agent`
+- `WoundList` -- **already registered** on Agent (E09). E12 extends Wound struct only.
+- `CombatProfile` -- **NEW**, register on `EntityKind::Agent`
+- `DeadAt` -- **NEW**, register on `EntityKind::Agent`
 
 ## SystemFn Integration
 - Implements the combat / wound handler in `SystemDispatch`
@@ -174,48 +259,50 @@ New components to register in `component_schema.rs`:
 - Reads:
   - `WoundList`
   - `CombatProfile`
-  - weapon / armor profiles
+  - weapon profiles (via `CommodityKind::combat_weapon_profile()`)
   - `HomeostaticNeeds`
+  - active actions (to check for Defend stance on targets)
+  - `DeadAt` (to skip dead agents)
 - Writes:
   - `WoundList`
-  - dead / alive state
-  - combat events
-  - death events
+  - `DeadAt` (attach on death)
+  - combat events (attack outcome, wound inflicted)
+  - death events (with cause chain)
 
 E12 does **not** call E09 or E13 directly.
 
 ## Cross-System Interactions (Principle 12)
-- **E09 → E12**: physiology affects combat effectiveness and natural healing quality
-- **E09 → E12**: deprivation can append `WoundCause::Deprivation(...)` entries to `WoundList`
-- **E12 → E13**: AI derives pain / danger / treatment priorities from wounds and co-located threats
-- **E12 → future systems**: corpses and wounds become discoverable material evidence
+- **E09 -> E12**: physiology affects combat effectiveness and natural healing quality
+- **E09 -> E12**: deprivation can append `WoundCause::Deprivation(...)` entries to `WoundList`
+- **E12 -> E13**: AI derives pain / danger / treatment priorities from wounds and co-located threats
+- **E12 -> future systems**: corpses and wounds become discoverable material evidence
 
 ## FND-01 Section H
 
 ### Information-Path Analysis
-- Combat is local to the shared place / route occupancy
-- Witnesses are all co-located agents
+- Combat is local to the shared Place
+- Witnesses are all co-located agents at that Place
 - Wounds live on the wounded body
 - Death events propagate through ordinary event visibility and later witness systems
 
 ### Positive-Feedback Analysis
-- **Wounds → weakness → more wounds**
-- **Bleeding → more wound load → less capacity to flee / heal**
+- **Wounds -> weakness -> more wounds**
+- **Bleeding -> more wound load -> less capacity to flee / heal**
 
 ### Concrete Dampeners
-- **Wounds → weakness loop dampeners**:
+- **Wounds -> weakness loop dampeners**:
   - physical separation if one side flees
   - incapacitation removing the target from active exchange
   - natural stabilization / healing when combat stops
 - **Bleeding loop dampeners**:
-  - clotting over time for survivable wounds
+  - natural clotting: `bleed_rate_per_tick` decreases based on elapsed time and `CombatProfile.natural_clot_resistance` -- this models blood coagulation (a physical world process, not a numerical clamp)
   - bandaging / healing by co-located agents
 
 ### Stored State vs. Derived Read-Model
 **Stored (authoritative)**:
 - `WoundList`
 - `CombatProfile`
-- dead / alive state
+- `DeadAt(Tick)`
 
 **Derived (transient read-model)**:
 - wound load
@@ -225,15 +312,18 @@ E12 does **not** call E09 or E13 directly.
 - current combat disadvantage from wounds
 
 ## Invariants Enforced
-- 9.14: Death finality — dead agents do not plan, act, trade, vote, or consume
-- 9.5: Conservation — corpse inventory persists; treatment consumes medicine
+- 9.14: Death finality -- dead agents do not plan, act, trade, vote, or consume
+- 9.5: Conservation -- corpse inventory persists; treatment consumes medicine
 - Principle 3: no stored health component
+- Principle 6: deterministic combat outcomes given RNG state
 - Principle 8: wound loops have physical dampeners through clotting / recovery / separation
+- Principle 11: per-agent combat profiles, no magic numbers
+- Principle 12: cross-system interaction via shared state only, no direct system calls
 
 ## Tests
 - [ ] T14: Dead agents generate no new plans or actions
 - [ ] Combat resolves deterministically with same RNG state
-- [ ] New wounds append to `WoundList` with correct cause and location
+- [ ] New wounds append to `WoundList` with correct cause and body_part
 - [ ] Per-wound bleeding increases severity over time
 - [ ] Treatment reduces bleeding and consumes medicine
 - [ ] Non-bleeding wounds can naturally stabilize / recover under acceptable physiological conditions
@@ -246,19 +336,31 @@ E12 does **not** call E09 or E13 directly.
 - [ ] No stored `Health` component exists
 - [ ] Different `CombatProfile` values produce different outcomes
 - [ ] Durations derive from weapon / medicine profiles, not hardcoded constants
+- [ ] `DeadAt` component is attached on death and scheduler excludes agents with it
+- [ ] Scheduler excludes agents with `DeadAt` from planning and action starts
+- [ ] Loot action transfers items from dead agent to looter
+- [ ] Defend action boosts effective `guard_skill` by `defend_bonus`
+- [ ] `Sword` and `Bow` exist in `CommodityKind` with `TradeCategory::Weapon`
+- [ ] Natural clotting reduces `bleed_rate_per_tick` over time based on `natural_clot_resistance`
+- [ ] Recovery only occurs when not bleeding and physiological conditions acceptable
+- [ ] `BodyCostPerTick` (E09) still accrues for dead agents (no special-case, corpse weight persists)
+- [ ] `DurationExpr::Indefinite` keeps Defend running until cancelled
+- [ ] `CombatWeaponRef::Commodity(Sword)` produces different wound profile than `Unarmed`
 
 ## Acceptance Criteria
 - Combat produces wounds, not hit-point subtraction
 - Wounds are the unified bodily-harm carrier for combat and deprivation
 - No stored health component exists
-- Death is final
-- Corpses persist as interactive entities
+- Death is final and modeled via `DeadAt(Tick)` component (not archival)
+- Corpses persist as interactive entities; only Loot is supported (Bury and Discover deferred)
 - Wounds can stabilize and heal naturally; medicine accelerates recovery
 - All combat outcomes remain traceable in the event log
+- `Sword` and `Bow` exist as weapon commodities
+- Defend is an ongoing (indefinite) action boosting `guard_skill`
+- **Out of scope**: armor coverage/mitigation, route combat (combat only at Places)
 
-## FND-01 Route Presence Note
-E10’s explicit `InTransitOnEdge` now provides a lawful route-presence carrier.  
-This epic still does **not** implement large-scale patrol / ambush behavior; it only ensures combat can occur where co-presence actually exists.
+## Route Combat Note
+Route combat is deferred to a future epic. Combat in E12 only occurs where co-presence actually exists at a Place. E10's `InTransitOnEdge` is checked to ensure combatants are not in transit, but no combat occurs on routes.
 
 ## Spec References
 - Section 3.4 (wounds as carriers of consequence)
