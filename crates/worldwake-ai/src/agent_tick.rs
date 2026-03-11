@@ -2,7 +2,7 @@ use crate::{
     build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
     generate_candidates, handle_plan_failure, rank_candidates, revalidate_next_step, search_plan,
     select_best_plan, AgentDecisionRuntime, InterruptDecision, PlanFailureContext,
-    PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget,
+    PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -65,6 +65,13 @@ struct AgentTickContext<'a> {
     tick: Tick,
 }
 
+#[derive(Clone, Copy)]
+struct ReadPhaseContext<'a> {
+    recipe_registry: &'a RecipeRegistry,
+    utility: &'a worldwake_core::UtilityProfile,
+    tick: Tick,
+}
+
 impl AutonomousController for AgentTickDriver {
     fn name(&self) -> &'static str {
         "agent_tick_driver"
@@ -106,7 +113,6 @@ impl AutonomousController for AgentTickDriver {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn process_agent(
     ctx: &mut AgentTickContext<'_>,
     runtime_by_agent: &mut BTreeMap<EntityId, AgentDecisionRuntime>,
@@ -132,12 +138,7 @@ fn process_agent(
         .cloned()
         .unwrap_or_default();
     let runtime = runtime_by_agent.entry(agent).or_default();
-    let active_action = ctx
-        .scheduler
-        .active_actions()
-        .values()
-        .find(|instance| instance.actor == agent)
-        .cloned();
+    let active_action = active_action_for_agent(ctx, agent);
 
     {
         let view = OmniscientBeliefView::new(ctx.world);
@@ -161,23 +162,96 @@ fn process_agent(
         replan_signals,
     )?;
 
-    let blocked_changed_from_cleanup = {
-        let view = OmniscientBeliefView::new(ctx.world);
-        let before = blocked_memory.clone();
-        clear_resolved_blockers(&view, agent, &mut blocked_memory, tick);
-        blocked_memory != before
-    };
+    let ranked_candidates = refresh_runtime_for_read_phase(
+        ctx.world,
+        runtime,
+        &mut blocked_memory,
+        agent,
+        replan_signals,
+        ReadPhaseContext {
+            recipe_registry,
+            utility: &utility,
+            tick,
+        },
+    );
+    let active_action = active_action_for_agent(ctx, agent);
 
-    let active_action = ctx
-        .scheduler
+    if let Some(active_action) = active_action {
+        return handle_active_action_phase(
+            ctx,
+            runtime,
+            &mut blocked_memory,
+            &original_blocked,
+            agent,
+            &ranked_candidates,
+            &active_action,
+            budget,
+            tick,
+            action_defs,
+            action_handlers,
+        );
+    }
+
+    let (next_step, next_step_valid) = plan_and_validate_next_step(
+        ctx.world,
+        runtime,
+        agent,
+        &ranked_candidates,
+        budget,
+        semantics_table,
+        action_defs,
+        action_handlers,
+    );
+
+    if let Some(step) = next_step {
+        let valid = next_step_valid.expect("validation result must exist for current step");
+        if valid {
+            let _ = ctx
+                .scheduler
+                .input_queue_mut()
+                .enqueue(tick, step.to_request_action(agent));
+            runtime.step_in_flight = true;
+        } else {
+            handle_current_step_failure(ctx, runtime, &mut blocked_memory, agent, &step, None)?;
+        }
+    }
+
+    finalize_agent_tick(
+        ctx.world,
+        ctx.event_log,
+        agent,
+        tick,
+        &original_blocked,
+        &blocked_memory,
+        runtime,
+    )
+}
+
+fn active_action_for_agent(
+    ctx: &AgentTickContext<'_>,
+    agent: EntityId,
+) -> Option<worldwake_sim::ActionInstance> {
+    ctx.scheduler
         .active_actions()
         .values()
         .find(|instance| instance.actor == agent)
-        .cloned();
-    let snapshot_changed = {
-        let view = OmniscientBeliefView::new(ctx.world);
-        observation_snapshot_changed(&view, agent, runtime)
-    };
+        .cloned()
+}
+
+fn refresh_runtime_for_read_phase(
+    world: &worldwake_core::World,
+    runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut BlockedIntentMemory,
+    agent: EntityId,
+    replan_signals: &[&ReplanNeeded],
+    phase: ReadPhaseContext<'_>,
+) -> Vec<RankedGoal> {
+    // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
+    let view = OmniscientBeliefView::new(world);
+    let before = blocked_memory.clone();
+    clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
+    let blocked_changed_from_cleanup = *blocked_memory != before;
+    let snapshot_changed = observation_snapshot_changed(&view, agent, runtime);
 
     runtime.dirty = runtime.dirty
         || runtime.current_plan.is_none()
@@ -186,93 +260,122 @@ fn process_agent(
         || blocked_changed_from_cleanup
         || snapshot_changed;
 
-    let ranked_candidates = {
-        let view = OmniscientBeliefView::new(ctx.world);
-        let candidates = generate_candidates(&view, agent, &blocked_memory, recipe_registry, tick);
-        rank_candidates(&candidates, &view, agent, &utility, recipe_registry)
-    };
+    let candidates = generate_candidates(
+        &view,
+        agent,
+        blocked_memory,
+        phase.recipe_registry,
+        phase.tick,
+    );
+    rank_candidates(
+        &candidates,
+        &view,
+        agent,
+        phase.utility,
+        phase.recipe_registry,
+    )
+}
 
-    if let Some(active_action) = active_action {
-        let interruptibility = action_defs
-            .get(active_action.def_id)
-            .map_or(worldwake_sim::Interruptibility::NonInterruptible, |def| {
-                def.interruptibility
-            });
-        let plan_valid = runtime
-            .current_plan
-            .as_ref()
-            .is_some_and(|plan| runtime.current_step_index < plan.steps.len());
-        if let InterruptDecision::InterruptForReplan { trigger: _ } = evaluate_interrupt(
-            runtime,
-            interruptibility,
-            &ranked_candidates,
-            plan_valid,
-            budget,
-        ) {
-            let replan = ctx
-                .scheduler
-                .interrupt_active_action(
-                    active_action.instance_id,
-                    SchedulerActionRuntime {
-                        action_defs,
-                        action_handlers,
-                        world: ctx.world,
-                        event_log: ctx.event_log,
-                        rng: ctx.rng,
-                    },
-                    worldwake_sim::ActionExecutionContext {
-                        cause: CauseRef::SystemTick(tick),
-                        tick,
-                    },
-                    worldwake_sim::InterruptReason::Reprioritized,
-                )
-                .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-            reconcile_in_flight_state(ctx, runtime, &mut blocked_memory, None, agent, &[&replan])?;
-        }
-
-        persist_blocked_memory(
-            ctx.world,
-            ctx.event_log,
-            agent,
-            tick,
-            &original_blocked,
-            &blocked_memory,
-        )?;
-        {
-            let view = OmniscientBeliefView::new(ctx.world);
-            update_runtime_observation_snapshot(&view, agent, runtime);
-        }
-        return Ok(());
+#[allow(clippy::too_many_arguments)]
+fn handle_active_action_phase(
+    ctx: &mut AgentTickContext<'_>,
+    runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut BlockedIntentMemory,
+    original_blocked: &BlockedIntentMemory,
+    agent: EntityId,
+    ranked_candidates: &[RankedGoal],
+    active_action: &worldwake_sim::ActionInstance,
+    budget: &PlanningBudget,
+    tick: Tick,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+) -> Result<(), TickInputError> {
+    let interruptibility = action_defs
+        .get(active_action.def_id)
+        .map_or(worldwake_sim::Interruptibility::NonInterruptible, |def| {
+            def.interruptibility
+        });
+    let plan_valid = runtime
+        .current_plan
+        .as_ref()
+        .is_some_and(|plan| runtime.current_step_index < plan.steps.len());
+    if let InterruptDecision::InterruptForReplan { trigger: _ } = evaluate_interrupt(
+        runtime,
+        interruptibility,
+        ranked_candidates,
+        plan_valid,
+        budget,
+    ) {
+        let replan = ctx
+            .scheduler
+            .interrupt_active_action(
+                active_action.instance_id,
+                SchedulerActionRuntime {
+                    action_defs,
+                    action_handlers,
+                    world: ctx.world,
+                    event_log: ctx.event_log,
+                    rng: ctx.rng,
+                },
+                worldwake_sim::ActionExecutionContext {
+                    cause: CauseRef::SystemTick(tick),
+                    tick,
+                },
+                worldwake_sim::InterruptReason::Reprioritized,
+            )
+            .map_err(|error| TickInputError::new(format!("{error:?}")))?;
+        reconcile_in_flight_state(ctx, runtime, blocked_memory, None, agent, &[&replan])?;
     }
 
-    if runtime.dirty {
-        let plans = {
-            let view = OmniscientBeliefView::new(ctx.world);
-            ranked_candidates
-                .iter()
-                .take(usize::from(budget.max_candidates_to_plan))
-                .map(|ranked| {
-                    let snapshot = build_planning_snapshot(
-                        &view,
-                        agent,
-                        &ranked.grounded.evidence_entities,
-                        &ranked.grounded.evidence_places,
-                        budget.max_plan_depth,
-                    );
-                    let plan = search_plan(
-                        &snapshot,
-                        &ranked.grounded,
-                        semantics_table,
-                        action_defs,
-                        action_handlers,
-                        budget,
-                    );
-                    (ranked.grounded.key, plan)
-                })
-                .collect::<Vec<_>>()
-        };
+    finalize_agent_tick(
+        ctx.world,
+        ctx.event_log,
+        agent,
+        tick,
+        original_blocked,
+        blocked_memory,
+        runtime,
+    )
+}
 
-        if let Some(selected_plan) = select_best_plan(&ranked_candidates, &plans, runtime, budget) {
+#[allow(clippy::too_many_arguments)]
+fn plan_and_validate_next_step(
+    world: &worldwake_core::World,
+    runtime: &mut AgentDecisionRuntime,
+    agent: EntityId,
+    ranked_candidates: &[RankedGoal],
+    budget: &PlanningBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+) -> (Option<PlannedStep>, Option<bool>) {
+    // A second read view covers plan selection and step validation after the active-action fork.
+    let view = OmniscientBeliefView::new(world);
+    if runtime.dirty {
+        let plans = ranked_candidates
+            .iter()
+            .take(usize::from(budget.max_candidates_to_plan))
+            .map(|ranked| {
+                let snapshot = build_planning_snapshot(
+                    &view,
+                    agent,
+                    &ranked.grounded.evidence_entities,
+                    &ranked.grounded.evidence_places,
+                    budget.max_plan_depth,
+                );
+                let plan = search_plan(
+                    &snapshot,
+                    &ranked.grounded,
+                    semantics_table,
+                    action_defs,
+                    action_handlers,
+                    budget,
+                );
+                (ranked.grounded.key, plan)
+            })
+            .collect::<Vec<_>>();
+
+        if let Some(selected_plan) = select_best_plan(ranked_candidates, &plans, runtime, budget) {
             runtime.current_goal = Some(selected_plan.goal);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
@@ -293,32 +396,33 @@ fn process_agent(
         runtime.dirty = false;
     }
 
-    if let Some(step) = current_step(runtime).cloned() {
-        let valid = {
-            let view = OmniscientBeliefView::new(ctx.world);
-            revalidate_next_step(&view, agent, &step, action_defs, action_handlers)
-        };
-        if valid {
-            let _ = ctx
-                .scheduler
-                .input_queue_mut()
-                .enqueue(tick, step.to_request_action(agent));
-            runtime.step_in_flight = true;
-        } else {
-            handle_current_step_failure(ctx, runtime, &mut blocked_memory, agent, &step, None)?;
-        }
-    }
+    let next_step = current_step(runtime).cloned();
+    let next_step_valid = next_step
+        .as_ref()
+        .map(|step| revalidate_next_step(&view, agent, step, action_defs, action_handlers));
+    (next_step, next_step_valid)
+}
 
+fn finalize_agent_tick(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    original_blocked: &BlockedIntentMemory,
+    blocked_memory: &BlockedIntentMemory,
+    runtime: &mut AgentDecisionRuntime,
+) -> Result<(), TickInputError> {
     persist_blocked_memory(
-        ctx.world,
-        ctx.event_log,
+        world,
+        event_log,
         agent,
         tick,
-        &original_blocked,
-        &blocked_memory,
+        original_blocked,
+        blocked_memory,
     )?;
     {
-        let view = OmniscientBeliefView::new(ctx.world);
+        // Snapshot the post-mutation world state before ending the tick.
+        let view = OmniscientBeliefView::new(world);
         update_runtime_observation_snapshot(&view, agent, runtime);
     }
     Ok(())
@@ -519,7 +623,7 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 
 #[cfg(test)]
 mod tests {
-    use super::{advance_completed_step, AgentTickDriver};
+    use super::{advance_completed_step, persist_blocked_memory, AgentTickDriver};
     use crate::PlanningBudget;
     use crate::{
         CommodityPurpose, GoalKey, GoalKind, PlanTerminalKind, PlannedPlan, PlannedStep,
@@ -528,9 +632,10 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile, Quantity, Seed,
-        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BlockedIntent, BlockedIntentMemory, BlockingFact, CauseRef,
+        CommodityKind, ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventLog,
+        HomeostaticNeeds, MetabolismProfile, Quantity, Seed, Tick, VisibilitySpec, WitnessData,
+        World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
@@ -762,6 +867,70 @@ mod tests {
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert!(runtime.dirty);
+    }
+
+    #[test]
+    fn persist_blocked_memory_skips_empty_unchanged_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut event_log = EventLog::new();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let _ = txn.commit(&mut event_log);
+            agent
+        };
+
+        persist_blocked_memory(
+            &mut world,
+            &mut event_log,
+            agent,
+            Tick(2),
+            &BlockedIntentMemory::default(),
+            &BlockedIntentMemory::default(),
+        )
+        .unwrap();
+
+        assert_eq!(world.get_component_blocked_intent_memory(agent), None);
+        assert_eq!(event_log.len(), 1);
+    }
+
+    #[test]
+    fn persist_blocked_memory_commits_changed_component() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut event_log = EventLog::new();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let _ = txn.commit(&mut event_log);
+            agent
+        };
+        let blocked = BlockedIntentMemory {
+            intents: vec![BlockedIntent {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                blocking_fact: BlockingFact::Unknown,
+                related_entity: None,
+                related_place: None,
+                observed_tick: Tick(2),
+                expires_tick: Tick(7),
+            }],
+        };
+
+        persist_blocked_memory(
+            &mut world,
+            &mut event_log,
+            agent,
+            Tick(2),
+            &BlockedIntentMemory::default(),
+            &blocked,
+        )
+        .unwrap();
+
+        assert_eq!(world.get_component_blocked_intent_memory(agent), Some(&blocked));
+        assert_eq!(event_log.len(), 2);
     }
 
     #[test]
