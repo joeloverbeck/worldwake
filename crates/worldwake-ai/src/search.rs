@@ -1,15 +1,13 @@
 use crate::{
-    derive_danger_pressure, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningSnapshot,
-    PlanningState,
+    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningSnapshot, PlanningState,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
-use worldwake_core::{CommodityKind, CommodityPurpose, EntityId, GoalKind, Permille, Quantity};
+use worldwake_core::GoalKind;
 use worldwake_sim::{
-    get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
-    ActionHandlerRegistry, ActionPayload, Affordance, BeliefView, CombatActionPayload,
-    LootActionPayload, TradeActionPayload,
+    get_affordances, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
+    Affordance, BeliefView,
 };
 
 #[derive(Clone)]
@@ -70,7 +68,7 @@ pub fn search_plan(
     let mut expansions = 0u16;
 
     while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
-        if goal_is_satisfied(goal, &node.state) {
+        if goal.key.kind.is_satisfied(&node.state) {
             return Some(PlannedPlan::new(
                 goal.key,
                 node.steps,
@@ -132,9 +130,8 @@ fn build_successor<'snapshot>(
     }
 
     let actor = node.state.snapshot().actor();
-    let payload_override = build_payload_override(
+    let payload_override = goal.key.kind.build_payload_override(
         affordance.payload_override.as_ref(),
-        &goal.key.kind,
         &node.state,
         &affordance.bound_targets,
         def,
@@ -154,12 +151,10 @@ fn build_successor<'snapshot>(
         ActionDuration::Indefinite => 0,
     };
 
-    let post_state = apply_step(
-        node.state.clone(),
-        &goal.key.kind,
-        semantics.op_kind,
-        &affordance.bound_targets,
-    );
+    let post_state =
+        goal.key
+            .kind
+            .apply_planner_step(node.state.clone(), semantics.op_kind, &affordance.bound_targets);
     let step = PlannedStep {
         def_id: affordance.def_id,
         targets: affordance.bound_targets,
@@ -200,133 +195,6 @@ fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Orderi
         .then_with(|| left.steps.cmp(&right.steps))
 }
 
-fn build_payload_override(
-    affordance_payload: Option<&ActionPayload>,
-    goal: &GoalKind,
-    state: &PlanningState<'_>,
-    targets: &[EntityId],
-    def: &ActionDef,
-    semantics: &PlannerOpSemantics,
-) -> Result<Option<ActionPayload>, ()> {
-    if let Some(payload) = affordance_payload {
-        return Ok(Some(payload.clone()));
-    }
-
-    let actor = state.snapshot().actor();
-    match semantics.op_kind {
-        PlannerOpKind::Trade => {
-            let Some(counterparty) = targets.first().copied() else {
-                return Err(());
-            };
-            let requested_commodity = match goal {
-                GoalKind::AcquireCommodity { commodity, .. }
-                | GoalKind::RestockCommodity { commodity }
-                | GoalKind::ConsumeOwnedCommodity { commodity } => *commodity,
-                GoalKind::Heal { .. } => CommodityKind::Medicine,
-                _ => return Err(()),
-            };
-            let Some(actor_place) = state.effective_place(actor) else {
-                return Err(());
-            };
-            if !state
-                .agents_selling_at(actor_place, requested_commodity)
-                .contains(&counterparty)
-            {
-                return Err(());
-            }
-            if state.commodity_quantity(counterparty, requested_commodity) == Quantity(0) {
-                return Err(());
-            }
-            if state.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
-                return Err(());
-            }
-            Ok(Some(ActionPayload::Trade(TradeActionPayload {
-                counterparty,
-                offered_commodity: CommodityKind::Coin,
-                offered_quantity: Quantity(1),
-                requested_commodity,
-                requested_quantity: Quantity(1),
-            })))
-        }
-        PlannerOpKind::Attack => {
-            let Some(target) = targets.first().copied() else {
-                return Err(());
-            };
-            Ok(Some(ActionPayload::Combat(CombatActionPayload {
-                target,
-                weapon: worldwake_core::CombatWeaponRef::Unarmed,
-            })))
-        }
-        PlannerOpKind::Loot => {
-            let Some(target) = targets.first().copied() else {
-                return Err(());
-            };
-            Ok(Some(ActionPayload::Loot(LootActionPayload { target })))
-        }
-        _ => Ok((!matches!(def.payload, ActionPayload::None)).then(|| def.payload.clone())),
-    }
-}
-
-fn apply_step<'snapshot>(
-    state: PlanningState<'snapshot>,
-    goal: &GoalKind,
-    op_kind: PlannerOpKind,
-    targets: &[EntityId],
-) -> PlanningState<'snapshot> {
-    match op_kind {
-        PlannerOpKind::Travel => {
-            if let Some(destination) = targets.first().copied() {
-                state.move_actor_to(destination)
-            } else {
-                state
-            }
-        }
-        PlannerOpKind::Consume => match goal {
-            GoalKind::ConsumeOwnedCommodity { commodity }
-            | GoalKind::AcquireCommodity { commodity, .. } => state.consume_commodity(*commodity),
-            _ => state,
-        },
-        PlannerOpKind::Sleep => update_actor_needs(state, |needs, thresholds| {
-            needs.fatigue = below_medium(thresholds.fatigue.medium());
-        }),
-        PlannerOpKind::Relieve => update_actor_needs(state, |needs, thresholds| {
-            needs.bladder = below_medium(thresholds.bladder.medium());
-        }),
-        PlannerOpKind::Wash => update_actor_needs(state, |needs, thresholds| {
-            needs.dirtiness = below_medium(thresholds.dirtiness.medium());
-        }),
-        PlannerOpKind::Heal => match goal {
-            GoalKind::Heal { target } => {
-                let Some(thresholds) = state.drive_thresholds(*target) else {
-                    return state;
-                };
-                state.with_pain(*target, below_medium(thresholds.pain.medium()))
-            }
-            _ => state,
-        },
-        _ => state,
-    }
-}
-
-fn update_actor_needs(
-    state: PlanningState<'_>,
-    apply: impl FnOnce(&mut worldwake_core::HomeostaticNeeds, worldwake_core::DriveThresholds),
-) -> PlanningState<'_> {
-    let actor = state.snapshot().actor();
-    let Some(mut needs) = state.homeostatic_needs(actor) else {
-        return state;
-    };
-    let Some(thresholds) = state.drive_thresholds(actor) else {
-        return state;
-    };
-    apply(&mut needs, thresholds);
-    state.with_homeostatic_needs(actor, needs)
-}
-
-fn below_medium(medium: Permille) -> Permille {
-    medium.saturating_sub(Permille::new(1).unwrap())
-}
-
 fn terminal_kind(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
@@ -335,86 +203,13 @@ fn terminal_kind(
     if matches!(step.op_kind, PlannerOpKind::Attack | PlannerOpKind::Defend) {
         return Some(PlanTerminalKind::CombatCommitment);
     }
-    if goal_is_satisfied(goal, state) {
+    if goal.key.kind.is_satisfied(state) {
         return Some(PlanTerminalKind::GoalSatisfied);
     }
-    progress_barrier(goal, step).then_some(PlanTerminalKind::ProgressBarrier)
-}
-
-fn progress_barrier(goal: &GroundedGoal, step: &PlannedStep) -> bool {
-    if !step.is_materialization_barrier {
-        return false;
-    }
-
-    match goal.key.kind {
-        GoalKind::AcquireCommodity { .. }
-        | GoalKind::ProduceCommodity { .. }
-        | GoalKind::RestockCommodity { .. }
-        | GoalKind::LootCorpse { .. } => true,
-        GoalKind::ConsumeOwnedCommodity { .. } => matches!(
-            step.op_kind,
-            PlannerOpKind::Trade
-                | PlannerOpKind::Harvest
-                | PlannerOpKind::Craft
-                | PlannerOpKind::MoveCargo
-        ),
-        GoalKind::Heal { .. } => step.op_kind == PlannerOpKind::Trade,
-        _ => false,
-    }
-}
-
-fn goal_is_satisfied(goal: &GroundedGoal, state: &PlanningState<'_>) -> bool {
-    let actor = state.snapshot().actor();
-    match goal.key.kind {
-        GoalKind::ConsumeOwnedCommodity { commodity } => {
-            let Some(needs) = state.homeostatic_needs(actor) else {
-                return false;
-            };
-            let Some(thresholds) = state.drive_thresholds(actor) else {
-                return false;
-            };
-            match commodity {
-                CommodityKind::Bread | CommodityKind::Apple | CommodityKind::Grain => {
-                    needs.hunger < thresholds.hunger.medium()
-                }
-                CommodityKind::Water => needs.thirst < thresholds.thirst.medium(),
-                _ => false,
-            }
-        }
-        GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
-            CommodityPurpose::SelfConsume
-            | CommodityPurpose::Restock
-            | CommodityPurpose::Treatment
-            | CommodityPurpose::RecipeInput(_) => {
-                state.commodity_quantity(actor, commodity) > Quantity(0)
-            }
-        },
-        GoalKind::Sleep => state
-            .homeostatic_needs(actor)
-            .zip(state.drive_thresholds(actor))
-            .is_some_and(|(needs, thresholds)| needs.fatigue < thresholds.fatigue.medium()),
-        GoalKind::Relieve => state
-            .homeostatic_needs(actor)
-            .zip(state.drive_thresholds(actor))
-            .is_some_and(|(needs, thresholds)| needs.bladder < thresholds.bladder.medium()),
-        GoalKind::Wash => state
-            .homeostatic_needs(actor)
-            .zip(state.drive_thresholds(actor))
-            .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.medium()),
-        GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
-            derive_danger_pressure(state, actor) < thresholds.danger.high()
-        }),
-        GoalKind::Heal { target } => state
-            .drive_thresholds(target)
-            .zip(state.pain_summary(target))
-            .is_some_and(|(thresholds, pain)| pain < thresholds.pain.medium()),
-        GoalKind::ProduceCommodity { .. }
-        | GoalKind::RestockCommodity { .. }
-        | GoalKind::LootCorpse { .. }
-        | GoalKind::SellCommodity { .. }
-        | GoalKind::MoveCargo { .. }
-        | GoalKind::BuryCorpse { .. } => false,
-    }
+    goal.key
+        .kind
+        .is_progress_barrier(step)
+        .then_some(PlanTerminalKind::ProgressBarrier)
 }
 
 #[cfg(test)]
