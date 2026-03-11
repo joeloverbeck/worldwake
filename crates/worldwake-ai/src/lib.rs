@@ -8,7 +8,9 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 mod enterprise;
 pub mod failure_handling;
+mod goal_switching;
 pub mod goal_model;
+pub mod interrupts;
 pub mod planner_ops;
 pub mod plan_selection;
 pub mod plan_revalidation;
@@ -25,6 +27,7 @@ pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFai
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
 };
+pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
 pub use planner_ops::{
     build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
     PlannerOpSemantics,

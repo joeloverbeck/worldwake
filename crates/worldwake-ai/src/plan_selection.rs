@@ -1,4 +1,7 @@
-use crate::{AgentDecisionRuntime, GoalKey, GoalPriorityClass, PlannedPlan, PlanningBudget, RankedGoal};
+use crate::{
+    goal_switching::{compare_goal_switch, GoalSwitchKind},
+    AgentDecisionRuntime, GoalKey, GoalPriorityClass, PlannedPlan, PlanningBudget, RankedGoal,
+};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -42,13 +45,16 @@ pub fn select_best_plan(
     if best_plan.goal == current_plan.goal {
         return Some(current_plan);
     }
-    if best_class > current_class {
-        return Some(best_plan);
-    }
-    if best_class < current_class {
-        return Some(current_plan);
-    }
-    if clears_switch_margin(best_motive, current_motive, budget) {
+    if matches!(
+        compare_goal_switch(
+            current_class,
+            Some(current_motive),
+            best_class,
+            best_motive,
+            budget
+        ),
+        Some(GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin)
+    ) {
         return Some(best_plan);
     }
 
@@ -66,18 +72,6 @@ fn compare_ranked_plans(
         .then_with(|| left.2.total_estimated_ticks.cmp(&right.2.total_estimated_ticks))
         .then_with(|| left.2.steps.cmp(&right.2.steps))
         .then_with(|| left.2.goal.cmp(&right.2.goal))
-}
-
-fn clears_switch_margin(new_score: u32, current_score: u32, budget: &PlanningBudget) -> bool {
-    if new_score <= current_score {
-        return false;
-    }
-    if current_score == 0 {
-        return true;
-    }
-    let required_increase = (u64::from(current_score) * u64::from(budget.switch_margin_permille.value()))
-        .div_ceil(1000);
-    u64::from(new_score) >= u64::from(current_score) + required_increase
 }
 
 #[cfg(test)]
