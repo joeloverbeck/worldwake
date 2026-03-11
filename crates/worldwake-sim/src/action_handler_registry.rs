@@ -1,4 +1,4 @@
-use crate::{ActionHandler, ActionHandlerId};
+use crate::{ActionDefId, ActionDefRegistry, ActionHandler, ActionHandlerId};
 
 #[derive(Clone, Default)]
 pub struct ActionHandlerRegistry {
@@ -37,11 +37,28 @@ impl ActionHandlerRegistry {
     }
 }
 
+pub fn verify_completeness(
+    defs: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+) -> Result<(), Vec<ActionDefId>> {
+    let orphaned_defs = defs
+        .iter()
+        .filter_map(|def| handlers.get(def.handler).is_none().then_some(def.id))
+        .collect::<Vec<_>>();
+
+    if orphaned_defs.is_empty() {
+        Ok(())
+    } else {
+        Err(orphaned_defs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ActionHandlerRegistry;
+    use super::{verify_completeness, ActionHandlerRegistry};
     use crate::{
-        AbortReason, ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionError,
+        AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
+        ActionError,
         ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
         ActionProgress, ActionState, ActionStatus, Constraint, DeterministicRng, DurationExpr,
         Interruptibility, Precondition, ReservationReq, TargetSpec,
@@ -71,7 +88,7 @@ mod tests {
         }
     }
 
-    fn sample_def() -> ActionDef {
+    fn sample_def(handler: ActionHandlerId) -> ActionDef {
         ActionDef {
             id: ActionDefId(1),
             name: "sample".to_string(),
@@ -90,7 +107,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
             payload: ActionPayload::None,
-            handler: ActionHandlerId(0),
+            handler,
         }
     }
 
@@ -180,7 +197,7 @@ mod tests {
         let retrieved_first = registry.get(first_id).unwrap();
         let retrieved_second = registry.get(second_id).unwrap();
         let instance = sample_instance();
-        let def = sample_def();
+        let def = sample_def(ActionHandlerId(0));
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut rng = DeterministicRng::new(Seed([0x66; 32]));
         let mut txn = WorldTxn::new(
@@ -210,7 +227,7 @@ mod tests {
         registry.register(ActionHandler::new(start_b, tick_a, commit_b, abort_a));
 
         let instance = sample_instance();
-        let def = sample_def();
+        let def = sample_def(ActionHandlerId(0));
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut rng = DeterministicRng::new(Seed([0x67; 32]));
         let mut txn = WorldTxn::new(
@@ -235,7 +252,7 @@ mod tests {
         let mut registry = ActionHandlerRegistry::new();
         let handler_id = registry.register(ActionHandler::new(start_a, tick_a, commit_b, abort_a));
         let instance = sample_instance();
-        let def = sample_def();
+        let def = sample_def(ActionHandlerId(0));
         let mut world = World::new(build_prototype_world()).unwrap();
         let before = world.query_agent_data().count();
         let mut rng = DeterministicRng::new(Seed([0x68; 32]));
@@ -253,5 +270,67 @@ mod tests {
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);
+    }
+
+    #[test]
+    fn verify_completeness_all_valid() {
+        let mut defs = ActionDefRegistry::new();
+        defs.register(ActionDef {
+            id: ActionDefId(0),
+            ..sample_def(ActionHandlerId(0))
+        });
+        defs.register(ActionDef {
+            id: ActionDefId(1),
+            ..sample_def(ActionHandlerId(1))
+        });
+
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(start_a, tick_a, commit_a, abort_a));
+        handlers.register(ActionHandler::new(start_b, tick_a, commit_b, abort_a));
+
+        assert_eq!(verify_completeness(&defs, &handlers), Ok(()));
+    }
+
+    #[test]
+    fn verify_completeness_missing_handler() {
+        let mut defs = ActionDefRegistry::new();
+        defs.register(ActionDef {
+            id: ActionDefId(0),
+            ..sample_def(ActionHandlerId(0))
+        });
+        defs.register(ActionDef {
+            id: ActionDefId(1),
+            ..sample_def(ActionHandlerId(2))
+        });
+
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(start_a, tick_a, commit_a, abort_a));
+
+        assert_eq!(verify_completeness(&defs, &handlers), Err(vec![ActionDefId(1)]));
+    }
+
+    #[test]
+    fn verify_completeness_reports_all_orphans_in_order() {
+        let mut defs = ActionDefRegistry::new();
+        defs.register(ActionDef {
+            id: ActionDefId(0),
+            ..sample_def(ActionHandlerId(3))
+        });
+        defs.register(ActionDef {
+            id: ActionDefId(1),
+            ..sample_def(ActionHandlerId(0))
+        });
+        defs.register(ActionDef {
+            id: ActionDefId(2),
+            ..sample_def(ActionHandlerId(4))
+        });
+
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(start_a, tick_a, commit_a, abort_a));
+
+        assert_eq!(
+            verify_completeness(&defs, &handlers),
+            Err(vec![ActionDefId(0), ActionDefId(2)])
+        );
     }
 }

@@ -260,15 +260,10 @@ mod tests {
         BodyCostPerTick, CommodityKind, EntityId, Quantity, UniqueItemKind, WorkstationTag,
     };
     use worldwake_sim::{
-        ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, InputKind,
-        RecipeDefinition, RecipeRegistry, TradeActionPayload,
+        ActionDefId, ActionDefRegistry, ActionPayload, InputKind, RecipeDefinition,
+        RecipeRegistry, TradeActionPayload,
     };
-    use worldwake_systems::{
-        register_attack_action, register_craft_actions, register_defend_action,
-        register_harvest_actions, register_heal_action, register_loot_action,
-        register_needs_actions, register_trade_action, register_transport_actions,
-        register_travel_actions,
-    };
+    use worldwake_systems::build_full_action_registries;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -295,8 +290,6 @@ mod tests {
     }
 
     fn build_phase_two_registry() -> ActionDefRegistry {
-        let mut defs = ActionDefRegistry::new();
-        let mut handlers = ActionHandlerRegistry::new();
         let mut recipes = RecipeRegistry::new();
         recipes.register(RecipeDefinition {
             name: "Harvest Apples".to_string(),
@@ -316,19 +309,7 @@ mod tests {
             required_tool_kinds: vec![UniqueItemKind::SimpleTool],
             body_cost_per_tick: BodyCostPerTick::zero(),
         });
-
-        register_needs_actions(&mut defs, &mut handlers);
-        let _ = register_travel_actions(&mut defs, &mut handlers);
-        let _ = register_transport_actions(&mut defs, &mut handlers);
-        let _ = register_trade_action(&mut defs, &mut handlers);
-        let _ = register_harvest_actions(&mut defs, &mut handlers, &recipes);
-        let _ = register_craft_actions(&mut defs, &mut handlers, &recipes);
-        let _ = register_attack_action(&mut defs, &mut handlers);
-        let _ = register_defend_action(&mut defs, &mut handlers);
-        let _ = register_loot_action(&mut defs, &mut handlers);
-        let _ = register_heal_action(&mut defs, &mut handlers);
-
-        defs
+        build_full_action_registries(&recipes).unwrap().defs
     }
 
     #[test]
@@ -424,58 +405,34 @@ mod tests {
     #[test]
     fn build_semantics_table_classifies_all_registered_phase_two_defs() {
         let defs = build_phase_two_registry();
-
         let table = build_semantics_table(&defs);
+        let semantics_by_name = defs
+            .iter()
+            .map(|def| (def.name.as_str(), table.get(&def.id).unwrap()))
+            .collect::<std::collections::BTreeMap<_, _>>();
 
         assert_eq!(table.len(), defs.len());
-        assert_eq!(
-            table.get(&ActionDefId(0)).unwrap().op_kind,
-            PlannerOpKind::Consume
-        );
-        assert_eq!(
-            table.get(&ActionDefId(2)).unwrap().op_kind,
-            PlannerOpKind::Sleep
-        );
-        assert_eq!(
-            table.get(&ActionDefId(3)).unwrap().op_kind,
-            PlannerOpKind::Relieve
-        );
-        assert_eq!(
-            table.get(&ActionDefId(5)).unwrap().op_kind,
-            PlannerOpKind::Travel
-        );
-        assert_eq!(
-            table.get(&ActionDefId(6)).unwrap().op_kind,
-            PlannerOpKind::MoveCargo
-        );
-        assert_eq!(
-            table.get(&ActionDefId(8)).unwrap().op_kind,
-            PlannerOpKind::Trade
-        );
-        assert_eq!(
-            table.get(&ActionDefId(9)).unwrap().op_kind,
-            PlannerOpKind::Harvest
-        );
-        assert_eq!(
-            table.get(&ActionDefId(10)).unwrap().op_kind,
-            PlannerOpKind::Craft
-        );
-        assert_eq!(
-            table.get(&ActionDefId(11)).unwrap().op_kind,
-            PlannerOpKind::Attack
-        );
-        assert_eq!(
-            table.get(&ActionDefId(12)).unwrap().op_kind,
-            PlannerOpKind::Defend
-        );
-        assert_eq!(
-            table.get(&ActionDefId(13)).unwrap().op_kind,
-            PlannerOpKind::Loot
-        );
-        assert_eq!(
-            table.get(&ActionDefId(14)).unwrap().op_kind,
-            PlannerOpKind::Heal
-        );
+        assert_eq!(semantics_by_name.get("eat").unwrap().op_kind, PlannerOpKind::Consume);
+        assert_eq!(semantics_by_name.get("drink").unwrap().op_kind, PlannerOpKind::Consume);
+        assert_eq!(semantics_by_name.get("sleep").unwrap().op_kind, PlannerOpKind::Sleep);
+        assert_eq!(semantics_by_name.get("toilet").unwrap().op_kind, PlannerOpKind::Relieve);
+        assert_eq!(semantics_by_name.get("wash").unwrap().op_kind, PlannerOpKind::Wash);
+        assert_eq!(semantics_by_name.get("travel").unwrap().op_kind, PlannerOpKind::Travel);
+        assert_eq!(semantics_by_name.get("pick_up").unwrap().op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(semantics_by_name.get("put_down").unwrap().op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(semantics_by_name.get("trade").unwrap().op_kind, PlannerOpKind::Trade);
+        assert_eq!(semantics_by_name.get("attack").unwrap().op_kind, PlannerOpKind::Attack);
+        assert_eq!(semantics_by_name.get("defend").unwrap().op_kind, PlannerOpKind::Defend);
+        assert_eq!(semantics_by_name.get("loot").unwrap().op_kind, PlannerOpKind::Loot);
+        assert_eq!(semantics_by_name.get("heal").unwrap().op_kind, PlannerOpKind::Heal);
+        assert!(defs.iter().any(|def| {
+            def.name.starts_with("harvest:")
+                && table.get(&def.id).unwrap().op_kind == PlannerOpKind::Harvest
+        }));
+        assert!(defs.iter().any(|def| {
+            def.name.starts_with("craft:")
+                && table.get(&def.id).unwrap().op_kind == PlannerOpKind::Craft
+        }));
     }
 
     #[test]
@@ -483,30 +440,23 @@ mod tests {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
 
-        for id in [
-            ActionDefId(8),
-            ActionDefId(9),
-            ActionDefId(10),
-            ActionDefId(13),
-        ] {
-            assert!(table.get(&id).unwrap().is_materialization_barrier);
+        for def in defs.iter() {
+            let semantics = table.get(&def.id).unwrap();
+            let should_be_barrier = def.name == "trade"
+                || def.name == "loot"
+                || def.name.starts_with("harvest:")
+                || def.name.starts_with("craft:");
+            assert_eq!(
+                semantics.is_materialization_barrier,
+                should_be_barrier,
+                "unexpected barrier semantics for {}",
+                def.name
+            );
         }
-        for id in [
-            ActionDefId(0),
-            ActionDefId(1),
-            ActionDefId(2),
-            ActionDefId(3),
-            ActionDefId(4),
-            ActionDefId(5),
-            ActionDefId(6),
-            ActionDefId(7),
-            ActionDefId(11),
-            ActionDefId(12),
-            ActionDefId(14),
-        ] {
-            assert!(!table.get(&id).unwrap().is_materialization_barrier);
-        }
-        assert!(!table.get(&ActionDefId(11)).unwrap().may_appear_mid_plan);
-        assert!(!table.get(&ActionDefId(12)).unwrap().may_appear_mid_plan);
+        assert!(
+            defs.iter()
+                .filter(|def| matches!(def.name.as_str(), "attack" | "defend"))
+                .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan)
+        );
     }
 }

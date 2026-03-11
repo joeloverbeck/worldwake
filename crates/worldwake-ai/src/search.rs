@@ -416,10 +416,7 @@ mod tests {
         RecipeRegistry,
     };
     use worldwake_systems::{
-        register_attack_action, register_craft_actions, register_defend_action,
-        register_harvest_actions, register_heal_action, register_loot_action,
-        register_needs_actions, register_trade_action, register_transport_actions,
-        register_travel_actions,
+        build_full_action_registries,
     };
 
     #[derive(Default)]
@@ -631,20 +628,9 @@ mod tests {
     }
 
     fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
-        let mut defs = ActionDefRegistry::new();
-        let mut handlers = worldwake_sim::ActionHandlerRegistry::new();
         let recipes = RecipeRegistry::new();
-        register_needs_actions(&mut defs, &mut handlers);
-        let _ = register_travel_actions(&mut defs, &mut handlers);
-        let _ = register_transport_actions(&mut defs, &mut handlers);
-        let _ = register_trade_action(&mut defs, &mut handlers);
-        let _ = register_harvest_actions(&mut defs, &mut handlers, &recipes);
-        let _ = register_craft_actions(&mut defs, &mut handlers, &recipes);
-        let _ = register_attack_action(&mut defs, &mut handlers);
-        let _ = register_defend_action(&mut defs, &mut handlers);
-        let _ = register_loot_action(&mut defs, &mut handlers);
-        let _ = register_heal_action(&mut defs, &mut handlers);
-        (defs, handlers)
+        let registries = build_full_action_registries(&recipes).unwrap();
+        (registries.defs, registries.handlers)
     }
 
     fn consume_goal(commodity: CommodityKind) -> GroundedGoal {

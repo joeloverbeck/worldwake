@@ -3,6 +3,7 @@
 //! Simulation systems: needs, production, trade, combat, perception, politics.
 //! Depends on `worldwake-core` and `worldwake-sim`.
 
+pub mod action_registry;
 pub mod combat;
 mod inventory;
 pub mod needs;
@@ -14,6 +15,7 @@ pub mod trade_actions;
 pub mod transport_actions;
 pub mod travel_actions;
 
+pub use action_registry::{build_full_action_registries, register_all_actions, ActionRegistries};
 pub use combat::{
     combat_system, register_attack_action, register_defend_action, register_heal_action,
     register_loot_action,

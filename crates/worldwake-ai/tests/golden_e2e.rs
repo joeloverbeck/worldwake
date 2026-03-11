@@ -25,9 +25,7 @@ use worldwake_sim::{
     TickStepResult, TickStepServices,
 };
 use worldwake_systems::{
-    dispatch_table, register_attack_action, register_craft_actions, register_defend_action,
-    register_harvest_actions, register_heal_action, register_loot_action, register_needs_actions,
-    register_trade_action, register_transport_actions, register_travel_actions,
+    build_full_action_registries, dispatch_table,
 };
 
 // ---------------------------------------------------------------------------
@@ -90,27 +88,8 @@ fn build_recipes() -> RecipeRegistry {
 }
 
 fn build_full_registries(recipes: &RecipeRegistry) -> (ActionDefRegistry, ActionHandlerRegistry) {
-    let mut defs = ActionDefRegistry::new();
-    let mut handlers = ActionHandlerRegistry::new();
-
-    // Needs: eat, drink, sleep
-    register_needs_actions(&mut defs, &mut handlers);
-    // Production: harvest + craft (recipe-driven)
-    register_harvest_actions(&mut defs, &mut handlers, recipes);
-    register_craft_actions(&mut defs, &mut handlers, recipes);
-    // Trade
-    register_trade_action(&mut defs, &mut handlers);
-    // Travel
-    register_travel_actions(&mut defs, &mut handlers);
-    // Transport: pick-up, put-down
-    register_transport_actions(&mut defs, &mut handlers);
-    // Combat: attack, defend, loot, heal
-    register_attack_action(&mut defs, &mut handlers);
-    register_defend_action(&mut defs, &mut handlers);
-    register_loot_action(&mut defs, &mut handlers);
-    register_heal_action(&mut defs, &mut handlers);
-
-    (defs, handlers)
+    let registries = build_full_action_registries(recipes).unwrap();
+    (registries.defs, registries.handlers)
 }
 
 fn default_combat_profile() -> CombatProfile {
