@@ -58,10 +58,9 @@ mod tests {
     use super::{verify_completeness, ActionHandlerRegistry};
     use crate::{
         AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
-        ActionError,
-        ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionState, ActionStatus, Constraint, DeterministicRng, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionError, ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, Constraint, DeterministicRng,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -306,7 +305,10 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(start_a, tick_a, commit_a, abort_a));
 
-        assert_eq!(verify_completeness(&defs, &handlers), Err(vec![ActionDefId(1)]));
+        assert_eq!(
+            verify_completeness(&defs, &handlers),
+            Err(vec![ActionDefId(1)])
+        );
     }
 
     #[test]

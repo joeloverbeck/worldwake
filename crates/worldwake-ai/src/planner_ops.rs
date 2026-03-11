@@ -260,8 +260,8 @@ mod tests {
         BodyCostPerTick, CommodityKind, EntityId, Quantity, UniqueItemKind, WorkstationTag,
     };
     use worldwake_sim::{
-        ActionDefId, ActionDefRegistry, ActionPayload, InputKind, RecipeDefinition,
-        RecipeRegistry, TradeActionPayload,
+        ActionDefId, ActionDefRegistry, ActionPayload, InputKind, RecipeDefinition, RecipeRegistry,
+        TradeActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -412,19 +412,58 @@ mod tests {
             .collect::<std::collections::BTreeMap<_, _>>();
 
         assert_eq!(table.len(), defs.len());
-        assert_eq!(semantics_by_name.get("eat").unwrap().op_kind, PlannerOpKind::Consume);
-        assert_eq!(semantics_by_name.get("drink").unwrap().op_kind, PlannerOpKind::Consume);
-        assert_eq!(semantics_by_name.get("sleep").unwrap().op_kind, PlannerOpKind::Sleep);
-        assert_eq!(semantics_by_name.get("toilet").unwrap().op_kind, PlannerOpKind::Relieve);
-        assert_eq!(semantics_by_name.get("wash").unwrap().op_kind, PlannerOpKind::Wash);
-        assert_eq!(semantics_by_name.get("travel").unwrap().op_kind, PlannerOpKind::Travel);
-        assert_eq!(semantics_by_name.get("pick_up").unwrap().op_kind, PlannerOpKind::MoveCargo);
-        assert_eq!(semantics_by_name.get("put_down").unwrap().op_kind, PlannerOpKind::MoveCargo);
-        assert_eq!(semantics_by_name.get("trade").unwrap().op_kind, PlannerOpKind::Trade);
-        assert_eq!(semantics_by_name.get("attack").unwrap().op_kind, PlannerOpKind::Attack);
-        assert_eq!(semantics_by_name.get("defend").unwrap().op_kind, PlannerOpKind::Defend);
-        assert_eq!(semantics_by_name.get("loot").unwrap().op_kind, PlannerOpKind::Loot);
-        assert_eq!(semantics_by_name.get("heal").unwrap().op_kind, PlannerOpKind::Heal);
+        assert_eq!(
+            semantics_by_name.get("eat").unwrap().op_kind,
+            PlannerOpKind::Consume
+        );
+        assert_eq!(
+            semantics_by_name.get("drink").unwrap().op_kind,
+            PlannerOpKind::Consume
+        );
+        assert_eq!(
+            semantics_by_name.get("sleep").unwrap().op_kind,
+            PlannerOpKind::Sleep
+        );
+        assert_eq!(
+            semantics_by_name.get("toilet").unwrap().op_kind,
+            PlannerOpKind::Relieve
+        );
+        assert_eq!(
+            semantics_by_name.get("wash").unwrap().op_kind,
+            PlannerOpKind::Wash
+        );
+        assert_eq!(
+            semantics_by_name.get("travel").unwrap().op_kind,
+            PlannerOpKind::Travel
+        );
+        assert_eq!(
+            semantics_by_name.get("pick_up").unwrap().op_kind,
+            PlannerOpKind::MoveCargo
+        );
+        assert_eq!(
+            semantics_by_name.get("put_down").unwrap().op_kind,
+            PlannerOpKind::MoveCargo
+        );
+        assert_eq!(
+            semantics_by_name.get("trade").unwrap().op_kind,
+            PlannerOpKind::Trade
+        );
+        assert_eq!(
+            semantics_by_name.get("attack").unwrap().op_kind,
+            PlannerOpKind::Attack
+        );
+        assert_eq!(
+            semantics_by_name.get("defend").unwrap().op_kind,
+            PlannerOpKind::Defend
+        );
+        assert_eq!(
+            semantics_by_name.get("loot").unwrap().op_kind,
+            PlannerOpKind::Loot
+        );
+        assert_eq!(
+            semantics_by_name.get("heal").unwrap().op_kind,
+            PlannerOpKind::Heal
+        );
         assert!(defs.iter().any(|def| {
             def.name.starts_with("harvest:")
                 && table.get(&def.id).unwrap().op_kind == PlannerOpKind::Harvest
@@ -447,16 +486,14 @@ mod tests {
                 || def.name.starts_with("harvest:")
                 || def.name.starts_with("craft:");
             assert_eq!(
-                semantics.is_materialization_barrier,
-                should_be_barrier,
+                semantics.is_materialization_barrier, should_be_barrier,
                 "unexpected barrier semantics for {}",
                 def.name
             );
         }
-        assert!(
-            defs.iter()
-                .filter(|def| matches!(def.name.as_str(), "attack" | "defend"))
-                .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan)
-        );
+        assert!(defs
+            .iter()
+            .filter(|def| matches!(def.name.as_str(), "attack" | "defend"))
+            .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
     }
 }

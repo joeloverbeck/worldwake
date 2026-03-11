@@ -25,9 +25,7 @@ use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeDefinition, RecipeRegistry, Scheduler, SystemManifest,
     TickStepResult, TickStepServices,
 };
-use worldwake_systems::{
-    build_full_action_registries, dispatch_table,
-};
+use worldwake_systems::{build_full_action_registries, dispatch_table};
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -1,7 +1,7 @@
 use crate::{
-    register_attack_action, register_craft_actions, register_defend_action, register_harvest_actions,
-    register_heal_action, register_loot_action, register_needs_actions, register_trade_action,
-    register_transport_actions, register_travel_actions,
+    register_attack_action, register_craft_actions, register_defend_action,
+    register_harvest_actions, register_heal_action, register_loot_action, register_needs_actions,
+    register_trade_action, register_transport_actions, register_travel_actions,
 };
 use worldwake_sim::{
     action_handler_registry::verify_completeness, ActionDefId, ActionDefRegistry,
@@ -60,19 +60,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         for required in [
-            "eat",
-            "drink",
-            "sleep",
-            "toilet",
-            "wash",
-            "trade",
-            "travel",
-            "pick_up",
-            "put_down",
-            "attack",
-            "defend",
-            "loot",
-            "heal",
+            "eat", "drink", "sleep", "toilet", "wash", "trade", "travel", "pick_up", "put_down",
+            "attack", "defend", "loot", "heal",
         ] {
             assert!(
                 action_names.contains(&required),

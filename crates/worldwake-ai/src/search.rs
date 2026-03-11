@@ -415,9 +415,7 @@ mod tests {
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, BeliefView, DurationExpr,
         RecipeRegistry,
     };
-    use worldwake_systems::{
-        build_full_action_registries,
-    };
+    use worldwake_systems::build_full_action_registries;
 
     #[derive(Default)]
     struct TestBeliefView {
@@ -631,6 +629,34 @@ mod tests {
         let recipes = RecipeRegistry::new();
         let registries = build_full_action_registries(&recipes).unwrap();
         (registries.defs, registries.handlers)
+    }
+
+    fn insert_hungry_actor(view: &mut TestBeliefView, actor: EntityId) {
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+    }
+
+    fn insert_bread_lot(
+        view: &mut TestBeliefView,
+        actor: EntityId,
+        bread: EntityId,
+        place: EntityId,
+        entities_at_place: &mut Vec<EntityId>,
+    ) {
+        view.alive.insert(bread);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(bread, place);
+        view.controllable.insert((actor, bread));
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        entities_at_place.push(bread);
     }
 
     fn consume_goal(commodity: CommodityKind) -> GroundedGoal {
@@ -897,6 +923,236 @@ mod tests {
             &registry,
             &handlers,
             &budget,
+        );
+
+        assert_eq!(plan, None);
+    }
+
+    #[test]
+    fn search_beam_width_1_prunes_viable_slower_branch() {
+        let actor = entity(1);
+        let town = entity(10);
+        let dead_end = entity(11);
+        let pantry = entity(12);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        let mut pantry_entities = Vec::new();
+        view.alive.extend([actor, town, dead_end, pantry]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(dead_end, EntityKind::Place);
+        view.kinds.insert(pantry, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(dead_end, Vec::new());
+        insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
+        view.entities_at.insert(pantry, pantry_entities);
+        view.adjacent.insert(
+            town,
+            vec![
+                (dead_end, NonZeroU32::new(1).unwrap()),
+                (pantry, NonZeroU32::new(3).unwrap()),
+            ],
+        );
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let narrow_beam_plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 1,
+                ..PlanningBudget::default()
+            },
+        );
+        let wide_beam_plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 2,
+                ..PlanningBudget::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(narrow_beam_plan, None);
+        assert_eq!(
+            wide_beam_plan.terminal_kind,
+            PlanTerminalKind::GoalSatisfied
+        );
+        assert_eq!(wide_beam_plan.steps.len(), 2);
+        assert_eq!(wide_beam_plan.steps[0].op_kind, PlannerOpKind::Travel);
+        assert_eq!(wide_beam_plan.steps[1].op_kind, PlannerOpKind::Consume);
+        assert_eq!(wide_beam_plan.steps[0].targets, vec![pantry]);
+    }
+
+    #[test]
+    fn search_beam_width_widening_keeps_more_successors() {
+        let actor = entity(1);
+        let town = entity(10);
+        let dead_end_a = entity(11);
+        let dead_end_b = entity(12);
+        let pantry = entity(13);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        let mut pantry_entities = Vec::new();
+        view.alive
+            .extend([actor, town, dead_end_a, dead_end_b, pantry]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(dead_end_a, EntityKind::Place);
+        view.kinds.insert(dead_end_b, EntityKind::Place);
+        view.kinds.insert(pantry, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(dead_end_a, Vec::new());
+        view.entities_at.insert(dead_end_b, Vec::new());
+        insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
+        view.entities_at.insert(pantry, pantry_entities);
+        view.adjacent.insert(
+            town,
+            vec![
+                (dead_end_a, NonZeroU32::new(1).unwrap()),
+                (dead_end_b, NonZeroU32::new(2).unwrap()),
+                (pantry, NonZeroU32::new(3).unwrap()),
+            ],
+        );
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let beam_two_plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 2,
+                ..PlanningBudget::default()
+            },
+        );
+        let beam_three_plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 3,
+                ..PlanningBudget::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(beam_two_plan, None);
+        assert_eq!(
+            beam_three_plan.terminal_kind,
+            PlanTerminalKind::GoalSatisfied
+        );
+        assert_eq!(beam_three_plan.steps.len(), 2);
+        assert_eq!(beam_three_plan.steps[0].targets, vec![pantry]);
+    }
+
+    #[test]
+    fn search_returns_none_when_large_beam_still_exhausts_node_budget() {
+        let actor = entity(1);
+        let town = entity(10);
+        let dead_end_a = entity(11);
+        let dead_end_b = entity(12);
+        let pantry = entity(13);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        let mut pantry_entities = Vec::new();
+        view.alive
+            .extend([actor, town, dead_end_a, dead_end_b, pantry]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(dead_end_a, EntityKind::Place);
+        view.kinds.insert(dead_end_b, EntityKind::Place);
+        view.kinds.insert(pantry, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(dead_end_a, Vec::new());
+        view.entities_at.insert(dead_end_b, Vec::new());
+        insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
+        view.entities_at.insert(pantry, pantry_entities);
+        view.adjacent.insert(
+            town,
+            vec![
+                (dead_end_a, NonZeroU32::new(1).unwrap()),
+                (dead_end_b, NonZeroU32::new(2).unwrap()),
+                (pantry, NonZeroU32::new(3).unwrap()),
+            ],
+        );
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let exhausted_plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 3,
+                max_node_expansions: 2,
+                ..PlanningBudget::default()
+            },
+        );
+        let sufficient_budget_plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 3,
+                max_node_expansions: 4,
+                ..PlanningBudget::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(exhausted_plan, None);
+        assert_eq!(
+            sufficient_budget_plan.terminal_kind,
+            PlanTerminalKind::GoalSatisfied
+        );
+        assert_eq!(sufficient_budget_plan.steps[0].targets, vec![pantry]);
+    }
+
+    #[test]
+    fn search_returns_none_when_plan_depth_is_zero() {
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        let mut town_entities = vec![actor];
+        view.alive.extend([actor, town]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        insert_bread_lot(&mut view, actor, bread, town, &mut town_entities);
+        view.entities_at.insert(town, town_entities);
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                max_plan_depth: 0,
+                ..PlanningBudget::default()
+            },
         );
 
         assert_eq!(plan, None);
