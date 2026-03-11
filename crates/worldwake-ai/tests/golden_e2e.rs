@@ -13,7 +13,8 @@ use std::num::NonZeroU32;
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_prototype_world, hash_event_log, hash_world, prototype_place_entity,
-    total_authoritative_commodity_quantity, total_live_lot_quantity, BlockedIntentMemory,
+    total_authoritative_commodity_quantity, total_live_lot_quantity,
+    verify_authoritative_conservation, verify_live_lot_conservation, BlockedIntentMemory,
     BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CommodityKind, ControlSource,
     DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
     KnownRecipes, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId,
@@ -72,9 +73,41 @@ fn build_harvest_apple_recipe() -> RecipeDefinition {
     }
 }
 
+fn build_harvest_grain_recipe() -> RecipeDefinition {
+    RecipeDefinition {
+        name: "Harvest Grain".to_string(),
+        inputs: vec![],
+        outputs: vec![(CommodityKind::Grain, Quantity(2))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::FieldPlot),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+    }
+}
+
+fn build_bake_bread_recipe() -> RecipeDefinition {
+    RecipeDefinition {
+        name: "Bake Bread".to_string(),
+        inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+        outputs: vec![(CommodityKind::Bread, Quantity(1))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+    }
+}
+
 fn build_recipes() -> RecipeRegistry {
     let mut recipes = RecipeRegistry::new();
     recipes.register(build_harvest_apple_recipe());
+    recipes
+}
+
+fn build_multi_recipe_registry() -> RecipeRegistry {
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(build_harvest_apple_recipe());
+    recipes.register(build_harvest_grain_recipe());
+    recipes.register(build_bake_bread_recipe());
     recipes
 }
 
@@ -108,6 +141,28 @@ fn seed_agent(
     metabolism: MetabolismProfile,
     utility: UtilityProfile,
 ) -> EntityId {
+    seed_agent_with_recipes(
+        world,
+        event_log,
+        name,
+        place,
+        needs,
+        metabolism,
+        utility,
+        KnownRecipes::with([RecipeId(0)]),
+    )
+}
+
+fn seed_agent_with_recipes(
+    world: &mut World,
+    event_log: &mut EventLog,
+    name: &str,
+    place: EntityId,
+    needs: HomeostaticNeeds,
+    metabolism: MetabolismProfile,
+    utility: UtilityProfile,
+    known_recipes: KnownRecipes,
+) -> EntityId {
     let mut txn = new_txn(world, 0);
     let agent = txn.create_agent(name, ControlSource::Ai).unwrap();
     txn.set_ground_location(agent, place).unwrap();
@@ -127,7 +182,7 @@ fn seed_agent(
         .unwrap();
     txn.set_component_carry_capacity(agent, CarryCapacity(LoadUnits(50)))
         .unwrap();
-    txn.set_component_known_recipes(agent, KnownRecipes::with([RecipeId(0)]))
+    txn.set_component_known_recipes(agent, known_recipes)
         .unwrap();
     commit_txn(txn, event_log);
     agent
@@ -167,6 +222,21 @@ fn place_workstation_with_source(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
+    commit_txn(txn, event_log);
+    ws
+}
+
+fn place_workstation(
+    world: &mut World,
+    event_log: &mut EventLog,
+    place: EntityId,
+    tag: WorkstationTag,
+) -> EntityId {
+    let mut txn = new_txn(world, 0);
+    let ws = txn.create_entity(EntityKind::Facility);
+    txn.set_ground_location(ws, place).unwrap();
+    txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
+        .unwrap();
     commit_txn(txn, event_log);
     ws
 }
@@ -248,6 +318,96 @@ impl GoldenHarness {
     fn agent_commodity_qty(&self, agent: EntityId, kind: CommodityKind) -> Quantity {
         self.world.controlled_commodity_quantity(agent, kind)
     }
+}
+
+fn run_multi_recipe_craft_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    let apple_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .map(|(id, _)| id)
+        .unwrap();
+    let grain_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Grain")
+        .map(|(id, _)| id)
+        .unwrap();
+    let bread_recipe = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .unwrap();
+
+    let agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Miller",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::with([apple_recipe, grain_recipe, bread_recipe]),
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Firewood,
+        Quantity(1),
+    );
+    place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Mill,
+    );
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 1).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 1).unwrap();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+
+    let initial_hunger = h.agent_hunger(agent);
+    let mut saw_bread_materialize = false;
+    let mut hunger_decreased = false;
+
+    for _ in 0..80 {
+        h.step_once();
+
+        let live_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+        if live_bread > 0 {
+            saw_bread_materialize = true;
+            verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_live_lot_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
+        }
+
+        if saw_bread_materialize
+            && live_bread == 0
+            && h.agent_hunger(agent) < initial_hunger
+        {
+            hunger_decreased = true;
+            verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_live_lot_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+            break;
+        }
+    }
+
+    assert!(
+        saw_bread_materialize,
+        "Agent should craft bread when recipe inputs are available and a mill is local"
+    );
+    assert!(
+        hunger_decreased,
+        "Agent should consume crafted bread after it materializes"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
 }
 
 // ---------------------------------------------------------------------------
@@ -883,6 +1043,27 @@ fn golden_deterministic_replay_fidelity() {
     assert_ne!(
         log_hash_1, initial_log_hash,
         "Event log should have changed from initial state"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 6b: Multi-Recipe Craft Path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn golden_multi_recipe_craft_path() {
+    let seed = Seed([6; 32]);
+
+    let (world_hash_1, log_hash_1) = run_multi_recipe_craft_scenario(seed);
+    let (world_hash_2, log_hash_2) = run_multi_recipe_craft_scenario(seed);
+
+    assert_eq!(
+        world_hash_1, world_hash_2,
+        "Multi-recipe craft scenario must replay deterministically"
+    );
+    assert_eq!(
+        log_hash_1, log_hash_2,
+        "Multi-recipe craft event log must replay deterministically"
     );
 }
 

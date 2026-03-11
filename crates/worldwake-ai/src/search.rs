@@ -4,9 +4,10 @@ use crate::{
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
-use worldwake_core::GoalKind;
+use worldwake_core::{GoalKind, Quantity};
 use worldwake_sim::{
-    get_affordances, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
+    get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
+    ActionHandlerRegistry,
     Affordance, BeliefView,
 };
 
@@ -151,10 +152,13 @@ fn build_successor<'snapshot>(
         ActionDuration::Indefinite => 0,
     };
 
-    let post_state =
-        goal.key
-            .kind
-            .apply_planner_step(node.state.clone(), semantics.op_kind, &affordance.bound_targets);
+    let post_state = apply_affordance_transition(
+        goal,
+        def,
+        semantics,
+        node.state.clone(),
+        &affordance.bound_targets,
+    );
     let step = PlannedStep {
         def_id: affordance.def_id,
         targets: affordance.bound_targets,
@@ -186,6 +190,37 @@ fn unsupported_goal(goal: &GoalKind) -> bool {
         goal,
         GoalKind::SellCommodity { .. } | GoalKind::MoveCargo { .. } | GoalKind::BuryCorpse { .. }
     )
+}
+
+fn apply_affordance_transition<'snapshot>(
+    goal: &GroundedGoal,
+    def: &ActionDef,
+    semantics: &PlannerOpSemantics,
+    state: PlanningState<'snapshot>,
+    targets: &[worldwake_core::EntityId],
+) -> PlanningState<'snapshot> {
+    let state = goal
+        .key
+        .kind
+        .apply_planner_step(state, semantics.op_kind, targets);
+
+    if semantics.op_kind != PlannerOpKind::MoveCargo || def.name != "pick_up" {
+        return state;
+    }
+
+    let Some(lot) = targets.first().copied() else {
+        return state;
+    };
+    let Some(commodity) = state.item_lot_commodity(lot) else {
+        return state;
+    };
+    let quantity = state.commodity_quantity(lot, commodity);
+    if quantity == Quantity(0) {
+        return state;
+    }
+    let actor = state.snapshot().actor();
+
+    state.move_lot_to_holder(lot, actor, commodity, quantity)
 }
 
 fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
@@ -479,6 +514,17 @@ mod tests {
     fn consume_goal(commodity: CommodityKind) -> GroundedGoal {
         GroundedGoal {
             key: GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity { commodity }),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        }
+    }
+
+    fn acquire_goal(commodity: CommodityKind) -> GroundedGoal {
+        GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
         }
@@ -1120,6 +1166,60 @@ mod tests {
         );
 
         assert_eq!(plan, None);
+    }
+
+    #[test]
+    fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: acquire_goal(CommodityKind::Bread).key,
+            evidence_entities: BTreeSet::from([bread]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
     }
 
     #[test]

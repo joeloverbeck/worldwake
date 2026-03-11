@@ -471,6 +471,9 @@ fn acquisition_path_evidence(
             evidence.entities.insert(seller);
         }
     }
+    if let Some(local_lots) = local_unpossessed_commodity_evidence(view, place, commodity) {
+        evidence.merge(local_lots);
+    }
     for source in view.resource_sources_at(place, commodity) {
         evidence.entities.insert(source);
     }
@@ -495,6 +498,24 @@ fn acquisition_path_evidence(
         }
     }
 
+    (!evidence.entities.is_empty()).then_some(evidence)
+}
+
+fn local_unpossessed_commodity_evidence(
+    view: &dyn BeliefView,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Option<Evidence> {
+    let mut evidence = Evidence::with_place(place);
+    for entity in view.entities_at(place) {
+        if view.item_lot_commodity(entity) != Some(commodity) {
+            continue;
+        }
+        if view.direct_container(entity).is_some() || view.direct_possessor(entity).is_some() {
+            continue;
+        }
+        evidence.entities.insert(entity);
+    }
     (!evidence.entities.is_empty()).then_some(evidence)
 }
 
@@ -1122,6 +1143,44 @@ mod tests {
             generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
 
         assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+    }
+
+    #[test]
+    fn hunger_emits_acquire_goal_for_local_unpossessed_food_lot() {
+        let agent = entity(1);
+        let place = entity(10);
+        let bread_lot = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, bread_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread_lot, place);
+        view.entities_at.insert(place, vec![agent, bread_lot]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread_lot,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
             &candidates,
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
