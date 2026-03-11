@@ -39,25 +39,45 @@ impl CommodityKind {
             Self::Apple => commodity_spec(
                 TradeCategory::Food,
                 LoadUnits(1),
-                Some(CommodityConsumableProfile::new(nz(2), pm(220), pm(120), pm(40))),
+                Some(CommodityConsumableProfile::new(
+                    nz(2),
+                    pm(220),
+                    pm(120),
+                    pm(40),
+                )),
                 None,
             ),
             Self::Grain => commodity_spec(
                 TradeCategory::Food,
                 LoadUnits(1),
-                Some(CommodityConsumableProfile::new(nz(4), pm(180), pm(0), pm(20))),
+                Some(CommodityConsumableProfile::new(
+                    nz(4),
+                    pm(180),
+                    pm(0),
+                    pm(20),
+                )),
                 None,
             ),
             Self::Bread => commodity_spec(
                 TradeCategory::Food,
                 LoadUnits(1),
-                Some(CommodityConsumableProfile::new(nz(3), pm(260), pm(0), pm(20))),
+                Some(CommodityConsumableProfile::new(
+                    nz(3),
+                    pm(260),
+                    pm(0),
+                    pm(20),
+                )),
                 None,
             ),
             Self::Water => commodity_spec(
                 TradeCategory::Water,
                 LoadUnits(2),
-                Some(CommodityConsumableProfile::new(nz(1), pm(0), pm(320), pm(220))),
+                Some(CommodityConsumableProfile::new(
+                    nz(1),
+                    pm(0),
+                    pm(320),
+                    pm(220),
+                )),
                 None,
             ),
             Self::Firewood => commodity_spec(TradeCategory::Fuel, LoadUnits(3), None, None),
@@ -311,8 +331,8 @@ const fn nz(value: u32) -> NonZeroU32 {
 mod tests {
     use super::{
         CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-        CommodityPhysicalProfile, Container, ItemLot, LotOperation, ProvenanceEntry,
-        TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
+        CommodityPhysicalProfile, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory,
+        UniqueItem, UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
     };
     use crate::{traits::Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
@@ -722,7 +742,9 @@ mod tests {
                     Permille::new_unchecked(30),
                 )),
             ),
-            CommodityKind::Medicine => expected_spec(TradeCategory::Medicine, LoadUnits(1), None, None),
+            CommodityKind::Medicine => {
+                expected_spec(TradeCategory::Medicine, LoadUnits(1), None, None)
+            }
             CommodityKind::Coin => expected_spec(TradeCategory::Coin, LoadUnits(1), None, None),
             CommodityKind::Waste => expected_spec(TradeCategory::Waste, LoadUnits(1), None, None),
         }
@@ -870,7 +892,10 @@ mod tests {
             CommodityKind::Sword.spec().trade_category,
             TradeCategory::Weapon
         );
-        assert_eq!(CommodityKind::Bow.spec().trade_category, TradeCategory::Weapon);
+        assert_eq!(
+            CommodityKind::Bow.spec().trade_category,
+            TradeCategory::Weapon
+        );
         assert_eq!(
             CommodityKind::Medicine.spec().trade_category,
             TradeCategory::Medicine

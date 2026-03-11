@@ -31,8 +31,8 @@ pub struct InputEvent {
 mod tests {
     use super::{InputEvent, InputKind};
     use crate::{ActionDefId, ActionInstanceId, ActionPayload, TradeActionPayload};
-    use worldwake_core::{CommodityKind, Quantity};
     use serde::{de::DeserializeOwned, Serialize};
+    use worldwake_core::{CommodityKind, Quantity};
     use worldwake_core::{EntityId, Tick};
 
     fn assert_traits<T: Clone + Eq + Ord + std::fmt::Debug + Serialize + DeserializeOwned>() {}

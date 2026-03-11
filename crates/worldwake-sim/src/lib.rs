@@ -52,7 +52,8 @@ pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
-    ActionPayload, CraftActionPayload, HarvestActionPayload, TradeActionPayload,
+    ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
+    LootActionPayload, TradeActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,

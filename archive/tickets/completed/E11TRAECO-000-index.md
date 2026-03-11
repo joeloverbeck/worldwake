@@ -1,7 +1,9 @@
+**Status**: ✅ COMPLETED
+
 # E11TRAECO — Trade, Exchange & Merchant Restock: Ticket Index
 
 ## Spec
-`specs/E11-trade-economy.md`
+`archive/specs/E11-trade-economy.md`
 
 ## Dependency Graph
 
@@ -62,3 +64,25 @@ After all tickets complete, the following must hold:
 - No `f32`/`f64` in trade logic
 - No global base price, scarcity table, or hidden market state
 - Pricing emerges from bilateral bundle valuation only
+
+## Outcome
+
+Completion date: 2026-03-11
+
+What actually changed:
+
+- Archived the full `E11TRAECO` ticket set under `archive/tickets/completed/`.
+- Completed the trade-economy implementation across ticketed milestones for traded lot provenance, trade-domain components, trade action payloads, bundle valuation, trade action handling, trade-system ticking, substitute-demand selection, merchant restock inputs, and the final E11 architectural boundary reassessment.
+- Corrected the index spec reference so it points to the archived E11 spec path that actually exists.
+
+Deviations from original plan:
+
+- The original wave plan was partially refined during implementation as ticket assumptions were corrected against the live codebase.
+- `E11TRAECO-012` closed as an architectural reassessment ticket rather than adding trade-specific affordance synthesis inside `worldwake-sim`.
+- Some intermediate dependency notes in the original index became stale as the module layout settled (`trade_actions.rs` plus `trade.rs`), but the overall implementation sequence still converged on the intended E11 deliverables.
+
+Verification results:
+
+- `cargo test --workspace` passed.
+- `cargo clippy --workspace` passed.
+- Trade behavior remains grounded in bilateral bundle valuation and authoritative component state rather than hidden market-state shortcuts, as recorded across the completed E11 tickets.

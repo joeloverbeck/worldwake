@@ -6,8 +6,8 @@ use crate::{
     DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry, Quantity,
-    RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology,
-    TradeDispositionProfile, UniqueItem, UniqueItemKind, WorkstationMarker, WorldError, WoundList,
+    RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology, TradeDispositionProfile,
+    UniqueItem, UniqueItemKind, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -561,14 +561,14 @@ mod tests {
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
             sample_trade_disposition_profile,
         },
-        AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
-        ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, EntityKind, EventId, FactId, HomeostaticNeeds,
-        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-        MetabolismProfile, Name, Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry,
-        Quantity, ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences, Tick,
-        TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource,
+        DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
+        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
+        LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, Permille, Place,
+        PlaceTag, ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
+        ResourceSource, SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
+        Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;

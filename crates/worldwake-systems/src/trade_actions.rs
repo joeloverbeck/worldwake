@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, LotOperation,
-    ProvenanceEntry, Quantity, VisibilitySpec, WorldTxn,
+    BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, LotOperation, ProvenanceEntry,
+    Quantity, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
@@ -151,7 +151,10 @@ fn validate_trade_context(
         )));
     }
     let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::AbortRequested(format!("actor {} is not at a tradeable place", instance.actor))
+        ActionError::AbortRequested(format!(
+            "actor {} is not at a tradeable place",
+            instance.actor
+        ))
     })?;
     if txn.effective_place(counterparty) != Some(place) {
         return Err(ActionError::AbortRequested(format!(
@@ -364,9 +367,9 @@ fn resolve_trade_lots(
         }
 
         selected.push((lot_id, available));
-        remaining = remaining
-            .checked_sub(available)
-            .ok_or_else(|| ActionError::InternalError("trade lot accounting underflowed".to_string()))?;
+        remaining = remaining.checked_sub(available).ok_or_else(|| {
+            ActionError::InternalError("trade lot accounting underflowed".to_string())
+        })?;
     }
 
     if remaining != Quantity(0) {
@@ -447,7 +450,9 @@ fn local_alternatives(
     others.sort();
     others.dedup();
     for other in others {
-        if other == focal || other == counterparty || txn.entity_kind(other) != Some(EntityKind::Agent)
+        if other == focal
+            || other == counterparty
+            || txn.entity_kind(other) != Some(EntityKind::Agent)
         {
             continue;
         }
@@ -463,7 +468,9 @@ fn local_alternatives(
 
 #[cfg(test)]
 mod tests {
-    use super::{register_trade_action, select_substitute_trade_candidate, SubstituteTradeCandidate};
+    use super::{
+        register_trade_action, select_substitute_trade_candidate, SubstituteTradeCandidate,
+    };
     use crate::trade_actions::local_alternatives;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
@@ -600,7 +607,8 @@ mod tests {
                     },
                 )
                 .unwrap();
-                txn.set_component_homeostatic_needs(actor, actor_needs).unwrap();
+                txn.set_component_homeostatic_needs(actor, actor_needs)
+                    .unwrap();
                 txn.set_component_homeostatic_needs(counterparty, HomeostaticNeeds::new_sated())
                     .unwrap();
                 commit_txn(txn);
@@ -627,7 +635,10 @@ mod tests {
 
         fn start_with_active(
             &mut self,
-        ) -> (ActionInstanceId, BTreeMap<ActionInstanceId, worldwake_sim::ActionInstance>) {
+        ) -> (
+            ActionInstanceId,
+            BTreeMap<ActionInstanceId, worldwake_sim::ActionInstance>,
+        ) {
             let affordance = Affordance {
                 def_id: self.def_id,
                 actor: self.actor,
@@ -665,8 +676,11 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(1),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 3, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            3,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         let (_instance_id, active) = harness.start_with_active();
         let instance = active.values().next().unwrap();
 
@@ -683,8 +697,11 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(1),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         let (instance_id, mut active) = harness.start_with_active();
 
         let outcome = tick_action(
@@ -704,10 +721,22 @@ mod tests {
         .unwrap();
 
         assert_eq!(outcome, TickOutcome::Committed);
-        assert_eq!(harness.world.possessor_of(harness.actor_offer), Some(harness.counterparty));
-        assert_eq!(harness.world.owner_of(harness.actor_offer), Some(harness.counterparty));
-        assert_eq!(harness.world.possessor_of(harness.counterparty_offer), Some(harness.actor));
-        assert_eq!(harness.world.owner_of(harness.counterparty_offer), Some(harness.actor));
+        assert_eq!(
+            harness.world.possessor_of(harness.actor_offer),
+            Some(harness.counterparty)
+        );
+        assert_eq!(
+            harness.world.owner_of(harness.actor_offer),
+            Some(harness.counterparty)
+        );
+        assert_eq!(
+            harness.world.possessor_of(harness.counterparty_offer),
+            Some(harness.actor)
+        );
+        assert_eq!(
+            harness.world.owner_of(harness.counterparty_offer),
+            Some(harness.actor)
+        );
 
         let trade_events = harness.log.events_by_tag(EventTag::Trade);
         assert_eq!(trade_events.len(), 1);
@@ -739,16 +768,22 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(2),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         {
             let mut txn = new_txn(&mut harness.world, 3);
             txn.clear_possessor(harness.counterparty_offer).unwrap();
             txn.clear_owner(harness.counterparty_offer).unwrap();
             txn.archive_entity(harness.counterparty_offer).unwrap();
-            let replacement = txn.create_item_lot(CommodityKind::Bread, Quantity(3)).unwrap();
+            let replacement = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
             txn.set_ground_location(replacement, harness.place).unwrap();
-            txn.set_possessor(replacement, harness.counterparty).unwrap();
+            txn.set_possessor(replacement, harness.counterparty)
+                .unwrap();
             txn.set_owner(replacement, harness.counterparty).unwrap();
             commit_txn(txn);
             harness.counterparty_offer = replacement;
@@ -783,13 +818,17 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(1),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         let (instance_id, mut active) = harness.start_with_active();
         let other_place = harness.world.topology().place_ids().nth(1).unwrap();
         {
             let mut txn = new_txn(&mut harness.world, 4);
-            txn.set_ground_location(harness.counterparty, other_place).unwrap();
+            txn.set_ground_location(harness.counterparty, other_place)
+                .unwrap();
             commit_txn(txn);
         }
 
@@ -842,7 +881,10 @@ mod tests {
         .unwrap();
 
         assert!(matches!(outcome, TickOutcome::Aborted { .. }));
-        assert_eq!(harness.world.possessor_of(harness.actor_offer), Some(harness.actor));
+        assert_eq!(
+            harness.world.possessor_of(harness.actor_offer),
+            Some(harness.actor)
+        );
         assert_eq!(
             harness.world.possessor_of(harness.counterparty_offer),
             Some(harness.counterparty)
@@ -862,7 +904,9 @@ mod tests {
         let bystander = {
             let mut txn = new_txn(&mut harness.world, 3);
             let bystander = txn.create_agent("Cato", ControlSource::Ai).unwrap();
-            let stock = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let stock = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             txn.set_ground_location(bystander, harness.place).unwrap();
             txn.set_ground_location(stock, harness.place).unwrap();
             txn.set_possessor(stock, bystander).unwrap();
@@ -872,10 +916,14 @@ mod tests {
         };
 
         let txn = new_txn(&mut harness.world, 4);
-        let alternatives = local_alternatives(&txn, harness.actor, harness.counterparty, harness.place);
+        let alternatives =
+            local_alternatives(&txn, harness.actor, harness.counterparty, harness.place);
         drop(txn);
 
-        assert_eq!(alternatives, vec![(bystander, CommodityKind::Bread, Quantity(2))]);
+        assert_eq!(
+            alternatives,
+            vec![(bystander, CommodityKind::Bread, Quantity(2))]
+        );
     }
 
     #[test]
@@ -887,8 +935,11 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(1),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         let (apple_seller, grain_seller) = {
             let mut txn = new_txn(&mut harness.world, 3);
             txn.set_component_substitute_preferences(
@@ -898,15 +949,21 @@ mod tests {
             .unwrap();
 
             let apple_seller = txn.create_agent("Apple Seller", ControlSource::Ai).unwrap();
-            let apple_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
-            txn.set_ground_location(apple_seller, harness.place).unwrap();
+            let apple_stock = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(apple_seller, harness.place)
+                .unwrap();
             txn.set_ground_location(apple_stock, harness.place).unwrap();
             txn.set_possessor(apple_stock, apple_seller).unwrap();
             txn.set_owner(apple_stock, apple_seller).unwrap();
 
             let grain_seller = txn.create_agent("Grain Seller", ControlSource::Ai).unwrap();
-            let grain_stock = txn.create_item_lot(CommodityKind::Grain, Quantity(1)).unwrap();
-            txn.set_ground_location(grain_seller, harness.place).unwrap();
+            let grain_stock = txn
+                .create_item_lot(CommodityKind::Grain, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(grain_seller, harness.place)
+                .unwrap();
             txn.set_ground_location(grain_stock, harness.place).unwrap();
             txn.set_possessor(grain_stock, grain_seller).unwrap();
             txn.set_owner(grain_stock, grain_seller).unwrap();
@@ -946,8 +1003,11 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(1),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         let grain_seller = {
             let other_place = harness.world.topology().place_ids().nth(1).unwrap();
             let mut txn = new_txn(&mut harness.world, 3);
@@ -958,15 +1018,20 @@ mod tests {
             .unwrap();
 
             let remote_seller = txn.create_agent("Remote Apple", ControlSource::Ai).unwrap();
-            let remote_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            let remote_stock = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(1))
+                .unwrap();
             txn.set_ground_location(remote_seller, other_place).unwrap();
             txn.set_ground_location(remote_stock, other_place).unwrap();
             txn.set_possessor(remote_stock, remote_seller).unwrap();
             txn.set_owner(remote_stock, remote_seller).unwrap();
 
             let grain_seller = txn.create_agent("Grain Seller", ControlSource::Ai).unwrap();
-            let grain_stock = txn.create_item_lot(CommodityKind::Grain, Quantity(1)).unwrap();
-            txn.set_ground_location(grain_seller, harness.place).unwrap();
+            let grain_stock = txn
+                .create_item_lot(CommodityKind::Grain, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(grain_seller, harness.place)
+                .unwrap();
             txn.set_ground_location(grain_stock, harness.place).unwrap();
             txn.set_possessor(grain_stock, grain_seller).unwrap();
             txn.set_owner(grain_stock, grain_seller).unwrap();
@@ -1005,8 +1070,11 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(1),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
 
         let txn = new_txn(&mut harness.world, 4);
         let candidate = select_substitute_trade_candidate(
@@ -1032,8 +1100,11 @@ mod tests {
             requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(1),
         };
-        let mut harness =
-            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         {
             let other_place = harness.world.topology().place_ids().nth(1).unwrap();
             let mut txn = new_txn(&mut harness.world, 3);
@@ -1044,7 +1115,9 @@ mod tests {
             .unwrap();
 
             let remote_seller = txn.create_agent("Remote Apple", ControlSource::Ai).unwrap();
-            let remote_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            let remote_stock = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(1))
+                .unwrap();
             txn.set_ground_location(remote_seller, other_place).unwrap();
             txn.set_ground_location(remote_stock, other_place).unwrap();
             txn.set_possessor(remote_stock, remote_seller).unwrap();
@@ -1088,15 +1161,21 @@ mod tests {
                 .unwrap();
 
             let apple_seller = txn.create_agent("Apple Seller", ControlSource::Ai).unwrap();
-            let apple_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
-            txn.set_ground_location(apple_seller, harness.place).unwrap();
+            let apple_stock = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(apple_seller, harness.place)
+                .unwrap();
             txn.set_ground_location(apple_stock, harness.place).unwrap();
             txn.set_possessor(apple_stock, apple_seller).unwrap();
             txn.set_owner(apple_stock, apple_seller).unwrap();
 
             let grain_seller = txn.create_agent("Grain Seller", ControlSource::Ai).unwrap();
-            let grain_stock = txn.create_item_lot(CommodityKind::Grain, Quantity(1)).unwrap();
-            txn.set_ground_location(grain_seller, harness.place).unwrap();
+            let grain_stock = txn
+                .create_item_lot(CommodityKind::Grain, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(grain_seller, harness.place)
+                .unwrap();
             txn.set_ground_location(grain_stock, harness.place).unwrap();
             txn.set_possessor(grain_stock, grain_seller).unwrap();
             txn.set_owner(grain_stock, grain_seller).unwrap();

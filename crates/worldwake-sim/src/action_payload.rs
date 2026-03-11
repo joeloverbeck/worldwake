@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind, WorkstationTag};
+use worldwake_core::{
+    CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind, WorkstationTag,
+};
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum ActionPayload {
@@ -8,6 +10,8 @@ pub enum ActionPayload {
     Harvest(HarvestActionPayload),
     Craft(CraftActionPayload),
     Trade(TradeActionPayload),
+    Combat(CombatActionPayload),
+    Loot(LootActionPayload),
 }
 
 impl ActionPayload {
@@ -15,7 +19,7 @@ impl ActionPayload {
     pub const fn as_harvest(&self) -> Option<&HarvestActionPayload> {
         match self {
             Self::Harvest(payload) => Some(payload),
-            Self::None | Self::Craft(_) | Self::Trade(_) => None,
+            Self::None | Self::Craft(_) | Self::Trade(_) | Self::Combat(_) | Self::Loot(_) => None,
         }
     }
 
@@ -23,7 +27,9 @@ impl ActionPayload {
     pub const fn as_craft(&self) -> Option<&CraftActionPayload> {
         match self {
             Self::Craft(payload) => Some(payload),
-            Self::None | Self::Harvest(_) | Self::Trade(_) => None,
+            Self::None | Self::Harvest(_) | Self::Trade(_) | Self::Combat(_) | Self::Loot(_) => {
+                None
+            }
         }
     }
 
@@ -31,7 +37,27 @@ impl ActionPayload {
     pub const fn as_trade(&self) -> Option<&TradeActionPayload> {
         match self {
             Self::Trade(payload) => Some(payload),
-            Self::None | Self::Harvest(_) | Self::Craft(_) => None,
+            Self::None | Self::Harvest(_) | Self::Craft(_) | Self::Combat(_) | Self::Loot(_) => {
+                None
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn as_combat(&self) -> Option<&CombatActionPayload> {
+        match self {
+            Self::Combat(payload) => Some(payload),
+            Self::None | Self::Harvest(_) | Self::Craft(_) | Self::Trade(_) | Self::Loot(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_loot(&self) -> Option<&LootActionPayload> {
+        match self {
+            Self::Loot(payload) => Some(payload),
+            Self::None | Self::Harvest(_) | Self::Craft(_) | Self::Trade(_) | Self::Combat(_) => {
+                None
+            }
         }
     }
 }
@@ -63,12 +89,27 @@ pub struct TradeActionPayload {
     pub requested_quantity: Quantity,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct CombatActionPayload {
+    pub target: EntityId,
+    pub weapon: CombatWeaponRef,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct LootActionPayload {
+    pub target: EntityId,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ActionPayload, CraftActionPayload, HarvestActionPayload, TradeActionPayload};
+    use super::{
+        ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
+        LootActionPayload, TradeActionPayload,
+    };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
-        CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind, WorkstationTag,
+        CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
+        WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -106,12 +147,33 @@ mod tests {
         }
     }
 
+    fn sample_combat_payload() -> CombatActionPayload {
+        CombatActionPayload {
+            target: EntityId {
+                slot: 17,
+                generation: 2,
+            },
+            weapon: CombatWeaponRef::Unarmed,
+        }
+    }
+
+    fn sample_loot_payload() -> LootActionPayload {
+        LootActionPayload {
+            target: EntityId {
+                slot: 23,
+                generation: 1,
+            },
+        }
+    }
+
     #[test]
     fn action_payload_satisfies_required_traits() {
         assert_traits::<ActionPayload>();
         assert_traits::<HarvestActionPayload>();
         assert_traits::<CraftActionPayload>();
         assert_traits::<TradeActionPayload>();
+        assert_traits::<CombatActionPayload>();
+        assert_traits::<LootActionPayload>();
     }
 
     #[test]
@@ -124,23 +186,45 @@ mod tests {
         let harvest = ActionPayload::Harvest(sample_payload());
         let craft = ActionPayload::Craft(sample_craft_payload());
         let trade = ActionPayload::Trade(sample_trade_payload());
+        let combat = ActionPayload::Combat(sample_combat_payload());
+        let loot = ActionPayload::Loot(sample_loot_payload());
         let none = ActionPayload::None;
 
         assert_eq!(harvest.as_harvest(), Some(&sample_payload()));
         assert_eq!(harvest.as_craft(), None);
         assert_eq!(harvest.as_trade(), None);
+        assert_eq!(harvest.as_combat(), None);
+        assert_eq!(harvest.as_loot(), None);
 
         assert_eq!(craft.as_harvest(), None);
         assert_eq!(craft.as_craft(), Some(&sample_craft_payload()));
         assert_eq!(craft.as_trade(), None);
+        assert_eq!(craft.as_combat(), None);
+        assert_eq!(craft.as_loot(), None);
 
         assert_eq!(trade.as_harvest(), None);
         assert_eq!(trade.as_craft(), None);
         assert_eq!(trade.as_trade(), Some(&sample_trade_payload()));
+        assert_eq!(trade.as_combat(), None);
+        assert_eq!(trade.as_loot(), None);
+
+        assert_eq!(combat.as_harvest(), None);
+        assert_eq!(combat.as_craft(), None);
+        assert_eq!(combat.as_trade(), None);
+        assert_eq!(combat.as_combat(), Some(&sample_combat_payload()));
+        assert_eq!(combat.as_loot(), None);
+
+        assert_eq!(loot.as_harvest(), None);
+        assert_eq!(loot.as_craft(), None);
+        assert_eq!(loot.as_trade(), None);
+        assert_eq!(loot.as_combat(), None);
+        assert_eq!(loot.as_loot(), Some(&sample_loot_payload()));
 
         assert_eq!(none.as_harvest(), None);
         assert_eq!(none.as_craft(), None);
         assert_eq!(none.as_trade(), None);
+        assert_eq!(none.as_combat(), None);
+        assert_eq!(none.as_loot(), None);
     }
 
     #[test]
@@ -166,6 +250,26 @@ mod tests {
     #[test]
     fn trade_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::Trade(sample_trade_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn combat_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::Combat(sample_combat_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn loot_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::Loot(sample_loot_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

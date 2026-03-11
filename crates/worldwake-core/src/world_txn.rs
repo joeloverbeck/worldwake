@@ -5,8 +5,8 @@ use crate::{
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
-    PendingEvent, QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta,
-    StateDelta, VisibilitySpec, WitnessData, ProvenanceEntry,
+    PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta, RelationKind, RelationValue,
+    ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
@@ -404,13 +404,12 @@ impl<'w> WorldTxn<'w> {
                 entity: lot_id,
                 component_type: "ItemLot",
             })?;
-        let lot = self
-            .staged_world
-            .get_component_item_lot_mut(lot_id)
-            .ok_or(WorldError::ComponentNotFound {
+        let lot = self.staged_world.get_component_item_lot_mut(lot_id).ok_or(
+            WorldError::ComponentNotFound {
                 entity: lot_id,
                 component_type: "ItemLot",
-            })?;
+            },
+        )?;
         lot.provenance.push(entry);
         let after = lot.clone();
         self.deltas.push(StateDelta::Component(ComponentDelta::Set {
@@ -1224,6 +1223,13 @@ impl Deref for WorldTxn<'_> {
 mod tests {
     use super::WorldTxn;
     use crate::{
+        test_utils::{
+            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
+            sample_trade_disposition_profile,
+        },
+        DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile,
+    };
+    use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
         EventLog, EventTag, InTransitOnEdge, KnownRecipes, QuantityDelta, RelationDelta,
         RelationKind, RelationValue, ReservationDelta, StateDelta, TravelEdgeId, VisibilitySpec,
@@ -1234,13 +1240,6 @@ mod tests {
         HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity, ReservationId,
         ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
         WorldError,
-    };
-    use crate::{
-        test_utils::{
-            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
-            sample_trade_disposition_profile,
-        },
-        DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2168,13 +2167,16 @@ mod tests {
             .unwrap();
         let before: DemandMemory = sample_demand_memory();
         let mut after = before.clone();
-        after.observations.push(crate::test_utils::sample_demand_observation());
+        after
+            .observations
+            .push(crate::test_utils::sample_demand_observation());
         world
             .insert_component_demand_memory(agent, before.clone())
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_demand_memory(agent, after.clone()).unwrap();
+        txn.set_component_demand_memory(agent, after.clone())
+            .unwrap();
 
         assert_eq!(
             txn.deltas(),
@@ -2195,7 +2197,8 @@ mod tests {
     }
 
     #[test]
-    fn set_component_trade_disposition_profile_records_component_delta_and_updates_world_on_commit() {
+    fn set_component_trade_disposition_profile_records_component_delta_and_updates_world_on_commit()
+    {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))

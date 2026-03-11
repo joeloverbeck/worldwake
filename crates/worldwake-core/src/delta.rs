@@ -2,11 +2,11 @@
 
 use crate::{
     component_schema::with_component_schema_entries, AgentData, CarryCapacity, CombatProfile,
-    CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds,
-    EntityId, EntityKind, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
+    CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId,
+    EntityKind, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
     MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob, Quantity,
-    ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
-    UniqueItem, WorkstationMarker, WoundList,
+    ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile, UniqueItem,
+    WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -220,13 +220,13 @@ mod tests {
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
             sample_trade_disposition_profile,
         },
-        AgentData, BodyPart, CarryCapacity, CommodityKind, Container, ControlSource,
-        CombatProfile, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
-        LoadUnits, LotOperation, MetabolismProfile, Name, Permille, ProductionJob,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
-        TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag,
-        Wound, WoundCause, WoundList,
+        AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource,
+        DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
+        LotOperation, MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity,
+        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
+        WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};

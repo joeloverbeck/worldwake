@@ -56,7 +56,10 @@ pub fn restock_candidates(agent: EntityId, world: &World) -> Vec<CommodityKind> 
         .collect()
 }
 
-fn collect_aging_updates(world: &World, tick: Tick) -> Vec<(worldwake_core::EntityId, DemandMemory)> {
+fn collect_aging_updates(
+    world: &World,
+    tick: Tick,
+) -> Vec<(worldwake_core::EntityId, DemandMemory)> {
     let mut updates = Vec::new();
 
     for (entity, memory) in world.query_demand_memory() {
@@ -184,7 +187,8 @@ mod tests {
         profile: MerchandiseProfile,
     ) {
         let mut txn = new_txn(world, 2);
-        txn.set_component_merchandise_profile(agent, profile).unwrap();
+        txn.set_component_merchandise_profile(agent, profile)
+            .unwrap();
         commit_txn(txn);
     }
 
@@ -289,9 +293,20 @@ mod tests {
         let profile = sale_profile(&[CommodityKind::Bread, CommodityKind::Water]);
         set_merchandise_profile(&mut left, left_agent, profile.clone());
         set_merchandise_profile(&mut right, right_agent, profile);
-        let _left_lot = grant_stock(&mut left, left_agent, place, CommodityKind::Water, Quantity(1));
-        let _right_lot =
-            grant_stock(&mut right, right_agent, place, CommodityKind::Water, Quantity(1));
+        let _left_lot = grant_stock(
+            &mut left,
+            left_agent,
+            place,
+            CommodityKind::Water,
+            Quantity(1),
+        );
+        let _right_lot = grant_stock(
+            &mut right,
+            right_agent,
+            place,
+            CommodityKind::Water,
+            Quantity(1),
+        );
 
         assert_eq!(
             restock_candidates(left_agent, &left),
@@ -332,8 +347,14 @@ mod tests {
         let candidates = restock_candidates(agent, &world);
 
         assert_eq!(candidates, vec![CommodityKind::Bread]);
-        assert_eq!(world.get_component_merchandise_profile(agent), Some(&profile));
-        assert_eq!(world.get_component_demand_memory(agent), Some(&before_memory));
+        assert_eq!(
+            world.get_component_merchandise_profile(agent),
+            Some(&profile)
+        );
+        assert_eq!(
+            world.get_component_demand_memory(agent),
+            Some(&before_memory)
+        );
         assert_eq!(
             world.controlled_commodity_quantity(agent, CommodityKind::Water),
             Quantity(1)
@@ -371,7 +392,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_demand_memory(agent).unwrap().observations,
+            world
+                .get_component_demand_memory(agent)
+                .unwrap()
+                .observations,
             vec![
                 observation(8, CommodityKind::Coin),
                 observation(9, CommodityKind::Apple),
@@ -419,7 +443,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_demand_memory(cautious).unwrap().observations,
+            world
+                .get_component_demand_memory(cautious)
+                .unwrap()
+                .observations,
             vec![observation(5, CommodityKind::Bread)]
         );
         assert!(world
@@ -459,7 +486,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_demand_memory(agent).unwrap().observations,
+            world
+                .get_component_demand_memory(agent)
+                .unwrap()
+                .observations,
             vec![
                 observation(7, CommodityKind::Bread),
                 observation(8, CommodityKind::Apple),
@@ -495,7 +525,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_demand_memory(agent).unwrap().observations,
+            world
+                .get_component_demand_memory(agent)
+                .unwrap()
+                .observations,
             vec![observation(1, CommodityKind::Bread)]
         );
         assert!(event_log.is_empty());

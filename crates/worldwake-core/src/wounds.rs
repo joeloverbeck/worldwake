@@ -157,7 +157,7 @@ mod tests {
                     severity: Permille::new(400).unwrap(),
                     inflicted_at: Tick(12),
                     bleed_rate_per_tick: Permille::new(0).unwrap(),
-                }
+                },
             ],
         };
 

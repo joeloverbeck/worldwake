@@ -164,7 +164,9 @@ mod tests {
     fn seed_trade_memory(world: &mut World) -> worldwake_core::EntityId {
         let place = world.topology().place_ids().next().unwrap();
         let mut txn = new_txn(world, 1);
-        let agent = txn.create_agent("Trader", worldwake_core::ControlSource::Ai).unwrap();
+        let agent = txn
+            .create_agent("Trader", worldwake_core::ControlSource::Ai)
+            .unwrap();
         txn.set_component_demand_memory(
             agent,
             DemandMemory {
