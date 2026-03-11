@@ -1,5 +1,7 @@
 # Phase 2 Spec Reassessment: E09-E13
 
+**Status**: COMPLETED
+
 This memo records the structural corrections made while re-evaluating Phase 2 against the foundational principles.
 
 ## Overall Judgment
@@ -105,3 +107,9 @@ The revised package includes:
 - corrected E12
 - corrected E13
 - corrected implementation order
+
+## Outcome
+- Completion date: 2026-03-11
+- What actually changed: the reassessment corrections were carried into the implemented Phase 2 stack, including shared thresholds and wound ownership, concrete production and transit carriers, grounded trade/restock assumptions, and the E13 decision-architecture scope and planner corrections.
+- Deviations from original plan: this memo remained a corrective archival record rather than becoming a living active spec once the E09-E13 implementation work landed.
+- Verification results: the implemented E13 surface was verified with `cargo test -p worldwake-ai` on 2026-03-11; the related Phase 2 correction targets are also reflected in the archived completed E10, E11, and E12 specs plus the current implementation-order document.

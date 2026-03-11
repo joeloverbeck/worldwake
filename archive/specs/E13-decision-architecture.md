@@ -1,5 +1,7 @@
 # E13: Grounded Agent Decision Architecture
 
+**Status**: COMPLETED
+
 ## Epic Summary
 Implement the first production decision architecture for Phase 2: grounded candidate generation, deterministic priority ranking, bounded plan search over planner-visible action semantics, affordance-keyed execution, plan revalidation, reactive interrupts, and belief-only decision making.
 
@@ -915,3 +917,9 @@ After E13, verify:
 - No future-epic goals are smuggled into Phase 2
 - Current plans are runtime state, not authoritative world state
 - `OmniscientBeliefView` remains explicitly temporary scaffolding only
+
+## Outcome
+- Completion date: 2026-03-11
+- What actually changed: implemented the grounded Phase 2 decision architecture in `worldwake-ai`, including shared goal identity integration, candidate generation from beliefs, deterministic ranking, bounded search with planner-local semantics, exact affordance-keyed execution, runtime-only decision state, blocked-intent failure memory, revalidation, interrupts, and end-to-end golden-path coverage.
+- Deviations from original plan: the implemented planner uses the spec's corrected planner-local semantics and affordance identity model rather than pretending the engine exposes generic declarative action effects.
+- Verification results: `cargo test -p worldwake-ai` passed on 2026-03-11 with 106 unit tests, 8 golden end-to-end tests, and 0 doc-test failures.
