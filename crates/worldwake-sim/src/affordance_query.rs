@@ -230,9 +230,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityConsumableProfile,
-        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, Quantity, RecipeId,
+        CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
+        EventLog, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, Quantity, RecipeId,
         ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
-        WorldTxn,
+        WorldTxn, Wound,
     };
 
     #[derive(Default)]
@@ -373,6 +374,94 @@ mod tests {
 
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn known_recipes(&self, actor: EntityId) -> Vec<RecipeId> {
+            self.known_recipes.get(&actor).cloned().unwrap_or_default()
+        }
+
+        fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+            self.colocated
+                .get(&place)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|entity| self.workstation_tags.get(entity).copied() == Some(tag))
+                .collect()
+        }
+
+        fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+            self.colocated
+                .get(&place)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|entity| {
+                    self.resource_sources
+                        .get(entity)
+                        .is_some_and(|source| source.commodity == commodity)
+                })
+                .collect()
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent_places(place)
+                .into_iter()
+                .map(|adjacent| (adjacent, NonZeroU32::MIN))
+                .collect()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            duration: &crate::DurationExpr,
+            _targets: &[EntityId],
+            _payload: &crate::ActionPayload,
+        ) -> Option<crate::ActionDuration> {
+            duration
+                .fixed_ticks()
+                .map(crate::ActionDuration::Finite)
+                .or(Some(crate::ActionDuration::Indefinite))
         }
     }
 

@@ -1,21 +1,82 @@
-use crate::BeliefView;
-use worldwake_core::{
-    is_incapacitated, CommodityConsumableProfile, CommodityKind, ControlSource, EntityId,
-    EntityKind, Quantity, RecipeId, ResourceSource, TickRange, UniqueItemKind, WorkstationTag,
-    World,
+use crate::{
+    ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
+    BeliefView, DurationExpr,
 };
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
+use worldwake_core::{
+    is_incapacitated, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
+    DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+    MerchandiseProfile, Quantity, RecipeId, ResourceSource, TickRange, UniqueItemKind,
+    WorkstationTag, World, Wound,
+};
+
+#[derive(Clone, Copy)]
+pub struct OmniscientBeliefRuntime<'a> {
+    pub active_actions: &'a BTreeMap<ActionInstanceId, ActionInstance>,
+    pub action_defs: &'a ActionDefRegistry,
+}
+
+impl<'a> OmniscientBeliefRuntime<'a> {
+    #[must_use]
+    pub const fn new(
+        active_actions: &'a BTreeMap<ActionInstanceId, ActionInstance>,
+        action_defs: &'a ActionDefRegistry,
+    ) -> Self {
+        Self {
+            active_actions,
+            action_defs,
+        }
+    }
+}
 
 /// Temporary stand-in until E14 provides per-agent belief stores.
 /// MUST NOT be used in agent-facing code after E14 lands.
 /// Wraps `&World` directly and returns authoritative truth, not beliefs.
 pub struct OmniscientBeliefView<'w> {
     world: &'w World,
+    runtime: Option<OmniscientBeliefRuntime<'w>>,
 }
 
 impl<'w> OmniscientBeliefView<'w> {
     #[must_use]
     pub const fn new(world: &'w World) -> Self {
-        Self { world }
+        Self {
+            world,
+            runtime: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_runtime(world: &'w World, runtime: OmniscientBeliefRuntime<'w>) -> Self {
+        Self {
+            world,
+            runtime: Some(runtime),
+        }
+    }
+
+    fn shares_local_context(&self, agent: EntityId, other: EntityId) -> bool {
+        if self.world.effective_place(agent) == self.world.effective_place(other)
+            && self.world.effective_place(agent).is_some()
+        {
+            return true;
+        }
+
+        matches!(
+            (
+                self.world.get_component_in_transit_on_edge(agent),
+                self.world.get_component_in_transit_on_edge(other),
+            ),
+            (Some(agent_transit), Some(other_transit))
+                if agent_transit.edge_id == other_transit.edge_id
+        )
+    }
+
+    fn local_agent_entities_at(&self, place: EntityId) -> impl Iterator<Item = EntityId> + '_ {
+        self.world
+            .entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| self.world.entity_kind(*entity) == Some(EntityKind::Agent))
     }
 }
 
@@ -134,16 +195,156 @@ impl BeliefView for OmniscientBeliefView<'_> {
             .get_component_wound_list(entity)
             .is_some_and(|wounds| !wounds.wounds.is_empty())
     }
+
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        self.world.get_component_homeostatic_needs(agent).copied()
+    }
+
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+        self.world.get_component_drive_thresholds(agent).copied()
+    }
+
+    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+        self.world
+            .get_component_wound_list(agent)
+            .map(|wounds| wounds.wounds.clone())
+            .unwrap_or_default()
+    }
+
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+        let mut hostiles = self
+            .world
+            .hostile_targets_of(agent)
+            .into_iter()
+            .chain(self.world.hostile_towards(agent))
+            .filter(|entity| self.world.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .collect::<BTreeSet<_>>();
+        hostiles.extend(self.current_attackers_of(agent));
+        hostiles.into_iter().collect()
+    }
+
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+        let Some(runtime) = self.runtime else {
+            return Vec::new();
+        };
+
+        runtime
+            .active_actions
+            .values()
+            .filter(|action| action.actor != agent)
+            .filter(|action| action.targets.contains(&agent))
+            .filter(|action| self.shares_local_context(agent, action.actor))
+            .filter_map(|action| {
+                let def = runtime.action_defs.get(action.def_id)?;
+                (def.domain.counts_as_combat_engagement() && def.name == "attack")
+                    .then_some(action.actor)
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.local_agent_entities_at(place)
+            .filter(|entity| {
+                self.world
+                    .get_component_merchandise_profile(*entity)
+                    .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+            })
+            .collect()
+    }
+
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
+        self.world
+            .get_component_known_recipes(agent)
+            .map(|known| known.recipes.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+        self.world
+            .entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| {
+                self.world
+                    .get_component_workstation_marker(*entity)
+                    .is_some_and(|marker| marker.0 == tag)
+            })
+            .collect()
+    }
+
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.world
+            .entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| {
+                self.world
+                    .get_component_resource_source(*entity)
+                    .is_some_and(|source| source.commodity == commodity)
+            })
+            .collect()
+    }
+
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+        self.world
+            .get_component_demand_memory(agent)
+            .map(|memory| memory.observations.clone())
+            .unwrap_or_default()
+    }
+
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+        self.world.get_component_merchandise_profile(agent).cloned()
+    }
+
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        self.local_agent_entities_at(place)
+            .filter(|entity| self.is_dead(*entity))
+            .collect()
+    }
+
+    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
+        self.world.get_component_in_transit_on_edge(entity).cloned()
+    }
+
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        self.world
+            .topology()
+            .outgoing_edges(place)
+            .iter()
+            .filter_map(|edge_id| self.world.topology().edge(*edge_id))
+            .map(|edge| (edge.to(), NonZeroU32::new(edge.travel_time_ticks()).unwrap()))
+            .collect()
+    }
+
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<ActionDuration> {
+        duration.resolve_for(self.world, actor, targets, payload).ok()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::OmniscientBeliefView;
-    use crate::BeliefView;
+    use super::{OmniscientBeliefRuntime, OmniscientBeliefView};
+    use crate::{
+        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, BeliefView,
+        Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, Container, ControlSource, EventLog,
-        LoadUnits, Quantity, RecipeId, ResourceSource, Tick, TickRange, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, Container,
+        ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+        DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -171,6 +372,60 @@ mod tests {
             allowed_commodities: None,
             allows_unique_items: true,
             allows_nested_containers: true,
+        }
+    }
+
+    fn pm(value: u16) -> Permille {
+        Permille::new(value).unwrap()
+    }
+
+    fn attack_action_def(id: ActionDefId) -> ActionDef {
+        ActionDef {
+            id,
+            name: "attack".to_string(),
+            domain: ActionDomain::Combat,
+            actor_constraints: vec![
+                Constraint::ActorAlive,
+                Constraint::ActorNotDead,
+                Constraint::ActorNotIncapacitated,
+            ],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: worldwake_core::EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAlive(0),
+            ],
+            reservation_requirements: Vec::<ReservationReq>::new(),
+            duration: DurationExpr::CombatWeapon,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        }
+    }
+
+    fn defend_action_def(id: ActionDefId) -> ActionDef {
+        ActionDef {
+            id,
+            name: "defend".to_string(),
+            domain: ActionDomain::Combat,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: Vec::new(),
+            preconditions: vec![Precondition::ActorAlive],
+            reservation_requirements: Vec::<ReservationReq>::new(),
+            duration: DurationExpr::Indefinite,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(1),
         }
     }
 
@@ -446,6 +701,344 @@ mod tests {
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
             })
+        );
+    }
+
+    #[test]
+    fn extended_component_queries_reflect_local_components_and_filter_remote_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+
+        let (
+            actor,
+            local_seller,
+            remote_seller,
+            local_hostile,
+            local_corpse,
+            remote_corpse,
+            local_workstation,
+            remote_workstation,
+        ) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let local_seller = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let remote_seller = txn.create_agent("Cato", ControlSource::Ai).unwrap();
+            let local_hostile = txn.create_agent("Dara", ControlSource::Ai).unwrap();
+            let remote_hostile = txn.create_agent("Enid", ControlSource::Ai).unwrap();
+            let local_corpse = txn.create_agent("Fara", ControlSource::None).unwrap();
+            let remote_corpse = txn.create_agent("Glen", ControlSource::None).unwrap();
+            let local_workstation = txn.create_entity(worldwake_core::EntityKind::Facility);
+            let remote_workstation = txn.create_entity(worldwake_core::EntityKind::Facility);
+
+            for entity in [actor, local_seller, local_hostile, local_corpse, local_workstation] {
+                txn.set_ground_location(entity, local_place).unwrap();
+            }
+            for entity in [remote_seller, remote_hostile, remote_corpse, remote_workstation] {
+                txn.set_ground_location(entity, remote_place).unwrap();
+            }
+
+            txn.set_component_homeostatic_needs(
+                actor,
+                HomeostaticNeeds::new(pm(320), pm(450), pm(120), pm(40), pm(80)),
+            )
+            .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_wound_list(
+                actor,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                        severity: pm(250),
+                        inflicted_at: Tick(1),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            txn.set_component_known_recipes(
+                actor,
+                worldwake_core::KnownRecipes::with([RecipeId(2), RecipeId(4)]),
+            )
+            .unwrap();
+            txn.set_component_demand_memory(
+                actor,
+                DemandMemory {
+                    observations: vec![DemandObservation {
+                        commodity: CommodityKind::Bread,
+                        quantity: Quantity(3),
+                        place: local_place,
+                        tick: Tick(2),
+                        counterparty: Some(local_seller),
+                        reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                    }],
+                },
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                actor,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Water]),
+                    home_market: Some(local_place),
+                },
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                local_seller,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                    home_market: Some(local_place),
+                },
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                remote_seller,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                    home_market: Some(remote_place),
+                },
+            )
+            .unwrap();
+            txn.set_component_workstation_marker(
+                local_workstation,
+                WorkstationMarker(WorkstationTag::Mill),
+            )
+            .unwrap();
+            txn.set_component_workstation_marker(
+                remote_workstation,
+                WorkstationMarker(WorkstationTag::Mill),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                local_workstation,
+                ResourceSource {
+                    commodity: CommodityKind::Grain,
+                    available_quantity: Quantity(5),
+                    max_quantity: Quantity(7),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                remote_workstation,
+                ResourceSource {
+                    commodity: CommodityKind::Grain,
+                    available_quantity: Quantity(9),
+                    max_quantity: Quantity(9),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_dead_at(local_corpse, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(remote_corpse, DeadAt(Tick(3))).unwrap();
+            txn.add_hostility(actor, local_hostile).unwrap();
+            txn.add_hostility(actor, remote_hostile).unwrap();
+            commit_txn(txn);
+
+            (
+                actor,
+                local_seller,
+                remote_seller,
+                local_hostile,
+                local_corpse,
+                remote_corpse,
+                local_workstation,
+                remote_workstation,
+            )
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert_eq!(
+            view.homeostatic_needs(actor),
+            Some(HomeostaticNeeds::new(pm(320), pm(450), pm(120), pm(40), pm(80)))
+        );
+        assert_eq!(view.drive_thresholds(actor), Some(DriveThresholds::default()));
+        assert_eq!(view.wounds(actor).len(), 1);
+        assert!(view.has_wounds(actor));
+        assert_eq!(view.visible_hostiles_for(actor), vec![local_hostile]);
+        assert_eq!(
+            view.agents_selling_at(local_place, CommodityKind::Bread),
+            vec![actor, local_seller]
+        );
+        assert_eq!(
+            view.agents_selling_at(remote_place, CommodityKind::Bread),
+            vec![remote_seller]
+        );
+        assert_eq!(view.known_recipes(actor), vec![RecipeId(2), RecipeId(4)]);
+        assert_eq!(
+            view.matching_workstations_at(local_place, WorkstationTag::Mill),
+            vec![local_workstation]
+        );
+        assert_eq!(
+            view.matching_workstations_at(remote_place, WorkstationTag::Mill),
+            vec![remote_workstation]
+        );
+        assert_eq!(
+            view.resource_sources_at(local_place, CommodityKind::Grain),
+            vec![local_workstation]
+        );
+        assert_eq!(
+            view.resource_sources_at(remote_place, CommodityKind::Grain),
+            vec![remote_workstation]
+        );
+        assert_eq!(view.demand_memory(actor).len(), 1);
+        assert_eq!(
+            view.merchandise_profile(actor).unwrap().sale_kinds,
+            BTreeSet::from([CommodityKind::Bread, CommodityKind::Water])
+        );
+        assert_eq!(view.corpse_entities_at(local_place), vec![local_corpse]);
+        assert_eq!(view.corpse_entities_at(remote_place), vec![remote_corpse]);
+    }
+
+    #[test]
+    fn runtime_attackers_transit_state_and_duration_queries_use_runtime_and_world_semantics() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let origin = places[0];
+        let destination = world.topology().neighbors(origin)[0];
+        let remote_place = places[2];
+        let edge = world
+            .topology()
+            .unique_direct_edge(origin, destination)
+            .unwrap()
+            .unwrap()
+            .clone();
+
+        let (actor, local_attacker, remote_attacker, defender, traveler) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let local_attacker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let remote_attacker = txn.create_agent("Cato", ControlSource::Ai).unwrap();
+            let defender = txn.create_agent("Dara", ControlSource::Ai).unwrap();
+            let traveler = txn.create_agent("Enid", ControlSource::Ai).unwrap();
+
+            txn.set_ground_location(actor, origin).unwrap();
+            txn.set_ground_location(local_attacker, origin).unwrap();
+            txn.set_ground_location(defender, origin).unwrap();
+            txn.set_ground_location(remote_attacker, remote_place).unwrap();
+            txn.set_in_transit(traveler).unwrap();
+            txn.set_component_in_transit_on_edge(
+                traveler,
+                InTransitOnEdge {
+                    edge_id: edge.id(),
+                    origin,
+                    destination,
+                    departure_tick: Tick(5),
+                    arrival_tick: Tick(u64::from(5 + edge.travel_time_ticks())),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+
+            (actor, local_attacker, remote_attacker, defender, traveler)
+        };
+
+        let mut action_defs = ActionDefRegistry::new();
+        action_defs.register(attack_action_def(ActionDefId(0)));
+        action_defs.register(defend_action_def(ActionDefId(1)));
+
+        let active_actions = BTreeMap::from([
+            (
+                ActionInstanceId(1),
+                ActionInstance {
+                    instance_id: ActionInstanceId(1),
+                    def_id: ActionDefId(0),
+                    payload: ActionPayload::None,
+                    actor: local_attacker,
+                    targets: vec![actor],
+                    start_tick: Tick(7),
+                    remaining_duration: ActionDuration::Finite(2),
+                    status: ActionStatus::Active,
+                    reservation_ids: Vec::new(),
+                    local_state: None,
+                },
+            ),
+            (
+                ActionInstanceId(2),
+                ActionInstance {
+                    instance_id: ActionInstanceId(2),
+                    def_id: ActionDefId(0),
+                    payload: ActionPayload::None,
+                    actor: remote_attacker,
+                    targets: vec![actor],
+                    start_tick: Tick(7),
+                    remaining_duration: ActionDuration::Finite(2),
+                    status: ActionStatus::Active,
+                    reservation_ids: Vec::new(),
+                    local_state: None,
+                },
+            ),
+            (
+                ActionInstanceId(3),
+                ActionInstance {
+                    instance_id: ActionInstanceId(3),
+                    def_id: ActionDefId(1),
+                    payload: ActionPayload::None,
+                    actor: defender,
+                    targets: vec![actor],
+                    start_tick: Tick(7),
+                    remaining_duration: ActionDuration::Indefinite,
+                    status: ActionStatus::Active,
+                    reservation_ids: Vec::new(),
+                    local_state: None,
+                },
+            ),
+        ]);
+
+        let view = OmniscientBeliefView::with_runtime(
+            &world,
+            OmniscientBeliefRuntime::new(&active_actions, &action_defs),
+        );
+
+        assert_eq!(view.current_attackers_of(actor), vec![local_attacker]);
+        assert_eq!(view.visible_hostiles_for(actor), vec![local_attacker]);
+        assert_eq!(
+            view.in_transit_state(traveler),
+            Some(InTransitOnEdge {
+                edge_id: edge.id(),
+                origin,
+                destination,
+                departure_tick: Tick(5),
+                arrival_tick: Tick(u64::from(5 + edge.travel_time_ticks())),
+            })
+        );
+        assert_eq!(
+            view.adjacent_places_with_travel_ticks(origin),
+            world.topology()
+                .outgoing_edges(origin)
+                .iter()
+                .filter_map(|edge_id| world.topology().edge(*edge_id))
+                .map(|edge| (edge.to(), NonZeroU32::new(edge.travel_time_ticks()).unwrap()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            view.estimate_duration(
+                actor,
+                &DurationExpr::TravelToTarget { target_index: 0 },
+                &[destination],
+                &ActionPayload::None,
+            ),
+            Some(ActionDuration::Finite(edge.travel_time_ticks()))
+        );
+        assert_eq!(
+            view.estimate_duration(
+                actor,
+                &DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
+                &[],
+                &ActionPayload::None,
+            ),
+            Some(ActionDuration::Finite(3))
+        );
+        assert_eq!(
+            view.estimate_duration(actor, &DurationExpr::Indefinite, &[], &ActionPayload::None),
+            Some(ActionDuration::Indefinite)
         );
     }
 }

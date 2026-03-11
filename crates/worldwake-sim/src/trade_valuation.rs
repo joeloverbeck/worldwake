@@ -269,9 +269,9 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         BodyPart, CommodityConsumableProfile, CommodityKind, DemandMemory, DemandObservation,
-        DemandObservationReason, EntityId, EntityKind, HomeostaticNeeds, Permille, Quantity,
-        RecipeId, ResourceSource, Tick, TickRange, UniqueItemKind, WorkstationTag, Wound,
-        WoundCause, WoundList,
+        DemandObservationReason, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
+        InTransitOnEdge, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundList,
     };
 
     #[derive(Default)]
@@ -376,6 +376,86 @@ mod tests {
 
         fn has_wounds(&self, _entity: EntityId) -> bool {
             false
+        }
+
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, std::num::NonZeroU32)> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            duration: &crate::DurationExpr,
+            _targets: &[EntityId],
+            _payload: &crate::ActionPayload,
+        ) -> Option<crate::ActionDuration> {
+            duration
+                .fixed_ticks()
+                .map(crate::ActionDuration::Finite)
+                .or(Some(crate::ActionDuration::Indefinite))
         }
     }
 

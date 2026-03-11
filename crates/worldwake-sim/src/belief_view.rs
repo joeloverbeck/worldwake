@@ -1,6 +1,9 @@
+use crate::{ActionDuration, ActionPayload, DurationExpr};
+use std::num::NonZeroU32;
 use worldwake_core::{
-    CommodityConsumableProfile, CommodityKind, EntityId, EntityKind, Quantity, RecipeId,
-    ResourceSource, TickRange, UniqueItemKind, WorkstationTag,
+    CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
+    EntityKind, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, Quantity, RecipeId,
+    ResourceSource, TickRange, UniqueItemKind, WorkstationTag, Wound,
 };
 
 pub trait BeliefView {
@@ -27,4 +30,25 @@ pub trait BeliefView {
     fn is_dead(&self, entity: EntityId) -> bool;
     fn is_incapacitated(&self, entity: EntityId) -> bool;
     fn has_wounds(&self, entity: EntityId) -> bool;
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn wounds(&self, agent: EntityId) -> Vec<Wound>;
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId>;
+    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<ActionDuration>;
 }

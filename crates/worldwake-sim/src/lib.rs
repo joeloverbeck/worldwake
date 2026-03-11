@@ -73,7 +73,7 @@ pub use deterministic_rng::DeterministicRng;
 pub use input_event::{InputEvent, InputKind};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
-pub use omniscient_belief_view::OmniscientBeliefView;
+pub use omniscient_belief_view::{OmniscientBeliefRuntime, OmniscientBeliefView};
 pub use recipe_def::RecipeDefinition;
 pub use recipe_registry::RecipeRegistry;
 pub use replan_needed::ReplanNeeded;
