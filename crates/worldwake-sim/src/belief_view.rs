@@ -26,4 +26,5 @@ pub trait BeliefView {
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
     fn is_dead(&self, entity: EntityId) -> bool;
     fn is_incapacitated(&self, entity: EntityId) -> bool;
+    fn has_wounds(&self, entity: EntityId) -> bool;
 }

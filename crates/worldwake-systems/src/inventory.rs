@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use worldwake_core::{load_of_entity, CarryCapacity, EntityId, LoadUnits, WorldTxn};
+use worldwake_core::{load_of_entity, CarryCapacity, CommodityKind, EntityId, LoadUnits, Quantity, WorldTxn};
 use worldwake_sim::ActionError;
 
 pub(crate) fn controlled_entity_ids(txn: &WorldTxn<'_>, root: EntityId) -> BTreeSet<EntityId> {
@@ -120,4 +120,48 @@ pub(crate) fn move_entity_to_direct_possession(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(entity);
     Ok(())
+}
+
+pub(crate) fn consume_one_unit(txn: &mut WorldTxn<'_>, lot_id: EntityId) -> Result<(), ActionError> {
+    let existing = txn
+        .get_component_item_lot(lot_id)
+        .cloned()
+        .ok_or(ActionError::InvalidTarget(lot_id))?;
+    match existing.quantity {
+        Quantity(1) => txn
+            .archive_entity(lot_id)
+            .map_err(|err| ActionError::InternalError(err.to_string())),
+        quantity => {
+            let (_, consumed) = txn
+                .split_lot(lot_id, Quantity(1))
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            debug_assert_eq!(
+                quantity.0.saturating_sub(1),
+                txn.get_component_item_lot(lot_id)
+                    .map_or(0, |lot| lot.quantity.0)
+            );
+            txn.archive_entity(consumed)
+                .map_err(|err| ActionError::InternalError(err.to_string()))
+        }
+    }
+}
+
+pub(crate) fn consume_one_unit_of_commodity(
+    txn: &mut WorldTxn<'_>,
+    holder: EntityId,
+    commodity: CommodityKind,
+) -> Result<EntityId, ActionError> {
+    let lot_id = controlled_entity_ids(txn, holder)
+        .into_iter()
+        .find(|entity| {
+            txn.get_component_item_lot(*entity)
+                .is_some_and(|lot| lot.commodity == commodity && lot.quantity.0 > 0)
+        })
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "holder {holder} lacks commodity {commodity:?}"
+            ))
+        })?;
+    consume_one_unit(txn, lot_id)?;
+    Ok(lot_id)
 }

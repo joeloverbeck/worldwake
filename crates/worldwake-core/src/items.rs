@@ -111,6 +111,10 @@ const fn commodity_spec(
         physical_profile: CommodityPhysicalProfile { load_per_unit },
         consumable_profile,
         combat_weapon_profile,
+        treatment_profile: match trade_category {
+            TradeCategory::Medicine => Some(CommodityTreatmentProfile::new(nz(4), pm(60), pm(120))),
+            _ => None,
+        },
     }
 }
 
@@ -120,6 +124,7 @@ pub struct CommodityKindSpec {
     pub physical_profile: CommodityPhysicalProfile,
     pub consumable_profile: Option<CommodityConsumableProfile>,
     pub combat_weapon_profile: Option<CombatWeaponProfile>,
+    pub treatment_profile: Option<CommodityTreatmentProfile>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -148,6 +153,28 @@ impl CommodityConsumableProfile {
             hunger_relief_per_unit,
             thirst_relief_per_unit,
             bladder_fill_per_unit,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommodityTreatmentProfile {
+    pub treatment_ticks_per_unit: NonZeroU32,
+    pub bleed_reduction_per_tick: Permille,
+    pub severity_reduction_per_tick: Permille,
+}
+
+impl CommodityTreatmentProfile {
+    #[must_use]
+    pub const fn new(
+        treatment_ticks_per_unit: NonZeroU32,
+        bleed_reduction_per_tick: Permille,
+        severity_reduction_per_tick: Permille,
+    ) -> Self {
+        Self {
+            treatment_ticks_per_unit,
+            bleed_reduction_per_tick,
+            severity_reduction_per_tick,
         }
     }
 }
@@ -331,8 +358,9 @@ const fn nz(value: u32) -> NonZeroU32 {
 mod tests {
     use super::{
         CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-        CommodityPhysicalProfile, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory,
-        UniqueItem, UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
+        CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,
+        ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
+        UniqueItemPhysicalProfile,
     };
     use crate::{traits::Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick};
     use serde::{de::DeserializeOwned, Serialize};
@@ -666,12 +694,14 @@ mod tests {
         load_per_unit: LoadUnits,
         consumable_profile: Option<CommodityConsumableProfile>,
         combat_weapon_profile: Option<CombatWeaponProfile>,
+        treatment_profile: Option<CommodityTreatmentProfile>,
     ) -> CommodityKindSpec {
         CommodityKindSpec {
             trade_category,
             physical_profile: CommodityPhysicalProfile { load_per_unit },
             consumable_profile,
             combat_weapon_profile,
+            treatment_profile,
         }
     }
 
@@ -687,6 +717,7 @@ mod tests {
                     Permille::new_unchecked(40),
                 )),
                 None,
+                None,
             ),
             CommodityKind::Grain => expected_spec(
                 TradeCategory::Food,
@@ -697,6 +728,7 @@ mod tests {
                     Permille::new_unchecked(0),
                     Permille::new_unchecked(20),
                 )),
+                None,
                 None,
             ),
             CommodityKind::Bread => expected_spec(
@@ -709,6 +741,7 @@ mod tests {
                     Permille::new_unchecked(20),
                 )),
                 None,
+                None,
             ),
             CommodityKind::Water => expected_spec(
                 TradeCategory::Water,
@@ -720,8 +753,11 @@ mod tests {
                     Permille::new_unchecked(220),
                 )),
                 None,
+                None,
             ),
-            CommodityKind::Firewood => expected_spec(TradeCategory::Fuel, LoadUnits(3), None, None),
+            CommodityKind::Firewood => {
+                expected_spec(TradeCategory::Fuel, LoadUnits(3), None, None, None)
+            }
             CommodityKind::Sword => expected_spec(
                 TradeCategory::Weapon,
                 LoadUnits(4),
@@ -731,6 +767,7 @@ mod tests {
                     Permille::new_unchecked(180),
                     Permille::new_unchecked(55),
                 )),
+                None,
             ),
             CommodityKind::Bow => expected_spec(
                 TradeCategory::Weapon,
@@ -741,12 +778,23 @@ mod tests {
                     Permille::new_unchecked(140),
                     Permille::new_unchecked(30),
                 )),
+                None,
             ),
-            CommodityKind::Medicine => {
-                expected_spec(TradeCategory::Medicine, LoadUnits(1), None, None)
+            CommodityKind::Medicine => expected_spec(
+                TradeCategory::Medicine,
+                LoadUnits(1),
+                None,
+                None,
+                Some(CommodityTreatmentProfile::new(
+                    NonZeroU32::new(4).unwrap(),
+                    Permille::new_unchecked(60),
+                    Permille::new_unchecked(120),
+                )),
+            ),
+            CommodityKind::Coin => expected_spec(TradeCategory::Coin, LoadUnits(1), None, None, None),
+            CommodityKind::Waste => {
+                expected_spec(TradeCategory::Waste, LoadUnits(1), None, None, None)
             }
-            CommodityKind::Coin => expected_spec(TradeCategory::Coin, LoadUnits(1), None, None),
-            CommodityKind::Waste => expected_spec(TradeCategory::Waste, LoadUnits(1), None, None),
         }
     }
 
@@ -821,6 +869,20 @@ mod tests {
 
         let bytes = bincode::serialize(&profile).unwrap();
         let roundtrip: CombatWeaponProfile = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn commodity_treatment_profile_roundtrips_through_bincode() {
+        let profile = CommodityTreatmentProfile::new(
+            NonZeroU32::new(5).unwrap(),
+            Permille::new(70).unwrap(),
+            Permille::new(90).unwrap(),
+        );
+
+        let bytes = bincode::serialize(&profile).unwrap();
+        let roundtrip: CommodityTreatmentProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
     }
@@ -943,6 +1005,32 @@ mod tests {
             CommodityKind::Waste,
         ] {
             assert_eq!(kind.spec().combat_weapon_profile, None);
+        }
+    }
+
+    #[test]
+    fn only_medicine_exposes_treatment_profile() {
+        assert_eq!(
+            CommodityKind::Medicine.spec().treatment_profile,
+            Some(CommodityTreatmentProfile::new(
+                NonZeroU32::new(4).unwrap(),
+                Permille::new(60).unwrap(),
+                Permille::new(120).unwrap(),
+            ))
+        );
+
+        for kind in [
+            CommodityKind::Apple,
+            CommodityKind::Grain,
+            CommodityKind::Bread,
+            CommodityKind::Water,
+            CommodityKind::Firewood,
+            CommodityKind::Sword,
+            CommodityKind::Bow,
+            CommodityKind::Coin,
+            CommodityKind::Waste,
+        ] {
+            assert_eq!(kind.spec().treatment_profile, None);
         }
     }
 

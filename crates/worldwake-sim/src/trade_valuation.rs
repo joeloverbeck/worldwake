@@ -373,6 +373,10 @@ mod tests {
         fn is_incapacitated(&self, _entity: EntityId) -> bool {
             false
         }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
     }
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug>() {}

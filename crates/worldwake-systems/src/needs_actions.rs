@@ -1,3 +1,4 @@
+use crate::inventory::consume_one_unit;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
@@ -205,23 +206,6 @@ fn set_actor_needs(
 ) -> Result<(), ActionError> {
     txn.set_component_homeostatic_needs(actor, needs)
         .map_err(|err| ActionError::InternalError(err.to_string()))
-}
-
-fn consume_one_unit(txn: &mut WorldTxn<'_>, lot_id: EntityId) -> Result<(), ActionError> {
-    let existing = lot(txn, lot_id)?;
-    match existing.quantity {
-        Quantity(1) => txn
-            .archive_entity(lot_id)
-            .map_err(|err| ActionError::InternalError(err.to_string())),
-        quantity => {
-            let (_, consumed) = txn
-                .split_lot(lot_id, Quantity(1))
-                .map_err(|err| ActionError::InternalError(err.to_string()))?;
-            debug_assert_eq!(quantity.0.saturating_sub(1), lot(txn, lot_id)?.quantity.0);
-            txn.archive_entity(consumed)
-                .map_err(|err| ActionError::InternalError(err.to_string()))
-        }
-    }
 }
 
 #[allow(clippy::unnecessary_wraps)]

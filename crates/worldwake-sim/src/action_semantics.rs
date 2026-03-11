@@ -2,8 +2,8 @@ use crate::{ActionDuration, ActionPayload};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CombatWeaponRef, CommodityKind, EntityId, EntityKind, Quantity, RecipeId, UniqueItemKind,
-    WorkstationTag, World,
+    CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, Quantity,
+    RecipeId, UniqueItemKind, WorkstationTag, World,
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -69,6 +69,7 @@ pub enum Precondition {
         target_index: u8,
         effect: ConsumableEffect,
     },
+    TargetHasWounds(u8),
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -97,6 +98,10 @@ pub enum DurationExpr {
     ActorTradeDisposition,
     Indefinite,
     CombatWeapon,
+    TargetTreatment {
+        target_index: u8,
+        commodity: CommodityKind,
+    },
 }
 
 impl DurationExpr {
@@ -109,7 +114,8 @@ impl DurationExpr {
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
             | Self::Indefinite
-            | Self::CombatWeapon => None,
+            | Self::CombatWeapon
+            | Self::TargetTreatment { .. } => None,
         }
     }
 
@@ -187,6 +193,38 @@ impl DurationExpr {
                         .ok_or_else(|| format!("commodity {kind:?} is not a combat weapon")),
                 }
             }
+            Self::TargetTreatment {
+                target_index,
+                commodity,
+            } => {
+                if world.controlled_commodity_quantity(actor, commodity) == Quantity(0) {
+                    return Err(format!("actor {actor} lacks treatment commodity {commodity:?}"));
+                }
+                let target = targets
+                    .get(usize::from(target_index))
+                    .copied()
+                    .ok_or_else(|| format!("missing target at index {target_index}"))?;
+                let wounds = world
+                    .get_component_wound_list(target)
+                    .ok_or_else(|| format!("target {target} lacks wounds"))?;
+                let CommodityTreatmentProfile {
+                    treatment_ticks_per_unit,
+                    severity_reduction_per_tick,
+                    ..
+                } = commodity
+                    .spec()
+                    .treatment_profile
+                    .ok_or_else(|| format!("commodity {commodity:?} has no treatment profile"))?;
+                if wounds.wounds.is_empty() {
+                    return Err(format!("target {target} has no wounds"));
+                }
+
+                let severity_per_tick = u32::from(severity_reduction_per_tick.value()).max(1);
+                let wound_ticks = wounds.wound_load().div_ceil(severity_per_tick).max(1);
+                Ok(ActionDuration::Finite(
+                    treatment_ticks_per_unit.get().max(wound_ticks),
+                ))
+            }
         }
     }
 }
@@ -254,7 +292,7 @@ mod tests {
         TargetSpec::AdjacentPlace,
     ];
 
-    const ALL_PRECONDITIONS: [Precondition; 17] = [
+    const ALL_PRECONDITIONS: [Precondition; 18] = [
         Precondition::ActorAlive,
         Precondition::ActorCanControlTarget(6),
         Precondition::TargetExists(0),
@@ -288,6 +326,7 @@ mod tests {
             target_index: 4,
             effect: ConsumableEffect::Thirst,
         },
+        Precondition::TargetHasWounds(2),
     ];
 
     const ALL_RESERVATION_REQS: [ReservationReq; 2] = [
@@ -295,7 +334,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 8] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 9] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::TargetConsumable { target_index: 0 },
@@ -306,6 +345,10 @@ mod tests {
         DurationExpr::ActorTradeDisposition,
         DurationExpr::Indefinite,
         DurationExpr::CombatWeapon,
+        DurationExpr::TargetTreatment {
+            target_index: 2,
+            commodity: CommodityKind::Medicine,
+        },
     ];
 
     const ALL_INTERRUPTIBILITY: [Interruptibility; 3] = [
@@ -356,6 +399,14 @@ mod tests {
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
         assert_eq!(DurationExpr::Indefinite.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
+        assert_eq!(
+            DurationExpr::TargetTreatment {
+                target_index: 0,
+                commodity: CommodityKind::Medicine,
+            }
+            .fixed_ticks(),
+            None
+        );
     }
 
     #[test]
@@ -675,6 +726,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn target_and_precondition_indices_use_fixed_width_integers() {
         let reservation = ReservationReq { target_index: 4 };
@@ -782,6 +834,13 @@ mod tests {
 
         match Precondition::TargetLacksProductionJob(13) {
             Precondition::TargetLacksProductionJob(target_index) => {
+                let _: u8 = target_index;
+            }
+            _ => unreachable!(),
+        }
+
+        match Precondition::TargetHasWounds(14) {
+            Precondition::TargetHasWounds(target_index) => {
                 let _: u8 = target_index;
             }
             _ => unreachable!(),

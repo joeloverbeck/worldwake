@@ -146,6 +146,9 @@ fn evaluate_precondition(
                 ConsumableEffect::Hunger => profile.hunger_relief_per_unit.value() > 0,
                 ConsumableEffect::Thirst => profile.thirst_relief_per_unit.value() > 0,
             }),
+        Precondition::TargetHasWounds(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| view.has_wounds(*target)),
     }
 }
 
@@ -251,6 +254,7 @@ mod tests {
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         production_jobs: BTreeMap<EntityId, bool>,
+        wounds: BTreeMap<EntityId, bool>,
         controllable: BTreeMap<(EntityId, EntityId), bool>,
         control: BTreeMap<EntityId, bool>,
     }
@@ -365,6 +369,10 @@ mod tests {
 
         fn is_incapacitated(&self, _entity: EntityId) -> bool {
             false
+        }
+
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds.get(&entity).copied().unwrap_or(false)
         }
     }
 
@@ -604,6 +612,39 @@ mod tests {
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![bread]);
+    }
+
+    #[test]
+    fn get_affordances_filters_targets_without_wounds() {
+        let actor = entity(1);
+        let place = entity(10);
+        let wounded = entity(20);
+        let healthy = entity(30);
+
+        let mut view = StubBeliefView::default();
+        for entity in [actor, wounded, healthy] {
+            view.alive.insert(entity, true);
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+        }
+        view.control.insert(actor, true);
+        view.colocated.insert(place, vec![healthy, wounded]);
+        view.wounds.insert(wounded, true);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            vec![Precondition::TargetHasWounds(0)],
+        ));
+
+        let affordances = get_affordances(&view, actor, &registry);
+
+        assert_eq!(affordances.len(), 1);
+        assert_eq!(affordances[0].bound_targets, vec![wounded]);
     }
 
     #[test]

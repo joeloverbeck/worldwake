@@ -15,7 +15,8 @@ pub mod transport_actions;
 pub mod travel_actions;
 
 pub use combat::{
-    combat_system, register_attack_action, register_defend_action, register_loot_action,
+    combat_system, register_attack_action, register_defend_action, register_heal_action,
+    register_loot_action,
 };
 pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;

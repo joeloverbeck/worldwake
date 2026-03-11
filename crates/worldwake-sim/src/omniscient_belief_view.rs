@@ -128,6 +128,12 @@ impl BeliefView for OmniscientBeliefView<'_> {
         };
         is_incapacitated(wounds, profile)
     }
+
+    fn has_wounds(&self, entity: EntityId) -> bool {
+        self.world
+            .get_component_wound_list(entity)
+            .is_some_and(|wounds| !wounds.wounds.is_empty())
+    }
 }
 
 #[cfg(test)]

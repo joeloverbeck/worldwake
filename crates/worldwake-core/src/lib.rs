@@ -85,8 +85,9 @@ pub use event_tag::EventTag;
 pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-    CommodityPhysicalProfile, Container, ItemLot, LotOperation, ProvenanceEntry, TradeCategory,
-    UniqueItem, UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile,
+    CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,
+    ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
+    UniqueItemPhysicalProfile,
 };
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,

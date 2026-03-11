@@ -118,6 +118,10 @@ pub(crate) fn evaluate_precondition_authoritatively(
                 ConsumableEffect::Hunger => profile.hunger_relief_per_unit.value() > 0,
                 ConsumableEffect::Thirst => profile.thirst_relief_per_unit.value() > 0,
             }),
+        Precondition::TargetHasWounds(index) => targets
+            .get(usize::from(index))
+            .and_then(|target| world.get_component_wound_list(*target))
+            .is_some_and(|wounds| !wounds.wounds.is_empty()),
     }
 }
 
@@ -144,9 +148,10 @@ mod tests {
     };
     use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, ControlSource, EntityKind, EventLog,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, BodyPart, CauseRef, CommodityKind, ControlSource, EntityKind,
+        EventLog, Permille, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId, WoundList,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -436,6 +441,52 @@ mod tests {
             Precondition::TargetIsAgent(0),
             actor,
             &[facility],
+        ));
+    }
+
+    #[test]
+    fn authoritative_target_has_wounds_checks_concrete_wound_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, wounded, healthy) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let wounded = txn.create_agent("Wounded", ControlSource::Ai).unwrap();
+            let healthy = txn.create_agent("Healthy", ControlSource::Ai).unwrap();
+            for entity in [actor, wounded, healthy] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_wound_list(
+                wounded,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                        severity: Permille::new(200).unwrap(),
+                        inflicted_at: Tick(1),
+                        bleed_rate_per_tick: Permille::new(0).unwrap(),
+                    }],
+                },
+            )
+            .unwrap();
+            txn.set_component_wound_list(healthy, WoundList::default())
+                .unwrap();
+            commit_txn(txn);
+            (actor, wounded, healthy)
+        };
+
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasWounds(0),
+            actor,
+            &[wounded],
+        ));
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasWounds(0),
+            actor,
+            &[healthy],
         ));
     }
 

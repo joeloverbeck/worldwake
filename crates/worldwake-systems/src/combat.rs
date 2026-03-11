@@ -1,5 +1,6 @@
 use crate::inventory::{
-    controlled_entity_load, move_entity_to_direct_possession, remaining_capacity,
+    consume_one_unit_of_commodity, controlled_entity_load, move_entity_to_direct_possession,
+    remaining_capacity,
 };
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
@@ -63,6 +64,19 @@ pub fn register_loot_action(
         abort_loot,
     ));
     defs.register(loot_action_def(ActionDefId(defs.len() as u32), handler))
+}
+
+pub fn register_heal_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(ActionHandler::new(
+        start_heal,
+        tick_heal,
+        commit_heal,
+        abort_heal,
+    ));
+    defs.register(heal_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
 pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -393,6 +407,54 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     }
 }
 
+fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    let preconditions = vec![
+        Precondition::ActorAlive,
+        Precondition::TargetExists(0),
+        Precondition::TargetAtActorPlace(0),
+        Precondition::TargetAlive(0),
+        Precondition::TargetIsAgent(0),
+        Precondition::TargetHasWounds(0),
+    ];
+
+    ActionDef {
+        id,
+        name: "heal".to_string(),
+        domain: ActionDomain::Care,
+        actor_constraints: vec![
+            Constraint::ActorAlive,
+            Constraint::ActorNotDead,
+            Constraint::ActorNotIncapacitated,
+            Constraint::ActorNotInTransit,
+            Constraint::ActorHasControl,
+            Constraint::ActorHasCommodity {
+                kind: worldwake_core::CommodityKind::Medicine,
+                min_qty: Quantity(1),
+            },
+        ],
+        targets: vec![TargetSpec::EntityAtActorPlace {
+            kind: EntityKind::Agent,
+        }],
+        preconditions: preconditions.clone(),
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::TargetTreatment {
+            target_index: 0,
+            commodity: worldwake_core::CommodityKind::Medicine,
+        },
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::InterruptibleWithPenalty,
+        commit_conditions: vec![
+            Precondition::TargetAlive(0),
+            Precondition::TargetAtActorPlace(0),
+            Precondition::TargetIsAgent(0),
+        ],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::WorldMutation, EventTag::Inventory]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn start_defend(
     _def: &ActionDef,
@@ -551,6 +613,90 @@ fn validate_selected_weapon(
     }
 }
 
+fn validate_heal_context(
+    txn: &WorldTxn<'_>,
+    instance: &ActionInstance,
+) -> Result<worldwake_core::EntityId, ActionError> {
+    let target = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    if target == instance.actor {
+        return Err(ActionError::AbortRequested(format!(
+            "actor {} cannot heal itself",
+            instance.actor
+        )));
+    }
+    if txn.entity_kind(target) != Some(EntityKind::Agent) {
+        return Err(ActionError::InvalidTarget(target));
+    }
+    let place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::AbortRequested(format!("actor {} is not placed", instance.actor))
+    })?;
+    if txn.effective_place(target) != Some(place) {
+        return Err(ActionError::AbortRequested(format!(
+            "patient {target} is no longer co-located with actor {}",
+            instance.actor
+        )));
+    }
+    if txn.get_component_dead_at(target).is_some() {
+        return Err(ActionError::AbortRequested(format!(
+            "patient {target} is no longer alive"
+        )));
+    }
+    let wounds = txn
+        .get_component_wound_list(target)
+        .ok_or_else(|| ActionError::AbortRequested(format!("patient {target} lacks wounds")))?;
+    if wounds.wounds.is_empty() {
+        return Err(ActionError::AbortRequested(format!(
+            "patient {target} no longer has wounds"
+        )));
+    }
+    Ok(target)
+}
+
+fn apply_treatment(
+    current: &WoundList,
+    profile: worldwake_core::CommodityTreatmentProfile,
+) -> Option<WoundList> {
+    let mut next = current.clone();
+    let mut changed = false;
+    let mut bleed_budget = profile.bleed_reduction_per_tick;
+    let mut severity_budget = profile.severity_reduction_per_tick;
+
+    for wound in next
+        .wounds
+        .iter_mut()
+        .filter(|wound| wound.bleed_rate_per_tick.value() > 0)
+    {
+        if bleed_budget.value() == 0 {
+            break;
+        }
+        let previous = wound.bleed_rate_per_tick;
+        let reduction = bleed_budget.min(wound.bleed_rate_per_tick);
+        wound.bleed_rate_per_tick = wound.bleed_rate_per_tick.saturating_sub(reduction);
+        bleed_budget = bleed_budget.saturating_sub(reduction);
+        changed |= wound.bleed_rate_per_tick != previous;
+    }
+
+    for wound in &mut next.wounds {
+        if severity_budget.value() == 0 {
+            break;
+        }
+        let previous = wound.severity;
+        let reduction = severity_budget.min(wound.severity);
+        wound.severity = wound.severity.saturating_sub(reduction);
+        severity_budget = severity_budget.saturating_sub(reduction);
+        changed |= wound.severity != previous;
+    }
+
+    let previous_len = next.wounds.len();
+    next.wounds.retain(|wound| wound.severity.value() > 0);
+    changed |= previous_len != next.wounds.len();
+
+    changed.then_some(next)
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct AttackWeaponStats {
     severity: Permille,
@@ -689,6 +835,18 @@ fn start_attack(
     Ok(None)
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn start_heal(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let _ = validate_heal_context(txn, instance)?;
+    let _ = consume_one_unit_of_commodity(txn, instance.actor, worldwake_core::CommodityKind::Medicine)?;
+    Ok(None)
+}
+
 fn direct_loot_entities(txn: &WorldTxn<'_>, corpse: EntityId) -> Vec<EntityId> {
     let mut entities = txn.possessions_of(corpse);
     entities.sort();
@@ -763,6 +921,38 @@ fn tick_loot(
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     Ok(ActionProgress::Continue)
+}
+
+fn tick_heal(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    let target = validate_heal_context(txn, instance)?;
+    let wounds = txn
+        .get_component_wound_list(target)
+        .cloned()
+        .ok_or_else(|| ActionError::AbortRequested(format!("patient {target} lacks wounds")))?;
+    let profile = worldwake_core::CommodityKind::Medicine
+        .spec()
+        .treatment_profile
+        .ok_or_else(|| {
+            ActionError::InternalError("medicine lacks treatment profile".to_string())
+        })?;
+
+    if let Some(next) = apply_treatment(&wounds, profile) {
+        let completed = next.wounds.is_empty();
+        txn.set_component_wound_list(target, next)
+            .map_err(|error| ActionError::InternalError(error.to_string()))?;
+        return Ok(if completed {
+            ActionProgress::Complete
+        } else {
+            ActionProgress::Continue
+        });
+    }
+
+    Ok(ActionProgress::Complete)
 }
 
 fn commit_loot(
@@ -871,12 +1061,33 @@ fn abort_loot(
     Ok(())
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn commit_heal(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_heal(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         combat_system, effective_guard_skill, register_attack_action, register_defend_action,
-        register_loot_action, resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
-        AttackResolutionTarget,
+        register_heal_action, register_loot_action, resolve_attack_wound,
+        AttackResolutionActor, AttackResolutionContext, AttackResolutionTarget,
     };
     use crate::dispatch_table;
     use std::collections::BTreeMap;
@@ -1138,6 +1349,283 @@ mod tests {
             .contains(&worldwake_sim::Precondition::TargetIsAgent(0)));
         assert!(loot.causal_event_tags.contains(&EventTag::Inventory));
         assert!(loot.causal_event_tags.contains(&EventTag::Transfer));
+    }
+
+    #[test]
+    fn register_heal_action_creates_public_care_definition() {
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+        let heal = defs.get(heal_id).unwrap();
+
+        assert_eq!(heal.name, "heal");
+        assert_eq!(heal.domain, worldwake_sim::ActionDomain::Care);
+        assert_eq!(
+            heal.duration,
+            DurationExpr::TargetTreatment {
+                target_index: 0,
+                commodity: CommodityKind::Medicine,
+            }
+        );
+        assert_eq!(
+            heal.interruptibility,
+            Interruptibility::InterruptibleWithPenalty
+        );
+        assert_eq!(heal.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(heal.payload, ActionPayload::None);
+        assert!(heal
+            .actor_constraints
+            .contains(&worldwake_sim::Constraint::ActorHasCommodity {
+                kind: CommodityKind::Medicine,
+                min_qty: Quantity(1),
+            }));
+        assert!(heal
+            .preconditions
+            .contains(&worldwake_sim::Precondition::TargetHasWounds(0)));
+    }
+
+    #[test]
+    fn heal_affordance_only_targets_wounded_agents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let healer = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let wounded = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let healthy = spawn_guard(&mut world, 3, ControlSource::Ai);
+        arm_actor(&mut world, healer, 4, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_wound_list(
+                wounded,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 240, 30, 5)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs);
+        let heal_targets = affordances
+            .into_iter()
+            .filter(|affordance| affordance.def_id == heal_id)
+            .map(|affordance| affordance.bound_targets)
+            .collect::<Vec<_>>();
+
+        assert_eq!(heal_targets, vec![vec![wounded]]);
+        assert!(!heal_targets.contains(&vec![healthy]));
+    }
+
+    #[test]
+    fn heal_lifecycle_consumes_medicine_and_reduces_bleeding_and_severity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let healer = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let patient = spawn_guard(&mut world, 2, ControlSource::Ai);
+        arm_actor(&mut world, healer, 3, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 360, 90, 4)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs)
+            .into_iter()
+            .find(|affordance| affordance.def_id == heal_id && affordance.bound_targets == vec![patient])
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x31);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
+            Quantity(0)
+        );
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Continuing);
+        let wound = &world.get_component_wound_list(patient).unwrap().wounds[0];
+        assert_eq!(wound.bleed_rate_per_tick, pm(30));
+        assert_eq!(wound.severity, pm(240));
+        let mut final_outcome = outcome;
+        for tick in 12..15 {
+            final_outcome = tick_action(
+                action_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
+            if final_outcome == TickOutcome::Committed {
+                break;
+            }
+        }
+
+        assert_eq!(final_outcome, TickOutcome::Committed);
+        assert!(log
+            .events_by_tag(EventTag::Inventory)
+            .iter()
+            .any(|event_id| log.get(*event_id).is_some()));
+    }
+
+    #[test]
+    fn heal_removes_fully_healed_wounds() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let healer = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let patient = spawn_guard(&mut world, 2, ControlSource::Ai);
+        arm_actor(&mut world, healer, 3, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 100, 0, 4)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs)
+            .into_iter()
+            .find(|affordance| affordance.def_id == heal_id && affordance.bound_targets == vec![patient])
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x33);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Committed);
+        assert_eq!(
+            world.get_component_wound_list(patient),
+            Some(&WoundList::default())
+        );
+    }
+
+    #[test]
+    fn heal_requires_medicine_and_living_same_place_wounded_target() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let healer = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let patient = spawn_guard(&mut world, 2, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 180, 20, 3)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs);
+        assert!(!affordances.iter().any(|affordance| affordance.def_id == heal_id));
+
+        arm_actor(&mut world, healer, 4, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_dead_at(patient, DeadAt(Tick(5))).unwrap();
+            commit_txn(txn);
+        }
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs);
+        assert!(!affordances.iter().any(|affordance| affordance.def_id == heal_id));
     }
 
     #[test]
