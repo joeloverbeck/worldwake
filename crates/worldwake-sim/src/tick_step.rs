@@ -107,11 +107,13 @@ pub fn step_tick(
     };
     let tick = runtime.scheduler.current_tick();
     let events_before = runtime.event_log.len();
+    let pre_progress_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     let (inputs_processed, actions_started, actions_aborted) =
         process_inputs(&mut runtime, controller, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &services)?;
     let systems_ran = run_systems(&mut runtime, rng, tick, services)?;
+    let post_system_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     emit_end_of_tick_marker(runtime.event_log, tick);
     runtime.scheduler.increment_tick();
 
@@ -120,8 +122,12 @@ pub fn step_tick(
         inputs_processed,
         actions_started,
         actions_completed,
-        actions_aborted: actions_aborted
+        actions_aborted: pre_progress_dead_aborts
+            .checked_add(actions_aborted)
+            .expect("tick-step action-abort counter overflowed")
             .checked_add(progressed_action_aborts)
+            .expect("tick-step action-abort counter overflowed")
+            .checked_add(post_system_dead_aborts)
             .expect("tick-step action-abort counter overflowed"),
         systems_ran,
         events_emitted_count: u32::try_from(runtime.event_log.len() - events_before)
@@ -341,6 +347,51 @@ fn progress_active_actions(
     Ok((actions_completed, actions_aborted))
 }
 
+fn abort_actions_for_dead_actors(
+    runtime: &mut TickStepRuntime<'_>,
+    tick: Tick,
+    services: &TickStepServices<'_>,
+) -> Result<u32, TickStepError> {
+    let action_ids = runtime
+        .scheduler
+        .active_actions()
+        .iter()
+        .filter_map(|(instance_id, instance)| {
+            runtime
+                .world
+                .get_component_dead_at(instance.actor)
+                .is_some()
+                .then_some(*instance_id)
+        })
+        .collect::<Vec<_>>();
+    let mut aborted = 0u32;
+
+    for instance_id in action_ids {
+        runtime
+            .scheduler
+            .abort_active_action(
+                instance_id,
+                SchedulerActionRuntime {
+                    action_defs: services.action_defs,
+                    action_handlers: services.action_handlers,
+                    world: runtime.world,
+                    event_log: runtime.event_log,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(tick),
+                    tick,
+                },
+                "actor marked dead".to_string(),
+            )
+            .map_err(TickStepError::Action)?;
+        aborted = aborted
+            .checked_add(1)
+            .expect("tick-step action-abort counter overflowed");
+    }
+
+    Ok(aborted)
+}
+
 fn run_systems(
     runtime: &mut TickStepRuntime<'_>,
     rng: &mut DeterministicRng,
@@ -395,15 +446,16 @@ mod tests {
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility,
-        Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest,
+        ActionState, ActionStatus, ControllerState, DeterministicRng, DurationExpr, InputKind,
+        Interruptibility, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
+        SystemManifest,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventLog,
-        EventTag, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, DeadAt, EntityId,
+        EventLog, EventTag, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -923,6 +975,117 @@ mod tests {
 
         assert_eq!(result.actions_completed, 1);
         assert!(scheduler.active_actions().is_empty());
+    }
+
+    #[test]
+    fn dead_actor_actions_are_aborted_before_tick_progress() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
+            build_state();
+        let actor = controlled_actor(&controller);
+        let action_id = ActionInstanceId(77);
+        scheduler.insert_action(ActionInstance {
+            instance_id: action_id,
+            def_id: ActionDefId(0),
+            payload: ActionPayload::None,
+            actor,
+            targets: Vec::new(),
+            start_tick: Tick(0),
+            remaining_duration: crate::ActionDuration::Finite(5),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: Some(ActionState::Empty),
+        });
+        {
+            let mut txn = new_txn(&mut world, 1);
+            txn.set_component_dead_at(actor, DeadAt(Tick(1))).unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+        reset_hooks();
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                systems: &SystemDispatchTable::canonical_noop(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.actions_aborted, 1);
+        assert!(scheduler.active_actions().is_empty());
+        assert_eq!(hook_log().lock().unwrap().aborts, vec![action_id]);
+        assert!(hook_log().lock().unwrap().ticks.is_empty());
+    }
+
+    #[test]
+    fn actions_for_agents_who_die_in_systems_are_culled_before_tick_ends() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (mut world, mut event_log, mut scheduler, mut controller, mut rng, defs, handlers) =
+            build_state();
+        let actor = controlled_actor(&controller);
+        let action_id = ActionInstanceId(88);
+        scheduler.insert_action(ActionInstance {
+            instance_id: action_id,
+            def_id: ActionDefId(0),
+            payload: ActionPayload::None,
+            actor,
+            targets: Vec::new(),
+            start_tick: Tick(0),
+            remaining_duration: crate::ActionDuration::Finite(5),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: Some(ActionState::Empty),
+        });
+        reset_hooks();
+
+        fn kill_actor_system(context: SystemExecutionContext<'_>) -> Result<(), SystemError> {
+            let actor = context
+                .active_actions
+                .values()
+                .next()
+                .map(|instance| instance.actor)
+                .unwrap();
+            let place = context.world.effective_place(actor);
+            let mut txn = WorldTxn::new(
+                context.world,
+                context.tick,
+                CauseRef::SystemTick(context.tick),
+                Some(actor),
+                place,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            txn.set_component_dead_at(actor, DeadAt(context.tick))
+                .map_err(|error| SystemError::new(error.to_string()))?;
+            let _ = txn.commit(context.event_log);
+            Ok(())
+        }
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                systems: &SystemDispatchTable::from_handlers([kill_actor_system; crate::SystemId::ALL.len()]),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.actions_aborted, 1);
+        assert!(scheduler.active_actions().is_empty());
+        assert_eq!(hook_log().lock().unwrap().aborts, vec![action_id]);
     }
 
     #[test]

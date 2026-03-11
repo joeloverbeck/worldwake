@@ -2,6 +2,17 @@
 
 use crate::{CombatProfile, CommodityKind, Component, EntityId, Permille, Tick};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Stable identifier for an individual wound within an agent's wound history.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct WoundId(pub u64);
+
+impl fmt::Display for WoundId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "w{}", self.0)
+    }
+}
 
 /// Body part targeted by a wound.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -41,6 +52,7 @@ pub enum WoundCause {
 /// A single wound on an agent's body.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Wound {
+    pub id: WoundId,
     pub body_part: BodyPart,
     pub cause: WoundCause,
     pub severity: Permille,
@@ -56,11 +68,28 @@ pub struct WoundList {
 
 impl WoundList {
     #[must_use]
+    pub fn next_wound_id(&self) -> WoundId {
+        WoundId(
+            self.wounds
+                .iter()
+                .map(|wound| wound.id.0)
+                .max()
+                .unwrap_or(0),
+        )
+        .next()
+    }
+
+    #[must_use]
     pub fn wound_load(&self) -> u32 {
         self.wounds
             .iter()
             .map(|wound| u32::from(wound.severity.value()))
             .sum()
+    }
+
+    #[must_use]
+    pub fn wound_ids(&self) -> Vec<WoundId> {
+        self.wounds.iter().map(|wound| wound.id).collect()
     }
 
     #[must_use]
@@ -83,11 +112,18 @@ pub fn is_wound_load_fatal(wounds: &WoundList, profile: &CombatProfile) -> bool 
 
 impl Component for WoundList {}
 
+impl WoundId {
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         is_incapacitated, is_wound_load_fatal, BodyPart, CombatWeaponRef, DeprivationKind, Wound,
-        WoundCause, WoundList,
+        WoundCause, WoundId, WoundList,
     };
     use crate::{traits::Component, CombatProfile, CommodityKind, EntityId, Permille, Tick};
     use serde::{de::DeserializeOwned, Serialize};
@@ -96,6 +132,7 @@ mod tests {
 
     fn sample_wound() -> Wound {
         Wound {
+            id: WoundId(1),
             body_part: BodyPart::Torso,
             cause: WoundCause::Deprivation(DeprivationKind::Starvation),
             severity: Permille::new(650).unwrap(),
@@ -106,6 +143,7 @@ mod tests {
 
     fn sample_combat_wound() -> Wound {
         Wound {
+            id: WoundId(2),
             body_part: BodyPart::Head,
             cause: WoundCause::Combat {
                 attacker: EntityId {
@@ -198,6 +236,7 @@ mod tests {
                 sample_wound(),
                 sample_combat_wound(),
                 Wound {
+                    id: WoundId(3),
                     body_part: BodyPart::LeftLeg,
                     cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
                     severity: Permille::new(400).unwrap(),
@@ -223,6 +262,7 @@ mod tests {
                 sample_wound(),
                 sample_combat_wound(),
                 Wound {
+                    id: WoundId(3),
                     body_part: BodyPart::LeftArm,
                     cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
                     severity: Permille::new(150).unwrap(),
@@ -240,6 +280,7 @@ mod tests {
         let profile = sample_combat_profile();
         let light = WoundList {
             wounds: vec![Wound {
+                id: WoundId(1),
                 body_part: BodyPart::Torso,
                 cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                 severity: Permille::new(300).unwrap(),
@@ -249,6 +290,7 @@ mod tests {
         };
         let incapacitated = WoundList {
             wounds: vec![Wound {
+                id: WoundId(2),
                 body_part: BodyPart::Torso,
                 cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                 severity: Permille::new(700).unwrap(),
@@ -258,6 +300,7 @@ mod tests {
         };
         let fatal = WoundList {
             wounds: vec![Wound {
+                id: WoundId(3),
                 body_part: BodyPart::Head,
                 cause: WoundCause::Combat {
                     attacker: EntityId {
@@ -289,5 +332,26 @@ mod tests {
             wounds: vec![sample_wound(), sample_combat_wound()]
         }
         .has_bleeding_wounds());
+    }
+
+    #[test]
+    fn next_wound_id_advances_past_highest_existing_identifier() {
+        assert_eq!(WoundList::default().next_wound_id(), WoundId(1));
+        assert_eq!(
+            WoundList {
+                wounds: vec![
+                    Wound {
+                        id: WoundId(4),
+                        ..sample_wound()
+                    },
+                    Wound {
+                        id: WoundId(9),
+                        ..sample_combat_wound()
+                    },
+                ],
+            }
+            .next_wound_id(),
+            WoundId(10)
+        );
     }
 }

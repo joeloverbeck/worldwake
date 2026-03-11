@@ -185,6 +185,7 @@ mod tests {
         let id = entity(5);
         let wounds = WoundList {
             wounds: vec![Wound {
+                id: crate::WoundId(1),
                 body_part: BodyPart::Torso,
                 cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                 severity: Permille::new(800).unwrap(),
@@ -508,6 +509,7 @@ mod tests {
             id,
             WoundList {
                 wounds: vec![Wound {
+                    id: crate::WoundId(2),
                     body_part: BodyPart::Head,
                     cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
                     severity: Permille::new(550).unwrap(),
@@ -611,6 +613,7 @@ mod tests {
             entity(9),
             WoundList {
                 wounds: vec![Wound {
+                    id: crate::WoundId(3),
                     body_part: BodyPart::LeftArm,
                     cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                     severity: Permille::new(300).unwrap(),

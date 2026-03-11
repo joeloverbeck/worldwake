@@ -80,7 +80,7 @@ pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
 pub use event_log::EventLog;
-pub use event_record::{EventRecord, PendingEvent};
+pub use event_record::{EvidenceRef, EventRecord, PendingEvent};
 pub use event_tag::EventTag;
 pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{
@@ -116,5 +116,5 @@ pub use world::World;
 pub use world_txn::WorldTxn;
 pub use wounds::{
     is_incapacitated, is_wound_load_fatal, BodyPart, CombatWeaponRef, DeprivationKind, Wound,
-    WoundCause, WoundList,
+    WoundCause, WoundId, WoundList,
 };

@@ -416,6 +416,7 @@ mod tests {
     fn wound_list() -> WoundList {
         WoundList {
             wounds: vec![Wound {
+                id: worldwake_core::WoundId(1),
                 body_part: BodyPart::Torso,
                 cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
                 severity: pm(700),

@@ -1,9 +1,13 @@
 use std::collections::BTreeSet;
-use worldwake_core::{BodyCostPerTick, EventTag, VisibilitySpec, WorldTxn};
+use worldwake_core::{
+    is_wound_load_fatal, BodyCostPerTick, CauseRef, ComponentDelta, ComponentKind, DeadAt,
+    EvidenceRef, EventLog, EventTag, StateDelta, VisibilitySpec, WitnessData, WorldTxn,
+};
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, Constraint, DurationExpr, Interruptibility, Precondition,
+    ActionState, Constraint, DurationExpr, Interruptibility, Precondition, SystemError,
+    SystemExecutionContext,
 };
 
 pub fn register_defend_action(
@@ -17,6 +21,98 @@ pub fn register_defend_action(
         abort_defend,
     ));
     defs.register(defend_action_def(ActionDefId(defs.len() as u32), handler))
+}
+
+pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
+    let SystemExecutionContext {
+        world,
+        event_log,
+        rng: _rng,
+        active_actions: _active_actions,
+        action_defs: _action_defs,
+        tick,
+        system_id: _system_id,
+    } = ctx;
+    let fatalities = collect_fatalities(world, event_log, tick);
+
+    for fatality in fatalities {
+        let place = world.effective_place(fatality.entity);
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            fatality.cause,
+            Some(fatality.entity),
+            place,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::System)
+            .add_tag(EventTag::WorldMutation)
+            .add_tag(EventTag::Combat)
+            .add_target(fatality.entity);
+        txn.set_component_dead_at(fatality.entity, DeadAt(tick))
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        let pending = txn.into_pending_event().with_evidence(fatality.evidence);
+        let _ = event_log.emit(pending);
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Fatality {
+    entity: worldwake_core::EntityId,
+    evidence: Vec<EvidenceRef>,
+    cause: CauseRef,
+}
+
+fn collect_fatalities(
+    world: &worldwake_core::World,
+    event_log: &EventLog,
+    tick: worldwake_core::Tick,
+) -> Vec<Fatality> {
+    world
+        .query_wound_list()
+        .filter_map(|(entity, wounds)| {
+            let profile = world.get_component_combat_profile(entity)?;
+            if world.get_component_dead_at(entity).is_some() {
+                return None;
+            }
+            is_wound_load_fatal(wounds, profile).then_some(Fatality {
+                entity,
+                evidence: wounds
+                    .wound_ids()
+                    .into_iter()
+                    .map(|wound_id| EvidenceRef::Wound { entity, wound_id })
+                    .collect(),
+                cause: latest_wound_event(event_log, entity)
+                    .map_or(CauseRef::SystemTick(tick), CauseRef::Event),
+            })
+        })
+        .collect()
+}
+
+fn latest_wound_event(
+    event_log: &EventLog,
+    entity: worldwake_core::EntityId,
+) -> Option<worldwake_core::EventId> {
+    (0..event_log.len())
+        .rev()
+        .map(|index| worldwake_core::EventId(index as u64))
+        .find(|event_id| {
+            event_log.get(*event_id).is_some_and(|record| {
+                record.state_deltas.iter().any(|delta| {
+                    matches!(
+                        delta,
+                        StateDelta::Component(ComponentDelta::Set {
+                            entity: changed,
+                            component_kind: ComponentKind::WoundList,
+                            ..
+                        }) if *changed == entity
+                    )
+                })
+            })
+        })
 }
 
 fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
@@ -83,18 +179,21 @@ fn abort_defend(
 
 #[cfg(test)]
 mod tests {
-    use super::register_defend_action;
+    use super::{combat_system, register_defend_action};
+    use crate::dispatch_table;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CombatProfile, ControlSource, DeadAt, EventLog,
-        Permille, Tick, VisibilitySpec, WitnessData, World, WorldTxn, WoundList,
+        build_prototype_world, CauseRef, CombatProfile, ControlSource, DeadAt, EvidenceRef,
+        EventLog, EventTag, Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration,
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionStatus, Affordance, DurationExpr,
-        Interruptibility, OmniscientBeliefView, TickOutcome,
+        ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng,
+        DurationExpr, Interruptibility, OmniscientBeliefView, SystemExecutionContext, SystemId,
+        TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -260,6 +359,7 @@ mod tests {
                 incapacitated,
                 WoundList {
                     wounds: vec![worldwake_core::Wound {
+                        id: WoundId(1),
                         body_part: worldwake_core::BodyPart::Torso,
                         cause: worldwake_core::WoundCause::Deprivation(
                             worldwake_core::DeprivationKind::Starvation,
@@ -302,6 +402,7 @@ mod tests {
                 incapacitated,
                 WoundList {
                     wounds: vec![worldwake_core::Wound {
+                        id: WoundId(1),
                         body_part: worldwake_core::BodyPart::Torso,
                         cause: worldwake_core::WoundCause::Deprivation(
                             worldwake_core::DeprivationKind::Starvation,
@@ -376,5 +477,165 @@ mod tests {
             incap_err,
             ActionError::ConstraintFailed("ActorNotIncapacitated".to_string())
         );
+    }
+
+    #[test]
+    fn combat_system_attaches_dead_at_and_emits_combat_event_for_fatal_wounds() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let place = world.topology().place_ids().next().unwrap();
+        let mut log = EventLog::new();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![worldwake_core::Wound {
+                        id: WoundId(7),
+                        body_part: worldwake_core::BodyPart::Head,
+                        cause: worldwake_core::WoundCause::Deprivation(
+                            worldwake_core::DeprivationKind::Starvation,
+                        ),
+                        severity: pm(1000),
+                        inflicted_at: Tick(2),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            let bread = txn
+                .create_item_lot(worldwake_core::CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, guard).unwrap();
+            let _ = txn.commit(&mut log);
+        }
+        let place_before = world.effective_place(guard);
+        let mut rng = DeterministicRng::new(Seed([7; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(5),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(5))));
+        assert_eq!(world.effective_place(guard), place_before);
+        assert_eq!(
+            world.controlled_commodity_quantity(guard, worldwake_core::CommodityKind::Bread),
+            Quantity(1)
+        );
+        assert!(!world.is_archived(guard));
+        assert_eq!(log.events_by_tag(EventTag::Combat).len(), 1);
+        let record = log.get(log.events_by_tag(EventTag::Combat)[0]).unwrap();
+        assert_eq!(record.actor_id, Some(guard));
+        assert!(matches!(record.cause, CauseRef::Event(_)));
+        assert_eq!(
+            record.evidence,
+            vec![EvidenceRef::Wound {
+                entity: guard,
+                wound_id: WoundId(7),
+            }]
+        );
+        assert!(record.tags.contains(&EventTag::System));
+        assert!(record.tags.contains(&EventTag::WorldMutation));
+    }
+
+    #[test]
+    fn combat_system_does_not_reemit_death_for_already_dead_agents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![worldwake_core::Wound {
+                        id: WoundId(8),
+                        body_part: worldwake_core::BodyPart::Head,
+                        cause: worldwake_core::WoundCause::Deprivation(
+                            worldwake_core::DeprivationKind::Starvation,
+                        ),
+                        severity: pm(1000),
+                        inflicted_at: Tick(2),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            txn.set_component_dead_at(guard, DeadAt(Tick(3))).unwrap();
+            commit_txn(txn);
+        }
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([5; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(6),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(3))));
+        assert!(log.is_empty());
+    }
+
+    #[test]
+    fn dispatch_table_uses_combat_system_for_combat_slot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![worldwake_core::Wound {
+                        id: WoundId(9),
+                        body_part: worldwake_core::BodyPart::Head,
+                        cause: worldwake_core::WoundCause::Deprivation(
+                            worldwake_core::DeprivationKind::Starvation,
+                        ),
+                        severity: pm(1000),
+                        inflicted_at: Tick(2),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let systems = dispatch_table();
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([11; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        systems
+            .get(SystemId::Combat)(SystemExecutionContext {
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+                active_actions: &active_actions,
+                action_defs: &defs,
+                tick: Tick(7),
+                system_id: SystemId::Combat,
+            })
+            .unwrap();
+
+        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(7))));
+        assert_eq!(log.events_by_tag(EventTag::Combat).len(), 1);
     }
 }

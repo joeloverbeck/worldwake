@@ -256,6 +256,7 @@ mod tests {
             }),
             ComponentValue::WoundList(WoundList {
                 wounds: vec![Wound {
+                    id: crate::WoundId(1),
                     body_part: BodyPart::Head,
                     cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                     severity: Permille::new(900).unwrap(),

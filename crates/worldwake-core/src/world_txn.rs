@@ -135,9 +135,9 @@ impl<'w> WorldTxn<'w> {
         &self.deltas
     }
 
-    pub fn commit(self, event_log: &mut EventLog) -> EventId {
+    pub fn into_pending_event(self) -> PendingEvent {
         *self.world = self.staged_world;
-        let pending = PendingEvent::new(
+        PendingEvent::new(
             self.tick,
             self.cause,
             self.actor_id,
@@ -147,9 +147,11 @@ impl<'w> WorldTxn<'w> {
             self.visibility,
             self.witness_data,
             self.tags,
-        );
+        )
+    }
 
-        event_log.emit(pending)
+    pub fn commit(self, event_log: &mut EventLog) -> EventId {
+        event_log.emit(self.into_pending_event())
     }
 
     pub fn add_target(&mut self, target_id: EntityId) -> &mut Self {

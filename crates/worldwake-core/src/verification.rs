@@ -775,6 +775,7 @@ mod tests {
                 agent,
                 WoundList {
                     wounds: vec![Wound {
+                        id: crate::WoundId(1),
                         body_part: BodyPart::Torso,
                         cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                         severity: crate::Permille::new(600).unwrap(),

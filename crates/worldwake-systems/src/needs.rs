@@ -78,6 +78,9 @@ fn collect_updates(
         if world.get_component_agent_data(entity).is_none() {
             continue;
         }
+        if world.get_component_dead_at(entity).is_some() {
+            continue;
+        }
 
         let Some(profile) = world.get_component_metabolism_profile(entity).copied() else {
             continue;
@@ -273,7 +276,9 @@ fn append_deprivation_wound(
     tick: Tick,
 ) {
     let list = wound_list.get_or_insert_with(|| existing.cloned().unwrap_or_default());
+    let wound_id = list.next_wound_id();
     list.wounds.push(Wound {
+        id: wound_id,
         body_part: BodyPart::Torso,
         cause: WoundCause::Deprivation(kind),
         severity,
@@ -301,7 +306,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource,
+        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, DeadAt,
         DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
         DeprivationKind, DriveThresholds, EventLog, EventTag, HomeostaticNeeds, MetabolismProfile,
         Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec, WitnessData,
@@ -684,6 +689,51 @@ mod tests {
             world.get_component_deprivation_exposure(agent),
             Some(&DeprivationExposure::default())
         );
+    }
+
+    #[test]
+    fn needs_system_skips_dead_agents_entirely() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Dead");
+        let place = first_place(&world);
+        place_agent(&mut world, agent, place);
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(120), pm(140), pm(0), pm(0)),
+            DeprivationExposure::default(),
+            metabolism(10, 12, 14, 0, 0),
+            DriveThresholds::default(),
+        );
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_dead_at(agent, DeadAt(Tick(3))).unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        let original_needs = *world.get_component_homeostatic_needs(agent).unwrap();
+        let original_exposure = *world.get_component_deprivation_exposure(agent).unwrap();
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([9; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = ActionDefRegistry::new();
+
+        needs_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(4),
+            system_id: SystemId::Needs,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_homeostatic_needs(agent), Some(&original_needs));
+        assert_eq!(
+            world.get_component_deprivation_exposure(agent),
+            Some(&original_exposure)
+        );
+        assert!(log.is_empty());
     }
 
     #[test]

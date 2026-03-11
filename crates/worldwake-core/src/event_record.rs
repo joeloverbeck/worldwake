@@ -1,9 +1,15 @@
 //! Immutable append-only event payloads.
 
+use crate::WoundId;
 use crate::{CauseRef, EventTag, StateDelta, VisibilitySpec, WitnessData};
 use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum EvidenceRef {
+    Wound { entity: EntityId, wound_id: WoundId },
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PendingEvent {
@@ -11,6 +17,7 @@ pub struct PendingEvent {
     pub cause: CauseRef,
     pub actor_id: Option<EntityId>,
     pub target_ids: Vec<EntityId>,
+    pub evidence: Vec<EvidenceRef>,
     pub place_id: Option<EntityId>,
     pub state_deltas: Vec<StateDelta>,
     pub visibility: VisibilitySpec,
@@ -25,6 +32,7 @@ pub struct EventRecord {
     pub cause: CauseRef,
     pub actor_id: Option<EntityId>,
     pub target_ids: Vec<EntityId>,
+    pub evidence: Vec<EvidenceRef>,
     pub place_id: Option<EntityId>,
     pub state_deltas: Vec<StateDelta>,
     pub visibility: VisibilitySpec,
@@ -54,12 +62,21 @@ impl PendingEvent {
             cause,
             actor_id,
             target_ids,
+            evidence: Vec::new(),
             place_id,
             state_deltas,
             visibility,
             witness_data,
             tags,
         }
+    }
+
+    #[must_use]
+    pub fn with_evidence(mut self, mut evidence: Vec<EvidenceRef>) -> Self {
+        evidence.sort();
+        evidence.dedup();
+        self.evidence = evidence;
+        self
     }
 
     #[must_use]
@@ -70,6 +87,7 @@ impl PendingEvent {
             cause: self.cause,
             actor_id: self.actor_id,
             target_ids: self.target_ids,
+            evidence: self.evidence,
             place_id: self.place_id,
             state_deltas: self.state_deltas,
             visibility: self.visibility,
@@ -111,7 +129,7 @@ impl EventRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{EventRecord, PendingEvent};
+    use super::{EvidenceRef, EventRecord, PendingEvent};
     use crate::{
         CauseRef, ComponentDelta, ComponentKind, ComponentValue, EventTag, QuantityDelta,
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
@@ -119,7 +137,7 @@ mod tests {
     };
     use crate::{
         CommodityKind, EntityId, EntityKind, EventId, FactId, Name, Quantity, ReservationId,
-        ReservationRecord, Tick, TickRange,
+        ReservationRecord, Tick, TickRange, WoundId,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
@@ -185,6 +203,7 @@ mod tests {
         assert_eq!(pending.cause, CauseRef::Event(EventId(1)));
         assert_eq!(pending.actor_id, Some(entity(2)));
         assert_eq!(pending.target_ids, vec![entity(3), entity(4), entity(5)]);
+        assert!(pending.evidence.is_empty());
         assert_eq!(pending.place_id, Some(entity(6)));
         assert_eq!(pending.state_deltas.len(), 2);
         assert_eq!(
@@ -227,6 +246,7 @@ mod tests {
         assert_eq!(record.cause, CauseRef::Event(EventId(1)));
         assert_eq!(record.actor_id, Some(entity(2)));
         assert_eq!(record.target_ids, vec![entity(3), entity(4), entity(5)]);
+        assert!(record.evidence.is_empty());
         assert_eq!(record.place_id, Some(entity(6)));
         assert_eq!(record.state_deltas.len(), 2);
         assert_eq!(
@@ -251,6 +271,7 @@ mod tests {
         .into_record(EventId(0));
 
         assert!(record.target_ids.is_empty());
+        assert!(record.evidence.is_empty());
         assert!(record.state_deltas.is_empty());
         assert!(record.tags.is_empty());
     }
@@ -287,13 +308,40 @@ mod tests {
                 potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
             },
             BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
-        );
+        )
+        .with_evidence(vec![
+            EvidenceRef::Wound {
+                entity: entity(1),
+                wound_id: WoundId(2),
+            },
+            EvidenceRef::Wound {
+                entity: entity(1),
+                wound_id: WoundId(1),
+            },
+            EvidenceRef::Wound {
+                entity: entity(1),
+                wound_id: WoundId(2),
+            },
+        ]);
 
         let bytes = bincode::serialize(&pending).unwrap();
         let roundtrip: PendingEvent = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, pending);
         assert_eq!(roundtrip.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(
+            roundtrip.evidence,
+            vec![
+                EvidenceRef::Wound {
+                    entity: entity(1),
+                    wound_id: WoundId(1),
+                },
+                EvidenceRef::Wound {
+                    entity: entity(1),
+                    wound_id: WoundId(2),
+                },
+            ]
+        );
         assert!(matches!(
             roundtrip.state_deltas[0],
             StateDelta::Component(ComponentDelta::Set { .. })
@@ -341,6 +389,10 @@ mod tests {
             },
             BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
         )
+        .with_evidence(vec![EvidenceRef::Wound {
+            entity: entity(1),
+            wound_id: WoundId(4),
+        }])
         .into_record(EventId(12));
 
         let bytes = bincode::serialize(&record).unwrap();
@@ -348,6 +400,7 @@ mod tests {
 
         assert_eq!(roundtrip, record);
         assert_eq!(roundtrip.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(roundtrip.evidence, record.evidence);
         assert!(matches!(
             roundtrip.state_deltas[0],
             StateDelta::Component(ComponentDelta::Set { .. })

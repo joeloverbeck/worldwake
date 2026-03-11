@@ -617,6 +617,7 @@ mod tests {
     fn sample_wound_list() -> WoundList {
         WoundList {
             wounds: vec![Wound {
+                id: crate::WoundId(1),
                 body_part: BodyPart::Torso,
                 cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                 severity: Permille::new(725).unwrap(),
@@ -4565,6 +4566,7 @@ mod tests {
                 second,
                 WoundList {
                     wounds: vec![Wound {
+                        id: crate::WoundId(2),
                         body_part: BodyPart::LeftLeg,
                         cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
                         severity: Permille::new(450).unwrap(),

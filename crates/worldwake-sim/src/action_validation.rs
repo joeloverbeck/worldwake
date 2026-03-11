@@ -242,6 +242,7 @@ mod tests {
                 incapacitated,
                 worldwake_core::WoundList {
                     wounds: vec![worldwake_core::Wound {
+                        id: worldwake_core::WoundId(1),
                         body_part: worldwake_core::BodyPart::Torso,
                         cause: worldwake_core::WoundCause::Deprivation(
                             worldwake_core::DeprivationKind::Starvation,
