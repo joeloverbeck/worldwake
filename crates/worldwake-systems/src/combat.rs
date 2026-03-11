@@ -2794,6 +2794,45 @@ mod tests {
     }
 
     #[test]
+    fn combat_system_skips_wounded_agents_without_combat_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.clear_component_combat_profile(guard).unwrap();
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 100, 35, 2)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let before = world.get_component_wound_list(guard).unwrap().clone();
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([12; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(3),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_combat_profile(guard), None);
+        assert_eq!(world.get_component_wound_list(guard), Some(&before));
+        assert!(world.get_component_dead_at(guard).is_none());
+        assert!(log.is_empty());
+    }
+
+    #[test]
     fn combat_system_progresses_bleeding_wounds_and_applies_clotting() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
