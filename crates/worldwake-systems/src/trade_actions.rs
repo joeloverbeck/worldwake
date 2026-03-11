@@ -15,12 +15,10 @@ pub fn register_trade_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_trade,
-        tick_trade,
-        commit_trade,
-        abort_trade,
-    ).with_affordance_payloads(enumerate_trade_payloads));
+    let handler = handlers.register(
+        ActionHandler::new(start_trade, tick_trade, commit_trade, abort_trade)
+            .with_affordance_payloads(enumerate_trade_payloads),
+    );
     defs.register(trade_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
@@ -112,7 +110,9 @@ fn enumerate_trade_payloads(
                 },
             )
         })
-        .filter(|payload| trade_bundle_is_mutually_accepted(view, actor, counterparty, place, payload))
+        .filter(|payload| {
+            trade_bundle_is_mutually_accepted(view, actor, counterparty, place, payload)
+        })
         .map(ActionPayload::Trade)
         .collect::<Vec<_>>();
     payloads.sort();
@@ -617,15 +617,14 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, CauseRef, CommodityKind,
         ControlSource, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
-        EventLog, EventTag, HomeostaticNeeds, LotOperation, MerchandiseProfile, Permille,
-        Quantity, Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        EventLog, EventTag, HomeostaticNeeds, LotOperation, MerchandiseProfile, Permille, Quantity,
+        Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefId, ActionDefRegistry,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng, TickOutcome,
-        TradeActionPayload,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
+        ActionPayload, ActionStatus, Affordance, DeterministicRng, TickOutcome, TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {

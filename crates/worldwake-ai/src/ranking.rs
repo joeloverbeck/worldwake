@@ -63,9 +63,10 @@ impl<'a> RankingContext<'a> {
     }
 
     fn danger_class(&self) -> GoalPriorityClass {
-        self.thresholds.map_or(GoalPriorityClass::Background, |thresholds| {
-            classify_band(self.danger_pressure, &thresholds.danger)
-        })
+        self.thresholds
+            .map_or(GoalPriorityClass::Background, |thresholds| {
+                classify_band(self.danger_pressure, &thresholds.danger)
+            })
     }
 
     fn max_self_care_class(&self) -> GoalPriorityClass {
@@ -90,8 +91,10 @@ impl<'a> RankingContext<'a> {
 }
 
 fn is_suppressed(candidate: &GroundedGoal, context: &RankingContext<'_>) -> bool {
-    matches!(candidate.key.kind, GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. })
-        && (context.danger_high_or_above() || context.self_care_high_or_above())
+    matches!(
+        candidate.key.kind,
+        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. }
+    ) && (context.danger_high_or_above() || context.self_care_high_or_above())
 }
 
 fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> GoalPriorityClass {
@@ -107,20 +110,31 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
         } => context
             .thresholds
             .map_or(GoalPriorityClass::Background, |thresholds| {
-                classify_band(derive_pain_pressure(context.view, context.agent), &thresholds.pain)
+                classify_band(
+                    derive_pain_pressure(context.view, context.agent),
+                    &thresholds.pain,
+                )
             }),
         GoalKind::AcquireCommodity { .. }
         | GoalKind::ProduceCommodity { .. }
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
         | GoalKind::MoveCargo { .. } => GoalPriorityClass::Medium,
-        GoalKind::Sleep => drive_priority(context, |needs| needs.fatigue, |thresholds| thresholds.fatigue),
-        GoalKind::Relieve => {
-            drive_priority(context, |needs| needs.bladder, |thresholds| thresholds.bladder)
-        }
-        GoalKind::Wash => {
-            drive_priority(context, |needs| needs.dirtiness, |thresholds| thresholds.dirtiness)
-        }
+        GoalKind::Sleep => drive_priority(
+            context,
+            |needs| needs.fatigue,
+            |thresholds| thresholds.fatigue,
+        ),
+        GoalKind::Relieve => drive_priority(
+            context,
+            |needs| needs.bladder,
+            |thresholds| thresholds.bladder,
+        ),
+        GoalKind::Wash => drive_priority(
+            context,
+            |needs| needs.dirtiness,
+            |thresholds| thresholds.dirtiness,
+        ),
         GoalKind::ReduceDanger => context.danger_class(),
         GoalKind::Heal { target } => {
             let target_pain = derive_pain_pressure(context.view, target);
@@ -139,7 +153,10 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
     }
 }
 
-fn self_consume_priority(commodity: CommodityKind, context: &RankingContext<'_>) -> GoalPriorityClass {
+fn self_consume_priority(
+    commodity: CommodityKind,
+    context: &RankingContext<'_>,
+) -> GoalPriorityClass {
     relevant_self_consume_factors(commodity, context)
         .into_iter()
         .map(|(pressure, _, band)| classify_band(pressure, &band))
@@ -189,9 +206,21 @@ fn motive_score(
         GoalKind::AcquireCommodity { commodity, .. }
         | GoalKind::SellCommodity { commodity }
         | GoalKind::RestockCommodity { commodity } => enterprise_score(commodity, context),
-        GoalKind::Sleep => drive_score(context, |needs| needs.fatigue, |utility| utility.fatigue_weight),
-        GoalKind::Relieve => drive_score(context, |needs| needs.bladder, |utility| utility.bladder_weight),
-        GoalKind::Wash => drive_score(context, |needs| needs.dirtiness, |utility| utility.dirtiness_weight),
+        GoalKind::Sleep => drive_score(
+            context,
+            |needs| needs.fatigue,
+            |utility| utility.fatigue_weight,
+        ),
+        GoalKind::Relieve => drive_score(
+            context,
+            |needs| needs.bladder,
+            |utility| utility.bladder_weight,
+        ),
+        GoalKind::Wash => drive_score(
+            context,
+            |needs| needs.dirtiness,
+            |utility| utility.dirtiness_weight,
+        ),
         GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
@@ -227,12 +256,12 @@ fn motive_score(
             score_product(context.utility.enterprise_weight, signal)
         }
         GoalKind::MoveCargo { lot, destination } => {
-            let signal = context
-                .view
-                .item_lot_commodity(lot)
-                .map_or(Permille::new_unchecked(0), |commodity| {
+            let signal = context.view.item_lot_commodity(lot).map_or(
+                Permille::new_unchecked(0),
+                |commodity| {
                     market_signal_for_place(context.view, context.agent, commodity, destination)
-                });
+                },
+            );
             score_product(context.utility.enterprise_weight, signal)
         }
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 0,
@@ -283,10 +312,18 @@ fn relevant_self_consume_factors(
 
     let mut factors = Vec::new();
     if profile.hunger_relief_per_unit.value() > 0 {
-        factors.push((needs.hunger, context.utility.hunger_weight, thresholds.hunger));
+        factors.push((
+            needs.hunger,
+            context.utility.hunger_weight,
+            thresholds.hunger,
+        ));
     }
     if profile.thirst_relief_per_unit.value() > 0 {
-        factors.push((needs.thirst, context.utility.thirst_weight, thresholds.thirst));
+        factors.push((
+            needs.thirst,
+            context.utility.thirst_weight,
+            thresholds.thirst,
+        ));
     }
     factors
 }
@@ -310,8 +347,16 @@ fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
         .priority_class
         .cmp(&left.priority_class)
         .then_with(|| right.motive_score.cmp(&left.motive_score))
-        .then_with(|| goal_kind_discriminant(left.grounded.key.kind).cmp(&goal_kind_discriminant(right.grounded.key.kind)))
-        .then_with(|| left.grounded.key.commodity.cmp(&right.grounded.key.commodity))
+        .then_with(|| {
+            goal_kind_discriminant(left.grounded.key.kind)
+                .cmp(&goal_kind_discriminant(right.grounded.key.kind))
+        })
+        .then_with(|| {
+            left.grounded
+                .key
+                .commodity
+                .cmp(&right.grounded.key.commodity)
+        })
         .then_with(|| left.grounded.key.entity.cmp(&right.grounded.key.entity))
         .then_with(|| left.grounded.key.place.cmp(&right.grounded.key.place))
 }
@@ -347,7 +392,9 @@ mod tests {
         Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
-    use worldwake_sim::{ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry};
+    use worldwake_sim::{
+        ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,
+    };
 
     #[derive(Default)]
     struct TestBeliefView {
@@ -364,15 +411,33 @@ mod tests {
     }
 
     impl BeliefView for TestBeliefView {
-        fn is_alive(&self, entity: EntityId) -> bool { self.alive.contains(&entity) }
-        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> { None }
-        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn is_in_transit(&self, _entity: EntityId) -> bool { false }
-        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool { false }
-        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 { 0 }
+        fn is_alive(&self, entity: EntityId) -> bool {
+            self.alive.contains(&entity)
+        }
+        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
+            None
+        }
+        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
         fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
             self.commodity_quantities
                 .get(&(holder, kind))
@@ -382,20 +447,49 @@ mod tests {
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
             self.item_lot_commodities.get(&entity).copied()
         }
-        fn item_lot_consumable_profile(&self, _entity: EntityId) -> Option<CommodityConsumableProfile> { None }
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> { None }
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> { None }
-        fn has_production_job(&self, _entity: EntityId) -> bool { false }
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool { false }
-        fn has_control(&self, _entity: EntityId) -> bool { false }
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool { false }
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> { Vec::new() }
-        fn is_dead(&self, _entity: EntityId) -> bool { false }
-        fn is_incapacitated(&self, _entity: EntityId) -> bool { false }
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+        fn is_dead(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
         fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds.get(&entity).is_some_and(|wounds| !wounds.is_empty())
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
         }
         fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
             self.needs.get(&agent).copied()
@@ -403,11 +497,15 @@ mod tests {
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
         }
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> { None }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> { None }
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }
@@ -417,19 +515,44 @@ mod tests {
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
-        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> { Vec::new() }
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> { Vec::new() }
-        fn matching_workstations_at(&self, _place: EntityId, _tag: WorkstationTag) -> Vec<EntityId> { Vec::new() }
-        fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> { Vec::new() }
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
         fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
             self.demand_memory.get(&agent).cloned().unwrap_or_default()
         }
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
         }
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> { None }
-        fn adjacent_places_with_travel_ticks(&self, _place: EntityId) -> Vec<(EntityId, NonZeroU32)> { Vec::new() }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
         fn estimate_duration(
             &self,
             _actor: EntityId,
@@ -442,7 +565,10 @@ mod tests {
     }
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 1 }
+        EntityId {
+            slot,
+            generation: 1,
+        }
     }
 
     fn pm(value: u16) -> Permille {
@@ -813,9 +939,20 @@ mod tests {
             goal(GoalKind::Sleep),
         ];
 
-        let first = rank_candidates(&candidates, &view, agent, &utility(), &RecipeRegistry::new());
-        let second =
-            rank_candidates(&candidates, &view, agent, &utility(), &RecipeRegistry::new());
+        let first = rank_candidates(
+            &candidates,
+            &view,
+            agent,
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+        let second = rank_candidates(
+            &candidates,
+            &view,
+            agent,
+            &utility(),
+            &RecipeRegistry::new(),
+        );
 
         assert_eq!(first, second);
     }

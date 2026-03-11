@@ -791,7 +791,9 @@ mod tests {
                     Permille::new_unchecked(120),
                 )),
             ),
-            CommodityKind::Coin => expected_spec(TradeCategory::Coin, LoadUnits(1), None, None, None),
+            CommodityKind::Coin => {
+                expected_spec(TradeCategory::Coin, LoadUnits(1), None, None, None)
+            }
             CommodityKind::Waste => {
                 expected_spec(TradeCategory::Waste, LoadUnits(1), None, None, None)
             }

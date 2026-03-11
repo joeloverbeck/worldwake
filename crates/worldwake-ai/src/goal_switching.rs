@@ -32,8 +32,9 @@ fn clears_switch_margin(new_score: u32, current_score: u32, budget: &PlanningBud
     if current_score == 0 {
         return true;
     }
-    let required_increase = (u64::from(current_score) * u64::from(budget.switch_margin_permille.value()))
-        .div_ceil(1000);
+    let required_increase = (u64::from(current_score)
+        * u64::from(budget.switch_margin_permille.value()))
+    .div_ceil(1000);
     u64::from(new_score) >= u64::from(current_score) + required_increase
 }
 

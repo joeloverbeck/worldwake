@@ -101,14 +101,7 @@ mod tests {
     fn assert_value_bounds<T: Copy + Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
     fn assert_ordinal_value_bounds<
-        T: Copy
-            + Clone
-            + Eq
-            + Ord
-            + std::hash::Hash
-            + Debug
-            + Serialize
-            + DeserializeOwned,
+        T: Copy + Clone + Eq + Ord + std::hash::Hash + Debug + Serialize + DeserializeOwned,
     >() {
     }
 

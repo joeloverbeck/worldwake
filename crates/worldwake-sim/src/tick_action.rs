@@ -157,9 +157,8 @@ fn tick_action_inner(
                 Ok(TickOutcome::Committed)
             }
             Err(ActionError::AbortRequested(reason)) => {
-                let reason = AbortReason::external_abort(ExternalAbortReason::HandlerRequested {
-                    reason,
-                });
+                let reason =
+                    AbortReason::external_abort(ExternalAbortReason::HandlerRequested { reason });
                 let replan = finalize_failed_action(
                     def,
                     instance,
@@ -746,10 +745,12 @@ mod tests {
         assert_eq!(state.abort_calls, 1);
         assert_eq!(
             state.abort_reasons,
-            vec![AbortReason::commit_condition_failed(Precondition::TargetKind {
-                target_index: 0,
-                kind: EntityKind::Container,
-            })]
+            vec![AbortReason::commit_condition_failed(
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Container,
+                }
+            )]
         );
     }
 

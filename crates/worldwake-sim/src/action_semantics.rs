@@ -92,9 +92,15 @@ pub enum MetabolismDurationKind {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum DurationExpr {
     Fixed(NonZeroU32),
-    TargetConsumable { target_index: u8 },
-    TravelToTarget { target_index: u8 },
-    ActorMetabolism { kind: MetabolismDurationKind },
+    TargetConsumable {
+        target_index: u8,
+    },
+    TravelToTarget {
+        target_index: u8,
+    },
+    ActorMetabolism {
+        kind: MetabolismDurationKind,
+    },
     ActorTradeDisposition,
     Indefinite,
     CombatWeapon,
@@ -129,10 +135,7 @@ impl DurationExpr {
         match self {
             Self::Fixed(ticks) => Ok(ActionDuration::Finite(ticks.get())),
             Self::TargetConsumable { target_index } => {
-                let target = targets
-                    .get(usize::from(target_index))
-                    .copied()
-                    .ok_or_else(|| format!("missing target at index {target_index}"))?;
+                let target = Self::target_at(targets, target_index)?;
                 let lot = world
                     .get_component_item_lot(target)
                     .ok_or_else(|| format!("target {target} is not an item lot"))?;
@@ -146,10 +149,7 @@ impl DurationExpr {
                 ))
             }
             Self::TravelToTarget { target_index } => {
-                let target = targets
-                    .get(usize::from(target_index))
-                    .copied()
-                    .ok_or_else(|| format!("missing target at index {target_index}"))?;
+                let target = Self::target_at(targets, target_index)?;
                 let origin = world
                     .effective_place(actor)
                     .ok_or_else(|| format!("actor {actor} has no effective place"))?;
@@ -198,12 +198,11 @@ impl DurationExpr {
                 commodity,
             } => {
                 if world.controlled_commodity_quantity(actor, commodity) == Quantity(0) {
-                    return Err(format!("actor {actor} lacks treatment commodity {commodity:?}"));
+                    return Err(format!(
+                        "actor {actor} lacks treatment commodity {commodity:?}"
+                    ));
                 }
-                let target = targets
-                    .get(usize::from(target_index))
-                    .copied()
-                    .ok_or_else(|| format!("missing target at index {target_index}"))?;
+                let target = Self::target_at(targets, target_index)?;
                 let wounds = world
                     .get_component_wound_list(target)
                     .ok_or_else(|| format!("target {target} lacks wounds"))?;
@@ -226,6 +225,13 @@ impl DurationExpr {
                 ))
             }
         }
+    }
+
+    fn target_at(targets: &[EntityId], target_index: u8) -> Result<EntityId, String> {
+        targets
+            .get(usize::from(target_index))
+            .copied()
+            .ok_or_else(|| format!("missing target at index {target_index}"))
     }
 }
 

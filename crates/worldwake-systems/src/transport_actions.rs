@@ -725,10 +725,11 @@ mod tests {
         };
         let (defs, handlers, _, put_down_id) = setup_registries();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
-            .into_iter()
-            .filter(|affordance| affordance.def_id == put_down_id)
-            .collect::<Vec<_>>();
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
+                .into_iter()
+                .filter(|affordance| affordance.def_id == put_down_id)
+                .collect::<Vec<_>>();
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![carried_lot]);
@@ -813,18 +814,17 @@ mod tests {
         let mut travel_handlers = ActionHandlerRegistry::new();
         let travel_id =
             crate::travel_actions::register_travel_actions(&mut travel_defs, &mut travel_handlers);
-        let travel_affordance =
-            get_affordances(
-                &OmniscientBeliefView::new(&world),
-                actor,
-                &travel_defs,
-                &travel_handlers,
-            )
-                .into_iter()
-                .find(|affordance| {
-                    affordance.def_id == travel_id && affordance.bound_targets == vec![destination]
-                })
-                .unwrap();
+        let travel_affordance = get_affordances(
+            &OmniscientBeliefView::new(&world),
+            actor,
+            &travel_defs,
+            &travel_handlers,
+        )
+        .into_iter()
+        .find(|affordance| {
+            affordance.def_id == travel_id && affordance.bound_targets == vec![destination]
+        })
+        .unwrap();
         let mut next_instance_id = ActionInstanceId(2);
         let travel_instance = start_action(
             &travel_affordance,
@@ -905,10 +905,11 @@ mod tests {
         };
         let (defs, handlers, pick_up_id, _) = setup_registries();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
-            .into_iter()
-            .filter(|affordance| affordance.def_id == pick_up_id)
-            .collect::<Vec<_>>();
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
+                .into_iter()
+                .filter(|affordance| affordance.def_id == pick_up_id)
+                .collect::<Vec<_>>();
 
         assert!(affordances
             .iter()

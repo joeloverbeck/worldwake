@@ -12,13 +12,12 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
-    build_prototype_world, hash_event_log, hash_world,
-    total_authoritative_commodity_quantity, total_live_lot_quantity,
-    BlockedIntentMemory, BodyCostPerTick, CauseRef, CombatProfile, CommodityKind, ControlSource,
-    CarryCapacity, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Permille, Quantity, RecipeId,
-    ResourceSource, Seed, StateHash, Tick, UtilityProfile, VisibilitySpec, WitnessData, World,
-    WorldTxn, WorkstationMarker, WorkstationTag, WoundList,
+    build_prototype_world, hash_event_log, hash_world, total_authoritative_commodity_quantity,
+    total_live_lot_quantity, BlockedIntentMemory, BodyCostPerTick, CarryCapacity, CauseRef,
+    CombatProfile, CommodityKind, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
+    EntityKind, EventLog, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Permille,
+    Quantity, RecipeId, ResourceSource, Seed, StateHash, Tick, UtilityProfile, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
@@ -90,9 +89,7 @@ fn build_recipes() -> RecipeRegistry {
     recipes
 }
 
-fn build_full_registries(
-    recipes: &RecipeRegistry,
-) -> (ActionDefRegistry, ActionHandlerRegistry) {
+fn build_full_registries(recipes: &RecipeRegistry) -> (ActionDefRegistry, ActionHandlerRegistry) {
     let mut defs = ActionDefRegistry::new();
     let mut handlers = ActionHandlerRegistry::new();
 
@@ -118,16 +115,16 @@ fn build_full_registries(
 
 fn default_combat_profile() -> CombatProfile {
     CombatProfile::new(
-        pm(1000),  // wound_capacity
-        pm(700),   // incapacitation_threshold
-        pm(500),   // attack_skill
-        pm(500),   // guard_skill
-        pm(80),    // defend_bonus
-        pm(25),    // natural_clot_resistance
-        pm(18),    // natural_recovery_rate
-        pm(120),   // unarmed_wound_severity
-        pm(35),    // unarmed_bleed_rate
-        nz(6),     // unarmed_attack_ticks
+        pm(1000), // wound_capacity
+        pm(700),  // incapacitation_threshold
+        pm(500),  // attack_skill
+        pm(500),  // guard_skill
+        pm(80),   // defend_bonus
+        pm(25),   // natural_clot_resistance
+        pm(18),   // natural_recovery_rate
+        pm(120),  // unarmed_wound_severity
+        pm(35),   // unarmed_bleed_rate
+        nz(6),    // unarmed_attack_ticks
     )
 }
 
@@ -378,12 +375,12 @@ fn golden_priority_based_interrupt() {
 
     // Single agent: high fatigue, low hunger, but very fast hunger metabolism.
     let fast_hunger_metabolism = MetabolismProfile::new(
-        pm(50),   // hunger_rate — very fast!
-        pm(3),    // thirst_rate
-        pm(2),    // fatigue_rate
-        pm(4),    // bladder_rate
-        pm(1),    // dirtiness_rate
-        pm(20),   // rest_efficiency
+        pm(50), // hunger_rate — very fast!
+        pm(3),  // thirst_rate
+        pm(2),  // fatigue_rate
+        pm(4),  // bladder_rate
+        pm(1),  // dirtiness_rate
+        pm(20), // rest_efficiency
         nz(480),
         nz(240),
         nz(120),
@@ -456,7 +453,10 @@ fn golden_priority_based_interrupt() {
         hunger_reached_critical,
         "Hunger should have reached critical with pm(50)/tick metabolism"
     );
-    assert!(ate_bread, "Agent should have eaten bread after hunger became critical");
+    assert!(
+        ate_bread,
+        "Agent should have eaten bread after hunger became critical"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -604,7 +604,10 @@ fn golden_materialization_barrier_chain() {
         }
     }
 
-    assert!(acquired_apples, "Agent should have harvested apples (lots materialized on ground)");
+    assert!(
+        acquired_apples,
+        "Agent should have harvested apples (lots materialized on ground)"
+    );
 
     // The harvest action creates apple lots on the ground at the workstation.
     // This is the materialization barrier in action: items exist in the world
@@ -814,7 +817,7 @@ fn golden_deprivation_cascade() {
     // This proves cross-system emergence: needs system drives state →
     // AI detects threshold crossing → agent acts.
     let fast_metabolism = MetabolismProfile::new(
-        pm(20),   // hunger_rate — fast, ~20 permille/tick
+        pm(20), // hunger_rate — fast, ~20 permille/tick
         pm(3),
         pm(2),
         pm(4),
@@ -893,8 +896,8 @@ fn golden_death_cascade_and_opportunistic_loot() {
     // Agent A: near death from deprivation — critical hunger, existing wounds
     // near wound capacity, fast metabolism to trigger deprivation wound quickly.
     let fragile_combat = CombatProfile::new(
-        pm(200),   // wound_capacity — very low
-        pm(150),   // incapacitation_threshold
+        pm(200), // wound_capacity — very low
+        pm(150), // incapacitation_threshold
         pm(500),
         pm(500),
         pm(80),
@@ -906,13 +909,13 @@ fn golden_death_cascade_and_opportunistic_loot() {
     );
 
     let dying_metabolism = MetabolismProfile::new(
-        pm(50),   // hunger_rate — very fast
+        pm(50), // hunger_rate — very fast
         pm(3),
         pm(2),
         pm(4),
         pm(1),
         pm(20),
-        nz(3),    // starvation_tolerance — very short!
+        nz(3), // starvation_tolerance — very short!
         nz(240),
         nz(120),
         nz(40),
@@ -1015,7 +1018,10 @@ fn golden_death_cascade_and_opportunistic_loot() {
         }
     }
 
-    assert!(a_died, "Agent A should have died from deprivation wounds exceeding wound_capacity");
+    assert!(
+        a_died,
+        "Agent A should have died from deprivation wounds exceeding wound_capacity"
+    );
 
     // Looting may not happen if the AI doesn't generate a loot goal within the tick budget.
     // The critical assertions are: death occurred and conservation held throughout.

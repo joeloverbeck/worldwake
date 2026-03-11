@@ -65,7 +65,9 @@ fn relevant_demand_quantity(
     view.demand_memory(agent)
         .into_iter()
         .filter(|observation| observation.place == market && observation.commodity == commodity)
-        .fold(0u32, |sum, observation| sum.saturating_add(observation.quantity.0))
+        .fold(0u32, |sum, observation| {
+            sum.saturating_add(observation.quantity.0)
+        })
 }
 
 fn permille_ratio(numerator: u32, denominator: u32) -> Permille {

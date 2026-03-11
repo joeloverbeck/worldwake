@@ -1054,15 +1054,13 @@ mod tests {
         let (mut world_empty, actor_empty, _, _) =
             setup_world(false, WorkstationTag::OrchardRow, 1);
         grant_recipe(&mut world_empty, actor_empty, recipe_id);
-        assert!(
-            get_affordances(
-                &OmniscientBeliefView::new(&world_empty),
-                actor_empty,
-                &defs,
-                &handlers,
-            )
-                .is_empty()
-        );
+        assert!(get_affordances(
+            &OmniscientBeliefView::new(&world_empty),
+            actor_empty,
+            &defs,
+            &handlers,
+        )
+        .is_empty());
 
         let _ = &mut world_missing_recipe;
     }
@@ -1078,7 +1076,9 @@ mod tests {
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
 
-        assert!(get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers).is_empty());
+        assert!(
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers).is_empty()
+        );
 
         let mut txn = new_txn(&mut world, 3);
         let tool = txn
@@ -1092,7 +1092,8 @@ mod tests {
         txn.set_possessor(tool, actor).unwrap();
         commit_txn(txn);
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         assert_eq!(affordances.len(), 1);
     }
 
@@ -1550,15 +1551,13 @@ mod tests {
         )
         .unwrap();
         commit_txn(txn);
-        assert!(
-            get_affordances(
-                &OmniscientBeliefView::new(&world_ready),
-                actor_ready,
-                &defs,
-                &handlers,
-            )
-                .is_empty()
-        );
+        assert!(get_affordances(
+            &OmniscientBeliefView::new(&world_ready),
+            actor_ready,
+            &defs,
+            &handlers,
+        )
+        .is_empty());
     }
 
     #[test]

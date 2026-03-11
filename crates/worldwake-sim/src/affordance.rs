@@ -29,8 +29,7 @@ impl Affordance {
         self.actor == actor
             && self.def_id == def.id
             && self.bound_targets == targets
-            && self.effective_payload(def)
-                == payload_override.unwrap_or(&def.payload)
+            && self.effective_payload(def) == payload_override.unwrap_or(&def.payload)
     }
 }
 
@@ -61,8 +60,8 @@ mod tests {
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
-    use worldwake_core::{BodyCostPerTick, CommodityKind, Quantity, VisibilitySpec};
     use worldwake_core::EntityId;
+    use worldwake_core::{BodyCostPerTick, CommodityKind, Quantity, VisibilitySpec};
 
     fn assert_traits<T: Clone + Eq + Ord + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

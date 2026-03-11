@@ -53,10 +53,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId,
-        ResourceSource, ThresholdBand, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        DeprivationKind, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
+        ThresholdBand, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, BeliefView, DurationExpr};
 
@@ -70,43 +70,98 @@ mod tests {
     }
 
     impl BeliefView for TestBeliefView {
-        fn is_alive(&self, _entity: EntityId) -> bool { true }
-        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> { None }
-        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn is_in_transit(&self, _entity: EntityId) -> bool { false }
-        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool { false }
-        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 { 0 }
-        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity { Quantity(0) }
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> { None }
-        fn item_lot_consumable_profile(&self, _entity: EntityId) -> Option<CommodityConsumableProfile> { None }
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> { None }
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> { None }
-        fn has_production_job(&self, _entity: EntityId) -> bool { false }
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool { false }
-        fn has_control(&self, _entity: EntityId) -> bool { false }
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool { false }
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> { Vec::new() }
-        fn is_dead(&self, _entity: EntityId) -> bool { false }
+        fn is_alive(&self, _entity: EntityId) -> bool {
+            true
+        }
+        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
+            None
+        }
+        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+            Quantity(0)
+        }
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+        fn is_dead(&self, _entity: EntityId) -> bool {
+            false
+        }
         fn is_incapacitated(&self, entity: EntityId) -> bool {
             self.incapacitated.contains(&entity)
         }
         fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds.get(&entity).is_some_and(|wounds| !wounds.is_empty())
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
         }
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> { None }
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
         }
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> { None }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> { None }
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }
@@ -116,15 +171,44 @@ mod tests {
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
-        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> { Vec::new() }
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> { Vec::new() }
-        fn matching_workstations_at(&self, _place: EntityId, _tag: WorkstationTag) -> Vec<EntityId> { Vec::new() }
-        fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> { Vec::new() }
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> { Vec::new() }
-        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> { None }
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> { None }
-        fn adjacent_places_with_travel_ticks(&self, _place: EntityId) -> Vec<(EntityId, NonZeroU32)> { Vec::new() }
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
         fn estimate_duration(
             &self,
             _actor: EntityId,
@@ -137,7 +221,10 @@ mod tests {
     }
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 1 }
+        EntityId {
+            slot,
+            generation: 1,
+        }
     }
 
     fn pm(value: u16) -> Permille {

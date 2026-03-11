@@ -149,9 +149,8 @@ mod tests {
     use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
         build_prototype_world, BodyPart, CauseRef, CommodityKind, ControlSource, EntityKind,
-        EventLog, Permille, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, WoundList,
+        EventLog, Permille, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {

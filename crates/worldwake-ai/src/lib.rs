@@ -9,12 +9,12 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 mod enterprise;
 pub mod failure_handling;
-mod goal_switching;
 pub mod goal_model;
+mod goal_switching;
 pub mod interrupts;
-pub mod planner_ops;
-pub mod plan_selection;
 pub mod plan_revalidation;
+pub mod plan_selection;
+pub mod planner_ops;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;
@@ -30,12 +30,12 @@ pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
 };
 pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
+pub use plan_revalidation::revalidate_next_step;
+pub use plan_selection::select_best_plan;
 pub use planner_ops::{
     build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
     PlannerOpSemantics,
 };
-pub use plan_selection::select_best_plan;
-pub use plan_revalidation::revalidate_next_step;
 pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
 pub use planning_state::PlanningState;
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};

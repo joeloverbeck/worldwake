@@ -214,8 +214,8 @@ mod tests {
         AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, Affordance, CombatActionPayload, Constraint, DeterministicRng,
-        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionState, Affordance, CombatActionPayload, Constraint, DeterministicRng, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;

@@ -1,6 +1,6 @@
 use crate::{
-    ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState,
-    ActionPayload, ActionStatus, BeliefView, DeterministicRng, Interruptibility, Precondition,
+    ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
+    ActionState, ActionStatus, BeliefView, DeterministicRng, Interruptibility, Precondition,
     TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
@@ -18,13 +18,12 @@ pub type ActionTickFn = for<'w> fn(
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<ActionProgress, ActionError>;
-pub type ActionCommitFn =
-    for<'w> fn(
-        &ActionDef,
-        &ActionInstance,
-        &mut DeterministicRng,
-        &mut WorldTxn<'w>,
-    ) -> Result<(), ActionError>;
+pub type ActionCommitFn = for<'w> fn(
+    &ActionDef,
+    &ActionInstance,
+    &mut DeterministicRng,
+    &mut WorldTxn<'w>,
+) -> Result<(), ActionError>;
 pub type ActionAbortFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
@@ -178,7 +177,9 @@ pub enum SelfTargetActionKind {
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum AbortReason {
-    CommitConditionFailed { condition: Precondition },
+    CommitConditionFailed {
+        condition: Precondition,
+    },
     Interrupted {
         kind: InterruptReason,
         detail: Option<String>,

@@ -1,13 +1,12 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory,
-    CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container, DeadAt, DemandMemory,
+    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory, CarryCapacity,
+    CombatProfile, CombatStance, CommodityKind, Container, DeadAt, DemandMemory,
     DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds,
-    InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
-    Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
-    SubstitutePreferences, TradeDispositionProfile, UniqueItem, UtilityProfile,
-    WorkstationMarker, WoundList,
+    InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille,
+    ProductionJob, Quantity, ReservationRecord, ResourceSource, SubstitutePreferences,
+    TradeDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -222,12 +221,11 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
-        Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
-        EntityId, EntityKind,
-        EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
+        AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
+        ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
+        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
+        LoadUnits, LotOperation, MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry,
+        Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
         UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
         WoundList,
     };

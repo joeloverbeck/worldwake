@@ -2,7 +2,7 @@ use crate::{
     goal_switching::{compare_goal_switch, GoalSwitchKind},
     AgentDecisionRuntime, GoalPriorityClass, RankedGoal,
 };
-use worldwake_core::{CommodityPurpose, GoalKind, GoalKey};
+use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
 use worldwake_sim::Interruptibility;
 
 use crate::PlanningBudget;
@@ -46,9 +46,7 @@ pub fn evaluate_interrupt(
 
     match current_action_interruptibility {
         Interruptibility::NonInterruptible => InterruptDecision::NoInterrupt,
-        Interruptibility::InterruptibleWithPenalty => {
-            interrupt_with_penalty(challenger)
-        }
+        Interruptibility::InterruptibleWithPenalty => interrupt_with_penalty(challenger),
         Interruptibility::FreelyInterruptible => {
             interrupt_freely(runtime, challenger, ranked_candidates, budget)
         }
@@ -156,10 +154,7 @@ fn is_critical_survival_goal(kind: &GoalKind) -> bool {
 
 fn is_reactive_goal(kind: &GoalKind) -> bool {
     is_critical_survival_goal(kind)
-        || matches!(
-            kind,
-            GoalKind::ReduceDanger | GoalKind::Heal { .. }
-        )
+        || matches!(kind, GoalKind::ReduceDanger | GoalKind::Heal { .. })
 }
 
 fn no_medium_or_above_self_care_or_danger(ranked_candidates: &[RankedGoal]) -> bool {
@@ -201,11 +196,7 @@ mod tests {
         }
     }
 
-    fn ranked(
-        kind: GoalKind,
-        priority_class: GoalPriorityClass,
-        motive_score: u32,
-    ) -> RankedGoal {
+    fn ranked(kind: GoalKind, priority_class: GoalPriorityClass, motive_score: u32) -> RankedGoal {
         RankedGoal {
             grounded: GroundedGoal {
                 key: GoalKey::from(kind),
@@ -217,7 +208,10 @@ mod tests {
         }
     }
 
-    fn runtime(current_goal: GoalKind, last_priority_class: GoalPriorityClass) -> AgentDecisionRuntime {
+    fn runtime(
+        current_goal: GoalKind,
+        last_priority_class: GoalPriorityClass,
+    ) -> AgentDecisionRuntime {
         AgentDecisionRuntime {
             current_goal: Some(GoalKey::from(current_goal)),
             current_plan: None,
@@ -417,23 +411,15 @@ mod tests {
                 100,
             ),
             ranked(
-                GoalKind::LootCorpse {
-                    corpse: entity(9),
-                },
+                GoalKind::LootCorpse { corpse: entity(9) },
                 GoalPriorityClass::Low,
                 50,
             ),
         ];
         let blocked_by_hunger = vec![
+            ranked(current_goal, GoalPriorityClass::Medium, 700),
             ranked(
-                current_goal,
-                GoalPriorityClass::Medium,
-                700,
-            ),
-            ranked(
-                GoalKind::LootCorpse {
-                    corpse: entity(9),
-                },
+                GoalKind::LootCorpse { corpse: entity(9) },
                 GoalPriorityClass::Low,
                 50,
             ),
@@ -470,9 +456,7 @@ mod tests {
 
     #[test]
     fn freely_interruptible_does_not_switch_for_higher_priority_enterprise_goal() {
-        let current_goal = GoalKind::LootCorpse {
-            corpse: entity(1),
-        };
+        let current_goal = GoalKind::LootCorpse { corpse: entity(1) };
         let challengers = vec![
             ranked(current_goal, GoalPriorityClass::Low, 20),
             ranked(

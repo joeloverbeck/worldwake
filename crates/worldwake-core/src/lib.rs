@@ -84,7 +84,7 @@ pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
 pub use event_log::EventLog;
-pub use event_record::{EvidenceRef, EventRecord, PendingEvent};
+pub use event_record::{EventRecord, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
 pub use goal::{CommodityPurpose, GoalKey, GoalKind};
 pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};

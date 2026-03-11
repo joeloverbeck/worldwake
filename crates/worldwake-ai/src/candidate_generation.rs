@@ -77,12 +77,7 @@ pub fn generate_candidates(
         emit_wash_goal(&mut candidates, &ctx, needs, thresholds);
     }
 
-    emit_produce_goals(
-        &mut candidates,
-        &ctx,
-        needs,
-        thresholds,
-    );
+    emit_produce_goals(&mut candidates, &ctx, needs, thresholds);
     emit_restock_goals(&mut candidates, &ctx);
 
     emit_reduce_danger_goal(&mut candidates, &ctx);
@@ -125,14 +120,15 @@ fn emit_need_driven_candidates(
         return;
     }
 
-    let already_satisfied = CommodityKind::ALL
-        .into_iter()
-        .any(|commodity| {
-            matches_need(commodity)
-                && local_controlled_commodity_exists(ctx.view, ctx.agent, ctx.place, commodity)
-        });
+    let already_satisfied = CommodityKind::ALL.into_iter().any(|commodity| {
+        matches_need(commodity)
+            && local_controlled_commodity_exists(ctx.view, ctx.agent, ctx.place, commodity)
+    });
 
-    for commodity in CommodityKind::ALL.into_iter().filter(|commodity| matches_need(*commodity)) {
+    for commodity in CommodityKind::ALL
+        .into_iter()
+        .filter(|commodity| matches_need(*commodity))
+    {
         if let Some(evidence) =
             local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
         {
@@ -214,7 +210,13 @@ fn emit_wash_goal(
     if let Some(evidence) =
         local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, CommodityKind::Water)
     {
-        emit_candidate(candidates, GoalKind::Wash, evidence, ctx.blocked, ctx.current_tick);
+        emit_candidate(
+            candidates,
+            GoalKind::Wash,
+            evidence,
+            ctx.blocked,
+            ctx.current_tick,
+        );
     }
 }
 
@@ -231,19 +233,25 @@ fn emit_reduce_danger_goal(
         let adjacent = ctx.view.adjacent_places_with_travel_ticks(place);
         if !adjacent.is_empty() {
             evidence.places.insert(place);
-            evidence
-                .places
-                .extend(adjacent.into_iter().map(|(adjacent_place, _)| adjacent_place));
+            evidence.places.extend(
+                adjacent
+                    .into_iter()
+                    .map(|(adjacent_place, _)| adjacent_place),
+            );
         }
     }
-    if ctx.view.commodity_quantity(ctx.agent, CommodityKind::Medicine) > Quantity(0) {
-        evidence.entities.extend(local_wounded_targets(
-            ctx.view,
-            ctx.agent,
-            ctx.place,
-        ));
+    if ctx
+        .view
+        .commodity_quantity(ctx.agent, CommodityKind::Medicine)
+        > Quantity(0)
+    {
+        evidence
+            .entities
+            .extend(local_wounded_targets(ctx.view, ctx.agent, ctx.place));
     }
-    evidence.entities.extend(ctx.view.current_attackers_of(ctx.agent));
+    evidence
+        .entities
+        .extend(ctx.view.current_attackers_of(ctx.agent));
 
     if !evidence.is_empty() {
         emit_candidate(
@@ -256,11 +264,12 @@ fn emit_reduce_danger_goal(
     }
 }
 
-fn emit_heal_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
-    ctx: &GenerationContext<'_>,
-) {
-    if ctx.view.commodity_quantity(ctx.agent, CommodityKind::Medicine) == Quantity(0) {
+fn emit_heal_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
+    if ctx
+        .view
+        .commodity_quantity(ctx.agent, CommodityKind::Medicine)
+        == Quantity(0)
+    {
         return;
     }
 
@@ -289,7 +298,8 @@ fn emit_produce_goals(
         let Some(recipe) = ctx.recipes.get(recipe_id) else {
             continue;
         };
-        let Some(mut evidence) = recipe_path_evidence(ctx.view, ctx.agent, ctx.place, recipe) else {
+        let Some(mut evidence) = recipe_path_evidence(ctx.view, ctx.agent, ctx.place, recipe)
+        else {
             continue;
         };
 
@@ -329,7 +339,10 @@ fn emit_produce_goals(
     }
 }
 
-fn emit_restock_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
+fn emit_restock_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
     let Some(profile) = ctx.view.merchandise_profile(ctx.agent) else {
         return;
     };
@@ -431,7 +444,11 @@ fn acquisition_path_evidence(
         let Some(recipe) = recipes.get(recipe_id) else {
             continue;
         };
-        if !recipe.outputs.iter().any(|(output, _)| *output == commodity) {
+        if !recipe
+            .outputs
+            .iter()
+            .any(|(output, _)| *output == commodity)
+        {
             continue;
         }
         if let Some(recipe_evidence) = recipe_path_evidence(view, agent, Some(place), recipe) {
@@ -466,11 +483,9 @@ fn recipe_path_evidence(
         let mut evidence = Evidence::with_place(place);
         for workstation in workstations {
             let &(output_commodity, output_quantity) = recipe.outputs.first()?;
-            let source_ok = view
-                .resource_source(workstation)
-                .is_some_and(|source| {
-                    source.commodity == output_commodity && source.available_quantity >= output_quantity
-                });
+            let source_ok = view.resource_source(workstation).is_some_and(|source| {
+                source.commodity == output_commodity && source.available_quantity >= output_quantity
+            });
             if source_ok {
                 evidence.entities.insert(workstation);
             }
@@ -497,7 +512,9 @@ fn recipe_path_evidence(
     Some(evidence)
 }
 
-fn aggregate_recipe_quantities(entries: &[(CommodityKind, Quantity)]) -> BTreeMap<CommodityKind, Quantity> {
+fn aggregate_recipe_quantities(
+    entries: &[(CommodityKind, Quantity)],
+) -> BTreeMap<CommodityKind, Quantity> {
     let mut aggregated = BTreeMap::new();
     for (commodity, quantity) in entries {
         aggregated
@@ -562,12 +579,16 @@ fn any_local_need_relief(
     place: Option<EntityId>,
     matches_need: fn(CommodityKind) -> bool,
 ) -> bool {
-    CommodityKind::ALL
-        .into_iter()
-        .any(|commodity| matches_need(commodity) && local_controlled_commodity_exists(view, agent, place, commodity))
+    CommodityKind::ALL.into_iter().any(|commodity| {
+        matches_need(commodity) && local_controlled_commodity_exists(view, agent, place, commodity)
+    })
 }
 
-fn corpse_contains_commodity(view: &dyn BeliefView, corpse: EntityId, commodity: CommodityKind) -> bool {
+fn corpse_contains_commodity(
+    view: &dyn BeliefView,
+    corpse: EntityId,
+    commodity: CommodityKind,
+) -> bool {
     view.direct_possessions(corpse)
         .into_iter()
         .any(|entity| view.item_lot_commodity(entity) == Some(commodity))
@@ -668,7 +689,10 @@ mod tests {
         }
 
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places.get(&place).cloned().unwrap_or_default()
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
@@ -693,7 +717,10 @@ mod tests {
             self.lot_commodities.get(&entity).copied()
         }
 
-        fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
+        fn item_lot_consumable_profile(
+            &self,
+            entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
             self.consumable_profiles.get(&entity).copied()
         }
 
@@ -742,7 +769,9 @@ mod tests {
         }
 
         fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds.get(&entity).is_some_and(|wounds| !wounds.is_empty())
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
         }
 
         fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
@@ -818,7 +847,10 @@ mod tests {
             None
         }
 
-        fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
             self.adjacent_places(place)
                 .into_iter()
                 .map(|adjacent| (adjacent, NonZeroU32::new(1).unwrap()))
@@ -837,7 +869,10 @@ mod tests {
     }
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 1 }
+        EntityId {
+            slot,
+            generation: 1,
+        }
     }
 
     fn pm(value: u16) -> Permille {
@@ -884,7 +919,9 @@ mod tests {
     }
 
     fn contains_goal(candidates: &[crate::GroundedGoal], goal: GoalKind) -> bool {
-        candidates.iter().any(|candidate| candidate.key.kind == goal)
+        candidates
+            .iter()
+            .any(|candidate| candidate.key.kind == goal)
     }
 
     #[test]
@@ -917,7 +954,8 @@ mod tests {
         view.effective_places.insert(agent, place);
         view.effective_places.insert(bread, place);
         view.homeostatic_needs.insert(agent, hunger(250));
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
         view.direct_possessions.insert(agent, vec![bread]);
         view.direct_possessors.insert(bread, agent);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
@@ -958,7 +996,8 @@ mod tests {
         view.effective_places.insert(agent, place);
         view.effective_places.insert(seller, place);
         view.homeostatic_needs.insert(agent, hunger(250));
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
         view.sellers
             .insert((place, CommodityKind::Bread), vec![seller]);
 
@@ -985,7 +1024,8 @@ mod tests {
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
         view.homeostatic_needs.insert(agent, hunger(50));
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
 
         let candidates = generate_candidates(
             &view,
@@ -1021,7 +1061,8 @@ mod tests {
         view.effective_places.insert(agent, place);
         view.effective_places.insert(seller, place);
         view.homeostatic_needs.insert(agent, hunger(250));
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
         view.sellers
             .insert((place, CommodityKind::Bread), vec![seller]);
         let blocked = BlockedIntentMemory {
@@ -1035,7 +1076,8 @@ mod tests {
             }],
         };
 
-        let candidates = generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
 
         assert!(!contains_goal(
             &candidates,
@@ -1055,7 +1097,8 @@ mod tests {
             agent,
             HomeostaticNeeds::new(pm(0), pm(0), pm(350), pm(400), pm(0)),
         );
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
 
         let candidates = generate_candidates(
             &view,
@@ -1078,7 +1121,8 @@ mod tests {
         view.alive.insert(agent);
         view.effective_places.insert(agent, place);
         view.homeostatic_needs.insert(agent, dirtiness(450));
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
         view.entity_kinds.insert(water, EntityKind::ItemLot);
         view.effective_places.insert(water, place);
         view.direct_possessions.insert(agent, vec![water]);
@@ -1121,7 +1165,8 @@ mod tests {
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, attacker]);
         view.effective_places.insert(agent, place);
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
         view.hostiles.insert(agent, vec![attacker]);
 
         let none = generate_candidates(
@@ -1166,10 +1211,7 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(5),
         );
-        assert!(!contains_goal(
-            &none,
-            GoalKind::Heal { target: patient }
-        ));
+        assert!(!contains_goal(&none, GoalKind::Heal { target: patient }));
 
         view.commodity_quantities
             .insert((agent, CommodityKind::Medicine), Quantity(1));
@@ -1195,7 +1237,8 @@ mod tests {
         view.alive.insert(agent);
         view.effective_places.insert(agent, place);
         view.homeostatic_needs.insert(agent, hunger(250));
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
         view.known_recipes.insert(agent, vec![RecipeId(0)]);
         view.unique_item_counts
             .insert((agent, UniqueItemKind::SimpleTool), 1);
@@ -1294,10 +1337,7 @@ mod tests {
             Tick(5),
         );
 
-        assert!(contains_goal(
-            &candidates,
-            GoalKind::LootCorpse { corpse }
-        ));
+        assert!(contains_goal(&candidates, GoalKind::LootCorpse { corpse }));
     }
 
     #[test]
@@ -1306,7 +1346,8 @@ mod tests {
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
         view.homeostatic_needs.insert(agent, fatigue(250));
-        view.drive_thresholds.insert(agent, DriveThresholds::default());
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
 
         let candidates = generate_candidates(
             &view,

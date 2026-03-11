@@ -43,9 +43,9 @@ The workspace currently has five crates under `crates/`:
 
 ```text
 worldwake-core    -> IDs, types, ECS store, topology, items, relations
-worldwake-sim     -> Event log, action framework, scheduler, replay
-worldwake-systems -> Needs, production, trade, combat, perception, politics
-worldwake-ai      -> GOAP planner, utility scoring, decision architecture
+worldwake-sim     -> Event log, action framework, scheduler, replay, save/load
+worldwake-systems -> Needs, production, trade, combat, travel, transport actions
+worldwake-ai      -> Pressure-based GOAP planner, goal ranking, decision architecture
 worldwake-cli     -> Human control interface
 ```
 
@@ -84,7 +84,8 @@ These rules exist to prevent specs from drifting into magic numbers, float-based
 ## Delivery Planning
 
 - The implementation plan spans 22 epics across 4 phases.
-- Active epic specs live in `specs/E11-*.md` through `specs/E22-*.md`; completed or archived specs live under `archive/specs/`.
+- Phase 1 (`E01`-`E08`) and Phase 2 (`E09`-`E13`) are completed and archived under `archive/specs/`.
+- Active epic specs live in `specs/E14-*.md` through `specs/E22-*.md`.
 - Phase ordering and gates live in `specs/IMPLEMENTATION-ORDER.md`.
 - Do not treat phase gates as advisory. New phase work should not begin until the prior gate conditions pass.
 
@@ -94,6 +95,7 @@ Keep external dependencies minimal. The core expected crates are:
 
 - `serde`
 - `bincode`
+- `blake3`
 - `rand_chacha`
 
 Avoid introducing a third-party ECS crate.
@@ -102,8 +104,8 @@ Avoid introducing a third-party ECS crate.
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Active epic specs: `specs/E11-*.md` through `specs/E22-*.md`
-- Archived phase-1 specs: `archive/specs/`
+- Active epic specs: `specs/E14-*.md` through `specs/E22-*.md`
+- Archived completed specs: `archive/specs/`
 - Archival workflow: `docs/archival-workflow.md`
 
 Follow `docs/archival-workflow.md` as the canonical archival policy. Do not duplicate or redefine archival procedure elsewhere; update that document if the policy changes.
@@ -134,7 +136,7 @@ PRs should include:
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (4454 symbols, 16009 relationships, 300 execution flows).
+This project is indexed by GitNexus as **worldwake** (4501 symbols, 16283 relationships, 300 execution flows).
 
 ## Always Start Here
 

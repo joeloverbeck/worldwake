@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
-use worldwake_core::{load_of_entity, CarryCapacity, CommodityKind, EntityId, LoadUnits, Quantity, WorldTxn};
+use worldwake_core::{
+    load_of_entity, CarryCapacity, CommodityKind, EntityId, LoadUnits, Quantity, WorldTxn,
+};
 use worldwake_sim::ActionError;
 
 pub(crate) fn controlled_entity_ids(txn: &WorldTxn<'_>, root: EntityId) -> BTreeSet<EntityId> {
@@ -122,7 +124,10 @@ pub(crate) fn move_entity_to_direct_possession(
     Ok(())
 }
 
-pub(crate) fn consume_one_unit(txn: &mut WorldTxn<'_>, lot_id: EntityId) -> Result<(), ActionError> {
+pub(crate) fn consume_one_unit(
+    txn: &mut WorldTxn<'_>,
+    lot_id: EntityId,
+) -> Result<(), ActionError> {
     let existing = txn
         .get_component_item_lot(lot_id)
         .cloned()

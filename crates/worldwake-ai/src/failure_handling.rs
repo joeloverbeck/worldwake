@@ -4,7 +4,7 @@ use worldwake_core::{
     Quantity, Tick,
 };
 use worldwake_sim::{
-    ActionAbortRequestReason, ActionPayload, AbortReason, BeliefView, ExternalAbortReason,
+    AbortReason, ActionAbortRequestReason, ActionPayload, BeliefView, ExternalAbortReason,
     InterruptReason, ReplanNeeded,
 };
 
@@ -38,7 +38,12 @@ pub fn handle_plan_failure(
         goal_key: context.goal_key,
         blocking_fact,
         related_entity: related_entity(context.failed_step),
-        related_place: related_place(context.view, context.agent, &context.goal_key, context.failed_step),
+        related_place: related_place(
+            context.view,
+            context.agent,
+            &context.goal_key,
+            context.failed_step,
+        ),
         observed_tick: context.current_tick,
         expires_tick,
     });
@@ -94,7 +99,10 @@ fn derive_blocking_fact(
                 return BlockingFact::CombatTooRisky;
             }
         }
-        PlannerOpKind::Sleep | PlannerOpKind::Relieve | PlannerOpKind::MoveCargo | PlannerOpKind::Loot => {}
+        PlannerOpKind::Sleep
+        | PlannerOpKind::Relieve
+        | PlannerOpKind::MoveCargo
+        | PlannerOpKind::Loot => {}
     }
 
     if danger_too_high(view, agent) {
@@ -150,7 +158,11 @@ fn classify_production_failure(
     agent: EntityId,
     step: &PlannedStep,
 ) -> Option<BlockingFact> {
-    if let Some(payload) = step.payload_override.as_ref().and_then(ActionPayload::as_harvest) {
+    if let Some(payload) = step
+        .payload_override
+        .as_ref()
+        .and_then(ActionPayload::as_harvest)
+    {
         if let Some(missing_tool) = payload
             .required_tool_kinds
             .iter()
@@ -161,7 +173,11 @@ fn classify_production_failure(
         }
     }
 
-    if let Some(payload) = step.payload_override.as_ref().and_then(ActionPayload::as_craft) {
+    if let Some(payload) = step
+        .payload_override
+        .as_ref()
+        .and_then(ActionPayload::as_craft)
+    {
         if let Some(missing_tool) = payload
             .required_tool_kinds
             .iter()
@@ -275,9 +291,15 @@ fn combat_too_risky(view: &dyn BeliefView, agent: EntityId) -> bool {
 fn map_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
     match &signal.reason {
         AbortReason::CommitConditionFailed { condition } => match condition {
-            worldwake_sim::Precondition::TargetAdjacentToActor(_) => Some(BlockingFact::NoKnownPath),
-            worldwake_sim::Precondition::TargetLacksProductionJob(_) => Some(BlockingFact::WorkstationBusy),
-            worldwake_sim::Precondition::TargetHasResourceSource { .. } => Some(BlockingFact::SourceDepleted),
+            worldwake_sim::Precondition::TargetAdjacentToActor(_) => {
+                Some(BlockingFact::NoKnownPath)
+            }
+            worldwake_sim::Precondition::TargetLacksProductionJob(_) => {
+                Some(BlockingFact::WorkstationBusy)
+            }
+            worldwake_sim::Precondition::TargetHasResourceSource { .. } => {
+                Some(BlockingFact::SourceDepleted)
+            }
             _ => None,
         },
         AbortReason::Interrupted { kind, detail } => match kind {
@@ -287,11 +309,11 @@ fn map_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
         },
         AbortReason::ExternalAbort { kind, detail } => match kind {
             ExternalAbortReason::TargetDestroyed => Some(BlockingFact::TargetGone),
-            ExternalAbortReason::ActorMarkedDead | ExternalAbortReason::CancelledByInput { .. } => None,
-            ExternalAbortReason::HandlerRequested { reason } => map_handler_abort_reason(reason),
-            ExternalAbortReason::Other => {
-                detail.as_deref().and_then(parse_abort_detail)
+            ExternalAbortReason::ActorMarkedDead | ExternalAbortReason::CancelledByInput { .. } => {
+                None
             }
+            ExternalAbortReason::HandlerRequested { reason } => map_handler_abort_reason(reason),
+            ExternalAbortReason::Other => detail.as_deref().and_then(parse_abort_detail),
         },
     }
 }
@@ -379,9 +401,12 @@ fn blocker_resolved(view: &dyn BeliefView, agent: EntityId, intent: &BlockedInte
             let Some(commodity) = intent.goal_key.commodity else {
                 return false;
             };
-            view.entity_kind(seller).is_some() && view.commodity_quantity(seller, commodity) > Quantity(0)
+            view.entity_kind(seller).is_some()
+                && view.commodity_quantity(seller, commodity) > Quantity(0)
         }
-        BlockingFact::TooExpensive => view.commodity_quantity(agent, CommodityKind::Coin) > Quantity(0),
+        BlockingFact::TooExpensive => {
+            view.commodity_quantity(agent, CommodityKind::Coin) > Quantity(0)
+        }
         BlockingFact::SourceDepleted => {
             let Some(source) = intent.related_entity else {
                 return false;
@@ -396,7 +421,9 @@ fn blocker_resolved(view: &dyn BeliefView, agent: EntityId, intent: &BlockedInte
             .related_entity
             .is_some_and(|entity| view.reservation_ranges(entity).is_empty()),
         BlockingFact::MissingTool(kind) => view.unique_item_count(agent, kind) > 0,
-        BlockingFact::MissingInput(commodity) => view.commodity_quantity(agent, commodity) > Quantity(0),
+        BlockingFact::MissingInput(commodity) => {
+            view.commodity_quantity(agent, commodity) > Quantity(0)
+        }
         BlockingFact::TargetGone => match intent.goal_key.kind {
             GoalKind::Heal { .. } | GoalKind::ReduceDanger => intent
                 .related_entity
@@ -406,7 +433,8 @@ fn blocker_resolved(view: &dyn BeliefView, agent: EntityId, intent: &BlockedInte
                 .is_some_and(|entity| view.entity_kind(entity).is_some()),
         },
         BlockingFact::DangerTooHigh | BlockingFact::CombatTooRisky => {
-            view.current_attackers_of(agent).is_empty() && view.visible_hostiles_for(agent).is_empty()
+            view.current_attackers_of(agent).is_empty()
+                && view.visible_hostiles_for(agent).is_empty()
         }
         BlockingFact::Unknown => false,
     }
@@ -432,7 +460,10 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
             .and_then(ActionPayload::as_loot)
             .map(|payload| payload.target)
             .or_else(|| step.targets.first().copied()),
-        PlannerOpKind::Travel | PlannerOpKind::Sleep | PlannerOpKind::Relieve | PlannerOpKind::Wash => None,
+        PlannerOpKind::Travel
+        | PlannerOpKind::Sleep
+        | PlannerOpKind::Relieve
+        | PlannerOpKind::Wash => None,
         PlannerOpKind::Consume
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
@@ -450,9 +481,10 @@ fn related_place(
 ) -> Option<EntityId> {
     match step.op_kind {
         PlannerOpKind::Travel => step.targets.first().copied(),
-        PlannerOpKind::Trade | PlannerOpKind::Harvest | PlannerOpKind::Craft | PlannerOpKind::MoveCargo => {
-            view.effective_place(agent).or(goal_key.place)
-        }
+        PlannerOpKind::Trade
+        | PlannerOpKind::Harvest
+        | PlannerOpKind::Craft
+        | PlannerOpKind::MoveCargo => view.effective_place(agent).or(goal_key.place),
         PlannerOpKind::Consume
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
@@ -495,11 +527,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, CombatProfile, DemandObservation, DriveThresholds,
-        EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        BlockedIntent, BlockedIntentMemory, BlockingFact, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
+        InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
+        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionDuration, ActionPayload, BeliefView, CombatActionPayload,
@@ -527,59 +559,169 @@ mod tests {
     }
 
     impl BeliefView for TestBeliefView {
-        fn is_alive(&self, entity: EntityId) -> bool { self.alive.contains(&entity) }
-        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> { self.entity_kinds.get(&entity).copied() }
-        fn effective_place(&self, entity: EntityId) -> Option<EntityId> { self.effective_places.get(&entity).copied() }
-        fn is_in_transit(&self, _entity: EntityId) -> bool { false }
-        fn entities_at(&self, place: EntityId) -> Vec<EntityId> { self.entities_at.get(&place).cloned().unwrap_or_default() }
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> { self.direct_possessions.get(&holder).cloned().unwrap_or_default() }
+        fn is_alive(&self, entity: EntityId) -> bool {
+            self.alive.contains(&entity)
+        }
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.entity_kinds.get(&entity).copied()
+        }
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places.get(&entity).copied()
+        }
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at.get(&place).cloned().unwrap_or_default()
+        }
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places.get(&place).cloned().unwrap_or_default().into_iter().map(|(place, _)| place).collect()
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(place, _)| place)
+                .collect()
         }
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool { false }
-        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 { self.unique_items.get(&(holder, kind)).copied().unwrap_or(0) }
-        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity { self.commodity_quantities.get(&(holder, kind)).copied().unwrap_or(Quantity(0)) }
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> { None }
-        fn item_lot_consumable_profile(&self, _entity: EntityId) -> Option<CommodityConsumableProfile> { None }
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> { None }
-        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> { self.resource_sources.get(&entity).cloned() }
-        fn has_production_job(&self, entity: EntityId) -> bool { self.production_jobs.contains(&entity) }
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool { true }
-        fn has_control(&self, entity: EntityId) -> bool { self.entity_kinds.get(&entity) == Some(&EntityKind::Agent) }
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
+        }
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
+        }
+        fn has_production_job(&self, entity: EntityId) -> bool {
+            self.production_jobs.contains(&entity)
+        }
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            true
+        }
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.entity_kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
         fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
-            self.reservation_ranges(entity).into_iter().any(|existing| existing.overlaps(&range))
+            self.reservation_ranges(entity)
+                .into_iter()
+                .any(|existing| existing.overlaps(&range))
         }
-        fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> { self.reservation_ranges.get(&entity).cloned().unwrap_or_default() }
-        fn is_dead(&self, entity: EntityId) -> bool { self.dead.contains(&entity) }
-        fn is_incapacitated(&self, _entity: EntityId) -> bool { false }
-        fn has_wounds(&self, entity: EntityId) -> bool { self.wounds.get(&entity).is_some_and(|wounds| !wounds.is_empty()) }
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> { None }
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> { None }
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> { None }
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> { None }
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> { None }
-        fn wounds(&self, agent: EntityId) -> Vec<Wound> { self.wounds.get(&agent).cloned().unwrap_or_default() }
-        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> { self.hostiles.get(&agent).cloned().unwrap_or_default() }
-        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> { self.attackers.get(&agent).cloned().unwrap_or_default() }
+        fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+            self.reservation_ranges
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
+        }
+        fn is_dead(&self, entity: EntityId) -> bool {
+            self.dead.contains(&entity)
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
+        }
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wounds.get(&agent).cloned().unwrap_or_default()
+        }
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostiles.get(&agent).cloned().unwrap_or_default()
+        }
+        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+            self.attackers.get(&agent).cloned().unwrap_or_default()
+        }
         fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.sellers.get(&(place, commodity)).cloned().unwrap_or_default()
+            self.sellers
+                .get(&(place, commodity))
+                .cloned()
+                .unwrap_or_default()
         }
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> { Vec::new() }
-        fn matching_workstations_at(&self, _place: EntityId, _tag: WorkstationTag) -> Vec<EntityId> { Vec::new() }
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
         fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
             self.entities_at(place)
                 .into_iter()
-                .filter(|entity| self.resource_source(*entity).is_some_and(|source| source.commodity == commodity))
+                .filter(|entity| {
+                    self.resource_source(*entity)
+                        .is_some_and(|source| source.commodity == commodity)
+                })
                 .collect()
         }
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> { Vec::new() }
-        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> { None }
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> { None }
-        fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent_places.get(&place).cloned().unwrap_or_default()
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
         }
         fn estimate_duration(
             &self,
@@ -593,7 +735,10 @@ mod tests {
     }
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 1 }
+        EntityId {
+            slot,
+            generation: 1,
+        }
     }
 
     fn trade_goal() -> GoalKey {
@@ -688,8 +833,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        view.sellers.insert((place, CommodityKind::Bread), vec![seller]);
-        view.commodity_quantities.insert((agent, CommodityKind::Coin), Quantity(1));
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(1));
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut blocked = BlockedIntentMemory::default();
 
@@ -712,7 +859,10 @@ mod tests {
         assert_eq!(runtime.current_goal, Some(goal));
         assert!(blocked.is_blocked(&goal, Tick(20)));
         assert_eq!(blocked.intents.len(), 1);
-        assert_eq!(blocked.intents[0].blocking_fact, BlockingFact::SellerOutOfStock);
+        assert_eq!(
+            blocked.intents[0].blocking_fact,
+            BlockingFact::SellerOutOfStock
+        );
         assert_eq!(blocked.intents[0].related_entity, Some(seller));
         assert_eq!(blocked.intents[0].related_place, Some(place));
         assert_eq!(
@@ -731,8 +881,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        view.sellers.insert((place, CommodityKind::Bread), vec![seller]);
-        view.commodity_quantities.insert((agent, CommodityKind::Coin), Quantity(1));
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(1));
 
         let fact = derive_blocking_fact(&view, agent, &trade_goal(), &trade_step(seller), None);
         assert_eq!(fact, BlockingFact::SellerOutOfStock);
@@ -785,8 +937,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(workstation, EntityKind::Facility);
         view.production_jobs.insert(workstation);
-        view.unique_items.insert((agent, UniqueItemKind::SimpleTool), 1);
-        view.commodity_quantities.insert((agent, CommodityKind::Grain), Quantity(2));
+        view.unique_items
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
 
         let fact = derive_blocking_fact(
             &view,
@@ -808,8 +962,10 @@ mod tests {
         view.alive.insert(agent);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(workstation, EntityKind::Facility);
-        view.unique_items.insert((agent, UniqueItemKind::SimpleTool), 1);
-        view.commodity_quantities.insert((agent, CommodityKind::Grain), Quantity(2));
+        view.unique_items
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
         view.reservation_ranges.insert(
             workstation,
             vec![TickRange::new(Tick(8), Tick(12)).unwrap()],
@@ -837,8 +993,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        view.commodity_quantities.insert((agent, CommodityKind::Coin), Quantity(1));
-        view.commodity_quantities.insert((seller, CommodityKind::Bread), Quantity(3));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(1));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(3));
 
         let fact = derive_blocking_fact(&view, agent, &trade_goal(), &trade_step(seller), None);
         assert_eq!(fact, BlockingFact::NoKnownSeller);
@@ -907,7 +1065,8 @@ mod tests {
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.entity_kinds.insert(workstation, EntityKind::Facility);
         view.effective_places.insert(agent, place);
-        view.commodity_quantities.insert((seller, CommodityKind::Bread), Quantity(2));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
 
         let mut blocked = BlockedIntentMemory {
             intents: vec![

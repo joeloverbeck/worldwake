@@ -71,14 +71,18 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::TargetConsumable { target_index } => {
             let target = targets.get(usize::from(target_index)).copied()?;
             let profile = view.item_lot_consumable_profile(target)?;
-            Some(ActionDuration::Finite(profile.consumption_ticks_per_unit.get()))
+            Some(ActionDuration::Finite(
+                profile.consumption_ticks_per_unit.get(),
+            ))
         }
         DurationExpr::TravelToTarget { target_index } => {
             let target = targets.get(usize::from(target_index)).copied()?;
             let origin = view.effective_place(actor)?;
             view.adjacent_places_with_travel_ticks(origin)
                 .into_iter()
-                .find_map(|(adjacent, ticks)| (adjacent == target).then_some(ActionDuration::Finite(ticks.get())))
+                .find_map(|(adjacent, ticks)| {
+                    (adjacent == target).then_some(ActionDuration::Finite(ticks.get()))
+                })
         }
         DurationExpr::ActorMetabolism { kind } => {
             let profile = view.metabolism_profile(actor)?;
@@ -121,12 +125,14 @@ pub fn estimate_duration_from_beliefs(
                 severity_reduction_per_tick,
                 ..
             } = commodity.spec().treatment_profile?;
-            let wound_load = wounds
-                .iter()
-                .fold(0u32, |acc, wound| acc.saturating_add(u32::from(wound.severity.value())));
+            let wound_load = wounds.iter().fold(0u32, |acc, wound| {
+                acc.saturating_add(u32::from(wound.severity.value()))
+            });
             let severity_per_tick = u32::from(severity_reduction_per_tick.value()).max(1);
             let wound_ticks = wound_load.div_ceil(severity_per_tick).max(1);
-            Some(ActionDuration::Finite(treatment_ticks_per_unit.get().max(wound_ticks)))
+            Some(ActionDuration::Finite(
+                treatment_ticks_per_unit.get().max(wound_ticks),
+            ))
         }
     }
 }

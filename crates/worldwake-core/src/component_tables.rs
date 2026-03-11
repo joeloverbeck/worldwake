@@ -397,7 +397,10 @@ mod tests {
         let id = entity(35);
         let memory = sample_blocked_intent_memory();
 
-        assert_eq!(tables.insert_blocked_intent_memory(id, memory.clone()), None);
+        assert_eq!(
+            tables.insert_blocked_intent_memory(id, memory.clone()),
+            None
+        );
         assert_eq!(tables.get_blocked_intent_memory(id), Some(&memory));
         assert!(tables.has_blocked_intent_memory(id));
         assert_eq!(tables.remove_blocked_intent_memory(id), Some(memory));

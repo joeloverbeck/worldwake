@@ -35,7 +35,8 @@ pub fn select_best_plan(
     let Some(current_plan) = current.current_plan.clone() else {
         return Some(best_plan);
     };
-    let Some((current_class, current_motive)) = candidate_scores.get(&current_plan.goal).copied() else {
+    let Some((current_class, current_motive)) = candidate_scores.get(&current_plan.goal).copied()
+    else {
         return Some(best_plan);
     };
     let Some((best_class, _, _)) = available.first().cloned() else {
@@ -43,7 +44,11 @@ pub fn select_best_plan(
     };
 
     if best_plan.goal == current_plan.goal {
-        return Some(if current_plan.steps.is_empty() { best_plan } else { current_plan });
+        return Some(if current_plan.steps.is_empty() {
+            best_plan
+        } else {
+            current_plan
+        });
     }
     if matches!(
         compare_goal_switch(
@@ -69,7 +74,11 @@ fn compare_ranked_plans(
         .0
         .cmp(&left.0)
         .then_with(|| right.1.cmp(&left.1))
-        .then_with(|| left.2.total_estimated_ticks.cmp(&right.2.total_estimated_ticks))
+        .then_with(|| {
+            left.2
+                .total_estimated_ticks
+                .cmp(&right.2.total_estimated_ticks)
+        })
         .then_with(|| left.2.steps.cmp(&right.2.steps))
         .then_with(|| left.2.goal.cmp(&right.2.goal))
 }
@@ -86,14 +95,13 @@ mod tests {
     use worldwake_sim::ActionDefId;
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 1 }
+        EntityId {
+            slot,
+            generation: 1,
+        }
     }
 
-    fn ranked(
-        goal: worldwake_core::GoalKind,
-        class: GoalPriorityClass,
-        motive: u32,
-    ) -> RankedGoal {
+    fn ranked(goal: worldwake_core::GoalKind, class: GoalPriorityClass, motive: u32) -> RankedGoal {
         RankedGoal {
             grounded: GroundedGoal {
                 key: GoalKey::from(goal),
@@ -127,7 +135,11 @@ mod tests {
             commodity: CommodityKind::Bread,
         });
         let candidates = vec![
-            ranked(worldwake_core::GoalKind::Sleep, GoalPriorityClass::Medium, 900),
+            ranked(
+                worldwake_core::GoalKind::Sleep,
+                GoalPriorityClass::Medium,
+                900,
+            ),
             ranked(
                 worldwake_core::GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Bread,
@@ -194,7 +206,8 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+        let selected =
+            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
 
         assert_eq!(selected.goal, current_goal);
     }
@@ -204,12 +217,23 @@ mod tests {
         let first_goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
         let second_goal = GoalKey::from(worldwake_core::GoalKind::Relieve);
         let candidates = vec![
-            ranked(worldwake_core::GoalKind::Sleep, GoalPriorityClass::Medium, 500),
-            ranked(worldwake_core::GoalKind::Relieve, GoalPriorityClass::Medium, 500),
+            ranked(
+                worldwake_core::GoalKind::Sleep,
+                GoalPriorityClass::Medium,
+                500,
+            ),
+            ranked(
+                worldwake_core::GoalKind::Relieve,
+                GoalPriorityClass::Medium,
+                500,
+            ),
         ];
         let slower = plan(first_goal, 4, 3);
         let faster = plan(second_goal, 3, 2);
-        let plans = vec![(first_goal, Some(slower)), (second_goal, Some(faster.clone()))];
+        let plans = vec![
+            (first_goal, Some(slower)),
+            (second_goal, Some(faster.clone())),
+        ];
 
         let first = select_best_plan(
             &candidates,
@@ -256,10 +280,15 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+        let selected =
+            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
 
         assert_eq!(selected.goal, eat_goal);
-        assert_eq!(selected.steps.len(), 1, "should adopt the actionable plan, not the empty one");
+        assert_eq!(
+            selected.steps.len(),
+            1,
+            "should adopt the actionable plan, not the empty one"
+        );
     }
 
     #[test]
@@ -285,9 +314,13 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+        let selected =
+            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
 
-        assert_eq!(selected, current, "non-empty current plan should be retained for same goal");
+        assert_eq!(
+            selected, current,
+            "non-empty current plan should be retained for same goal"
+        );
     }
 
     #[test]
@@ -311,9 +344,13 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+        let selected =
+            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
 
         assert_eq!(selected.goal, eat_goal);
-        assert!(selected.steps.is_empty(), "both plans are empty — best is selected but also empty");
+        assert!(
+            selected.steps.is_empty(),
+            "both plans are empty — best is selected but also empty"
+        );
     }
 }

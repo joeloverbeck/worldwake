@@ -1,7 +1,5 @@
 use crate::{GoalKey, GoalPriorityClass, PlannedPlan};
-use worldwake_core::{
-    CommodityKind, EntityId, HomeostaticNeeds, Quantity, UniqueItemKind, Wound,
-};
+use worldwake_core::{CommodityKind, EntityId, HomeostaticNeeds, Quantity, UniqueItemKind, Wound};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AgentDecisionRuntime {

@@ -132,7 +132,12 @@ mod tests {
             self.name
         }
 
-        fn claims_agent(&self, _world: &World, _agent: EntityId, control_source: ControlSource) -> bool {
+        fn claims_agent(
+            &self,
+            _world: &World,
+            _agent: EntityId,
+            control_source: ControlSource,
+        ) -> bool {
             control_source == self.claimed_source
         }
 
@@ -265,7 +270,9 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            format!("multiple autonomous controllers claimed agent {ai_agent}: [\"first\", \"second\"]")
+            format!(
+                "multiple autonomous controllers claimed agent {ai_agent}: [\"first\", \"second\"]"
+            )
         );
     }
 }

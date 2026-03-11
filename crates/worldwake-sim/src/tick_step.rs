@@ -492,13 +492,12 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 mod tests {
     use super::{resolve_affordance, step_tick, TickStepError, TickStepResult, TickStepServices};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
-        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionState, ActionStatus, ControllerState, DeterministicRng, DurationExpr,
-        InputKind, Interruptibility, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
-        SystemExecutionContext, SystemManifest, TickInputContext, TickInputError,
-        TickInputProducer,
-        get_affordances,
+        get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
+        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, ControllerState,
+        DeterministicRng, DurationExpr, InputKind, Interruptibility, RecipeRegistry, Scheduler,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TickInputContext,
+        TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -745,7 +744,8 @@ mod tests {
 
     impl TickInputProducer for QueueingProducer {
         fn produce_inputs(&mut self, ctx: TickInputContext<'_>) -> Result<(), TickInputError> {
-            self.observed_pending_replans.push(ctx.pending_replans.len());
+            self.observed_pending_replans
+                .push(ctx.pending_replans.len());
             ctx.scheduler.input_queue_mut().enqueue(
                 ctx.tick,
                 InputKind::RequestAction {
@@ -776,8 +776,7 @@ mod tests {
             recipes,
             defs,
             handlers,
-        ) =
-            build_state();
+        ) = build_state();
 
         let systems = SystemDispatchTable::canonical_noop();
         let services = services(&defs, &handlers, &recipes, &systems);

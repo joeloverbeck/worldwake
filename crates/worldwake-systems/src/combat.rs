@@ -11,12 +11,11 @@ use worldwake_core::{
     StateDelta, VisibilitySpec, WitnessData, WorldTxn, Wound, WoundCause, WoundList,
 };
 use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId, ActionDefRegistry,
-    ActionDomain, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
-    ActionInstance, ActionPayload, ActionProgress, ActionState, CombatActionPayload, Constraint,
-    BeliefView, DeterministicRng, DurationExpr, Interruptibility, LootActionPayload,
-    PayloadEntityRole, Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext,
-    TargetSpec,
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain,
+    ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
+    ActionPayload, ActionProgress, ActionState, BeliefView, CombatActionPayload, Constraint,
+    DeterministicRng, DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole,
+    Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext, TargetSpec,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -32,12 +31,10 @@ pub fn register_attack_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_attack,
-        tick_attack,
-        commit_attack,
-        abort_attack,
-    ).with_affordance_payloads(enumerate_attack_payloads));
+    let handler = handlers.register(
+        ActionHandler::new(start_attack, tick_attack, commit_attack, abort_attack)
+            .with_affordance_payloads(enumerate_attack_payloads),
+    );
     defs.register(attack_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
@@ -58,12 +55,10 @@ pub fn register_loot_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_loot,
-        tick_loot,
-        commit_loot,
-        abort_loot,
-    ).with_affordance_payloads(enumerate_loot_payloads));
+    let handler = handlers.register(
+        ActionHandler::new(start_loot, tick_loot, commit_loot, abort_loot)
+            .with_affordance_payloads(enumerate_loot_payloads),
+    );
     defs.register(loot_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
@@ -917,7 +912,11 @@ fn start_heal(
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let _ = validate_heal_context(txn, instance)?;
-    let _ = consume_one_unit_of_commodity(txn, instance.actor, worldwake_core::CommodityKind::Medicine)?;
+    let _ = consume_one_unit_of_commodity(
+        txn,
+        instance.actor,
+        worldwake_core::CommodityKind::Medicine,
+    )?;
     Ok(None)
 }
 
@@ -1004,12 +1003,12 @@ fn tick_heal(
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
     let target = validate_heal_context(txn, instance)?;
-    let wounds = txn
-        .get_component_wound_list(target)
-        .cloned()
-        .ok_or(ActionError::AbortRequested(
-            ActionAbortRequestReason::TargetLacksWounds { target },
-        ))?;
+    let wounds =
+        txn.get_component_wound_list(target)
+            .cloned()
+            .ok_or(ActionError::AbortRequested(
+                ActionAbortRequestReason::TargetLacksWounds { target },
+            ))?;
     let profile = worldwake_core::CommodityKind::Medicine
         .spec()
         .treatment_profile
@@ -1072,12 +1071,12 @@ fn commit_attack(
                 actor: instance.actor,
             },
         ))?;
-    let target_profile = txn
-        .get_component_combat_profile(target)
-        .copied()
-        .ok_or(ActionError::AbortRequested(
-            ActionAbortRequestReason::TargetMissingCombatProfile { target },
-        ))?;
+    let target_profile =
+        txn.get_component_combat_profile(target)
+            .copied()
+            .ok_or(ActionError::AbortRequested(
+                ActionAbortRequestReason::TargetMissingCombatProfile { target },
+            ))?;
     let attacker_needs = txn.get_component_homeostatic_needs(instance.actor);
     let target_needs = txn.get_component_homeostatic_needs(target);
     let attacker_wounds = txn.get_component_wound_list(instance.actor);
@@ -1164,8 +1163,8 @@ fn abort_heal(
 mod tests {
     use super::{
         combat_system, effective_guard_skill, register_attack_action, register_defend_action,
-        register_heal_action, register_loot_action, resolve_attack_wound,
-        AttackResolutionActor, AttackResolutionContext, AttackResolutionTarget,
+        register_heal_action, register_loot_action, resolve_attack_wound, AttackResolutionActor,
+        AttackResolutionContext, AttackResolutionTarget,
     };
     use crate::dispatch_table;
     use std::collections::BTreeMap;
@@ -1518,10 +1517,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
-            .into_iter()
-            .find(|affordance| affordance.def_id == heal_id && affordance.bound_targets == vec![patient])
-            .unwrap();
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
+                .into_iter()
+                .find(|affordance| {
+                    affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
+                })
+                .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -1622,10 +1624,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
-            .into_iter()
-            .find(|affordance| affordance.def_id == heal_id && affordance.bound_targets == vec![patient])
-            .unwrap();
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
+                .into_iter()
+                .find(|affordance| {
+                    affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
+                })
+                .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -1696,7 +1701,9 @@ mod tests {
 
         let affordances =
             get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
-        assert!(!affordances.iter().any(|affordance| affordance.def_id == heal_id));
+        assert!(!affordances
+            .iter()
+            .any(|affordance| affordance.def_id == heal_id));
 
         arm_actor(&mut world, healer, 4, CommodityKind::Medicine, 1);
         {
@@ -1706,7 +1713,9 @@ mod tests {
         }
         let affordances =
             get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
-        assert!(!affordances.iter().any(|affordance| affordance.def_id == heal_id));
+        assert!(!affordances
+            .iter()
+            .any(|affordance| affordance.def_id == heal_id));
     }
 
     #[test]
@@ -1725,12 +1734,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
-            .into_iter()
-            .find(|affordance| {
-                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
-            })
-            .unwrap();
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
+                .into_iter()
+                .find(|affordance| {
+                    affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+                })
+                .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -1808,12 +1818,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
-            .into_iter()
-            .find(|affordance| {
-                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
-            })
-            .unwrap();
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
+                .into_iter()
+                .find(|affordance| {
+                    affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+                })
+                .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -1901,12 +1912,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
-            .into_iter()
-            .find(|affordance| {
-                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
-            })
-            .unwrap();
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
+                .into_iter()
+                .find(|affordance| {
+                    affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+                })
+                .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2141,13 +2153,17 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let attack_id = register_attack_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), attacker, &defs, &handlers)
-            .into_iter()
-            .find(|affordance| {
-                affordance.def_id == attack_id && affordance.bound_targets == vec![target]
-            })
-            .unwrap();
+        let affordance = get_affordances(
+            &OmniscientBeliefView::new(&world),
+            attacker,
+            &defs,
+            &handlers,
+        )
+        .into_iter()
+        .find(|affordance| {
+            affordance.def_id == attack_id && affordance.bound_targets == vec![target]
+        })
+        .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2615,13 +2631,12 @@ mod tests {
 
         let dead_affordances =
             get_affordances(&OmniscientBeliefView::new(&world), dead, &defs, &handlers);
-        let incapacitated_affordances =
-            get_affordances(
-                &OmniscientBeliefView::new(&world),
-                incapacitated,
-                &defs,
-                &handlers,
-            );
+        let incapacitated_affordances = get_affordances(
+            &OmniscientBeliefView::new(&world),
+            incapacitated,
+            &defs,
+            &handlers,
+        );
 
         assert!(!dead_affordances
             .iter()
@@ -3065,10 +3080,11 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), guard, &defs, &handlers)
-            .into_iter()
-            .find(|affordance| affordance.def_id == defend_id)
-            .unwrap();
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), guard, &defs, &handlers)
+                .into_iter()
+                .find(|affordance| affordance.def_id == defend_id)
+                .unwrap();
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);

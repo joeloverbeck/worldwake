@@ -2,47 +2,53 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
-pub enum SystemId {
-    Needs,
-    Production,
-    Trade,
-    Combat,
-    Perception,
-    Politics,
+macro_rules! define_system_ids {
+    ($(($variant:ident, $name:literal)),+ $(,)?) => {
+        #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+        #[repr(u8)]
+        pub enum SystemId {
+            $($variant),+
+        }
+
+        impl SystemId {
+            /// Authoritative tick order for the closed system set.
+            ///
+            /// The ordering is load-bearing:
+            /// - `Needs` runs first so deprivation and wound pressure are visible before economic systems act.
+            /// - `Production` runs before `Trade` so newly created goods exist before market exchange.
+            /// - `Trade` runs before `Combat` so economic resolution happens before violence mutates the world.
+            /// - `Combat` runs before `Perception` so observers can react to the current tick's outcomes.
+            /// - `Perception` runs before `Politics` so social systems consume freshly propagated local information.
+            ///
+            /// Do not reorder this list casually. Any change here changes the simulation's causal sequencing.
+            pub const ALL: [Self; define_system_ids!(@count $($variant),+)] = [$(Self::$variant),+];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name),+
+                }
+            }
+
+            pub const fn ordinal(self) -> usize {
+                self as usize
+            }
+        }
+    };
+    (@count $($variant:ident),+ $(,)?) => {
+        <[()]>::len(&[$(define_system_ids!(@unit $variant)),+])
+    };
+    (@unit $variant:ident) => {
+        ()
+    };
 }
 
-impl SystemId {
-    pub const ALL: [Self; 6] = [
-        Self::Needs,
-        Self::Production,
-        Self::Trade,
-        Self::Combat,
-        Self::Perception,
-        Self::Politics,
-    ];
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Needs => "needs",
-            Self::Production => "production",
-            Self::Trade => "trade",
-            Self::Combat => "combat",
-            Self::Perception => "perception",
-            Self::Politics => "politics",
-        }
-    }
-
-    pub const fn ordinal(self) -> usize {
-        match self {
-            Self::Needs => 0,
-            Self::Production => 1,
-            Self::Trade => 2,
-            Self::Combat => 3,
-            Self::Perception => 4,
-            Self::Politics => 5,
-        }
-    }
+define_system_ids! {
+    (Needs, "needs"),
+    (Production, "production"),
+    (Trade, "trade"),
+    (Combat, "combat"),
+    (Perception, "perception"),
+    (Politics, "politics"),
 }
 
 impl fmt::Display for SystemId {
@@ -72,6 +78,11 @@ impl SystemManifest {
         })
     }
 
+    /// Returns the authoritative per-tick system order.
+    ///
+    /// This must stay aligned with [`SystemId::ALL`]. Reordering it changes the
+    /// simulation's causal sequencing and should only happen with an explicit
+    /// architecture decision.
     pub fn canonical() -> Self {
         Self::new(SystemId::ALL).expect("canonical system order must not contain duplicates")
     }
@@ -149,6 +160,17 @@ mod tests {
         for (expected, system_id) in SystemId::ALL.into_iter().enumerate() {
             assert_eq!(system_id.ordinal(), expected);
         }
+    }
+
+    #[test]
+    fn system_id_ordinals_cover_dense_dispatch_range() {
+        let mut covered_slots = [false; SystemId::ALL.len()];
+
+        for system_id in SystemId::ALL {
+            covered_slots[system_id.ordinal()] = true;
+        }
+
+        assert!(covered_slots.into_iter().all(std::convert::identity));
     }
 
     #[test]

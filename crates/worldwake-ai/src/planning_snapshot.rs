@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile,
-    MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile,
+    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::BeliefView;
 
@@ -88,13 +88,7 @@ impl PlanningSnapshot {
             .map(|entity| {
                 (
                     entity,
-                    build_snapshot_entity(
-                        view,
-                        actor,
-                        entity,
-                        evidence_entities,
-                        &included_places,
-                    ),
+                    build_snapshot_entity(view, actor, entity, evidence_entities, &included_places),
                 )
             })
             .collect();

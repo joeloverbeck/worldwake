@@ -5,13 +5,11 @@ use crate::{
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use worldwake_core::{
-    CommodityKind, CommodityPurpose, EntityId, GoalKind, Permille, Quantity,
-};
+use worldwake_core::{CommodityKind, CommodityPurpose, EntityId, GoalKind, Permille, Quantity};
 use worldwake_sim::{
     get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
-    ActionHandlerRegistry, ActionPayload, BeliefView, CombatActionPayload, LootActionPayload,
-    TradeActionPayload,
+    ActionHandlerRegistry, ActionPayload, Affordance, BeliefView, CombatActionPayload,
+    LootActionPayload, TradeActionPayload,
 };
 
 #[derive(Clone)]
@@ -33,12 +31,7 @@ pub fn search_plan(
         return None;
     }
 
-    let actor = snapshot.actor();
-    let mut frontier = vec![SearchNode {
-        state: PlanningState::new(snapshot),
-        steps: Vec::new(),
-        total_estimated_ticks: 0,
-    }];
+    let mut frontier = vec![root_node(snapshot)];
     let mut expansions = 0u16;
 
     while let Some(node) = pop_next_node(&mut frontier) {
@@ -57,66 +50,10 @@ pub fn search_plan(
         }
         expansions = expansions.saturating_add(1);
 
-        let mut successors = get_affordances(&node.state, actor, registry, handlers)
+        let mut successors = get_affordances(&node.state, snapshot.actor(), registry, handlers)
             .into_iter()
             .filter_map(|affordance| {
-                let def = registry.get(affordance.def_id)?;
-                let semantics = semantics_table.get(&affordance.def_id)?;
-                if !goal.key.kind.relevant_op_kinds().contains(&semantics.op_kind) {
-                    return None;
-                }
-
-                let payload_override = build_payload_override(
-                    affordance.payload_override.as_ref(),
-                    &goal.key.kind,
-                    &node.state,
-                    &affordance.bound_targets,
-                    def,
-                    semantics,
-                )
-                .ok()?;
-                let effective_payload = payload_override.as_ref().unwrap_or(&def.payload);
-                let duration = node.state.estimate_duration(
-                    actor,
-                    &def.duration,
-                    &affordance.bound_targets,
-                    effective_payload,
-                )?;
-                let estimated_ticks = match duration {
-                    ActionDuration::Finite(ticks) => ticks,
-                    ActionDuration::Indefinite if semantics.may_appear_mid_plan => return None,
-                    ActionDuration::Indefinite => 0,
-                };
-
-                let post_state = apply_step(
-                    node.state.clone(),
-                    &goal.key.kind,
-                    semantics.op_kind,
-                    &affordance.bound_targets,
-                );
-                let step = PlannedStep {
-                    def_id: affordance.def_id,
-                    targets: affordance.bound_targets,
-                    payload_override,
-                    op_kind: semantics.op_kind,
-                    estimated_ticks,
-                    is_materialization_barrier: semantics.is_materialization_barrier,
-                };
-                let terminal = terminal_kind(goal, &post_state, &step);
-                if !semantics.may_appear_mid_plan && terminal.is_none() {
-                    return None;
-                }
-                let total_estimated_ticks = node
-                    .total_estimated_ticks
-                    .checked_add(estimated_ticks)?;
-                let mut steps = node.steps.clone();
-                steps.push(step);
-
-                Some((terminal, SearchNode {
-                    state: post_state,
-                    steps,
-                    total_estimated_ticks,
-                }))
+                build_successor(goal, semantics_table, registry, &node, affordance)
             })
             .collect::<Vec<_>>();
         successors.sort_by(|left, right| compare_successors(&left.1, &right.1));
@@ -133,12 +70,91 @@ pub fn search_plan(
     None
 }
 
+fn root_node(snapshot: &PlanningSnapshot) -> SearchNode<'_> {
+    SearchNode {
+        state: PlanningState::new(snapshot),
+        steps: Vec::new(),
+        total_estimated_ticks: 0,
+    }
+}
+
+fn build_successor<'snapshot>(
+    goal: &GroundedGoal,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    node: &SearchNode<'snapshot>,
+    affordance: Affordance,
+) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
+    let def = registry.get(affordance.def_id)?;
+    let semantics = semantics_table.get(&affordance.def_id)?;
+    if !goal
+        .key
+        .kind
+        .relevant_op_kinds()
+        .contains(&semantics.op_kind)
+    {
+        return None;
+    }
+
+    let actor = node.state.snapshot().actor();
+    let payload_override = build_payload_override(
+        affordance.payload_override.as_ref(),
+        &goal.key.kind,
+        &node.state,
+        &affordance.bound_targets,
+        def,
+        semantics,
+    )
+    .ok()?;
+    let effective_payload = payload_override.as_ref().unwrap_or(&def.payload);
+    let duration = node.state.estimate_duration(
+        actor,
+        &def.duration,
+        &affordance.bound_targets,
+        effective_payload,
+    )?;
+    let estimated_ticks = match duration {
+        ActionDuration::Finite(ticks) => ticks,
+        ActionDuration::Indefinite if semantics.may_appear_mid_plan => return None,
+        ActionDuration::Indefinite => 0,
+    };
+
+    let post_state = apply_step(
+        node.state.clone(),
+        &goal.key.kind,
+        semantics.op_kind,
+        &affordance.bound_targets,
+    );
+    let step = PlannedStep {
+        def_id: affordance.def_id,
+        targets: affordance.bound_targets,
+        payload_override,
+        op_kind: semantics.op_kind,
+        estimated_ticks,
+        is_materialization_barrier: semantics.is_materialization_barrier,
+    };
+    let terminal = terminal_kind(goal, &post_state, &step);
+    if !semantics.may_appear_mid_plan && terminal.is_none() {
+        return None;
+    }
+    let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
+    let mut steps = node.steps.clone();
+    steps.push(step);
+
+    Some((
+        terminal,
+        SearchNode {
+            state: post_state,
+            steps,
+            total_estimated_ticks,
+        },
+    ))
+}
+
 fn unsupported_goal(goal: &GoalKind) -> bool {
     matches!(
         goal,
-        GoalKind::SellCommodity { .. }
-            | GoalKind::MoveCargo { .. }
-            | GoalKind::BuryCorpse { .. }
+        GoalKind::SellCommodity { .. } | GoalKind::MoveCargo { .. } | GoalKind::BuryCorpse { .. }
     )
 }
 
@@ -159,10 +175,7 @@ fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Orderi
         .then_with(|| left.steps.cmp(&right.steps))
 }
 
-fn compare_successors(
-    left: &SearchNode<'_>,
-    right: &SearchNode<'_>,
-) -> Ordering {
+fn compare_successors(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
     compare_search_nodes(left, right)
 }
 
@@ -248,9 +261,8 @@ fn apply_step<'snapshot>(
             }
         }
         PlannerOpKind::Consume => match goal {
-            GoalKind::ConsumeOwnedCommodity { commodity } | GoalKind::AcquireCommodity { commodity, .. } => {
-                state.consume_commodity(*commodity)
-            }
+            GoalKind::ConsumeOwnedCommodity { commodity }
+            | GoalKind::AcquireCommodity { commodity, .. } => state.consume_commodity(*commodity),
             _ => state,
         },
         PlannerOpKind::Sleep => update_actor_needs(state, |needs, thresholds| {
@@ -320,7 +332,10 @@ fn progress_barrier(goal: &GroundedGoal, step: &PlannedStep) -> bool {
         | GoalKind::LootCorpse { .. } => true,
         GoalKind::ConsumeOwnedCommodity { .. } => matches!(
             step.op_kind,
-            PlannerOpKind::Trade | PlannerOpKind::Harvest | PlannerOpKind::Craft | PlannerOpKind::MoveCargo
+            PlannerOpKind::Trade
+                | PlannerOpKind::Harvest
+                | PlannerOpKind::Craft
+                | PlannerOpKind::MoveCargo
         ),
         GoalKind::Heal { .. } => step.op_kind == PlannerOpKind::Trade,
         _ => false,
@@ -346,10 +361,12 @@ fn goal_is_satisfied(goal: &GroundedGoal, state: &PlanningState<'_>) -> bool {
             }
         }
         GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
-            CommodityPurpose::SelfConsume | CommodityPurpose::Restock | CommodityPurpose::Treatment => {
+            CommodityPurpose::SelfConsume
+            | CommodityPurpose::Restock
+            | CommodityPurpose::Treatment
+            | CommodityPurpose::RecipeInput(_) => {
                 state.commodity_quantity(actor, commodity) > Quantity(0)
             }
-            CommodityPurpose::RecipeInput(_) => state.commodity_quantity(actor, commodity) > Quantity(0),
         },
         GoalKind::Sleep => state
             .homeostatic_needs(actor)
@@ -363,9 +380,9 @@ fn goal_is_satisfied(goal: &GroundedGoal, state: &PlanningState<'_>) -> bool {
             .homeostatic_needs(actor)
             .zip(state.drive_thresholds(actor))
             .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.medium()),
-        GoalKind::ReduceDanger => state
-            .drive_thresholds(actor)
-            .is_some_and(|thresholds| derive_danger_pressure(state, actor) < thresholds.danger.high()),
+        GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
+            derive_danger_pressure(state, actor) < thresholds.danger.high()
+        }),
         GoalKind::Heal { target } => state
             .drive_thresholds(target)
             .zip(state.pain_summary(target))
@@ -384,25 +401,25 @@ mod tests {
     use super::search_plan;
     use crate::{
         build_planning_snapshot, build_semantics_table, CommodityPurpose, GoalKey, GroundedGoal,
-        PlanningBudget, PlanTerminalKind, PlannerOpKind,
+        PlanTerminalKind, PlannerOpKind, PlanningBudget,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         test_utils::sample_trade_disposition_profile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille,
-        Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
-        WorkstationTag, Wound,
+        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
+        InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId,
+        ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, BeliefView,
-        DurationExpr, RecipeRegistry,
+        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, BeliefView, DurationExpr,
+        RecipeRegistry,
     };
     use worldwake_systems::{
-        register_attack_action, register_craft_actions, register_defend_action, register_harvest_actions,
-        register_heal_action, register_loot_action, register_needs_actions, register_trade_action,
-        register_transport_actions, register_travel_actions,
+        register_attack_action, register_craft_actions, register_defend_action,
+        register_harvest_actions, register_heal_action, register_loot_action,
+        register_needs_actions, register_trade_action, register_transport_actions,
+        register_travel_actions,
     };
 
     #[derive(Default)]
@@ -427,38 +444,102 @@ mod tests {
     }
 
     impl BeliefView for TestBeliefView {
-        fn is_alive(&self, entity: EntityId) -> bool { self.alive.contains(&entity) }
-        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> { self.kinds.get(&entity).copied() }
-        fn effective_place(&self, entity: EntityId) -> Option<EntityId> { self.effective_places.get(&entity).copied() }
-        fn is_in_transit(&self, _entity: EntityId) -> bool { false }
-        fn entities_at(&self, place: EntityId) -> Vec<EntityId> { self.entities_at.get(&place).cloned().unwrap_or_default() }
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> { self.direct_possessions.get(&holder).cloned().unwrap_or_default() }
+        fn is_alive(&self, entity: EntityId) -> bool {
+            self.alive.contains(&entity)
+        }
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.kinds.get(&entity).copied()
+        }
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places.get(&entity).copied()
+        }
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at.get(&place).cloned().unwrap_or_default()
+        }
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places_with_travel_ticks(place).into_iter().map(|(place, _)| place).collect()
+            self.adjacent_places_with_travel_ticks(place)
+                .into_iter()
+                .map(|(place, _)| place)
+                .collect()
         }
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool { false }
-        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 { 0 }
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
         fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-            self.commodity_quantities.get(&(holder, kind)).copied().unwrap_or(Quantity(0))
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
         }
-        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> { self.lot_commodities.get(&entity).copied() }
-        fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> { self.consumable_profiles.get(&entity).copied() }
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> { None }
-        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> { self.direct_possessors.get(&entity).copied() }
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> { None }
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> { None }
-        fn has_production_job(&self, _entity: EntityId) -> bool { false }
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool { self.controllable.contains(&(actor, entity)) }
-        fn has_control(&self, entity: EntityId) -> bool { self.kinds.get(&entity) == Some(&EntityKind::Agent) }
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool { false }
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> { Vec::new() }
-        fn is_dead(&self, entity: EntityId) -> bool { !self.is_alive(entity) }
-        fn is_incapacitated(&self, _entity: EntityId) -> bool { false }
-        fn has_wounds(&self, _entity: EntityId) -> bool { false }
-        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> { self.needs.get(&agent).copied() }
-        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> { self.thresholds.get(&agent).copied() }
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> { Some(MetabolismProfile::default()) }
-        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> { self.trade_profiles.get(&agent).cloned() }
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.lot_commodities.get(&entity).copied()
+        }
+        fn item_lot_consumable_profile(
+            &self,
+            entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            self.consumable_profiles.get(&entity).copied()
+        }
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
+        }
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            self.controllable.contains(&(actor, entity))
+        }
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
+        }
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
+        }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            Some(MetabolismProfile::default())
+        }
+        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+            self.trade_profiles.get(&agent).cloned()
+        }
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             Some(CombatProfile::new(
                 pm(1000),
@@ -473,22 +554,58 @@ mod tests {
                 NonZeroU32::new(6).unwrap(),
             ))
         }
-        fn wounds(&self, _agent: EntityId) -> Vec<Wound> { Vec::new() }
-        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> { self.hostiles.get(&agent).cloned().unwrap_or_default() }
-        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> { self.attackers.get(&agent).cloned().unwrap_or_default() }
-        fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.entities_at(place).into_iter().filter(|entity| {
-                self.merchandise_profiles.get(entity).is_some_and(|profile| profile.sale_kinds.contains(&commodity))
-            }).collect()
+        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
+            Vec::new()
         }
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> { Vec::new() }
-        fn matching_workstations_at(&self, _place: EntityId, _tag: WorkstationTag) -> Vec<EntityId> { Vec::new() }
-        fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> { Vec::new() }
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> { Vec::new() }
-        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> { self.merchandise_profiles.get(&agent).cloned() }
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> { Vec::new() }
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> { None }
-        fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostiles.get(&agent).cloned().unwrap_or_default()
+        }
+        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+            self.attackers.get(&agent).cloned().unwrap_or_default()
+        }
+        fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+            self.entities_at(place)
+                .into_iter()
+                .filter(|entity| {
+                    self.merchandise_profiles
+                        .get(entity)
+                        .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+                })
+                .collect()
+        }
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+            self.merchandise_profiles.get(&agent).cloned()
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
             self.adjacent.get(&place).cloned().unwrap_or_default()
         }
         fn estimate_duration(
@@ -503,7 +620,10 @@ mod tests {
     }
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 1 }
+        EntityId {
+            slot,
+            generation: 1,
+        }
     }
 
     fn pm(value: u16) -> Permille {
@@ -593,8 +713,10 @@ mod tests {
         view.entities_at.insert(town, vec![actor]);
         view.entities_at.insert(field, vec![bread]);
         view.controllable.insert((actor, bread));
-        view.adjacent.insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
-        view.adjacent.insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
         view.consumable_profiles.insert(
             bread,
@@ -638,8 +760,10 @@ mod tests {
         view.effective_places.insert(seller, market);
         view.entities_at.insert(town, vec![actor]);
         view.entities_at.insert(market, vec![seller]);
-        view.adjacent.insert(town, vec![(market, NonZeroU32::new(4).unwrap())]);
-        view.adjacent.insert(market, vec![(town, NonZeroU32::new(4).unwrap())]);
+        view.adjacent
+            .insert(town, vec![(market, NonZeroU32::new(4).unwrap())]);
+        view.adjacent
+            .insert(market, vec![(town, NonZeroU32::new(4).unwrap())]);
         view.needs.insert(
             actor,
             HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
@@ -654,8 +778,10 @@ mod tests {
                 home_market: Some(market),
             },
         );
-        view.commodity_quantities.insert((actor, CommodityKind::Coin), Quantity(3));
-        view.commodity_quantities.insert((seller, CommodityKind::Bread), Quantity(2));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
         let (registry, handlers) = build_registry();
         let goal = GroundedGoal {
             key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
@@ -665,7 +791,13 @@ mod tests {
             evidence_entities: BTreeSet::from([seller]),
             evidence_places: BTreeSet::from([market]),
         };
-        let snapshot = build_planning_snapshot(&view, actor, &goal.evidence_entities, &goal.evidence_places, 1);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
         let plan = search_plan(
             &snapshot,
             &goal,
@@ -680,7 +812,10 @@ mod tests {
         assert_eq!(plan.steps.len(), 2);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Trade);
-        assert!(matches!(plan.steps[1].payload_override, Some(ActionPayload::Trade(_))));
+        assert!(matches!(
+            plan.steps[1].payload_override,
+            Some(ActionPayload::Trade(_))
+        ));
     }
 
     #[test]
@@ -700,8 +835,10 @@ mod tests {
         view.entities_at.insert(town, vec![actor]);
         view.entities_at.insert(field, vec![bread]);
         view.controllable.insert((actor, bread));
-        view.adjacent.insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
-        view.adjacent.insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
         view.consumable_profiles.insert(
             bread,
@@ -747,8 +884,10 @@ mod tests {
         view.entities_at.insert(town, vec![actor]);
         view.entities_at.insert(field, vec![bread]);
         view.controllable.insert((actor, bread));
-        view.adjacent.insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
-        view.adjacent.insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
         view.consumable_profiles.insert(
             bread,
@@ -792,8 +931,10 @@ mod tests {
         view.effective_places.insert(seller, market);
         view.entities_at.insert(town, vec![actor]);
         view.entities_at.insert(market, vec![seller]);
-        view.adjacent.insert(town, vec![(market, NonZeroU32::new(3).unwrap())]);
-        view.adjacent.insert(market, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(town, vec![(market, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(market, vec![(town, NonZeroU32::new(3).unwrap())]);
         view.merchandise_profiles.insert(
             seller,
             MerchandiseProfile {
@@ -801,8 +942,10 @@ mod tests {
                 home_market: Some(market),
             },
         );
-        view.commodity_quantities.insert((actor, CommodityKind::Coin), Quantity(3));
-        view.commodity_quantities.insert((seller, CommodityKind::Bread), Quantity(2));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
         view.needs.insert(
             actor,
             HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
@@ -853,8 +996,10 @@ mod tests {
         view.effective_places.insert(attacker, town);
         view.entities_at.insert(town, vec![actor, attacker]);
         view.entities_at.insert(refuge, Vec::new());
-        view.adjacent.insert(town, vec![(refuge, NonZeroU32::new(2).unwrap())]);
-        view.adjacent.insert(refuge, vec![(town, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(town, vec![(refuge, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(refuge, vec![(town, NonZeroU32::new(2).unwrap())]);
         view.thresholds.insert(actor, DriveThresholds::default());
         view.hostiles.insert(actor, vec![attacker]);
         view.attackers.insert(actor, vec![attacker]);
@@ -864,7 +1009,13 @@ mod tests {
             evidence_entities: BTreeSet::from([attacker]),
             evidence_places: BTreeSet::from([town, refuge]),
         };
-        let snapshot = build_planning_snapshot(&view, actor, &goal.evidence_entities, &goal.evidence_places, 1);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
         let plan = search_plan(
             &snapshot,
             &goal,
@@ -879,7 +1030,10 @@ mod tests {
         assert!(matches!(
             (plan.steps[0].op_kind, plan.terminal_kind),
             (PlannerOpKind::Travel, PlanTerminalKind::GoalSatisfied)
-                | (PlannerOpKind::Attack | PlannerOpKind::Defend, PlanTerminalKind::CombatCommitment)
+                | (
+                    PlannerOpKind::Attack | PlannerOpKind::Defend,
+                    PlanTerminalKind::CombatCommitment
+                )
         ));
     }
 
@@ -906,7 +1060,13 @@ mod tests {
             evidence_entities: BTreeSet::from([attacker]),
             evidence_places: BTreeSet::from([town]),
         };
-        let snapshot = build_planning_snapshot(&view, actor, &goal.evidence_entities, &goal.evidence_places, 0);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
         let plan = search_plan(
             &snapshot,
             &goal,

@@ -1,7 +1,7 @@
 use crate::{
     build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
-    generate_candidates, handle_plan_failure, rank_candidates, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, InterruptDecision, PlanFailureContext,
+    generate_candidates, handle_plan_failure, rank_candidates, revalidate_next_step, search_plan,
+    select_best_plan, AgentDecisionRuntime, InterruptDecision, PlanFailureContext,
     PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget,
 };
 use std::collections::BTreeMap;
@@ -70,7 +70,12 @@ impl AutonomousController for AgentTickDriver {
         "agent_tick_driver"
     }
 
-    fn claims_agent(&self, _world: &worldwake_core::World, _agent: EntityId, control_source: ControlSource) -> bool {
+    fn claims_agent(
+        &self,
+        _world: &worldwake_core::World,
+        _agent: EntityId,
+        control_source: ControlSource,
+    ) -> bool {
         control_source == ControlSource::Ai
     }
 
@@ -222,14 +227,7 @@ fn process_agent(
                     worldwake_sim::InterruptReason::Reprioritized,
                 )
                 .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-            reconcile_in_flight_state(
-                ctx,
-                runtime,
-                &mut blocked_memory,
-                None,
-                agent,
-                &[&replan],
-            )?;
+            reconcile_in_flight_state(ctx, runtime, &mut blocked_memory, None, agent, &[&replan])?;
         }
 
         persist_blocked_memory(
@@ -288,7 +286,9 @@ fn process_agent(
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
-            runtime.last_priority_class = ranked_candidates.first().map(|candidate| candidate.priority_class);
+            runtime.last_priority_class = ranked_candidates
+                .first()
+                .map(|candidate| candidate.priority_class);
         }
         runtime.dirty = false;
     }
@@ -439,7 +439,9 @@ fn persist_blocked_memory(
     after: &BlockedIntentMemory,
 ) -> Result<(), TickInputError> {
     let existing = world.get_component_blocked_intent_memory(agent);
-    if existing == Some(after) || (existing.is_none() && before == after && after.intents.is_empty()) {
+    if existing == Some(after)
+        || (existing.is_none() && before == after && after.intents.is_empty())
+    {
         return Ok(());
     }
 
@@ -466,13 +468,16 @@ fn current_step(runtime: &AgentDecisionRuntime) -> Option<&PlannedStep> {
 }
 
 fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
-    runtime
-        .current_plan
-        .as_ref()
-        .is_some_and(|plan| runtime.current_step_index >= plan.steps.len() && !runtime.step_in_flight)
+    runtime.current_plan.as_ref().is_some_and(|plan| {
+        runtime.current_step_index >= plan.steps.len() && !runtime.step_in_flight
+    })
 }
 
-fn observation_snapshot_changed(view: &dyn BeliefView, agent: EntityId, runtime: &AgentDecisionRuntime) -> bool {
+fn observation_snapshot_changed(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    runtime: &AgentDecisionRuntime,
+) -> bool {
     runtime.last_effective_place != view.effective_place(agent)
         || runtime.last_needs != view.homeostatic_needs(agent)
         || runtime.last_wounds != view.wounds(agent)
@@ -516,18 +521,21 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 mod tests {
     use super::{advance_completed_step, AgentTickDriver};
     use crate::PlanningBudget;
-    use crate::{CommodityPurpose, GoalKey, GoalKind, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
+    use crate::{
+        CommodityPurpose, GoalKey, GoalKind, PlanTerminalKind, PlannedPlan, PlannedStep,
+        PlannerOpKind,
+    };
     use std::fs;
     use std::path::PathBuf;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile, Quantity, Seed,
+        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
-        ControllerState, DeterministicRng, RecipeRegistry, Scheduler, SystemDispatchTable,
-        SystemManifest, TickStepServices,
+        step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
+        AutonomousControllerRuntime, ControllerState, DeterministicRng, RecipeRegistry, Scheduler,
+        SystemDispatchTable, SystemManifest, TickStepServices,
     };
     use worldwake_systems::register_needs_actions;
 
@@ -551,7 +559,9 @@ mod tests {
             let actor = {
                 let mut txn = new_txn(&mut world, 1);
                 let actor = txn.create_agent("Aster", control_source).unwrap();
-                let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+                let bread = txn
+                    .create_item_lot(CommodityKind::Bread, Quantity(1))
+                    .unwrap();
                 txn.set_ground_location(actor, place).unwrap();
                 txn.set_ground_location(bread, place).unwrap();
                 txn.set_possessor(bread, actor).unwrap();
@@ -595,8 +605,7 @@ mod tests {
         }
 
         fn step_once(&mut self) -> worldwake_sim::TickStepResult {
-            let mut controllers =
-                AutonomousControllerRuntime::new(vec![&mut self.driver]);
+            let mut controllers = AutonomousControllerRuntime::new(vec![&mut self.driver]);
             step_tick(
                 &mut self.world,
                 &mut self.event_log,

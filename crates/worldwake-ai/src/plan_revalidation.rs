@@ -16,7 +16,12 @@ pub fn revalidate_next_step(
     get_affordances(view, actor, registry, handlers)
         .into_iter()
         .any(|affordance| {
-            affordance.matches_request_identity(def, actor, &step.targets, step.payload_override.as_ref())
+            affordance.matches_request_identity(
+                def,
+                actor,
+                &step.targets,
+                step.payload_override.as_ref(),
+            )
         })
 }
 
@@ -27,7 +32,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BodyCostPerTick, CommodityConsumableProfile, CommodityKind, CombatProfile,
+        BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
         InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId,
         ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
@@ -75,7 +80,10 @@ mod tests {
         }
 
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places.get(&place).cloned().unwrap_or_default()
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
@@ -200,11 +208,19 @@ mod tests {
             Vec::new()
         }
 
-        fn matching_workstations_at(&self, _place: EntityId, _tag: WorkstationTag) -> Vec<EntityId> {
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 
-        fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -224,7 +240,10 @@ mod tests {
             None
         }
 
-        fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
             self.adjacent_with_ticks
                 .get(&place)
                 .cloned()
@@ -451,21 +470,19 @@ mod tests {
 
         let mut step = sample_step(ActionDefId(0), entity(99));
         step.targets.clear();
-        step.payload_override = Some(ActionPayload::Harvest(worldwake_sim::HarvestActionPayload {
-            recipe_id: worldwake_core::RecipeId(4),
-            required_workstation_tag: worldwake_core::WorkstationTag::OrchardRow,
-            output_commodity: CommodityKind::Apple,
-            output_quantity: Quantity(2),
-            required_tool_kinds: Vec::new(),
-        }));
+        step.payload_override = Some(ActionPayload::Harvest(
+            worldwake_sim::HarvestActionPayload {
+                recipe_id: worldwake_core::RecipeId(4),
+                required_workstation_tag: worldwake_core::WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(2),
+                required_tool_kinds: Vec::new(),
+            },
+        ));
 
         let (registry, handlers) = build_payload_registry();
         assert!(!revalidate_next_step(
-            &view,
-            actor,
-            &step,
-            &registry,
-            &handlers,
+            &view, actor, &step, &registry, &handlers,
         ));
     }
 
@@ -477,21 +494,19 @@ mod tests {
 
         let mut step = sample_step(ActionDefId(0), entity(99));
         step.targets.clear();
-        step.payload_override = Some(ActionPayload::Harvest(worldwake_sim::HarvestActionPayload {
-            recipe_id: worldwake_core::RecipeId(4),
-            required_workstation_tag: worldwake_core::WorkstationTag::OrchardRow,
-            output_commodity: CommodityKind::Apple,
-            output_quantity: Quantity(1),
-            required_tool_kinds: Vec::new(),
-        }));
+        step.payload_override = Some(ActionPayload::Harvest(
+            worldwake_sim::HarvestActionPayload {
+                recipe_id: worldwake_core::RecipeId(4),
+                required_workstation_tag: worldwake_core::WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(1),
+                required_tool_kinds: Vec::new(),
+            },
+        ));
 
         let (registry, handlers) = build_payload_registry();
         assert!(revalidate_next_step(
-            &view,
-            actor,
-            &step,
-            &registry,
-            &handlers,
+            &view, actor, &step, &registry, &handlers,
         ));
     }
 }

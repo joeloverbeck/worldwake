@@ -1,14 +1,14 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory,
-    CarryCapacity, CombatProfile, CombatStance, CommodityKind, ComponentTables, ComponentValue,
-    Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
-    EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-    KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource,
-    SubstitutePreferences, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory, CarryCapacity,
+    CombatProfile, CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt,
+    DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind,
+    EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
+    LotOperation, MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry,
+    Quantity, RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology,
+    TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker,
+    WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

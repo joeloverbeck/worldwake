@@ -2,7 +2,9 @@ use crate::{GoalKey, GoalKindTag};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::EntityId;
-use worldwake_sim::{ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload, InputKind};
+use worldwake_sim::{
+    ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload, InputKind,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
@@ -59,7 +61,9 @@ const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 
 #[must_use]
-pub fn build_semantics_table(registry: &ActionDefRegistry) -> BTreeMap<ActionDefId, PlannerOpSemantics> {
+pub fn build_semantics_table(
+    registry: &ActionDefRegistry,
+) -> BTreeMap<ActionDefId, PlannerOpSemantics> {
     registry
         .iter()
         .filter_map(|def| classify_action_def(def).map(|op_kind| (def.id, semantics_for(op_kind))))
@@ -74,7 +78,9 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Needs, "toilet", _) => Some(PlannerOpKind::Relieve),
         (ActionDomain::Needs, "wash", _) => Some(PlannerOpKind::Wash),
         (ActionDomain::Trade, "trade", _) => Some(PlannerOpKind::Trade),
-        (ActionDomain::Production, name, ActionPayload::Harvest(_)) if name.starts_with("harvest:") => {
+        (ActionDomain::Production, name, ActionPayload::Harvest(_))
+            if name.starts_with("harvest:") =>
+        {
             Some(PlannerOpKind::Harvest)
         }
         (ActionDomain::Production, name, ActionPayload::Craft(_)) if name.starts_with("craft:") => {
@@ -247,9 +253,7 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    };
+    use super::{build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use crate::{CommodityPurpose, GoalKey, GoalKind};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -260,9 +264,10 @@ mod tests {
         RecipeDefinition, RecipeRegistry, TradeActionPayload,
     };
     use worldwake_systems::{
-        register_attack_action, register_craft_actions, register_defend_action, register_harvest_actions,
-        register_heal_action, register_loot_action, register_needs_actions, register_trade_action,
-        register_transport_actions, register_travel_actions,
+        register_attack_action, register_craft_actions, register_defend_action,
+        register_harvest_actions, register_heal_action, register_loot_action,
+        register_needs_actions, register_trade_action, register_transport_actions,
+        register_travel_actions,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -423,18 +428,54 @@ mod tests {
         let table = build_semantics_table(&defs);
 
         assert_eq!(table.len(), defs.len());
-        assert_eq!(table.get(&ActionDefId(0)).unwrap().op_kind, PlannerOpKind::Consume);
-        assert_eq!(table.get(&ActionDefId(2)).unwrap().op_kind, PlannerOpKind::Sleep);
-        assert_eq!(table.get(&ActionDefId(3)).unwrap().op_kind, PlannerOpKind::Relieve);
-        assert_eq!(table.get(&ActionDefId(5)).unwrap().op_kind, PlannerOpKind::Travel);
-        assert_eq!(table.get(&ActionDefId(6)).unwrap().op_kind, PlannerOpKind::MoveCargo);
-        assert_eq!(table.get(&ActionDefId(8)).unwrap().op_kind, PlannerOpKind::Trade);
-        assert_eq!(table.get(&ActionDefId(9)).unwrap().op_kind, PlannerOpKind::Harvest);
-        assert_eq!(table.get(&ActionDefId(10)).unwrap().op_kind, PlannerOpKind::Craft);
-        assert_eq!(table.get(&ActionDefId(11)).unwrap().op_kind, PlannerOpKind::Attack);
-        assert_eq!(table.get(&ActionDefId(12)).unwrap().op_kind, PlannerOpKind::Defend);
-        assert_eq!(table.get(&ActionDefId(13)).unwrap().op_kind, PlannerOpKind::Loot);
-        assert_eq!(table.get(&ActionDefId(14)).unwrap().op_kind, PlannerOpKind::Heal);
+        assert_eq!(
+            table.get(&ActionDefId(0)).unwrap().op_kind,
+            PlannerOpKind::Consume
+        );
+        assert_eq!(
+            table.get(&ActionDefId(2)).unwrap().op_kind,
+            PlannerOpKind::Sleep
+        );
+        assert_eq!(
+            table.get(&ActionDefId(3)).unwrap().op_kind,
+            PlannerOpKind::Relieve
+        );
+        assert_eq!(
+            table.get(&ActionDefId(5)).unwrap().op_kind,
+            PlannerOpKind::Travel
+        );
+        assert_eq!(
+            table.get(&ActionDefId(6)).unwrap().op_kind,
+            PlannerOpKind::MoveCargo
+        );
+        assert_eq!(
+            table.get(&ActionDefId(8)).unwrap().op_kind,
+            PlannerOpKind::Trade
+        );
+        assert_eq!(
+            table.get(&ActionDefId(9)).unwrap().op_kind,
+            PlannerOpKind::Harvest
+        );
+        assert_eq!(
+            table.get(&ActionDefId(10)).unwrap().op_kind,
+            PlannerOpKind::Craft
+        );
+        assert_eq!(
+            table.get(&ActionDefId(11)).unwrap().op_kind,
+            PlannerOpKind::Attack
+        );
+        assert_eq!(
+            table.get(&ActionDefId(12)).unwrap().op_kind,
+            PlannerOpKind::Defend
+        );
+        assert_eq!(
+            table.get(&ActionDefId(13)).unwrap().op_kind,
+            PlannerOpKind::Loot
+        );
+        assert_eq!(
+            table.get(&ActionDefId(14)).unwrap().op_kind,
+            PlannerOpKind::Heal
+        );
     }
 
     #[test]
@@ -442,7 +483,12 @@ mod tests {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
 
-        for id in [ActionDefId(8), ActionDefId(9), ActionDefId(10), ActionDefId(13)] {
+        for id in [
+            ActionDefId(8),
+            ActionDefId(9),
+            ActionDefId(10),
+            ActionDefId(13),
+        ] {
             assert!(table.get(&id).unwrap().is_materialization_barrier);
         }
         for id in [

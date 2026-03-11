@@ -2343,7 +2343,10 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas.len(), 1);
-        assert_eq!(world.get_component_blocked_intent_memory(agent), Some(&after));
+        assert_eq!(
+            world.get_component_blocked_intent_memory(agent),
+            Some(&after)
+        );
     }
 
     #[test]

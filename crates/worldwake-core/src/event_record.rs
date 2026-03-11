@@ -129,7 +129,7 @@ impl EventRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{EvidenceRef, EventRecord, PendingEvent};
+    use super::{EventRecord, EvidenceRef, PendingEvent};
     use crate::{
         CauseRef, ComponentDelta, ComponentKind, ComponentValue, EventTag, QuantityDelta,
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,

@@ -19,9 +19,9 @@ pub mod action_payload;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
-pub mod autonomous_controller;
 pub mod affordance;
 pub mod affordance_query;
+pub mod autonomous_controller;
 pub mod belief_view;
 pub mod controller_state;
 pub mod deterministic_rng;
@@ -68,11 +68,11 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
+pub use affordance::Affordance;
+pub use affordance_query::get_affordances;
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
 };
-pub use affordance::Affordance;
-pub use affordance_query::get_affordances;
 pub use belief_view::{estimate_duration_from_beliefs, BeliefView};
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;

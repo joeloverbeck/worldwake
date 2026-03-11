@@ -249,8 +249,7 @@ mod tests {
             WitnessData::default(),
         );
 
-        (registry.get(handler_id).unwrap().on_commit)(&def, &instance, &mut rng, &mut txn)
-            .unwrap();
+        (registry.get(handler_id).unwrap().on_commit)(&def, &instance, &mut rng, &mut txn).unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

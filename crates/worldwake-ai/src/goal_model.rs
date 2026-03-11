@@ -240,19 +240,33 @@ mod tests {
             commodity: CommodityKind::Bread,
         };
 
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Consume));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Travel));
-        assert!(!goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Attack));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Consume));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Travel));
+        assert!(!goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Attack));
     }
 
     #[test]
     fn reduce_danger_goal_relevant_ops_include_defense_leaf_options() {
         let goal = GoalKind::ReduceDanger;
 
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Travel));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Attack));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Defend));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Heal));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Travel));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Attack));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Defend));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Heal));
     }
 
     #[test]
@@ -261,11 +275,21 @@ mod tests {
             commodity: CommodityKind::Bread,
         };
 
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Travel));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Trade));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Harvest));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::Craft));
-        assert!(goal.relevant_op_kinds().contains(&crate::PlannerOpKind::MoveCargo));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Travel));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Trade));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Harvest));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::Craft));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&crate::PlannerOpKind::MoveCargo));
     }
 
     #[test]

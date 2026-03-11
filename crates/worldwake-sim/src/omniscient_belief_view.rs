@@ -217,7 +217,9 @@ impl BeliefView for OmniscientBeliefView<'_> {
     }
 
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
-        self.world.get_component_trade_disposition_profile(agent).cloned()
+        self.world
+            .get_component_trade_disposition_profile(agent)
+            .cloned()
     }
 
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
@@ -333,7 +335,12 @@ impl BeliefView for OmniscientBeliefView<'_> {
             .outgoing_edges(place)
             .iter()
             .filter_map(|edge_id| self.world.topology().edge(*edge_id))
-            .map(|edge| (edge.to(), NonZeroU32::new(edge.travel_time_ticks()).unwrap()))
+            .map(|edge| {
+                (
+                    edge.to(),
+                    NonZeroU32::new(edge.travel_time_ticks()).unwrap(),
+                )
+            })
             .collect()
     }
 
@@ -353,8 +360,8 @@ mod tests {
     use super::{OmniscientBeliefRuntime, OmniscientBeliefView};
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, BeliefView,
-        Constraint, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, BeliefView, Constraint,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -753,10 +760,21 @@ mod tests {
             let local_workstation = txn.create_entity(worldwake_core::EntityKind::Facility);
             let remote_workstation = txn.create_entity(worldwake_core::EntityKind::Facility);
 
-            for entity in [actor, local_seller, local_hostile, local_corpse, local_workstation] {
+            for entity in [
+                actor,
+                local_seller,
+                local_hostile,
+                local_corpse,
+                local_workstation,
+            ] {
                 txn.set_ground_location(entity, local_place).unwrap();
             }
-            for entity in [remote_seller, remote_hostile, remote_corpse, remote_workstation] {
+            for entity in [
+                remote_seller,
+                remote_hostile,
+                remote_corpse,
+                remote_workstation,
+            ] {
                 txn.set_ground_location(entity, remote_place).unwrap();
             }
 
@@ -856,8 +874,10 @@ mod tests {
                 },
             )
             .unwrap();
-            txn.set_component_dead_at(local_corpse, DeadAt(Tick(3))).unwrap();
-            txn.set_component_dead_at(remote_corpse, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(local_corpse, DeadAt(Tick(3)))
+                .unwrap();
+            txn.set_component_dead_at(remote_corpse, DeadAt(Tick(3)))
+                .unwrap();
             txn.add_hostility(actor, local_hostile).unwrap();
             txn.add_hostility(actor, remote_hostile).unwrap();
             commit_txn(txn);
@@ -878,9 +898,18 @@ mod tests {
 
         assert_eq!(
             view.homeostatic_needs(actor),
-            Some(HomeostaticNeeds::new(pm(320), pm(450), pm(120), pm(40), pm(80)))
+            Some(HomeostaticNeeds::new(
+                pm(320),
+                pm(450),
+                pm(120),
+                pm(40),
+                pm(80)
+            ))
         );
-        assert_eq!(view.drive_thresholds(actor), Some(DriveThresholds::default()));
+        assert_eq!(
+            view.drive_thresholds(actor),
+            Some(DriveThresholds::default())
+        );
         assert_eq!(view.wounds(actor).len(), 1);
         assert!(view.has_wounds(actor));
         assert_eq!(view.visible_hostiles_for(actor), vec![local_hostile]);
@@ -944,7 +973,8 @@ mod tests {
             txn.set_ground_location(actor, origin).unwrap();
             txn.set_ground_location(local_attacker, origin).unwrap();
             txn.set_ground_location(defender, origin).unwrap();
-            txn.set_ground_location(remote_attacker, remote_place).unwrap();
+            txn.set_ground_location(remote_attacker, remote_place)
+                .unwrap();
             txn.set_in_transit(traveler).unwrap();
             txn.set_component_in_transit_on_edge(
                 traveler,
@@ -1033,11 +1063,15 @@ mod tests {
         );
         assert_eq!(
             view.adjacent_places_with_travel_ticks(origin),
-            world.topology()
+            world
+                .topology()
                 .outgoing_edges(origin)
                 .iter()
                 .filter_map(|edge_id| world.topology().edge(*edge_id))
-                .map(|edge| (edge.to(), NonZeroU32::new(edge.travel_time_ticks()).unwrap()))
+                .map(|edge| (
+                    edge.to(),
+                    NonZeroU32::new(edge.travel_time_ticks()).unwrap()
+                ))
                 .collect::<Vec<_>>()
         );
         assert_eq!(

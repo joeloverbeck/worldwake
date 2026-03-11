@@ -74,9 +74,10 @@ impl From<GoalKind> for GoalKey {
                 (None, Some(target), None)
             }
             GoalKind::MoveCargo { lot, destination } => (None, Some(lot), Some(destination)),
-            GoalKind::BuryCorpse { corpse, burial_site } => {
-                (None, Some(corpse), Some(burial_site))
-            }
+            GoalKind::BuryCorpse {
+                corpse,
+                burial_site,
+            } => (None, Some(corpse), Some(burial_site)),
             GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
