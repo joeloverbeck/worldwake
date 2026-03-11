@@ -11,6 +11,7 @@ worldwake-systems = { path = "../worldwake-systems" }
 
 [dev-dependencies]
 bincode = "1"
+blake3 = "1"
 
 [lints]
 workspace = true

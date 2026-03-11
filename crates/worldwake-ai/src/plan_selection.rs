@@ -43,7 +43,7 @@ pub fn select_best_plan(
     };
 
     if best_plan.goal == current_plan.goal {
-        return Some(current_plan);
+        return Some(if current_plan.steps.is_empty() { best_plan } else { current_plan });
     }
     if matches!(
         compare_goal_switch(
@@ -228,5 +228,92 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(first.goal, faster.goal);
+    }
+
+    fn empty_plan(goal: GoalKey) -> PlannedPlan {
+        PlannedPlan::new(goal, Vec::new(), PlanTerminalKind::GoalSatisfied)
+    }
+
+    #[test]
+    fn empty_current_plan_replaced_by_actionable_plan_for_same_goal() {
+        let eat_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let candidates = vec![ranked(
+            worldwake_core::GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalPriorityClass::High,
+            800,
+        )];
+        let actionable = plan(eat_goal, 1, 3);
+        let plans = vec![(eat_goal, Some(actionable.clone()))];
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(eat_goal),
+            current_plan: Some(empty_plan(eat_goal)),
+            dirty: false,
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+
+        assert_eq!(selected.goal, eat_goal);
+        assert_eq!(selected.steps.len(), 1, "should adopt the actionable plan, not the empty one");
+    }
+
+    #[test]
+    fn nonempty_current_plan_retained_over_new_plan_for_same_goal() {
+        let eat_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let candidates = vec![ranked(
+            worldwake_core::GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalPriorityClass::High,
+            800,
+        )];
+        let current = plan(eat_goal, 1, 3);
+        let challenger = plan(eat_goal, 2, 1);
+        let plans = vec![(eat_goal, Some(challenger))];
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(eat_goal),
+            current_plan: Some(current.clone()),
+            dirty: false,
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+
+        assert_eq!(selected, current, "non-empty current plan should be retained for same goal");
+    }
+
+    #[test]
+    fn both_empty_plans_same_goal_selects_best() {
+        let eat_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let candidates = vec![ranked(
+            worldwake_core::GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalPriorityClass::High,
+            800,
+        )];
+        let plans = vec![(eat_goal, Some(empty_plan(eat_goal)))];
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(eat_goal),
+            current_plan: Some(empty_plan(eat_goal)),
+            dirty: false,
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+
+        assert_eq!(selected.goal, eat_goal);
+        assert!(selected.steps.is_empty(), "both plans are empty — best is selected but also empty");
     }
 }

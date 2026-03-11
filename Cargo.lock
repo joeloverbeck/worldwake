@@ -182,6 +182,7 @@ name = "worldwake-ai"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "blake3",
  "serde",
  "worldwake-core",
  "worldwake-sim",
