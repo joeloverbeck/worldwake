@@ -9,8 +9,9 @@ use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKind, Permille, Quantity,
 };
 use worldwake_sim::{
-    get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration, ActionPayload,
-    BeliefView, CombatActionPayload, LootActionPayload, TradeActionPayload,
+    get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
+    ActionHandlerRegistry, ActionPayload, BeliefView, CombatActionPayload, LootActionPayload,
+    TradeActionPayload,
 };
 
 #[derive(Clone)]
@@ -25,6 +26,7 @@ pub fn search_plan(
     goal: &GroundedGoal,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
     budget: &PlanningBudget,
 ) -> Option<PlannedPlan> {
     if unsupported_goal(&goal.key.kind) {
@@ -55,7 +57,7 @@ pub fn search_plan(
         }
         expansions = expansions.saturating_add(1);
 
-        let mut successors = get_affordances(&node.state, actor, registry)
+        let mut successors = get_affordances(&node.state, actor, registry, handlers)
             .into_iter()
             .filter_map(|affordance| {
                 let def = registry.get(affordance.def_id)?;
@@ -65,6 +67,7 @@ pub fn search_plan(
                 }
 
                 let payload_override = build_payload_override(
+                    affordance.payload_override.as_ref(),
                     &goal.key.kind,
                     &node.state,
                     &affordance.bound_targets,
@@ -164,12 +167,17 @@ fn compare_successors(
 }
 
 fn build_payload_override(
+    affordance_payload: Option<&ActionPayload>,
     goal: &GoalKind,
     state: &PlanningState<'_>,
     targets: &[EntityId],
     def: &ActionDef,
     semantics: &PlannerOpSemantics,
 ) -> Result<Option<ActionPayload>, ()> {
+    if let Some(payload) = affordance_payload {
+        return Ok(Some(payload.clone()));
+    }
+
     let actor = state.snapshot().actor();
     match semantics.op_kind {
         PlannerOpKind::Trade => {
@@ -502,7 +510,7 @@ mod tests {
         Permille::new(value).unwrap()
     }
 
-    fn build_registry() -> ActionDefRegistry {
+    fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = worldwake_sim::ActionHandlerRegistry::new();
         let recipes = RecipeRegistry::new();
@@ -516,7 +524,7 @@ mod tests {
         let _ = register_defend_action(&mut defs, &mut handlers);
         let _ = register_loot_action(&mut defs, &mut handlers);
         let _ = register_heal_action(&mut defs, &mut handlers);
-        defs
+        (defs, handlers)
     }
 
     fn consume_goal(commodity: CommodityKind) -> GroundedGoal {
@@ -551,13 +559,14 @@ mod tests {
             HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
         );
         view.thresholds.insert(actor, DriveThresholds::default());
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let plan = search_plan(
             &snapshot,
             &consume_goal(CommodityKind::Bread),
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &PlanningBudget::default(),
         )
         .unwrap();
@@ -596,13 +605,14 @@ mod tests {
             HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
         );
         view.thresholds.insert(actor, DriveThresholds::default());
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let plan = search_plan(
             &snapshot,
             &consume_goal(CommodityKind::Bread),
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &PlanningBudget::default(),
         )
         .unwrap();
@@ -646,7 +656,7 @@ mod tests {
         );
         view.commodity_quantities.insert((actor, CommodityKind::Coin), Quantity(3));
         view.commodity_quantities.insert((seller, CommodityKind::Bread), Quantity(2));
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let goal = GroundedGoal {
             key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
@@ -661,6 +671,7 @@ mod tests {
             &goal,
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &PlanningBudget::default(),
         )
         .unwrap();
@@ -701,7 +712,7 @@ mod tests {
             HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
         );
         view.thresholds.insert(actor, DriveThresholds::default());
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let mut budget = PlanningBudget::default();
         budget.max_plan_depth = 1;
@@ -710,6 +721,7 @@ mod tests {
             &consume_goal(CommodityKind::Bread),
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &budget,
         );
 
@@ -745,7 +757,7 @@ mod tests {
             HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
         );
         view.thresholds.insert(actor, DriveThresholds::default());
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let mut budget = PlanningBudget::default();
         budget.max_node_expansions = 0;
@@ -754,6 +766,7 @@ mod tests {
             &consume_goal(CommodityKind::Bread),
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &budget,
         );
 
@@ -800,7 +813,7 @@ mod tests {
             evidence_places: BTreeSet::from([market]),
         };
 
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
             &view,
             actor,
@@ -813,6 +826,7 @@ mod tests {
             &goal,
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &PlanningBudget::default(),
         );
 
@@ -840,7 +854,7 @@ mod tests {
         view.thresholds.insert(actor, DriveThresholds::default());
         view.hostiles.insert(actor, vec![attacker]);
         view.attackers.insert(actor, vec![attacker]);
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let goal = GroundedGoal {
             key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
             evidence_entities: BTreeSet::from([attacker]),
@@ -852,6 +866,7 @@ mod tests {
             &goal,
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &PlanningBudget::default(),
         )
         .unwrap();
@@ -881,7 +896,7 @@ mod tests {
         view.hostiles.insert(actor, vec![attacker]);
         view.attackers.insert(actor, vec![attacker]);
 
-        let registry = build_registry();
+        let (registry, handlers) = build_registry();
         let goal = GroundedGoal {
             key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
             evidence_entities: BTreeSet::from([attacker]),
@@ -893,6 +908,7 @@ mod tests {
             &goal,
             &build_semantics_table(&registry),
             &registry,
+            &handlers,
             &PlanningBudget::default(),
         )
         .unwrap();

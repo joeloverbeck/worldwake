@@ -14,8 +14,9 @@ use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId, ActionDefRegistry,
     ActionDomain, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
     ActionInstance, ActionPayload, ActionProgress, ActionState, CombatActionPayload, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole,
-    Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext, TargetSpec,
+    BeliefView, DeterministicRng, DurationExpr, Interruptibility, LootActionPayload,
+    PayloadEntityRole, Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext,
+    TargetSpec,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -36,7 +37,7 @@ pub fn register_attack_action(
         tick_attack,
         commit_attack,
         abort_attack,
-    ));
+    ).with_affordance_payloads(enumerate_attack_payloads));
     defs.register(attack_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
@@ -62,7 +63,7 @@ pub fn register_loot_action(
         tick_loot,
         commit_loot,
         abort_loot,
-    ));
+    ).with_affordance_payloads(enumerate_loot_payloads));
     defs.register(loot_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
@@ -341,6 +342,35 @@ fn attack_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     }
 }
 
+fn enumerate_attack_payloads(
+    _def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    view: &dyn BeliefView,
+) -> Vec<ActionPayload> {
+    let Some(target) = targets.first().copied() else {
+        return Vec::new();
+    };
+
+    let mut payloads = vec![ActionPayload::Combat(CombatActionPayload {
+        target,
+        weapon: CombatWeaponRef::Unarmed,
+    })];
+    for commodity in worldwake_core::CommodityKind::ALL {
+        if commodity.spec().combat_weapon_profile.is_some()
+            && view.commodity_quantity(actor, commodity) > Quantity(0)
+        {
+            payloads.push(ActionPayload::Combat(CombatActionPayload {
+                target,
+                weapon: CombatWeaponRef::Commodity(commodity),
+            }));
+        }
+    }
+    payloads.sort();
+    payloads.dedup();
+    payloads
+}
+
 fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
@@ -405,6 +435,20 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
     }
+}
+
+fn enumerate_loot_payloads(
+    _def: &ActionDef,
+    _actor: EntityId,
+    targets: &[EntityId],
+    _view: &dyn BeliefView,
+) -> Vec<ActionPayload> {
+    targets
+        .first()
+        .copied()
+        .map(|target| ActionPayload::Loot(LootActionPayload { target }))
+        .into_iter()
+        .collect()
 }
 
 fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
@@ -1441,7 +1485,8 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs);
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
         let heal_targets = affordances
             .into_iter()
             .filter(|affordance| affordance.def_id == heal_id)
@@ -1473,7 +1518,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
             .into_iter()
             .find(|affordance| affordance.def_id == heal_id && affordance.bound_targets == vec![patient])
             .unwrap();
@@ -1577,7 +1622,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
             .into_iter()
             .find(|affordance| affordance.def_id == heal_id && affordance.bound_targets == vec![patient])
             .unwrap();
@@ -1649,7 +1694,8 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs);
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
         assert!(!affordances.iter().any(|affordance| affordance.def_id == heal_id));
 
         arm_actor(&mut world, healer, 4, CommodityKind::Medicine, 1);
@@ -1658,7 +1704,8 @@ mod tests {
             txn.set_component_dead_at(patient, DeadAt(Tick(5))).unwrap();
             commit_txn(txn);
         }
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), healer, &defs);
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
         assert!(!affordances.iter().any(|affordance| affordance.def_id == heal_id));
     }
 
@@ -1678,7 +1725,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
                 affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
@@ -1761,7 +1808,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
                 affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
@@ -1854,7 +1901,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
                 affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
@@ -1944,7 +1991,8 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
 
-        let alive_affordances = get_affordances(&OmniscientBeliefView::new(&world), looter, &defs);
+        let alive_affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers);
         assert!(!alive_affordances.iter().any(|affordance| {
             affordance.def_id == loot_id && affordance.bound_targets == vec![alive_target]
         }));
@@ -2093,7 +2141,8 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let attack_id = register_attack_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), attacker, &defs)
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), attacker, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
                 affordance.def_id == attack_id && affordance.bound_targets == vec![target]
@@ -2185,7 +2234,7 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
         let view = OmniscientBeliefView::new(&world);
-        let affordance = get_affordances(&view, actor, &defs)
+        let affordance = get_affordances(&view, actor, &defs, &handlers)
             .into_iter()
             .find(|affordance| affordance.def_id == defend_id)
             .unwrap();
@@ -2564,9 +2613,15 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
 
-        let dead_affordances = get_affordances(&OmniscientBeliefView::new(&world), dead, &defs);
+        let dead_affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), dead, &defs, &handlers);
         let incapacitated_affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), incapacitated, &defs);
+            get_affordances(
+                &OmniscientBeliefView::new(&world),
+                incapacitated,
+                &defs,
+                &handlers,
+            );
 
         assert!(!dead_affordances
             .iter()
@@ -3010,7 +3065,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(&OmniscientBeliefView::new(&world), guard, &defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), guard, &defs, &handlers)
             .into_iter()
             .find(|affordance| affordance.def_id == defend_id)
             .unwrap();

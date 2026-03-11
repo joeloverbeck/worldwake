@@ -1,6 +1,7 @@
 use crate::{
     ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState,
-    ActionStatus, DeterministicRng, Interruptibility, Precondition, TradeAcceptance,
+    ActionPayload, ActionStatus, BeliefView, DeterministicRng, Interruptibility, Precondition,
+    TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{CommodityKind, EntityId, Quantity, WorldTxn};
@@ -31,6 +32,8 @@ pub type ActionAbortFn = for<'w> fn(
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<(), ActionError>;
+pub type AffordancePayloadFn =
+    fn(&ActionDef, EntityId, &[EntityId], &dyn BeliefView) -> Vec<ActionPayload>;
 
 #[derive(Copy, Clone)]
 pub struct ActionHandler {
@@ -38,6 +41,7 @@ pub struct ActionHandler {
     pub on_tick: ActionTickFn,
     pub on_commit: ActionCommitFn,
     pub on_abort: ActionAbortFn,
+    pub affordance_payloads: AffordancePayloadFn,
 }
 
 impl ActionHandler {
@@ -53,8 +57,27 @@ impl ActionHandler {
             on_tick,
             on_commit,
             on_abort,
+            affordance_payloads: no_affordance_payloads,
         }
     }
+
+    #[must_use]
+    pub const fn with_affordance_payloads(
+        mut self,
+        affordance_payloads: AffordancePayloadFn,
+    ) -> Self {
+        self.affordance_payloads = affordance_payloads;
+        self
+    }
+}
+
+fn no_affordance_payloads(
+    _def: &ActionDef,
+    _actor: EntityId,
+    _targets: &[EntityId],
+    _view: &dyn BeliefView,
+) -> Vec<ActionPayload> {
+    Vec::new()
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]

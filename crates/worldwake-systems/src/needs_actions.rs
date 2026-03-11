@@ -472,7 +472,7 @@ mod tests {
         let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
         let mut next_id = ActionInstanceId(0);
         let mut rng = test_rng();
-        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers);
         let affordance = affordances[affordance_index].clone();
         let instance_id = start_action(
             &affordance,
@@ -594,7 +594,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let drink_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(1))
@@ -635,7 +635,7 @@ mod tests {
         let mut next_id = ActionInstanceId(0);
         let mut rng = test_rng();
         let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs)[0].clone();
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)[0].clone();
         let instance_id = start_action(
             &affordance,
             &defs,
@@ -685,7 +685,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let sleep_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(2))
@@ -708,7 +708,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let toilet_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(3))
@@ -751,7 +751,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let wash_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(4))
@@ -783,9 +783,9 @@ mod tests {
             txn.set_ground_location(bread, place).unwrap();
             commit_txn(txn);
         }
-        let (defs, _handlers) = setup_registries();
+        let (defs, handlers) = setup_registries();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         assert!(affordances
             .iter()
             .all(|affordance| affordance.def_id != worldwake_sim::ActionDefId(0)));

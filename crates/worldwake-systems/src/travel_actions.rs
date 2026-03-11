@@ -310,7 +310,7 @@ mod tests {
         actor: EntityId,
         destination: EntityId,
     ) -> ActionInstanceId {
-        let affordance = get_affordances(&OmniscientBeliefView::new(world), actor, defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers)
             .into_iter()
             .find(|affordance| affordance.bound_targets == vec![destination])
             .unwrap();
@@ -358,8 +358,9 @@ mod tests {
     #[test]
     fn travel_affordances_only_offer_adjacent_places() {
         let (world, actor, _, _, _, destination) = setup_world();
-        let (defs, _, _) = setup_registries();
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs);
+        let (defs, handlers, _) = setup_registries();
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![destination]);

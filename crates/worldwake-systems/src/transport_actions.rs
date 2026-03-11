@@ -400,7 +400,7 @@ mod tests {
         actor: EntityId,
         target: EntityId,
     ) -> ActionInstanceId {
-        let affordance = get_affordances(&OmniscientBeliefView::new(world), actor, defs)
+        let affordance = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers)
             .into_iter()
             .find(|affordance| affordance.bound_targets == vec![target])
             .unwrap();
@@ -723,9 +723,9 @@ mod tests {
             commit_txn(txn);
             carried_lot
         };
-        let (defs, _, _, put_down_id) = setup_registries();
+        let (defs, handlers, _, put_down_id) = setup_registries();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs)
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
             .into_iter()
             .filter(|affordance| affordance.def_id == put_down_id)
             .collect::<Vec<_>>();
@@ -814,7 +814,12 @@ mod tests {
         let travel_id =
             crate::travel_actions::register_travel_actions(&mut travel_defs, &mut travel_handlers);
         let travel_affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &travel_defs)
+            get_affordances(
+                &OmniscientBeliefView::new(&world),
+                actor,
+                &travel_defs,
+                &travel_handlers,
+            )
                 .into_iter()
                 .find(|affordance| {
                     affordance.def_id == travel_id && affordance.bound_targets == vec![destination]
@@ -898,9 +903,9 @@ mod tests {
             commit_txn(txn);
             contained_lot
         };
-        let (defs, _, pick_up_id, _) = setup_registries();
+        let (defs, handlers, pick_up_id, _) = setup_registries();
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs)
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
             .into_iter()
             .filter(|affordance| affordance.def_id == pick_up_id)
             .collect::<Vec<_>>();

@@ -210,7 +210,9 @@ impl CombatHarness {
                 actor,
                 def_id,
                 targets: vec![target],
-                payload_override: None,
+                payload_override: Some(ActionPayload::Loot(worldwake_sim::LootActionPayload {
+                    target,
+                })),
             },
         );
     }
@@ -254,7 +256,9 @@ impl CombatHarness {
                     actor,
                     def_id,
                     targets: vec![target],
-                    payload_override: None,
+                    payload_override: Some(ActionPayload::Loot(worldwake_sim::LootActionPayload {
+                        target,
+                    })),
                 },
             )
         }

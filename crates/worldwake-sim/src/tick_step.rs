@@ -200,6 +200,7 @@ fn apply_input(
             let affordance = resolve_affordance(
                 runtime.world,
                 services.action_defs,
+                services.action_handlers,
                 actor,
                 def_id,
                 &targets,
@@ -261,18 +262,25 @@ fn apply_input(
 fn resolve_affordance(
     world: &World,
     action_defs: &ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
     actor: EntityId,
     def_id: ActionDefId,
     targets: &[EntityId],
     payload_override: Option<crate::ActionPayload>,
 ) -> Result<crate::Affordance, TickStepError> {
     let view = crate::OmniscientBeliefView::new(world);
-    let mut affordance = get_affordances(&view, actor, action_defs)
+    let Some(def) = action_defs.get(def_id) else {
+        return Err(TickStepError::RequestedAffordanceUnavailable {
+            actor,
+            def_id,
+            targets: targets.to_owned(),
+            payload_override,
+        });
+    };
+    let mut affordance = get_affordances(&view, actor, action_defs, action_handlers)
         .into_iter()
         .find(|affordance| {
-            affordance.actor == actor
-                && affordance.def_id == def_id
-                && affordance.bound_targets == targets
+            affordance.matches_request_identity(def, actor, targets, payload_override.as_ref())
         })
         .ok_or(TickStepError::RequestedAffordanceUnavailable {
             actor,
@@ -447,13 +455,14 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 
 #[cfg(test)]
 mod tests {
-    use super::{step_tick, TickStepError, TickStepResult, TickStepServices};
+    use super::{resolve_affordance, step_tick, TickStepError, TickStepResult, TickStepServices};
     use crate::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
         ActionProgress, ActionState, ActionStatus, ControllerState, DeterministicRng, DurationExpr,
         InputKind, Interruptibility, Scheduler, SystemDispatchTable, SystemError,
         SystemExecutionContext, SystemManifest,
+        get_affordances,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -808,6 +817,52 @@ mod tests {
                 payload_override: None,
             }
         );
+    }
+
+    #[test]
+    fn resolve_affordance_uses_shared_request_binding_rule() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (world, _event_log, _scheduler, controller, _rng, defs, handlers) = build_state();
+        let actor = controlled_actor(&controller);
+        let view = crate::OmniscientBeliefView::new(&world);
+        let def = defs.get(ActionDefId(0)).unwrap();
+        let affordance = get_affordances(&view, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.matches_request_identity(def, actor, &[], None))
+            .expect("expected the no-target affordance registered for the test actor");
+
+        let resolved = resolve_affordance(
+            &world,
+            &defs,
+            &handlers,
+            actor,
+            affordance.def_id,
+            &[],
+            None,
+        )
+        .unwrap();
+        assert_eq!(resolved.def_id, affordance.def_id);
+        assert!(resolved.bound_targets.is_empty());
+
+        let error = resolve_affordance(
+            &world,
+            &defs,
+            &handlers,
+            actor,
+            affordance.def_id,
+            &[actor],
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            TickStepError::RequestedAffordanceUnavailable {
+                actor: err_actor,
+                def_id: err_def_id,
+                ..
+            } if err_actor == actor && err_def_id == affordance.def_id
+        ));
     }
 
     #[test]

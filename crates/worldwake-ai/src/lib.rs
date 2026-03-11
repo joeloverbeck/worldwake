@@ -11,6 +11,7 @@ pub mod failure_handling;
 pub mod goal_model;
 pub mod planner_ops;
 pub mod plan_selection;
+pub mod plan_revalidation;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;
@@ -29,6 +30,7 @@ pub use planner_ops::{
     PlannerOpSemantics,
 };
 pub use plan_selection::select_best_plan;
+pub use plan_revalidation::revalidate_next_step;
 pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
 pub use planning_state::PlanningState;
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};

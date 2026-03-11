@@ -1,6 +1,6 @@
 use crate::{
-    ActionDefRegistry, Affordance, BeliefView, Constraint, ConsumableEffect, Precondition,
-    TargetSpec,
+    ActionDef, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, BeliefView,
+    Constraint, ConsumableEffect, Precondition, TargetSpec,
 };
 use worldwake_core::{EntityId, EntityKind};
 
@@ -9,6 +9,7 @@ pub fn get_affordances(
     view: &dyn BeliefView,
     actor: EntityId,
     registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
 ) -> Vec<Affordance> {
     let mut affordances = Vec::new();
 
@@ -21,26 +22,70 @@ pub fn get_affordances(
             continue;
         }
 
+        let mut def_affordances = Vec::new();
         let mut bound_targets = Vec::new();
         enumerate_bindings(
             &def.targets,
             actor,
             view,
             &mut bound_targets,
-            &mut affordances,
+            &mut def_affordances,
             def.id,
         );
-        affordances.retain(|affordance| {
-            affordance.def_id != def.id
-                || def.preconditions.iter().all(|precondition| {
-                    evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
-                })
+        def_affordances.retain(|affordance| {
+            def.preconditions.iter().all(|precondition| {
+                evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
+            })
         });
+        let handler = handlers
+            .get(def.handler)
+            .unwrap_or_else(|| panic!("action def {} references missing handler {}", def.id.0, def.handler.0));
+        for affordance in &def_affordances {
+            affordances.extend(expand_payload_variants(def, handler, affordance, view));
+        }
     }
 
     affordances.sort();
     affordances.dedup();
     affordances
+}
+
+fn expand_payload_variants(
+    def: &ActionDef,
+    handler: &crate::ActionHandler,
+    affordance: &Affordance,
+    view: &dyn BeliefView,
+) -> Vec<Affordance> {
+    payload_variants(def, handler, affordance.actor, &affordance.bound_targets, view)
+        .into_iter()
+        .map(|payload_override| Affordance {
+            payload_override,
+            ..affordance.clone()
+        })
+        .collect()
+}
+
+fn payload_variants(
+    def: &ActionDef,
+    handler: &crate::ActionHandler,
+    actor: EntityId,
+    targets: &[EntityId],
+    view: &dyn BeliefView,
+) -> Vec<Option<ActionPayload>> {
+    if !matches!(def.payload, ActionPayload::None) {
+        return vec![Some(def.payload.clone())];
+    }
+    let mut variants = (handler.affordance_payloads)(def, actor, targets, view)
+        .into_iter()
+        .map(Some)
+        .collect::<Vec<_>>();
+    if variants.is_empty() {
+        variants.push(None);
+    } else {
+        variants.sort();
+        variants.dedup();
+    }
+    variants
 }
 
 #[must_use]
@@ -222,14 +267,16 @@ fn enumerate_bindings(
 mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionHandlerId, ActionPayload,
-        Constraint, ConsumableEffect, DurationExpr, Interruptibility, OmniscientBeliefView,
-        Precondition, ReservationReq, TargetSpec,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState,
+        CombatActionPayload, Constraint, ConsumableEffect, DeterministicRng, DurationExpr,
+        Interruptibility, OmniscientBeliefView, Precondition, ReservationReq, TargetSpec,
+        TradeActionPayload,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile,
+        build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile, CombatWeaponRef,
         CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
         DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge,
         MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
@@ -259,6 +306,10 @@ mod tests {
         wounds: BTreeMap<EntityId, bool>,
         controllable: BTreeMap<(EntityId, EntityId), bool>,
         control: BTreeMap<EntityId, bool>,
+        needs: BTreeMap<EntityId, HomeostaticNeeds>,
+        demand_memories: BTreeMap<EntityId, Vec<DemandObservation>>,
+        merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        wound_lists: BTreeMap<EntityId, Vec<Wound>>,
     }
 
     impl crate::BeliefView for StubBeliefView {
@@ -381,8 +432,8 @@ mod tests {
             self.wounds.get(&entity).copied().unwrap_or(false)
         }
 
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
         }
 
         fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
@@ -401,8 +452,8 @@ mod tests {
             None
         }
 
-        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
-            Vec::new()
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wound_lists.get(&agent).cloned().unwrap_or_default()
         }
 
         fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
@@ -445,12 +496,12 @@ mod tests {
                 .collect()
         }
 
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
-            Vec::new()
+        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+            self.demand_memories.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-            None
+        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+            self.merchandise_profiles.get(&agent).cloned()
         }
 
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
@@ -487,6 +538,60 @@ mod tests {
             slot,
             generation: 1,
         }
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_start(
+        _def: &ActionDef,
+        _instance: &crate::ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<Option<ActionState>, ActionError> {
+        Ok(None)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_tick(
+        _def: &ActionDef,
+        _instance: &crate::ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<ActionProgress, ActionError> {
+        Ok(ActionProgress::Continue)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_commit(
+        _def: &ActionDef,
+        _instance: &crate::ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
+        Ok(())
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_abort(
+        _def: &ActionDef,
+        _instance: &crate::ActionInstance,
+        _reason: &crate::AbortReason,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
+        Ok(())
+    }
+
+    fn handler_registry(count: usize) -> ActionHandlerRegistry {
+        let mut handlers = ActionHandlerRegistry::new();
+        for _ in 0..count {
+            handlers.register(ActionHandler::new(
+                noop_start,
+                noop_tick,
+                noop_commit,
+                noop_abort,
+            ));
+        }
+        handlers
     }
 
     fn sample_action_def(
@@ -713,8 +818,9 @@ mod tests {
                 },
             ],
         ));
+        let handlers = handler_registry(registry.len());
 
-        let affordances = get_affordances(&view, actor, &registry);
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![bread]);
@@ -746,8 +852,9 @@ mod tests {
             }],
             vec![Precondition::TargetHasWounds(0)],
         ));
+        let handlers = handler_registry(registry.len());
 
-        let affordances = get_affordances(&view, actor, &registry);
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![wounded]);
@@ -788,8 +895,9 @@ mod tests {
             vec![TargetSpec::SpecificEntity(target_b)],
             vec![Precondition::TargetExists(0)],
         ));
+        let handlers = handler_registry(registry.len());
 
-        let affordances = get_affordances(&view, actor, &registry);
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
 
         assert_eq!(affordances.len(), 3);
         assert_eq!(affordances[0].def_id, ActionDefId(0));
@@ -798,6 +906,229 @@ mod tests {
         assert_eq!(affordances[1].bound_targets, vec![target_b]);
         assert_eq!(affordances[2].def_id, ActionDefId(1));
         assert_eq!(affordances[2].bound_targets, vec![target_b]);
+    }
+
+    #[test]
+    fn get_affordances_materializes_definition_payload_identity() {
+        let actor = entity(1);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "harvest:test".to_string(),
+            domain: ActionDomain::Production,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: Vec::new(),
+            preconditions: vec![Precondition::ActorAlive],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::Harvest(crate::HarvestActionPayload {
+                recipe_id: RecipeId(3),
+                required_workstation_tag: WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(1),
+                required_tool_kinds: Vec::new(),
+            }),
+            handler: ActionHandlerId(0),
+        });
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+        assert_eq!(affordances.len(), 1);
+        assert!(matches!(
+            affordances[0].payload_override,
+            Some(ActionPayload::Harvest(_))
+        ));
+    }
+
+    #[test]
+    fn get_affordances_expands_attack_weapon_payload_variants() {
+        let actor = entity(1);
+        let place = entity(10);
+        let target = entity(20);
+
+        let mut view = StubBeliefView::default();
+        for entity in [actor, target] {
+            view.alive.insert(entity, true);
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+        }
+        view.colocated.insert(place, vec![target]);
+        view.commodities
+            .insert((actor, CommodityKind::Sword), Quantity(1));
+
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort).with_affordance_payloads(
+                |_def, actor, targets, view| {
+                    let Some(target) = targets.first().copied() else {
+                        return Vec::new();
+                    };
+                    let mut payloads = vec![ActionPayload::Combat(CombatActionPayload {
+                        target,
+                        weapon: CombatWeaponRef::Unarmed,
+                    })];
+                    if view.commodity_quantity(actor, CommodityKind::Sword) > Quantity(0) {
+                        payloads.push(ActionPayload::Combat(CombatActionPayload {
+                            target,
+                            weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                        }));
+                    }
+                    payloads
+                },
+            ),
+        );
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "attack".to_string(),
+            domain: ActionDomain::Combat,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Agent,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Indefinite,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+        let payloads = affordances
+            .into_iter()
+            .map(|affordance| affordance.payload_override.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(payloads.len(), 2);
+        assert!(payloads.contains(&ActionPayload::Combat(CombatActionPayload {
+            target,
+            weapon: CombatWeaponRef::Unarmed,
+        })));
+        assert!(payloads.contains(&ActionPayload::Combat(CombatActionPayload {
+            target,
+            weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+        })));
+    }
+
+    #[test]
+    fn get_affordances_expands_trade_into_concrete_payloads() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+
+        let mut view = StubBeliefView::default();
+        for entity in [actor, seller] {
+            view.alive.insert(entity, true);
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+        }
+        view.colocated.insert(place, vec![seller]);
+        view.commodities
+            .insert((actor, CommodityKind::Coin), Quantity(1));
+        view.commodities
+            .insert((seller, CommodityKind::Bread), Quantity(1));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(
+                worldwake_core::Permille::new(900).unwrap(),
+                worldwake_core::Permille::new(0).unwrap(),
+                worldwake_core::Permille::new(0).unwrap(),
+                worldwake_core::Permille::new(0).unwrap(),
+                worldwake_core::Permille::new(0).unwrap(),
+            ),
+        );
+        view.needs.insert(seller, HomeostaticNeeds::new_sated());
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(place),
+            },
+        );
+
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort).with_affordance_payloads(
+                |_def, actor, targets, view| {
+                    let Some(counterparty) = targets.first().copied() else {
+                        return Vec::new();
+                    };
+                    if view.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0)
+                        || view.commodity_quantity(counterparty, CommodityKind::Bread) == Quantity(0)
+                    {
+                        return Vec::new();
+                    }
+                    vec![ActionPayload::Trade(TradeActionPayload {
+                        counterparty,
+                        offered_commodity: CommodityKind::Coin,
+                        offered_quantity: Quantity(1),
+                        requested_commodity: CommodityKind::Bread,
+                        requested_quantity: Quantity(1),
+                    })]
+                },
+            ),
+        );
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "trade".to_string(),
+            domain: ActionDomain::Trade,
+            actor_constraints: Vec::new(),
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Agent,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Indefinite,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+        assert_eq!(affordances.len(), 1);
+        assert_eq!(
+            affordances[0].payload_override,
+            Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_commodity: CommodityKind::Bread,
+                requested_quantity: Quantity(1),
+            }))
+        );
     }
 
     #[test]
@@ -843,8 +1174,9 @@ mod tests {
             vec![TargetSpec::SpecificEntity(target)],
             vec![Precondition::TargetExists(4)],
         ));
+        let handlers = handler_registry(registry.len());
 
-        let affordances = get_affordances(&view, actor, &registry);
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
 
         assert!(affordances.is_empty());
     }
@@ -884,8 +1216,9 @@ mod tests {
                 },
             ],
         ));
+        let handlers = handler_registry(registry.len());
 
-        assert!(get_affordances(&view, actor, &registry).is_empty());
+        assert!(get_affordances(&view, actor, &registry, &handlers).is_empty());
     }
 
     #[test]
@@ -919,10 +1252,12 @@ mod tests {
             Vec::new(),
             vec![Precondition::ActorAlive],
         ));
+        let handlers = handler_registry(registry.len());
 
         let human_affordances =
-            get_affordances(&OmniscientBeliefView::new(&human_world), human, &registry);
-        let ai_affordances = get_affordances(&OmniscientBeliefView::new(&ai_world), ai, &registry);
+            get_affordances(&OmniscientBeliefView::new(&human_world), human, &registry, &handlers);
+        let ai_affordances =
+            get_affordances(&OmniscientBeliefView::new(&ai_world), ai, &registry, &handlers);
 
         assert_eq!(human_affordances.len(), 2);
         assert_eq!(ai_affordances.len(), 2);
@@ -961,8 +1296,10 @@ mod tests {
             Vec::new(),
             vec![Precondition::ActorAlive],
         ));
+        let handlers = handler_registry(registry.len());
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &registry);
+        let affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &registry, &handlers);
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].def_id, ActionDefId(0));
@@ -1005,9 +1342,10 @@ mod tests {
             }],
             vec![Precondition::TargetAtActorPlace(0)],
         ));
+        let handlers = handler_registry(registry.len());
 
-        let affordances_a = get_affordances(&view_a, actor, &registry);
-        let affordances_b = get_affordances(&view_b, actor, &registry);
+        let affordances_a = get_affordances(&view_a, actor, &registry, &handlers);
+        let affordances_b = get_affordances(&view_b, actor, &registry, &handlers);
 
         assert_eq!(affordances_a.len(), 1);
         assert_eq!(affordances_b.len(), 1);

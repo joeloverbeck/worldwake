@@ -1,14 +1,14 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, LotOperation, ProvenanceEntry,
-    Quantity, VisibilitySpec, WorldTxn,
+    Quantity, VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId,
     ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
-    ActionInstance, ActionPayload, ActionProgress, ActionState, DeterministicRng, DurationExpr,
-    Interruptibility, OmniscientBeliefView, PayloadEntityRole, Precondition, TargetSpec,
-    TradeAcceptance, TradeActionPayload,
+    ActionInstance, ActionPayload, ActionProgress, ActionState, BeliefView, DeterministicRng,
+    DurationExpr, Interruptibility, OmniscientBeliefView, PayloadEntityRole, Precondition,
+    TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
 pub fn register_trade_action(
@@ -20,7 +20,7 @@ pub fn register_trade_action(
         tick_trade,
         commit_trade,
         abort_trade,
-    ));
+    ).with_affordance_payloads(enumerate_trade_payloads));
     defs.register(trade_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
@@ -76,6 +76,48 @@ fn trade_payload<'a>(
             def.id
         ))
     })
+}
+
+fn enumerate_trade_payloads(
+    _def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    view: &dyn BeliefView,
+) -> Vec<ActionPayload> {
+    let Some(counterparty) = targets.first().copied() else {
+        return Vec::new();
+    };
+    let Some(place) = view.effective_place(actor) else {
+        return Vec::new();
+    };
+    let Some(profile) = view.merchandise_profile(counterparty) else {
+        return Vec::new();
+    };
+    if view.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
+        return Vec::new();
+    }
+
+    let mut payloads = profile
+        .sale_kinds
+        .iter()
+        .copied()
+        .filter_map(|requested_commodity| {
+            (view.commodity_quantity(counterparty, requested_commodity) > Quantity(0)).then_some(
+                TradeActionPayload {
+                    counterparty,
+                    offered_commodity: CommodityKind::Coin,
+                    offered_quantity: Quantity(1),
+                    requested_commodity,
+                    requested_quantity: Quantity(1),
+                },
+            )
+        })
+        .filter(|payload| trade_bundle_is_mutually_accepted(view, actor, counterparty, place, payload))
+        .map(ActionPayload::Trade)
+        .collect::<Vec<_>>();
+    payloads.sort();
+    payloads.dedup();
+    payloads
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -220,6 +262,79 @@ fn ensure_bundle_accepted(
     }
 
     Ok(())
+}
+
+fn trade_bundle_is_mutually_accepted(
+    view: &dyn BeliefView,
+    actor: EntityId,
+    counterparty: EntityId,
+    place: EntityId,
+    payload: &TradeActionPayload,
+) -> bool {
+    evaluate_trade_bundle(
+        actor,
+        view,
+        view.homeostatic_needs(actor).as_ref(),
+        wounds_for(view, actor).as_ref(),
+        view.commodity_quantity(actor, CommodityKind::Coin),
+        &[(payload.offered_commodity, payload.offered_quantity)],
+        &[(payload.requested_commodity, payload.requested_quantity)],
+        &local_trade_alternatives(view, actor, counterparty, place),
+        demand_memory_for(view, actor).as_ref(),
+    ) == TradeAcceptance::Accept
+        && evaluate_trade_bundle(
+            counterparty,
+            view,
+            view.homeostatic_needs(counterparty).as_ref(),
+            wounds_for(view, counterparty).as_ref(),
+            view.commodity_quantity(counterparty, CommodityKind::Coin),
+            &[(payload.requested_commodity, payload.requested_quantity)],
+            &[(payload.offered_commodity, payload.offered_quantity)],
+            &local_trade_alternatives(view, counterparty, actor, place),
+            demand_memory_for(view, counterparty).as_ref(),
+        ) == TradeAcceptance::Accept
+}
+
+fn local_trade_alternatives(
+    view: &dyn BeliefView,
+    actor: EntityId,
+    excluded_counterparty: EntityId,
+    place: EntityId,
+) -> Vec<(EntityId, CommodityKind, Quantity)> {
+    let mut alternatives = view
+        .entities_at(place)
+        .into_iter()
+        .filter(|entity| {
+            *entity != actor
+                && *entity != excluded_counterparty
+                && view.entity_kind(*entity) == Some(EntityKind::Agent)
+        })
+        .flat_map(|seller| {
+            view.merchandise_profile(seller)
+                .into_iter()
+                .flat_map(move |profile| {
+                    profile.sale_kinds.into_iter().filter_map(move |commodity| {
+                        let quantity = view.commodity_quantity(seller, commodity);
+                        (quantity > Quantity(0)).then_some((seller, commodity, quantity))
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    alternatives.sort();
+    alternatives
+}
+
+fn wounds_for(view: &dyn BeliefView, actor: EntityId) -> Option<WoundList> {
+    let wounds = view.wounds(actor);
+    (!wounds.is_empty()).then_some(WoundList { wounds })
+}
+
+fn demand_memory_for(
+    view: &dyn BeliefView,
+    actor: EntityId,
+) -> Option<worldwake_core::DemandMemory> {
+    let observations = view.demand_memory(actor);
+    (!observations.is_empty()).then_some(worldwake_core::DemandMemory { observations })
 }
 
 fn evaluate_for_participant(
@@ -502,14 +617,15 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, CauseRef, CommodityKind,
         ControlSource, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
-        EventLog, EventTag, HomeostaticNeeds, LotOperation, Permille, Quantity, Seed,
-        SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        EventLog, EventTag, HomeostaticNeeds, LotOperation, MerchandiseProfile, Permille,
+        Quantity, Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        start_action, tick_action, ActionDefId, ActionDefRegistry, ActionExecutionAuthority,
-        ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload,
-        ActionStatus, Affordance, DeterministicRng, TickOutcome, TradeActionPayload,
+        get_affordances, start_action, tick_action, ActionDefId, ActionDefRegistry,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
+        ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng, TickOutcome,
+        TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -641,6 +757,14 @@ mod tests {
                     .unwrap();
                 txn.set_component_homeostatic_needs(counterparty, HomeostaticNeeds::new_sated())
                     .unwrap();
+                txn.set_component_merchandise_profile(
+                    counterparty,
+                    MerchandiseProfile {
+                        sale_kinds: [payload.requested_commodity].into_iter().collect(),
+                        home_market: Some(place),
+                    },
+                )
+                .unwrap();
                 commit_txn(txn);
             }
 
@@ -721,6 +845,36 @@ mod tests {
             worldwake_sim::ActionDuration::Finite(3)
         );
         assert_eq!(instance.status, ActionStatus::Active);
+    }
+
+    #[test]
+    fn trade_affordance_enumerates_concrete_bundle_payloads_from_handler() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+
+        let affordances = get_affordances(
+            &worldwake_sim::OmniscientBeliefView::new(&harness.world),
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
+
+        assert!(affordances.iter().any(|affordance| {
+            affordance.def_id == harness.def_id
+                && affordance.bound_targets == vec![harness.counterparty]
+                && affordance.payload_override
+                    == Some(ActionPayload::Trade(harness.payload.clone()))
+        }));
     }
 
     #[test]

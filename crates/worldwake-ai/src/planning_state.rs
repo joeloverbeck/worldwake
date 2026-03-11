@@ -614,8 +614,9 @@ mod tests {
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
-        ActionHandlerId, ActionPayload, BeliefView, Constraint, DurationExpr, Interruptibility,
-        Precondition, ReservationReq, TargetSpec,
+        ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionPayload,
+        ActionProgress, ActionState, BeliefView, Constraint, DeterministicRng, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
 
     #[derive(Default)]
@@ -872,8 +873,56 @@ mod tests {
         Permille::new(value).unwrap()
     }
 
-    fn sample_registry() -> ActionDefRegistry {
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_start(
+        _def: &ActionDef,
+        _instance: &worldwake_sim::ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut worldwake_core::WorldTxn<'_>,
+    ) -> Result<Option<ActionState>, ActionError> {
+        Ok(None)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_tick(
+        _def: &ActionDef,
+        _instance: &worldwake_sim::ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut worldwake_core::WorldTxn<'_>,
+    ) -> Result<ActionProgress, ActionError> {
+        Ok(ActionProgress::Continue)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_commit(
+        _def: &ActionDef,
+        _instance: &worldwake_sim::ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut worldwake_core::WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
+        Ok(())
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_abort(
+        _def: &ActionDef,
+        _instance: &worldwake_sim::ActionInstance,
+        _reason: &worldwake_sim::AbortReason,
+        _rng: &mut DeterministicRng,
+        _txn: &mut worldwake_core::WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
+        Ok(())
+    }
+
+    fn sample_registry() -> (ActionDefRegistry, ActionHandlerRegistry) {
         let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(
+            noop_start,
+            noop_tick,
+            noop_commit,
+            noop_abort,
+        ));
         registry.register(ActionDef {
             id: ActionDefId(0),
             name: "eat".to_string(),
@@ -902,7 +951,7 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
         });
-        registry
+        (registry, handlers)
     }
 
     fn test_view() -> (StubBeliefView, EntityId, EntityId, EntityId, EntityId) {
@@ -1035,19 +1084,19 @@ mod tests {
     fn removing_target_updates_lifecycle_and_affordances() {
         let (view, actor, _town, _field, bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
-        let registry = sample_registry();
+        let (registry, handlers) = sample_registry();
 
         let base = PlanningState::new(&snapshot);
         let removed = base.clone().mark_removed(bread);
 
-        assert_eq!(get_affordances(&base, actor, &registry).len(), 1);
+        assert_eq!(get_affordances(&base, actor, &registry, &handlers).len(), 1);
         assert!(removed.is_dead(bread));
         assert!(!removed.is_alive(bread));
         assert!(removed
             .entities_at(entity(10))
             .iter()
             .all(|entity| *entity != bread));
-        assert!(get_affordances(&removed, actor, &registry).is_empty());
+        assert!(get_affordances(&removed, actor, &registry, &handlers).is_empty());
     }
 
     #[test]

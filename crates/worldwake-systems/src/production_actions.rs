@@ -716,8 +716,9 @@ mod tests {
         world: &World,
         actor: EntityId,
         defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
     ) -> worldwake_sim::Affordance {
-        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers);
         assert_eq!(affordances.len(), 1);
         affordances.into_iter().next().unwrap()
     }
@@ -726,8 +727,9 @@ mod tests {
         world: &World,
         actor: EntityId,
         defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
     ) -> worldwake_sim::Affordance {
-        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers);
         assert_eq!(affordances.len(), 1);
         affordances.into_iter().next().unwrap()
     }
@@ -968,7 +970,7 @@ mod tests {
         let (mut world, actor, workstation, place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
-        let affordance = single_harvest_affordance(&world, actor, &defs);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0x81);
@@ -1026,14 +1028,15 @@ mod tests {
     #[test]
     fn harvest_affordance_requires_recipe_stock_and_matching_workstation() {
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
-        let (defs, _handlers, _) = setup_registries(&recipes);
+        let (defs, handlers, _) = setup_registries(&recipes);
 
         let (mut world_missing_recipe, actor_missing_recipe, _, _) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         assert!(get_affordances(
             &OmniscientBeliefView::new(&world_missing_recipe),
             actor_missing_recipe,
-            &defs
+            &defs,
+            &handlers,
         )
         .is_empty());
 
@@ -1043,7 +1046,8 @@ mod tests {
         assert!(get_affordances(
             &OmniscientBeliefView::new(&world_wrong_tag),
             actor_wrong_tag,
-            &defs
+            &defs,
+            &handlers,
         )
         .is_empty());
 
@@ -1051,7 +1055,12 @@ mod tests {
             setup_world(false, WorkstationTag::OrchardRow, 1);
         grant_recipe(&mut world_empty, actor_empty, recipe_id);
         assert!(
-            get_affordances(&OmniscientBeliefView::new(&world_empty), actor_empty, &defs)
+            get_affordances(
+                &OmniscientBeliefView::new(&world_empty),
+                actor_empty,
+                &defs,
+                &handlers,
+            )
                 .is_empty()
         );
 
@@ -1064,12 +1073,12 @@ mod tests {
             BodyCostPerTick::zero(),
             vec![worldwake_core::UniqueItemKind::SimpleTool],
         );
-        let (defs, _handlers, _) = setup_registries(&recipes);
+        let (defs, handlers, _) = setup_registries(&recipes);
         let (mut world, actor, _workstation, place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
 
-        assert!(get_affordances(&OmniscientBeliefView::new(&world), actor, &defs).is_empty());
+        assert!(get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers).is_empty());
 
         let mut txn = new_txn(&mut world, 3);
         let tool = txn
@@ -1083,7 +1092,7 @@ mod tests {
         txn.set_possessor(tool, actor).unwrap();
         commit_txn(txn);
 
-        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs);
+        let affordances = get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         assert_eq!(affordances.len(), 1);
     }
 
@@ -1105,8 +1114,8 @@ mod tests {
             actor
         };
 
-        let affordance_a = single_harvest_affordance(&world, actor_a, &defs);
-        let affordance_b = single_harvest_affordance(&world, actor_b, &defs);
+        let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
+        let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0x82);
@@ -1185,7 +1194,7 @@ mod tests {
         let (defs, handlers, _) = setup_registries(&recipes);
         let (mut world, actor, _workstation, _) = setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
-        let affordance = single_harvest_affordance(&world, actor, &defs);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0x83);
@@ -1359,7 +1368,7 @@ mod tests {
         let (mut world, actor, workstation, place) = craft_fixture(false);
         grant_recipe(&mut world, actor, recipe_id);
         let source_lot = add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
-        let affordance = single_craft_affordance(&world, actor, &defs);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0x84);
@@ -1471,7 +1480,7 @@ mod tests {
             BodyCostPerTick::zero(),
             vec![worldwake_core::UniqueItemKind::SimpleTool],
         );
-        let (defs, _handlers, _) = setup_craft_registries(&recipes);
+        let (defs, handlers, _) = setup_craft_registries(&recipes);
 
         let (mut world_missing_recipe, actor_missing_recipe, _, place_missing_recipe) =
             craft_fixture(false);
@@ -1485,7 +1494,8 @@ mod tests {
         assert!(get_affordances(
             &OmniscientBeliefView::new(&world_missing_recipe),
             actor_missing_recipe,
-            &defs
+            &defs,
+            &handlers,
         )
         .is_empty());
 
@@ -1502,7 +1512,8 @@ mod tests {
         assert!(get_affordances(
             &OmniscientBeliefView::new(&world_missing_tool),
             actor_missing_tool,
-            &defs
+            &defs,
+            &handlers,
         )
         .is_empty());
 
@@ -1517,7 +1528,13 @@ mod tests {
         );
         add_tool(&mut world_ready, actor_ready, place_ready);
         assert_eq!(
-            get_affordances(&OmniscientBeliefView::new(&world_ready), actor_ready, &defs).len(),
+            get_affordances(
+                &OmniscientBeliefView::new(&world_ready),
+                actor_ready,
+                &defs,
+                &handlers,
+            )
+            .len(),
             1
         );
 
@@ -1534,7 +1551,12 @@ mod tests {
         .unwrap();
         commit_txn(txn);
         assert!(
-            get_affordances(&OmniscientBeliefView::new(&world_ready), actor_ready, &defs)
+            get_affordances(
+                &OmniscientBeliefView::new(&world_ready),
+                actor_ready,
+                &defs,
+                &handlers,
+            )
                 .is_empty()
         );
     }
@@ -1546,7 +1568,7 @@ mod tests {
         let (mut world, actor, workstation, place) = craft_fixture(false);
         grant_recipe(&mut world, actor, recipe_id);
         add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 2);
-        let affordance = single_craft_affordance(&world, actor, &defs);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0x85);
@@ -1617,7 +1639,7 @@ mod tests {
         let (mut world, actor, _workstation, place) = craft_fixture(false);
         grant_recipe(&mut world, actor, recipe_id);
         add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 2);
-        let affordance = single_craft_affordance(&world, actor, &defs);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0x86);

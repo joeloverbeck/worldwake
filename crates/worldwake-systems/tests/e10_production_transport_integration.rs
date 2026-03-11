@@ -232,6 +232,7 @@ impl Harness {
             &worldwake_sim::OmniscientBeliefView::new(&self.world),
             self.actor,
             &self.defs,
+            &self.handlers,
         )
         .into_iter()
         .filter(|affordance| affordance.def_id == def_id)
