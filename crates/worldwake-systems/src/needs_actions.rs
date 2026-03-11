@@ -668,7 +668,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
-            "danger".to_string(),
+            worldwake_sim::ExternalAbortReason::Other,
         )
         .unwrap();
 

@@ -586,7 +586,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(6),
             },
-            "cancelled".to_string(),
+            worldwake_sim::ExternalAbortReason::Other,
         )
         .unwrap();
 

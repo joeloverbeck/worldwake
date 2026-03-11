@@ -4,10 +4,11 @@ use worldwake_core::{
     Quantity, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
-    evaluate_trade_bundle, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
-    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, DeterministicRng, DurationExpr, Interruptibility,
-    OmniscientBeliefView, Precondition, TargetSpec, TradeAcceptance, TradeActionPayload,
+    evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId,
+    ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
+    ActionInstance, ActionPayload, ActionProgress, ActionState, DeterministicRng, DurationExpr,
+    Interruptibility, OmniscientBeliefView, PayloadEntityRole, Precondition, TargetSpec,
+    TradeAcceptance, TradeActionPayload,
 };
 
 pub fn register_trade_action(
@@ -150,21 +151,26 @@ fn validate_trade_context(
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
     if counterparty != payload.counterparty {
-        return Err(ActionError::AbortRequested(format!(
-            "trade counterparty target {counterparty} does not match payload {}",
-            payload.counterparty
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::PayloadEntityMismatch {
+                role: PayloadEntityRole::Counterparty,
+                expected: counterparty,
+                actual: payload.counterparty,
+            },
+        ));
     }
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::AbortRequested(format!(
-            "actor {} is not at a tradeable place",
-            instance.actor
-        ))
+    let place = txn.effective_place(instance.actor).ok_or({
+        ActionError::AbortRequested(ActionAbortRequestReason::ActorNotPlaced {
+            actor: instance.actor,
+        })
     })?;
     if txn.effective_place(counterparty) != Some(place) {
-        return Err(ActionError::AbortRequested(format!(
-            "counterparty {counterparty} is no longer co-located"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetNotColocated {
+                actor: instance.actor,
+                target: counterparty,
+            },
+        ));
     }
     Ok((counterparty, place))
 }
@@ -187,9 +193,12 @@ fn ensure_bundle_accepted(
         [(payload.requested_commodity, payload.requested_quantity)],
     );
     if actor_acceptance != TradeAcceptance::Accept {
-        return Err(ActionError::AbortRequested(format!(
-            "actor {actor} rejected trade bundle: {actor_acceptance:?}"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TradeBundleRejected {
+                participant: actor,
+                acceptance: actor_acceptance,
+            },
+        ));
     }
 
     let counterparty_acceptance = evaluate_for_participant(
@@ -202,9 +211,12 @@ fn ensure_bundle_accepted(
         [(payload.offered_commodity, payload.offered_quantity)],
     );
     if counterparty_acceptance != TradeAcceptance::Accept {
-        return Err(ActionError::AbortRequested(format!(
-            "counterparty {counterparty} rejected trade bundle: {counterparty_acceptance:?}"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TradeBundleRejected {
+                participant: counterparty,
+                acceptance: counterparty_acceptance,
+            },
+        ));
     }
 
     Ok(())
@@ -378,9 +390,13 @@ fn resolve_trade_lots(
     }
 
     if remaining != Quantity(0) {
-        return Err(ActionError::AbortRequested(format!(
-            "holder {holder} lacks accessible {quantity:?} of {commodity:?}"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder,
+                commodity,
+                quantity,
+            },
+        ));
     }
 
     Ok(selected)
@@ -394,9 +410,13 @@ fn ensure_accessible_quantity(
 ) -> Result<(), ActionError> {
     let available = txn.controlled_commodity_quantity(holder, commodity);
     if available < quantity {
-        return Err(ActionError::AbortRequested(format!(
-            "holder {holder} lacks accessible {quantity:?} of {commodity:?}"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder,
+                commodity,
+                quantity,
+            },
+        ));
     }
     Ok(())
 }

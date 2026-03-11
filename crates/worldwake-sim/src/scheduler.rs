@@ -2,7 +2,7 @@ use crate::{
     abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
     ActionInstanceId, Affordance, DeterministicRng, InputEvent, InputQueue, SystemManifest,
-    TickOutcome,
+    ExternalAbortReason, TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -130,7 +130,7 @@ impl Scheduler {
         id: ActionInstanceId,
         runtime: SchedulerActionRuntime<'_>,
         context: ActionExecutionContext,
-        reason: String,
+        reason: ExternalAbortReason,
     ) -> Result<crate::ReplanNeeded, ActionError> {
         let SchedulerActionRuntime {
             action_defs,

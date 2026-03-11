@@ -7,6 +7,7 @@ pub mod budget;
 pub mod candidate_generation;
 pub mod decision_runtime;
 mod enterprise;
+pub mod failure_handling;
 pub mod goal_model;
 pub mod planner_ops;
 pub mod plan_selection;
@@ -19,6 +20,7 @@ pub mod search;
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::AgentDecisionRuntime;
+pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
 };

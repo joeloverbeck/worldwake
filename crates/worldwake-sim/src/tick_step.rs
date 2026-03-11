@@ -2,7 +2,7 @@ use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     get_affordances, ActionDefId, ActionDefRegistry, ActionError, ActionExecutionContext,
     ActionHandlerRegistry, ActionInstanceId, ControlError, ControllerState, DeterministicRng,
-    InputKind, Scheduler, SystemDispatchTable, SystemError, TickOutcome,
+    ExternalAbortReason, InputKind, Scheduler, SystemDispatchTable, SystemError, TickOutcome,
 };
 use std::collections::BTreeSet;
 use std::fmt;
@@ -247,7 +247,7 @@ fn apply_input(
                         cause: CauseRef::ExternalInput(sequence_no),
                         tick,
                     },
-                    format!("cancelled by input {sequence_no}"),
+                    ExternalAbortReason::CancelledByInput { sequence_no },
                 )
                 .map_err(TickStepError::Action)?;
             Ok(InputOutcome {
@@ -387,7 +387,7 @@ fn abort_actions_for_dead_actors(
                     cause: CauseRef::SystemTick(tick),
                     tick,
                 },
-                "actor marked dead".to_string(),
+                ExternalAbortReason::ActorMarkedDead,
             )
             .map_err(TickStepError::Action)?;
         aborted = aborted

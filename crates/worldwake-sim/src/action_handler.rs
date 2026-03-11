@@ -1,9 +1,9 @@
 use crate::{
     ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionState,
-    ActionStatus, DeterministicRng, Interruptibility,
+    ActionStatus, DeterministicRng, Interruptibility, Precondition, TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
-use worldwake_core::{EntityId, WorldTxn};
+use worldwake_core::{CommodityKind, EntityId, Quantity, WorldTxn};
 
 pub type ActionStartFn = for<'w> fn(
     &ActionDef,
@@ -80,20 +80,150 @@ pub enum ActionError {
     PreconditionFailed(String),
     ReservationUnavailable(EntityId),
     InvalidTarget(EntityId),
-    AbortRequested(String),
+    AbortRequested(ActionAbortRequestReason),
     InternalError(String),
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub enum ActionAbortRequestReason {
+    PayloadEntityMismatch {
+        role: PayloadEntityRole,
+        expected: EntityId,
+        actual: EntityId,
+    },
+    ActorAlreadyHasCombatStance {
+        actor: EntityId,
+    },
+    ActorNotPlaced {
+        actor: EntityId,
+    },
+    TargetNotColocated {
+        actor: EntityId,
+        target: EntityId,
+    },
+    TargetNotDead {
+        target: EntityId,
+    },
+    TargetNotAlive {
+        target: EntityId,
+    },
+    TargetLacksWounds {
+        target: EntityId,
+    },
+    TargetHasNoWounds {
+        target: EntityId,
+    },
+    SelfTargetForbidden {
+        actor: EntityId,
+        action: SelfTargetActionKind,
+    },
+    ActorMissingWeaponCommodity {
+        actor: EntityId,
+        commodity: CommodityKind,
+    },
+    CommodityNotCombatWeapon {
+        commodity: CommodityKind,
+    },
+    ActorMissingCombatProfile {
+        actor: EntityId,
+    },
+    TargetMissingCombatProfile {
+        target: EntityId,
+    },
+    HolderLacksAccessibleCommodity {
+        holder: EntityId,
+        commodity: CommodityKind,
+        quantity: Quantity,
+    },
+    TradeBundleRejected {
+        participant: EntityId,
+        acceptance: TradeAcceptance,
+    },
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub enum PayloadEntityRole {
+    Counterparty,
+    Target,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub enum SelfTargetActionKind {
+    Attack,
+    Heal,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum AbortReason {
-    CommitConditionFailed(String),
-    Interrupted(String),
-    ExternalAbort(String),
+    CommitConditionFailed { condition: Precondition },
+    Interrupted {
+        kind: InterruptReason,
+        detail: Option<String>,
+    },
+    ExternalAbort {
+        kind: ExternalAbortReason,
+        detail: Option<String>,
+    },
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub enum InterruptReason {
+    DangerNearby,
+    Reprioritized,
+    Other,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub enum ExternalAbortReason {
+    CancelledByInput { sequence_no: u64 },
+    ActorMarkedDead,
+    TargetDestroyed,
+    HandlerRequested { reason: ActionAbortRequestReason },
+    Other,
+}
+
+impl AbortReason {
+    #[must_use]
+    pub const fn commit_condition_failed(condition: Precondition) -> Self {
+        Self::CommitConditionFailed { condition }
+    }
+
+    #[must_use]
+    pub const fn interrupted(kind: InterruptReason) -> Self {
+        Self::Interrupted { kind, detail: None }
+    }
+
+    #[must_use]
+    pub fn interrupted_with_detail(kind: InterruptReason, detail: impl Into<String>) -> Self {
+        Self::Interrupted {
+            kind,
+            detail: Some(detail.into()),
+        }
+    }
+
+    #[must_use]
+    pub const fn external_abort(kind: ExternalAbortReason) -> Self {
+        Self::ExternalAbort { kind, detail: None }
+    }
+
+    #[must_use]
+    pub fn external_abort_with_detail(
+        kind: ExternalAbortReason,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self::ExternalAbort {
+            kind,
+            detail: Some(detail.into()),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AbortReason, ActionError, ActionHandler, ActionProgress};
+    use super::{
+        AbortReason, ActionAbortRequestReason, ActionError, ActionHandler, ActionProgress,
+        ExternalAbortReason, InterruptReason, PayloadEntityRole, SelfTargetActionKind,
+    };
     use crate::{
         ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionHandlerId, ActionInstance,
         ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DeterministicRng,
@@ -203,6 +333,7 @@ mod tests {
         assert_copy_traits::<ActionProgress>();
         assert_clone_traits::<ActionError>();
         assert_clone_traits::<AbortReason>();
+        assert_clone_traits::<ActionAbortRequestReason>();
     }
 
     #[test]
@@ -233,11 +364,82 @@ mod tests {
         (handler.on_abort)(
             &def,
             &instance,
-            &AbortReason::ExternalAbort("test".to_string()),
+            &AbortReason::external_abort_with_detail(ExternalAbortReason::Other, "test"),
             &mut rng,
             &mut txn,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn abort_reason_helpers_preserve_structured_semantics_and_optional_detail() {
+        assert_eq!(
+            AbortReason::commit_condition_failed(Precondition::ActorAlive),
+            AbortReason::CommitConditionFailed {
+                condition: Precondition::ActorAlive,
+            }
+        );
+        assert_eq!(
+            AbortReason::interrupted(InterruptReason::DangerNearby),
+            AbortReason::Interrupted {
+                kind: InterruptReason::DangerNearby,
+                detail: None,
+            }
+        );
+        assert_eq!(
+            AbortReason::interrupted_with_detail(InterruptReason::Other, "danger nearby"),
+            AbortReason::Interrupted {
+                kind: InterruptReason::Other,
+                detail: Some("danger nearby".to_string()),
+            }
+        );
+        assert_eq!(
+            AbortReason::external_abort(ExternalAbortReason::ActorMarkedDead),
+            AbortReason::ExternalAbort {
+                kind: ExternalAbortReason::ActorMarkedDead,
+                detail: None,
+            }
+        );
+        assert_eq!(
+            ActionError::AbortRequested(ActionAbortRequestReason::PayloadEntityMismatch {
+                role: PayloadEntityRole::Target,
+                expected: EntityId {
+                    slot: 1,
+                    generation: 0,
+                },
+                actual: EntityId {
+                    slot: 2,
+                    generation: 0,
+                },
+            }),
+            ActionError::AbortRequested(ActionAbortRequestReason::PayloadEntityMismatch {
+                role: PayloadEntityRole::Target,
+                expected: EntityId {
+                    slot: 1,
+                    generation: 0,
+                },
+                actual: EntityId {
+                    slot: 2,
+                    generation: 0,
+                },
+            })
+        );
+        assert_eq!(
+            ActionError::AbortRequested(ActionAbortRequestReason::SelfTargetForbidden {
+                actor: EntityId {
+                    slot: 9,
+                    generation: 0,
+                },
+                action: SelfTargetActionKind::Heal,
+            }),
+            ActionError::AbortRequested(ActionAbortRequestReason::SelfTargetForbidden {
+                actor: EntityId {
+                    slot: 9,
+                    generation: 0,
+                },
+                action: SelfTargetActionKind::Heal,
+            })
+        );
     }
 
     #[test]

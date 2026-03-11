@@ -5,7 +5,7 @@ use crate::{
     action_validation::evaluate_txn_precondition_authoritatively,
     AbortReason, ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
     ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionStatus,
-    DeterministicRng, ReplanNeeded,
+    DeterministicRng, ExternalAbortReason, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
@@ -125,7 +125,7 @@ fn tick_action_inner(
                     &instance.targets,
                 )
             })
-            .map(|precondition| AbortReason::CommitConditionFailed(format!("{precondition:?}")))
+            .map(|precondition| AbortReason::commit_condition_failed(*precondition))
     };
 
     if let Some(reason) = failure_reason {
@@ -156,8 +156,10 @@ fn tick_action_inner(
                 let _ = txn.commit(event_log);
                 Ok(TickOutcome::Committed)
             }
-            Err(ActionError::AbortRequested(message)) => {
-                let reason = AbortReason::ExternalAbort(message);
+            Err(ActionError::AbortRequested(reason)) => {
+                let reason = AbortReason::external_abort(ExternalAbortReason::HandlerRequested {
+                    reason,
+                });
                 let replan = finalize_failed_action(
                     def,
                     instance,
@@ -712,16 +714,18 @@ mod tests {
         assert_eq!(
             outcome,
             TickOutcome::Aborted {
-                reason: AbortReason::CommitConditionFailed(
-                    "TargetKind { target_index: 0, kind: Container }".to_string(),
-                ),
+                reason: AbortReason::commit_condition_failed(Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Container,
+                }),
                 replan: ReplanNeeded {
                     agent: actor,
                     failed_action_def: ActionDefId(0),
                     failed_instance: instance_id,
-                    reason: AbortReason::CommitConditionFailed(
-                        "TargetKind { target_index: 0, kind: Container }".to_string(),
-                    ),
+                    reason: AbortReason::commit_condition_failed(Precondition::TargetKind {
+                        target_index: 0,
+                        kind: EntityKind::Container,
+                    }),
                     tick: Tick(11),
                 },
             }
@@ -742,9 +746,10 @@ mod tests {
         assert_eq!(state.abort_calls, 1);
         assert_eq!(
             state.abort_reasons,
-            vec![AbortReason::CommitConditionFailed(
-                "TargetKind { target_index: 0, kind: Container }".to_string(),
-            )]
+            vec![AbortReason::commit_condition_failed(Precondition::TargetKind {
+                target_index: 0,
+                kind: EntityKind::Container,
+            })]
         );
     }
 

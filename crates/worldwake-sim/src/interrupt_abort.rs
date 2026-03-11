@@ -1,8 +1,8 @@
 use crate::{
     action_termination::{finalize_failed_action, FailedActionTermination},
     ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
-    ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus, Interruptibility,
-    ReplanNeeded,
+    ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus, ExternalAbortReason,
+    InterruptReason, Interruptibility, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
@@ -12,7 +12,7 @@ pub fn interrupt_action(
     handler_registry: &ActionHandlerRegistry,
     authority: ActionExecutionAuthority<'_>,
     context: ActionExecutionContext,
-    reason: String,
+    reason: InterruptReason,
 ) -> Result<ReplanNeeded, ActionError> {
     transition_action(
         instance_id,
@@ -20,7 +20,7 @@ pub fn interrupt_action(
         handler_registry,
         authority,
         context,
-        TransitionKind::Interrupt(reason),
+        &TransitionKind::Interrupt(reason),
     )
 }
 
@@ -30,7 +30,7 @@ pub fn abort_action(
     handler_registry: &ActionHandlerRegistry,
     authority: ActionExecutionAuthority<'_>,
     context: ActionExecutionContext,
-    reason: String,
+    reason: ExternalAbortReason,
 ) -> Result<ReplanNeeded, ActionError> {
     transition_action(
         instance_id,
@@ -38,13 +38,14 @@ pub fn abort_action(
         handler_registry,
         authority,
         context,
-        TransitionKind::Abort(reason),
+        &TransitionKind::Abort(reason),
     )
 }
 
+#[derive(Clone)]
 enum TransitionKind {
-    Interrupt(String),
-    Abort(String),
+    Interrupt(InterruptReason),
+    Abort(ExternalAbortReason),
 }
 
 struct TransitionRuntime<'a> {
@@ -59,7 +60,7 @@ fn transition_action(
     handler_registry: &ActionHandlerRegistry,
     authority: ActionExecutionAuthority<'_>,
     context: ActionExecutionContext,
-    kind: TransitionKind,
+    kind: &TransitionKind,
 ) -> Result<ReplanNeeded, ActionError> {
     let ActionExecutionAuthority {
         active_actions,
@@ -104,7 +105,7 @@ fn transition_action_inner(
     handler_registry: &ActionHandlerRegistry,
     runtime: TransitionRuntime<'_>,
     context: ActionExecutionContext,
-    kind: TransitionKind,
+    kind: &TransitionKind,
 ) -> Result<ReplanNeeded, ActionError> {
     let TransitionRuntime {
         world,
@@ -136,13 +137,13 @@ fn transition_action_inner(
             }
             FailedActionTermination {
                 status: ActionStatus::Interrupted,
-                reason: crate::AbortReason::Interrupted(reason),
+                reason: crate::AbortReason::interrupted(*reason),
                 event_tag: EventTag::ActionInterrupted,
             }
         }
         TransitionKind::Abort(reason) => FailedActionTermination {
             status: ActionStatus::Aborted,
-            reason: crate::AbortReason::ExternalAbort(reason),
+            reason: crate::AbortReason::external_abort(reason.clone()),
             event_tag: EventTag::ActionAborted,
         },
     };
@@ -169,7 +170,8 @@ mod tests {
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
         ActionProgress, ActionState, ActionStatus, Affordance, Constraint, DeterministicRng,
-        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        DurationExpr, ExternalAbortReason, InterruptReason, Interruptibility, Precondition,
+        ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -411,7 +413,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
-            "danger nearby".to_string(),
+            InterruptReason::DangerNearby,
         )
         .unwrap_err();
 
@@ -453,7 +455,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
-            "danger nearby".to_string(),
+            InterruptReason::DangerNearby,
         )
         .unwrap();
 
@@ -464,7 +466,10 @@ mod tests {
         assert_eq!(replan.failed_instance, instance_id);
         assert_eq!(
             replan.reason,
-            AbortReason::Interrupted("danger nearby".to_string())
+            AbortReason::Interrupted {
+                kind: InterruptReason::DangerNearby,
+                detail: None,
+            }
         );
         assert_eq!(replan.tick, Tick(11));
         let record = log
@@ -499,7 +504,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
-            "reprioritized".to_string(),
+            InterruptReason::Reprioritized,
         )
         .unwrap();
 
@@ -507,7 +512,10 @@ mod tests {
         assert!(world.reservations_for(target).is_empty());
         assert_eq!(
             replan.reason,
-            AbortReason::Interrupted("reprioritized".to_string())
+            AbortReason::Interrupted {
+                kind: InterruptReason::Reprioritized,
+                detail: None,
+            }
         );
         assert_eq!(log.events_by_tag(EventTag::ActionInterrupted).len(), 1);
     }
@@ -534,7 +542,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
-            "target destroyed".to_string(),
+            ExternalAbortReason::TargetDestroyed,
         )
         .unwrap();
 
@@ -544,7 +552,10 @@ mod tests {
         assert_eq!(replan.failed_instance, instance_id);
         assert_eq!(
             replan.reason,
-            AbortReason::ExternalAbort("target destroyed".to_string())
+            AbortReason::ExternalAbort {
+                kind: ExternalAbortReason::TargetDestroyed,
+                detail: None,
+            }
         );
         let record = log
             .get(log.events_by_tag(EventTag::ActionAborted)[0])

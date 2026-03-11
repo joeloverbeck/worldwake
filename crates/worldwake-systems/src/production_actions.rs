@@ -1165,7 +1165,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
-            "cancel".to_string(),
+            worldwake_sim::ExternalAbortReason::Other,
         )
         .unwrap();
 
@@ -1587,7 +1587,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
             },
-            "reprioritized".to_string(),
+            worldwake_sim::ExternalAbortReason::Other,
         )
         .unwrap();
 

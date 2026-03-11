@@ -11,11 +11,11 @@ use worldwake_core::{
     StateDelta, VisibilitySpec, WitnessData, WorldTxn, Wound, WoundCause, WoundList,
 };
 use worldwake_sim::{
-    AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
-    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, CombatActionPayload, Constraint, DeterministicRng, DurationExpr,
-    Interruptibility, LootActionPayload, Precondition, SystemError, SystemExecutionContext,
-    TargetSpec,
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId, ActionDefRegistry,
+    ActionDomain, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
+    ActionInstance, ActionPayload, ActionProgress, ActionState, CombatActionPayload, Constraint,
+    DeterministicRng, DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole,
+    Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext, TargetSpec,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -463,10 +463,11 @@ fn start_defend(
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     if txn.get_component_combat_stance(instance.actor).is_some() {
-        return Err(ActionError::AbortRequested(format!(
-            "actor {} already has an active combat stance",
-            instance.actor
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::ActorAlreadyHasCombatStance {
+                actor: instance.actor,
+            },
+        ));
     }
 
     txn.set_component_combat_stance(instance.actor, CombatStance::Defending)
@@ -535,28 +536,35 @@ fn validate_loot_context(
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
     if let Some(payload) = loot_payload(instance) {
         if payload.target != target {
-            return Err(ActionError::AbortRequested(format!(
-                "loot payload target {} does not match bound target {target}",
-                payload.target
-            )));
+            return Err(ActionError::AbortRequested(
+                ActionAbortRequestReason::PayloadEntityMismatch {
+                    role: PayloadEntityRole::Target,
+                    expected: target,
+                    actual: payload.target,
+                },
+            ));
         }
     }
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::AbortRequested(format!("actor {} is not placed", instance.actor))
+    let place = txn.effective_place(instance.actor).ok_or({
+        ActionError::AbortRequested(ActionAbortRequestReason::ActorNotPlaced {
+            actor: instance.actor,
+        })
     })?;
     if txn.entity_kind(target) != Some(EntityKind::Agent) {
         return Err(ActionError::InvalidTarget(target));
     }
     if txn.effective_place(target) != Some(place) {
-        return Err(ActionError::AbortRequested(format!(
-            "corpse target {target} is no longer co-located with actor {}",
-            instance.actor
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetNotColocated {
+                actor: instance.actor,
+                target,
+            },
+        ));
     }
     if txn.get_component_dead_at(target).is_none() {
-        return Err(ActionError::AbortRequested(format!(
-            "corpse target {target} is no longer dead"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetNotDead { target },
+        ));
     }
     Ok((target, place))
 }
@@ -571,25 +579,34 @@ fn validate_attack_context(
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
     if target != payload.target {
-        return Err(ActionError::AbortRequested(format!(
-            "attack payload target {} does not match bound target {target}",
-            payload.target
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::PayloadEntityMismatch {
+                role: PayloadEntityRole::Target,
+                expected: target,
+                actual: payload.target,
+            },
+        ));
     }
     if target == instance.actor {
-        return Err(ActionError::AbortRequested(format!(
-            "actor {} cannot attack itself",
-            instance.actor
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::SelfTargetForbidden {
+                actor: instance.actor,
+                action: SelfTargetActionKind::Attack,
+            },
+        ));
     }
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::AbortRequested(format!("actor {} is not placed", instance.actor))
+    let place = txn.effective_place(instance.actor).ok_or({
+        ActionError::AbortRequested(ActionAbortRequestReason::ActorNotPlaced {
+            actor: instance.actor,
+        })
     })?;
     if txn.effective_place(target) != Some(place) {
-        return Err(ActionError::AbortRequested(format!(
-            "target {target} is no longer co-located with actor {}",
-            instance.actor
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetNotColocated {
+                actor: instance.actor,
+                target,
+            },
+        ));
     }
     Ok(target)
 }
@@ -605,9 +622,12 @@ fn validate_selected_weapon(
             if txn.controlled_commodity_quantity(actor, kind).0 > 0 {
                 Ok(())
             } else {
-                Err(ActionError::AbortRequested(format!(
-                    "actor {actor} lacks selected weapon commodity {kind:?}"
-                )))
+                Err(ActionError::AbortRequested(
+                    ActionAbortRequestReason::ActorMissingWeaponCommodity {
+                        actor,
+                        commodity: kind,
+                    },
+                ))
             }
         }
     }
@@ -622,35 +642,43 @@ fn validate_heal_context(
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
     if target == instance.actor {
-        return Err(ActionError::AbortRequested(format!(
-            "actor {} cannot heal itself",
-            instance.actor
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::SelfTargetForbidden {
+                actor: instance.actor,
+                action: SelfTargetActionKind::Heal,
+            },
+        ));
     }
     if txn.entity_kind(target) != Some(EntityKind::Agent) {
         return Err(ActionError::InvalidTarget(target));
     }
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::AbortRequested(format!("actor {} is not placed", instance.actor))
+    let place = txn.effective_place(instance.actor).ok_or({
+        ActionError::AbortRequested(ActionAbortRequestReason::ActorNotPlaced {
+            actor: instance.actor,
+        })
     })?;
     if txn.effective_place(target) != Some(place) {
-        return Err(ActionError::AbortRequested(format!(
-            "patient {target} is no longer co-located with actor {}",
-            instance.actor
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetNotColocated {
+                actor: instance.actor,
+                target,
+            },
+        ));
     }
     if txn.get_component_dead_at(target).is_some() {
-        return Err(ActionError::AbortRequested(format!(
-            "patient {target} is no longer alive"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetNotAlive { target },
+        ));
     }
     let wounds = txn
         .get_component_wound_list(target)
-        .ok_or_else(|| ActionError::AbortRequested(format!("patient {target} lacks wounds")))?;
+        .ok_or(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetLacksWounds { target },
+        ))?;
     if wounds.wounds.is_empty() {
-        return Err(ActionError::AbortRequested(format!(
-            "patient {target} no longer has wounds"
-        )));
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetHasNoWounds { target },
+        ));
     }
     Ok(target)
 }
@@ -717,8 +745,10 @@ fn weapon_stats(
                 base_wound_severity,
                 base_bleed_rate,
                 ..
-            } = kind.spec().combat_weapon_profile.ok_or_else(|| {
-                ActionError::AbortRequested(format!("commodity {kind:?} is not a combat weapon"))
+            } = kind.spec().combat_weapon_profile.ok_or({
+                ActionError::AbortRequested(ActionAbortRequestReason::CommodityNotCombatWeapon {
+                    commodity: kind,
+                })
             })?;
             Ok(AttackWeaponStats {
                 severity: base_wound_severity,
@@ -933,7 +963,9 @@ fn tick_heal(
     let wounds = txn
         .get_component_wound_list(target)
         .cloned()
-        .ok_or_else(|| ActionError::AbortRequested(format!("patient {target} lacks wounds")))?;
+        .ok_or(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetLacksWounds { target },
+        ))?;
     let profile = worldwake_core::CommodityKind::Medicine
         .spec()
         .treatment_profile
@@ -991,15 +1023,17 @@ fn commit_attack(
     let attacker_profile = txn
         .get_component_combat_profile(instance.actor)
         .copied()
-        .ok_or_else(|| {
-            ActionError::AbortRequested(format!("attacker {} lacks combat profile", instance.actor))
-        })?;
+        .ok_or(ActionError::AbortRequested(
+            ActionAbortRequestReason::ActorMissingCombatProfile {
+                actor: instance.actor,
+            },
+        ))?;
     let target_profile = txn
         .get_component_combat_profile(target)
         .copied()
-        .ok_or_else(|| {
-            ActionError::AbortRequested(format!("target {target} lacks combat profile"))
-        })?;
+        .ok_or(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetMissingCombatProfile { target },
+        ))?;
     let attacker_needs = txn.get_component_homeostatic_needs(instance.actor);
     let target_needs = txn.get_component_homeostatic_needs(target);
     let attacker_wounds = txn.get_component_wound_list(instance.actor);
@@ -2225,7 +2259,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(7),
             },
-            "cancel defend".to_string(),
+            worldwake_sim::ExternalAbortReason::Other,
         )
         .unwrap();
 

@@ -1,16 +1,17 @@
 use crate::BeliefView;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     CommodityKind, DemandMemory, EntityId, HomeostaticNeeds, Quantity, WoundList,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum TradeAcceptance {
     Accept,
     Reject { reason: TradeRejectionReason },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum TradeRejectionReason {
     PostTradeStateWorse,
     InsufficientPayment,

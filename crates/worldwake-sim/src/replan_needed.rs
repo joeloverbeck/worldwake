@@ -14,7 +14,7 @@ pub struct ReplanNeeded {
 #[cfg(test)]
 mod tests {
     use super::ReplanNeeded;
-    use crate::{AbortReason, ActionDefId, ActionInstanceId};
+    use crate::{AbortReason, ActionDefId, ActionInstanceId, InterruptReason};
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{EntityId, Tick};
 
@@ -28,7 +28,7 @@ mod tests {
             },
             failed_action_def: ActionDefId(4),
             failed_instance: ActionInstanceId(9),
-            reason: AbortReason::Interrupted("danger nearby".to_string()),
+            reason: AbortReason::interrupted(InterruptReason::DangerNearby),
             tick: Tick(17),
         }
     }
