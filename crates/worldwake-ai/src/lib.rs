@@ -3,14 +3,20 @@
 //! GOAP planner, utility scoring, and decision architecture.
 //! Depends on `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
 
+pub mod budget;
 pub mod candidate_generation;
+pub mod decision_runtime;
 mod enterprise;
 pub mod goal_model;
+pub mod planner_ops;
 pub mod pressure;
 pub mod ranking;
 
+pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
+pub use decision_runtime::AgentDecisionRuntime;
 pub use goal_model::{GoalPriorityClass, GroundedGoal, RankedGoal};
+pub use planner_ops::{PlanTerminalKind, PlannedPlan, PlannedStep};
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
 pub use ranking::rank_candidates;
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
