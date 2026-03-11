@@ -105,7 +105,10 @@ pub use production::{
     WorkstationMarker, WorkstationTag,
 };
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
-pub use topology::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
+pub use topology::{
+    build_prototype_world, prototype_place_entity, Place, PlaceTag, PrototypePlace, Route,
+    Topology, TravelEdge,
+};
 pub use trade::{
     DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
     SubstitutePreferences, TradeDispositionProfile,

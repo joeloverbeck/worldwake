@@ -25,6 +25,74 @@ pub enum PlaceTag {
     Gate,
 }
 
+/// Typed identifiers for the canonical prototype-world places.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub enum PrototypePlace {
+    VillageSquare,
+    OrchardFarm,
+    GeneralStore,
+    CommonHouse,
+    RulersHall,
+    GuardPost,
+    PublicLatrine,
+    NorthCrossroads,
+    ForestPath,
+    BanditCamp,
+    SouthGate,
+    EastFieldTrail,
+}
+
+impl PrototypePlace {
+    pub const ALL: [Self; 12] = [
+        Self::VillageSquare,
+        Self::OrchardFarm,
+        Self::GeneralStore,
+        Self::CommonHouse,
+        Self::RulersHall,
+        Self::GuardPost,
+        Self::PublicLatrine,
+        Self::NorthCrossroads,
+        Self::ForestPath,
+        Self::BanditCamp,
+        Self::SouthGate,
+        Self::EastFieldTrail,
+    ];
+
+    pub const fn slot(self) -> u32 {
+        match self {
+            Self::VillageSquare => 0,
+            Self::OrchardFarm => 1,
+            Self::GeneralStore => 2,
+            Self::CommonHouse => 3,
+            Self::RulersHall => 4,
+            Self::GuardPost => 5,
+            Self::PublicLatrine => 6,
+            Self::NorthCrossroads => 7,
+            Self::ForestPath => 8,
+            Self::BanditCamp => 9,
+            Self::SouthGate => 10,
+            Self::EastFieldTrail => 11,
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::VillageSquare => "Village Square",
+            Self::OrchardFarm => "Orchard Farm",
+            Self::GeneralStore => "General Store",
+            Self::CommonHouse => "Common House",
+            Self::RulersHall => "Ruler's Hall",
+            Self::GuardPost => "Guard Post",
+            Self::PublicLatrine => "Public Latrine",
+            Self::NorthCrossroads => "North Crossroads",
+            Self::ForestPath => "Forest Path",
+            Self::BanditCamp => "Bandit Camp",
+            Self::SouthGate => "South Gate",
+            Self::EastFieldTrail => "East Field Trail",
+        }
+    }
+}
+
 /// Authoritative metadata for a place entity in the world graph.
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Place {
@@ -297,15 +365,22 @@ impl Topology {
     }
 }
 
+pub const fn prototype_place_entity(place: PrototypePlace) -> EntityId {
+    EntityId {
+        slot: place.slot(),
+        generation: 0,
+    }
+}
+
 pub fn build_prototype_world() -> Topology {
     let mut topology = Topology::new();
 
     for spec in PROTOTYPE_PLACE_SPECS {
         topology
             .add_place(
-                prototype_entity(spec.slot),
+                prototype_place_entity(spec.place),
                 Place {
-                    name: spec.name.to_string(),
+                    name: spec.place.name().to_string(),
                     capacity: None,
                     tags: spec.tags.iter().copied().collect(),
                 },
@@ -318,8 +393,8 @@ pub fn build_prototype_world() -> Topology {
             .add_edge(
                 TravelEdge::new(
                     TravelEdgeId(spec.id),
-                    prototype_entity(spec.from),
-                    prototype_entity(spec.to),
+                    prototype_place_entity(spec.from),
+                    prototype_place_entity(spec.to),
                     spec.travel_time_ticks,
                     None,
                 )
@@ -333,78 +408,65 @@ pub fn build_prototype_world() -> Topology {
 
 #[derive(Copy, Clone)]
 struct PrototypePlaceSpec {
-    slot: u32,
-    name: &'static str,
+    place: PrototypePlace,
     tags: &'static [PlaceTag],
 }
 
 #[derive(Copy, Clone)]
 struct PrototypeEdgeSpec {
     id: u32,
-    from: u32,
-    to: u32,
+    from: PrototypePlace,
+    to: PrototypePlace,
     travel_time_ticks: u32,
 }
 
 const PROTOTYPE_PLACE_SPECS: &[PrototypePlaceSpec] = &[
     PrototypePlaceSpec {
-        slot: 0,
-        name: "Village Square",
+        place: PrototypePlace::VillageSquare,
         tags: &[PlaceTag::Village],
     },
     PrototypePlaceSpec {
-        slot: 1,
-        name: "Orchard Farm",
+        place: PrototypePlace::OrchardFarm,
         tags: &[PlaceTag::Farm, PlaceTag::Field],
     },
     PrototypePlaceSpec {
-        slot: 2,
-        name: "General Store",
+        place: PrototypePlace::GeneralStore,
         tags: &[PlaceTag::Store, PlaceTag::Village],
     },
     PrototypePlaceSpec {
-        slot: 3,
-        name: "Common House",
+        place: PrototypePlace::CommonHouse,
         tags: &[PlaceTag::Inn, PlaceTag::Village],
     },
     PrototypePlaceSpec {
-        slot: 4,
-        name: "Ruler's Hall",
+        place: PrototypePlace::RulersHall,
         tags: &[PlaceTag::Hall, PlaceTag::Village],
     },
     PrototypePlaceSpec {
-        slot: 5,
-        name: "Guard Post",
+        place: PrototypePlace::GuardPost,
         tags: &[PlaceTag::Barracks, PlaceTag::Village],
     },
     PrototypePlaceSpec {
-        slot: 6,
-        name: "Public Latrine",
+        place: PrototypePlace::PublicLatrine,
         tags: &[PlaceTag::Latrine, PlaceTag::Village],
     },
     PrototypePlaceSpec {
-        slot: 7,
-        name: "North Crossroads",
+        place: PrototypePlace::NorthCrossroads,
         tags: &[PlaceTag::Crossroads, PlaceTag::Road],
     },
     PrototypePlaceSpec {
-        slot: 8,
-        name: "Forest Path",
+        place: PrototypePlace::ForestPath,
         tags: &[PlaceTag::Forest, PlaceTag::Trail],
     },
     PrototypePlaceSpec {
-        slot: 9,
-        name: "Bandit Camp",
+        place: PrototypePlace::BanditCamp,
         tags: &[PlaceTag::Camp, PlaceTag::Forest],
     },
     PrototypePlaceSpec {
-        slot: 10,
-        name: "South Gate",
+        place: PrototypePlace::SouthGate,
         tags: &[PlaceTag::Gate, PlaceTag::Road],
     },
     PrototypePlaceSpec {
-        slot: 11,
-        name: "East Field Trail",
+        place: PrototypePlace::EastFieldTrail,
         tags: &[PlaceTag::Trail, PlaceTag::Field],
     },
 ];
@@ -412,156 +474,149 @@ const PROTOTYPE_PLACE_SPECS: &[PrototypePlaceSpec] = &[
 const PROTOTYPE_EDGE_SPECS: &[PrototypeEdgeSpec] = &[
     PrototypeEdgeSpec {
         id: 0,
-        from: 0,
-        to: 2,
+        from: PrototypePlace::VillageSquare,
+        to: PrototypePlace::GeneralStore,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 1,
-        from: 2,
-        to: 0,
+        from: PrototypePlace::GeneralStore,
+        to: PrototypePlace::VillageSquare,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 2,
-        from: 0,
-        to: 3,
+        from: PrototypePlace::VillageSquare,
+        to: PrototypePlace::CommonHouse,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 3,
-        from: 3,
-        to: 0,
+        from: PrototypePlace::CommonHouse,
+        to: PrototypePlace::VillageSquare,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 4,
-        from: 0,
-        to: 4,
+        from: PrototypePlace::VillageSquare,
+        to: PrototypePlace::RulersHall,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 5,
-        from: 4,
-        to: 0,
+        from: PrototypePlace::RulersHall,
+        to: PrototypePlace::VillageSquare,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 6,
-        from: 0,
-        to: 5,
+        from: PrototypePlace::VillageSquare,
+        to: PrototypePlace::GuardPost,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 7,
-        from: 5,
-        to: 0,
+        from: PrototypePlace::GuardPost,
+        to: PrototypePlace::VillageSquare,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 8,
-        from: 0,
-        to: 6,
+        from: PrototypePlace::VillageSquare,
+        to: PrototypePlace::PublicLatrine,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 9,
-        from: 6,
-        to: 0,
+        from: PrototypePlace::PublicLatrine,
+        to: PrototypePlace::VillageSquare,
         travel_time_ticks: 1,
     },
     PrototypeEdgeSpec {
         id: 10,
-        from: 0,
-        to: 10,
+        from: PrototypePlace::VillageSquare,
+        to: PrototypePlace::SouthGate,
         travel_time_ticks: 2,
     },
     PrototypeEdgeSpec {
         id: 11,
-        from: 10,
-        to: 0,
+        from: PrototypePlace::SouthGate,
+        to: PrototypePlace::VillageSquare,
         travel_time_ticks: 2,
     },
     PrototypeEdgeSpec {
         id: 12,
-        from: 10,
-        to: 11,
+        from: PrototypePlace::SouthGate,
+        to: PrototypePlace::EastFieldTrail,
         travel_time_ticks: 3,
     },
     PrototypeEdgeSpec {
         id: 13,
-        from: 11,
-        to: 10,
+        from: PrototypePlace::EastFieldTrail,
+        to: PrototypePlace::SouthGate,
         travel_time_ticks: 3,
     },
     PrototypeEdgeSpec {
         id: 14,
-        from: 11,
-        to: 1,
+        from: PrototypePlace::EastFieldTrail,
+        to: PrototypePlace::OrchardFarm,
         travel_time_ticks: 2,
     },
     PrototypeEdgeSpec {
         id: 15,
-        from: 1,
-        to: 11,
+        from: PrototypePlace::OrchardFarm,
+        to: PrototypePlace::EastFieldTrail,
         travel_time_ticks: 2,
     },
     PrototypeEdgeSpec {
         id: 16,
-        from: 11,
-        to: 7,
+        from: PrototypePlace::EastFieldTrail,
+        to: PrototypePlace::NorthCrossroads,
         travel_time_ticks: 3,
     },
     PrototypeEdgeSpec {
         id: 17,
-        from: 7,
-        to: 11,
+        from: PrototypePlace::NorthCrossroads,
+        to: PrototypePlace::EastFieldTrail,
         travel_time_ticks: 3,
     },
     PrototypeEdgeSpec {
         id: 18,
-        from: 7,
-        to: 8,
+        from: PrototypePlace::NorthCrossroads,
+        to: PrototypePlace::ForestPath,
         travel_time_ticks: 4,
     },
     PrototypeEdgeSpec {
         id: 19,
-        from: 8,
-        to: 7,
+        from: PrototypePlace::ForestPath,
+        to: PrototypePlace::NorthCrossroads,
         travel_time_ticks: 4,
     },
     PrototypeEdgeSpec {
         id: 20,
-        from: 8,
-        to: 9,
+        from: PrototypePlace::ForestPath,
+        to: PrototypePlace::BanditCamp,
         travel_time_ticks: 5,
     },
     PrototypeEdgeSpec {
         id: 21,
-        from: 9,
-        to: 8,
+        from: PrototypePlace::BanditCamp,
+        to: PrototypePlace::ForestPath,
         travel_time_ticks: 5,
     },
     PrototypeEdgeSpec {
         id: 22,
-        from: 0,
-        to: 7,
+        from: PrototypePlace::VillageSquare,
+        to: PrototypePlace::NorthCrossroads,
         travel_time_ticks: 3,
     },
     PrototypeEdgeSpec {
         id: 23,
-        from: 7,
-        to: 0,
+        from: PrototypePlace::NorthCrossroads,
+        to: PrototypePlace::VillageSquare,
         travel_time_ticks: 3,
     },
 ];
-
-fn prototype_entity(slot: u32) -> EntityId {
-    EntityId {
-        slot,
-        generation: 0,
-    }
-}
 
 fn insert_sorted_edge_id(edge_ids: &mut Vec<TravelEdgeId>, edge_id: TravelEdgeId) {
     match edge_ids.binary_search(&edge_id) {
@@ -614,7 +669,10 @@ impl Route {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_prototype_world, Place, PlaceTag, Route, Topology, TravelEdge};
+    use super::{
+        build_prototype_world, prototype_place_entity, Place, PlaceTag, PrototypePlace, Route,
+        Topology, TravelEdge, PROTOTYPE_EDGE_SPECS, PROTOTYPE_PLACE_SPECS,
+    };
     use crate::{
         canonical_bytes, hash_serializable, traits::Component, EntityId, TravelEdgeId, WorldError,
     };
@@ -1274,7 +1332,46 @@ mod tests {
         let second = build_prototype_world();
 
         assert_eq!(first, second);
-        assert!((12..=20).contains(&first.place_count()));
+        assert_eq!(first.place_count(), PROTOTYPE_PLACE_SPECS.len());
+        assert_eq!(first.edge_count(), PROTOTYPE_EDGE_SPECS.len());
+    }
+
+    #[test]
+    fn prototype_place_entity_matches_expected_entity_ids() {
+        assert_eq!(
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            EntityId {
+                slot: 0,
+                generation: 0,
+            }
+        );
+        assert_eq!(
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+            EntityId {
+                slot: 1,
+                generation: 0,
+            }
+        );
+        assert_eq!(
+            prototype_place_entity(PrototypePlace::EastFieldTrail),
+            EntityId {
+                slot: 11,
+                generation: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn prototype_place_entity_resolves_to_expected_places_in_built_world() {
+        let topology = build_prototype_world();
+
+        for place in PrototypePlace::ALL {
+            let entity = prototype_place_entity(place);
+            let topology_place = topology
+                .place(entity)
+                .expect("prototype place accessor must resolve in built world");
+            assert_eq!(topology_place.name, place.name());
+        }
     }
 
     #[test]

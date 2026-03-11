@@ -12,12 +12,13 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
-    build_prototype_world, hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, BlockedIntentMemory, BodyCostPerTick, CarryCapacity, CauseRef,
-    CombatProfile, CommodityKind, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
-    EntityKind, EventLog, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Permille,
-    Quantity, RecipeId, ResourceSource, Seed, StateHash, Tick, UtilityProfile, VisibilitySpec,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    build_prototype_world, hash_event_log, hash_world, prototype_place_entity,
+    total_authoritative_commodity_quantity, total_live_lot_quantity, BlockedIntentMemory,
+    BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CommodityKind, ControlSource,
+    DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
+    KnownRecipes, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId,
+    ResourceSource, Seed, StateHash, Tick, UtilityProfile, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
@@ -40,18 +41,10 @@ fn nz(value: u32) -> NonZeroU32 {
     NonZeroU32::new(value).unwrap()
 }
 
-/// Reproduce the private `prototype_entity` from topology.rs.
-const fn prototype_entity(slot: u32) -> EntityId {
-    EntityId {
-        slot,
-        generation: 0,
-    }
-}
-
 /// Village Square — central hub, slot 0.
-const VILLAGE_SQUARE: EntityId = prototype_entity(0);
+const VILLAGE_SQUARE: EntityId = prototype_place_entity(PrototypePlace::VillageSquare);
 /// Orchard Farm — slot 1.
-const ORCHARD_FARM: EntityId = prototype_entity(1);
+const ORCHARD_FARM: EntityId = prototype_place_entity(PrototypePlace::OrchardFarm);
 
 fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
     WorldTxn::new(
