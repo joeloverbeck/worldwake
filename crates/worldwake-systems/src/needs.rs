@@ -278,6 +278,7 @@ fn append_deprivation_wound(
         cause: WoundCause::Deprivation(kind),
         severity,
         inflicted_at: tick,
+        bleed_rate_per_tick: worldwake_core::Permille::new(0).expect("zero is a valid permille"),
     });
 }
 
@@ -723,6 +724,10 @@ mod tests {
         );
         assert_eq!(wounds.wounds[0].severity, thresholds.hunger.critical());
         assert_eq!(
+            wounds.wounds[0].bleed_rate_per_tick,
+            Permille::new(0).unwrap()
+        );
+        assert_eq!(
             world
                 .get_component_deprivation_exposure(agent)
                 .unwrap()
@@ -771,6 +776,10 @@ mod tests {
             WoundCause::Deprivation(DeprivationKind::Dehydration)
         );
         assert_eq!(wounds.wounds[0].severity, thresholds.thirst.critical());
+        assert_eq!(
+            wounds.wounds[0].bleed_rate_per_tick,
+            Permille::new(0).unwrap()
+        );
         assert_eq!(
             world
                 .get_component_deprivation_exposure(agent)

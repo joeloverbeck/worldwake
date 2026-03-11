@@ -412,6 +412,7 @@ mod tests {
                 cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
                 severity: pm(700),
                 inflicted_at: Tick(3),
+                bleed_rate_per_tick: pm(0),
             }],
         }
     }

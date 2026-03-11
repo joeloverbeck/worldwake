@@ -365,10 +365,12 @@ fn scheduler_applies_starvation_and_dehydration_consequences_after_tolerance_win
         wounds.wounds[0].cause,
         WoundCause::Deprivation(DeprivationKind::Starvation)
     );
+    assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(0));
     assert_eq!(
         wounds.wounds[1].cause,
         WoundCause::Deprivation(DeprivationKind::Dehydration)
     );
+    assert_eq!(wounds.wounds[1].bleed_rate_per_tick, pm(0));
 }
 
 #[test]

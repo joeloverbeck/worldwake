@@ -185,6 +185,7 @@ mod tests {
                 cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                 severity: Permille::new(800).unwrap(),
                 inflicted_at: Tick(7),
+                bleed_rate_per_tick: Permille::new(0).unwrap(),
             }],
         };
 
@@ -474,6 +475,7 @@ mod tests {
                     cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
                     severity: Permille::new(550).unwrap(),
                     inflicted_at: Tick(2),
+                    bleed_rate_per_tick: Permille::new(0).unwrap(),
                 }],
             },
         );
@@ -574,6 +576,7 @@ mod tests {
                     cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                     severity: Permille::new(300).unwrap(),
                     inflicted_at: Tick(4),
+                    bleed_rate_per_tick: Permille::new(0).unwrap(),
                 }],
             },
         );

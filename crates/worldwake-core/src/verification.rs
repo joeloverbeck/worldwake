@@ -779,6 +779,7 @@ mod tests {
                         cause: WoundCause::Deprivation(DeprivationKind::Starvation),
                         severity: crate::Permille::new(600).unwrap(),
                         inflicted_at: Tick(8),
+                        bleed_rate_per_tick: crate::Permille::new(0).unwrap(),
                     }],
                 },
             )
