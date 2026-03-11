@@ -70,21 +70,53 @@ pub fn generate_candidates(
         current_tick,
     };
 
-    if let (Some(needs), Some(thresholds)) = (needs, thresholds) {
-        emit_self_consume_candidates(&mut candidates, &ctx, needs, thresholds);
-        emit_sleep_goal(&mut candidates, &ctx, needs, thresholds);
-        emit_relieve_goal(&mut candidates, &ctx, needs, thresholds);
-        emit_wash_goal(&mut candidates, &ctx, needs, thresholds);
-    }
-
-    emit_produce_goals(&mut candidates, &ctx, needs, thresholds);
-    emit_restock_goals(&mut candidates, &ctx);
-
-    emit_reduce_danger_goal(&mut candidates, &ctx);
-    emit_heal_goals(&mut candidates, &ctx);
-    emit_loot_goals(&mut candidates, &ctx);
+    emit_need_candidates(&mut candidates, &ctx, needs, thresholds);
+    emit_production_candidates(&mut candidates, &ctx, needs, thresholds);
+    emit_enterprise_candidates(&mut candidates, &ctx);
+    emit_combat_candidates(&mut candidates, &ctx);
 
     candidates.into_values().collect()
+}
+
+fn emit_need_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+    needs: Option<HomeostaticNeeds>,
+    thresholds: Option<DriveThresholds>,
+) {
+    let (Some(needs), Some(thresholds)) = (needs, thresholds) else {
+        return;
+    };
+
+    emit_self_consume_candidates(candidates, ctx, needs, thresholds);
+    emit_sleep_goal(candidates, ctx, needs, thresholds);
+    emit_relieve_goal(candidates, ctx, needs, thresholds);
+    emit_wash_goal(candidates, ctx, needs, thresholds);
+}
+
+fn emit_production_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+    needs: Option<HomeostaticNeeds>,
+    thresholds: Option<DriveThresholds>,
+) {
+    emit_produce_goals(candidates, ctx, needs, thresholds);
+}
+
+fn emit_enterprise_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
+    emit_restock_goals(candidates, ctx);
+}
+
+fn emit_combat_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
+    emit_reduce_danger_goal(candidates, ctx);
+    emit_heal_goals(candidates, ctx);
+    emit_loot_goals(candidates, ctx);
 }
 
 fn emit_self_consume_candidates(
@@ -1365,5 +1397,84 @@ mod tests {
                     | GoalKind::BuryCorpse { .. }
             )
         }));
+    }
+
+    #[test]
+    fn generate_candidates_orchestrates_all_domain_groups() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let attacker = entity(3);
+        let place = entity(10);
+        let adjacent = entity(11);
+        let workstation = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, attacker]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::Mill), vec![workstation]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(place),
+            },
+        );
+        view.demand_memory.insert(
+            agent,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place,
+                tick: Tick(2),
+                counterparty: Some(seller),
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        );
+        view.hostiles.insert(agent, vec![attacker]);
+        view.attackers.insert(agent, vec![attacker]);
+        view.adjacent_places.insert(place, vec![adjacent]);
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Bread, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(2))],
+            WorkstationTag::Mill,
+        ));
+
+        let candidates =
+            generate_candidates(&view, agent, &BlockedIntentMemory::default(), &recipes, Tick(5));
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(0)
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        ));
+        assert!(contains_goal(&candidates, GoalKind::ReduceDanger));
     }
 }
