@@ -1,4 +1,4 @@
-use crate::{ActionDefId, ActionInstanceId, ActionState, ActionStatus};
+use crate::{ActionDefId, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, ReservationId, Tick};
 
@@ -6,6 +6,7 @@ use worldwake_core::{EntityId, ReservationId, Tick};
 pub struct ActionInstance {
     pub instance_id: ActionInstanceId,
     pub def_id: ActionDefId,
+    pub payload: ActionPayload,
     pub actor: EntityId,
     pub targets: Vec<EntityId>,
     pub start_tick: Tick,
@@ -18,7 +19,8 @@ pub struct ActionInstance {
 #[cfg(test)]
 mod tests {
     use super::ActionInstance;
-    use crate::{ActionDefId, ActionInstanceId, ActionState, ActionStatus};
+    use crate::{ActionDefId, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
+    use worldwake_core::{CommodityKind, Quantity};
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{EntityId, ReservationId, Tick};
 
@@ -28,6 +30,16 @@ mod tests {
         ActionInstance {
             instance_id: ActionInstanceId(3),
             def_id: ActionDefId(1),
+            payload: ActionPayload::Trade(crate::TradeActionPayload {
+                counterparty: EntityId {
+                    slot: 6,
+                    generation: 1,
+                },
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(2),
+                requested_commodity: CommodityKind::Bread,
+                requested_quantity: Quantity(1),
+            }),
             actor: EntityId {
                 slot: 5,
                 generation: 1,

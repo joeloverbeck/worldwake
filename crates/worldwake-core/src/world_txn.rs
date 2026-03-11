@@ -1,12 +1,12 @@
 use crate::{
     component_schema::with_component_schema_entries, ArchiveMutationSnapshot, CommodityKind,
     Container, ControlSource, EntityId, EntityKind, EventId, FactId, Permille, Quantity,
-    ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
+    ReservationId, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
     PendingEvent, QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta,
-    StateDelta, VisibilitySpec, WitnessData,
+    StateDelta, VisibilitySpec, WitnessData, ProvenanceEntry,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
@@ -389,6 +389,53 @@ impl<'w> WorldTxn<'w> {
         self.push_archive_snapshot(source_snapshot);
 
         Ok(merged_id)
+    }
+
+    pub fn append_lot_provenance(
+        &mut self,
+        lot_id: EntityId,
+        entry: ProvenanceEntry,
+    ) -> Result<(), WorldError> {
+        let before = self
+            .staged_world
+            .get_component_item_lot(lot_id)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: lot_id,
+                component_type: "ItemLot",
+            })?;
+        let lot = self
+            .staged_world
+            .get_component_item_lot_mut(lot_id)
+            .ok_or(WorldError::ComponentNotFound {
+                entity: lot_id,
+                component_type: "ItemLot",
+            })?;
+        lot.provenance.push(entry);
+        let after = lot.clone();
+        self.deltas.push(StateDelta::Component(ComponentDelta::Set {
+            entity: lot_id,
+            component_kind: ComponentKind::ItemLot,
+            before: Some(ComponentValue::ItemLot(before)),
+            after: ComponentValue::ItemLot(after),
+        }));
+        Ok(())
+    }
+
+    pub fn set_component_trade_disposition_profile(
+        &mut self,
+        entity: EntityId,
+        component: TradeDispositionProfile,
+    ) -> Result<(), WorldError> {
+        self.replace_simple_component(
+            entity,
+            component,
+            |world, entity| world.get_component_trade_disposition_profile(entity).cloned(),
+            World::remove_component_trade_disposition_profile,
+            World::insert_component_trade_disposition_profile,
+            ComponentKind::TradeDispositionProfile,
+            ComponentValue::TradeDispositionProfile,
+        )
     }
 
     pub fn set_owner(&mut self, entity: EntityId, owner: EntityId) -> Result<(), WorldError> {

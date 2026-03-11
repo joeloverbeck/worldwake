@@ -87,6 +87,7 @@ pub enum DurationExpr {
     TargetConsumable { target_index: u8 },
     TravelToTarget { target_index: u8 },
     ActorMetabolism { kind: MetabolismDurationKind },
+    ActorTradeDisposition,
 }
 
 impl DurationExpr {
@@ -96,7 +97,8 @@ impl DurationExpr {
             Self::Fixed(ticks) => Some(ticks.get()),
             Self::TargetConsumable { .. }
             | Self::TravelToTarget { .. }
-            | Self::ActorMetabolism { .. } => None,
+            | Self::ActorMetabolism { .. }
+            | Self::ActorTradeDisposition => None,
         }
     }
 
@@ -150,6 +152,10 @@ impl DurationExpr {
                 };
                 Ok(ticks)
             }
+            Self::ActorTradeDisposition => world
+                .get_component_trade_disposition_profile(actor)
+                .map(|profile| profile.negotiation_round_ticks.get())
+                .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
         }
     }
 }

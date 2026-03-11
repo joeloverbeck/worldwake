@@ -201,6 +201,7 @@ impl Harness {
                 actor: self.actor,
                 def_id,
                 targets,
+                payload_override: None,
             },
         );
     }

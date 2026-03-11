@@ -134,7 +134,7 @@ PRs should include:
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (2894 symbols, 10551 relationships, 242 execution flows).
+This project is indexed by GitNexus as **worldwake** (2962 symbols, 10779 relationships, 248 execution flows).
 
 ## Always Start Here
 

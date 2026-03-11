@@ -543,6 +543,7 @@ mod tests {
             def_id: pick_up_id,
             actor,
             bound_targets: vec![lot],
+            payload_override: None,
             explanation: None,
         };
         let mut log = EventLog::new();
@@ -589,6 +590,7 @@ mod tests {
             def_id: pick_up_id,
             actor,
             bound_targets: vec![lot],
+            payload_override: None,
             explanation: None,
         };
         let mut log = EventLog::new();
@@ -769,6 +771,7 @@ mod tests {
             def_id: put_down_id,
             actor,
             bound_targets: vec![lot],
+            payload_override: None,
             explanation: None,
         };
         let mut log = EventLog::new();

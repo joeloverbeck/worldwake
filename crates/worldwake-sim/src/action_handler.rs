@@ -72,6 +72,7 @@ pub enum ActionError {
     PreconditionFailed(String),
     ReservationUnavailable(EntityId),
     InvalidTarget(EntityId),
+    AbortRequested(String),
     InternalError(String),
 }
 
@@ -102,6 +103,7 @@ mod tests {
         ActionInstance {
             instance_id: ActionInstanceId(9),
             def_id: ActionDefId(2),
+            payload: ActionPayload::None,
             actor: EntityId {
                 slot: 3,
                 generation: 1,

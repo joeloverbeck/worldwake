@@ -1,4 +1,4 @@
-use crate::ActionDefId;
+use crate::{ActionDefId, ActionPayload};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use worldwake_core::EntityId;
@@ -8,6 +8,7 @@ pub struct Affordance {
     pub def_id: ActionDefId,
     pub actor: EntityId,
     pub bound_targets: Vec<EntityId>,
+    pub payload_override: Option<ActionPayload>,
     pub explanation: Option<String>,
 }
 
@@ -17,6 +18,7 @@ impl Ord for Affordance {
             .cmp(&other.def_id)
             .then_with(|| self.bound_targets.cmp(&other.bound_targets))
             .then_with(|| self.actor.cmp(&other.actor))
+            .then_with(|| self.payload_override.cmp(&other.payload_override))
             .then_with(|| self.explanation.cmp(&other.explanation))
     }
 }
@@ -56,18 +58,21 @@ mod tests {
                 def_id: ActionDefId(2),
                 actor,
                 bound_targets: vec![entity(4)],
+                payload_override: None,
                 explanation: Some("later".to_string()),
             },
             Affordance {
                 def_id: ActionDefId(1),
                 actor,
                 bound_targets: vec![entity(7)],
+                payload_override: None,
                 explanation: Some("human".to_string()),
             },
             Affordance {
                 def_id: ActionDefId(1),
                 actor,
                 bound_targets: vec![entity(3)],
+                payload_override: None,
                 explanation: None,
             },
         ];

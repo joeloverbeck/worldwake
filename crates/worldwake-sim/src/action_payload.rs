@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind, WorkstationTag};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum ActionPayload {
     #[default]
     None,
@@ -36,7 +36,7 @@ impl ActionPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct HarvestActionPayload {
     pub recipe_id: RecipeId,
     pub required_workstation_tag: WorkstationTag,
@@ -45,7 +45,7 @@ pub struct HarvestActionPayload {
     pub required_tool_kinds: Vec<UniqueItemKind>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct CraftActionPayload {
     pub recipe_id: RecipeId,
     pub required_workstation_tag: WorkstationTag,
@@ -54,7 +54,7 @@ pub struct CraftActionPayload {
     pub required_tool_kinds: Vec<UniqueItemKind>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct TradeActionPayload {
     pub counterparty: EntityId,
     pub offered_commodity: CommodityKind,

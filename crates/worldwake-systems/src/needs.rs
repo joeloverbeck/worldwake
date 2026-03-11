@@ -307,7 +307,7 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionState, ActionStatus, DeterministicRng, DurationExpr,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr,
         Interruptibility, SystemExecutionContext, SystemId,
     };
 
@@ -498,6 +498,7 @@ mod tests {
             ActionInstance {
                 instance_id: ActionInstanceId(0),
                 def_id: ActionDefId(0),
+                payload: ActionPayload::None,
                 actor: agent,
                 targets: Vec::new(),
                 start_tick: Tick(6),

@@ -197,14 +197,20 @@ fn craft_action_def(
     })
 }
 
-fn harvest_payload(def: &ActionDef) -> Result<&HarvestActionPayload, ActionError> {
-    def.payload.as_harvest().ok_or_else(|| {
+fn harvest_payload<'a>(
+    def: &ActionDef,
+    instance: &'a ActionInstance,
+) -> Result<&'a HarvestActionPayload, ActionError> {
+    instance.payload.as_harvest().ok_or_else(|| {
         ActionError::InternalError(format!("action def {} is missing harvest payload", def.id))
     })
 }
 
-fn craft_payload(def: &ActionDef) -> Result<&CraftActionPayload, ActionError> {
-    def.payload.as_craft().ok_or_else(|| {
+fn craft_payload<'a>(
+    def: &ActionDef,
+    instance: &'a ActionInstance,
+) -> Result<&'a CraftActionPayload, ActionError> {
+    instance.payload.as_craft().ok_or_else(|| {
         ActionError::InternalError(format!("action def {} is missing craft payload", def.id))
     })
 }
@@ -322,10 +328,10 @@ fn consume_staged_inputs(txn: &mut WorldTxn<'_>, container: EntityId) -> Result<
 #[allow(clippy::unnecessary_wraps)]
 fn start_harvest(
     def: &ActionDef,
-    _instance: &ActionInstance,
+    instance: &ActionInstance,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
-    let _ = harvest_payload(def)?;
+    let _ = harvest_payload(def, instance)?;
     Ok(None)
 }
 
@@ -343,7 +349,7 @@ fn start_craft(
     instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
-    let payload = craft_payload(def)?;
+    let payload = craft_payload(def, instance)?;
     let workstation = *instance
         .targets
         .first()
@@ -392,7 +398,7 @@ fn tick_craft(
     instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
-    let payload = craft_payload(def)?;
+    let payload = craft_payload(def, instance)?;
     let workstation = *instance
         .targets
         .first()
@@ -426,7 +432,7 @@ fn commit_harvest(
     instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    let payload = harvest_payload(def)?;
+    let payload = harvest_payload(def, instance)?;
     let workstation = *instance
         .targets
         .first()
@@ -480,7 +486,7 @@ fn commit_craft(
     instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    let payload = craft_payload(def)?;
+    let payload = craft_payload(def, instance)?;
     let workstation = *instance
         .targets
         .first()
@@ -913,7 +919,23 @@ mod tests {
             handler: ActionHandlerId(0),
         };
 
-        let err = harvest_payload(&def).unwrap_err();
+        let instance = ActionInstance {
+            instance_id: ActionInstanceId(0),
+            def_id: def.id,
+            payload: def.payload.clone(),
+            actor: EntityId {
+                slot: 1,
+                generation: 0,
+            },
+            targets: Vec::new(),
+            start_tick: Tick(0),
+            remaining_ticks: 1,
+            status: worldwake_sim::ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+        };
+
+        let err = harvest_payload(&def, &instance).unwrap_err();
         assert_eq!(
             err,
             ActionError::InternalError(format!("action def {} is missing harvest payload", def.id))
@@ -1277,7 +1299,23 @@ mod tests {
             handler: ActionHandlerId(0),
         };
 
-        let err = craft_payload(&def).unwrap_err();
+        let instance = ActionInstance {
+            instance_id: ActionInstanceId(0),
+            def_id: def.id,
+            payload: def.payload.clone(),
+            actor: EntityId {
+                slot: 1,
+                generation: 0,
+            },
+            targets: Vec::new(),
+            start_tick: Tick(0),
+            remaining_ticks: 1,
+            status: worldwake_sim::ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+        };
+
+        let err = craft_payload(&def, &instance).unwrap_err();
         assert_eq!(
             err,
             ActionError::InternalError(format!("action def {} is missing craft payload", def.id))

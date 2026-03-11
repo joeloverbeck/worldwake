@@ -56,6 +56,7 @@ mod tests {
         ActionInstance {
             instance_id: ActionInstanceId(6),
             def_id: ActionDefId(1),
+            payload: ActionPayload::None,
             actor: EntityId {
                 slot: 4,
                 generation: 1,

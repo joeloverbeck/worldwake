@@ -91,17 +91,14 @@ pub fn start_action(
         )));
     }
 
-    let mut instance = ActionInstance {
+    let mut instance = build_action_instance(
         instance_id,
-        def_id: def.id,
-        actor: affordance.actor,
-        targets: affordance.bound_targets.clone(),
-        start_tick: context.tick,
-        remaining_ticks: duration,
-        status: ActionStatus::Active,
+        def,
+        affordance,
+        context.tick,
+        duration,
         reservation_ids,
-        local_state: None,
-    };
+    );
 
     instance.local_state = match (handler.on_start)(def, &instance, &mut txn) {
         Ok(local_state) => local_state,
@@ -125,6 +122,31 @@ pub fn start_action(
     debug_assert!(replaced.is_none(), "active action id prechecked as unique");
 
     Ok(instance_id)
+}
+
+fn build_action_instance(
+    instance_id: ActionInstanceId,
+    def: &crate::ActionDef,
+    affordance: &Affordance,
+    start_tick: Tick,
+    remaining_ticks: u32,
+    reservation_ids: Vec<worldwake_core::ReservationId>,
+) -> ActionInstance {
+    ActionInstance {
+        instance_id,
+        def_id: def.id,
+        payload: affordance
+            .payload_override
+            .clone()
+            .unwrap_or_else(|| def.payload.clone()),
+        actor: affordance.actor,
+        targets: affordance.bound_targets.clone(),
+        start_tick,
+        remaining_ticks,
+        status: ActionStatus::Active,
+        reservation_ids,
+        local_state: None,
+    }
 }
 
 fn reservation_range(current_tick: Tick, duration: u32) -> Result<Option<TickRange>, ActionError> {
@@ -302,6 +324,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: vec![target],
+            payload_override: None,
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
@@ -347,6 +370,7 @@ mod tests {
         assert_eq!(instance_id, ActionInstanceId(12));
         let instance = active_actions.get(&instance_id).unwrap();
         assert_eq!(instance.def_id, ActionDefId(0));
+        assert_eq!(instance.payload, defs.get(ActionDefId(0)).unwrap().payload);
         assert_eq!(instance.actor, actor);
         assert_eq!(instance.targets, vec![target]);
         assert_eq!(instance.start_tick, Tick(5));
@@ -381,6 +405,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: Vec::new(),
+            payload_override: None,
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
@@ -443,6 +468,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: vec![target],
+            payload_override: None,
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
@@ -530,6 +556,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: vec![first_target, second_target],
+            payload_override: None,
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
@@ -598,6 +625,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: Vec::new(),
+            payload_override: None,
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
@@ -675,6 +703,7 @@ mod tests {
             def_id: ActionDefId(9),
             actor,
             bound_targets: Vec::new(),
+            payload_override: None,
             explanation: None,
         };
         let defs = ActionDefRegistry::new();
@@ -706,6 +735,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: Vec::new(),
+            payload_override: None,
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
@@ -756,6 +786,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: Vec::new(),
+            payload_override: None,
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
@@ -779,6 +810,7 @@ mod tests {
             crate::ActionInstance {
                 instance_id: ActionInstanceId(4),
                 def_id: ActionDefId(99),
+                payload: ActionPayload::None,
                 actor,
                 targets: Vec::new(),
                 start_tick: Tick(0),

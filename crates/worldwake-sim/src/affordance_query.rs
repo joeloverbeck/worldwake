@@ -199,6 +199,7 @@ fn enumerate_bindings(
         def_id,
         actor,
         bound_targets: current.clone(),
+        payload_override: None,
         explanation: None,
     });
 }

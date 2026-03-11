@@ -156,6 +156,7 @@ mod tests {
             actor: entity(actor_slot),
             def_id: ActionDefId(def_id),
             targets: target_slots.iter().map(|slot| entity(*slot)).collect(),
+            payload_override: None,
         }
     }
 

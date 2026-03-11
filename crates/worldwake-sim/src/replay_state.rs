@@ -235,6 +235,7 @@ mod tests {
                 actor: entity(actor_slot),
                 def_id: ActionDefId(7),
                 targets: vec![entity(target_slot)],
+                payload_override: None,
             },
         }
     }

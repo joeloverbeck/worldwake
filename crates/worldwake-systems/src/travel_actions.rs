@@ -451,6 +451,7 @@ mod tests {
             def_id: travel_def,
             actor,
             bound_targets: vec![entity(3)],
+            payload_override: None,
             explanation: None,
         };
         let mut next_instance_id = ActionInstanceId(1);
@@ -505,6 +506,7 @@ mod tests {
             def_id: travel_def,
             actor,
             bound_targets: vec![destination],
+            payload_override: None,
             explanation: None,
         };
         let mut next_instance_id = ActionInstanceId(1);

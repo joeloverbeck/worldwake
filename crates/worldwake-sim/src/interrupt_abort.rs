@@ -312,6 +312,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: vec![target],
+            payload_override: None,
             explanation: None,
         };
 

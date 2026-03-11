@@ -144,16 +144,36 @@ fn tick_action_inner(
         )?;
         Ok(TickOutcome::Aborted { reason, replan })
     } else {
-        instance.status = ActionStatus::Committed;
-        (handler.on_commit)(def, instance, &mut txn)?;
-        release_reservations(&mut txn, &instance.reservation_ids)?;
-        txn.add_tag(EventTag::ActionCommitted);
-        for tag in &def.causal_event_tags {
-            txn.add_tag(*tag);
+        match (handler.on_commit)(def, instance, &mut txn) {
+            Ok(()) => {
+                instance.status = ActionStatus::Committed;
+                release_reservations(&mut txn, &instance.reservation_ids)?;
+                txn.add_tag(EventTag::ActionCommitted);
+                for tag in &def.causal_event_tags {
+                    txn.add_tag(*tag);
+                }
+                add_targets(&mut txn, &instance.targets);
+                let _ = txn.commit(event_log);
+                Ok(TickOutcome::Committed)
+            }
+            Err(ActionError::AbortRequested(message)) => {
+                let reason = AbortReason::ExternalAbort(message);
+                let replan = finalize_failed_action(
+                    def,
+                    instance,
+                    handler,
+                    txn,
+                    event_log,
+                    &FailedActionTermination {
+                        status: ActionStatus::Aborted,
+                        reason: reason.clone(),
+                        event_tag: EventTag::ActionAborted,
+                    },
+                )?;
+                Ok(TickOutcome::Aborted { reason, replan })
+            }
+            Err(err) => Err(err),
         }
-        add_targets(&mut txn, &instance.targets);
-        let _ = txn.commit(event_log);
-        Ok(TickOutcome::Committed)
     }
 }
 
@@ -356,6 +376,7 @@ mod tests {
             def_id: ActionDefId(0),
             actor,
             bound_targets: vec![target],
+            payload_override: None,
             explanation: None,
         };
 

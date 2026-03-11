@@ -98,6 +98,7 @@ impl Harness {
                 actor: self.actor,
                 def_id,
                 targets,
+                payload_override: None,
             },
         );
     }
@@ -334,6 +335,7 @@ fn scheduler_rejects_eat_request_for_uncontrolled_ground_item() {
             actor: harness.actor,
             def_id: action_def_id(&harness.defs, "eat"),
             targets: vec![bread],
+            payload_override: None,
         }
     );
 }

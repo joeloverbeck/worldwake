@@ -1,4 +1,4 @@
-use crate::{ActionDefId, ActionInstanceId};
+use crate::{ActionDefId, ActionInstanceId, ActionPayload};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, Tick};
 
@@ -8,6 +8,7 @@ pub enum InputKind {
         actor: EntityId,
         def_id: ActionDefId,
         targets: Vec<EntityId>,
+        payload_override: Option<ActionPayload>,
     },
     CancelAction {
         actor: EntityId,
@@ -29,7 +30,8 @@ pub struct InputEvent {
 #[cfg(test)]
 mod tests {
     use super::{InputEvent, InputKind};
-    use crate::{ActionDefId, ActionInstanceId};
+    use crate::{ActionDefId, ActionInstanceId, ActionPayload, TradeActionPayload};
+    use worldwake_core::{CommodityKind, Quantity};
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{EntityId, Tick};
 
@@ -69,6 +71,7 @@ mod tests {
                 actor: entity(2),
                 def_id: ActionDefId(7),
                 targets: vec![entity(3)],
+                payload_override: None,
             },
         };
         let later_tick = InputEvent {
@@ -90,6 +93,13 @@ mod tests {
             actor: entity(7),
             def_id: ActionDefId(3),
             targets: vec![entity(8), entity(9)],
+            payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: entity(8),
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(2),
+                requested_commodity: CommodityKind::Bread,
+                requested_quantity: Quantity(1),
+            })),
         };
 
         let bytes = bincode::serialize(&kind).unwrap();
@@ -133,6 +143,7 @@ mod tests {
                 actor: entity(5),
                 def_id: ActionDefId(2),
                 targets: vec![entity(6)],
+                payload_override: None,
             },
         };
 

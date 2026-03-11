@@ -192,6 +192,7 @@ mod tests {
                 actor: entity(1),
                 def_id: ActionDefId(7),
                 targets: vec![entity(2)],
+                payload_override: None,
             },
         }
     }

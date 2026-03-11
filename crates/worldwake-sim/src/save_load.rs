@@ -108,10 +108,10 @@ mod tests {
     };
     use crate::{
         step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionState, ActionStatus, ControllerState, DeterministicRng, InputKind,
-        RecipeDefinition, RecipeRegistry, ReplayCheckpoint, ReplayRecordingConfig, ReplayState,
-        Scheduler, SimulationState, SystemDispatchTable, SystemError, SystemExecutionContext,
-        SystemId, SystemManifest, TickStepServices,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, ControllerState,
+        DeterministicRng, InputKind, RecipeDefinition, RecipeRegistry, ReplayCheckpoint,
+        ReplayRecordingConfig, ReplayState, Scheduler, SimulationState, SystemDispatchTable,
+        SystemError, SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
     };
     use std::num::NonZeroU64;
     use std::path::PathBuf;
@@ -216,11 +216,13 @@ mod tests {
                 actor,
                 def_id: ActionDefId(9),
                 targets: vec![target],
+                payload_override: None,
             },
         );
         scheduler.insert_action(ActionInstance {
             instance_id: ActionInstanceId(7),
             def_id: ActionDefId(4),
+            payload: ActionPayload::None,
             actor,
             targets: vec![target],
             start_tick: Tick(2),

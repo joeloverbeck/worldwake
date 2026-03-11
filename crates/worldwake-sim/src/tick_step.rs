@@ -48,6 +48,7 @@ pub enum TickStepError {
         actor: EntityId,
         def_id: ActionDefId,
         targets: Vec<EntityId>,
+        payload_override: Option<crate::ActionPayload>,
     },
     CancelActorMismatch {
         actor: EntityId,
@@ -69,9 +70,10 @@ impl fmt::Display for TickStepError {
                 actor,
                 def_id,
                 targets,
+                payload_override,
             } => write!(
                 f,
-                "requested affordance is not currently available for actor {actor}: def {def_id}, targets {targets:?}"
+                "requested affordance is not currently available for actor {actor}: def {def_id}, targets {targets:?}, payload {payload_override:?}"
             ),
             Self::CancelActorMismatch {
                 actor,
@@ -185,9 +187,16 @@ fn apply_input(
             actor,
             def_id,
             targets,
+            payload_override,
         } => {
-            let affordance =
-                resolve_affordance(runtime.world, services.action_defs, actor, def_id, &targets)?;
+            let affordance = resolve_affordance(
+                runtime.world,
+                services.action_defs,
+                actor,
+                def_id,
+                &targets,
+                payload_override,
+            )?;
             runtime
                 .scheduler
                 .start_affordance(
@@ -245,9 +254,10 @@ fn resolve_affordance(
     actor: EntityId,
     def_id: ActionDefId,
     targets: &[EntityId],
+    payload_override: Option<crate::ActionPayload>,
 ) -> Result<crate::Affordance, TickStepError> {
     let view = crate::OmniscientBeliefView::new(world);
-    get_affordances(&view, actor, action_defs)
+    let mut affordance = get_affordances(&view, actor, action_defs)
         .into_iter()
         .find(|affordance| {
             affordance.actor == actor
@@ -258,7 +268,10 @@ fn resolve_affordance(
             actor,
             def_id,
             targets: targets.to_owned(),
-        })
+            payload_override: payload_override.clone(),
+        })?;
+    affordance.payload_override = payload_override;
+    Ok(affordance)
 }
 
 fn validate_cancel_actor(
@@ -656,6 +669,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
+                payload_override: None,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -664,6 +678,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
+                payload_override: None,
             },
         );
 
@@ -702,6 +717,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(99),
                 targets: Vec::new(),
+                payload_override: None,
             },
         );
 
@@ -725,6 +741,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(99),
                 targets: Vec::new(),
+                payload_override: None,
             }
         );
     }
@@ -743,6 +760,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
+                payload_override: None,
             },
         );
         step_tick(
@@ -842,6 +860,7 @@ mod tests {
                     actor,
                     def_id: ActionDefId(0),
                     targets: Vec::new(),
+                    payload_override: None,
                 },
             );
         }
@@ -884,6 +903,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
+                payload_override: None,
             },
         );
 
@@ -943,6 +963,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
+                payload_override: None,
             },
         );
 
@@ -985,6 +1006,7 @@ mod tests {
                 actor,
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
+                payload_override: None,
             },
         );
 
