@@ -155,6 +155,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                utility_profiles,
+                UtilityProfile,
+                insert_utility_profile,
+                get_utility_profile,
+                get_utility_profile_mut,
+                remove_utility_profile,
+                has_utility_profile,
+                iter_utility_profiles,
+                insert_component_utility_profile,
+                get_component_utility_profile,
+                get_component_utility_profile_mut,
+                remove_component_utility_profile,
+                has_component_utility_profile,
+                entities_with_utility_profile,
+                query_utility_profile,
+                count_with_utility_profile,
+                "UtilityProfile",
+                |kind| kind == EntityKind::Agent,
+                UtilityProfile,
+                crate::UtilityProfile,
+                set_component_utility_profile,
+                clear_component_utility_profile,
+                txn_simple_set
+            }
+            {
                 drive_thresholds,
                 DriveThresholds,
                 insert_drive_thresholds,
@@ -732,6 +757,31 @@ macro_rules! with_component_schema_entries {
                 crate::CombatStance,
                 set_component_combat_stance,
                 clear_component_combat_stance,
+                txn_simple_set
+            }
+            {
+                utility_profiles,
+                UtilityProfile,
+                insert_utility_profile,
+                get_utility_profile,
+                get_utility_profile_mut,
+                remove_utility_profile,
+                has_utility_profile,
+                iter_utility_profiles,
+                insert_component_utility_profile,
+                get_component_utility_profile,
+                get_component_utility_profile_mut,
+                remove_component_utility_profile,
+                has_component_utility_profile,
+                entities_with_utility_profile,
+                query_utility_profile,
+                count_with_utility_profile,
+                "UtilityProfile",
+                |kind| kind == EntityKind::Agent,
+                UtilityProfile,
+                crate::UtilityProfile,
+                set_component_utility_profile,
+                clear_component_utility_profile,
                 txn_simple_set
             }
             {

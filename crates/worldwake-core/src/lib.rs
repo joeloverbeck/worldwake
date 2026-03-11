@@ -51,6 +51,7 @@ pub mod test_utils;
 pub mod topology;
 pub mod trade;
 pub mod traits;
+pub mod utility_profile;
 pub mod verification;
 pub mod visibility;
 pub mod witness;
@@ -106,6 +107,7 @@ pub use trade::{
     SubstitutePreferences, TradeDispositionProfile,
 };
 pub use traits::{Component, RelationRecord};
+pub use utility_profile::UtilityProfile;
 pub use verification::{verify_completeness, VerificationError};
 pub use visibility::VisibilitySpec;
 pub use witness::WitnessData;

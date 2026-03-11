@@ -1227,9 +1227,10 @@ mod tests {
     use crate::{
         test_utils::{
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
-            sample_trade_disposition_profile,
+            sample_trade_disposition_profile, sample_utility_profile,
         },
         DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile,
+        UtilityProfile,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -2275,6 +2276,41 @@ mod tests {
     }
 
     #[test]
+    fn set_component_utility_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before: UtilityProfile = sample_utility_profile();
+        let mut after = before.clone();
+        after.enterprise_weight = Permille::new(800).unwrap();
+        world
+            .insert_component_utility_profile(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_utility_profile(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::UtilityProfile,
+                before: Some(ComponentValue::UtilityProfile(before)),
+                after: ComponentValue::UtilityProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_utility_profile(agent), Some(&after));
+    }
+
+    #[test]
     fn set_component_substitute_preferences_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -2497,6 +2533,37 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_known_recipes(agent), None);
+    }
+
+    #[test]
+    fn clear_component_utility_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = sample_utility_profile();
+        world
+            .insert_component_utility_profile(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_utility_profile(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::UtilityProfile,
+                before: ComponentValue::UtilityProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_utility_profile(agent), None);
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::{
         WorkstationMarker,
     },
     trade::{DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile},
+    utility_profile::UtilityProfile,
     wounds::WoundList,
     EntityId,
 };
@@ -110,7 +111,7 @@ mod tests {
         components::{AgentData, Name},
         test_utils::{
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
-            sample_trade_disposition_profile,
+            sample_trade_disposition_profile, sample_utility_profile,
         },
         BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds,
@@ -138,6 +139,7 @@ mod tests {
         assert_eq!(tables.iter_wound_lists().count(), 0);
         assert_eq!(tables.iter_combat_profiles().count(), 0);
         assert_eq!(tables.iter_dead_ats().count(), 0);
+        assert_eq!(tables.iter_utility_profiles().count(), 0);
         assert_eq!(tables.iter_drive_thresholds().count(), 0);
         assert_eq!(tables.iter_homeostatic_needs().count(), 0);
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
@@ -374,6 +376,19 @@ mod tests {
     }
 
     #[test]
+    fn insert_and_get_utility_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(34);
+        let profile = sample_utility_profile();
+
+        assert_eq!(tables.insert_utility_profile(id, profile.clone()), None);
+        assert_eq!(tables.get_utility_profile(id), Some(&profile));
+        assert!(tables.has_utility_profile(id));
+        assert_eq!(tables.remove_utility_profile(id), Some(profile));
+        assert_eq!(tables.get_utility_profile(id), None);
+    }
+
+    #[test]
     fn insert_and_get_merchandise_profile() {
         let mut tables = ComponentTables::default();
         let id = entity(31);
@@ -521,6 +536,7 @@ mod tests {
         tables.insert_homeostatic_needs(id, HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(id, DeprivationExposure::default());
         tables.insert_metabolism_profile(id, MetabolismProfile::default());
+        tables.insert_utility_profile(id, sample_utility_profile());
         tables.insert_carry_capacity(id, CarryCapacity(LoadUnits(7)));
         tables.insert_known_recipes(id, KnownRecipes::with([crate::RecipeId(8)]));
         tables.insert_substitute_preferences(id, sample_substitute_preferences());
@@ -583,6 +599,7 @@ mod tests {
         assert_eq!(tables.get_wound_list(id), None);
         assert_eq!(tables.get_combat_profile(id), None);
         assert_eq!(tables.get_dead_at(id), None);
+        assert_eq!(tables.get_utility_profile(id), None);
         assert_eq!(tables.get_drive_thresholds(id), None);
         assert_eq!(tables.get_homeostatic_needs(id), None);
         assert_eq!(tables.get_deprivation_exposure(id), None);
@@ -638,6 +655,7 @@ mod tests {
             ),
         );
         tables.insert_dead_at(entity(19), DeadAt(Tick(14)));
+        tables.insert_utility_profile(entity(20), sample_utility_profile());
         tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
         tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());

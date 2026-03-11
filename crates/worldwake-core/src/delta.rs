@@ -5,9 +5,9 @@ use crate::{
     CombatStance, CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
     KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob, Quantity,
-        ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
-        UniqueItem, WorkstationMarker, WoundList,
-    };
+    ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
+    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+};
 use serde::{Deserialize, Serialize};
 
 macro_rules! define_component_kind {
@@ -218,7 +218,7 @@ mod tests {
     use crate::{
         test_utils::{
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
-            sample_trade_disposition_profile,
+            sample_trade_disposition_profile, sample_utility_profile,
         },
         AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
         Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
@@ -249,6 +249,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn component_samples() -> Vec<ComponentValue> {
         vec![
             ComponentValue::Name(Name("Aster".to_string())),
@@ -279,6 +280,7 @@ mod tests {
             )),
             ComponentValue::DeadAt(DeadAt(Tick(18))),
             ComponentValue::CombatStance(CombatStance::Defending),
+            ComponentValue::UtilityProfile(sample_utility_profile()),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
                 Permille::new(100).unwrap(),
@@ -430,6 +432,7 @@ mod tests {
                 ComponentKind::CombatProfile,
                 ComponentKind::DeadAt,
                 ComponentKind::CombatStance,
+                ComponentKind::UtilityProfile,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,

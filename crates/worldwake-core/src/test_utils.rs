@@ -6,7 +6,7 @@
 use crate::{
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
     MerchandiseProfile, Permille, Quantity, Seed, SubstitutePreferences, Tick, TradeCategory,
-    TradeDispositionProfile,
+    TradeDispositionProfile, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -56,6 +56,20 @@ pub fn sample_trade_disposition_profile() -> TradeDispositionProfile {
         initial_offer_bias: Permille::new(650).unwrap(),
         concession_rate: Permille::new(125).unwrap(),
         demand_memory_retention_ticks: 240,
+    }
+}
+
+/// Returns a representative utility profile fixture for decision-architecture tests.
+pub fn sample_utility_profile() -> UtilityProfile {
+    UtilityProfile {
+        hunger_weight: Permille::new(900).unwrap(),
+        thirst_weight: Permille::new(850).unwrap(),
+        fatigue_weight: Permille::new(700).unwrap(),
+        bladder_weight: Permille::new(650).unwrap(),
+        dirtiness_weight: Permille::new(300).unwrap(),
+        pain_weight: Permille::new(950).unwrap(),
+        danger_weight: Permille::new(1000).unwrap(),
+        enterprise_weight: Permille::new(425).unwrap(),
     }
 }
 
