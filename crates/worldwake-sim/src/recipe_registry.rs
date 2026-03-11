@@ -7,6 +7,7 @@ use worldwake_core::{RecipeId, WorkstationTag};
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RecipeRegistry {
     recipes: Vec<RecipeDefinition>,
+    by_name: BTreeMap<String, RecipeId>,
     by_workstation: BTreeMap<WorkstationTag, Vec<RecipeId>>,
 }
 
@@ -17,7 +18,13 @@ impl RecipeRegistry {
     }
 
     pub fn register(&mut self, def: RecipeDefinition) -> RecipeId {
+        assert!(
+            !self.by_name.contains_key(&def.name),
+            "duplicate recipe name: {}",
+            def.name
+        );
         let id = RecipeId(self.recipes.len() as u32);
+        self.by_name.insert(def.name.clone(), id);
         if let Some(tag) = def.required_workstation_tag {
             self.by_workstation.entry(tag).or_default().push(id);
         }
@@ -28,6 +35,15 @@ impl RecipeRegistry {
     #[must_use]
     pub fn get(&self, id: RecipeId) -> Option<&RecipeDefinition> {
         self.recipes.get(id.0 as usize)
+    }
+
+    #[must_use]
+    pub fn recipe_by_name(&self, name: &str) -> Option<(RecipeId, &RecipeDefinition)> {
+        let id = *self.by_name.get(name)?;
+        let def = self
+            .get(id)
+            .expect("recipe registry by_name index must reference a stored recipe");
+        Some((id, def))
     }
 
     #[must_use]
@@ -113,6 +129,32 @@ mod tests {
     }
 
     #[test]
+    fn recipe_by_name_returns_registered_id_and_definition() {
+        let mut registry = RecipeRegistry::new();
+        let first = sample_recipe("Harvest Apples", Some(WorkstationTag::OrchardRow));
+        let second = sample_recipe("Bake Bread", Some(WorkstationTag::Mill));
+        let first_id = registry.register(first.clone());
+        let second_id = registry.register(second.clone());
+
+        assert_eq!(
+            registry.recipe_by_name("Harvest Apples"),
+            Some((first_id, &first))
+        );
+        assert_eq!(registry.recipe_by_name("Bake Bread"), Some((second_id, &second)));
+    }
+
+    #[test]
+    fn recipe_by_name_returns_none_for_empty_and_unknown_names() {
+        let mut registry = RecipeRegistry::new();
+
+        assert_eq!(registry.recipe_by_name("Harvest Apples"), None);
+
+        registry.register(sample_recipe("Harvest Apples", Some(WorkstationTag::OrchardRow)));
+
+        assert_eq!(registry.recipe_by_name("Bake Bread"), None);
+    }
+
+    #[test]
     fn recipes_for_workstation_returns_registered_ids_in_order() {
         let mut registry = RecipeRegistry::new();
         let orchard_first = registry.register(sample_recipe(
@@ -150,6 +192,15 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "duplicate recipe name")]
+    fn duplicate_recipe_names_are_rejected() {
+        let mut registry = RecipeRegistry::new();
+        registry.register(sample_recipe("Bake Bread", Some(WorkstationTag::Mill)));
+
+        registry.register(sample_recipe("Bake Bread", Some(WorkstationTag::Forge)));
+    }
+
+    #[test]
     fn iter_returns_ids_and_definitions_in_registration_order() {
         let mut registry = RecipeRegistry::new();
         registry.register(sample_recipe("first", Some(WorkstationTag::Forge)));
@@ -174,15 +225,20 @@ mod tests {
     #[test]
     fn registry_roundtrips_through_bincode() {
         let mut registry = RecipeRegistry::new();
-        registry.register(sample_recipe(
+        let harvest_id = registry.register(sample_recipe(
             "Harvest Apples",
             Some(WorkstationTag::OrchardRow),
         ));
-        registry.register(sample_recipe("Rest", None));
+        let rest_id = registry.register(sample_recipe("Rest", None));
 
         let bytes = bincode::serialize(&registry).unwrap();
         let roundtrip: RecipeRegistry = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, registry);
+        assert_eq!(
+            roundtrip.recipe_by_name("Harvest Apples").map(|(id, _)| id),
+            Some(harvest_id)
+        );
+        assert_eq!(roundtrip.recipe_by_name("Rest").map(|(id, _)| id), Some(rest_id));
     }
 }
