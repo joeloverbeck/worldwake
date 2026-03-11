@@ -742,6 +742,119 @@ fn run_deterministic_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn seed_fragile_deprivation_victim(h: &mut GoldenHarness) -> EntityId {
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Victim",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::new(
+            pm(50),
+            pm(3),
+            pm(2),
+            pm(4),
+            pm(1),
+            pm(20),
+            nz(3),
+            nz(240),
+            nz(120),
+            nz(40),
+            nz(8),
+            nz(12),
+        ),
+        UtilityProfile::default(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_combat_profile(
+        agent,
+        CombatProfile::new(
+            pm(200),
+            pm(150),
+            pm(500),
+            pm(500),
+            pm(80),
+            pm(25),
+            pm(18),
+            pm(120),
+            pm(35),
+            nz(6),
+        ),
+    )
+    .unwrap();
+    txn.set_component_wound_list(
+        agent,
+        WoundList {
+            wounds: vec![worldwake_core::Wound {
+                id: worldwake_core::WoundId(1),
+                body_part: worldwake_core::BodyPart::Torso,
+                cause: worldwake_core::WoundCause::Deprivation(
+                    worldwake_core::DeprivationKind::Starvation,
+                ),
+                severity: pm(150),
+                inflicted_at: Tick(0),
+                bleed_rate_per_tick: pm(0),
+            }],
+        },
+    )
+    .unwrap();
+    txn.set_component_deprivation_exposure(
+        agent,
+        DeprivationExposure {
+            hunger_critical_ticks: 2,
+            thirst_critical_ticks: 0,
+            fatigue_critical_ticks: 0,
+            bladder_critical_ticks: 0,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+    agent
+}
+
+fn run_death_and_loot_observation(
+    h: &mut GoldenHarness,
+    victim: EntityId,
+    looter: EntityId,
+    initial_coin_total: u64,
+) -> (bool, bool) {
+    let mut victim_died = false;
+    let mut looter_gained_coin = false;
+
+    for _ in 0..100 {
+        h.step_once();
+
+        if h.agent_is_dead(victim) {
+            victim_died = true;
+        }
+        if h.agent_commodity_qty(looter, CommodityKind::Coin) > Quantity(0) {
+            looter_gained_coin = true;
+        }
+
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
+        );
+
+        if victim_died && looter_gained_coin {
+            break;
+        }
+    }
+
+    (victim_died, looter_gained_coin)
+}
+
 #[test]
 fn golden_deterministic_replay_fidelity() {
     let seed = Seed([42; 32]);
@@ -862,94 +975,7 @@ fn golden_deprivation_cascade() {
 #[test]
 fn golden_death_cascade_and_opportunistic_loot() {
     let mut h = GoldenHarness::new(Seed([8; 32]));
-
-    // Agent A: near death from deprivation — critical hunger, existing wounds
-    // near wound capacity, fast metabolism to trigger deprivation wound quickly.
-    let fragile_combat = CombatProfile::new(
-        pm(200), // wound_capacity — very low
-        pm(150), // incapacitation_threshold
-        pm(500),
-        pm(500),
-        pm(80),
-        pm(25),
-        pm(18),
-        pm(120),
-        pm(35),
-        nz(6),
-    );
-
-    let dying_metabolism = MetabolismProfile::new(
-        pm(50), // hunger_rate — very fast
-        pm(3),
-        pm(2),
-        pm(4),
-        pm(1),
-        pm(20),
-        nz(3), // starvation_tolerance — very short!
-        nz(240),
-        nz(120),
-        nz(40),
-        nz(8),
-        nz(12),
-    );
-
-    let agent_a = seed_agent(
-        &mut h.world,
-        &mut h.event_log,
-        "Victim",
-        VILLAGE_SQUARE,
-        HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
-        dying_metabolism,
-        UtilityProfile::default(),
-    );
-
-    // Override combat profile to be fragile.
-    {
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_combat_profile(agent_a, fragile_combat)
-            .unwrap();
-        // Pre-existing wounds near capacity.
-        txn.set_component_wound_list(
-            agent_a,
-            WoundList {
-                wounds: vec![worldwake_core::Wound {
-                    id: worldwake_core::WoundId(1),
-                    body_part: worldwake_core::BodyPart::Torso,
-                    cause: worldwake_core::WoundCause::Deprivation(
-                        worldwake_core::DeprivationKind::Starvation,
-                    ),
-                    severity: pm(150),
-                    inflicted_at: Tick(0),
-                    bleed_rate_per_tick: pm(0),
-                }],
-            },
-        )
-        .unwrap();
-        // High deprivation exposure so wound triggers quickly.
-        txn.set_component_deprivation_exposure(
-            agent_a,
-            DeprivationExposure {
-                hunger_critical_ticks: 2,
-                thirst_critical_ticks: 0,
-                fatigue_critical_ticks: 0,
-                bladder_critical_ticks: 0,
-            },
-        )
-        .unwrap();
-        commit_txn(txn, &mut h.event_log);
-    }
-
-    // Give Agent A valuables.
-    give_commodity(
-        &mut h.world,
-        &mut h.event_log,
-        agent_a,
-        VILLAGE_SQUARE,
-        CommodityKind::Coin,
-        Quantity(5),
-    );
-
-    // Agent B: healthy, at same location, low pressure.
+    let agent_a = seed_fragile_deprivation_victim(&mut h);
     let agent_b = seed_agent(
         &mut h.world,
         &mut h.event_log,
@@ -961,32 +987,8 @@ fn golden_death_cascade_and_opportunistic_loot() {
     );
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
-
-    let mut a_died = false;
-    let mut b_looted = false;
-
-    for _ in 0..100 {
-        h.step_once();
-
-        if h.agent_is_dead(agent_a) {
-            a_died = true;
-        }
-
-        if h.agent_commodity_qty(agent_b, CommodityKind::Coin) > Quantity(0) {
-            b_looted = true;
-        }
-
-        // Conservation: coins don't appear or vanish.
-        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
-        assert_eq!(
-            coin_total, initial_coin_total,
-            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
-        );
-
-        if a_died && b_looted {
-            break;
-        }
-    }
+    let (a_died, b_looted) =
+        run_death_and_loot_observation(&mut h, agent_a, agent_b, initial_coin_total);
 
     assert!(
         a_died,

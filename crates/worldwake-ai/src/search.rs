@@ -4,7 +4,7 @@ use crate::{
     PlanningState,
 };
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BinaryHeap};
 use worldwake_core::{CommodityKind, CommodityPurpose, EntityId, GoalKind, Permille, Quantity};
 use worldwake_sim::{
     get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
@@ -19,6 +19,40 @@ struct SearchNode<'snapshot> {
     total_estimated_ticks: u32,
 }
 
+struct FrontierEntry<'snapshot> {
+    node: SearchNode<'snapshot>,
+}
+
+impl<'snapshot> FrontierEntry<'snapshot> {
+    fn new(node: SearchNode<'snapshot>) -> Self {
+        Self { node }
+    }
+
+    fn into_node(self) -> SearchNode<'snapshot> {
+        self.node
+    }
+}
+
+impl PartialEq for FrontierEntry<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        compare_search_nodes(&self.node, &other.node) == Ordering::Equal
+    }
+}
+
+impl Eq for FrontierEntry<'_> {}
+
+impl PartialOrd for FrontierEntry<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FrontierEntry<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        compare_search_nodes(&other.node, &self.node)
+    }
+}
+
 pub fn search_plan(
     snapshot: &PlanningSnapshot,
     goal: &GroundedGoal,
@@ -31,10 +65,11 @@ pub fn search_plan(
         return None;
     }
 
-    let mut frontier = vec![root_node(snapshot)];
+    let mut frontier = BinaryHeap::new();
+    frontier.push(FrontierEntry::new(root_node(snapshot)));
     let mut expansions = 0u16;
 
-    while let Some(node) = pop_next_node(&mut frontier) {
+    while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
         if goal_is_satisfied(goal, &node.state) {
             return Some(PlannedPlan::new(
                 goal.key,
@@ -56,14 +91,14 @@ pub fn search_plan(
                 build_successor(goal, semantics_table, registry, &node, affordance)
             })
             .collect::<Vec<_>>();
-        successors.sort_by(|left, right| compare_successors(&left.1, &right.1));
+        successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
         successors.truncate(usize::from(budget.beam_width));
 
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
                 return Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
             }
-            frontier.push(successor);
+            frontier.push(FrontierEntry::new(successor));
         }
     }
 
@@ -158,25 +193,11 @@ fn unsupported_goal(goal: &GoalKind) -> bool {
     )
 }
 
-fn pop_next_node<'snapshot>(
-    frontier: &mut Vec<SearchNode<'snapshot>>,
-) -> Option<SearchNode<'snapshot>> {
-    if frontier.is_empty() {
-        return None;
-    }
-    frontier.sort_by(compare_search_nodes);
-    Some(frontier.remove(0))
-}
-
 fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
     left.total_estimated_ticks
         .cmp(&right.total_estimated_ticks)
         .then_with(|| left.steps.len().cmp(&right.steps.len()))
         .then_with(|| left.steps.cmp(&right.steps))
-}
-
-fn compare_successors(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
-    compare_search_nodes(left, right)
 }
 
 fn build_payload_override(
@@ -398,12 +419,13 @@ fn goal_is_satisfied(goal: &GroundedGoal, state: &PlanningState<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::search_plan;
+    use super::{search_plan, FrontierEntry, SearchNode};
     use crate::{
         build_planning_snapshot, build_semantics_table, CommodityPurpose, GoalKey, GroundedGoal,
-        PlanTerminalKind, PlannerOpKind, PlanningBudget,
+        PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningBudget, PlanningSnapshot,
+        PlanningState,
     };
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
         test_utils::sample_trade_disposition_profile, CombatProfile, CommodityConsumableProfile,
@@ -412,8 +434,8 @@ mod tests {
         ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, BeliefView, DurationExpr,
-        RecipeRegistry,
+        estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionPayload, BeliefView,
+        DurationExpr, RecipeRegistry,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -667,6 +689,34 @@ mod tests {
         }
     }
 
+    fn sample_step(
+        def_id: u32,
+        op_kind: PlannerOpKind,
+        estimated_ticks: u32,
+        targets: Vec<EntityId>,
+    ) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(def_id),
+            targets,
+            payload_override: None,
+            op_kind,
+            estimated_ticks,
+            is_materialization_barrier: false,
+        }
+    }
+
+    fn frontier_test_node(
+        snapshot: &PlanningSnapshot,
+        total_estimated_ticks: u32,
+        steps: Vec<PlannedStep>,
+    ) -> SearchNode<'_> {
+        SearchNode {
+            state: PlanningState::new(snapshot),
+            steps,
+            total_estimated_ticks,
+        }
+    }
+
     #[test]
     fn search_returns_one_step_consume_plan_for_local_food() {
         let actor = entity(1);
@@ -706,6 +756,61 @@ mod tests {
         assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Consume);
+    }
+
+    #[test]
+    fn search_frontier_heap_preserves_priority_tiebreaks() {
+        let actor = entity(1);
+        let town = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let mut frontier = BinaryHeap::new();
+        frontier.push(FrontierEntry::new(frontier_test_node(
+            &snapshot,
+            5,
+            vec![sample_step(4, PlannerOpKind::Travel, 5, vec![entity(24)])],
+        )));
+        frontier.push(FrontierEntry::new(frontier_test_node(
+            &snapshot,
+            3,
+            vec![
+                sample_step(1, PlannerOpKind::Travel, 1, vec![entity(21)]),
+                sample_step(2, PlannerOpKind::Consume, 2, vec![entity(22)]),
+            ],
+        )));
+        frontier.push(FrontierEntry::new(frontier_test_node(
+            &snapshot,
+            3,
+            vec![sample_step(3, PlannerOpKind::Travel, 3, vec![entity(23)])],
+        )));
+        frontier.push(FrontierEntry::new(frontier_test_node(
+            &snapshot,
+            3,
+            vec![sample_step(2, PlannerOpKind::Travel, 3, vec![entity(22)])],
+        )));
+
+        let popped = std::iter::from_fn(|| frontier.pop().map(FrontierEntry::into_node))
+            .map(|node| node.steps)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            popped,
+            vec![
+                vec![sample_step(2, PlannerOpKind::Travel, 3, vec![entity(22)])],
+                vec![sample_step(3, PlannerOpKind::Travel, 3, vec![entity(23)])],
+                vec![
+                    sample_step(1, PlannerOpKind::Travel, 1, vec![entity(21)]),
+                    sample_step(2, PlannerOpKind::Consume, 2, vec![entity(22)]),
+                ],
+                vec![sample_step(4, PlannerOpKind::Travel, 5, vec![entity(24)])],
+            ]
+        );
     }
 
     #[test]
