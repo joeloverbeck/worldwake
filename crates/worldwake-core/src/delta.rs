@@ -1,12 +1,13 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure,
-    DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-    KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob, Quantity,
-    ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
-    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory,
+    CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container, DeadAt, DemandMemory,
+    DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds,
+    InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
+    Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
+    SubstitutePreferences, TradeDispositionProfile, UniqueItem, UtilityProfile,
+    WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -217,8 +218,9 @@ mod tests {
     };
     use crate::{
         test_utils::{
-            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
-            sample_trade_disposition_profile, sample_utility_profile,
+            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_substitute_preferences, sample_trade_disposition_profile,
+            sample_utility_profile,
         },
         AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
         Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
@@ -281,6 +283,7 @@ mod tests {
             ComponentValue::DeadAt(DeadAt(Tick(18))),
             ComponentValue::CombatStance(CombatStance::Defending),
             ComponentValue::UtilityProfile(sample_utility_profile()),
+            ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
                 Permille::new(100).unwrap(),
@@ -433,6 +436,7 @@ mod tests {
                 ComponentKind::DeadAt,
                 ComponentKind::CombatStance,
                 ComponentKind::UtilityProfile,
+                ComponentKind::BlockedIntentMemory,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,

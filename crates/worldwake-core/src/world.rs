@@ -1,13 +1,14 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
-    DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-    MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry, Quantity,
-    RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology, TradeDispositionProfile,
-    UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory,
+    CarryCapacity, CombatProfile, CombatStance, CommodityKind, ComponentTables, ComponentValue,
+    Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
+    EntityId, EntityKind, EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+    KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+    ProductionJob, ProvenanceEntry, Quantity, RelationTables, ResourceSource,
+    SubstitutePreferences, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -558,8 +559,9 @@ mod tests {
     use crate::{
         build_prototype_world,
         test_utils::{
-            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
-            sample_trade_disposition_profile, sample_utility_profile,
+            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_substitute_preferences, sample_trade_disposition_profile,
+            sample_utility_profile,
         },
         AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource,
         DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
@@ -3830,6 +3832,28 @@ mod tests {
     }
 
     #[test]
+    fn blocked_intent_memory_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let memory = sample_blocked_intent_memory();
+
+        world
+            .insert_component_blocked_intent_memory(id, memory.clone())
+            .unwrap();
+        assert_eq!(world.get_component_blocked_intent_memory(id), Some(&memory));
+        assert!(world.has_component_blocked_intent_memory(id));
+        assert_eq!(
+            world.query_blocked_intent_memory().collect::<Vec<_>>(),
+            vec![(id, &memory)]
+        );
+        assert_eq!(world.count_with_blocked_intent_memory(), 1);
+
+        let removed = world.remove_component_blocked_intent_memory(id).unwrap();
+        assert_eq!(removed, Some(memory));
+        assert_eq!(world.get_component_blocked_intent_memory(id), None);
+    }
+
+    #[test]
     fn insert_drive_thresholds_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
@@ -3852,6 +3876,19 @@ mod tests {
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
         assert_eq!(world.get_component_utility_profile(id), None);
+    }
+
+    #[test]
+    fn insert_blocked_intent_memory_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_blocked_intent_memory(id, sample_blocked_intent_memory())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.get_component_blocked_intent_memory(id), None);
     }
 
     #[test]
@@ -4786,6 +4823,8 @@ mod tests {
         assert_eq!(world.query_agent_data().count(), 0);
         assert_eq!(world.entities_with_wound_list().count(), 0);
         assert_eq!(world.query_wound_list().count(), 0);
+        assert_eq!(world.entities_with_blocked_intent_memory().count(), 0);
+        assert_eq!(world.query_blocked_intent_memory().count(), 0);
         assert_eq!(world.entities_with_drive_thresholds().count(), 0);
         assert_eq!(world.query_drive_thresholds().count(), 0);
         assert_eq!(world.entities_with_item_lot().count(), 0);
@@ -4846,6 +4885,18 @@ mod tests {
             .insert_component_utility_profile(archived_named_agent, sample_utility_profile())
             .unwrap();
         world
+            .insert_component_blocked_intent_memory(
+                live_named_agent,
+                sample_blocked_intent_memory(),
+            )
+            .unwrap();
+        world
+            .insert_component_blocked_intent_memory(
+                archived_named_agent,
+                sample_blocked_intent_memory(),
+            )
+            .unwrap();
+        world
             .insert_component_name(live_named_office, Name("Ledger Hall".to_string()))
             .unwrap();
         world.archive_entity(archived_named_agent, Tick(4)).unwrap();
@@ -4856,6 +4907,7 @@ mod tests {
         assert_eq!(world.count_with_wound_list(), 1);
         assert_eq!(world.count_with_drive_thresholds(), 1);
         assert_eq!(world.count_with_utility_profile(), 1);
+        assert_eq!(world.count_with_blocked_intent_memory(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
         assert_eq!(world.count_with_unique_item(), 0);
         assert_eq!(world.count_with_container(), 0);
@@ -4954,6 +5006,7 @@ mod tests {
             assert_eq!(world.get_component_agent_data(place_id), None);
             assert_eq!(world.get_component_wound_list(place_id), None);
             assert_eq!(world.get_component_utility_profile(place_id), None);
+            assert_eq!(world.get_component_blocked_intent_memory(place_id), None);
             assert_eq!(world.get_component_drive_thresholds(place_id), None);
             assert_eq!(world.get_component_item_lot(place_id), None);
             assert_eq!(world.get_component_unique_item(place_id), None);

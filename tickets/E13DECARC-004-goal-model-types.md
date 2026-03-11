@@ -3,7 +3,7 @@
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: None — AI-layer types only
+**Engine Changes**: Yes — shared goal identity in worldwake-core, read-model types in worldwake-ai
 **Deps**: E13DECARC-001
 
 ## Problem
@@ -13,52 +13,28 @@ The decision architecture needs a concrete goal model that enumerates exactly th
 ## Assumption Reassessment (2026-03-11)
 
 1. `CommodityKind`, `EntityId`, `RecipeId` exist in `worldwake-core` — confirmed.
-2. `CommodityPurpose` does not yet exist anywhere — must be created.
+2. `BlockedIntentMemory` needs a persisted normalized goal identity in `worldwake-core`, so `CommodityPurpose`, `GoalKind`, and `GoalKey` cannot remain AI-only types.
 3. No existing goal model in `worldwake-ai` — confirmed (crate is empty).
 4. `BTreeSet` is required for determinism — confirmed.
 
 ## Architecture Check
 
-1. These types live in `worldwake-ai`, not `worldwake-core`, because they are AI-layer concepts.
-2. `GoalKey` normalizes goal identity for comparisons across planning, switching, and failure memory.
-3. `GroundedGoal` is a transient read-model struct, never stored as authoritative state.
-4. Only Phase 2 goals are included — no law/policing/succession/rumor goals.
+1. Shared normalized goal identity (`CommodityPurpose`, `GoalKind`, `GoalKey`) lives in `worldwake-core`, because it is used by an authoritative core component (`BlockedIntentMemory`) and by AI planning logic.
+2. `GoalPriorityClass` and `GroundedGoal` remain AI-layer read-model types in `worldwake-ai`.
+3. `GoalKey` normalizes goal identity for comparisons across planning, switching, and failure memory.
+4. `GroundedGoal` is a transient read-model struct, never stored as authoritative state.
+5. Only Phase 2 goals are included — no law/policing/succession/rumor goals.
 
 ## What to Change
 
-### 1. Define goal types in `worldwake-ai/src/goal_model.rs`
+### 1. Consume shared goal identity from `worldwake-core`
+
+This ticket no longer defines `CommodityPurpose`, `GoalKind`, or `GoalKey` in `worldwake-ai`.
+Those shared types are owned by `worldwake-core` so both authoritative state and AI logic use one canonical definition.
+
+### 2. Define AI-layer read-model types in `worldwake-ai/src/goal_model.rs`
 
 ```rust
-pub enum CommodityPurpose {
-    SelfConsume,
-    Restock,
-    RecipeInput(RecipeId),
-    Treatment,
-}
-
-pub enum GoalKind {
-    ConsumeOwnedCommodity { commodity: CommodityKind },
-    AcquireCommodity { commodity: CommodityKind, purpose: CommodityPurpose },
-    Sleep,
-    Relieve,
-    Wash,
-    ReduceDanger,
-    Heal { target: EntityId },
-    ProduceCommodity { recipe_id: RecipeId },
-    SellCommodity { commodity: CommodityKind },
-    RestockCommodity { commodity: CommodityKind },
-    MoveCargo { lot: EntityId, destination: EntityId },
-    LootCorpse { corpse: EntityId },
-    BuryCorpse { corpse: EntityId, burial_site: EntityId },
-}
-
-pub struct GoalKey {
-    pub kind: GoalKind,
-    pub commodity: Option<CommodityKind>,
-    pub entity: Option<EntityId>,
-    pub place: Option<EntityId>,
-}
-
 pub enum GoalPriorityClass {
     Critical,
     High,
@@ -76,21 +52,17 @@ pub struct GroundedGoal {
 }
 ```
 
-### 2. Implement GoalKey normalization
+### 3. Re-export shared goal identity from `worldwake-ai`
 
-`GoalKey::from(goal_kind: &GoalKind)` — extracts the canonical commodity/entity/place from each `GoalKind` variant.
+Re-export `CommodityPurpose`, `GoalKind`, and `GoalKey` from `worldwake-core` through `worldwake-ai` if that improves call-site ergonomics, but do not create aliases or duplicate shadow types.
 
-### 3. Implement Ord/PartialOrd for GoalPriorityClass
+### 4. Implement Ord/PartialOrd for GoalPriorityClass
 
 `Critical > High > Medium > Low > Background` — needed for deterministic sorting.
 
-### 4. Implement Eq/Hash-equivalent for GoalKey
-
-`GoalKey` must implement `Eq`, `PartialEq`, `Ord`, `PartialOrd` for use in `BTreeSet` and deterministic sorting. No `Hash` (no HashMap usage).
-
 ### 5. Derive traits
 
-All types: `Clone`, `Debug`, `Eq`, `PartialEq`, `Serialize`, `Deserialize`.
+All AI-owned types: `Clone`, `Debug`, `Eq`, `PartialEq`, `Serialize`, `Deserialize`.
 `GoalPriorityClass`: additionally `Copy`, `Ord`, `PartialOrd`.
 
 ## Files to Touch
@@ -100,6 +72,7 @@ All types: `Clone`, `Debug`, `Eq`, `PartialEq`, `Serialize`, `Deserialize`.
 
 ## Out of Scope
 
+- Defining `CommodityPurpose`, `GoalKind`, or `GoalKey` in `worldwake-ai`
 - Candidate generation logic that produces `GroundedGoal` — E13DECARC-007
 - Priority/motive scoring logic — E13DECARC-008
 - Any goal kinds from Phase 3+ (law, policing, succession, rumor, party, expedition, persuasion, crime investigation, escort/raid/camp)
@@ -109,26 +82,23 @@ All types: `Clone`, `Debug`, `Eq`, `PartialEq`, `Serialize`, `Deserialize`.
 
 ### Tests That Must Pass
 
-1. `GoalKey::from(&GoalKind::AcquireCommodity { commodity: Apple, purpose: SelfConsume })` extracts `commodity = Some(Apple)`
-2. `GoalKey::from(&GoalKind::Sleep)` has `commodity = None, entity = None, place = None`
-3. `GoalKey::from(&GoalKind::LootCorpse { corpse })` extracts `entity = Some(corpse)`
-4. `GoalPriorityClass::Critical > GoalPriorityClass::High` (Ord)
-5. `GoalKind` has exactly 13 variants (no Phase 3+ leakage)
-6. All types round-trip through bincode
-7. Existing suite: `cargo test --workspace`
+1. `worldwake-ai` consumes the shared `GoalKey` / `GoalKind` / `CommodityPurpose` definitions from `worldwake-core` without duplicating them
+2. `GoalPriorityClass::Critical > GoalPriorityClass::High` (Ord)
+3. `GroundedGoal` round-trips through bincode
+4. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
 1. No Phase 3+ goal kinds present
 2. `GroundedGoal` is never stored as a component
-3. `GoalKey` comparison is deterministic (Ord, not Hash-based)
+3. No duplicate `GoalKey` type exists in `worldwake-ai`
 4. `BTreeSet<EntityId>` for evidence, not `HashSet`
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/goal_model.rs` — tests for GoalKey normalization, GoalPriorityClass ordering, trait bounds, bincode roundtrip
+1. `crates/worldwake-ai/src/goal_model.rs` — tests for `GoalPriorityClass` ordering, `GroundedGoal` serialization, and shared-type consumption
 
 ### Commands
 

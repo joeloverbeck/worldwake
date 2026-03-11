@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod allocator;
+pub mod blocked_intent;
 pub mod canonical;
 pub mod cause;
 pub mod combat;
@@ -40,6 +41,7 @@ pub mod error;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
+pub mod goal;
 pub mod ids;
 pub mod items;
 pub mod load;
@@ -60,6 +62,7 @@ pub mod world_txn;
 pub mod wounds;
 
 pub use allocator::EntityAllocator;
+pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
 pub use canonical::{
     canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world, CanonicalError,
     StateHash,
@@ -83,6 +86,7 @@ pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EvidenceRef, EventRecord, PendingEvent};
 pub use event_tag::EventTag;
+pub use goal::{CommodityPurpose, GoalKey, GoalKind};
 pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,

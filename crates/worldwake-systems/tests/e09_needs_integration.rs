@@ -420,6 +420,7 @@ fn authoritative_schema_includes_expected_shared_e09_and_e12_components_and_fiel
             ComponentKind::DeadAt,
             ComponentKind::CombatStance,
             ComponentKind::UtilityProfile,
+            ComponentKind::BlockedIntentMemory,
             ComponentKind::DriveThresholds,
             ComponentKind::HomeostaticNeeds,
             ComponentKind::DeprivationExposure,

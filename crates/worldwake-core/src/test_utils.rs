@@ -4,7 +4,8 @@
 //! deterministic testing.
 
 use crate::{
-    CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
+    BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, CommodityPurpose,
+    DemandMemory, DemandObservation, DemandObservationReason, EntityId, GoalKey, GoalKind,
     MerchandiseProfile, Permille, Quantity, Seed, SubstitutePreferences, Tick, TradeCategory,
     TradeDispositionProfile, UtilityProfile,
 };
@@ -70,6 +71,33 @@ pub fn sample_utility_profile() -> UtilityProfile {
         pain_weight: Permille::new(950).unwrap(),
         danger_weight: Permille::new(1000).unwrap(),
         enterprise_weight: Permille::new(425).unwrap(),
+    }
+}
+
+/// Returns a representative canonical goal identity fixture.
+pub fn sample_goal_key() -> GoalKey {
+    GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    })
+}
+
+/// Returns a representative blocked intent fixture for decision-memory tests.
+pub fn sample_blocked_intent() -> BlockedIntent {
+    BlockedIntent {
+        goal_key: sample_goal_key(),
+        blocking_fact: BlockingFact::SellerOutOfStock,
+        related_entity: Some(entity_id(8, 0)),
+        related_place: Some(entity_id(3, 0)),
+        observed_tick: Tick(10),
+        expires_tick: Tick(15),
+    }
+}
+
+/// Returns a representative blocked intent memory fixture for authoritative component tests.
+pub fn sample_blocked_intent_memory() -> BlockedIntentMemory {
+    BlockedIntentMemory {
+        intents: vec![sample_blocked_intent()],
     }
 }
 

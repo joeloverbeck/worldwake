@@ -180,6 +180,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                blocked_intent_memories,
+                BlockedIntentMemory,
+                insert_blocked_intent_memory,
+                get_blocked_intent_memory,
+                get_blocked_intent_memory_mut,
+                remove_blocked_intent_memory,
+                has_blocked_intent_memory,
+                iter_blocked_intent_memories,
+                insert_component_blocked_intent_memory,
+                get_component_blocked_intent_memory,
+                get_component_blocked_intent_memory_mut,
+                remove_component_blocked_intent_memory,
+                has_component_blocked_intent_memory,
+                entities_with_blocked_intent_memory,
+                query_blocked_intent_memory,
+                count_with_blocked_intent_memory,
+                "BlockedIntentMemory",
+                |kind| kind == EntityKind::Agent,
+                BlockedIntentMemory,
+                crate::BlockedIntentMemory,
+                set_component_blocked_intent_memory,
+                clear_component_blocked_intent_memory,
+                txn_simple_set
+            }
+            {
                 drive_thresholds,
                 DriveThresholds,
                 insert_drive_thresholds,
@@ -782,6 +807,31 @@ macro_rules! with_component_schema_entries {
                 crate::UtilityProfile,
                 set_component_utility_profile,
                 clear_component_utility_profile,
+                txn_simple_set
+            }
+            {
+                blocked_intent_memories,
+                BlockedIntentMemory,
+                insert_blocked_intent_memory,
+                get_blocked_intent_memory,
+                get_blocked_intent_memory_mut,
+                remove_blocked_intent_memory,
+                has_blocked_intent_memory,
+                iter_blocked_intent_memories,
+                insert_component_blocked_intent_memory,
+                get_component_blocked_intent_memory,
+                get_component_blocked_intent_memory_mut,
+                remove_component_blocked_intent_memory,
+                has_component_blocked_intent_memory,
+                entities_with_blocked_intent_memory,
+                query_blocked_intent_memory,
+                count_with_blocked_intent_memory,
+                "BlockedIntentMemory",
+                |kind| kind == EntityKind::Agent,
+                BlockedIntentMemory,
+                crate::BlockedIntentMemory,
+                set_component_blocked_intent_memory,
+                clear_component_blocked_intent_memory,
                 txn_simple_set
             }
             {
