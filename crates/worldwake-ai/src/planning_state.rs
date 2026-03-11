@@ -462,6 +462,8 @@ impl BeliefView for PlanningState<'_> {
     }
 
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+        let agent_place = self.effective_place(agent);
+        let agent_transit = self.in_transit_state(agent);
         self.snapshot
             .entities
             .get(&agent)
@@ -471,12 +473,19 @@ impl BeliefView for PlanningState<'_> {
                     .iter()
                     .copied()
                     .filter(|entity| !self.removed_entities.contains(entity))
+                    .filter(|entity| {
+                        self.effective_place(*entity) == agent_place
+                            || agent_transit.is_some()
+                                && self.in_transit_state(*entity) == agent_transit
+                    })
                     .collect()
             })
             .unwrap_or_default()
     }
 
     fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+        let agent_place = self.effective_place(agent);
+        let agent_transit = self.in_transit_state(agent);
         self.snapshot
             .entities
             .get(&agent)
@@ -486,6 +495,11 @@ impl BeliefView for PlanningState<'_> {
                     .iter()
                     .copied()
                     .filter(|entity| !self.removed_entities.contains(entity))
+                    .filter(|entity| {
+                        self.effective_place(*entity) == agent_place
+                            || agent_transit.is_some()
+                                && self.in_transit_state(*entity) == agent_transit
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -624,6 +638,8 @@ mod tests {
         reservations: BTreeMap<EntityId, Vec<TickRange>>,
         durations: BTreeMap<(EntityId, ActionDefId), ActionDuration>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
+        hostiles: BTreeMap<EntityId, Vec<EntityId>>,
+        attackers: BTreeMap<EntityId, Vec<EntityId>>,
     }
 
     impl BeliefView for StubBeliefView {
@@ -765,12 +781,12 @@ mod tests {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostiles.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+            self.attackers.get(&agent).cloned().unwrap_or_default()
         }
 
         fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
@@ -1058,5 +1074,44 @@ mod tests {
 
         assert!(std::ptr::eq(base_wounds.as_ptr(), moved_wounds.as_ptr()));
         assert!(std::ptr::eq(base_demand.as_ptr(), moved_demand.as_ptr()));
+    }
+
+    #[test]
+    fn hostile_queries_respect_hypothetical_location_changes() {
+        let actor = entity(1);
+        let attacker = entity(2);
+        let town = entity(10);
+        let field = entity(11);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(attacker, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(attacker, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(field, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(attacker, town);
+        view.entities_at.insert(town, vec![actor, attacker]);
+        view.entities_at.insert(field, vec![]);
+        view.adjacent
+            .insert(town, vec![(field, NonZeroU32::new(1).unwrap())]);
+        view.adjacent
+            .insert(field, vec![(town, NonZeroU32::new(1).unwrap())]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.hostiles.insert(actor, vec![attacker]);
+        view.attackers.insert(actor, vec![attacker]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([attacker]),
+            &BTreeSet::from([town, field]),
+            1,
+        );
+
+        let moved = PlanningState::new(&snapshot).move_actor_to(field);
+
+        assert!(moved.visible_hostiles_for(actor).is_empty());
+        assert!(moved.current_attackers_of(actor).is_empty());
     }
 }

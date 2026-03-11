@@ -289,6 +289,7 @@ fn collect_entities(
 ) -> BTreeSet<EntityId> {
     let mut included = BTreeSet::from([actor]);
     included.extend(evidence_entities.iter().copied());
+    included.extend(included_places.iter().copied());
 
     for place in included_places {
         included.extend(view.entities_at(*place));

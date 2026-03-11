@@ -9,10 +9,12 @@ pub mod decision_runtime;
 mod enterprise;
 pub mod goal_model;
 pub mod planner_ops;
+pub mod plan_selection;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;
 pub mod ranking;
+pub mod search;
 
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
@@ -24,10 +26,12 @@ pub use planner_ops::{
     build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
     PlannerOpSemantics,
 };
+pub use plan_selection::select_best_plan;
 pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
 pub use planning_state::PlanningState;
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
 pub use ranking::rank_candidates;
+pub use search::search_plan;
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
 
 #[cfg(test)]

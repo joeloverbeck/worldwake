@@ -215,6 +215,7 @@ impl PlannedStep {
 pub enum PlanTerminalKind {
     GoalSatisfied,
     ProgressBarrier,
+    CombatCommitment,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
