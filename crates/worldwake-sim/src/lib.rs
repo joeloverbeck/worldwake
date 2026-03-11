@@ -8,6 +8,7 @@ mod action_validation;
 
 pub mod action_def;
 pub mod action_def_registry;
+pub mod action_domain;
 pub mod action_duration;
 pub mod action_execution;
 pub mod action_handler;
@@ -44,6 +45,7 @@ pub mod trade_valuation;
 
 pub use action_def::ActionDef;
 pub use action_def_registry::ActionDefRegistry;
+pub use action_domain::ActionDomain;
 pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
 pub use action_handler::{

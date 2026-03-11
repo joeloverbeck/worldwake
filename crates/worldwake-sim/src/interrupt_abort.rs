@@ -150,11 +150,11 @@ fn transition_action_inner(
 mod tests {
     use super::{abort_action, interrupt_action};
     use crate::{
-        start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ActionStatus, Affordance, Constraint, DurationExpr, Interruptibility,
-        Precondition, ReservationReq, TargetSpec,
+        start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain,
+        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionProgress, ActionState, ActionStatus, Affordance, Constraint, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -256,6 +256,7 @@ mod tests {
         ActionDef {
             id,
             name: format!("action-{}", id.0),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::SpecificEntity(entity(99))],
             preconditions: vec![

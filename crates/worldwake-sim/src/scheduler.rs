@@ -187,8 +187,8 @@ impl Scheduler {
 mod tests {
     use super::Scheduler;
     use crate::{
-        ActionDefId, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionState, ActionStatus, InputKind, SystemManifest,
+        ActionDefId, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
+        ActionStatus, InputKind, SystemManifest,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{EntityId, ReservationId, Tick};

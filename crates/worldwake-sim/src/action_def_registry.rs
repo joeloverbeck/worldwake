@@ -47,8 +47,8 @@ impl ActionDefRegistry {
 mod tests {
     use super::ActionDefRegistry;
     use crate::{
-        ActionDef, ActionDefId, ActionHandlerId, ActionPayload, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionDef, ActionDefId, ActionDomain, ActionHandlerId, ActionPayload, Constraint,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -60,6 +60,7 @@ mod tests {
         ActionDef {
             id,
             name: name.to_string(),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![
                 Constraint::ActorAlive,
                 Constraint::ActorHasCommodity {

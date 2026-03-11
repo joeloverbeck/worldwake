@@ -22,6 +22,7 @@ pub fn register_travel_actions(
     defs.register(ActionDef {
         id,
         name: "travel".to_string(),
+        domain: worldwake_sim::ActionDomain::Travel,
         actor_constraints: vec![
             Constraint::ActorAlive,
             Constraint::ActorHasControl,

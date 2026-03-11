@@ -95,6 +95,7 @@ fn register_def(
     defs.register(ActionDef {
         id,
         name: name.to_string(),
+        domain: worldwake_sim::ActionDomain::Needs,
         actor_constraints: vec![Constraint::ActorAlive],
         targets: match name {
             "eat" | "drink" | "wash" => vec![TargetSpec::EntityAtActorPlace {

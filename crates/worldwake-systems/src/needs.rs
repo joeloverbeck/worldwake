@@ -313,7 +313,7 @@ mod tests {
         World, WorldTxn, WoundCause,
     };
     use worldwake_sim::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerId,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
         ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
         DeterministicRng, DurationExpr, Interruptibility, SystemExecutionContext, SystemId,
     };
@@ -408,6 +408,7 @@ mod tests {
         let _ = registry.register(ActionDef {
             id: ActionDefId(0),
             name: "travel".to_string(),
+            domain: ActionDomain::Travel,
             actor_constraints: Vec::new(),
             targets: Vec::new(),
             preconditions: Vec::new(),
@@ -728,7 +729,10 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(world.get_component_homeostatic_needs(agent), Some(&original_needs));
+        assert_eq!(
+            world.get_component_homeostatic_needs(agent),
+            Some(&original_needs)
+        );
         assert_eq!(
             world.get_component_deprivation_exposure(agent),
             Some(&original_exposure)

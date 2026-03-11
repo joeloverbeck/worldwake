@@ -87,7 +87,7 @@ pub enum AbortReason {
 mod tests {
     use super::{AbortReason, ActionError, ActionHandler, ActionProgress};
     use crate::{
-        ActionDef, ActionDefId, ActionDuration, ActionHandlerId, ActionInstance,
+        ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionHandlerId, ActionInstance,
         ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DurationExpr,
         Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
@@ -125,6 +125,7 @@ mod tests {
         ActionDef {
             id: ActionDefId(2),
             name: "sample".to_string(),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::SpecificEntity(EntityId {
                 slot: 7,

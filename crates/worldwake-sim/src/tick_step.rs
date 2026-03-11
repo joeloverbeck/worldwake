@@ -444,11 +444,11 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 mod tests {
     use super::{step_tick, TickStepError, TickStepResult, TickStepServices};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ActionStatus, ControllerState, DeterministicRng, DurationExpr, InputKind,
-        Interruptibility, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
-        SystemManifest,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionProgress, ActionState, ActionStatus, ControllerState, DeterministicRng, DurationExpr,
+        InputKind, Interruptibility, Scheduler, SystemDispatchTable, SystemError,
+        SystemExecutionContext, SystemManifest,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -601,6 +601,7 @@ mod tests {
         registry.register(ActionDef {
             id: ActionDefId(0),
             name: "continue".to_string(),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![crate::Constraint::ActorAlive],
             targets: Vec::new(),
             preconditions: vec![crate::Precondition::ActorAlive],
@@ -617,6 +618,7 @@ mod tests {
         registry.register(ActionDef {
             id: ActionDefId(1),
             name: "complete".to_string(),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![crate::Constraint::ActorAlive],
             targets: Vec::new(),
             preconditions: vec![crate::Precondition::ActorAlive],
@@ -1078,7 +1080,9 @@ mod tests {
             TickStepServices {
                 action_defs: &defs,
                 action_handlers: &handlers,
-                systems: &SystemDispatchTable::from_handlers([kill_actor_system; crate::SystemId::ALL.len()]),
+                systems: &SystemDispatchTable::from_handlers(
+                    [kill_actor_system; crate::SystemId::ALL.len()],
+                ),
             },
         )
         .unwrap();

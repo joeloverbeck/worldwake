@@ -219,9 +219,9 @@ fn enumerate_bindings(
 mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, ActionPayload, Constraint,
-        ConsumableEffect, DurationExpr, Interruptibility, OmniscientBeliefView, Precondition,
-        ReservationReq, TargetSpec,
+        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionHandlerId, ActionPayload,
+        Constraint, ConsumableEffect, DurationExpr, Interruptibility, OmniscientBeliefView,
+        Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -384,6 +384,7 @@ mod tests {
         ActionDef {
             id,
             name: format!("action-{}", id.0),
+            domain: ActionDomain::Generic,
             actor_constraints,
             targets,
             preconditions,

@@ -481,11 +481,11 @@ mod tests {
                 .unwrap(),
             ActionDuration::Finite(
                 CommodityKind::Bread
-                .spec()
-                .consumable_profile
-                .unwrap()
-                .consumption_ticks_per_unit
-                .get()
+                    .spec()
+                    .consumable_profile
+                    .unwrap()
+                    .consumption_ticks_per_unit
+                    .get()
             )
         );
         assert_eq!(
@@ -603,11 +603,11 @@ mod tests {
                 .unwrap(),
             ActionDuration::Finite(
                 CommodityKind::Sword
-                .spec()
-                .combat_weapon_profile
-                .unwrap()
-                .attack_duration_ticks
-                .get()
+                    .spec()
+                    .combat_weapon_profile
+                    .unwrap()
+                    .attack_duration_ticks
+                    .get()
             )
         );
     }

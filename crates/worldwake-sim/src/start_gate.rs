@@ -2,8 +2,8 @@ use crate::{
     action_validation::{
         evaluate_constraint_authoritatively, evaluate_precondition_authoritatively,
     },
-    ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
-    ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus,
+    ActionDefRegistry, ActionDuration, ActionError, ActionExecutionAuthority,
+    ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus,
     Affordance,
 };
 use worldwake_core::{EventTag, Tick, TickRange, WitnessData, WorldError, WorldTxn};
@@ -210,11 +210,11 @@ fn map_reservation_error(err: WorldError, entity: worldwake_core::EntityId) -> A
 mod tests {
     use super::start_action;
     use crate::{
-        AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError,
-        ActionDuration, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
+        AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
+        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, Affordance, CombatActionPayload, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionState, Affordance, CombatActionPayload, Constraint, DurationExpr, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -305,6 +305,7 @@ mod tests {
         ActionDef {
             id,
             name: format!("action-{}", id.0),
+            domain: ActionDomain::Generic,
             actor_constraints,
             targets: vec![TargetSpec::SpecificEntity(entity(99))],
             preconditions,
@@ -455,6 +456,7 @@ mod tests {
         defs.register(ActionDef {
             id: ActionDefId(0),
             name: "attack".to_string(),
+            domain: ActionDomain::Combat,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: Vec::new(),
             preconditions: vec![Precondition::ActorAlive],
@@ -536,6 +538,7 @@ mod tests {
         defs.register(ActionDef {
             id: ActionDefId(0),
             name: "defend".to_string(),
+            domain: ActionDomain::Combat,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: Vec::new(),
             preconditions: vec![Precondition::ActorAlive],
@@ -599,7 +602,10 @@ mod tests {
             ActionDefId(0),
             ActionHandlerId(0),
             vec![Constraint::ActorAlive],
-            vec![Precondition::TargetExists(0), Precondition::TargetAtActorPlace(0)],
+            vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
             vec![ReservationReq { target_index: 0 }],
             NonZeroU32::MIN,
         );

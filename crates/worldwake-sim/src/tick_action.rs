@@ -181,11 +181,11 @@ fn txn_has_effects(txn: &WorldTxn<'_>) -> bool {
 mod tests {
     use super::{tick_action, TickOutcome};
     use crate::{
-        start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
-        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
-        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionState, ActionStatus, Affordance, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReplanNeeded, ReservationReq, TargetSpec,
+        start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain,
+        ActionDuration, ActionError, ActionExecutionAuthority, ActionExecutionContext,
+        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, Affordance, Constraint,
+        DurationExpr, Interruptibility, Precondition, ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -313,6 +313,7 @@ mod tests {
         ActionDef {
             id,
             name: format!("action-{}", id.0),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::SpecificEntity(entity(99))],
             preconditions: vec![
@@ -450,6 +451,7 @@ mod tests {
         defs.register(ActionDef {
             id: ActionDefId(0),
             name: "defend".to_string(),
+            domain: ActionDomain::Combat,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::SpecificEntity(entity(99))],
             preconditions: vec![

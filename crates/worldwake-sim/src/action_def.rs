@@ -1,6 +1,6 @@
 use crate::{
-    ActionDefId, ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility,
-    Precondition, ReservationReq, TargetSpec,
+    ActionDefId, ActionDomain, ActionHandlerId, ActionPayload, Constraint, DurationExpr,
+    Interruptibility, Precondition, ReservationReq, TargetSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -10,6 +10,7 @@ use worldwake_core::{BodyCostPerTick, EventTag, VisibilitySpec};
 pub struct ActionDef {
     pub id: ActionDefId,
     pub name: String,
+    pub domain: ActionDomain,
     pub actor_constraints: Vec<Constraint>,
     pub targets: Vec<TargetSpec>,
     pub preconditions: Vec<Precondition>,
@@ -28,8 +29,8 @@ pub struct ActionDef {
 mod tests {
     use super::ActionDef;
     use crate::{
-        ActionDefId, ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility,
-        Precondition, ReservationReq, TargetSpec,
+        ActionDefId, ActionDomain, ActionHandlerId, ActionPayload, Constraint, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
@@ -45,6 +46,7 @@ mod tests {
         ActionDef {
             id,
             name: format!("action-{}", id.0),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![
                 Constraint::ActorAlive,
                 Constraint::ActorHasCommodity {
@@ -98,6 +100,7 @@ mod tests {
         let ActionDef {
             id,
             name,
+            domain,
             actor_constraints,
             targets,
             preconditions,
@@ -114,6 +117,7 @@ mod tests {
 
         let _: ActionDefId = id;
         let _: String = name;
+        let _: ActionDomain = domain;
         let _: Vec<Constraint> = actor_constraints;
         let _: Vec<TargetSpec> = targets;
         let _: Vec<Precondition> = preconditions;

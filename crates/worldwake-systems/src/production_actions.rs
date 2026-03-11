@@ -103,6 +103,7 @@ fn harvest_action_def(
     Some(ActionDef {
         id,
         name: format!("harvest:{}", recipe.name),
+        domain: worldwake_sim::ActionDomain::Production,
         actor_constraints,
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Facility,
@@ -169,6 +170,7 @@ fn craft_action_def(
     Some(ActionDef {
         id,
         name: format!("craft:{}", recipe.name),
+        domain: worldwake_sim::ActionDomain::Production,
         actor_constraints,
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Facility,
@@ -896,6 +898,7 @@ mod tests {
         let def = ActionDef {
             id: ActionDefId(77),
             name: "trade:test".to_string(),
+            domain: worldwake_sim::ActionDomain::Trade,
             actor_constraints: Vec::new(),
             targets: Vec::new(),
             preconditions: Vec::new(),
@@ -1276,6 +1279,7 @@ mod tests {
         let def = ActionDef {
             id: ActionDefId(88),
             name: "trade:test".to_string(),
+            domain: worldwake_sim::ActionDomain::Trade,
             actor_constraints: Vec::new(),
             targets: Vec::new(),
             preconditions: Vec::new(),

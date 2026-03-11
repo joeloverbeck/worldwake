@@ -41,10 +41,10 @@ impl ActionHandlerRegistry {
 mod tests {
     use super::ActionHandlerRegistry;
     use crate::{
-        AbortReason, ActionDef, ActionDefId, ActionError, ActionHandler, ActionHandlerId,
-        ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ActionStatus, Constraint, DurationExpr, Interruptibility, Precondition,
-        ReservationReq, TargetSpec,
+        AbortReason, ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionError,
+        ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionProgress, ActionState, ActionStatus, Constraint, DurationExpr, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -75,6 +75,7 @@ mod tests {
         ActionDef {
             id: ActionDefId(1),
             name: "sample".to_string(),
+            domain: ActionDomain::Generic,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::SpecificEntity(EntityId {
                 slot: 9,

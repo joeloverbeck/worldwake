@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     is_wound_load_fatal, BodyCostPerTick, CauseRef, ComponentDelta, ComponentKind, DeadAt,
-    EvidenceRef, EventLog, EventTag, StateDelta, VisibilitySpec, WitnessData, WorldTxn,
+    DriveThresholds, EventLog, EventTag, EvidenceRef, HomeostaticNeeds, StateDelta, VisibilitySpec,
+    WitnessData, WorldTxn, WoundList,
 };
 use worldwake_sim::{
-    AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, Constraint, DurationExpr, Interruptibility, Precondition, SystemError,
-    SystemExecutionContext,
+    AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
+    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
+    ActionProgress, ActionState, Constraint, DurationExpr, Interruptibility, Precondition,
+    SystemError, SystemExecutionContext,
 };
 
 pub fn register_defend_action(
@@ -28,11 +29,12 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
         world,
         event_log,
         rng: _rng,
-        active_actions: _active_actions,
-        action_defs: _action_defs,
+        active_actions,
+        action_defs,
         tick,
         system_id: _system_id,
     } = ctx;
+    apply_wound_progression(world, event_log, active_actions, action_defs, tick)?;
     let fatalities = collect_fatalities(world, event_log, tick);
 
     for fatality in fatalities {
@@ -57,6 +59,139 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
     }
 
     Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct WoundProgressionUpdate {
+    entity: worldwake_core::EntityId,
+    wounds: WoundList,
+}
+
+fn apply_wound_progression(
+    world: &mut worldwake_core::World,
+    event_log: &mut EventLog,
+    active_actions: &std::collections::BTreeMap<worldwake_sim::ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
+    tick: worldwake_core::Tick,
+) -> Result<(), SystemError> {
+    let updates = collect_wound_progression_updates(world, active_actions, action_defs);
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        None,
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.add_tag(EventTag::System)
+        .add_tag(EventTag::WorldMutation);
+
+    for update in updates {
+        txn.set_component_wound_list(update.entity, update.wounds)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+fn collect_wound_progression_updates(
+    world: &worldwake_core::World,
+    active_actions: &std::collections::BTreeMap<worldwake_sim::ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
+) -> Vec<WoundProgressionUpdate> {
+    world
+        .query_wound_list()
+        .filter_map(|(entity, wounds)| {
+            if world.get_component_dead_at(entity).is_some() || wounds.wounds.is_empty() {
+                return None;
+            }
+
+            let profile = world.get_component_combat_profile(entity).copied()?;
+            let needs = world.get_component_homeostatic_needs(entity).copied();
+            let thresholds = world.get_component_drive_thresholds(entity).copied();
+            let engaged_in_combat =
+                entity_is_engaged_in_combat(entity, active_actions, action_defs);
+            progress_wounds(wounds, profile, needs, thresholds, engaged_in_combat)
+                .map(|wounds| WoundProgressionUpdate { entity, wounds })
+        })
+        .collect()
+}
+
+fn progress_wounds(
+    current: &WoundList,
+    profile: worldwake_core::CombatProfile,
+    needs: Option<HomeostaticNeeds>,
+    thresholds: Option<DriveThresholds>,
+    engaged_in_combat: bool,
+) -> Option<WoundList> {
+    let can_recover = recovery_conditions_met(needs, thresholds, engaged_in_combat);
+    let mut next = current.clone();
+    let mut changed = false;
+
+    for wound in &mut next.wounds {
+        if wound.bleed_rate_per_tick.value() > 0 {
+            let previous_severity = wound.severity;
+            let previous_bleed_rate = wound.bleed_rate_per_tick;
+            wound.severity = wound.severity.saturating_add(wound.bleed_rate_per_tick);
+            wound.bleed_rate_per_tick = wound
+                .bleed_rate_per_tick
+                .saturating_sub(profile.natural_clot_resistance);
+            changed |= wound.severity != previous_severity
+                || wound.bleed_rate_per_tick != previous_bleed_rate;
+            continue;
+        }
+
+        if can_recover && wound.severity.value() > 0 {
+            let previous_severity = wound.severity;
+            wound.severity = wound.severity.saturating_sub(profile.natural_recovery_rate);
+            changed |= wound.severity != previous_severity;
+        }
+    }
+
+    let previous_len = next.wounds.len();
+    next.wounds.retain(|wound| wound.severity.value() > 0);
+    changed |= next.wounds.len() != previous_len;
+
+    changed.then_some(next)
+}
+
+fn recovery_conditions_met(
+    needs: Option<HomeostaticNeeds>,
+    thresholds: Option<DriveThresholds>,
+    engaged_in_combat: bool,
+) -> bool {
+    if engaged_in_combat {
+        return false;
+    }
+
+    let (Some(needs), Some(thresholds)) = (needs, thresholds) else {
+        return false;
+    };
+
+    needs.hunger < thresholds.hunger.high()
+        && needs.thirst < thresholds.thirst.high()
+        && needs.fatigue < thresholds.fatigue.high()
+}
+
+fn entity_is_engaged_in_combat(
+    entity: worldwake_core::EntityId,
+    active_actions: &std::collections::BTreeMap<worldwake_sim::ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
+) -> bool {
+    active_actions.values().any(|action| {
+        let Some(def) = action_defs.get(action.def_id) else {
+            return false;
+        };
+
+        def.domain.counts_as_combat_engagement()
+            && (action.actor == entity || action.targets.contains(&entity))
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,6 +254,7 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
         name: "defend".to_string(),
+        domain: ActionDomain::Combat,
         actor_constraints: vec![
             Constraint::ActorAlive,
             Constraint::ActorNotDead,
@@ -184,16 +320,16 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CombatProfile, ControlSource, DeadAt, EvidenceRef,
-        EventLog, EventTag, Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn, WoundId, WoundList,
+        build_prototype_world, BodyPart, CauseRef, CombatProfile, ControlSource, DeadAt,
+        DeprivationKind, DriveThresholds, EventLog, EventTag, EvidenceRef, HomeostaticNeeds,
+        Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionDuration,
-        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng,
-        DurationExpr, Interruptibility, OmniscientBeliefView, SystemExecutionContext, SystemId,
-        TickOutcome,
+        abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
+        ActionPayload, ActionStatus, Affordance, DeterministicRng, DurationExpr, Interruptibility,
+        OmniscientBeliefView, SystemExecutionContext, SystemId, TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -236,18 +372,48 @@ mod tests {
         )
     }
 
-    fn spawn_guard(world: &mut World, tick: u64, control: ControlSource) -> worldwake_core::EntityId {
+    fn spawn_guard(
+        world: &mut World,
+        tick: u64,
+        control: ControlSource,
+    ) -> worldwake_core::EntityId {
         let place = world.topology().place_ids().next().unwrap();
         let actor = {
             let mut txn = new_txn(world, tick);
             let actor = txn.create_agent("Guard", control).unwrap();
             txn.set_ground_location(actor, place).unwrap();
-            txn.set_component_combat_profile(actor, defend_profile()).unwrap();
-            txn.set_component_wound_list(actor, WoundList::default()).unwrap();
+            txn.set_component_combat_profile(actor, defend_profile())
+                .unwrap();
+            txn.set_component_wound_list(actor, WoundList::default())
+                .unwrap();
             commit_txn(txn);
             actor
         };
         actor
+    }
+
+    fn set_recovery_state(
+        world: &mut World,
+        entity: worldwake_core::EntityId,
+        tick: u64,
+        needs: HomeostaticNeeds,
+    ) {
+        let mut txn = new_txn(world, tick);
+        txn.set_component_homeostatic_needs(entity, needs).unwrap();
+        txn.set_component_drive_thresholds(entity, DriveThresholds::default())
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    fn deprivation_wound(id: u64, severity: u16, bleed_rate: u16, inflicted_at: u64) -> Wound {
+        Wound {
+            id: WoundId(id),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+            severity: pm(severity),
+            inflicted_at: Tick(inflicted_at),
+            bleed_rate_per_tick: pm(bleed_rate),
+        }
     }
 
     #[test]
@@ -259,7 +425,10 @@ mod tests {
 
         assert_eq!(defend.name, "defend");
         assert_eq!(defend.duration, DurationExpr::Indefinite);
-        assert_eq!(defend.interruptibility, Interruptibility::FreelyInterruptible);
+        assert_eq!(
+            defend.interruptibility,
+            Interruptibility::FreelyInterruptible
+        );
         assert_eq!(defend.visibility, VisibilitySpec::SamePlace);
         assert_eq!(defend.payload, ActionPayload::None);
         assert!(defend.targets.is_empty());
@@ -623,19 +792,316 @@ mod tests {
         let active_actions = BTreeMap::new();
         let defs = worldwake_sim::ActionDefRegistry::new();
 
-        systems
-            .get(SystemId::Combat)(SystemExecutionContext {
-                world: &mut world,
-                event_log: &mut log,
-                rng: &mut rng,
-                active_actions: &active_actions,
-                action_defs: &defs,
-                tick: Tick(7),
-                system_id: SystemId::Combat,
-            })
-            .unwrap();
+        systems.get(SystemId::Combat)(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(7),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
 
         assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(7))));
         assert_eq!(log.events_by_tag(EventTag::Combat).len(), 1);
+    }
+
+    #[test]
+    fn combat_system_progresses_bleeding_wounds_and_applies_clotting() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 100, 35, 2)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(3),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(guard).unwrap();
+        assert_eq!(wounds.wounds[0].severity, pm(135));
+        assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(15));
+    }
+
+    #[test]
+    fn higher_clot_resistance_stabilizes_faster() {
+        let base = WoundList {
+            wounds: vec![deprivation_wound(1, 100, 35, 2)],
+        };
+        let slow = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(5),
+            pm(15),
+            pm(120),
+            pm(30),
+            nz(6),
+        );
+        let fast = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(20),
+            pm(15),
+            pm(120),
+            pm(30),
+            nz(6),
+        );
+
+        let slow_next = super::progress_wounds(
+            &base,
+            slow,
+            Some(HomeostaticNeeds::new_sated()),
+            Some(DriveThresholds::default()),
+            false,
+        )
+        .unwrap();
+        let fast_next = super::progress_wounds(
+            &base,
+            fast,
+            Some(HomeostaticNeeds::new_sated()),
+            Some(DriveThresholds::default()),
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(slow_next.wounds[0].bleed_rate_per_tick, pm(30));
+        assert_eq!(fast_next.wounds[0].bleed_rate_per_tick, pm(15));
+    }
+
+    #[test]
+    fn non_bleeding_wounds_recover_when_physiology_is_tolerable() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        set_recovery_state(&mut world, guard, 2, HomeostaticNeeds::new_sated());
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 100, 0, 3)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([17; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(4),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(guard).unwrap();
+        assert_eq!(wounds.wounds[0].severity, pm(85));
+        assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(0));
+    }
+
+    #[test]
+    fn recovery_is_blocked_during_active_combat_domain_actions() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        set_recovery_state(&mut world, guard, 2, HomeostaticNeeds::new_sated());
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 100, 0, 3)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let defend_id = register_defend_action(&mut defs, &mut handlers);
+        let affordance = get_affordances(&OmniscientBeliefView::new(&world), guard, &defs)
+            .into_iter()
+            .find(|affordance| affordance.def_id == defend_id)
+            .unwrap();
+        let mut active_actions = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+
+        let _ = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(4),
+            },
+        )
+        .unwrap();
+
+        let mut rng = DeterministicRng::new(Seed([18; 32]));
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(5),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(guard).unwrap();
+        assert_eq!(wounds.wounds[0].severity, pm(100));
+    }
+
+    #[test]
+    fn recovery_is_blocked_when_physiology_exceeds_tolerable_thresholds() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        set_recovery_state(
+            &mut world,
+            guard,
+            2,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 100, 0, 3)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([19; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(4),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(guard).unwrap();
+        assert_eq!(wounds.wounds[0].severity, pm(100));
+    }
+
+    #[test]
+    fn healed_wounds_are_removed_from_wound_list() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        set_recovery_state(&mut world, guard, 2, HomeostaticNeeds::new_sated());
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 10, 0, 3)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([23; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(4),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(guard).unwrap();
+        assert!(wounds.wounds.is_empty());
+    }
+
+    #[test]
+    fn progression_can_trigger_same_tick_fatality() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_wound_list(
+                guard,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 980, 30, 2)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([29; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            tick: Tick(3),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(3))));
+        let record = log.get(log.events_by_tag(EventTag::Combat)[0]).unwrap();
+        assert!(matches!(record.cause, CauseRef::Event(_)));
     }
 }

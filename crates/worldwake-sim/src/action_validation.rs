@@ -215,7 +215,9 @@ mod tests {
         let (healthy, incapacitated, dead) = {
             let mut txn = new_txn(&mut world, 1);
             let healthy = txn.create_agent("Healthy", ControlSource::Ai).unwrap();
-            let incapacitated = txn.create_agent("Incapacitated", ControlSource::Ai).unwrap();
+            let incapacitated = txn
+                .create_agent("Incapacitated", ControlSource::Ai)
+                .unwrap();
             let dead = txn.create_agent("Dead", ControlSource::Ai).unwrap();
             for entity in [healthy, incapacitated, dead] {
                 txn.set_ground_location(entity, place).unwrap();
