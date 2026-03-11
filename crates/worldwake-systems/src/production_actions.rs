@@ -198,15 +198,15 @@ fn craft_action_def(
 }
 
 fn harvest_payload(def: &ActionDef) -> Result<&HarvestActionPayload, ActionError> {
-    def.payload
-        .as_harvest()
-        .ok_or_else(|| ActionError::InternalError(format!("action def {} is missing harvest payload", def.id)))
+    def.payload.as_harvest().ok_or_else(|| {
+        ActionError::InternalError(format!("action def {} is missing harvest payload", def.id))
+    })
 }
 
 fn craft_payload(def: &ActionDef) -> Result<&CraftActionPayload, ActionError> {
-    def.payload
-        .as_craft()
-        .ok_or_else(|| ActionError::InternalError(format!("action def {} is missing craft payload", def.id)))
+    def.payload.as_craft().ok_or_else(|| {
+        ActionError::InternalError(format!("action def {} is missing craft payload", def.id))
+    })
 }
 
 fn aggregate_recipe_entries(
@@ -555,8 +555,8 @@ mod tests {
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, OmniscientBeliefView, RecipeRegistry, SystemExecutionContext,
-        SystemId, TickOutcome, TradeActionPayload,
+        ActionInstanceId, ActionPayload, OmniscientBeliefView, RecipeRegistry,
+        SystemExecutionContext, SystemId, TickOutcome, TradeActionPayload,
     };
 
     use super::*;
@@ -916,10 +916,7 @@ mod tests {
         let err = harvest_payload(&def).unwrap_err();
         assert_eq!(
             err,
-            ActionError::InternalError(format!(
-                "action def {} is missing harvest payload",
-                def.id
-            ))
+            ActionError::InternalError(format!("action def {} is missing harvest payload", def.id))
         );
     }
 
@@ -1283,10 +1280,7 @@ mod tests {
         let err = craft_payload(&def).unwrap_err();
         assert_eq!(
             err,
-            ActionError::InternalError(format!(
-                "action def {} is missing craft payload",
-                def.id
-            ))
+            ActionError::InternalError(format!("action def {} is missing craft payload", def.id))
         );
     }
 

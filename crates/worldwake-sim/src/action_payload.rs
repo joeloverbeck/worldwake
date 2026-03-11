@@ -67,7 +67,9 @@ pub struct TradeActionPayload {
 mod tests {
     use super::{ActionPayload, CraftActionPayload, HarvestActionPayload, TradeActionPayload};
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind, WorkstationTag};
+    use worldwake_core::{
+        CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind, WorkstationTag,
+    };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

@@ -39,6 +39,7 @@ pub mod system_dispatch;
 pub mod system_manifest;
 pub mod tick_action;
 pub mod tick_step;
+pub mod trade_valuation;
 
 pub use action_def::ActionDef;
 pub use action_def_registry::ActionDefRegistry;
@@ -50,7 +51,9 @@ pub use action_handler::{
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
-pub use action_payload::{ActionPayload, CraftActionPayload, HarvestActionPayload, TradeActionPayload};
+pub use action_payload::{
+    ActionPayload, CraftActionPayload, HarvestActionPayload, TradeActionPayload,
+};
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
     Precondition, ReservationReq, TargetSpec,
@@ -84,3 +87,4 @@ pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionConte
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use tick_action::{tick_action, TickOutcome};
 pub use tick_step::{step_tick, TickStepError, TickStepResult, TickStepServices};
+pub use trade_valuation::{evaluate_trade_bundle, TradeAcceptance, TradeRejectionReason};
