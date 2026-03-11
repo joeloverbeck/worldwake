@@ -301,9 +301,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource,
-        DeprivationExposure, DeprivationKind, DriveThresholds, EventLog, EventTag,
-        HomeostaticNeeds, MetabolismProfile, Permille, Seed, Tick, VisibilitySpec, WitnessData,
-        World, WorldTxn, WoundCause,
+        DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EventLog, EventTag, HomeostaticNeeds,
+        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile,
+        VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
     };
     use worldwake_sim::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionHandlerId, ActionInstance,
@@ -432,6 +433,39 @@ mod tests {
             tick: Tick(7),
             system_id: SystemId::Needs,
         }
+    }
+
+    fn seed_trade_memory(world: &mut World) -> worldwake_core::EntityId {
+        let place = first_place(world);
+        let mut txn = new_txn(world, 2);
+        let agent = txn.create_agent("Trader", ControlSource::Ai).unwrap();
+        txn.set_component_demand_memory(
+            agent,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                    place,
+                    tick: Tick(1),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButNoSeller,
+                }],
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(
+            agent,
+            TradeDispositionProfile {
+                negotiation_round_ticks: nz(1),
+                initial_offer_bias: pm(500),
+                concession_rate: pm(100),
+                demand_memory_retention_ticks: 1,
+            },
+        )
+        .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+        agent
     }
 
     #[test]
@@ -858,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_table_registers_needs_system_without_changing_other_slots() {
+    fn dispatch_table_registers_needs_system_and_trade_slot_ages_demand_memory() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let agent = spawn_agent(&mut world, 1, "Aster");
         seed_agent(
@@ -889,6 +923,7 @@ mod tests {
             Some(&HomeostaticNeeds::new(pm(1), pm(0), pm(0), pm(0), pm(0)))
         );
 
+        let trader = seed_trade_memory(&mut world);
         systems.get(SystemId::Trade)(SystemExecutionContext {
             world: &mut world,
             event_log: &mut event_log,
@@ -900,6 +935,11 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(event_log.len(), 1);
+        assert_eq!(event_log.len(), 2);
+        assert!(world
+            .get_component_demand_memory(trader)
+            .unwrap()
+            .observations
+            .is_empty());
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     component_schema::with_component_schema_entries, ArchiveMutationSnapshot, CommodityKind,
     Container, ControlSource, EntityId, EntityKind, EventId, FactId, Permille, Quantity,
-    ReservationId, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, World, WorldError,
+    ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
@@ -420,22 +420,6 @@ impl<'w> WorldTxn<'w> {
             after: ComponentValue::ItemLot(after),
         }));
         Ok(())
-    }
-
-    pub fn set_component_trade_disposition_profile(
-        &mut self,
-        entity: EntityId,
-        component: TradeDispositionProfile,
-    ) -> Result<(), WorldError> {
-        self.replace_simple_component(
-            entity,
-            component,
-            |world, entity| world.get_component_trade_disposition_profile(entity).cloned(),
-            World::remove_component_trade_disposition_profile,
-            World::insert_component_trade_disposition_profile,
-            ComponentKind::TradeDispositionProfile,
-            ComponentValue::TradeDispositionProfile,
-        )
     }
 
     pub fn set_owner(&mut self, entity: EntityId, owner: EntityId) -> Result<(), WorldError> {
@@ -1250,6 +1234,13 @@ mod tests {
         HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity, ReservationId,
         ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
         WorldError,
+    };
+    use crate::{
+        test_utils::{
+            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
+            sample_trade_disposition_profile,
+        },
+        DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2167,6 +2158,155 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_known_recipes(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_demand_memory_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before: DemandMemory = sample_demand_memory();
+        let mut after = before.clone();
+        after.observations.push(crate::test_utils::sample_demand_observation());
+        world
+            .insert_component_demand_memory(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_demand_memory(agent, after.clone()).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::DemandMemory,
+                before: Some(ComponentValue::DemandMemory(before)),
+                after: ComponentValue::DemandMemory(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_demand_memory(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_trade_disposition_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before: TradeDispositionProfile = sample_trade_disposition_profile();
+        let after = TradeDispositionProfile {
+            demand_memory_retention_ticks: before.demand_memory_retention_ticks + 5,
+            ..before.clone()
+        };
+        world
+            .insert_component_trade_disposition_profile(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_trade_disposition_profile(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::TradeDispositionProfile,
+                before: Some(ComponentValue::TradeDispositionProfile(before)),
+                after: ComponentValue::TradeDispositionProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(
+            world.get_component_trade_disposition_profile(agent),
+            Some(&after)
+        );
+    }
+
+    #[test]
+    fn set_component_merchandise_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before: MerchandiseProfile = sample_merchandise_profile();
+        let mut after = before.clone();
+        after.home_market = Some(entity(5));
+        world
+            .insert_component_merchandise_profile(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_merchandise_profile(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::MerchandiseProfile,
+                before: Some(ComponentValue::MerchandiseProfile(before)),
+                after: ComponentValue::MerchandiseProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_merchandise_profile(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_substitute_preferences_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before: SubstitutePreferences = sample_substitute_preferences();
+        let mut after = before.clone();
+        after
+            .preferences
+            .insert(crate::TradeCategory::Food, vec![CommodityKind::Water]);
+        world
+            .insert_component_substitute_preferences(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_substitute_preferences(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::SubstitutePreferences,
+                before: Some(ComponentValue::SubstitutePreferences(before)),
+                after: ComponentValue::SubstitutePreferences(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(
+            world.get_component_substitute_preferences(agent),
+            Some(&after)
+        );
     }
 
     #[test]
