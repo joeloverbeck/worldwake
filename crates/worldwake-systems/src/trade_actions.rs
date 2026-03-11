@@ -76,6 +76,13 @@ fn trade_payload<'a>(
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SubstituteTradeCandidate {
+    pub seller: EntityId,
+    pub commodity: CommodityKind,
+    pub quantity: Quantity,
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn start_trade(
     def: &ActionDef,
@@ -216,6 +223,60 @@ fn evaluate_for_participant(
         &alternatives,
         txn.get_component_demand_memory(actor),
     )
+}
+
+/// Selects the first locally available, valuation-approved substitute trade in stored preference order.
+pub fn select_substitute_trade_candidate(
+    txn: &WorldTxn<'_>,
+    buyer: EntityId,
+    desired_commodity: CommodityKind,
+    desired_quantity: Quantity,
+    offered_commodity: CommodityKind,
+    offered_quantity: Quantity,
+    place: EntityId,
+) -> Option<SubstituteTradeCandidate> {
+    let preferences = txn.get_component_substitute_preferences(buyer)?;
+    let desired_category = desired_commodity.spec().trade_category;
+    let substitutes = preferences.preferences.get(&desired_category)?;
+    let belief = OmniscientBeliefView::new(txn);
+
+    let mut sellers = txn.entities_effectively_at(place);
+    sellers.sort();
+    sellers.dedup();
+
+    for substitute in substitutes.iter().copied() {
+        if substitute == desired_commodity {
+            continue;
+        }
+
+        for seller in sellers.iter().copied() {
+            if seller == buyer || txn.entity_kind(seller) != Some(EntityKind::Agent) {
+                continue;
+            }
+            if txn.controlled_commodity_quantity(seller, substitute) < desired_quantity {
+                continue;
+            }
+
+            let acceptance = evaluate_for_participant(
+                txn,
+                &belief,
+                buyer,
+                seller,
+                place,
+                [(offered_commodity, offered_quantity)],
+                [(substitute, desired_quantity)],
+            );
+            if acceptance == TradeAcceptance::Accept {
+                return Some(SubstituteTradeCandidate {
+                    seller,
+                    commodity: substitute,
+                    quantity: desired_quantity,
+                });
+            }
+        }
+    }
+
+    None
 }
 
 fn execute_trade_transfers(
@@ -402,14 +463,16 @@ fn local_alternatives(
 
 #[cfg(test)]
 mod tests {
-    use super::register_trade_action;
+    use super::{register_trade_action, select_substitute_trade_candidate, SubstituteTradeCandidate};
     use crate::trade_actions::local_alternatives;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, EventTag, HomeostaticNeeds, LotOperation, Permille,
-        Quantity, Tick, TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        ControlSource, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
+        EventLog, EventTag, HomeostaticNeeds, LotOperation, Permille, Quantity,
+        SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         start_action, tick_action, ActionDefId, ActionDefRegistry, ActionExecutionAuthority,
@@ -447,6 +510,25 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn food_substitutes(kinds: Vec<CommodityKind>) -> SubstitutePreferences {
+        SubstitutePreferences {
+            preferences: BTreeMap::from([(TradeCategory::Food, kinds)]),
+        }
+    }
+
+    fn remembered_demand(kind: CommodityKind) -> DemandMemory {
+        DemandMemory {
+            observations: vec![DemandObservation {
+                commodity: kind,
+                quantity: Quantity(1),
+                place: entity(99),
+                tick: Tick(2),
+                counterparty: Some(entity(88)),
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        }
     }
 
     struct TradeHarness {
@@ -794,5 +876,253 @@ mod tests {
         drop(txn);
 
         assert_eq!(alternatives, vec![(bystander, CommodityKind::Bread, Quantity(2))]);
+    }
+
+    #[test]
+    fn substitute_selection_chooses_first_acceptable_preference_in_order() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let mut harness =
+            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let (apple_seller, grain_seller) = {
+            let mut txn = new_txn(&mut harness.world, 3);
+            txn.set_component_substitute_preferences(
+                harness.actor,
+                food_substitutes(vec![CommodityKind::Apple, CommodityKind::Grain]),
+            )
+            .unwrap();
+
+            let apple_seller = txn.create_agent("Apple Seller", ControlSource::Ai).unwrap();
+            let apple_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            txn.set_ground_location(apple_seller, harness.place).unwrap();
+            txn.set_ground_location(apple_stock, harness.place).unwrap();
+            txn.set_possessor(apple_stock, apple_seller).unwrap();
+            txn.set_owner(apple_stock, apple_seller).unwrap();
+
+            let grain_seller = txn.create_agent("Grain Seller", ControlSource::Ai).unwrap();
+            let grain_stock = txn.create_item_lot(CommodityKind::Grain, Quantity(1)).unwrap();
+            txn.set_ground_location(grain_seller, harness.place).unwrap();
+            txn.set_ground_location(grain_stock, harness.place).unwrap();
+            txn.set_possessor(grain_stock, grain_seller).unwrap();
+            txn.set_owner(grain_stock, grain_seller).unwrap();
+            commit_txn(txn);
+            (apple_seller, grain_seller)
+        };
+
+        let txn = new_txn(&mut harness.world, 4);
+        let candidate = select_substitute_trade_candidate(
+            &txn,
+            harness.actor,
+            CommodityKind::Bread,
+            Quantity(1),
+            CommodityKind::Coin,
+            Quantity(1),
+            harness.place,
+        );
+        drop(txn);
+
+        assert_eq!(
+            candidate,
+            Some(SubstituteTradeCandidate {
+                seller: apple_seller,
+                commodity: CommodityKind::Apple,
+                quantity: Quantity(1),
+            })
+        );
+        assert_ne!(candidate.unwrap().seller, grain_seller);
+    }
+
+    #[test]
+    fn substitute_selection_skips_unavailable_earlier_preference() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let mut harness =
+            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        let grain_seller = {
+            let other_place = harness.world.topology().place_ids().nth(1).unwrap();
+            let mut txn = new_txn(&mut harness.world, 3);
+            txn.set_component_substitute_preferences(
+                harness.actor,
+                food_substitutes(vec![CommodityKind::Apple, CommodityKind::Grain]),
+            )
+            .unwrap();
+
+            let remote_seller = txn.create_agent("Remote Apple", ControlSource::Ai).unwrap();
+            let remote_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            txn.set_ground_location(remote_seller, other_place).unwrap();
+            txn.set_ground_location(remote_stock, other_place).unwrap();
+            txn.set_possessor(remote_stock, remote_seller).unwrap();
+            txn.set_owner(remote_stock, remote_seller).unwrap();
+
+            let grain_seller = txn.create_agent("Grain Seller", ControlSource::Ai).unwrap();
+            let grain_stock = txn.create_item_lot(CommodityKind::Grain, Quantity(1)).unwrap();
+            txn.set_ground_location(grain_seller, harness.place).unwrap();
+            txn.set_ground_location(grain_stock, harness.place).unwrap();
+            txn.set_possessor(grain_stock, grain_seller).unwrap();
+            txn.set_owner(grain_stock, grain_seller).unwrap();
+            commit_txn(txn);
+            grain_seller
+        };
+
+        let txn = new_txn(&mut harness.world, 4);
+        let candidate = select_substitute_trade_candidate(
+            &txn,
+            harness.actor,
+            CommodityKind::Bread,
+            Quantity(1),
+            CommodityKind::Coin,
+            Quantity(1),
+            harness.place,
+        );
+        drop(txn);
+
+        assert_eq!(
+            candidate,
+            Some(SubstituteTradeCandidate {
+                seller: grain_seller,
+                commodity: CommodityKind::Grain,
+                quantity: Quantity(1),
+            })
+        );
+    }
+
+    #[test]
+    fn substitute_selection_returns_none_without_preferences() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let mut harness =
+            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+
+        let txn = new_txn(&mut harness.world, 4);
+        let candidate = select_substitute_trade_candidate(
+            &txn,
+            harness.actor,
+            CommodityKind::Bread,
+            Quantity(1),
+            CommodityKind::Coin,
+            Quantity(1),
+            harness.place,
+        );
+        drop(txn);
+
+        assert_eq!(candidate, None);
+    }
+
+    #[test]
+    fn substitute_selection_ignores_non_colocated_sellers() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let mut harness =
+            TradeHarness::new(&payload, 1, HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
+        {
+            let other_place = harness.world.topology().place_ids().nth(1).unwrap();
+            let mut txn = new_txn(&mut harness.world, 3);
+            txn.set_component_substitute_preferences(
+                harness.actor,
+                food_substitutes(vec![CommodityKind::Apple]),
+            )
+            .unwrap();
+
+            let remote_seller = txn.create_agent("Remote Apple", ControlSource::Ai).unwrap();
+            let remote_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            txn.set_ground_location(remote_seller, other_place).unwrap();
+            txn.set_ground_location(remote_stock, other_place).unwrap();
+            txn.set_possessor(remote_stock, remote_seller).unwrap();
+            txn.set_owner(remote_stock, remote_seller).unwrap();
+            commit_txn(txn);
+        }
+
+        let txn = new_txn(&mut harness.world, 4);
+        let candidate = select_substitute_trade_candidate(
+            &txn,
+            harness.actor,
+            CommodityKind::Bread,
+            Quantity(1),
+            CommodityKind::Coin,
+            Quantity(1),
+            harness.place,
+        );
+        drop(txn);
+
+        assert_eq!(candidate, None);
+    }
+
+    #[test]
+    fn substitute_selection_skips_valuation_rejected_candidate_for_later_acceptable_one() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let mut harness = TradeHarness::new(&payload, 1, HomeostaticNeeds::new_sated());
+        let grain_seller = {
+            let mut txn = new_txn(&mut harness.world, 3);
+            txn.set_component_substitute_preferences(
+                harness.actor,
+                food_substitutes(vec![CommodityKind::Apple, CommodityKind::Grain]),
+            )
+            .unwrap();
+            txn.set_component_demand_memory(harness.actor, remembered_demand(CommodityKind::Grain))
+                .unwrap();
+
+            let apple_seller = txn.create_agent("Apple Seller", ControlSource::Ai).unwrap();
+            let apple_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            txn.set_ground_location(apple_seller, harness.place).unwrap();
+            txn.set_ground_location(apple_stock, harness.place).unwrap();
+            txn.set_possessor(apple_stock, apple_seller).unwrap();
+            txn.set_owner(apple_stock, apple_seller).unwrap();
+
+            let grain_seller = txn.create_agent("Grain Seller", ControlSource::Ai).unwrap();
+            let grain_stock = txn.create_item_lot(CommodityKind::Grain, Quantity(1)).unwrap();
+            txn.set_ground_location(grain_seller, harness.place).unwrap();
+            txn.set_ground_location(grain_stock, harness.place).unwrap();
+            txn.set_possessor(grain_stock, grain_seller).unwrap();
+            txn.set_owner(grain_stock, grain_seller).unwrap();
+            commit_txn(txn);
+            grain_seller
+        };
+
+        let txn = new_txn(&mut harness.world, 4);
+        let candidate = select_substitute_trade_candidate(
+            &txn,
+            harness.actor,
+            CommodityKind::Bread,
+            Quantity(1),
+            CommodityKind::Coin,
+            Quantity(1),
+            harness.place,
+        );
+        drop(txn);
+
+        assert_eq!(
+            candidate,
+            Some(SubstituteTradeCandidate {
+                seller: grain_seller,
+                commodity: CommodityKind::Grain,
+                quantity: Quantity(1),
+            })
+        );
     }
 }
