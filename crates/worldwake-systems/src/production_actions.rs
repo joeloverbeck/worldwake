@@ -198,22 +198,15 @@ fn craft_action_def(
 }
 
 fn harvest_payload(def: &ActionDef) -> Result<&HarvestActionPayload, ActionError> {
-    match &def.payload {
-        ActionPayload::Harvest(payload) => Ok(payload),
-        ActionPayload::Craft(_) | ActionPayload::None => Err(ActionError::InternalError(format!(
-            "action def {} is missing harvest payload",
-            def.id
-        ))),
-    }
+    def.payload
+        .as_harvest()
+        .ok_or_else(|| ActionError::InternalError(format!("action def {} is missing harvest payload", def.id)))
 }
 
 fn craft_payload(def: &ActionDef) -> Result<&CraftActionPayload, ActionError> {
-    match &def.payload {
-        ActionPayload::Craft(payload) => Ok(payload),
-        ActionPayload::Harvest(_) | ActionPayload::None => Err(ActionError::InternalError(
-            format!("action def {} is missing craft payload", def.id),
-        )),
-    }
+    def.payload
+        .as_craft()
+        .ok_or_else(|| ActionError::InternalError(format!("action def {} is missing craft payload", def.id)))
 }
 
 fn aggregate_recipe_entries(
@@ -562,8 +555,8 @@ mod tests {
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, OmniscientBeliefView, RecipeRegistry, SystemExecutionContext, SystemId,
-        TickOutcome,
+        ActionInstanceId, ActionPayload, OmniscientBeliefView, RecipeRegistry, SystemExecutionContext,
+        SystemId, TickOutcome, TradeActionPayload,
     };
 
     use super::*;
@@ -893,6 +886,44 @@ mod tests {
     }
 
     #[test]
+    fn harvest_payload_rejects_trade_payloads() {
+        let def = ActionDef {
+            id: ActionDefId(77),
+            name: "trade:test".to_string(),
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(nz(1)),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::Trade(TradeActionPayload {
+                counterparty: EntityId {
+                    slot: 9,
+                    generation: 0,
+                },
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(3),
+                requested_commodity: CommodityKind::Bread,
+                requested_quantity: Quantity(1),
+            }),
+            handler: ActionHandlerId(0),
+        };
+
+        let err = harvest_payload(&def).unwrap_err();
+        assert_eq!(
+            err,
+            ActionError::InternalError(format!(
+                "action def {} is missing harvest payload",
+                def.id
+            ))
+        );
+    }
+
+    #[test]
     fn harvest_happy_path_reduces_source_and_creates_output_lot() {
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
         let (defs, handlers, _) = setup_registries(&recipes);
@@ -1218,6 +1249,44 @@ mod tests {
                 outputs: vec![(CommodityKind::Bread, Quantity(1))],
                 required_tool_kinds: Vec::new(),
             })
+        );
+    }
+
+    #[test]
+    fn craft_payload_rejects_trade_payloads() {
+        let def = ActionDef {
+            id: ActionDefId(88),
+            name: "trade:test".to_string(),
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(nz(1)),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::Trade(TradeActionPayload {
+                counterparty: EntityId {
+                    slot: 10,
+                    generation: 0,
+                },
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(4),
+                requested_commodity: CommodityKind::Grain,
+                requested_quantity: Quantity(2),
+            }),
+            handler: ActionHandlerId(0),
+        };
+
+        let err = craft_payload(&def).unwrap_err();
+        assert_eq!(
+            err,
+            ActionError::InternalError(format!(
+                "action def {} is missing craft payload",
+                def.id
+            ))
         );
     }
 
