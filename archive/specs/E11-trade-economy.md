@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E11: Trade, Exchange & Merchant Restock
 
 ## Epic Summary
@@ -412,3 +414,25 @@ This epic still does **not** introduce ambush, interception, or trade-route dang
 - Section 9.5 (conservation)
 - Section 9.7 (ownership consistency)
 - `docs/FOUNDATIONS.md` Principles 2, 3, 6, 7, 8, 11, 12
+
+## Outcome
+
+Completion date: 2026-03-11
+
+What actually changed:
+
+- Implemented trade-domain core types and components, including `LotOperation::Traded`, `MerchandiseProfile`, `DemandMemory`, `TradeDispositionProfile`, `SubstitutePreferences`, and `TradeActionPayload`.
+- Implemented trade valuation in `worldwake-sim`, trade execution in `worldwake-systems::trade_actions`, trade memory aging in `worldwake-systems::trade`, and restock candidate derivation from sale intent plus concrete stock absence.
+- Kept trade as a parameterized action that uses `TradeActionPayload` and `payload_override` rather than introducing a hidden market model or price table.
+
+Deviations from original plan:
+
+- The final E11 closure rejected generic sim-layer trade-offer synthesis inside `get_affordances()`.
+- Trade remains exposed through explicit action registration plus higher-level payload construction rather than having `worldwake-sim` invent concrete bundles on its own.
+
+Verification results:
+
+- `cargo test -p worldwake-systems trade` passed.
+- `cargo test -p worldwake-sim` passed.
+- `cargo test --workspace` passed.
+- `cargo clippy --workspace` passed.

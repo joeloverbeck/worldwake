@@ -1,5 +1,6 @@
 use worldwake_core::{
-    CauseRef, DemandMemory, EventTag, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+    CauseRef, CommodityKind, DemandMemory, EntityId, EventTag, Quantity, Tick, VisibilitySpec,
+    WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -41,6 +42,20 @@ pub fn trade_system_tick(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     Ok(())
 }
 
+#[must_use]
+pub fn restock_candidates(agent: EntityId, world: &World) -> Vec<CommodityKind> {
+    let Some(profile) = world.get_component_merchandise_profile(agent) else {
+        return Vec::new();
+    };
+
+    profile
+        .sale_kinds
+        .iter()
+        .copied()
+        .filter(|kind| world.controlled_commodity_quantity(agent, *kind) == Quantity(0))
+        .collect()
+}
+
 fn collect_aging_updates(world: &World, tick: Tick) -> Vec<(worldwake_core::EntityId, DemandMemory)> {
     let mut updates = Vec::new();
 
@@ -66,14 +81,15 @@ fn collect_aging_updates(world: &World, tick: Tick) -> Vec<(worldwake_core::Enti
 
 #[cfg(test)]
 mod tests {
-    use super::trade_system_tick;
+    use super::{restock_candidates, trade_system_tick};
     use crate::dispatch_table;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, EventLog, EventTag, Permille, Quantity, Seed,
-        Tick, TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        DemandObservation, DemandObservationReason, EventLog, EventTag, MerchandiseProfile,
+        Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec, WitnessData,
+        World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -155,6 +171,39 @@ mod tests {
         agent
     }
 
+    fn sale_profile(kinds: &[CommodityKind]) -> MerchandiseProfile {
+        MerchandiseProfile {
+            sale_kinds: kinds.iter().copied().collect::<BTreeSet<_>>(),
+            home_market: None,
+        }
+    }
+
+    fn set_merchandise_profile(
+        world: &mut World,
+        agent: worldwake_core::EntityId,
+        profile: MerchandiseProfile,
+    ) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_merchandise_profile(agent, profile).unwrap();
+        commit_txn(txn);
+    }
+
+    fn grant_stock(
+        world: &mut World,
+        holder: worldwake_core::EntityId,
+        place: worldwake_core::EntityId,
+        commodity: CommodityKind,
+        quantity: Quantity,
+    ) -> worldwake_core::EntityId {
+        let mut txn = new_txn(world, 3);
+        let lot = txn.create_item_lot(commodity, quantity).unwrap();
+        txn.set_ground_location(lot, place).unwrap();
+        txn.set_possessor(lot, holder).unwrap();
+        txn.set_owner(lot, holder).unwrap();
+        commit_txn(txn);
+        lot
+    }
+
     fn system_context<'a>(
         world: &'a mut World,
         event_log: &'a mut EventLog,
@@ -172,6 +221,123 @@ mod tests {
             tick: Tick(tick),
             system_id: SystemId::Trade,
         }
+    }
+
+    #[test]
+    fn restock_candidates_returns_missing_sale_kinds_for_merchants() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = seed_agent(&mut world, "Merchant", None, None);
+        set_merchandise_profile(
+            &mut world,
+            agent,
+            sale_profile(&[CommodityKind::Bread, CommodityKind::Water]),
+        );
+
+        let candidates = restock_candidates(agent, &world);
+
+        assert_eq!(candidates, vec![CommodityKind::Bread, CommodityKind::Water]);
+    }
+
+    #[test]
+    fn restock_candidates_excludes_sale_kinds_with_available_stock() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "Stocked", None, None);
+        set_merchandise_profile(
+            &mut world,
+            agent,
+            sale_profile(&[CommodityKind::Bread, CommodityKind::Water]),
+        );
+        let _bread_lot = grant_stock(&mut world, agent, place, CommodityKind::Bread, Quantity(2));
+
+        let candidates = restock_candidates(agent, &world);
+
+        assert_eq!(candidates, vec![CommodityKind::Water]);
+    }
+
+    #[test]
+    fn restock_candidates_returns_empty_without_merchandise_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = seed_agent(
+            &mut world,
+            "MemoryOnly",
+            Some(DemandMemory {
+                observations: vec![observation(4, CommodityKind::Bread)],
+            }),
+            Some(10),
+        );
+
+        let candidates = restock_candidates(agent, &world);
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn restock_candidates_ignore_demand_memory_when_sale_intent_and_stock_match() {
+        let mut left = World::new(build_prototype_world()).unwrap();
+        let mut right = World::new(build_prototype_world()).unwrap();
+        let place = left.topology().place_ids().next().unwrap();
+        let left_agent = seed_agent(&mut left, "Left", None, None);
+        let right_agent = seed_agent(
+            &mut right,
+            "Right",
+            Some(DemandMemory {
+                observations: vec![observation(4, CommodityKind::Bread)],
+            }),
+            Some(10),
+        );
+        let profile = sale_profile(&[CommodityKind::Bread, CommodityKind::Water]);
+        set_merchandise_profile(&mut left, left_agent, profile.clone());
+        set_merchandise_profile(&mut right, right_agent, profile);
+        let _left_lot = grant_stock(&mut left, left_agent, place, CommodityKind::Water, Quantity(1));
+        let _right_lot =
+            grant_stock(&mut right, right_agent, place, CommodityKind::Water, Quantity(1));
+
+        assert_eq!(
+            restock_candidates(left_agent, &left),
+            restock_candidates(right_agent, &right)
+        );
+    }
+
+    #[test]
+    fn restock_candidates_do_not_use_partial_stock_thresholds() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "Thresholdless", None, None);
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Bread]));
+        let _lot = grant_stock(&mut world, agent, place, CommodityKind::Bread, Quantity(1));
+
+        let candidates = restock_candidates(agent, &world);
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn restock_candidates_are_read_only() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(
+            &mut world,
+            "Readonly",
+            Some(DemandMemory {
+                observations: vec![observation(2, CommodityKind::Bread)],
+            }),
+            Some(10),
+        );
+        let profile = sale_profile(&[CommodityKind::Bread, CommodityKind::Water]);
+        set_merchandise_profile(&mut world, agent, profile.clone());
+        let _lot = grant_stock(&mut world, agent, place, CommodityKind::Water, Quantity(1));
+        let before_memory = world.get_component_demand_memory(agent).unwrap().clone();
+
+        let candidates = restock_candidates(agent, &world);
+
+        assert_eq!(candidates, vec![CommodityKind::Bread]);
+        assert_eq!(world.get_component_merchandise_profile(agent), Some(&profile));
+        assert_eq!(world.get_component_demand_memory(agent), Some(&before_memory));
+        assert_eq!(
+            world.controlled_commodity_quantity(agent, CommodityKind::Water),
+            Quantity(1)
+        );
     }
 
     #[test]

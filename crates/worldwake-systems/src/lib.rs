@@ -16,7 +16,7 @@ pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
 pub use production::resource_regeneration_system;
 pub use production_actions::{register_craft_actions, register_harvest_actions};
-pub use trade::trade_system_tick;
+pub use trade::{restock_candidates, trade_system_tick};
 pub use trade_actions::register_trade_action;
 pub use transport_actions::register_transport_actions;
 pub use travel_actions::register_travel_actions;
