@@ -3,6 +3,11 @@
 //! GOAP planner, utility scoring, and decision architecture.
 //! Depends on `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
 
+pub mod goal_model;
+
+pub use goal_model::{GoalPriorityClass, GroundedGoal};
+pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
+
 #[cfg(test)]
 mod tests {
     use std::any::type_name;
