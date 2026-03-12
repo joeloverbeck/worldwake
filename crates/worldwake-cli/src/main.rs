@@ -3,6 +3,8 @@
 //! Human control interface for the Worldwake simulation.
 //! Depends on all other crates.
 
+mod scenario;
+
 fn main() {
     println!("Worldwake — causality-first emergent micro-world simulation");
 }

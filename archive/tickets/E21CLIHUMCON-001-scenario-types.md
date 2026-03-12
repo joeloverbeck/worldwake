@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # E21CLIHUMCON-001: Scenario Types (RON Structs)
 
 ## Summary
@@ -64,3 +66,16 @@ pub struct ScenarioDef {
 - All types are `Deserialize` — RON parsing works for valid input
 - No dependency on runtime state (pure data types)
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-12
+- **What changed**:
+  - Created `crates/worldwake-cli/src/scenario/types.rs` with `ScenarioDef`, `PlaceDef`, `EdgeDef`, `AgentDef`, `ItemDef`, `FacilityDef`, `ResourceSourceDef`, `MerchandiseProfileDef`
+  - Created `crates/worldwake-cli/src/scenario/mod.rs` with module declaration
+  - Added `mod scenario` to `main.rs`
+- **Deviations from plan**:
+  - Added `MerchandiseProfileDef` (scenario-specific) instead of reusing `MerchandiseProfile` directly, because `MerchandiseProfile.home_market` is `Option<EntityId>` which cannot appear in RON before entities are spawned. The def uses `Option<String>` (place name) instead.
+  - Tests use `ron::Options` with `UNWRAP_NEWTYPES` + `IMPLICIT_SOME` extensions for clean RON syntax (newtypes like `Permille(u16)` and `Quantity(u32)` would otherwise require verbose wrapper syntax). Ticket 002's loader should adopt the same extensions.
+  - Removed re-exports from `mod.rs` to avoid unused-import warnings; ticket 002 will add them when consumers exist.
+- **Verification**: 4/4 tests pass, `cargo clippy -p worldwake-cli` clean (zero warnings)
