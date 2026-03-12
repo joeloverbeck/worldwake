@@ -280,8 +280,8 @@ fn terminal_kind(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_successor, search_candidate_from_planner, search_plan, FrontierEntry,
-        SearchCandidate, SearchNode,
+        build_successor, search_candidate_from_planner, search_candidates, search_plan,
+        FrontierEntry, SearchCandidate, SearchNode,
     };
     use crate::planner_ops::planner_only_candidates;
     use crate::{
@@ -292,15 +292,18 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        test_utils::sample_trade_disposition_profile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        WorkstationTag, Wound,
+        test_utils::sample_trade_disposition_profile, CarryCapacity, CauseRef, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
+        EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, Place, Quantity, RecipeId,
+        ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
+        TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
+        WorldTxn, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionPayload, BeliefView,
-        DurationExpr, RecipeRegistry, TransportActionPayload,
+        DurationExpr, OmniscientBeliefView, RecipeRegistry, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1456,6 +1459,239 @@ mod tests {
             }))
         );
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
+    }
+
+    #[test]
+    fn cargo_search_handles_partial_pickup_split_before_travel() {
+        let actor = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, origin, destination, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(origin, EntityKind::Place);
+        view.kinds.insert(destination, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, origin);
+        view.effective_places.insert(bread, origin);
+        view.entities_at.insert(origin, vec![actor, bread]);
+        view.entities_at.insert(destination, Vec::new());
+        view.adjacent
+            .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(destination, vec![(origin, NonZeroU32::new(2).unwrap())]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((actor, bread));
+        view.carry_capacities.insert(actor, LoadUnits(3));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(bread, LoadUnits(3));
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.merchandise_profiles.insert(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(destination),
+            },
+        );
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(2),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: worldwake_core::DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }),
+            evidence_entities: BTreeSet::from([bread]),
+            evidence_places: BTreeSet::from([origin, destination]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+        assert_eq!(plan.steps.len(), 2);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(
+            plan.steps[0].payload_override,
+            Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(2),
+            }))
+        );
+        assert!(matches!(
+            plan.steps[0].targets.as_slice(),
+            [PlanningEntityRef::Hypothetical(_)]
+        ));
+        assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
+    }
+
+    #[test]
+    fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
+        let origin = entity(10);
+        let destination = entity(11);
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                origin,
+                Place {
+                    name: "Origin".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                destination,
+                Place {
+                    name: "Destination".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(1), origin, destination, 2, None).unwrap())
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(2), destination, origin, 2, None).unwrap())
+            .unwrap();
+
+        let mut world = World::new(topology).unwrap();
+        let actor;
+        let bread;
+        {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            actor = txn.create_agent("Mira", ControlSource::Ai).unwrap();
+            bread = txn.create_item_lot(CommodityKind::Bread, Quantity(3)).unwrap();
+            txn.set_ground_location(actor, origin).unwrap();
+            txn.set_ground_location(bread, origin).unwrap();
+            txn.set_owner(bread, actor).unwrap();
+            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(3)))
+                .unwrap();
+            txn.set_component_merchandise_profile(
+                actor,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                    home_market: Some(destination),
+                },
+            )
+            .unwrap();
+            txn.set_component_demand_memory(
+                actor,
+                DemandMemory {
+                    observations: vec![DemandObservation {
+                        commodity: CommodityKind::Bread,
+                        quantity: Quantity(2),
+                        place: destination,
+                        tick: Tick(1),
+                        counterparty: None,
+                        reason: DemandObservationReason::WantedToBuyButNoSeller,
+                    }],
+                },
+            )
+            .unwrap();
+            let mut event_log = EventLog::new();
+            let _ = txn.commit(&mut event_log);
+        }
+
+        let view = OmniscientBeliefView::new(&world);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }),
+            evidence_entities: BTreeSet::from([bread]),
+            evidence_places: BTreeSet::from([origin, destination]),
+        };
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let node = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 0,
+        };
+
+        let initial_candidates = search_candidates(&node, &semantics, &registry, &handlers);
+        let pick_up = initial_candidates
+            .iter()
+            .find(|candidate| {
+                registry
+                    .get(candidate.def_id)
+                    .is_some_and(|def| def.name == "pick_up")
+            })
+            .expect("authoritative snapshot should expose cargo pick_up");
+        let (terminal, after_pick_up) =
+            build_successor(&goal, &semantics, &registry, &node, &pick_up).unwrap();
+        assert_eq!(terminal, None);
+        assert!(matches!(
+            after_pick_up.steps[0].targets.as_slice(),
+            [PlanningEntityRef::Hypothetical(_)]
+        ));
+
+        let follow_up_candidates =
+            search_candidates(&after_pick_up, &semantics, &registry, &handlers);
+        let travel = follow_up_candidates
+            .iter()
+            .find(|candidate| {
+                registry
+                    .get(candidate.def_id)
+                    .is_some_and(|def| def.name == "travel")
+                    && candidate.authoritative_targets == vec![destination]
+            })
+            .expect("partial cargo successor should expose travel to destination");
+        let (terminal, _) =
+            build_successor(&goal, &semantics, &registry, &after_pick_up, &travel).unwrap();
+
+        assert_eq!(terminal, Some(PlanTerminalKind::GoalSatisfied));
     }
 
     #[test]

@@ -410,7 +410,7 @@ fn plan_and_validate_next_step(
                     agent,
                     &ranked.grounded.evidence_entities,
                     &ranked.grounded.evidence_places,
-                    budget.max_plan_depth,
+                    budget.snapshot_travel_horizon,
                 );
                 let plan = search_plan(
                     &snapshot,
@@ -767,7 +767,9 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 mod tests {
     use super::{
         advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
-        persist_blocked_memory, resolve_step_targets, AgentTickDriver,
+        persist_blocked_memory, plan_and_validate_next_step, refresh_runtime_for_read_phase,
+        resolve_step_targets, update_runtime_observation_snapshot, AgentTickDriver,
+        ReadPhaseContext,
     };
     use crate::PlanningBudget;
     use crate::{
@@ -777,18 +779,20 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use worldwake_core::{
-        build_prototype_world, BlockedIntent, BlockedIntentMemory, BlockingFact, CauseRef,
-        CommodityKind, ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventLog,
-        HomeostaticNeeds, MetabolismProfile, Quantity, Seed, Tick, VisibilitySpec, WitnessData,
-        World, WorldTxn,
+        build_prototype_world, BlockedIntent, BlockedIntentMemory, BlockingFact, CarryCapacity,
+        CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EventLog,
+        HomeostaticNeeds, LoadUnits, MerchandiseProfile, MetabolismProfile, Place, Quantity,
+        Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
         AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState,
-        DeterministicRng, Materialization, MaterializationTag, RecipeRegistry, Scheduler,
-        SystemDispatchTable, SystemManifest, TickStepServices,
+        DeterministicRng, Materialization, MaterializationTag, OmniscientBeliefView,
+        RecipeRegistry, Scheduler, SystemDispatchTable, SystemManifest, TickStepServices,
     };
-    use worldwake_systems::register_needs_actions;
+    use worldwake_systems::{build_full_action_registries, register_needs_actions};
 
     struct Harness {
         world: World,
@@ -873,6 +877,140 @@ mod tests {
             )
             .unwrap()
         }
+
+        fn active_action_name(&self) -> Option<&str> {
+            self.scheduler
+                .active_actions()
+                .values()
+                .next()
+                .and_then(|action| self.defs.get(action.def_id))
+                .map(|def| def.name.as_str())
+        }
+
+        fn runtime(&self) -> Option<&crate::AgentDecisionRuntime> {
+            self.driver.runtime_by_agent.get(&self.actor)
+        }
+    }
+
+    fn cargo_harness(possessed: bool) -> (Harness, EntityId, EntityId, EntityId) {
+        let origin = entity(1);
+        let destination = entity(2);
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                origin,
+                Place {
+                    name: "Origin".to_string(),
+                    capacity: None,
+                    tags: Default::default(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                destination,
+                Place {
+                    name: "Destination".to_string(),
+                    capacity: None,
+                    tags: Default::default(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(1), origin, destination, 2, None).unwrap())
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(2), destination, origin, 2, None).unwrap())
+            .unwrap();
+        let mut world = World::new(topology).unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Mira", ControlSource::Ai).unwrap();
+            let water = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(actor, origin).unwrap();
+            txn.set_ground_location(water, origin).unwrap();
+            if possessed {
+                txn.set_possessor(water, actor).unwrap();
+            } else {
+                txn.set_owner(water, actor).unwrap();
+            }
+            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(3)))
+                .unwrap();
+            txn.set_component_merchandise_profile(
+                actor,
+                MerchandiseProfile {
+                    sale_kinds: [CommodityKind::Bread].into_iter().collect(),
+                    home_market: Some(destination),
+                },
+            )
+            .unwrap();
+            txn.set_component_demand_memory(
+                actor,
+                DemandMemory {
+                    observations: vec![DemandObservation {
+                        commodity: CommodityKind::Bread,
+                        quantity: Quantity(2),
+                        place: destination,
+                        tick: Tick(1),
+                        counterparty: None,
+                        reason: DemandObservationReason::WantedToBuyButNoSeller,
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, water)
+        };
+        let recipes = RecipeRegistry::new();
+        let registries = build_full_action_registries(&recipes).unwrap();
+
+        (
+            Harness {
+                world,
+                event_log: EventLog::new(),
+                scheduler: Scheduler::new(SystemManifest::canonical()),
+                controller: ControllerState::with_entity(actor.0),
+                rng: DeterministicRng::new(Seed([9; 32])),
+                recipes,
+                defs: registries.defs,
+                handlers: registries.handlers,
+                driver: AgentTickDriver::new(PlanningBudget {
+                    max_plan_depth: 2,
+                    ..PlanningBudget::default()
+                }),
+                actor: actor.0,
+            },
+            actor.1,
+            origin,
+            destination,
+        )
+    }
+
+    fn step_until(
+        harness: &mut Harness,
+        max_ticks: usize,
+        predicate: impl Fn(&Harness) -> bool,
+    ) {
+        for _ in 0..max_ticks {
+            if predicate(harness) {
+                return;
+            }
+            let _ = harness.step_once();
+        }
+        assert!(
+            predicate(harness),
+            "condition not met within {max_ticks} ticks"
+        );
     }
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -1209,6 +1347,237 @@ mod tests {
             .materialization_bindings
             .hypothetical_to_authoritative
             .is_empty());
+    }
+
+    #[test]
+    fn goal_stability_across_cargo_replan_after_materialization() {
+        let (mut harness, original_lot, origin, destination) = cargo_harness(false);
+        let expected_goal = GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        });
+        let budget = PlanningBudget {
+            max_plan_depth: 2,
+            ..PlanningBudget::default()
+        };
+        let semantics = crate::build_semantics_table(&harness.defs);
+        let view = OmniscientBeliefView::new(&harness.world);
+        let grounded = crate::generate_candidates(
+            &view,
+            harness.actor,
+            &BlockedIntentMemory::default(),
+            &harness.recipes,
+            Tick(0),
+        )
+        .into_iter()
+        .find(|candidate| candidate.key == expected_goal)
+        .expect("owned ground lot with home-market demand should emit MoveCargo");
+        assert_eq!(grounded.evidence_entities, [original_lot].into_iter().collect());
+        assert_eq!(
+            grounded.evidence_places,
+            [origin, destination].into_iter().collect()
+        );
+        let snapshot = crate::build_planning_snapshot(
+            &view,
+            harness.actor,
+            &grounded.evidence_entities,
+            &grounded.evidence_places,
+            1,
+        );
+        let planning_state = crate::PlanningState::new(&snapshot);
+        let planning_affordances = worldwake_sim::get_affordances(
+            &planning_state,
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
+        assert!(
+            planning_affordances.iter().any(|affordance| {
+                harness
+                    .defs
+                    .get(affordance.def_id)
+                    .is_some_and(|def| def.name == "pick_up")
+            }),
+            "planning state should expose pick_up affordance for owned ground cargo"
+        );
+        let plan = crate::search_plan(
+            &snapshot,
+            &grounded,
+            &semantics,
+            &harness.defs,
+            &harness.handlers,
+            &budget,
+        );
+        assert!(
+            plan.is_some(),
+            "partial cargo pickup should be plannable before runtime continuity is asserted"
+        );
+
+        let mut blocked = BlockedIntentMemory::default();
+        let utility = harness
+            .world
+            .get_component_utility_profile(harness.actor)
+            .cloned()
+            .unwrap_or_default();
+        let runtime = harness
+            .driver
+            .runtime_by_agent
+            .entry(harness.actor)
+            .or_default();
+        let ranked = refresh_runtime_for_read_phase(
+            &harness.world,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(1),
+            },
+        );
+        let (next_step, next_step_valid) = plan_and_validate_next_step(
+            &harness.world,
+            runtime,
+            harness.actor,
+            &ranked,
+            &budget,
+            &semantics,
+            &harness.defs,
+            &harness.handlers,
+        );
+        let pick_up = next_step.expect("cargo runtime should choose an initial pick_up step");
+        assert_eq!(runtime.current_goal, Some(expected_goal));
+        assert_eq!(pick_up.op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(next_step_valid, Some(false));
+
+        update_runtime_observation_snapshot(&view, harness.actor, runtime);
+
+        let carried_water = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            let (_, split_off) = txn.split_lot(original_lot, Quantity(2)).unwrap();
+            txn.set_ground_location(split_off, origin).unwrap();
+            txn.set_possessor(split_off, harness.actor).unwrap();
+            commit_txn(txn);
+            split_off
+        };
+        assert_eq!(
+            harness
+                .world
+                .get_component_item_lot(original_lot)
+                .unwrap()
+                .quantity,
+            Quantity(1)
+        );
+        assert_eq!(harness.world.possessor_of(carried_water), Some(harness.actor));
+        assert_eq!(harness.world.effective_place(carried_water), Some(origin));
+        assert_eq!(
+            harness
+                .world
+                .get_component_item_lot(carried_water)
+                .unwrap()
+                .quantity,
+            Quantity(2)
+        );
+
+        runtime.step_in_flight = true;
+        apply_step_materialization_bindings(
+            runtime,
+            &pick_up,
+            &CommitOutcome {
+                materializations: vec![Materialization {
+                    tag: MaterializationTag::SplitOffLot,
+                    entity: carried_water,
+                }],
+            },
+        )
+        .unwrap();
+        runtime.step_in_flight = false;
+        advance_completed_step(runtime);
+        assert_eq!(runtime.current_goal, Some(expected_goal));
+
+        let ranked_after_pickup = refresh_runtime_for_read_phase(
+            &harness.world,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(2),
+            },
+        );
+        assert!(runtime.dirty);
+        let (next_step, next_step_valid) = plan_and_validate_next_step(
+            &harness.world,
+            runtime,
+            harness.actor,
+            &ranked_after_pickup,
+            &budget,
+            &semantics,
+            &harness.defs,
+            &harness.handlers,
+        );
+        let travel = next_step.expect("dirty cargo runtime should continue planning the same goal");
+        assert_eq!(runtime.current_goal, Some(expected_goal));
+        assert!(matches!(
+            travel.op_kind,
+            PlannerOpKind::Travel | PlannerOpKind::MoveCargo
+        ));
+        assert_eq!(next_step_valid, Some(false));
+    }
+
+    #[test]
+    fn cargo_satisfaction_at_destination_while_carrying() {
+        let (mut harness, remote_lot, _origin, destination) = cargo_harness(true);
+
+        let _ = harness.step_once();
+        assert_eq!(
+            harness.runtime().unwrap().current_goal,
+            Some(GoalKey::from(GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }))
+        );
+
+        step_until(&mut harness, 8, |state| {
+            state.world.effective_place(state.actor) == Some(destination)
+                && state.scheduler.active_actions().is_empty()
+        });
+
+        let result = harness.step_once();
+
+        assert_eq!(result.actions_started, 0);
+        assert_eq!(harness.world.possessor_of(remote_lot), Some(harness.actor));
+        assert_eq!(harness.world.effective_place(remote_lot), Some(destination));
+        assert_eq!(harness.runtime().unwrap().current_goal, None);
+        assert!(harness.runtime().unwrap().current_plan.is_none());
+        assert_eq!(harness.active_action_name(), None);
+    }
+
+    #[test]
+    fn merchant_restock_requires_delivery_to_home_market() {
+        let (mut harness, remote_lot, origin, destination) = cargo_harness(true);
+
+        assert_eq!(harness.world.possessor_of(remote_lot), Some(harness.actor));
+        assert_eq!(harness.world.effective_place(remote_lot), Some(origin));
+        assert_ne!(origin, destination);
+
+        let result = harness.step_once();
+        assert_eq!(result.actions_started, 1);
+
+        assert_eq!(
+            harness.runtime().unwrap().current_goal,
+            Some(GoalKey::from(GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }))
+        );
+        assert!(
+            harness.world.is_in_transit(harness.actor)
+                || harness.world.effective_place(remote_lot) == Some(destination)
+        );
     }
 
     #[test]

@@ -5,6 +5,7 @@ use worldwake_core::Permille;
 pub struct PlanningBudget {
     pub max_candidates_to_plan: u8,
     pub max_plan_depth: u8,
+    pub snapshot_travel_horizon: u8,
     pub max_node_expansions: u16,
     pub beam_width: u8,
     pub switch_margin_permille: Permille,
@@ -17,6 +18,7 @@ impl Default for PlanningBudget {
         Self {
             max_candidates_to_plan: 4,
             max_plan_depth: 6,
+            snapshot_travel_horizon: 6,
             max_node_expansions: 128,
             beam_width: 8,
             switch_margin_permille: Permille::new_unchecked(100),
@@ -37,6 +39,7 @@ mod tests {
 
         assert_eq!(budget.max_candidates_to_plan, 4);
         assert_eq!(budget.max_plan_depth, 6);
+        assert_eq!(budget.snapshot_travel_horizon, 6);
         assert_eq!(budget.max_node_expansions, 128);
         assert_eq!(budget.beam_width, 8);
         assert_eq!(budget.switch_margin_permille, Permille::new(100).unwrap());

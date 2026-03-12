@@ -95,7 +95,11 @@ fn restock_gap_for_market(
     }
 
     let current_stock = view.commodity_quantity(agent, commodity).0;
-    (current_stock < observed_quantity).then_some(Quantity(observed_quantity - current_stock))
+    if current_stock < observed_quantity {
+        Some(Quantity(observed_quantity - current_stock))
+    } else {
+        None
+    }
 }
 
 pub(crate) fn restock_gap_at_destination(
@@ -112,8 +116,11 @@ pub(crate) fn restock_gap_at_destination(
     let current_stock_at_destination = view
         .controlled_commodity_quantity_at_place(agent, destination, commodity)
         .0;
-    (current_stock_at_destination < observed_quantity)
-        .then_some(Quantity(observed_quantity - current_stock_at_destination))
+    if current_stock_at_destination < observed_quantity {
+        Some(Quantity(observed_quantity - current_stock_at_destination))
+    } else {
+        None
+    }
 }
 
 fn permille_ratio(numerator: u32, denominator: u32) -> Permille {
