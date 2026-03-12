@@ -7,9 +7,9 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     is_incapacitated, load_of_entity, CarryCapacity, CombatProfile, CommodityConsumableProfile,
     CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
-    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity,
-    RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-    World, Wound,
+    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag,
+    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -187,6 +187,10 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world
             .get_component_workstation_marker(entity)
             .map(|marker| marker.0)
+    }
+
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        self.world.place_has_tag(place, tag)
     }
 
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {

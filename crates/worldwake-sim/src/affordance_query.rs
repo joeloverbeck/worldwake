@@ -138,6 +138,9 @@ fn evaluate_constraint(constraint: &Constraint, actor: EntityId, view: &dyn Beli
         Constraint::ActorHasControl => view.has_control(actor),
         Constraint::ActorNotInTransit => !view.is_in_transit(actor),
         Constraint::ActorAtPlace(place) => view.effective_place(actor) == Some(*place),
+        Constraint::ActorAtPlaceTag(tag) => view
+            .effective_place(actor)
+            .is_some_and(|place| view.place_has_tag(place, *tag)),
         Constraint::ActorKnowsRecipe(recipe) => view.knows_recipe(actor, *recipe),
         Constraint::ActorHasUniqueItemKind { kind, min_count } => {
             view.unique_item_count(actor, *kind) >= *min_count

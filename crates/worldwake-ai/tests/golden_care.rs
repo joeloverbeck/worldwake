@@ -116,5 +116,8 @@ fn golden_healing_wounded_agent_replays_deterministically() {
     let first = run_healing_scenario(Seed([15; 32]));
     let second = run_healing_scenario(Seed([15; 32]));
 
-    assert_eq!(first, second, "healing scenario should replay deterministically");
+    assert_eq!(
+        first, second,
+        "healing scenario should replay deterministically"
+    );
 }

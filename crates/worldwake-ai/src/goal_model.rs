@@ -8,8 +8,8 @@ use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, Permille, Quantity,
 };
 use worldwake_sim::{
-    ActionDef, ActionPayload, BeliefView, CombatActionPayload, LootActionPayload,
-    RecipeRegistry, TradeActionPayload, TransportActionPayload,
+    ActionDef, ActionPayload, BeliefView, CombatActionPayload, LootActionPayload, RecipeRegistry,
+    TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]

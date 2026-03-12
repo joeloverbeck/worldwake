@@ -5,10 +5,10 @@ use crate::{
     CombatProfile, CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt,
     DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind,
     EntityMeta, EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-    LotOperation, MerchandiseProfile, MetabolismProfile, Name, ProductionJob, ProvenanceEntry,
-    Quantity, RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology,
-    TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker,
-    WorldError, WoundList,
+    LotOperation, MerchandiseProfile, MetabolismProfile, Name, PlaceTag, ProductionJob,
+    ProvenanceEntry, Quantity, RelationTables, ResourceSource, SubstitutePreferences, Tick,
+    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
+    WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -402,6 +402,13 @@ impl World {
     #[must_use]
     pub fn topology(&self) -> &Topology {
         &self.topology
+    }
+
+    #[must_use]
+    pub fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        self.topology
+            .place(place)
+            .is_some_and(|place_data| place_data.tags.contains(&tag))
     }
 
     pub fn archive_dependencies(

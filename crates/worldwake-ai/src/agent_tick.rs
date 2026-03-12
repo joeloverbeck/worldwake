@@ -1,11 +1,11 @@
+use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::{
     build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
     handle_plan_failure, rank_candidates, resolve_planning_targets_with, revalidate_next_step,
     search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision,
-    PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics,
-    PlanningBudget, RankedGoal,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget,
+    RankedGoal,
 };
-use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use std::collections::BTreeMap;
 use worldwake_core::{
     BlockedIntentMemory, CauseRef, CommodityKind, ControlSource, EntityId, Quantity, Tick,
@@ -735,16 +735,22 @@ fn observation_snapshot_changed(
         .current_goal
         .map(|goal| goal.kind.relevant_observed_commodities(recipe_registry))
         .or_else(|| {
-            runtime
-                .current_plan
-                .as_ref()
-                .map(|plan| plan.goal.kind.relevant_observed_commodities(recipe_registry))
+            runtime.current_plan.as_ref().map(|plan| {
+                plan.goal
+                    .kind
+                    .relevant_observed_commodities(recipe_registry)
+            })
         });
     runtime.last_effective_place != view.effective_place(agent)
         || runtime.last_needs != view.homeostatic_needs(agent)
         || runtime.last_wounds != view.wounds(agent)
-        || filtered_commodity_signature(&runtime.last_commodity_signature, commodity_filter.as_ref())
-            != filtered_commodity_signature(&current_commodity_signature, commodity_filter.as_ref())
+        || filtered_commodity_signature(
+            &runtime.last_commodity_signature,
+            commodity_filter.as_ref(),
+        ) != filtered_commodity_signature(
+            &current_commodity_signature,
+            commodity_filter.as_ref(),
+        )
         || runtime.last_unique_item_signature != unique_item_signature(view, agent)
 }
 
@@ -814,9 +820,8 @@ mod tests {
         build_prototype_world, BlockedIntent, BlockedIntentMemory, BlockingFact, CarryCapacity,
         CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EventLog,
-        HomeostaticNeeds, LoadUnits, MerchandiseProfile, MetabolismProfile, Place, Quantity,
-        Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        HomeostaticNeeds, LoadUnits, MerchandiseProfile, MetabolismProfile, Place, Quantity, Seed,
+        Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
@@ -1028,11 +1033,7 @@ mod tests {
         )
     }
 
-    fn step_until(
-        harness: &mut Harness,
-        max_ticks: usize,
-        predicate: impl Fn(&Harness) -> bool,
-    ) {
+    fn step_until(harness: &mut Harness, max_ticks: usize, predicate: impl Fn(&Harness) -> bool) {
         for _ in 0..max_ticks {
             if predicate(harness) {
                 return;
@@ -1421,7 +1422,10 @@ mod tests {
         .into_iter()
         .find(|candidate| candidate.key == expected_goal)
         .expect("owned ground lot with home-market demand should emit MoveCargo");
-        assert_eq!(grounded.evidence_entities, [original_lot].into_iter().collect());
+        assert_eq!(
+            grounded.evidence_entities,
+            [original_lot].into_iter().collect()
+        );
         assert_eq!(
             grounded.evidence_places,
             [origin, destination].into_iter().collect()
@@ -1523,7 +1527,10 @@ mod tests {
                 .quantity,
             Quantity(1)
         );
-        assert_eq!(harness.world.possessor_of(carried_water), Some(harness.actor));
+        assert_eq!(
+            harness.world.possessor_of(carried_water),
+            Some(harness.actor)
+        );
         assert_eq!(harness.world.effective_place(carried_water), Some(origin));
         assert_eq!(
             harness
@@ -1602,7 +1609,9 @@ mod tests {
         {
             let place = harness.world.effective_place(harness.actor).unwrap();
             let mut txn = new_txn(&mut harness.world, 2);
-            let coin = txn.create_item_lot(CommodityKind::Coin, Quantity(1)).unwrap();
+            let coin = txn
+                .create_item_lot(CommodityKind::Coin, Quantity(1))
+                .unwrap();
             txn.set_ground_location(coin, place).unwrap();
             txn.set_possessor(coin, harness.actor).unwrap();
             commit_txn(txn);
@@ -1634,11 +1643,15 @@ mod tests {
             .get_component_utility_profile(harness.actor)
             .cloned()
             .unwrap_or_default();
-        let runtime = harness.driver.runtime_by_agent.entry(harness.actor).or_insert_with(|| {
-            active_runtime(GoalKind::ConsumeOwnedCommodity {
-                commodity: CommodityKind::Bread,
-            })
-        });
+        let runtime = harness
+            .driver
+            .runtime_by_agent
+            .entry(harness.actor)
+            .or_insert_with(|| {
+                active_runtime(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                })
+            });
         let view = OmniscientBeliefView::new(&harness.world);
         update_runtime_observation_snapshot(&view, harness.actor, runtime);
 

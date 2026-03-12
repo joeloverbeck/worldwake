@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TickRange,
+    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::BeliefView;
 
@@ -92,6 +92,7 @@ pub(crate) struct SnapshotLifecycle {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SnapshotPlace {
     pub(crate) entities: BTreeSet<EntityId>,
+    pub(crate) tags: BTreeSet<PlaceTag>,
     pub(crate) adjacent_places_with_travel_ticks: Vec<(EntityId, NonZeroU32)>,
 }
 
@@ -162,10 +163,15 @@ fn build_snapshot_places(
                 .into_iter()
                 .filter(|(adjacent, _)| included_places.contains(adjacent))
                 .collect();
+            let tags = PlaceTag::ALL
+                .into_iter()
+                .filter(|tag| view.place_has_tag(place, *tag))
+                .collect();
             (
                 place,
                 SnapshotPlace {
                     entities,
+                    tags,
                     adjacent_places_with_travel_ticks,
                 },
             )

@@ -17,6 +17,9 @@ pub(crate) fn evaluate_constraint_authoritatively(
         Constraint::ActorHasControl => has_control(world, actor),
         Constraint::ActorNotInTransit => !world.is_in_transit(actor),
         Constraint::ActorAtPlace(place) => world.effective_place(actor) == Some(*place),
+        Constraint::ActorAtPlaceTag(tag) => world
+            .effective_place(actor)
+            .is_some_and(|place| world.place_has_tag(place, *tag)),
         Constraint::ActorKnowsRecipe(recipe) => world
             .get_component_known_recipes(actor)
             .is_some_and(|known| known.recipes.contains(recipe)),

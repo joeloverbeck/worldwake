@@ -301,8 +301,8 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default())
-            .unwrap();
+        let selected =
+            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
 
         assert_eq!(selected, refreshed_plan);
     }

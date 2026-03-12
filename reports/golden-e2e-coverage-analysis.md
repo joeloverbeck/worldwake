@@ -12,7 +12,7 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 6 tests (scenarios 1, 2, 3b, 5, 7, 7a)
+  golden_ai_decisions.rs      — 7 tests (scenarios 1, 2, 3b, 5, 7, 7a, 7b)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 2 tests (scenario 8 + replay)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 17 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 18 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -164,6 +164,16 @@ The golden suite contains 17 tests across 6 domain files. Every test uses the re
 - Agent drinks the water.
 **Cross-system chain**: Metabolism system → thirst escalation → AI threshold detection → consume goal generation → drink action.
 
+### Scenario 7b: Bladder Relief with Travel
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_bladder_relief_with_travel`
+**Systems exercised**: Needs (bladder pressure), AI (candidate generation, planning), Travel, Needs actions (`toilet`)
+**Setup**: Agent (Mira) starts at Village Square with elevated bladder pressure. Public Latrine is reachable in the prototype topology and `toilet` is only available at latrine-tagged places.
+**Emergent behavior proven**:
+- Bladder pressure emits the `Relieve` goal.
+- Agent leaves Village Square and reaches Public Latrine instead of relieving locally.
+- Relief completes at the latrine, reducing bladder pressure and materializing waste there without taking the bladder-accident path.
+**Cross-system chain**: Bladder pressure → `Relieve` goal → travel to latrine-tagged place → `toilet` action → bladder relief + waste materialization.
+
 ### Scenario 8: Death Cascade and Opportunistic Loot
 **File**: `golden_combat.rs` | **Test**: `golden_death_cascade_and_opportunistic_loot`
 **Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
@@ -190,7 +200,7 @@ The golden suite contains 17 tests across 6 domain files. Every test uses the re
 | AcquireCommodity (RecipeInput) | **No** | — |
 | AcquireCommodity (Treatment) | **No** | — |
 | Sleep | Yes | 2 |
-| Relieve | **No** | — |
+| Relieve | Yes | 7b |
 | Wash | **No** | — |
 | ReduceDanger | **No** | — |
 | Heal | Yes | 2c |
@@ -201,7 +211,7 @@ The golden suite contains 17 tests across 6 domain files. Every test uses the re
 | LootCorpse | Yes | 8 |
 | BuryCorpse | **No** | — |
 
-**Coverage: 6/16 GoalKinds tested (37.5%), 1 partially tested.**
+**Coverage: 7/16 GoalKinds tested (43.75%), 1 partially tested.**
 
 ### ActionDomain Coverage
 
@@ -226,7 +236,7 @@ The golden suite contains 17 tests across 6 domain files. Every test uses the re
 | Hunger | Yes (all scenarios) | Yes (2) |
 | Thirst | Yes (7a) | **No** |
 | Fatigue | Yes (2, initial) | **No** |
-| Bladder | **No** | **No** |
+| Bladder | Yes (7b) | **No** |
 | Dirtiness | **No** | **No** |
 
 ### Topology Coverage
@@ -239,14 +249,14 @@ The golden suite contains 17 tests across 6 domain files. Every test uses the re
 | CommonHouse | **No** | — |
 | RulersHall | **No** | — |
 | GuardPost | **No** | — |
-| PublicLatrine | **No** | — |
+| PublicLatrine | Yes | 7b |
 | NorthCrossroads | Yes | 3b |
 | ForestPath | Yes | 3b |
 | BanditCamp | Yes | 3b |
 | SouthGate | **No** | — |
 | EastFieldTrail | Yes | 3b |
 
-**6/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route (14 ticks across 4 edges).**
+**7/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route (14 ticks across 4 edges).**
 
 ### Cross-System Interaction Coverage
 
@@ -255,6 +265,7 @@ The golden suite contains 17 tests across 6 domain files. Every test uses the re
 | Needs → AI goal generation | Yes |
 | Metabolism → need escalation → eating | Yes |
 | Metabolism → thirst escalation → drinking | Yes |
+| Bladder pressure → travel → relief | Yes |
 | Production → materialization → transport → consumption | Yes |
 | Resource depletion → regeneration → re-harvest | Yes |
 | Deprivation → wounds → death | Yes |

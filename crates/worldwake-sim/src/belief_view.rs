@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
     DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
     TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 
@@ -35,6 +35,10 @@ pub trait BeliefView {
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        let _ = (place, tag);
+        false
+    }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
     fn has_production_job(&self, entity: EntityId) -> bool;
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;

@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     load_per_unit, CombatProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
     EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MetabolismProfile, Permille,
-    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
-    WorkstationTag, Wound,
+    PlaceTag, Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, BeliefView, DurationExpr,
@@ -742,6 +742,13 @@ impl BeliefView for PlanningState<'_> {
             .entities
             .get(&entity)
             .and_then(|snapshot| snapshot.workstation_tag)
+    }
+
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        self.snapshot
+            .places
+            .get(&place)
+            .is_some_and(|snapshot| snapshot.tags.contains(&tag))
     }
 
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {

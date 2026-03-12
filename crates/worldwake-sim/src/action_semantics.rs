@@ -2,8 +2,8 @@ use crate::{ActionDuration, ActionPayload};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, Quantity,
-    RecipeId, UniqueItemKind, WorkstationTag, World,
+    CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, PlaceTag,
+    Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -14,6 +14,7 @@ pub enum Constraint {
     ActorHasControl,
     ActorNotInTransit,
     ActorAtPlace(EntityId),
+    ActorAtPlaceTag(PlaceTag),
     ActorKnowsRecipe(RecipeId),
     ActorHasUniqueItemKind {
         kind: UniqueItemKind,

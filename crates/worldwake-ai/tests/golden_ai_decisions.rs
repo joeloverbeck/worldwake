@@ -416,6 +416,117 @@ fn golden_thirst_driven_acquisition() {
 }
 
 #[test]
+fn golden_bladder_relief_with_travel() {
+    let mut h = GoldenHarness::new(Seed([80; 32]));
+
+    let fast_bladder_metabolism = MetabolismProfile::new(
+        pm(2),
+        pm(2),
+        pm(2),
+        pm(10), // bladder_rate
+        pm(1),
+        pm(20),
+        nz(480),
+        nz(240),
+        nz(120),
+        nz(200),
+        nz(8),
+        nz(12),
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Mira",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(650), pm(0)),
+        fast_bladder_metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    let initial_bladder = h.agent_bladder(agent);
+    let mut reached_latrine = false;
+    let mut relieved_at_latrine = false;
+    let mut waste_appeared_at_latrine = false;
+    let mut waste_appeared_at_origin = false;
+    let mut final_place = h.world.effective_place(agent);
+    let mut visited_places = vec![VILLAGE_SQUARE];
+
+    for _ in 0..100 {
+        h.step_once();
+
+        if let Some(place) = h.world.effective_place(agent) {
+            final_place = Some(place);
+            if !visited_places.contains(&place) {
+                visited_places.push(place);
+            }
+            if place == PUBLIC_LATRINE {
+                reached_latrine = true;
+            }
+        }
+
+        waste_appeared_at_latrine = h
+            .world
+            .entities_effectively_at(PUBLIC_LATRINE)
+            .into_iter()
+            .any(|entity| {
+                h.world
+                    .get_component_item_lot(entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+            });
+        waste_appeared_at_origin = h
+            .world
+            .entities_effectively_at(VILLAGE_SQUARE)
+            .into_iter()
+            .any(|entity| {
+                h.world
+                    .get_component_item_lot(entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+            });
+        let dirtiness = h
+            .world
+            .get_component_homeostatic_needs(agent)
+            .map_or(pm(0), |needs| needs.dirtiness);
+
+        if reached_latrine
+            && waste_appeared_at_latrine
+            && h.agent_bladder(agent) < initial_bladder
+            && dirtiness < pm(200)
+        {
+            relieved_at_latrine = true;
+            break;
+        }
+    }
+
+    assert!(
+        visited_places.iter().any(|place| *place != VILLAGE_SQUARE),
+        "Agent should leave Village Square to satisfy relief at a latrine; visited={visited_places:?}, final_place={final_place:?}"
+    );
+    assert!(
+        reached_latrine,
+        "Agent should reach the public latrine before relieving; visited={visited_places:?}, final_place={final_place:?}"
+    );
+    assert!(
+        relieved_at_latrine,
+        "Agent should complete relief at the latrine without taking the accident path; initial={initial_bladder}, final={}, visited={visited_places:?}, final_place={final_place:?}, waste_origin={waste_appeared_at_origin}, waste_latrine={waste_appeared_at_latrine}, blocked={:?}, active_actions={:?}",
+        h.agent_bladder(agent),
+        h.world.get_component_blocked_intent_memory(agent),
+        h.scheduler
+            .active_actions()
+            .values()
+            .map(|instance| h.defs.get(instance.def_id).map(|def| def.name.clone()).unwrap_or_else(|| format!("def-{}", instance.def_id.0)))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        waste_appeared_at_latrine,
+        "Relief should materialize waste at the latrine rather than at the origin; visited={visited_places:?}, final_place={final_place:?}"
+    );
+}
+
+#[test]
 fn golden_multi_hop_travel_plan() {
     let mut h = GoldenHarness::new(Seed([79; 32]));
     let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
@@ -474,13 +585,15 @@ fn golden_multi_hop_travel_plan() {
             reached_orchard_farm = true;
         }
 
-        let apple_lot_at_orchard = h.world.entities_effectively_at(ORCHARD_FARM).into_iter().any(
-            |entity| {
+        let apple_lot_at_orchard = h
+            .world
+            .entities_effectively_at(ORCHARD_FARM)
+            .into_iter()
+            .any(|entity| {
                 h.world
                     .get_component_item_lot(entity)
                     .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
-            },
-        );
+            });
         if apple_lot_at_orchard {
             saw_apple_lot_at_orchard = true;
         }

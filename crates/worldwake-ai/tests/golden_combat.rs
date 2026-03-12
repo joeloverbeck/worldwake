@@ -176,7 +176,8 @@ fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
 
 #[test]
 fn golden_death_cascade_and_opportunistic_loot() {
-    let (mut h, agent_a, agent_b, initial_coin_total) = build_death_and_loot_scenario(Seed([8; 32]));
+    let (mut h, agent_a, agent_b, initial_coin_total) =
+        build_death_and_loot_scenario(Seed([8; 32]));
     let (a_died, b_looted) =
         run_death_and_loot_observation(&mut h, agent_a, agent_b, initial_coin_total);
 

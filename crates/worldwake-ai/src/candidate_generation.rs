@@ -200,16 +200,14 @@ fn emit_need_driven_candidates(
             continue;
         }
 
-        if let Some(evidence) =
-            acquisition_path_evidence(
-                ctx.view,
-                ctx.agent,
-                ctx.place,
-                commodity,
-                ctx.recipes,
-                ctx.travel_horizon,
-            )
-        {
+        if let Some(evidence) = acquisition_path_evidence(
+            ctx.view,
+            ctx.agent,
+            ctx.place,
+            commodity,
+            ctx.recipes,
+            ctx.travel_horizon,
+        ) {
             emit_candidate(
                 candidates,
                 GoalKind::AcquireCommodity {
@@ -413,16 +411,14 @@ fn emit_restock_goals(
         if ctx.enterprise.restock_gap(commodity).is_none() {
             continue;
         }
-        if let Some(evidence) =
-            acquisition_path_evidence(
-                ctx.view,
-                ctx.agent,
-                ctx.place,
-                commodity,
-                ctx.recipes,
-                ctx.travel_horizon,
-            )
-        {
+        if let Some(evidence) = acquisition_path_evidence(
+            ctx.view,
+            ctx.agent,
+            ctx.place,
+            commodity,
+            ctx.recipes,
+            ctx.travel_horizon,
+        ) {
             emit_candidate(
                 candidates,
                 GoalKind::RestockCommodity { commodity },
@@ -1514,7 +1510,8 @@ mod tests {
         view.effective_places.insert(agent, place);
         view.effective_places.insert(apple_lot, place);
         view.effective_places.insert(workstation, place);
-        view.entities_at.insert(place, vec![agent, apple_lot, workstation]);
+        view.entities_at
+            .insert(place, vec![agent, apple_lot, workstation]);
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());

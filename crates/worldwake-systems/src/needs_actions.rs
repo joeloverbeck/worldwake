@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile, Permille,
-    Quantity, VisibilitySpec, WorldTxn,
+    PlaceTag, Quantity, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
@@ -97,7 +97,13 @@ fn register_def(
         id,
         name: name.to_string(),
         domain: worldwake_sim::ActionDomain::Needs,
-        actor_constraints: vec![Constraint::ActorAlive],
+        actor_constraints: match name {
+            "toilet" => vec![
+                Constraint::ActorAlive,
+                Constraint::ActorAtPlaceTag(PlaceTag::Latrine),
+            ],
+            _ => vec![Constraint::ActorAlive],
+        },
         targets: match name {
             "eat" | "drink" | "wash" => vec![TargetSpec::EntityAtActorPlace {
                 kind: worldwake_core::EntityKind::ItemLot,
@@ -386,10 +392,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, Container, ControlSource,
-        DeprivationExposure, DriveThresholds, EntityId, EventLog, HomeostaticNeeds, LoadUnits,
-        MetabolismProfile, Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        build_prototype_world, prototype_place_entity, CauseRef, CommodityKind, Container,
+        ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventLog, HomeostaticNeeds,
+        LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, Seed, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -710,7 +716,38 @@ mod tests {
     #[test]
     fn toilet_reduces_bladder_and_creates_waste() {
         let mut world = World::new(build_prototype_world()).unwrap();
-        let (actor, place) = setup_actor(&mut world);
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let mut txn = new_txn(&mut world, 1);
+        let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(actor, place).unwrap();
+        txn.set_component_homeostatic_needs(
+            actor,
+            HomeostaticNeeds::new(pm(700), pm(650), pm(400), pm(200), pm(350)),
+        )
+        .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(
+            actor,
+            MetabolismProfile::new(
+                pm(1),
+                pm(1),
+                pm(1),
+                pm(1),
+                pm(1),
+                pm(40),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(2).unwrap(),
+                NonZeroU32::new(3).unwrap(),
+            ),
+        )
+        .unwrap();
+        commit_txn(txn);
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
@@ -739,6 +776,36 @@ mod tests {
             })
             .count();
         assert_eq!(waste_count, 1);
+    }
+
+    #[test]
+    fn toilet_affordance_requires_latrine_tagged_place() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, village_square) = setup_actor(&mut world);
+        let public_latrine = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let (defs, handlers) = setup_registries();
+
+        let square_affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        assert!(
+            square_affordances
+                .iter()
+                .all(|affordance| affordance.def_id != worldwake_sim::ActionDefId(3)),
+            "toilet should not be available away from a latrine; actor_place={village_square}"
+        );
+
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_ground_location(actor, public_latrine).unwrap();
+        commit_txn(txn);
+
+        let latrine_affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        assert!(
+            latrine_affordances
+                .iter()
+                .any(|affordance| affordance.def_id == worldwake_sim::ActionDefId(3)),
+            "toilet should be available at the public latrine; actor_place={public_latrine}"
+        );
     }
 
     #[test]

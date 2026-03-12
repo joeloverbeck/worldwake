@@ -5,9 +5,9 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, CommodityKind, EventTag,
-    HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile, Quantity, Seed,
-    TradeDispositionProfile, UtilityProfile,
+    hash_event_log, hash_world, total_live_lot_quantity, CommodityKind, EventTag, HomeostaticNeeds,
+    KnownRecipes, MerchandiseProfile, MetabolismProfile, Quantity, Seed, TradeDispositionProfile,
+    UtilityProfile,
 };
 use worldwake_sim::RecipeRegistry;
 
@@ -20,7 +20,9 @@ fn default_trade_disposition_profile() -> TradeDispositionProfile {
     }
 }
 
-fn run_buyer_driven_trade_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+fn run_buyer_driven_trade_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
 
     let seller = seed_agent_with_recipes(
@@ -127,7 +129,10 @@ fn run_buyer_driven_trade_scenario(seed: Seed) -> (worldwake_core::StateHash, wo
         }
     }
 
-    assert!(saw_trade_event, "scenario should execute at least one trade event");
+    assert!(
+        saw_trade_event,
+        "scenario should execute at least one trade event"
+    );
     assert!(
         buyer_received_bread,
         "buyer should receive bread from the seller through trade"
@@ -151,7 +156,10 @@ fn run_buyer_driven_trade_scenario(seed: Seed) -> (worldwake_core::StateHash, wo
     assert!(!h.agent_is_dead(buyer), "buyer must stay alive");
     assert!(!h.agent_is_dead(seller), "seller must stay alive");
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]
@@ -164,5 +172,8 @@ fn golden_buyer_driven_trade_acquisition_replays_deterministically() {
     let first = run_buyer_driven_trade_scenario(Seed([13; 32]));
     let second = run_buyer_driven_trade_scenario(Seed([13; 32]));
 
-    assert_eq!(first, second, "trade scenario should replay deterministically");
+    assert_eq!(
+        first, second,
+        "trade scenario should replay deterministically"
+    );
 }

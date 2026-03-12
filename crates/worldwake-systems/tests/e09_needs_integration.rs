@@ -1,10 +1,10 @@
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    build_prototype_world, CauseRef, CommodityKind, ComponentKind, Container, ControlSource,
-    DeprivationExposure, DeprivationKind, DriveThresholds, EventLog, HomeostaticNeeds, LoadUnits,
-    MetabolismProfile, Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
-    WorldTxn, WoundCause,
+    build_prototype_world, prototype_place_entity, CauseRef, CommodityKind, ComponentKind,
+    Container, ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EventLog,
+    HomeostaticNeeds, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, Seed, Tick,
+    VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
 };
 use worldwake_sim::{
     step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
@@ -304,10 +304,24 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
         pm(400).saturating_sub(profile.rest_efficiency)
     );
 
+    let origin_place = harness.place;
+    let public_latrine = prototype_place_entity(PrototypePlace::PublicLatrine);
+    let mut txn = new_txn(&mut harness.world, 4);
+    txn.set_ground_location(harness.actor, public_latrine)
+        .unwrap();
+    commit_txn(txn);
+    harness.place = public_latrine;
+
     harness.queue_action("toilet", Vec::new());
     harness.run_queued_action_to_completion(5);
     assert_eq!(actor_needs(&harness).bladder, pm(0));
     assert_eq!(waste_count_at_place(&harness), 1);
+
+    let mut txn = new_txn(&mut harness.world, 5);
+    txn.set_ground_location(harness.actor, origin_place)
+        .unwrap();
+    commit_txn(txn);
+    harness.place = origin_place;
 
     harness.queue_action("wash", vec![water]);
     harness.run_queued_action_to_completion(5);

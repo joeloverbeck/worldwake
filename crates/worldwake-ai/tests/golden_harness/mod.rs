@@ -10,12 +10,11 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
-    build_prototype_world, BlockedIntentMemory, BodyCostPerTick, CarryCapacity, CauseRef,
-    CombatProfile, CommodityKind, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
-    EntityKind, EventLog, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Permille,
-    PrototypePlace, Quantity, RecipeId, ResourceSource, Seed, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
-    prototype_place_entity,
+    build_prototype_world, prototype_place_entity, BlockedIntentMemory, BodyCostPerTick,
+    CarryCapacity, CauseRef, CombatProfile, CommodityKind, ControlSource, DeprivationExposure,
+    DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed,
+    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
@@ -40,6 +39,8 @@ pub fn nz(value: u32) -> NonZeroU32 {
 pub const VILLAGE_SQUARE: EntityId = prototype_place_entity(PrototypePlace::VillageSquare);
 /// Orchard Farm — slot 1.
 pub const ORCHARD_FARM: EntityId = prototype_place_entity(PrototypePlace::OrchardFarm);
+/// Public Latrine — sanitation facility in the village.
+pub const PUBLIC_LATRINE: EntityId = prototype_place_entity(PrototypePlace::PublicLatrine);
 
 pub fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
     WorldTxn::new(
@@ -107,7 +108,9 @@ pub fn build_multi_recipe_registry() -> RecipeRegistry {
     recipes
 }
 
-pub fn build_full_registries(recipes: &RecipeRegistry) -> (ActionDefRegistry, ActionHandlerRegistry) {
+pub fn build_full_registries(
+    recipes: &RecipeRegistry,
+) -> (ActionDefRegistry, ActionHandlerRegistry) {
     let registries = build_full_action_registries(recipes).unwrap();
     (registries.defs, registries.handlers)
 }
@@ -305,6 +308,12 @@ impl GoldenHarness {
         self.world
             .get_component_homeostatic_needs(agent)
             .map_or(pm(0), |n| n.thirst)
+    }
+
+    pub fn agent_bladder(&self, agent: EntityId) -> Permille {
+        self.world
+            .get_component_homeostatic_needs(agent)
+            .map_or(pm(0), |n| n.bladder)
     }
 
     pub fn agent_wound_load(&self, agent: EntityId) -> u32 {

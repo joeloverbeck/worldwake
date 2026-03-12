@@ -306,13 +306,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         test_utils::sample_trade_disposition_profile, CarryCapacity, CauseRef, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
-        EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, Place, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
-        TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
-        WorldTxn, Wound,
+        CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
+        EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Permille, Place, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionPayload, BeliefView,
@@ -617,10 +616,7 @@ mod tests {
         purpose: CommodityPurpose,
     ) -> GroundedGoal {
         GroundedGoal {
-            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
-                commodity,
-                purpose,
-            }),
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity { commodity, purpose }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
         }
@@ -1499,7 +1495,8 @@ mod tests {
 
         let (registry, handlers) = build_registry();
         let goal = GroundedGoal {
-            key: acquire_goal_with_purpose(CommodityKind::Medicine, CommodityPurpose::Treatment).key,
+            key: acquire_goal_with_purpose(CommodityKind::Medicine, CommodityPurpose::Treatment)
+                .key,
             evidence_entities: BTreeSet::from([medicine]),
             evidence_places: BTreeSet::from([town]),
         };
@@ -1809,7 +1806,9 @@ mod tests {
                 WitnessData::default(),
             );
             actor = txn.create_agent("Mira", ControlSource::Ai).unwrap();
-            bread = txn.create_item_lot(CommodityKind::Bread, Quantity(3)).unwrap();
+            bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
             txn.set_ground_location(actor, origin).unwrap();
             txn.set_ground_location(bread, origin).unwrap();
             txn.set_owner(bread, actor).unwrap();

@@ -25,6 +25,25 @@ pub enum PlaceTag {
     Gate,
 }
 
+impl PlaceTag {
+    pub const ALL: [Self; 14] = [
+        Self::Village,
+        Self::Farm,
+        Self::Store,
+        Self::Inn,
+        Self::Hall,
+        Self::Barracks,
+        Self::Latrine,
+        Self::Crossroads,
+        Self::Forest,
+        Self::Camp,
+        Self::Road,
+        Self::Trail,
+        Self::Field,
+        Self::Gate,
+    ];
+}
+
 /// Typed identifiers for the canonical prototype-world places.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum PrototypePlace {
