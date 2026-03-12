@@ -37,7 +37,9 @@ pub use planner_ops::{
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
 };
 pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
-pub use planning_state::PlanningState;
+pub use planning_state::{
+    HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
+};
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
 pub use ranking::rank_candidates;
 pub use search::search_plan;
