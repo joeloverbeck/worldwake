@@ -1,9 +1,9 @@
 use crate::{
-    build_planning_snapshot, build_semantics_table,
-    clear_resolved_blockers, evaluate_interrupt, generate_candidates, handle_plan_failure,
-    rank_candidates, resolve_planning_targets_with, revalidate_next_step, search_plan,
-    select_best_plan, AgentDecisionRuntime, InterruptDecision, PlanFailureContext,
-    PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
+    build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
+    generate_candidates, handle_plan_failure, rank_candidates, resolve_planning_targets_with,
+    revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime, InterruptDecision,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget,
+    RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -12,8 +12,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefId, ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
-    BeliefView, CommittedAction, CommitOutcome, InputKind, OmniscientBeliefView,
-    RecipeRegistry, ReplanNeeded, Scheduler, SchedulerActionRuntime, TickInputError,
+    BeliefView, CommitOutcome, CommittedAction, InputKind, OmniscientBeliefView, RecipeRegistry,
+    ReplanNeeded, Scheduler, SchedulerActionRuntime, TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -373,15 +373,7 @@ fn handle_active_action_phase(
                 worldwake_sim::InterruptReason::Reprioritized,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-        reconcile_in_flight_state(
-            ctx,
-            runtime,
-            blocked_memory,
-            None,
-            agent,
-            &[&replan],
-            &[],
-        )?;
+        reconcile_in_flight_state(ctx, runtime, blocked_memory, None, agent, &[&replan], &[])?;
     }
 
     finalize_agent_tick(
@@ -456,18 +448,16 @@ fn plan_and_validate_next_step(
     }
 
     let next_step = current_step(runtime).cloned();
-    let next_step_valid = next_step
-        .as_ref()
-        .map(|step| {
-            revalidate_next_step(
-                &view,
-                agent,
-                step,
-                &runtime.materialization_bindings,
-                action_defs,
-                action_handlers,
-            )
-        });
+    let next_step_valid = next_step.as_ref().map(|step| {
+        revalidate_next_step(
+            &view,
+            agent,
+            step,
+            &runtime.materialization_bindings,
+            action_defs,
+            action_handlers,
+        )
+    });
     (next_step, next_step_valid)
 }
 
@@ -618,7 +608,9 @@ fn resolve_step_targets(
     runtime: &AgentDecisionRuntime,
     step: &PlannedStep,
 ) -> Option<Vec<EntityId>> {
-    resolve_planning_targets_with(&step.targets, |id| runtime.materialization_bindings.resolve(id))
+    resolve_planning_targets_with(&step.targets, |id| {
+        runtime.materialization_bindings.resolve(id)
+    })
 }
 
 fn committed_action_for_step<'a>(
@@ -922,9 +914,9 @@ mod tests {
     fn hypothetical_step(def_id: u32, hypothetical: u32) -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(def_id),
-            targets: vec![PlanningEntityRef::Hypothetical(crate::HypotheticalEntityId(
-                hypothetical,
-            ))],
+            targets: vec![PlanningEntityRef::Hypothetical(
+                crate::HypotheticalEntityId(hypothetical),
+            )],
             payload_override: None,
             op_kind: PlannerOpKind::MoveCargo,
             estimated_ticks: 1,
@@ -1039,7 +1031,10 @@ mod tests {
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert!(runtime.dirty);
-        assert!(runtime.materialization_bindings.hypothetical_to_authoritative.is_empty());
+        assert!(runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty());
     }
 
     #[test]
@@ -1069,8 +1064,10 @@ mod tests {
         let mut runtime = crate::AgentDecisionRuntime::default();
         let step = hypothetical_step(4, 7);
 
-        assert!(apply_step_materialization_bindings(&mut runtime, &step, &CommitOutcome::empty())
-            .is_err());
+        assert!(
+            apply_step_materialization_bindings(&mut runtime, &step, &CommitOutcome::empty())
+                .is_err()
+        );
     }
 
     #[test]
@@ -1195,7 +1192,10 @@ mod tests {
         advance_completed_step(&mut runtime);
 
         assert_eq!(runtime.current_step_index, 2);
-        assert_eq!(resolve_step_targets(&runtime, &plan.steps[2]), Some(vec![created]));
+        assert_eq!(
+            resolve_step_targets(&runtime, &plan.steps[2]),
+            Some(vec![created])
+        );
 
         runtime.step_in_flight = true;
         apply_step_materialization_bindings(&mut runtime, &plan.steps[2], &CommitOutcome::empty())
@@ -1205,7 +1205,10 @@ mod tests {
 
         assert!(runtime.current_plan.is_none());
         assert!(!runtime.step_in_flight);
-        assert!(runtime.materialization_bindings.hypothetical_to_authoritative.is_empty());
+        assert!(runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty());
     }
 
     #[test]
@@ -1268,7 +1271,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(world.get_component_blocked_intent_memory(agent), Some(&blocked));
+        assert_eq!(
+            world.get_component_blocked_intent_memory(agent),
+            Some(&blocked)
+        );
         assert_eq!(event_log.len(), 2);
     }
 

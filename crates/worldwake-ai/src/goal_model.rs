@@ -1,5 +1,6 @@
 use crate::{
-    derive_danger_pressure, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningState,
+    derive_danger_pressure, enterprise::restock_gap_at_destination, PlannedStep, PlannerOpKind,
+    PlannerOpSemantics, PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -8,7 +9,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, BeliefView, CombatActionPayload, LootActionPayload,
-    TradeActionPayload,
+    TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -214,6 +215,41 @@ impl GoalKindPlannerExt for GoalKind {
                 };
                 Ok(Some(ActionPayload::Loot(LootActionPayload { target })))
             }
+            PlannerOpKind::MoveCargo => match self {
+                GoalKind::MoveCargo {
+                    commodity,
+                    destination,
+                } if def.name == "pick_up" => {
+                    let Some(target) = targets.first().copied() else {
+                        return Err(GoalPayloadOverrideError::MissingTarget);
+                    };
+                    if state.item_lot_commodity(target) != Some(*commodity) {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
+                    let lot_quantity = state.commodity_quantity(target, *commodity);
+                    let Some(restock_gap) =
+                        restock_gap_at_destination(state, actor, *destination, *commodity)
+                    else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    let remaining_capacity = state
+                        .remaining_carry_capacity_ref(crate::PlanningEntityRef::Authoritative(
+                            actor,
+                        ))
+                        .ok_or(GoalPayloadOverrideError::UnsupportedGoal)?
+                        .0;
+                    let per_unit = worldwake_core::load_per_unit(*commodity).0;
+                    let carry_fit = Quantity(remaining_capacity / per_unit);
+                    let quantity = Quantity(lot_quantity.0.min(restock_gap.0).min(carry_fit.0));
+                    if quantity == Quantity(0) {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
+                    Ok(Some(ActionPayload::Transport(TransportActionPayload {
+                        quantity,
+                    })))
+                }
+                _ => Ok((!matches!(def.payload, ActionPayload::None)).then(|| def.payload.clone())),
+            },
             _ => Ok((!matches!(def.payload, ActionPayload::None)).then(|| def.payload.clone())),
         }
     }
@@ -224,6 +260,8 @@ impl GoalKindPlannerExt for GoalKind {
         op_kind: PlannerOpKind,
         targets: &[EntityId],
     ) -> PlanningState<'snapshot> {
+        // Cargo uses transport transition kinds in planner_ops.rs for hypothetical state changes,
+        // so MoveCargo intentionally falls through the default no-op path here.
         match op_kind {
             PlannerOpKind::Travel => {
                 if let Some(destination) = targets.first().copied() {
@@ -234,7 +272,9 @@ impl GoalKindPlannerExt for GoalKind {
             }
             PlannerOpKind::Consume => match self {
                 GoalKind::ConsumeOwnedCommodity { commodity }
-                | GoalKind::AcquireCommodity { commodity, .. } => state.consume_commodity(*commodity),
+                | GoalKind::AcquireCommodity { commodity, .. } => {
+                    state.consume_commodity(*commodity)
+                }
                 _ => state,
             },
             PlannerOpKind::Sleep => update_actor_needs(state, |needs, thresholds| {
@@ -264,6 +304,9 @@ impl GoalKindPlannerExt for GoalKind {
             return false;
         }
 
+        // Cargo state changes are modeled by transport transition kinds in planner_ops.rs, and
+        // the commodity+destination goal identity survives lot splitting, so cargo intentionally
+        // falls through the default non-barrier behavior here.
         match self {
             GoalKind::AcquireCommodity { .. }
             | GoalKind::ProduceCommodity { .. }
@@ -326,11 +369,14 @@ impl GoalKindPlannerExt for GoalKind {
                 .drive_thresholds(*target)
                 .zip(state.pain_summary(*target))
                 .is_some_and(|(thresholds, pain)| pain < thresholds.pain.medium()),
+            GoalKind::MoveCargo {
+                commodity,
+                destination,
+            } => restock_gap_at_destination(state, actor, *destination, *commodity).is_none(),
             GoalKind::ProduceCommodity { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::SellCommodity { .. }
-            | GoalKind::MoveCargo { .. }
             | GoalKind::BuryCorpse { .. } => false,
         }
     }
@@ -382,8 +428,8 @@ pub struct RankedGoal {
 mod tests {
     use super::{GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal};
     use crate::{
-        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, PlannedStep,
-        PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningState,
+        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind,
+        PlannerOpSemantics, PlannerTransitionKind, PlanningState,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -392,15 +438,15 @@ mod tests {
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
         BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
-        VisibilitySpec, WorkstationTag, Wound,
+        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDefId, ActionDomain, ActionDuration,
         ActionHandlerId, ActionPayload, BeliefView, DurationExpr, Interruptibility,
-        TradeActionPayload,
+        TradeActionPayload, TransportActionPayload,
     };
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
@@ -532,6 +578,140 @@ mod tests {
         assert!(goal.relevant_op_kinds().is_empty());
     }
 
+    #[test]
+    fn move_cargo_satisfied_when_destination_stocked() {
+        let actor = entity_id(1, 0);
+        let destination = entity_id(2, 0);
+        let bread = entity_id(3, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, destination);
+        view.effective_places.insert(bread, destination);
+        view.entities_at.insert(destination, vec![actor, bread]);
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([destination]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        }
+        .is_satisfied(&state));
+    }
+
+    #[test]
+    fn move_cargo_not_satisfied_when_destination_understocked() {
+        let actor = entity_id(1, 0);
+        let destination = entity_id(2, 0);
+        let bread = entity_id(3, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, destination);
+        view.effective_places.insert(bread, destination);
+        view.entities_at.insert(destination, vec![actor, bread]);
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([destination]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        }
+        .is_satisfied(&state));
+    }
+
+    #[test]
+    fn move_cargo_satisfaction_is_destination_local() {
+        let actor = entity_id(1, 0);
+        let destination = entity_id(2, 0);
+        let remote = entity_id(3, 0);
+        let bread = entity_id(4, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, remote);
+        view.effective_places.insert(bread, remote);
+        view.entities_at.insert(remote, vec![actor, bread]);
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([destination, remote]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        }
+        .is_satisfied(&state));
+    }
+
     #[derive(Default)]
     struct TestBeliefView {
         alive: BTreeSet<EntityId>,
@@ -544,6 +724,10 @@ mod tests {
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        controlled_quantities: BTreeMap<(EntityId, EntityId, CommodityKind), Quantity>,
+        demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
@@ -602,11 +786,14 @@ mod tests {
         }
         fn controlled_commodity_quantity_at_place(
             &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Quantity {
-            Quantity(0)
+            self.controlled_quantities
+                .get(&(actor, place, commodity))
+                .copied()
+                .unwrap_or(Quantity(0))
         }
         fn local_controlled_lots_for(
             &self,
@@ -656,12 +843,12 @@ mod tests {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
 
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
         }
 
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
@@ -760,8 +947,8 @@ mod tests {
             Vec::new()
         }
 
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
-            Vec::new()
+        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+            self.demand_memory.get(&agent).cloned().unwrap_or_default()
         }
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
@@ -897,6 +1084,90 @@ mod tests {
                 offered_quantity: Quantity(1),
                 requested_commodity: CommodityKind::Bread,
                 requested_quantity: Quantity(1),
+            }))
+        );
+    }
+
+    #[test]
+    fn move_cargo_pickup_builds_exact_transport_quantity_payload() {
+        let actor = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, origin, destination, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(origin, EntityKind::Place);
+        view.kinds.insert(destination, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, origin);
+        view.effective_places.insert(bread, origin);
+        view.entities_at.insert(origin, vec![actor, bread]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(5));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(0));
+        view.direct_possessions.insert(actor, Vec::new());
+        view.carry_capacities.insert(actor, LoadUnits(2));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([origin, destination]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        };
+        let def = ActionDef {
+            id: ActionDefId(9),
+            name: "pick_up".to_string(),
+            domain: ActionDomain::Transport,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::MoveCargo,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::PickUpGroundLot,
+            relevant_goal_kinds: &[],
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[bread], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(2),
             }))
         );
     }

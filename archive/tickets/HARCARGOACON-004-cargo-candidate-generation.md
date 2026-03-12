@@ -1,10 +1,10 @@
 # HARCARGOACON-004: Emit MoveCargo candidates from local controllable cargo
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-ai (candidate_generation module)
-**Deps**: HARCARGOACON-001 (new MoveCargo variant), HARCARGOACON-002 (BeliefView helpers), HARCARGOACON-003 (restock_gap_at_destination)
+**Deps**: None
 
 ## Problem
 
@@ -15,15 +15,17 @@
 1. `generate_candidates()` currently never emits `MoveCargo` — confirmed via test at `candidate_generation.rs:1542`
 2. `MerchandiseProfile.home_market` provides destination — confirmed in `worldwake-core`
 3. `DemandMemory` provides demand observations per place/commodity — confirmed
-4. `restock_gap_at_destination` will exist after HARCARGOACON-003 — per dependency
-5. `local_controlled_lots_for` and `controlled_commodity_quantity_at_place` will exist after HARCARGOACON-002 — per dependency
-6. The spec requires `deliverable_quantity` as a private helper, not on `BeliefView` — confirmed per spec Section C.3
+4. `restock_gap_at_destination` now exists in `enterprise.rs`
+5. `local_controlled_lots_for` and `controlled_commodity_quantity_at_place` already exist on `BeliefView` and `PlanningState`
+6. `GroundedGoal` currently has evidence entity/place sets only; it does not have a quantity field
+7. Transport actions do not currently accept a quantity payload override, so exact destination-gap-sized pickup cannot be enforced at action selection time yet
 
 ## Architecture Check
 
 1. Cargo candidates are derived from concrete local state (possessions + ground lots at current place) — no omniscient remote queries
 2. `deliverable_quantity` is a private candidate_generation helper, not a trait method — keeps planning concerns out of the belief surface
-3. Evidence model stores `deliverable_quantity` for planner batch sizing without coupling it to goal identity
+3. `deliverable_quantity` should still exist as a private helper, but in the current architecture it is used as an emission gate, not serialized into `GroundedGoal`
+4. Exact batch sizing belongs in a future transport-affordance improvement, not in goal identity or an ad hoc compatibility layer
 
 ## What to Change
 
@@ -58,6 +60,8 @@ Uses:
 - carry capacity / load math for carry fit
 - Returns `min(local, gap, carry_fit)`
 
+In the current architecture this helper is used to decide whether a cargo goal is actionable at all. It is not yet persisted into `GroundedGoal`, because `GroundedGoal` has no quantity field and transport actions have no exact-quantity payload override.
+
 ### 3. Wire into `generate_candidates()`
 
 Call the new cargo candidate function from the main `generate_candidates()` orchestrator.
@@ -69,9 +73,10 @@ Remove `GoalKind::MoveCargo { .. }` from the assertion at line 1562. `MoveCargo`
 ### 5. Evidence model for GroundedGoal
 
 The `GroundedGoal` evidence for cargo must include:
-- The destination place (already in `GoalKind`)
-- The concrete local lot entity IDs that could satisfy the batch (in `targets` or evidence field)
-- The computed `deliverable_quantity` (for planner batch sizing)
+- The destination place in `evidence_places`
+- The concrete local lot entity IDs that could satisfy the batch in `evidence_entities`
+
+Do not add a compatibility-only quantity field just for this ticket.
 
 ## Files to Touch
 
@@ -94,7 +99,7 @@ The `GroundedGoal` evidence for cargo must include:
 2. New test: No `MoveCargo` candidate emitted when agent has no local stock of demanded commodity
 3. New test: No `MoveCargo` candidate emitted when agent is already at home_market
 4. New test: No `MoveCargo` candidate emitted from remote stock the agent is not positioned to move (locality)
-5. New test: `deliverable_quantity` is capped by carry capacity
+5. New test: `deliverable_quantity` is capped by carry capacity for emission eligibility
 6. New test: No `MoveCargo` emitted when `deliverable_quantity` is zero (full carry or zero gap)
 7. Updated test: `deferred_goal_kinds_are_not_emitted` no longer asserts `MoveCargo` exclusion
 8. `cargo test --workspace` and `cargo clippy --workspace` pass
@@ -119,3 +124,19 @@ The `GroundedGoal` evidence for cargo must include:
 1. `cargo test -p worldwake-ai candidate_generation`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-12
+- What actually changed:
+  - Added real `MoveCargo` candidate emission in `crates/worldwake-ai/src/candidate_generation.rs`
+  - Added private `deliverable_quantity(...)` gating based on local controlled stock, destination-local restock gap, and remaining carry capacity
+  - Added cargo candidate tests covering positive emission, no-local-stock suppression, at-destination suppression, carry-capacity gating, and zero-deliverable suppression
+  - Updated the deferred-goal test so only still-deferred goal families remain excluded
+- Deviations from original plan:
+  - `deliverable_quantity` is used as an emission guard only; it is not stored in `GroundedGoal`, because `GroundedGoal` has no quantity field and transport actions do not yet support exact-quantity payload overrides
+  - Exact batch-sized pickup remains a follow-on transport-affordance improvement rather than being forced through goal identity or compatibility shims
+- Verification results:
+  - `cargo test -p worldwake-ai candidate_generation` passed
+  - `cargo test --workspace` passed
+  - `cargo clippy --workspace` passed

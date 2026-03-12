@@ -8,7 +8,7 @@ use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, CommitOutcome,
     Constraint, DeterministicRng, DurationExpr, Interruptibility, Materialization,
-    MaterializationTag, Precondition, TargetSpec,
+    MaterializationTag, Precondition, TargetSpec, TransportActionPayload,
 };
 
 use crate::inventory::{move_entity_to_direct_possession, remaining_capacity};
@@ -17,12 +17,15 @@ pub fn register_transport_actions(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> Vec<ActionDefId> {
-    let pick_up_handler = handlers.register(ActionHandler::new(
-        start_pick_up,
-        tick_transport,
-        commit_pick_up,
-        abort_transport,
-    ));
+    let pick_up_handler = handlers.register(
+        ActionHandler::new(
+            start_pick_up,
+            tick_transport,
+            commit_pick_up,
+            abort_transport,
+        )
+        .with_payload_override_validator(validate_pick_up_payload_override),
+    );
     let put_down_handler = handlers.register(ActionHandler::new(
         start_put_down,
         tick_transport,
@@ -129,6 +132,7 @@ fn validate_pick_up(
     txn: &WorldTxn<'_>,
     actor: EntityId,
     target: EntityId,
+    requested_quantity: Option<Quantity>,
 ) -> Result<(), ActionError> {
     let actor_place = txn
         .effective_place(actor)
@@ -162,6 +166,14 @@ fn validate_pick_up(
             lot.commodity
         )));
     }
+    if let Some(quantity) = requested_quantity {
+        let max_quantity = Quantity((remaining / per_unit).min(lot.quantity.0));
+        if quantity == Quantity(0) || quantity > max_quantity {
+            return Err(ActionError::PreconditionFailed(format!(
+                "requested pickup quantity {quantity:?} exceeds available movable quantity {max_quantity:?}",
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -169,8 +181,9 @@ fn execute_pick_up(
     txn: &mut WorldTxn<'_>,
     actor: EntityId,
     target: EntityId,
+    requested_quantity: Option<Quantity>,
 ) -> Result<EntityId, ActionError> {
-    validate_pick_up(txn, actor, target)?;
+    validate_pick_up(txn, actor, target, requested_quantity)?;
     let actor_place = txn
         .effective_place(actor)
         .ok_or_else(|| ActionError::PreconditionFailed(format!("actor {actor} has no place")))?;
@@ -180,16 +193,18 @@ fn execute_pick_up(
         .ok_or(ActionError::InvalidTarget(target))?;
     let remaining = remaining_capacity(txn, actor)?.0;
     let per_unit = load_per_unit(lot.commodity).0;
+    let requested_quantity =
+        requested_quantity.unwrap_or(Quantity((remaining / per_unit).min(lot.quantity.0)));
     let moved_entity = if load_of_entity(txn, target)
         .map_err(|err| ActionError::InternalError(err.to_string()))?
         .0
         <= remaining
+        && requested_quantity == lot.quantity
     {
         target
     } else {
-        let max_quantity = remaining / per_unit;
         let (_, split_off) = txn
-            .split_lot(target, Quantity(max_quantity))
+            .split_lot(target, requested_quantity)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
         split_off
     };
@@ -228,7 +243,12 @@ fn start_pick_up(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
-    validate_pick_up(txn, instance.actor, require_item_lot_target(instance)?)?;
+    validate_pick_up(
+        txn,
+        instance.actor,
+        require_item_lot_target(instance)?,
+        requested_pick_up_quantity(&instance.payload)?,
+    )?;
     Ok(None)
 }
 
@@ -239,7 +259,12 @@ fn commit_pick_up(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let target = require_item_lot_target(instance)?;
-    let moved_entity = execute_pick_up(txn, instance.actor, target)?;
+    let moved_entity = execute_pick_up(
+        txn,
+        instance.actor,
+        target,
+        requested_pick_up_quantity(&instance.payload)?,
+    )?;
     if moved_entity == target {
         Ok(CommitOutcome::empty())
     } else {
@@ -297,6 +322,51 @@ fn abort_transport(
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
+}
+
+fn requested_pick_up_quantity(payload: &ActionPayload) -> Result<Option<Quantity>, ActionError> {
+    match payload {
+        ActionPayload::None => Ok(None),
+        ActionPayload::Transport(TransportActionPayload { quantity }) => Ok(Some(*quantity)),
+        _ => Err(ActionError::PreconditionFailed(
+            "pick_up received non-transport payload".to_string(),
+        )),
+    }
+}
+
+fn validate_pick_up_payload_override(
+    def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    view: &dyn worldwake_sim::BeliefView,
+) -> bool {
+    if def.name != "pick_up" {
+        return false;
+    }
+    let Some(TransportActionPayload { quantity }) = payload.as_transport() else {
+        return false;
+    };
+    if *quantity == Quantity(0) {
+        return false;
+    }
+    let Some(target) = targets.first().copied() else {
+        return false;
+    };
+    let Some(commodity) = view.item_lot_commodity(target) else {
+        return false;
+    };
+    let lot_quantity = view.commodity_quantity(target, commodity);
+    let Some(carry_capacity) = view.carry_capacity(actor) else {
+        return false;
+    };
+    let Some(load) = view.load_of_entity(actor) else {
+        return false;
+    };
+    let per_unit = load_per_unit(commodity).0;
+    let max_quantity =
+        Quantity((carry_capacity.0.saturating_sub(load.0) / per_unit).min(lot_quantity.0));
+    *quantity <= max_quantity
 }
 
 #[cfg(test)]
@@ -666,6 +736,87 @@ mod tests {
         let remaining_lot = world.get_component_item_lot(lot).unwrap();
         assert_eq!(carried_lot.quantity, Quantity(2));
         assert_eq!(remaining_lot.quantity, Quantity(1));
+        assert_eq!(world.possessor_of(picked_up), Some(actor));
+        assert_eq!(world.owner_of(picked_up), None);
+        assert_eq!(world.effective_place(picked_up), Some(place));
+        assert_eq!(world.effective_place(lot), Some(place));
+    }
+
+    #[test]
+    fn pick_up_transport_payload_moves_exact_requested_quantity() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        let (defs, handlers, pick_up_id, _) = setup_registries();
+        let affordance = worldwake_sim::Affordance {
+            def_id: pick_up_id,
+            actor,
+            bound_targets: vec![lot],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            explanation: None,
+        };
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
+
+        let direct_possessions = world.possessions_of(actor);
+        assert_eq!(direct_possessions.len(), 1);
+        let picked_up = direct_possessions[0];
+        assert_eq!(
+            outcome,
+            TickOutcome::Committed {
+                outcome: CommitOutcome {
+                    materializations: vec![Materialization {
+                        tag: MaterializationTag::SplitOffLot,
+                        entity: picked_up,
+                    }],
+                },
+            }
+        );
+        assert_eq!(
+            world.get_component_item_lot(picked_up).unwrap().quantity,
+            Quantity(1)
+        );
+        assert_eq!(
+            world.get_component_item_lot(lot).unwrap().quantity,
+            Quantity(2)
+        );
         assert_eq!(world.possessor_of(picked_up), Some(actor));
         assert_eq!(world.owner_of(picked_up), None);
         assert_eq!(world.effective_place(picked_up), Some(place));

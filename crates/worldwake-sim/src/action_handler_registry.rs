@@ -60,8 +60,7 @@ mod tests {
         AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
         ActionError, ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId,
         ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome, Constraint,
-        DeterministicRng, DurationExpr, Interruptibility, Precondition, ReservationReq,
-        TargetSpec,
+        DeterministicRng, DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;

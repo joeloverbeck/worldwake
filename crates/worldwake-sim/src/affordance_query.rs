@@ -1,6 +1,6 @@
 use crate::{
-    ActionDef, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, BeliefView,
-    Constraint, ConsumableEffect, Precondition, TargetSpec,
+    ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
+    BeliefView, Constraint, ConsumableEffect, Precondition, TargetSpec,
 };
 use worldwake_core::{EntityId, EntityKind};
 
@@ -51,6 +51,38 @@ pub fn get_affordances(
     affordances.sort();
     affordances.dedup();
     affordances
+}
+
+#[must_use]
+pub fn requested_affordance_matches(
+    affordance: &Affordance,
+    def: &ActionDef,
+    handler: &ActionHandler,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload_override: Option<&ActionPayload>,
+    view: &dyn BeliefView,
+) -> bool {
+    if affordance.matches_request_identity(def, actor, targets, payload_override) {
+        return true;
+    }
+
+    let Some(requested_payload) = payload_override else {
+        return false;
+    };
+    if affordance.actor != actor
+        || affordance.def_id != def.id
+        || affordance.bound_targets != targets
+    {
+        return false;
+    }
+    if !matches!(affordance.effective_payload(def), ActionPayload::None)
+        || !matches!(def.payload, ActionPayload::None)
+    {
+        return false;
+    }
+
+    (handler.payload_override_is_valid)(def, actor, targets, requested_payload, view)
 }
 
 fn expand_payload_variants(
@@ -288,9 +320,9 @@ mod tests {
         build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile, CombatWeaponRef,
         CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
         DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
-        Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn, Wound,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, Wound,
     };
 
     #[derive(Default)]

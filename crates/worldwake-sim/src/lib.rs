@@ -52,16 +52,15 @@ pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
-    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, CommitOutcome,
-    ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
-    PayloadEntityRole, SelfTargetActionKind,
+    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, CommitOutcome, ExternalAbortReason,
+    InterruptReason, Materialization, MaterializationTag, PayloadEntityRole, SelfTargetActionKind,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
     ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-    LootActionPayload, TradeActionPayload,
+    LootActionPayload, TradeActionPayload, TransportActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
@@ -70,7 +69,7 @@ pub use action_semantics::{
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
 pub use affordance::Affordance;
-pub use affordance_query::get_affordances;
+pub use affordance_query::{get_affordances, requested_affordance_matches};
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
 };

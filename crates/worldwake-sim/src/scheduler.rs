@@ -1,8 +1,8 @@
 use crate::{
     abort_action, start_action, tick_action, ActionDefId, ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-    ActionInstanceId, Affordance, CommitOutcome, DeterministicRng, ExternalAbortReason,
-    InputEvent, InputQueue, InterruptReason, ReplanNeeded, SystemManifest, TickOutcome,
+    ActionInstanceId, Affordance, CommitOutcome, DeterministicRng, ExternalAbortReason, InputEvent,
+    InputQueue, InterruptReason, ReplanNeeded, SystemManifest, TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

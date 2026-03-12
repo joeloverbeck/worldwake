@@ -385,10 +385,7 @@ fn run_multi_recipe_craft_scenario(seed: Seed) -> (StateHash, StateHash) {
             verify_authoritative_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
         }
 
-        if saw_bread_materialize
-            && live_bread == 0
-            && h.agent_hunger(agent) < initial_hunger
-        {
+        if saw_bread_materialize && live_bread == 0 && h.agent_hunger(agent) < initial_hunger {
             hunger_decreased = true;
             verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
             verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
@@ -407,7 +404,10 @@ fn run_multi_recipe_craft_scenario(seed: Seed) -> (StateHash, StateHash) {
         "Agent should consume crafted bread after it materializes"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 // ---------------------------------------------------------------------------

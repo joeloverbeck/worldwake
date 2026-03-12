@@ -170,9 +170,10 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .entities
                 .get(&entity)
                 .and_then(|snapshot| snapshot.kind),
-            PlanningEntityRef::Hypothetical(entity) => {
-                self.hypothetical_registry.get(&entity).map(|meta| meta.kind)
-            }
+            PlanningEntityRef::Hypothetical(entity) => self
+                .hypothetical_registry
+                .get(&entity)
+                .map(|meta| meta.kind),
         }
     }
 
@@ -182,7 +183,11 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
-    pub fn commodity_quantity_ref(&self, holder: PlanningEntityRef, kind: CommodityKind) -> Quantity {
+    pub fn commodity_quantity_ref(
+        &self,
+        holder: PlanningEntityRef,
+        kind: CommodityKind,
+    ) -> Quantity {
         if self.removed_entities.contains(&holder) {
             return Quantity(0);
         }
@@ -240,7 +245,8 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     #[must_use]
     pub fn move_entity_ref(mut self, entity: PlanningEntityRef, destination: EntityId) -> Self {
-        self.entity_place_overrides.insert(entity, Some(destination));
+        self.entity_place_overrides
+            .insert(entity, Some(destination));
         self
     }
 
@@ -262,7 +268,8 @@ impl<'snapshot> PlanningState<'snapshot> {
         entity: PlanningEntityRef,
         container: PlanningEntityRef,
     ) -> Self {
-        self.direct_container_overrides.insert(entity, Some(container));
+        self.direct_container_overrides
+            .insert(entity, Some(container));
         self.direct_possessor_overrides.insert(entity, None);
         self.entity_place_overrides.remove(&entity);
         self
@@ -586,7 +593,9 @@ impl BeliefView for PlanningState<'_> {
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
-        self.is_alive(entity).then_some(()).and(self.entity_kind_ref(PlanningEntityRef::Authoritative(entity)))
+        self.is_alive(entity)
+            .then_some(())
+            .and(self.entity_kind_ref(PlanningEntityRef::Authoritative(entity)))
     }
 
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -662,17 +671,21 @@ impl BeliefView for PlanningState<'_> {
         place: EntityId,
         commodity: CommodityKind,
     ) -> Quantity {
-        self.local_controlled_lot_refs_for(PlanningEntityRef::Authoritative(agent), place, commodity)
-            .into_iter()
-            .fold(Quantity(0), |total, entity| {
-                let quantity = self.commodity_quantity_ref(entity, commodity);
-                Quantity(
-                    total
-                        .0
-                        .checked_add(quantity.0)
-                        .expect("local controlled commodity quantity overflowed"),
-                )
-            })
+        self.local_controlled_lot_refs_for(
+            PlanningEntityRef::Authoritative(agent),
+            place,
+            commodity,
+        )
+        .into_iter()
+        .fold(Quantity(0), |total, entity| {
+            let quantity = self.commodity_quantity_ref(entity, commodity);
+            Quantity(
+                total
+                    .0
+                    .checked_add(quantity.0)
+                    .expect("local controlled commodity quantity overflowed"),
+            )
+        })
     }
 
     fn local_controlled_lots_for(
@@ -681,13 +694,17 @@ impl BeliefView for PlanningState<'_> {
         place: EntityId,
         commodity: CommodityKind,
     ) -> Vec<EntityId> {
-        self.local_controlled_lot_refs_for(PlanningEntityRef::Authoritative(agent), place, commodity)
-            .into_iter()
-            .filter_map(|entity| match entity {
-                PlanningEntityRef::Authoritative(entity) => Some(entity),
-                PlanningEntityRef::Hypothetical(_) => None,
-            })
-            .collect()
+        self.local_controlled_lot_refs_for(
+            PlanningEntityRef::Authoritative(agent),
+            place,
+            commodity,
+        )
+        .into_iter()
+        .filter_map(|entity| match entity {
+            PlanningEntityRef::Authoritative(entity) => Some(entity),
+            PlanningEntityRef::Hypothetical(_) => None,
+        })
+        .collect()
     }
 
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
@@ -1638,7 +1655,8 @@ mod tests {
         let first = base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Water);
         let mut branch = base.clone();
         let second = base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Bread);
-        let branch_second = branch.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
+        let branch_second =
+            branch.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
 
         assert_eq!(first, HypotheticalEntityId(0));
         assert_eq!(second, HypotheticalEntityId(1));
@@ -1681,8 +1699,14 @@ mod tests {
             .set_possessor_ref(hypothetical, actor_ref)
             .set_quantity_ref(hypothetical, CommodityKind::Water, Quantity(2));
 
-        assert_eq!(state.item_lot_commodity_ref(hypothetical), Some(CommodityKind::Water));
-        assert_eq!(state.entity_kind_ref(hypothetical), Some(EntityKind::ItemLot));
+        assert_eq!(
+            state.item_lot_commodity_ref(hypothetical),
+            Some(CommodityKind::Water)
+        );
+        assert_eq!(
+            state.entity_kind_ref(hypothetical),
+            Some(EntityKind::ItemLot)
+        );
         assert_eq!(state.direct_possessor_ref(hypothetical), Some(actor_ref));
         assert_eq!(state.effective_place_ref(hypothetical), Some(town));
         assert_eq!(
@@ -1753,7 +1777,10 @@ mod tests {
             moved.controlled_commodity_quantity_at_place(actor, field, CommodityKind::Bread),
             Quantity(3)
         );
-        assert_eq!(moved.local_controlled_lots_for(actor, field, CommodityKind::Bread), vec![bread]);
+        assert_eq!(
+            moved.local_controlled_lots_for(actor, field, CommodityKind::Bread),
+            vec![bread]
+        );
     }
 
     #[test]
@@ -1789,7 +1816,8 @@ mod tests {
     }
 
     #[test]
-    fn removed_hypothetical_entities_stop_answering_ref_queries_and_do_not_leak_through_belief_view() {
+    fn removed_hypothetical_entities_stop_answering_ref_queries_and_do_not_leak_through_belief_view(
+    ) {
         let (view, actor, _town, _field, bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let mut state = PlanningState::new(&snapshot);
@@ -1850,7 +1878,8 @@ mod tests {
         view.direct_possessions.insert(actor, vec![satchel]);
         view.direct_possessors.insert(satchel, actor);
         view.direct_containers.insert(water, satchel);
-        view.item_lot_commodities.insert(water, CommodityKind::Water);
+        view.item_lot_commodities
+            .insert(water, CommodityKind::Water);
         view.commodity_quantities
             .insert((water, CommodityKind::Water), Quantity(2));
         view.carry_capacities.insert(actor, LoadUnits(10));
@@ -1885,11 +1914,16 @@ mod tests {
         assert!(base.remaining_carry_capacity_ref(actor_ref).is_some());
 
         let full_fit = base.clone();
-        assert!(full_fit.load_of_entity_ref(PlanningEntityRef::Authoritative(entity(20))).unwrap()
-            <= full_fit.remaining_carry_capacity_ref(actor_ref).unwrap());
+        assert!(
+            full_fit
+                .load_of_entity_ref(PlanningEntityRef::Authoritative(entity(20)))
+                .unwrap()
+                <= full_fit.remaining_carry_capacity_ref(actor_ref).unwrap()
+        );
 
         let mut partial_base = base.clone();
-        let ballast = partial_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
+        let ballast =
+            partial_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
         let hid = partial_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Water);
         let partial = partial_base
             .set_possessor_ref(PlanningEntityRef::Hypothetical(ballast), actor_ref)
@@ -1898,7 +1932,11 @@ mod tests {
                 CommodityKind::Apple,
                 Quantity(7),
             )
-            .set_quantity_ref(PlanningEntityRef::Hypothetical(hid), CommodityKind::Water, Quantity(2));
+            .set_quantity_ref(
+                PlanningEntityRef::Hypothetical(hid),
+                CommodityKind::Water,
+                Quantity(2),
+            );
         let remaining = partial.remaining_carry_capacity_ref(actor_ref).unwrap();
         let water_load = partial
             .load_of_entity_ref(PlanningEntityRef::Hypothetical(hid))
@@ -1908,8 +1946,10 @@ mod tests {
         assert!(per_unit <= remaining);
 
         let mut zero_base = base.clone();
-        let zero_ballast = zero_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
-        let zero_hid = zero_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Firewood);
+        let zero_ballast =
+            zero_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
+        let zero_hid =
+            zero_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Firewood);
         let zero = zero_base
             .set_possessor_ref(PlanningEntityRef::Hypothetical(zero_ballast), actor_ref)
             .set_quantity_ref(

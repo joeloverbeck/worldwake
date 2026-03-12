@@ -285,10 +285,27 @@ fn resolve_affordance(
             payload_override,
         });
     };
+    let handler =
+        action_handlers
+            .get(def.handler)
+            .ok_or(TickStepError::RequestedAffordanceUnavailable {
+                actor,
+                def_id,
+                targets: targets.to_owned(),
+                payload_override: payload_override.clone(),
+            })?;
     let mut affordance = get_affordances(&view, actor, action_defs, action_handlers)
         .into_iter()
         .find(|affordance| {
-            affordance.matches_request_identity(def, actor, targets, payload_override.as_ref())
+            crate::requested_affordance_matches(
+                affordance,
+                def,
+                handler,
+                actor,
+                targets,
+                payload_override.as_ref(),
+                &view,
+            )
         })
         .ok_or(TickStepError::RequestedAffordanceUnavailable {
             actor,
@@ -359,13 +376,15 @@ fn progress_active_actions(
         {
             TickOutcome::Continuing => {}
             TickOutcome::Committed { outcome } => {
-                runtime.scheduler.retain_committed_action(crate::CommittedAction {
-                    actor: instance.actor,
-                    def_id: instance.def_id,
-                    instance_id,
-                    tick,
-                    outcome,
-                });
+                runtime
+                    .scheduler
+                    .retain_committed_action(crate::CommittedAction {
+                        actor: instance.actor,
+                        def_id: instance.def_id,
+                        instance_id,
+                        tick,
+                        outcome,
+                    });
                 actions_completed = actions_completed
                     .checked_add(1)
                     .expect("tick-step action-complete counter overflowed");
@@ -507,10 +526,10 @@ mod tests {
     use crate::{
         get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
         ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome,
-        ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility,
-        RecipeRegistry, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
-        SystemManifest, TickInputContext, TickInputError, TickInputProducer,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome, ControllerState,
+        DeterministicRng, DurationExpr, InputKind, Interruptibility, RecipeRegistry, Scheduler,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TickInputContext,
+        TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;

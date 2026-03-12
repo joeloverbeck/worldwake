@@ -1,6 +1,9 @@
 use crate::{resolve_planning_targets_with, MaterializationBindings, PlannedStep};
 use worldwake_core::EntityId;
-use worldwake_sim::{get_affordances, ActionDefRegistry, ActionHandlerRegistry, BeliefView};
+use worldwake_sim::{
+    get_affordances, requested_affordance_matches, ActionDefRegistry, ActionHandlerRegistry,
+    BeliefView,
+};
 
 #[must_use]
 pub fn revalidate_next_step(
@@ -14,19 +17,24 @@ pub fn revalidate_next_step(
     let Some(def) = registry.get(step.def_id) else {
         return false;
     };
-    let Some(targets) =
-        resolve_planning_targets_with(&step.targets, |id| bindings.resolve(id))
+    let Some(handler) = handlers.get(def.handler) else {
+        return false;
+    };
+    let Some(targets) = resolve_planning_targets_with(&step.targets, |id| bindings.resolve(id))
     else {
         return false;
     };
     get_affordances(view, actor, registry, handlers)
         .into_iter()
         .any(|affordance| {
-            affordance.matches_request_identity(
+            requested_affordance_matches(
+                &affordance,
                 def,
+                handler,
                 actor,
                 &targets,
                 step.payload_override.as_ref(),
+                view,
             )
         })
 }
@@ -51,7 +59,7 @@ mod tests {
         ActionDef, ActionDefId, ActionDefRegistry, ActionDuration, ActionError, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState,
         BeliefView, Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition,
-        TargetSpec,
+        TargetSpec, TransportActionPayload,
     };
 
     #[derive(Default)]
@@ -59,8 +67,13 @@ mod tests {
         alive: BTreeSet<EntityId>,
         kinds: BTreeMap<EntityId, EntityKind>,
         effective_places: BTreeMap<EntityId, EntityId>,
+        entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         adjacent_places: BTreeMap<EntityId, Vec<EntityId>>,
         adjacent_with_ticks: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
+        lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
     }
 
     impl BeliefView for TestBeliefView {
@@ -80,8 +93,8 @@ mod tests {
             false
         }
 
-        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
@@ -103,8 +116,11 @@ mod tests {
             0
         }
 
-        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
-            Quantity(0)
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
         }
         fn controlled_commodity_quantity_at_place(
             &self,
@@ -123,8 +139,8 @@ mod tests {
             Vec::new()
         }
 
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
-            None
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.lot_commodities.get(&entity).copied()
         }
 
         fn item_lot_consumable_profile(
@@ -162,12 +178,12 @@ mod tests {
             true
         }
 
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
         }
 
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
@@ -410,6 +426,67 @@ mod tests {
         (registry, handlers)
     }
 
+    fn transport_payload_override_is_valid(
+        def: &ActionDef,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+        view: &dyn BeliefView,
+    ) -> bool {
+        if def.name != "pick_up" {
+            return false;
+        }
+        let Some(TransportActionPayload { quantity }) = payload.as_transport() else {
+            return false;
+        };
+        let Some(target) = targets.first().copied() else {
+            return false;
+        };
+        let Some(commodity) = view.item_lot_commodity(target) else {
+            return false;
+        };
+        let Some(carry_capacity) = view.carry_capacity(actor) else {
+            return false;
+        };
+        let Some(load) = view.load_of_entity(actor) else {
+            return false;
+        };
+        let fit =
+            carry_capacity.0.saturating_sub(load.0) / worldwake_core::load_per_unit(commodity).0;
+        *quantity > Quantity(0)
+            && *quantity <= view.commodity_quantity(target, commodity)
+            && quantity.0 <= fit
+    }
+
+    fn build_transport_registry() -> (ActionDefRegistry, ActionHandlerRegistry) {
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort)
+                .with_payload_override_validator(transport_payload_override_is_valid),
+        );
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "pick_up".to_string(),
+            domain: worldwake_sim::ActionDomain::Transport,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            preconditions: vec![Precondition::TargetAtActorPlace(0)],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+        (registry, handlers)
+    }
+
     fn sample_step(def_id: ActionDefId, target: EntityId) -> PlannedStep {
         PlannedStep {
             def_id,
@@ -609,6 +686,42 @@ mod tests {
         ));
 
         let (registry, handlers) = build_payload_registry();
+        assert!(revalidate_next_step(
+            &view,
+            actor,
+            &step,
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        ));
+    }
+
+    #[test]
+    fn transport_payload_override_revalidates_against_base_affordance() {
+        let actor = entity(1);
+        let place = entity(10);
+        let lot = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, lot]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(lot, place);
+        view.entities_at.insert(place, vec![lot]);
+        view.lot_commodities.insert(lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((lot, CommodityKind::Bread), Quantity(3));
+        view.carry_capacities.insert(actor, LoadUnits(4));
+        view.entity_loads.insert(actor, LoadUnits(0));
+
+        let mut step = sample_step(ActionDefId(0), lot);
+        step.op_kind = PlannerOpKind::MoveCargo;
+        step.payload_override = Some(ActionPayload::Transport(TransportActionPayload {
+            quantity: Quantity(1),
+        }));
+
+        let (registry, handlers) = build_transport_registry();
         assert!(revalidate_next_step(
             &view,
             actor,

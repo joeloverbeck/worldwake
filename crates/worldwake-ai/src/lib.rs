@@ -35,8 +35,8 @@ pub use plan_selection::select_best_plan;
 pub use planner_ops::{
     apply_hypothetical_transition, authoritative_target, authoritative_targets,
     build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,
-    ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlannerOpSemantics,
-    PlannerTransitionKind,
+    ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+    PlannerOpSemantics, PlannerTransitionKind,
 };
 pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
 pub use planning_state::{

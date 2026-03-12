@@ -1,4 +1,6 @@
-use crate::{authoritative_target, AgentDecisionRuntime, PlannedStep, PlannerOpKind, PlanningBudget};
+use crate::{
+    authoritative_target, AgentDecisionRuntime, PlannedStep, PlannerOpKind, PlanningBudget,
+};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, EntityId, GoalKey, GoalKind,
     Quantity, Tick,
@@ -197,7 +199,11 @@ fn classify_production_failure(
         }
     }
 
-    let workstation = step.targets.first().copied().and_then(authoritative_target)?;
+    let workstation = step
+        .targets
+        .first()
+        .copied()
+        .and_then(authoritative_target)?;
     if view.has_production_job(workstation) {
         return Some(BlockingFact::WorkstationBusy);
     }

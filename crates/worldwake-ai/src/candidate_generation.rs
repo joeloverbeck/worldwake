@@ -1,12 +1,12 @@
 use crate::{
     derive_danger_pressure,
-    enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
+    enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
     GroundedGoal,
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use worldwake_core::{
-    BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey,
-    GoalKind, HomeostaticNeeds, Quantity, Tick,
+    load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
+    GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
 };
 use worldwake_sim::{BeliefView, RecipeDefinition, RecipeRegistry};
 
@@ -115,6 +115,7 @@ fn emit_enterprise_candidates(
     ctx: &GenerationContext<'_>,
 ) {
     emit_restock_goals(candidates, ctx);
+    emit_move_cargo_goals(candidates, ctx);
 }
 
 fn emit_combat_candidates(
@@ -357,9 +358,10 @@ fn emit_produce_goals(
                 && ctx.view.commodity_quantity(ctx.agent, *commodity) == Quantity(0)
                 && !local_wounded_targets(ctx.view, ctx.agent, ctx.place).is_empty()
         });
-        let serves_restock = recipe.outputs.iter().any(|(commodity, _)| {
-            ctx.enterprise.restock_gap(*commodity).is_some()
-        });
+        let serves_restock = recipe
+            .outputs
+            .iter()
+            .any(|(commodity, _)| ctx.enterprise.restock_gap(*commodity).is_some());
 
         if !(serves_self_consume || serves_treatment || serves_restock) {
             continue;
@@ -402,6 +404,77 @@ fn emit_restock_goals(
             );
         }
     }
+}
+
+fn emit_move_cargo_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
+    let Some(profile) = ctx.view.merchandise_profile(ctx.agent) else {
+        return;
+    };
+    let Some(current_place) = ctx.place else {
+        return;
+    };
+    let Some(destination) = profile.home_market else {
+        return;
+    };
+    if current_place == destination {
+        return;
+    }
+
+    for commodity in profile.sale_kinds {
+        let local_lots = ctx
+            .view
+            .local_controlled_lots_for(ctx.agent, current_place, commodity);
+        if local_lots.is_empty() {
+            continue;
+        }
+        if deliverable_quantity(ctx.view, ctx.agent, current_place, destination, commodity)
+            == Quantity(0)
+        {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_place(current_place);
+        evidence.places.insert(destination);
+        evidence.entities.extend(local_lots);
+        emit_candidate(
+            candidates,
+            GoalKind::MoveCargo {
+                commodity,
+                destination,
+            },
+            evidence,
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
+}
+
+fn deliverable_quantity(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    current_place: EntityId,
+    destination: EntityId,
+    commodity: CommodityKind,
+) -> Quantity {
+    let local_quantity =
+        view.controlled_commodity_quantity_at_place(agent, current_place, commodity);
+    let Some(restock_gap) = restock_gap_at_destination(view, agent, destination, commodity) else {
+        return Quantity(0);
+    };
+    let Some(carry_capacity) = view.carry_capacity(agent) else {
+        return Quantity(0);
+    };
+    let Some(current_load) = view.load_of_entity(agent) else {
+        return Quantity(0);
+    };
+    let per_unit = load_per_unit(commodity).0;
+    let remaining_capacity = carry_capacity.0.saturating_sub(current_load.0);
+    let carry_fit = Quantity(remaining_capacity / per_unit);
+
+    Quantity(local_quantity.0.min(restock_gap.0).min(carry_fit.0))
 }
 
 fn emit_loot_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
@@ -671,7 +744,8 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        emit_produce_goals, emit_restock_goals, generate_candidates, GenerationContext,
+        deliverable_quantity, emit_produce_goals, emit_restock_goals, generate_candidates,
+        GenerationContext,
     };
     use crate::enterprise::{analyze_candidate_enterprise, EnterpriseSignals};
     use std::collections::{BTreeMap, BTreeSet};
@@ -700,6 +774,8 @@ mod tests {
         adjacent_places: BTreeMap<EntityId, Vec<EntityId>>,
         unique_item_counts: BTreeMap<(EntityId, UniqueItemKind), u32>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         direct_containers: BTreeMap<EntityId, EntityId>,
@@ -777,19 +853,36 @@ mod tests {
         }
         fn controlled_commodity_quantity_at_place(
             &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Quantity {
-            Quantity(0)
+            self.local_controlled_lots_for(actor, place, commodity)
+                .into_iter()
+                .fold(Quantity(0), |total, entity| {
+                    let quantity = self
+                        .commodity_quantities
+                        .get(&(entity, commodity))
+                        .copied()
+                        .unwrap_or(Quantity(0));
+                    Quantity(total.0 + quantity.0)
+                })
         }
         fn local_controlled_lots_for(
             &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Vec<EntityId> {
-            Vec::new()
+            let mut entities = self.entities_at(place);
+            entities.extend(self.direct_possessions(actor));
+            entities.sort();
+            entities.dedup();
+            entities
+                .into_iter()
+                .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+                .filter(|entity| self.can_control(actor, *entity))
+                .collect()
         }
 
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
@@ -831,12 +924,12 @@ mod tests {
             self.controlled_entities.contains(&entity)
         }
 
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
         }
 
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
@@ -986,6 +1079,17 @@ mod tests {
             severity: pm(severity),
             inflicted_at: Tick(1),
             bleed_rate_per_tick: pm(0),
+        }
+    }
+
+    fn demand(place: EntityId, commodity: CommodityKind, quantity: u32) -> DemandObservation {
+        DemandObservation {
+            commodity,
+            quantity: Quantity(quantity),
+            place,
+            tick: Tick(1),
+            counterparty: None,
+            reason: DemandObservationReason::WantedToBuyButNoSeller,
         }
     }
 
@@ -1555,7 +1659,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_goal_kinds_are_not_emitted() {
+    fn still_deferred_goal_kinds_are_not_emitted() {
         let agent = entity(1);
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
@@ -1574,11 +1678,250 @@ mod tests {
         assert!(!candidates.iter().any(|candidate| {
             matches!(
                 candidate.key.kind,
-                GoalKind::SellCommodity { .. }
-                    | GoalKind::MoveCargo { .. }
-                    | GoalKind::BuryCorpse { .. }
+                GoalKind::SellCommodity { .. } | GoalKind::BuryCorpse { .. }
             )
         }));
+    }
+
+    #[test]
+    fn cargo_candidate_emitted_from_local_stock_and_demand() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, origin, destination, bread]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(origin, EntityKind::Place);
+        view.entity_kinds.insert(destination, EntityKind::Place);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(bread, origin);
+        view.entities_at.insert(origin, vec![agent, bread]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((agent, bread));
+        view.carry_capacities.insert(agent, LoadUnits(3));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(destination),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(destination, CommodityKind::Bread, 2)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let goal = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.key.kind
+                    == GoalKind::MoveCargo {
+                        commodity: CommodityKind::Bread,
+                        destination,
+                    }
+            })
+            .unwrap();
+        assert!(goal.evidence_entities.contains(&bread));
+        assert!(goal.evidence_places.contains(&origin));
+        assert!(goal.evidence_places.contains(&destination));
+    }
+
+    #[test]
+    fn no_cargo_candidate_without_local_stock() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let remote_bread = entity(20);
+        let remote_place = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([agent, origin, destination, remote_bread, remote_place]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(origin, EntityKind::Place);
+        view.entity_kinds.insert(destination, EntityKind::Place);
+        view.entity_kinds.insert(remote_place, EntityKind::Place);
+        view.entity_kinds.insert(remote_bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(remote_bread, remote_place);
+        view.entities_at.insert(origin, vec![agent]);
+        view.entities_at.insert(remote_place, vec![remote_bread]);
+        view.lot_commodities
+            .insert(remote_bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((remote_bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((agent, remote_bread));
+        view.carry_capacities.insert(agent, LoadUnits(3));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(destination),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(destination, CommodityKind::Bread, 2)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }
+        ));
+    }
+
+    #[test]
+    fn no_cargo_candidate_when_at_destination() {
+        let agent = entity(1);
+        let destination = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, destination, bread]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(destination, EntityKind::Place);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, destination);
+        view.effective_places.insert(bread, destination);
+        view.entities_at.insert(destination, vec![agent, bread]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((agent, bread));
+        view.carry_capacities.insert(agent, LoadUnits(3));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(destination),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(destination, CommodityKind::Bread, 2)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }
+        ));
+    }
+
+    #[test]
+    fn deliverable_quantity_is_capped_by_carry_capacity() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, origin, destination, bread]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(origin, EntityKind::Place);
+        view.entity_kinds.insert(destination, EntityKind::Place);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(bread, origin);
+        view.entities_at.insert(origin, vec![agent, bread]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(5));
+        view.controllable.insert((agent, bread));
+        view.carry_capacities.insert(agent, LoadUnits(2));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(destination),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(destination, CommodityKind::Bread, 5)]);
+
+        assert_eq!(
+            deliverable_quantity(&view, agent, origin, destination, CommodityKind::Bread),
+            Quantity(2)
+        );
+    }
+
+    #[test]
+    fn no_cargo_candidate_when_zero_deliverable() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, origin, destination, bread]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(origin, EntityKind::Place);
+        view.entity_kinds.insert(destination, EntityKind::Place);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(bread, origin);
+        view.entities_at.insert(origin, vec![agent, bread]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((agent, bread));
+        view.carry_capacities.insert(agent, LoadUnits(1));
+        view.entity_loads.insert(agent, LoadUnits(1));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(destination),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(destination, CommodityKind::Bread, 3)]);
+
+        assert_eq!(
+            deliverable_quantity(&view, agent, origin, destination, CommodityKind::Bread),
+            Quantity(0)
+        );
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }
+        ));
     }
 
     #[test]
@@ -1635,8 +1978,13 @@ mod tests {
             WorkstationTag::Mill,
         ));
 
-        let candidates =
-            generate_candidates(&view, agent, &BlockedIntentMemory::default(), &recipes, Tick(5));
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
 
         assert!(contains_goal(
             &candidates,

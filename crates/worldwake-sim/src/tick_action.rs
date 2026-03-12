@@ -12,7 +12,9 @@ use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TickOutcome {
     Continuing,
-    Committed { outcome: CommitOutcome },
+    Committed {
+        outcome: CommitOutcome,
+    },
     Aborted {
         reason: AbortReason,
         replan: ReplanNeeded,

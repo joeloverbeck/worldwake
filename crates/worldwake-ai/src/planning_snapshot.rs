@@ -718,15 +718,24 @@ mod tests {
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
 
         assert_eq!(
-            snapshot.entities.get(&actor).and_then(|entity| entity.carry_capacity),
+            snapshot
+                .entities
+                .get(&actor)
+                .and_then(|entity| entity.carry_capacity),
             Some(LoadUnits(9))
         );
         assert_eq!(
-            snapshot.entities.get(&lot).map(|entity| entity.intrinsic_load),
+            snapshot
+                .entities
+                .get(&lot)
+                .map(|entity| entity.intrinsic_load),
             Some(LoadUnits(6))
         );
         assert_eq!(
-            snapshot.entities.get(&place).map(|entity| entity.intrinsic_load),
+            snapshot
+                .entities
+                .get(&place)
+                .map(|entity| entity.intrinsic_load),
             Some(LoadUnits(0))
         );
     }

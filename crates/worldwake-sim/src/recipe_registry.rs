@@ -140,7 +140,10 @@ mod tests {
             registry.recipe_by_name("Harvest Apples"),
             Some((first_id, &first))
         );
-        assert_eq!(registry.recipe_by_name("Bake Bread"), Some((second_id, &second)));
+        assert_eq!(
+            registry.recipe_by_name("Bake Bread"),
+            Some((second_id, &second))
+        );
     }
 
     #[test]
@@ -149,7 +152,10 @@ mod tests {
 
         assert_eq!(registry.recipe_by_name("Harvest Apples"), None);
 
-        registry.register(sample_recipe("Harvest Apples", Some(WorkstationTag::OrchardRow)));
+        registry.register(sample_recipe(
+            "Harvest Apples",
+            Some(WorkstationTag::OrchardRow),
+        ));
 
         assert_eq!(registry.recipe_by_name("Bake Bread"), None);
     }
@@ -239,6 +245,9 @@ mod tests {
             roundtrip.recipe_by_name("Harvest Apples").map(|(id, _)| id),
             Some(harvest_id)
         );
-        assert_eq!(roundtrip.recipe_by_name("Rest").map(|(id, _)| id), Some(rest_id));
+        assert_eq!(
+            roundtrip.recipe_by_name("Rest").map(|(id, _)| id),
+            Some(rest_id)
+        );
     }
 }

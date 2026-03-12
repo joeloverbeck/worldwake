@@ -415,11 +415,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
-        Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
-        DemandObservationReason, DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge,
-        LoadUnits, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        Container, ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+        DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -680,7 +680,15 @@ mod tests {
         let places = world.topology().place_ids().collect::<Vec<_>>();
         let place = places[0];
         let remote_place = places[1];
-        let (actor, other, local_owned, local_possessed, remote_owned, local_uncontrolled, local_water) = {
+        let (
+            actor,
+            other,
+            local_owned,
+            local_possessed,
+            remote_owned,
+            local_uncontrolled,
+            local_water,
+        ) = {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
@@ -746,7 +754,10 @@ mod tests {
         assert!(view.can_control(actor, local_possessed));
         assert!(view.can_control(actor, remote_owned));
         assert!(!view.can_control(actor, local_uncontrolled));
-        assert_eq!(view.item_lot_commodity(local_water), Some(CommodityKind::Water));
+        assert_eq!(
+            view.item_lot_commodity(local_water),
+            Some(CommodityKind::Water)
+        );
         assert!(view.is_alive(other));
     }
 
@@ -789,7 +800,15 @@ mod tests {
             txn.set_owner(wrong_commodity, actor).unwrap();
             commit_txn(txn);
 
-            (actor, other, first, second, remote, uncontrolled, wrong_commodity)
+            (
+                actor,
+                other,
+                first,
+                second,
+                remote,
+                uncontrolled,
+                wrong_commodity,
+            )
         };
 
         let view = OmniscientBeliefView::new(&world);

@@ -173,15 +173,9 @@ impl Harness {
         let scheduler = Scheduler::new(SystemManifest::canonical());
         let controller = ControllerState::with_entity(actor);
         let rng = DeterministicRng::new(Seed([7; 32]));
-        let initial_hash = hash_serializable(&(
-            &world,
-            &event_log,
-            &scheduler,
-            &recipes,
-            &controller,
-            &rng,
-        ))
-        .unwrap();
+        let initial_hash =
+            hash_serializable(&(&world, &event_log, &scheduler, &recipes, &controller, &rng))
+                .unwrap();
 
         Self {
             world,
@@ -672,7 +666,11 @@ fn scheduler_partial_pickup_travel_put_down_replays_deterministically() {
     let carried_water = harness.world.possessions_of(harness.actor)[0];
     assert_ne!(carried_water, water);
     assert_eq!(
-        harness.world.get_component_item_lot(water).unwrap().quantity,
+        harness
+            .world
+            .get_component_item_lot(water)
+            .unwrap()
+            .quantity,
         Quantity(1)
     );
     assert_eq!(
@@ -698,7 +696,10 @@ fn scheduler_partial_pickup_travel_put_down_replays_deterministically() {
         harness.world.effective_place(carried_water),
         Some(harness.bakery_place)
     );
-    assert_eq!(harness.world.effective_place(water), Some(harness.orchard_place));
+    assert_eq!(
+        harness.world.effective_place(water),
+        Some(harness.orchard_place)
+    );
     verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
     verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
 

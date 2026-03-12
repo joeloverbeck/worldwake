@@ -1,10 +1,10 @@
 # HARCARGOACON-005: Enable MoveCargo goal satisfaction and search support
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-ai (goal_model, search modules)
-**Deps**: HARCARGOACON-001 (new MoveCargo variant), HARCARGOACON-002 (BeliefView helpers), HARCARGOACON-003 (restock_gap_at_destination)
+**Deps**: None
 
 ## Problem
 
@@ -21,13 +21,15 @@ Both must be fixed for cargo plans to be discovered and completed.
 2. `unsupported_goal` at `search.rs:236-241` matches `MoveCargo { .. }` — confirmed
 3. `apply_planner_step` at `goal_model.rs:258` — `MoveCargo` falls through to `_ => state` (intentional no-op per spec Section D.4) — confirmed
 4. `is_progress_barrier` at `goal_model.rs:277-280` — `MoveCargo` falls through to `_ => false` — confirmed; spec says to consider whether `pick_up` should be a barrier
-5. `restock_gap_at_destination` will exist after HARCARGOACON-003 — per dependency
+5. `restock_gap_at_destination` now exists in `enterprise.rs`
+6. Transport actions still have no quantity payload, so cargo search will currently plan in concrete pick-up/travel steps but cannot yet target an exact destination-gap batch size
 
 ## Architecture Check
 
 1. Satisfaction uses `restock_gap_at_destination` — destination-aware, not just "agent owns commodity somewhere"
 2. Removing from `unsupported_goal` is a one-line change with no side effects beyond enabling search
 3. No special progress-barrier needed for lot splitting — the goal key is stable across splits
+4. Enabling search and satisfaction together is cleaner than enabling either one alone; cargo should become a real goal family, not a half-enabled placeholder
 
 ## What to Change
 
@@ -111,3 +113,21 @@ Per spec Section D.5: `pick_up` under `MoveCargo` can split lots (creating mater
 2. `cargo test -p worldwake-ai search`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-12
+- What actually changed:
+  - `GoalKind::MoveCargo` satisfaction now uses destination-local restock semantics through `restock_gap_at_destination(...)`
+  - `search.rs` no longer treats `MoveCargo` as unsupported
+  - Added cargo satisfaction tests in `goal_model.rs`
+  - Added cargo search coverage in `search.rs` proving a simple pickup-then-travel delivery plan is discovered
+  - Added code comments documenting why `MoveCargo` remains a goal-model no-op in `apply_planner_step` and why it does not need a progress barrier
+- Deviations from original plan:
+  - Cargo search is now enabled end-to-end, but exact destination-gap-sized pickup is still limited by the current transport action model, which has no quantity payload override
+  - No special progress barrier was added; the stable commodity+destination goal identity made that unnecessary
+- Verification results:
+  - `cargo test -p worldwake-ai goal_model` passed
+  - `cargo test -p worldwake-ai search` passed
+  - `cargo test --workspace` passed
+  - `cargo clippy --workspace` passed

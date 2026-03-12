@@ -56,6 +56,8 @@ pub type ActionAbortFn = for<'w> fn(
 ) -> Result<(), ActionError>;
 pub type AffordancePayloadFn =
     fn(&ActionDef, EntityId, &[EntityId], &dyn BeliefView) -> Vec<ActionPayload>;
+pub type PayloadOverrideValidatorFn =
+    fn(&ActionDef, EntityId, &[EntityId], &ActionPayload, &dyn BeliefView) -> bool;
 
 #[derive(Copy, Clone)]
 pub struct ActionHandler {
@@ -64,6 +66,7 @@ pub struct ActionHandler {
     pub on_commit: ActionCommitFn,
     pub on_abort: ActionAbortFn,
     pub affordance_payloads: AffordancePayloadFn,
+    pub payload_override_is_valid: PayloadOverrideValidatorFn,
 }
 
 impl ActionHandler {
@@ -80,6 +83,7 @@ impl ActionHandler {
             on_commit,
             on_abort,
             affordance_payloads: no_affordance_payloads,
+            payload_override_is_valid: no_payload_override_validator,
         }
     }
 
@@ -91,6 +95,15 @@ impl ActionHandler {
         self.affordance_payloads = affordance_payloads;
         self
     }
+
+    #[must_use]
+    pub const fn with_payload_override_validator(
+        mut self,
+        payload_override_is_valid: PayloadOverrideValidatorFn,
+    ) -> Self {
+        self.payload_override_is_valid = payload_override_is_valid;
+        self
+    }
 }
 
 fn no_affordance_payloads(
@@ -100,6 +113,16 @@ fn no_affordance_payloads(
     _view: &dyn BeliefView,
 ) -> Vec<ActionPayload> {
     Vec::new()
+}
+
+fn no_payload_override_validator(
+    _def: &ActionDef,
+    _actor: EntityId,
+    _targets: &[EntityId],
+    _payload: &ActionPayload,
+    _view: &dyn BeliefView,
+) -> bool {
+    false
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -269,8 +292,8 @@ impl AbortReason {
 mod tests {
     use super::{
         AbortReason, ActionAbortRequestReason, ActionError, ActionHandler, ActionProgress,
-        CommitOutcome, ExternalAbortReason, InterruptReason, Materialization,
-        MaterializationTag, PayloadEntityRole, SelfTargetActionKind,
+        CommitOutcome, ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
+        PayloadEntityRole, SelfTargetActionKind,
     };
     use crate::{
         ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionHandlerId, ActionInstance,
@@ -404,7 +427,10 @@ mod tests {
         };
 
         assert_eq!(outcome.materializations.len(), 1);
-        assert_eq!(outcome.materializations[0].tag, MaterializationTag::SplitOffLot);
+        assert_eq!(
+            outcome.materializations[0].tag,
+            MaterializationTag::SplitOffLot
+        );
         assert_eq!(outcome.materializations[0].entity, entity);
     }
 

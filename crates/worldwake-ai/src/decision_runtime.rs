@@ -71,7 +71,10 @@ mod tests {
         assert!(runtime.last_wounds.is_empty());
         assert!(runtime.last_commodity_signature.is_empty());
         assert!(runtime.last_unique_item_signature.is_empty());
-        assert!(runtime.materialization_bindings.hypothetical_to_authoritative.is_empty());
+        assert!(runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty());
     }
 
     #[test]

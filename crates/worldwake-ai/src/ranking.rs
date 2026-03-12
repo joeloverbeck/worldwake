@@ -389,8 +389,8 @@ mod tests {
         DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
         EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
         MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause,
+        WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,

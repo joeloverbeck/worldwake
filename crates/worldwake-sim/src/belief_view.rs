@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
     DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange,
-    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
+    TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 
 pub trait BeliefView {
