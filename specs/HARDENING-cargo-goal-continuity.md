@@ -1,6 +1,6 @@
 # Hardening Spec: Cargo Goal Continuity & Destination-Aware Delivery
 
-**Status**: DRAFT
+**Status**: DRAFT (reassessed)
 
 ## Summary
 
@@ -127,29 +127,32 @@ Replace the shared goal variant with:
 GoalKind::MoveCargo {
     commodity: CommodityKind,
     destination: EntityId,
-    quantity: Quantity,
 }
 ```
 
 This means:
 
-- the goal represents delivery of a concrete commodity batch
+- the goal represents delivery of a commodity to a destination
 - the goal does **not** name a specific lot entity
-- exact lot identity remains a planning/execution concern, not a goal-identity concern
+- the goal does **not** include quantity — quantity is a volatile planning parameter, not goal identity
+- exact lot identity and batch size remain planning/execution concerns, not goal-identity concerns
 
 This is the central architectural change.
 
+**Why no `quantity` in goal identity**: All three inputs to `deliverable_quantity` (local stock, carry fit, restock gap) are volatile across replans. If quantity were part of `GoalKind`, conditions changing between replans would produce a different `GoalKey`, causing goal-switching logic to treat it as a new goal → plan abandoned → potential thrashing. The batch quantity belongs in `GroundedGoal` evidence where the planner can access it without coupling goal identity to volatile conditions.
+
 ### 2. Why Batch Identity Is Better
 
-Batch identity survives the exact split path:
+Commodity-destination identity survives the exact split path:
 
 - before pickup: local lot `Water x 3`, carry fit `Water x 2`
-- emitted cargo goal: `MoveCargo { Water, destination, Quantity(2) }`
+- emitted cargo goal: `MoveCargo { Water, destination }` with `deliverable_quantity = 2` in evidence
 - planner may split the source lot and create hypothetical carried lot `H1`
 - runtime binds `H1 -> L27`
-- if replanning occurs, the same goal still exists: deliver `Water x 2` to destination
+- if replanning occurs, the same goal still exists: `MoveCargo { Water, destination }`
+- re-derived `deliverable_quantity` may differ (e.g., now only 1 remaining locally) but goal key is stable
 
-No alias table is needed at the goal layer.
+No alias table is needed at the goal layer. No goal-switching thrashing from volatile quantity changes.
 
 ### 3. No Backward Compatibility Path
 
@@ -192,7 +195,7 @@ That preserves locality and avoids omniscient logistics orchestration.
 
 ### 3. Delivery Batch Quantity
 
-For each eligible local cargo opportunity, derive:
+For each eligible local cargo opportunity, derive a `deliverable_quantity` as a **private helper in `candidate_generation.rs`** (not on `BeliefView`):
 
 ```rust
 deliverable_quantity = min(
@@ -202,13 +205,15 @@ deliverable_quantity = min(
 )
 ```
 
+**Important**: `restock_gap_at_destination` is a NEW helper (see Section B below), distinct from the existing `restock_gap_for_market` in `enterprise.rs`. The existing helper computes gap using `commodity_quantity(agent, commodity)` which counts total agent stock everywhere. The new helper must use `controlled_commodity_quantity_at_place(agent, destination, commodity)` to compute gap specifically at the destination market. The existing `restock_gap_for_market` must not be modified — it continues to serve its existing purpose in `RestockCommodity` scoring.
+
 Requirements:
 
 - use exact carry/load math already present in the belief surface
 - use `Quantity`, not floats
-- if `deliverable_quantity == Quantity(0)`, emit no cargo goal
+- if `deliverable_quantity == Quantity(0)`, emit no `MoveCargo` goal for that commodity-destination pair
 
-This keeps the goal batch concrete and single-trip-sized under the current planner architecture.
+This keeps the evidence batch concrete and single-trip-sized under the current planner architecture.
 
 ### 4. Evidence Model
 
@@ -216,12 +221,14 @@ This keeps the goal batch concrete and single-trip-sized under the current plann
 
 - the destination place
 - the concrete local lots that could satisfy the batch
+- the computed `deliverable_quantity` (for planner batch sizing, **not** for goal identity)
 
 That gives search enough evidence to build a planning snapshot with:
 
 - the source lot(s)
 - the destination
 - the actor's local placement and load state
+- the batch size to plan for
 
 ## Belief / Planning Read Model Additions
 
@@ -257,13 +264,15 @@ These helpers are better than overloading the existing global `commodity_quantit
 
 ### 1. Satisfaction
 
-`GoalKind::MoveCargo { commodity, destination, quantity }` is satisfied when:
+`GoalKind::MoveCargo { commodity, destination }` is satisfied when the destination has enough stock to meet observed demand:
 
 ```rust
-controlled_commodity_quantity_at_place(actor, destination, commodity) >= quantity
+restock_gap_at_destination(actor, destination, commodity).is_none()
 ```
 
-This is concrete, deterministic, and stable across lot splitting.
+Equivalently: `controlled_commodity_quantity_at_place(actor, destination, commodity) >= observed_demand_at(destination, commodity)`.
+
+This is concrete, deterministic, stable across lot splitting, and — crucially — does not depend on a volatile quantity embedded in the goal key. Satisfaction tracks the underlying business need (demand met at destination) rather than a snapshot batch size.
 
 ### 2. Relevant Operation Kinds
 
@@ -332,7 +341,7 @@ The runtime may still become dirty after a successful cargo step.
 
 With the new cargo goal identity:
 
-- the candidate stream can rediscover the same `MoveCargo { commodity, destination, quantity }`
+- the candidate stream can rediscover the same `MoveCargo { commodity, destination }`
 - `select_best_plan()` can retain the current non-empty plan for the same goal
 - partial-pickup materialization no longer invalidates the goal key itself
 
@@ -505,37 +514,52 @@ These are concrete world limits. No numeric clamp should be introduced merely to
 
 Implement:
 
-1. replace lot-based `GoalKind::MoveCargo`
+1. replace lot-based `GoalKind::MoveCargo { lot, destination }` with `MoveCargo { commodity, destination }`
 2. update `GoalKey::from(GoalKind::MoveCargo)` extraction to use:
    - `commodity = Some(commodity)`
    - `entity = None`
    - `place = Some(destination)`
-3. update all tests and pattern matches across crates
+3. update `ranking.rs` — motive scoring at line ~258 currently destructures `GoalKind::MoveCargo { lot, destination }` and reads `lot` to get commodity via `item_lot_commodity(lot)`. Change to direct commodity-based scoring: `GoalKind::MoveCargo { commodity, destination } => market_signal_for_place(view, agent, commodity, destination)`
+4. update all remaining tests and pattern matches across crates
 
 ### Section B: Destination-Aware Read Helpers
 
 Implement:
 
-1. destination-aware controlled commodity quantity helper(s)
-2. local controllable cargo-lot enumeration helper(s)
-3. `PlanningState` support for the same semantics
+1. destination-aware controlled commodity quantity helper(s) on `BeliefView` and `PlanningState`
+2. local controllable cargo-lot enumeration helper(s) on `BeliefView` and `PlanningState`
+3. `restock_gap_at_destination` helper in `enterprise.rs` — a NEW function (not modifying the existing `restock_gap_for_market`) that computes the gap using `controlled_commodity_quantity_at_place(agent, destination, commodity)` rather than `commodity_quantity(agent, commodity)`. This provides destination-local stock awareness for cargo candidate sizing and satisfaction checks.
 
 ### Section C: Cargo Candidate Generation
 
 Implement:
 
 1. concrete cargo-opportunity derivation from local controllable lots
-2. deliverable batch sizing from exact carry math and destination demand
-3. `MoveCargo` candidate emission
-4. remove "deferred cargo goals" behavior
+2. `deliverable_quantity` as a private helper in `candidate_generation.rs` using `restock_gap_at_destination` and exact carry math
+3. `MoveCargo` candidate emission with `deliverable_quantity` stored in `GroundedGoal` evidence (not in goal identity)
+4. remove "deferred cargo goals" behavior — specifically update or remove the `deferred_goal_kinds_are_not_emitted` test at `candidate_generation.rs:1542` which currently asserts `MoveCargo` is excluded from candidates
 
 ### Section D: Goal Model & Search Support
 
 Implement:
 
-1. concrete `MoveCargo` satisfaction
-2. remove unsupported-goal rejection for cargo
+1. concrete `MoveCargo` satisfaction using `restock_gap_at_destination` (replacing the permanent `false` at `goal_model.rs:333`)
+2. remove unsupported-goal rejection for cargo in `search.rs:236-241`
 3. ensure cargo plans can terminate on delivery without requiring lot identity continuity
+4. `apply_planner_step` for `MoveCargo`: confirm this intentionally remains a no-op (falls through to `_ => state` at `goal_model.rs:258`). State transitions for cargo happen via `PickUpGroundLot`/`PutDownGroundLot` transition kinds in `planner_ops.rs`, not via goal-level step application.
+5. `is_progress_barrier` for `MoveCargo`: currently falls through to `_ => false` at `goal_model.rs:280`. Consider whether `pick_up` under a `MoveCargo` goal should be treated as a progress barrier (it can split lots, creating materialization). If so, add `GoalKind::MoveCargo { .. }` to the match arm at line 268 with `PlannerOpKind::MoveCargo` as the barrier op kind. If not, document the rationale (carried goods at destination satisfy the goal without requiring further put_down steps).
+
+### Expected Search Plan Shape
+
+For clarity, the expected plan shape for `MoveCargo` is:
+
+- `pick_up` → `travel` → [optional `put_down`]
+
+Satisfaction can be met by carrying goods at the destination (no `put_down` required if the satisfaction check counts carried-at-destination stock). This means a 2-step plan (`pick_up → travel`) is the minimal valid cargo plan.
+
+### Multi-Trip Delivery Behavior
+
+Agents deliver carry-capacity batches one trip at a time. If `deliverable_quantity` exceeds carry capacity, the evidence batch is capped to one trip. After delivery, the same `MoveCargo { commodity, destination }` goal may be re-emitted if the destination gap persists, triggering another trip. This is expected emergent behavior, not a bug.
 
 ### Section E: Verification
 
@@ -564,22 +588,37 @@ Add/strengthen tests for:
 1. `crates/worldwake-ai/src/candidate_generation.rs`
    - cargo goals are emitted from local controllable stock plus destination demand
    - cargo goals are not emitted from remote stock the agent is not currently positioned to move
-2. `crates/worldwake-ai/src/goal_model.rs`
-   - `MoveCargo` satisfaction uses destination-aware controlled quantity
-3. `crates/worldwake-ai/src/search.rs`
+   - update or replace `deferred_goal_kinds_are_not_emitted` (line 1542) — MoveCargo must no longer be excluded
+2. `crates/worldwake-ai/src/ranking.rs`
+   - MoveCargo motive scoring works with commodity-based destructuring (no lot lookup)
+3. `crates/worldwake-ai/src/goal_model.rs`
+   - `MoveCargo` satisfaction uses `restock_gap_at_destination`
+4. `crates/worldwake-ai/src/search.rs`
    - cargo goals are searchable and can terminate after delivery
    - partial-pickup cargo planning remains exact under the new goal identity
-4. `crates/worldwake-ai/src/agent_tick.rs`
+5. `crates/worldwake-ai/src/agent_tick.rs`
    - successful materializing cargo steps followed by dirty replanning retain the same cargo goal and continue coherently
-5. `crates/worldwake-systems/tests/e10_production_transport_integration.rs`
+6. `crates/worldwake-systems/tests/e10_production_transport_integration.rs`
    - enterprise cargo delivery / replay / conservation coverage where applicable
+
+### Concrete Test Scenarios
+
+1. **Basic delivery**: agent at Place A, Bread x 3 local, home_market=B with demand, carry fits 3 → `MoveCargo { Bread, B }` emitted, plan = `pick_up → travel`
+2. **Partial pickup with split**: Water x 5 ground lot, carry fits 2 → evidence `deliverable_quantity = 2`, hypothetical split, plan completes
+3. **No cargo from remote stock**: agent owns goods at non-local place → no `MoveCargo` emitted (locality)
+4. **Goal stability across replan**: `pick_up` triggers lot split, dirty replan, same `MoveCargo { Water, B }` re-derived with potentially different `deliverable_quantity` in evidence — goal key unchanged
+5. **Satisfaction at destination while carrying**: agent arrives at destination carrying the commodity — satisfaction check counts carried-at-destination stock (no `put_down` required)
+6. **Zero deliverable suppression**: full carry capacity or zero restock gap → no `MoveCargo` emitted
+7. **Conservation invariant across full delivery sequence**: lot quantities preserved through pick_up, travel, optional put_down
+8. **Deterministic replay of cargo delivery**: full cargo delivery sequence replays identically from same seed and inputs
 
 ### Commands
 
 1. `cargo test -p worldwake-ai candidate_generation`
 2. `cargo test -p worldwake-ai goal_model`
-3. `cargo test -p worldwake-ai search`
-4. `cargo test -p worldwake-ai agent_tick`
-5. `cargo test -p worldwake-systems --test e10_production_transport_integration`
-6. `cargo test --workspace`
-7. `cargo clippy --workspace`
+3. `cargo test -p worldwake-ai ranking`
+4. `cargo test -p worldwake-ai search`
+5. `cargo test -p worldwake-ai agent_tick`
+6. `cargo test -p worldwake-systems --test e10_production_transport_integration`
+7. `cargo test --workspace`
+8. `cargo clippy --workspace`
