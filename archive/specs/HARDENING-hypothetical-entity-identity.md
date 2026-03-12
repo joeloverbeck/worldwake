@@ -1,6 +1,6 @@
 # Hardening Spec: Hypothetical Entity Identity & Materialization Binding
 
-**Status**: DRAFT
+**Status**: ✅ COMPLETED
 
 ## Summary
 
@@ -650,3 +650,10 @@ Implement:
 - [E10-production-transport.md](/home/joeloverbeck/projects/worldwake/archive/specs/E10-production-transport.md)
 - [HARPREE14-015-authoritative-hypothetical-action-transitions.md](/home/joeloverbeck/projects/worldwake/archive/tickets/HARPREE14-015-authoritative-hypothetical-action-transitions.md)
 - [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)
+
+## Outcome
+
+- Completed: 2026-03-12
+- What changed: the planning/runtime stack now uses explicit hypothetical identity and binding primitives, including `HypotheticalEntityId`, `PlanningEntityRef`, `MaterializationBindings`, `CommitOutcome`, `Materialization`, `MaterializationTag`, `PutDownGroundLot`, and exact partial-pickup planner semantics with split-off lot binding. `PlannedStep.targets` now carries planning refs instead of raw `EntityId`s, and the split `pick_up` commit path reports `SplitOffLot` materializations for runtime rebinding.
+- Deviations from original plan: no authoritative ECS components were added; the work landed as planner/runtime state plus the shared action-handler contract. The implementation was delivered across the HARHYPENTIDE ticket series rather than as one monolithic change.
+- Verification results: repository tests now cover hypothetical entity spawning, typed planning targets, binding resolution, exact carry-fit/partial pickup behavior, `CommitOutcome` materialization flow, and exact cargo planning follow-up scenarios in `worldwake-ai`, `worldwake-sim`, and `worldwake-systems`.

@@ -1,6 +1,6 @@
 # Hardening Spec: Cargo Goal Continuity & Destination-Aware Delivery
 
-**Status**: DRAFT (reassessed)
+**Status**: ✅ COMPLETED
 
 ## Summary
 
@@ -20,7 +20,7 @@ The key architectural decision is:
 - do **not** special-case runtime dirtiness to "pretend nothing changed" after cargo mutations
 - instead, make the cargo goal itself stable across those expected mutations so replanning and plan retention remain honest
 
-That is cleaner, more extensible, and better aligned with the materialization-aware planning architecture already introduced by `specs/HARDENING-hypothetical-entity-identity.md`.
+That is cleaner, more extensible, and better aligned with the materialization-aware planning architecture already introduced by `archive/specs/HARDENING-hypothetical-entity-identity.md`.
 
 ## Phase
 
@@ -622,3 +622,10 @@ Add/strengthen tests for:
 6. `cargo test -p worldwake-systems --test e10_production_transport_integration`
 7. `cargo test --workspace`
 8. `cargo clippy --workspace`
+
+## Outcome
+
+- Completed: 2026-03-12
+- What changed: `GoalKind::MoveCargo` now uses commodity-plus-destination identity, cargo candidate generation emits concrete destination-aware delivery goals from local controllable lots, `restock_gap_at_destination` and destination-local quantity helpers back both candidate sizing and satisfaction, and cargo search/goal-model support now treats `MoveCargo` as a real searchable goal. Merchant restock continuity now requires delivery to the relevant destination market rather than remote acquisition alone.
+- Deviations from original plan: the work was delivered incrementally through the HARCARGOACON ticket series, with the earlier goal-identity slice landing before the remaining read-helper, candidate-generation, search, and verification slices. No runtime dirty-snapshot exception path was added; continuity stayed goal-based as intended.
+- Verification results: repository tests now cover cargo goal emission from local stock plus destination demand, suppression for remote stock and zero-deliverable cases, commodity-based ranking, destination-aware satisfaction, searchable cargo plans across partial pickup/materialization, agent-tick continuity, and transport integration verification.
