@@ -33,8 +33,8 @@ pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
 pub use plan_revalidation::revalidate_next_step;
 pub use plan_selection::select_best_plan;
 pub use planner_ops::{
-    build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics,
+    apply_hypothetical_transition, build_semantics_table, PlanTerminalKind, PlannedPlan,
+    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
 };
 pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
 pub use planning_state::PlanningState;

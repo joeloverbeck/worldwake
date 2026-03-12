@@ -383,7 +383,7 @@ mod tests {
     use super::{GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal};
     use crate::{
         build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, PlannedStep,
-        PlannerOpKind, PlannerOpSemantics, PlanningState,
+        PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningState,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -857,6 +857,7 @@ mod tests {
             op_kind: PlannerOpKind::Trade,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
             relevant_goal_kinds: &[],
         };
 

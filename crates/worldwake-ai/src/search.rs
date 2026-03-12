@@ -1,13 +1,13 @@
 use crate::{
-    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
+    apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind,
+    PlannedPlan, PlannedStep,
     PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningSnapshot, PlanningState,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
-use worldwake_core::{GoalKind, Quantity};
+use worldwake_core::GoalKind;
 use worldwake_sim::{
-    get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDuration,
-    ActionHandlerRegistry,
+    get_affordances, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
     Affordance, BeliefView,
 };
 
@@ -152,13 +152,8 @@ fn build_successor<'snapshot>(
         ActionDuration::Indefinite => 0,
     };
 
-    let post_state = apply_affordance_transition(
-        goal,
-        def,
-        semantics,
-        node.state.clone(),
-        &affordance.bound_targets,
-    );
+    let post_state =
+        apply_hypothetical_transition(goal, semantics, node.state.clone(), &affordance.bound_targets);
     let step = PlannedStep {
         def_id: affordance.def_id,
         targets: affordance.bound_targets,
@@ -190,37 +185,6 @@ fn unsupported_goal(goal: &GoalKind) -> bool {
         goal,
         GoalKind::SellCommodity { .. } | GoalKind::MoveCargo { .. } | GoalKind::BuryCorpse { .. }
     )
-}
-
-fn apply_affordance_transition<'snapshot>(
-    goal: &GroundedGoal,
-    def: &ActionDef,
-    semantics: &PlannerOpSemantics,
-    state: PlanningState<'snapshot>,
-    targets: &[worldwake_core::EntityId],
-) -> PlanningState<'snapshot> {
-    let state = goal
-        .key
-        .kind
-        .apply_planner_step(state, semantics.op_kind, targets);
-
-    if semantics.op_kind != PlannerOpKind::MoveCargo || def.name != "pick_up" {
-        return state;
-    }
-
-    let Some(lot) = targets.first().copied() else {
-        return state;
-    };
-    let Some(commodity) = state.item_lot_commodity(lot) else {
-        return state;
-    };
-    let quantity = state.commodity_quantity(lot, commodity);
-    if quantity == Quantity(0) {
-        return state;
-    }
-    let actor = state.snapshot().actor();
-
-    state.move_lot_to_holder(lot, actor, commodity, quantity)
 }
 
 fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {

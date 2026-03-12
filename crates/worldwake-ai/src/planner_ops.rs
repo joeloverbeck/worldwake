@@ -1,7 +1,8 @@
-use crate::{GoalKey, GoalKindTag};
+use crate::{GoalKindPlannerExt, GoalKey, GoalKindTag, GroundedGoal, PlanningState};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::EntityId;
+use worldwake_core::{EntityId, Quantity};
+use worldwake_sim::BeliefView;
 use worldwake_sim::{
     ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload, InputKind,
 };
@@ -28,15 +29,41 @@ pub struct PlannerOpSemantics {
     pub op_kind: PlannerOpKind,
     pub may_appear_mid_plan: bool,
     pub is_materialization_barrier: bool,
+    pub transition_kind: PlannerTransitionKind,
     pub relevant_goal_kinds: &'static [GoalKindTag],
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum PlannerTransitionKind {
+    GoalModelFallback,
+    PickUpGroundLot,
+}
+
 const GOALS_CONSUME: &[GoalKindTag] = &[GoalKindTag::ConsumeOwnedCommodity];
+const GOALS_TRAVEL: &[GoalKindTag] = &[
+    GoalKindTag::ConsumeOwnedCommodity,
+    GoalKindTag::AcquireCommodity,
+    GoalKindTag::Sleep,
+    GoalKindTag::Relieve,
+    GoalKindTag::Wash,
+    GoalKindTag::ReduceDanger,
+    GoalKindTag::Heal,
+    GoalKindTag::ProduceCommodity,
+    GoalKindTag::SellCommodity,
+    GoalKindTag::RestockCommodity,
+    GoalKindTag::MoveCargo,
+    GoalKindTag::LootCorpse,
+];
 const GOALS_ACQUIRE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
     GoalKindTag::AcquireCommodity,
     GoalKindTag::Heal,
     GoalKindTag::SellCommodity,
+    GoalKindTag::RestockCommodity,
+];
+const GOALS_HARVEST: &[GoalKindTag] = &[
+    GoalKindTag::ConsumeOwnedCommodity,
+    GoalKindTag::AcquireCommodity,
     GoalKindTag::RestockCommodity,
 ];
 const GOALS_PRODUCE: &[GoalKindTag] = &[
@@ -66,7 +93,7 @@ pub fn build_semantics_table(
 ) -> BTreeMap<ActionDefId, PlannerOpSemantics> {
     registry
         .iter()
-        .filter_map(|def| classify_action_def(def).map(|op_kind| (def.id, semantics_for(op_kind))))
+        .filter_map(|def| classify_action_def(def).map(|op_kind| (def.id, semantics_for(def, op_kind))))
         .collect()
 }
 
@@ -95,104 +122,157 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
     }
 }
 
-const fn semantics_for(op_kind: PlannerOpKind) -> PlannerOpSemantics {
-    match op_kind {
-        PlannerOpKind::Travel => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: &[
-                GoalKindTag::ConsumeOwnedCommodity,
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::Sleep,
-                GoalKindTag::Relieve,
-                GoalKindTag::Wash,
-                GoalKindTag::ReduceDanger,
-                GoalKindTag::Heal,
-                GoalKindTag::ProduceCommodity,
-                GoalKindTag::SellCommodity,
-                GoalKindTag::RestockCommodity,
-                GoalKindTag::MoveCargo,
-                GoalKindTag::LootCorpse,
-            ],
-        },
-        PlannerOpKind::Consume => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: GOALS_CONSUME,
-        },
-        PlannerOpKind::Sleep => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: &[GoalKindTag::Sleep],
-        },
-        PlannerOpKind::Relieve => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: &[GoalKindTag::Relieve],
-        },
-        PlannerOpKind::Wash => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: &[GoalKindTag::Wash],
-        },
-        PlannerOpKind::Trade => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: true,
-            relevant_goal_kinds: GOALS_ACQUIRE,
-        },
-        PlannerOpKind::Harvest => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: true,
-            relevant_goal_kinds: &[
-                GoalKindTag::ConsumeOwnedCommodity,
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::RestockCommodity,
-            ],
-        },
-        PlannerOpKind::Craft => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: true,
-            relevant_goal_kinds: GOALS_PRODUCE,
-        },
-        PlannerOpKind::MoveCargo => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: GOALS_MOVE_CARGO,
-        },
-        PlannerOpKind::Heal => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: GOALS_HEAL,
-        },
-        PlannerOpKind::Loot => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: true,
-            relevant_goal_kinds: GOALS_LOOT,
-        },
-        PlannerOpKind::Attack => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: GOALS_ATTACK,
-        },
-        PlannerOpKind::Defend => PlannerOpSemantics {
-            op_kind,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            relevant_goal_kinds: GOALS_DEFEND,
-        },
+const fn base_semantics(
+    op_kind: PlannerOpKind,
+    may_appear_mid_plan: bool,
+    is_materialization_barrier: bool,
+    transition_kind: PlannerTransitionKind,
+    relevant_goal_kinds: &'static [GoalKindTag],
+) -> PlannerOpSemantics {
+    PlannerOpSemantics {
+        op_kind,
+        may_appear_mid_plan,
+        is_materialization_barrier,
+        transition_kind,
+        relevant_goal_kinds,
     }
+}
+
+fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics {
+    match op_kind {
+        PlannerOpKind::Travel => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_TRAVEL,
+        ),
+        PlannerOpKind::Consume => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_CONSUME,
+        ),
+        PlannerOpKind::Sleep => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            &[GoalKindTag::Sleep],
+        ),
+        PlannerOpKind::Relieve => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            &[GoalKindTag::Relieve],
+        ),
+        PlannerOpKind::Wash => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            &[GoalKindTag::Wash],
+        ),
+        PlannerOpKind::Trade => base_semantics(
+            op_kind,
+            true,
+            true,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_ACQUIRE,
+        ),
+        PlannerOpKind::Harvest => base_semantics(
+            op_kind,
+            true,
+            true,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_HARVEST,
+        ),
+        PlannerOpKind::Craft => base_semantics(
+            op_kind,
+            true,
+            true,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_PRODUCE,
+        ),
+        PlannerOpKind::MoveCargo => base_semantics(
+            op_kind,
+            true,
+            false,
+            if def.name == "pick_up" {
+                PlannerTransitionKind::PickUpGroundLot
+            } else {
+                PlannerTransitionKind::GoalModelFallback
+            },
+            GOALS_MOVE_CARGO,
+        ),
+        PlannerOpKind::Heal => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_HEAL,
+        ),
+        PlannerOpKind::Loot => base_semantics(
+            op_kind,
+            true,
+            true,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_LOOT,
+        ),
+        PlannerOpKind::Attack => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_ATTACK,
+        ),
+        PlannerOpKind::Defend => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_DEFEND,
+        ),
+    }
+}
+
+#[must_use]
+pub fn apply_hypothetical_transition<'snapshot>(
+    goal: &GroundedGoal,
+    semantics: &PlannerOpSemantics,
+    state: PlanningState<'snapshot>,
+    targets: &[EntityId],
+) -> PlanningState<'snapshot> {
+    let state = goal
+        .key
+        .kind
+        .apply_planner_step(state, semantics.op_kind, targets);
+
+    match semantics.transition_kind {
+        PlannerTransitionKind::GoalModelFallback => state,
+        PlannerTransitionKind::PickUpGroundLot => apply_pick_up_transition(state, targets),
+    }
+}
+
+fn apply_pick_up_transition<'snapshot>(
+    state: PlanningState<'snapshot>,
+    targets: &[EntityId],
+) -> PlanningState<'snapshot> {
+    let Some(lot) = targets.first().copied() else {
+        return state;
+    };
+    let Some(commodity) = state.item_lot_commodity(lot) else {
+        return state;
+    };
+    let quantity = state.commodity_quantity(lot, commodity);
+    if quantity == Quantity(0) {
+        return state;
+    }
+    let actor = state.snapshot().actor();
+
+    state.move_lot_to_holder(lot, actor, commodity, quantity)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -253,14 +333,24 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_semantics_table, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
-    use crate::{CommodityPurpose, GoalKey, GoalKind};
+    use super::{
+        apply_hypothetical_transition, build_semantics_table, PlanTerminalKind, PlannedPlan,
+        PlannedStep, PlannerOpKind, PlannerTransitionKind,
+    };
+    use crate::{
+        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanningState,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BodyCostPerTick, CommodityKind, EntityId, Quantity, UniqueItemKind, WorkstationTag,
+        BodyCostPerTick, CommodityConsumableProfile, CommodityKind, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDefId, ActionDefRegistry, ActionPayload, InputKind, RecipeDefinition, RecipeRegistry,
+        estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionDuration,
+        ActionPayload, BeliefView, DurationExpr, InputKind, RecipeDefinition, RecipeRegistry,
         TradeActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
@@ -310,6 +400,255 @@ mod tests {
             body_cost_per_tick: BodyCostPerTick::zero(),
         });
         build_full_action_registries(&recipes).unwrap().defs
+    }
+
+    #[derive(Default)]
+    struct TestBeliefView {
+        alive: BTreeSet<EntityId>,
+        kinds: BTreeMap<EntityId, EntityKind>,
+        effective_places: BTreeMap<EntityId, EntityId>,
+        entities_at: BTreeMap<EntityId, Vec<EntityId>>,
+        direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
+        direct_possessors: BTreeMap<EntityId, EntityId>,
+        lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        needs: BTreeMap<EntityId, HomeostaticNeeds>,
+        thresholds: BTreeMap<EntityId, DriveThresholds>,
+        adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
+    }
+
+    impl BeliefView for TestBeliefView {
+        fn is_alive(&self, entity: EntityId) -> bool {
+            self.alive.contains(&entity)
+        }
+
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.kinds.get(&entity).copied()
+        }
+
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places.get(&entity).copied()
+        }
+
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+            self.adjacent_places_with_travel_ticks(place)
+                .into_iter()
+                .map(|(place, _)| place)
+                .collect()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.lot_commodities.get(&entity).copied()
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
+        }
+
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            actor == entity || self.direct_possessor(entity) == Some(actor)
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
+        }
+
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            Some(MetabolismProfile::default())
+        }
+
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
+            None
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn estimate_duration(
+            &self,
+            actor: EntityId,
+            duration: &DurationExpr,
+            targets: &[EntityId],
+            payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+        }
+    }
+
+    fn pm(value: u16) -> Permille {
+        Permille::new(value).unwrap()
+    }
+
+    fn sample_snapshot() -> (PlanningState<'static>, EntityId, EntityId, EntityId) {
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        let snapshot = Box::leak(Box::new(build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([town]),
+            1,
+        )));
+
+        (PlanningState::new(snapshot), actor, town, bread)
     }
 
     #[test]
@@ -441,8 +780,16 @@ mod tests {
             PlannerOpKind::MoveCargo
         );
         assert_eq!(
+            semantics_by_name.get("pick_up").unwrap().transition_kind,
+            PlannerTransitionKind::PickUpGroundLot
+        );
+        assert_eq!(
             semantics_by_name.get("put_down").unwrap().op_kind,
             PlannerOpKind::MoveCargo
+        );
+        assert_eq!(
+            semantics_by_name.get("put_down").unwrap().transition_kind,
+            PlannerTransitionKind::GoalModelFallback
         );
         assert_eq!(
             semantics_by_name.get("trade").unwrap().op_kind,
@@ -495,5 +842,27 @@ mod tests {
             .iter()
             .filter(|def| matches!(def.name.as_str(), "attack" | "defend"))
             .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
+    }
+
+    #[test]
+    fn hypothetical_transition_preserves_goal_model_fallback_for_non_pickup_ops() {
+        let (state, actor, _town, _bread) = sample_snapshot();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+        let semantics = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "eat")
+            .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
+            .unwrap();
+
+        let advanced = apply_hypothetical_transition(&goal, &semantics, state, &[]);
+        let thresholds = advanced.drive_thresholds(actor).unwrap();
+
+        assert!(advanced.homeostatic_needs(actor).unwrap().hunger < thresholds.hunger.low());
     }
 }
