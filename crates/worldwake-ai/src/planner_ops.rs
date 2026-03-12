@@ -342,7 +342,7 @@ fn apply_pick_up_transition<'snapshot>(
             .move_lot_ref_to_holder(hypothetical_ref, actor_ref, commodity, requested_quantity);
 
         return Some(HypotheticalTransition {
-            targets: vec![hypothetical_ref],
+            targets: vec![lot_ref],
             state,
             expected_materializations: vec![ExpectedMaterialization {
                 tag: MaterializationTag::SplitOffLot,
@@ -372,7 +372,7 @@ fn apply_pick_up_transition<'snapshot>(
         .move_lot_ref_to_holder(hypothetical_ref, actor_ref, commodity, moved_quantity);
 
     Some(HypotheticalTransition {
-        targets: vec![hypothetical_ref],
+        targets: vec![lot_ref],
         state,
         expected_materializations: vec![ExpectedMaterialization {
             tag: MaterializationTag::SplitOffLot,
@@ -1230,19 +1230,15 @@ mod tests {
 
         let advanced =
             apply_hypothetical_transition(&goal, &semantics, state, &[lot], None).unwrap();
-        let split_off = advanced.targets[0];
-
-        assert!(matches!(split_off, PlanningEntityRef::Hypothetical(_)));
-        assert_eq!(
-            advanced.expected_materializations,
-            vec![ExpectedMaterialization {
+        assert_eq!(advanced.targets, vec![lot]);
+        let split_off = match advanced.expected_materializations.as_slice() {
+            [ExpectedMaterialization {
                 tag: MaterializationTag::SplitOffLot,
-                hypothetical_id: match split_off {
-                    PlanningEntityRef::Hypothetical(id) => id,
-                    PlanningEntityRef::Authoritative(_) => unreachable!(),
-                },
-            }]
-        );
+                hypothetical_id,
+            }] => PlanningEntityRef::Hypothetical(*hypothetical_id),
+            _ => panic!("partial pickup should expose one split-off materialization"),
+        };
+
         assert_eq!(
             advanced
                 .state
@@ -1297,9 +1293,14 @@ mod tests {
             })),
         )
         .unwrap();
-        let split_off = advanced.targets[0];
-
-        assert!(matches!(split_off, PlanningEntityRef::Hypothetical(_)));
+        assert_eq!(advanced.targets, vec![lot]);
+        let split_off = match advanced.expected_materializations.as_slice() {
+            [ExpectedMaterialization {
+                tag: MaterializationTag::SplitOffLot,
+                hypothetical_id,
+            }] => PlanningEntityRef::Hypothetical(*hypothetical_id),
+            _ => panic!("payload split pickup should expose one split-off materialization"),
+        };
         assert_eq!(
             advanced
                 .state

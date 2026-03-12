@@ -1449,7 +1449,11 @@ mod tests {
         let pick_up = next_step.expect("cargo runtime should choose an initial pick_up step");
         assert_eq!(runtime.current_goal, Some(expected_goal));
         assert_eq!(pick_up.op_kind, PlannerOpKind::MoveCargo);
-        assert_eq!(next_step_valid, Some(false));
+        assert_eq!(
+            pick_up.targets,
+            vec![PlanningEntityRef::Authoritative(original_lot)]
+        );
+        assert_eq!(next_step_valid, Some(true));
 
         update_runtime_observation_snapshot(&view, harness.actor, runtime);
 

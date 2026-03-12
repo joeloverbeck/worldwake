@@ -285,9 +285,9 @@ mod tests {
     };
     use crate::planner_ops::planner_only_candidates;
     use crate::{
-        build_planning_snapshot, build_semantics_table, CommodityPurpose, ExpectedMaterialization,
-        GoalKey, GoalKind, GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind,
-        PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
+        build_planning_snapshot, build_semantics_table, CommodityPurpose, GoalKey, GoalKind,
+        GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningBudget,
+        PlanningEntityRef, PlanningSnapshot, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
@@ -599,15 +599,22 @@ mod tests {
         }
     }
 
-    fn acquire_goal(commodity: CommodityKind) -> GroundedGoal {
+    fn acquire_goal_with_purpose(
+        commodity: CommodityKind,
+        purpose: CommodityPurpose,
+    ) -> GroundedGoal {
         GroundedGoal {
             key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
                 commodity,
-                purpose: CommodityPurpose::SelfConsume,
+                purpose,
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
         }
+    }
+
+    fn acquire_goal(commodity: CommodityKind) -> GroundedGoal {
+        acquire_goal_with_purpose(commodity, CommodityPurpose::SelfConsume)
     }
 
     fn sample_step(
@@ -1377,6 +1384,116 @@ mod tests {
     }
 
     #[test]
+    fn search_returns_pick_up_goal_satisfaction_for_local_treatment_lot() {
+        let actor = entity(1);
+        let town = entity(10);
+        let medicine = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, medicine]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(medicine, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(medicine, town);
+        view.entities_at.insert(town, vec![actor, medicine]);
+        view.lot_commodities
+            .insert(medicine, CommodityKind::Medicine);
+        view.commodity_quantities
+            .insert((medicine, CommodityKind::Medicine), Quantity(1));
+        view.carry_capacities.insert(actor, LoadUnits(2));
+        view.entity_loads.insert(actor, LoadUnits(0));
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: acquire_goal_with_purpose(CommodityKind::Medicine, CommodityPurpose::Treatment).key,
+            evidence_entities: BTreeSet::from([medicine]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+    }
+
+    #[test]
+    fn search_returns_partial_pick_up_goal_satisfaction_for_local_food_lot() {
+        let actor = entity(1);
+        let town = entity(10);
+        let apples = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, apples]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(apples, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(apples, town);
+        view.entities_at.insert(town, vec![actor, apples]);
+        view.lot_commodities.insert(apples, CommodityKind::Apple);
+        view.consumable_profiles.insert(
+            apples,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+        view.commodity_quantities
+            .insert((apples, CommodityKind::Apple), Quantity(2));
+        view.carry_capacities.insert(actor, LoadUnits(1));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(apples, LoadUnits(2));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: acquire_goal(CommodityKind::Apple).key,
+            evidence_entities: BTreeSet::from([apples]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(
+            plan.steps[0].targets,
+            vec![PlanningEntityRef::Authoritative(apples)]
+        );
+        assert!(!plan.steps[0].expected_materializations.is_empty());
+    }
+
+    #[test]
     fn cargo_search_finds_pickup_then_travel_plan() {
         let actor = entity(1);
         let origin = entity(10);
@@ -1543,10 +1660,11 @@ mod tests {
                 quantity: Quantity(2),
             }))
         );
-        assert!(matches!(
-            plan.steps[0].targets.as_slice(),
-            [PlanningEntityRef::Hypothetical(_)]
-        ));
+        assert_eq!(
+            plan.steps[0].targets,
+            vec![PlanningEntityRef::Authoritative(bread)]
+        );
+        assert!(!plan.steps[0].expected_materializations.is_empty());
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
     }
 
@@ -1672,10 +1790,11 @@ mod tests {
         let (terminal, after_pick_up) =
             build_successor(&goal, &semantics, &registry, &node, &pick_up).unwrap();
         assert_eq!(terminal, None);
-        assert!(matches!(
-            after_pick_up.steps[0].targets.as_slice(),
-            [PlanningEntityRef::Hypothetical(_)]
-        ));
+        assert_eq!(
+            after_pick_up.steps[0].targets,
+            vec![PlanningEntityRef::Authoritative(bread)]
+        );
+        assert!(!after_pick_up.steps[0].expected_materializations.is_empty());
 
         let follow_up_candidates =
             search_candidates(&after_pick_up, &semantics, &registry, &handlers);
@@ -1816,19 +1935,11 @@ mod tests {
             build_successor(&goal, &semantics_table, &registry, &node, &candidate).unwrap();
 
         let step = &successor.steps[0];
-        assert!(matches!(
-            step.targets[0],
-            PlanningEntityRef::Hypothetical(_)
-        ));
+        assert_eq!(step.targets, vec![PlanningEntityRef::Authoritative(lot)]);
+        assert_eq!(step.expected_materializations.len(), 1);
         assert_eq!(
-            step.expected_materializations,
-            vec![ExpectedMaterialization {
-                tag: worldwake_sim::MaterializationTag::SplitOffLot,
-                hypothetical_id: match step.targets[0] {
-                    PlanningEntityRef::Hypothetical(id) => id,
-                    PlanningEntityRef::Authoritative(_) => unreachable!(),
-                },
-            }]
+            step.expected_materializations[0].tag,
+            worldwake_sim::MaterializationTag::SplitOffLot
         );
     }
 

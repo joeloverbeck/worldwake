@@ -8,7 +8,7 @@
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 8 tests (9 including the 6b variant). Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 10 tests. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **Test**: `golden_goal_invalidation_by_another_agent`
@@ -82,6 +82,18 @@ The golden suite contains 8 tests (9 including the 6b variant). Every test uses 
 - Deterministic replay: two runs with same seed produce identical hashes.
 **Cross-system chain**: Recipe selection → craft action (input consumption + output materialization) → replan → eat.
 
+### Scenario 6c: Capacity-Constrained Ground-Lot Pickup
+**Test**: `golden_capacity_constrained_ground_lot_pickup`
+**Systems exercised**: Production (harvest), Transport (partial pick-up split), Needs, AI (post-barrier replanning)
+**Setup**: Agent (Porter) at Orchard Farm, critically hungry, carry capacity only 1 load unit. OrchardRow workstation has 10 apples; harvest outputs 2-apple ground lots.
+**Emergent behavior proven**:
+- Agent harvests apples, materializing a 2-apple ground lot.
+- Because only 1 apple fits, the follow-up `pick_up` executes against the authoritative ground lot and materializes a split-off carried lot.
+- Agent consumes one carried apple; one apple remains on the ground.
+- Conservation checkpoints hold: 10 authoritative apples after harvest, then 9 after one apple is consumed.
+- Deterministic replay: two runs with the same seed produce identical hashes.
+**Cross-system chain**: Harvest materialization → replan → constrained pick-up split → consume.
+
 ### Scenario 7: Deprivation Cascade
 **Test**: `golden_deprivation_cascade`
 **Systems exercised**: Needs (metabolism-driven escalation), AI (threshold-crossing detection)
@@ -138,7 +150,7 @@ The golden suite contains 8 tests (9 including the 6b variant). Every test uses 
 | Production (harvest, craft) | Yes | 4, 5, 6b |
 | Trade | **No** | — |
 | Travel | Yes | 1, 3 (implicit) |
-| Transport (pick-up, put-down) | Partial | pick-up only (4) |
+| Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
 | Combat (attack, defend) | **No** | — |
 | Care (heal) | **No** | — |
 | Loot | Partial | 8 (soft assert) |
@@ -189,7 +201,7 @@ The golden suite contains 8 tests (9 including the 6b variant). Every test uses 
 | Healing a wounded agent with medicine | **No** |
 | Merchant restock → travel → acquire → return → sell | **No** |
 | Goal switching mid-travel | **No** |
-| Carry capacity exhaustion forcing inventory decisions | **No** |
+| Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multiple competing needs (hunger + thirst + fatigue) | **No** |
 | Wound bleed → clotting → natural recovery | **No** |
 

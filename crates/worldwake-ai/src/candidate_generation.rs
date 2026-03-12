@@ -713,7 +713,11 @@ fn any_local_need_relief(
     matches_need: fn(CommodityKind) -> bool,
 ) -> bool {
     CommodityKind::ALL.into_iter().any(|commodity| {
-        matches_need(commodity) && local_controlled_commodity_exists(view, agent, place, commodity)
+        matches_need(commodity)
+            && (local_controlled_commodity_exists(view, agent, place, commodity)
+                || place
+                    .and_then(|place| local_unpossessed_commodity_evidence(view, place, commodity))
+                    .is_some())
     })
 }
 
@@ -1313,6 +1317,74 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+    }
+
+    #[test]
+    fn local_unpossessed_food_relief_suppresses_duplicate_produce_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple_lot = entity(11);
+        let workstation = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, apple_lot, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(apple_lot, EntityKind::ItemLot);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple_lot, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, apple_lot, workstation]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(apple_lot, CommodityKind::Apple);
+        view.consumable_profiles.insert(
+            apple_lot,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(0)
             }
         ));
     }
