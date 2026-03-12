@@ -9,7 +9,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, BeliefView, CombatActionPayload, LootActionPayload,
-    TradeActionPayload, TransportActionPayload,
+    RecipeRegistry, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -32,6 +32,10 @@ pub enum GoalKindTag {
 pub trait GoalKindPlannerExt {
     fn goal_kind_tag(&self) -> GoalKindTag;
     fn relevant_op_kinds(&self) -> &'static [PlannerOpKind];
+    fn relevant_observed_commodities(
+        &self,
+        recipes: &RecipeRegistry,
+    ) -> Option<BTreeSet<CommodityKind>>;
     fn build_payload_override(
         &self,
         affordance_payload: Option<&ActionPayload>,
@@ -149,6 +153,34 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::MoveCargo { .. } => MOVE_CARGO_OPS,
             GoalKind::LootCorpse { .. } => LOOT_OPS,
             GoalKind::BuryCorpse { .. } => NO_OPS,
+        }
+    }
+
+    fn relevant_observed_commodities(
+        &self,
+        recipes: &RecipeRegistry,
+    ) -> Option<BTreeSet<CommodityKind>> {
+        match self {
+            GoalKind::ConsumeOwnedCommodity { commodity }
+            | GoalKind::AcquireCommodity { commodity, .. }
+            | GoalKind::SellCommodity { commodity }
+            | GoalKind::RestockCommodity { commodity }
+            | GoalKind::MoveCargo { commodity, .. } => Some([*commodity].into_iter().collect()),
+            GoalKind::ProduceCommodity { recipe_id } => recipes.get(*recipe_id).map(|recipe| {
+                recipe
+                    .inputs
+                    .iter()
+                    .chain(recipe.outputs.iter())
+                    .map(|(commodity, _)| *commodity)
+                    .collect()
+            }),
+            GoalKind::Sleep
+            | GoalKind::Relieve
+            | GoalKind::Wash
+            | GoalKind::ReduceDanger
+            | GoalKind::Heal { .. }
+            | GoalKind::LootCorpse { .. }
+            | GoalKind::BuryCorpse { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -553,6 +585,67 @@ mod tests {
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Attack));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Defend));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Heal));
+    }
+
+    #[test]
+    fn sleep_goal_observed_commodities_are_empty() {
+        let recipes = worldwake_sim::RecipeRegistry::new();
+
+        assert_eq!(
+            GoalKind::Sleep.relevant_observed_commodities(&recipes),
+            Some(BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn move_cargo_goal_observed_commodities_track_goal_commodity_only() {
+        let recipes = worldwake_sim::RecipeRegistry::new();
+
+        assert_eq!(
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination: entity_id(5, 0),
+            }
+            .relevant_observed_commodities(&recipes),
+            Some(BTreeSet::from([CommodityKind::Bread]))
+        );
+    }
+
+    #[test]
+    fn produce_goal_observed_commodities_include_recipe_inputs_and_outputs() {
+        let mut recipes = worldwake_sim::RecipeRegistry::new();
+        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: None,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+            ),
+        });
+
+        assert_eq!(
+            GoalKind::ProduceCommodity { recipe_id }.relevant_observed_commodities(&recipes),
+            Some(BTreeSet::from([CommodityKind::Bread, CommodityKind::Grain]))
+        );
+    }
+
+    #[test]
+    fn missing_produce_recipe_falls_back_to_full_observed_commodity_tracking() {
+        let recipes = worldwake_sim::RecipeRegistry::new();
+
+        assert_eq!(
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(999),
+            }
+            .relevant_observed_commodities(&recipes),
+            None
+        );
     }
 
     #[test]

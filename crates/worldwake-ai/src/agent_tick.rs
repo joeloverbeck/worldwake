@@ -1,9 +1,9 @@
 use crate::{
     build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
     generate_candidates, handle_plan_failure, rank_candidates, resolve_planning_targets_with,
-    revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime, InterruptDecision,
-    PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget,
-    RankedGoal,
+    revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt,
+    InterruptDecision, PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics,
+    PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -300,7 +300,8 @@ fn refresh_runtime_for_read_phase(
     let before = blocked_memory.clone();
     clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
     let blocked_changed_from_cleanup = *blocked_memory != before;
-    let snapshot_changed = observation_snapshot_changed(&view, agent, runtime);
+    let snapshot_changed =
+        observation_snapshot_changed(&view, agent, runtime, phase.recipe_registry);
 
     runtime.dirty = runtime.dirty
         || runtime.current_plan.is_none()
@@ -723,11 +724,23 @@ fn observation_snapshot_changed(
     view: &dyn BeliefView,
     agent: EntityId,
     runtime: &AgentDecisionRuntime,
+    recipe_registry: &RecipeRegistry,
 ) -> bool {
+    let current_commodity_signature = commodity_signature(view, agent);
+    let commodity_filter = runtime
+        .current_goal
+        .map(|goal| goal.kind.relevant_observed_commodities(recipe_registry))
+        .or_else(|| {
+            runtime
+                .current_plan
+                .as_ref()
+                .map(|plan| plan.goal.kind.relevant_observed_commodities(recipe_registry))
+        });
     runtime.last_effective_place != view.effective_place(agent)
         || runtime.last_needs != view.homeostatic_needs(agent)
         || runtime.last_wounds != view.wounds(agent)
-        || runtime.last_commodity_signature != commodity_signature(view, agent)
+        || filtered_commodity_signature(&runtime.last_commodity_signature, commodity_filter.as_ref())
+            != filtered_commodity_signature(&current_commodity_signature, commodity_filter.as_ref())
         || runtime.last_unique_item_signature != unique_item_signature(view, agent)
 }
 
@@ -751,6 +764,20 @@ fn commodity_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(Commodity
             (quantity > Quantity(0)).then_some((commodity, quantity))
         })
         .collect()
+}
+
+fn filtered_commodity_signature(
+    signature: &[(CommodityKind, Quantity)],
+    relevant: Option<&Option<std::collections::BTreeSet<CommodityKind>>>,
+) -> Vec<(CommodityKind, Quantity)> {
+    match relevant {
+        Some(Some(relevant)) => signature
+            .iter()
+            .copied()
+            .filter(|(commodity, _)| relevant.contains(commodity))
+            .collect(),
+        Some(None) | None => signature.to_vec(),
+    }
 }
 
 fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueItemKind, u32)> {
@@ -1063,6 +1090,22 @@ mod tests {
                 tag: MaterializationTag::SplitOffLot,
                 hypothetical_id: crate::HypotheticalEntityId(hypothetical),
             }],
+        }
+    }
+
+    fn active_runtime(goal: GoalKind) -> crate::AgentDecisionRuntime {
+        let goal = GoalKey::from(goal);
+        crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(PlannedPlan::new(
+                goal,
+                vec![barrier_step()],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            current_step_index: 0,
+            step_in_flight: false,
+            dirty: false,
+            ..crate::AgentDecisionRuntime::default()
         }
     }
 
@@ -1530,6 +1573,121 @@ mod tests {
             PlannerOpKind::Travel | PlannerOpKind::MoveCargo
         ));
         assert_eq!(next_step_valid, Some(false));
+    }
+
+    #[test]
+    fn irrelevant_commodity_change_does_not_trigger_replan_for_sleep_goal() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let utility = harness
+            .world
+            .get_component_utility_profile(harness.actor)
+            .cloned()
+            .unwrap_or_default();
+        let runtime = harness
+            .driver
+            .runtime_by_agent
+            .entry(harness.actor)
+            .or_insert_with(|| active_runtime(GoalKind::Sleep));
+        let view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&view, harness.actor, runtime);
+
+        {
+            let place = harness.world.effective_place(harness.actor).unwrap();
+            let mut txn = new_txn(&mut harness.world, 2);
+            let coin = txn.create_item_lot(CommodityKind::Coin, Quantity(1)).unwrap();
+            txn.set_ground_location(coin, place).unwrap();
+            txn.set_possessor(coin, harness.actor).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut blocked = BlockedIntentMemory::default();
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(2),
+            },
+        );
+
+        assert!(!runtime.dirty);
+    }
+
+    #[test]
+    fn relevant_commodity_change_triggers_replan_for_consume_goal() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let utility = harness
+            .world
+            .get_component_utility_profile(harness.actor)
+            .cloned()
+            .unwrap_or_default();
+        let runtime = harness.driver.runtime_by_agent.entry(harness.actor).or_insert_with(|| {
+            active_runtime(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })
+        });
+        let view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&view, harness.actor, runtime);
+
+        {
+            let place = harness.world.effective_place(harness.actor).unwrap();
+            let mut txn = new_txn(&mut harness.world, 2);
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, harness.actor).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut blocked = BlockedIntentMemory::default();
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(2),
+            },
+        );
+
+        assert!(runtime.dirty);
+    }
+
+    #[test]
+    fn no_plan_always_marks_runtime_dirty() {
+        let harness = Harness::new(ControlSource::Ai);
+        let utility = harness
+            .world
+            .get_component_utility_profile(harness.actor)
+            .cloned()
+            .unwrap_or_default();
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        let view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
+        let mut blocked = BlockedIntentMemory::default();
+
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            &mut runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(1),
+            },
+        );
+
+        assert!(runtime.dirty);
     }
 
     #[test]
