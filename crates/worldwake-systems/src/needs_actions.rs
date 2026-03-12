@@ -8,8 +8,8 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
-    MetabolismDurationKind, Precondition, TargetSpec,
+    ActionState, CommitOutcome, Constraint, ConsumableEffect, DeterministicRng, DurationExpr,
+    Interruptibility, MetabolismDurationKind, Precondition, TargetSpec,
 };
 
 pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut ActionHandlerRegistry) {
@@ -234,8 +234,8 @@ fn commit_noop(
     _instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
-    Ok(())
+) -> Result<CommitOutcome, ActionError> {
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -273,8 +273,9 @@ fn commit_eat(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
-    apply_consumable_effects(instance, txn, true)
+) -> Result<CommitOutcome, ActionError> {
+    apply_consumable_effects(instance, txn, true)?;
+    Ok(CommitOutcome::empty())
 }
 
 fn commit_drink(
@@ -282,8 +283,9 @@ fn commit_drink(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
-    apply_consumable_effects(instance, txn, false)
+) -> Result<CommitOutcome, ActionError> {
+    apply_consumable_effects(instance, txn, false)?;
+    Ok(CommitOutcome::empty())
 }
 
 fn apply_consumable_effects(
@@ -324,7 +326,7 @@ fn commit_toilet(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let needs = actor_needs(txn, instance.actor)?;
     let place = txn.effective_place(instance.actor).ok_or_else(|| {
         ActionError::InternalError(format!("actor {} has no place", instance.actor))
@@ -344,7 +346,8 @@ fn commit_toilet(
             pm(0),
             needs.dirtiness,
         ),
-    )
+    )?;
+    Ok(CommitOutcome::empty())
 }
 
 fn commit_wash(
@@ -352,7 +355,7 @@ fn commit_wash(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let target = *instance
         .targets
         .first()
@@ -369,7 +372,8 @@ fn commit_wash(
             needs.bladder,
             pm(0),
         ),
-    )
+    )?;
+    Ok(CommitOutcome::empty())
 }
 
 const fn pm(value: u16) -> Permille {
@@ -511,7 +515,7 @@ mod tests {
             .unwrap()
             {
                 TickOutcome::Continuing => {}
-                TickOutcome::Committed => break,
+                TickOutcome::Committed { .. } => break,
                 TickOutcome::Aborted { reason, .. } => panic!("unexpected abort: {reason:?}"),
             }
         }

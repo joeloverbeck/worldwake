@@ -6,8 +6,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, CommitOutcome,
+    Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
 };
 
 use crate::inventory::{move_entity_to_direct_possession, remaining_capacity};
@@ -236,10 +236,10 @@ fn commit_pick_up(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let target = require_item_lot_target(instance)?;
     let _ = execute_pick_up(txn, instance.actor, target)?;
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 fn start_put_down(
@@ -257,7 +257,7 @@ fn commit_put_down(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let target = require_item_lot_target(instance)?;
     let actor_place = validate_put_down(txn, instance.actor, target)?;
     txn.clear_possessor(target)
@@ -265,7 +265,7 @@ fn commit_put_down(
     txn.set_ground_location(target, actor_place)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(target);
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -479,7 +479,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(lot), Some(actor));
         assert_eq!(world.owner_of(lot), None);
         assert_eq!(world.effective_place(lot), Some(place));
@@ -633,7 +633,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         let direct_possessions = world.possessions_of(actor);
         assert_eq!(direct_possessions.len(), 1);
         let picked_up = direct_possessions[0];
@@ -690,7 +690,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(lot), None);
         assert_eq!(world.owner_of(lot), Some(owner));
         assert_eq!(world.effective_place(lot), Some(place));
@@ -877,7 +877,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(lot), Some(actor));
         assert_eq!(world.effective_place(lot), Some(destination));
     }

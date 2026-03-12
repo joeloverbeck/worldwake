@@ -285,8 +285,8 @@ mod tests {
         _instance: &crate::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
-    ) -> Result<(), ActionError> {
-        Ok(())
+    ) -> Result<crate::CommitOutcome, ActionError> {
+        Ok(crate::CommitOutcome::empty())
     }
 
     #[allow(clippy::unnecessary_wraps)]

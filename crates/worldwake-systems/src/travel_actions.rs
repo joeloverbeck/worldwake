@@ -4,8 +4,9 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
+    CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition,
+    TargetSpec,
 };
 
 pub fn register_travel_actions(
@@ -163,7 +164,7 @@ fn commit_travel(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let (_, _, destination, _, _) = travel_state(instance)?;
     txn.clear_component_in_transit_on_edge(instance.actor)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -173,7 +174,7 @@ fn commit_travel(
         txn.set_ground_location(entity, destination)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 fn abort_travel(
@@ -443,7 +444,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.effective_place(actor), Some(destination));
         assert_eq!(world.effective_place(bag), Some(destination));
         assert_eq!(world.effective_place(bread), Some(destination));

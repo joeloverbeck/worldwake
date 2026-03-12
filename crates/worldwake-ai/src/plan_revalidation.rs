@@ -298,8 +298,8 @@ mod tests {
         _instance: &worldwake_sim::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
-    ) -> Result<(), ActionError> {
-        Ok(())
+    ) -> Result<worldwake_sim::CommitOutcome, ActionError> {
+        Ok(worldwake_sim::CommitOutcome::empty())
     }
 
     #[allow(clippy::unnecessary_wraps)]

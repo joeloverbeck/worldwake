@@ -6,7 +6,7 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
+    ActionState, CommitOutcome, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
     HarvestActionPayload, Interruptibility, Precondition, RecipeDefinition, RecipeRegistry,
     ReservationReq, TargetSpec,
 };
@@ -439,7 +439,7 @@ fn commit_harvest(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let payload = harvest_payload(def, instance)?;
     let workstation = *instance
         .targets
@@ -486,7 +486,7 @@ fn commit_harvest(
     txn.set_ground_location(lot, place)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 fn commit_craft(
@@ -494,7 +494,7 @@ fn commit_craft(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let payload = craft_payload(def, instance)?;
     let workstation = *instance
         .targets
@@ -532,7 +532,7 @@ fn commit_craft(
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
         txn.add_target(lot);
     }
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -856,7 +856,7 @@ mod tests {
             .unwrap()
             {
                 TickOutcome::Continuing => {}
-                TickOutcome::Committed => return,
+                TickOutcome::Committed { .. } => return,
                 TickOutcome::Aborted { reason, .. } => panic!("unexpected abort: {reason:?}"),
             }
         }
@@ -1457,7 +1457,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(second_tick, TickOutcome::Committed);
+        assert!(matches!(second_tick, TickOutcome::Committed { .. }));
         assert!(world.get_component_production_job(workstation).is_none());
         assert!(world.is_archived(job.staged_inputs_container));
         assert!(world.get_component_item_lot(staged_lots[0].0).is_none());

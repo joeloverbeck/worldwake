@@ -59,8 +59,9 @@ mod tests {
     use crate::{
         AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
         ActionError, ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionState, ActionStatus, Constraint, DeterministicRng,
-        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome, Constraint,
+        DeterministicRng, DurationExpr, Interruptibility, Precondition, ReservationReq,
+        TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -146,8 +147,8 @@ mod tests {
         _instance: &ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
-    ) -> Result<(), ActionError> {
-        Ok(())
+    ) -> Result<CommitOutcome, ActionError> {
+        Ok(CommitOutcome::empty())
     }
 
     #[allow(clippy::unnecessary_wraps)]
@@ -166,11 +167,11 @@ mod tests {
         instance: &ActionInstance,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
-    ) -> Result<(), ActionError> {
+    ) -> Result<CommitOutcome, ActionError> {
         let _ = instance.instance_id;
         txn.create_agent("Bram", ControlSource::Ai)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        Ok(())
+        Ok(CommitOutcome::empty())
     }
 
     #[test]

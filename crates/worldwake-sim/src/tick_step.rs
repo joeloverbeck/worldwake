@@ -352,7 +352,7 @@ fn progress_active_actions(
             .map_err(TickStepError::Action)?
         {
             TickOutcome::Continuing => {}
-            TickOutcome::Committed => {
+            TickOutcome::Committed { .. } => {
                 actions_completed = actions_completed
                     .checked_add(1)
                     .expect("tick-step action-complete counter overflowed");
@@ -494,10 +494,10 @@ mod tests {
     use crate::{
         get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
         ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionState, ActionStatus, ControllerState,
-        DeterministicRng, DurationExpr, InputKind, Interruptibility, RecipeRegistry, Scheduler,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TickInputContext,
-        TickInputError, TickInputProducer,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome,
+        ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility,
+        RecipeRegistry, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
+        SystemManifest, TickInputContext, TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -599,8 +599,8 @@ mod tests {
         _instance: &ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
-    ) -> Result<(), ActionError> {
-        Ok(())
+    ) -> Result<CommitOutcome, ActionError> {
+        Ok(CommitOutcome::empty())
     }
 
     #[allow(clippy::unnecessary_wraps)]

@@ -5,14 +5,14 @@ use crate::{
     action_validation::evaluate_txn_precondition_authoritatively,
     AbortReason, ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
     ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionProgress, ActionStatus,
-    DeterministicRng, ExternalAbortReason, ReplanNeeded,
+    CommitOutcome, DeterministicRng, ExternalAbortReason, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TickOutcome {
     Continuing,
-    Committed,
+    Committed { outcome: CommitOutcome },
     Aborted {
         reason: AbortReason,
         replan: ReplanNeeded,
@@ -145,7 +145,7 @@ fn tick_action_inner(
         Ok(TickOutcome::Aborted { reason, replan })
     } else {
         match (handler.on_commit)(def, instance, rng, &mut txn) {
-            Ok(()) => {
+            Ok(outcome) => {
                 instance.status = ActionStatus::Committed;
                 release_reservations(&mut txn, &instance.reservation_ids)?;
                 txn.add_tag(EventTag::ActionCommitted);
@@ -154,7 +154,7 @@ fn tick_action_inner(
                 }
                 add_targets(&mut txn, &instance.targets);
                 let _ = txn.commit(event_log);
-                Ok(TickOutcome::Committed)
+                Ok(TickOutcome::Committed { outcome })
             }
             Err(ActionError::AbortRequested(reason)) => {
                 let reason =
@@ -190,9 +190,9 @@ mod tests {
         start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain,
         ActionDuration, ActionError, ActionExecutionAuthority, ActionExecutionContext,
         ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionState, ActionStatus, Affordance, Constraint,
-        DeterministicRng, DurationExpr, Interruptibility, Precondition, ReplanNeeded,
-        ReservationReq, TargetSpec,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, Affordance, CommitOutcome,
+        Constraint, DeterministicRng, DurationExpr, Interruptibility, Materialization,
+        MaterializationTag, Precondition, ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -212,6 +212,7 @@ mod tests {
         mutate_on_tick: bool,
         fail_after_tick_mutation: bool,
         abort_reasons: Vec<AbortReason>,
+        commit_outcome: CommitOutcome,
     }
 
     fn test_lock() -> &'static Mutex<()> {
@@ -297,10 +298,10 @@ mod tests {
         _instance: &ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
-    ) -> Result<(), ActionError> {
+    ) -> Result<CommitOutcome, ActionError> {
         let mut state = hook_state().lock().unwrap();
         state.commit_calls += 1;
-        Ok(())
+        Ok(state.commit_outcome.clone())
     }
 
     #[allow(clippy::unnecessary_wraps)]
@@ -596,7 +597,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert_eq!(
+            outcome,
+            TickOutcome::Committed {
+                outcome: CommitOutcome::empty(),
+            }
+        );
         assert!(!active_actions.contains_key(&instance_id));
         assert!(world.reservations_for(target).is_empty());
         assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
@@ -671,10 +677,64 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert_eq!(
+            outcome,
+            TickOutcome::Committed {
+                outcome: CommitOutcome::empty(),
+            }
+        );
         assert!(!active_actions.contains_key(&instance_id));
         assert_eq!(hook_state().lock().unwrap().commit_calls, 1);
         assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
+    }
+
+    #[test]
+    fn tick_action_returns_handler_commit_outcome() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        hook_state().lock().unwrap().commit_outcome = CommitOutcome {
+            materializations: vec![Materialization {
+                tag: MaterializationTag::SplitOffLot,
+                entity: entity(77),
+            }],
+        };
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
+            start_sample_action(
+                NonZeroU32::MIN,
+                Vec::new(),
+                vec![Precondition::ActorAlive],
+                BTreeSet::new(),
+            );
+        let mut rng = test_rng();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            TickOutcome::Committed {
+                outcome: CommitOutcome {
+                    materializations: vec![Materialization {
+                        tag: MaterializationTag::SplitOffLot,
+                        entity: entity(77),
+                    }],
+                },
+            }
+        );
     }
 
     #[test]

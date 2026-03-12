@@ -52,8 +52,9 @@ pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
-    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, ExternalAbortReason,
-    InterruptReason, PayloadEntityRole, SelfTargetActionKind,
+    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, CommitOutcome,
+    ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
+    PayloadEntityRole, SelfTargetActionKind,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};

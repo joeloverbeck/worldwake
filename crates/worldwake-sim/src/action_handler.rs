@@ -6,6 +6,29 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use worldwake_core::{CommodityKind, EntityId, Quantity, WorldTxn};
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommitOutcome {
+    pub materializations: Vec<Materialization>,
+}
+
+impl CommitOutcome {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Materialization {
+    pub tag: MaterializationTag,
+    pub entity: EntityId,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum MaterializationTag {
+    SplitOffLot,
+}
+
 pub type ActionStartFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
@@ -23,7 +46,7 @@ pub type ActionCommitFn = for<'w> fn(
     &ActionInstance,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
-) -> Result<(), ActionError>;
+) -> Result<CommitOutcome, ActionError>;
 pub type ActionAbortFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
@@ -246,7 +269,8 @@ impl AbortReason {
 mod tests {
     use super::{
         AbortReason, ActionAbortRequestReason, ActionError, ActionHandler, ActionProgress,
-        ExternalAbortReason, InterruptReason, PayloadEntityRole, SelfTargetActionKind,
+        CommitOutcome, ExternalAbortReason, InterruptReason, Materialization,
+        MaterializationTag, PayloadEntityRole, SelfTargetActionKind,
     };
     use crate::{
         ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionHandlerId, ActionInstance,
@@ -331,10 +355,10 @@ mod tests {
         _instance: &ActionInstance,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
-    ) -> Result<(), ActionError> {
+    ) -> Result<CommitOutcome, ActionError> {
         txn.create_agent("Aster", ControlSource::Ai)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        Ok(())
+        Ok(CommitOutcome::empty())
     }
 
     #[allow(clippy::unnecessary_wraps)]
@@ -358,6 +382,30 @@ mod tests {
         assert_clone_traits::<ActionError>();
         assert_clone_traits::<AbortReason>();
         assert_clone_traits::<ActionAbortRequestReason>();
+        assert_clone_traits::<CommitOutcome>();
+    }
+
+    #[test]
+    fn commit_outcome_empty_has_no_materializations() {
+        assert!(CommitOutcome::empty().materializations.is_empty());
+    }
+
+    #[test]
+    fn commit_outcome_tracks_materializations() {
+        let entity = EntityId {
+            slot: 17,
+            generation: 2,
+        };
+        let outcome = CommitOutcome {
+            materializations: vec![Materialization {
+                tag: MaterializationTag::SplitOffLot,
+                entity,
+            }],
+        };
+
+        assert_eq!(outcome.materializations.len(), 1);
+        assert_eq!(outcome.materializations[0].tag, MaterializationTag::SplitOffLot);
+        assert_eq!(outcome.materializations[0].entity, entity);
     }
 
     #[test]
@@ -486,9 +534,10 @@ mod tests {
             WitnessData::default(),
         );
 
-        (handler.on_commit)(&def, &instance, &mut rng, &mut txn).unwrap();
+        let outcome = (handler.on_commit)(&def, &instance, &mut rng, &mut txn).unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);
+        assert_eq!(outcome, CommitOutcome::empty());
     }
 }

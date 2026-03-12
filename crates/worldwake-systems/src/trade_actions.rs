@@ -8,7 +8,7 @@ use worldwake_sim::{
     ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
     ActionInstance, ActionPayload, ActionProgress, ActionState, BeliefView, DeterministicRng,
     DurationExpr, Interruptibility, OmniscientBeliefView, PayloadEntityRole, Precondition,
-    TargetSpec, TradeAcceptance, TradeActionPayload,
+    CommitOutcome, TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
 pub fn register_trade_action(
@@ -153,7 +153,7 @@ fn commit_trade(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let payload = trade_payload(def, instance)?;
     let (counterparty, place) = validate_trade_context(txn, instance, payload)?;
     ensure_accessible_quantity(
@@ -169,7 +169,8 @@ fn commit_trade(
         payload.requested_quantity,
     )?;
     ensure_bundle_accepted(txn, instance.actor, counterparty, payload, place)?;
-    execute_trade_transfers(txn, instance.actor, counterparty, payload, place)
+    execute_trade_transfers(txn, instance.actor, counterparty, payload, place)?;
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -909,7 +910,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(
             harness.world.possessor_of(harness.actor_offer),
             Some(harness.counterparty)
@@ -995,7 +996,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 3).unwrap();
     }
 

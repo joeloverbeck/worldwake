@@ -14,8 +14,9 @@ use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain,
     ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
     ActionPayload, ActionProgress, ActionState, BeliefView, CombatActionPayload, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole,
-    Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext, TargetSpec,
+    CommitOutcome, DeterministicRng, DurationExpr, Interruptibility, LootActionPayload,
+    PayloadEntityRole, Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext,
+    TargetSpec,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -530,10 +531,10 @@ fn commit_defend(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     txn.clear_component_combat_stance(instance.actor)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1035,12 +1036,12 @@ fn commit_loot(
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let (corpse, place) = validate_loot_context(txn, instance)?;
     for entity in direct_loot_entities(txn, corpse) {
         let _ = transferable_loot_entity(txn, instance.actor, corpse, entity, place)?;
     }
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1058,7 +1059,7 @@ fn commit_attack(
     instance: &ActionInstance,
     rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
+) -> Result<CommitOutcome, ActionError> {
     let payload = combat_payload(def, instance)?;
     let target = validate_attack_context(txn, instance, payload)?;
     validate_selected_weapon(txn, instance.actor, payload.weapon)?;
@@ -1106,14 +1107,14 @@ fn commit_attack(
         rng,
     )?
     else {
-        return Ok(());
+        return Ok(CommitOutcome::empty());
     };
 
     let mut next_wounds = target_wounds;
     next_wounds.wounds.push(wound);
     txn.set_component_wound_list(target, next_wounds)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    Ok(())
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1144,8 +1145,8 @@ fn commit_heal(
     _instance: &ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
-) -> Result<(), ActionError> {
-    Ok(())
+) -> Result<CommitOutcome, ActionError> {
+    Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1591,12 +1592,12 @@ mod tests {
                 },
             )
             .unwrap();
-            if final_outcome == TickOutcome::Committed {
+            if matches!(final_outcome, TickOutcome::Committed { .. }) {
                 break;
             }
         }
 
-        assert_eq!(final_outcome, TickOutcome::Committed);
+        assert!(matches!(final_outcome, TickOutcome::Committed { .. }));
         assert!(log
             .events_by_tag(EventTag::Inventory)
             .iter()
@@ -1671,7 +1672,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(
             world.get_component_wound_list(patient),
             Some(&WoundList::default())
@@ -1781,7 +1782,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(bread), Some(looter));
         assert_eq!(
             world.controlled_commodity_quantity(looter, CommodityKind::Bread),
@@ -1865,7 +1866,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(
             world.get_component_item_lot(bread).unwrap().quantity,
             Quantity(1)
@@ -1958,7 +1959,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(satchel), Some(looter));
         assert_eq!(world.direct_container(bread), Some(satchel));
         assert_eq!(
@@ -2221,7 +2222,7 @@ mod tests {
             }
         }
 
-        assert_eq!(outcome, TickOutcome::Committed);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         let wounds = world.get_component_wound_list(target).unwrap();
         assert_eq!(wounds.wounds.len(), 1);
         assert_eq!(
