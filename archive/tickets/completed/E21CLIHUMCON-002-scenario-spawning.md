@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-002: Scenario Spawning (`spawn_scenario()`)
 
 ## Summary
@@ -28,33 +30,45 @@ Implement `spawn_scenario()`: takes a `ScenarioDef`, builds a `Topology`, create
 - Parse via `ron::from_str()`
 - Return typed error on I/O or parse failure
 
-### `spawn_scenario(def: ScenarioDef) -> Result<SimulationState, ScenarioError>`
+### `spawn_scenario(def: ScenarioDef) -> Result<SpawnedSimulation, ScenarioError>`
+
+Returns a `SpawnedSimulation` struct that bundles persistent `SimulationState` with transient runtime artifacts:
+```rust
+pub struct SpawnedSimulation {
+    pub state: SimulationState,
+    pub action_registries: ActionRegistries,
+    pub dispatch_table: SystemDispatchTable,
+}
+```
+Rationale: `SimulationState` is serializable persistent state (save/load). Action registries and dispatch tables are derived runtime state rebuilt from the recipe registry — they don't belong in `SimulationState` (Principle 3: no derived state stored as authoritative). Bundling them in a wrapper keeps initialization in one place while preserving the boundary.
 
 Bootstrap sequence (per spec lines 36–48):
 1. Build `Topology` from `def.places` + `def.edges`:
+   - Assign synthetic `EntityId { slot: N, generation: 0 }` for each place (topology is built before World)
    - Create `Place` for each `PlaceDef` (with name, tags)
    - Create `TravelEdge` for each `EdgeDef` (resolve place names → `EntityId`)
    - If `bidirectional`, create reverse edge too
 2. `World::new(topology)`
 3. Spawn agents via `WorldTxn`:
-   - Allocate entity with `EntityKind::Agent`
-   - Set `Name`, `AgentData` (with `ControlSource`), `HomeostaticNeeds` (default or overrides)
-   - Set optional components: `CombatProfile`, `UtilityProfile`, `MerchandiseProfile`, `TradeDispositionProfile`
-   - Place agent at named location via relation
+   - `txn.create_agent(name, control_source)` — sets `Name`, `AgentData` automatically
+   - Set `HomeostaticNeeds` (default or overrides) via `txn.set_component_homeostatic_needs()`
+   - Set optional components via macro-generated setters: `set_component_combat_profile()`, `set_component_utility_profile()`, `set_component_merchandise_profile()`, `set_component_trade_disposition_profile()`
+   - Place agent at named location via `txn.set_ground_location()`
 4. Spawn items via `WorldTxn`:
-   - Allocate `ItemLot` entities with `CommodityKind`, `Quantity`
-   - Place at named location (place or agent) via relation
+   - `txn.create_item_lot(commodity, quantity)` — creates `ItemLot` entity
+   - Place at named location (place or agent) via `txn.set_ground_location()` or `txn.set_possessor()`
 5. Spawn facilities via `WorldTxn`:
-   - Create entities with `WorkstationTag` component at named place
+   - `txn.create_entity(EntityKind::Facility)` + `txn.set_component_workstation_marker()` + `txn.set_ground_location()`
 6. Spawn resource sources via `WorldTxn`:
-   - Create entities with `ResourceSource` component at named place
-7. Build action registries: `build_full_action_registries(&recipes)`
-8. Build dispatch table: `dispatch_table()`
-9. Create `Scheduler::new_with_tick(Tick(0), SystemManifest::canonical())`
-10. Create `ControllerState` — find agent with `ControlSource::Human`, set as controlled
-11. Create `DeterministicRng::new(Seed(...))`
-12. Create `ReplayState::new(...)`
-13. Assemble `SimulationState::new(...)`
+   - `txn.create_entity(EntityKind::Facility)` + `txn.set_component_resource_source()` + `txn.set_ground_location()`
+7. Create `RecipeRegistry::new()` (empty — recipes registered separately)
+8. Build action registries: `build_full_action_registries(&recipes)`
+9. Build dispatch table: `worldwake_systems::dispatch_table()`
+10. Create `Scheduler::new_with_tick(Tick(0), SystemManifest::canonical())`
+11. Create `ControllerState` — find agent with `ControlSource::Human`, set as controlled
+12. Create `DeterministicRng::new(Seed(...))`
+13. Create `ReplayState::new(initial_hash, seed, Tick(0), ReplayRecordingConfig::disabled())`
+14. Assemble `SimulationState::new(...)` and wrap in `SpawnedSimulation`
 
 ### `ScenarioError` enum
 - `Io(std::io::Error)`
@@ -86,3 +100,10 @@ Bootstrap sequence (per spec lines 36–48):
 - Determinism: same `ScenarioDef` with same seed → identical `SimulationState`
 - No direct world mutation outside `WorldTxn`
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-12
+- **What changed**: Implemented `spawn_scenario()`, `load_scenario_file()`, `ScenarioError`, and `SpawnedSimulation` in `crates/worldwake-cli/src/scenario/mod.rs`. The function was split into 5 helpers (`build_topology`, `spawn_entities`, `spawn_agent`, `spawn_item`, `assemble_state`) to satisfy clippy's `too_many_lines` lint.
+- **Deviations**: `spawn_scenario()` takes `&ScenarioDef` (reference) instead of owned `ScenarioDef` per clippy `needless_pass_by_value`. Dead-code warnings remain for public API items not yet consumed by `main.rs` (E21CLIHUMCON-003 scope).
+- **Verification**: 16/16 tests pass, cargo clippy passes with no errors (only expected dead_code warnings for items not yet called from main).

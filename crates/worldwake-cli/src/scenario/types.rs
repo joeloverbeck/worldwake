@@ -3,10 +3,6 @@
 //! These are pure data types — no logic, just the schema for scenario files.
 //! All location references use string names, resolved to `EntityId` during spawning.
 
-// These types are public API consumed by spawn_scenario (E21CLIHUMCON-002).
-// Dead-code warnings are expected until the consumer is implemented.
-#![allow(dead_code)]
-
 use std::num::NonZeroU32;
 
 use serde::Deserialize;
