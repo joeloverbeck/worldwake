@@ -17,14 +17,14 @@ crates/worldwake-ai/tests/
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 4 tests (living combat + scenario 8 + replay)
   golden_determinism.rs       — 1 test  (scenario 6)
-  golden_trade.rs             — 2 tests (scenario 2b + replay)
+  golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
 
 ---
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 21 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 23 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -69,6 +69,18 @@ The golden suite contains 21 tests across 6 domain files. Every test uses the re
 - Heal executes through the normal lifecycle: medicine is consumed and the patient's wound load decreases.
 - Two runs with the same seed produce identical world and event-log hashes for the healing scenario.
 **Cross-system chain**: Local wound state → heal-goal generation → planner care-step selection → medicine consumption → wound severity/bleed reduction.
+
+### Scenario 2d: Merchant Restock and Return to Home Market
+**File**: `golden_trade.rs` | **Tests**: `golden_merchant_restock_return_stock`, `golden_merchant_restock_return_stock_replays_deterministically`
+**Systems exercised**: Enterprise AI signals, Travel, Production, Transport/cargo continuity, deterministic replay
+**Setup**: Merchant starts at General Store with `MerchandiseProfile` advertising apples, zero apple stock, and remembered unmet apple demand at the home market. Orchard Farm has an apple resource source via OrchardRow workstation + `ResourceSource`.
+**Emergent behavior proven**:
+- Merchant generates the enterprise `RestockCommodity { Apple }` path from concrete remembered demand rather than from a magic stock threshold.
+- Merchant leaves General Store, reaches Orchard Farm, and acquires apples through the real harvest path.
+- Merchant controls apples away from the home market and later returns that stock to General Store, exercising `MoveCargo`.
+- The scenario exposed a planner-budget gap: the default search node-expansion budget was too low for the branch-heavy restock route from Village Square. Raising the default node-expansion budget fixed the real runtime path without adding special cases.
+- Two runs with the same seed produce identical world and event-log hashes for the merchant restock scenario.
+**Cross-system chain**: Demand memory at home market → enterprise restock signal → multi-leg travel → harvest/materialization → cargo return to home market.
 
 ### Scenario 3: Resource Contention with Conservation
 **File**: `golden_production.rs` | **Test**: `golden_resource_contention_with_conservation`
@@ -218,7 +230,7 @@ The golden suite contains 21 tests across 6 domain files. Every test uses the re
 |----------|---------|-----------|
 | ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a |
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
-| AcquireCommodity (Restock) | **No** | — |
+| AcquireCommodity (Restock) | Yes | 2d |
 | AcquireCommodity (RecipeInput) | **No** | — |
 | AcquireCommodity (Treatment) | **No** | — |
 | Sleep | Yes | 2 |
@@ -229,12 +241,12 @@ The golden suite contains 21 tests across 6 domain files. Every test uses the re
 | Heal | Yes | 2c |
 | ProduceCommodity | Yes | 6b |
 | SellCommodity | **No** | — |
-| RestockCommodity | **No** | — |
-| MoveCargo | **No** | — |
+| RestockCommodity | Yes | 2d |
+| MoveCargo | Yes | 2d |
 | LootCorpse | Yes | 8 |
 | BuryCorpse | **No** | — |
 
-**Coverage: 8/17 GoalKinds tested (47.1%), 1 partially tested.**
+**Coverage: 11/17 GoalKinds tested (64.7%).**
 
 ### ActionDomain Coverage
 
@@ -267,8 +279,8 @@ The golden suite contains 21 tests across 6 domain files. Every test uses the re
 | Place | Used? | Scenarios |
 |-------|-------|-----------|
 | VillageSquare | Yes | All |
-| OrchardFarm | Yes | 1, 3, 3b, 4, 5 |
-| GeneralStore | **No** | — |
+| OrchardFarm | Yes | 1, 2d, 3, 3b, 4, 5 |
+| GeneralStore | Yes | 2d |
 | CommonHouse | **No** | — |
 | RulersHall | **No** | — |
 | GuardPost | **No** | — |
@@ -276,10 +288,10 @@ The golden suite contains 21 tests across 6 domain files. Every test uses the re
 | NorthCrossroads | Yes | 3b |
 | ForestPath | Yes | 3b |
 | BanditCamp | Yes | 3b |
-| SouthGate | **No** | — |
+| SouthGate | Yes | 2d |
 | EastFieldTrail | Yes | 3b |
 
-**7/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route (14 ticks across 4 edges).**
+**9/12 places are now used. Multi-hop travel is explicitly tested via both the BanditCamp→OrchardFarm route and the GeneralStore→OrchardFarm merchant restock route.**
 
 ### Cross-System Interaction Coverage
 
@@ -297,7 +309,7 @@ The golden suite contains 21 tests across 6 domain files. Every test uses the re
 | Multi-hop travel to distant acquisition source | Yes |
 | Combat between two living agents | Yes |
 | Healing a wounded agent with medicine | Yes |
-| Merchant restock → travel → acquire → return → sell | **No** |
+| Merchant restock → travel → acquire → return stock to home market | Yes |
 | Goal switching during multi-leg travel | Yes |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multiple competing needs (hunger + thirst + fatigue) | **No** |
@@ -329,11 +341,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Proves**: Agent comes under active attack pressure → `ReduceDanger` is emitted at high-or-above danger → planner selects a defensive mitigation (`defend`, reposition, or equivalent real path) → danger drops without manual action queueing.
 
 ### Tier 2: Medium Priority (score 3-5)
-
-#### P8. Merchant Restock-Travel-Sell Loop
-**Score**: Emergence=5, Bug-catching=4, Effort=4 → **Composite: 5**
-**Rationale**: The full merchant enterprise loop (RestockCommodity → travel to source → acquire → MoveCargo back to market → SellCommodity) is the most complex emergent chain possible. Tests EnterpriseSignals, restock_gap, deliverable_quantity, and the sell action.
-**Proves**: Merchant with empty stock → restock goal → travel to resource → harvest/acquire → MoveCargo to home market → sell to buyer.
 
 #### P9. Carry Capacity Exhaustion
 **Score**: Emergence=3, Bug-catching=4, Effort=2 → **Composite: 5**
@@ -384,14 +391,14 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| GoalKind coverage | 8/17 (47.1%) | 13/17 (76.5%) | 16/17 (94.1%) |
+| GoalKind coverage | 11/17 (64.7%) | 12/17 (70.6%) | 13/17 (76.5%) |
 | ActionDomain coverage | 7/9 full | 7/9 full | 9/9 full |
 | Needs tested | 4/5 | 4/5 | 5/5 |
-| Places used | 6/12 | 6/12+ | 6/12+ |
-| Cross-system chains | 12 | 13 | 18 |
+| Places used | 9/12 | 9/12+ | 9/12+ |
+| Cross-system chains | 13 | 14 | 17 |
 
 ### Recommended Implementation Order (Tier 1)
 
-1. **P1 (Thirst)** — trivial, fills a basic coverage gap
-2. **P5 (Bladder/Latrine)** — new need + new place
-3. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
+1. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
+2. **P9 (Carry capacity exhaustion)** — transport/capacity decision gap with high regression value
+3. **P10 (Three-way need competition)** — ranking/regression coverage without major harness expansion

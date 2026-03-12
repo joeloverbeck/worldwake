@@ -305,17 +305,19 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        test_utils::sample_trade_disposition_profile, CarryCapacity, CauseRef, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory, DemandObservation,
-        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-        EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Place, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        build_prototype_world, prototype_place_entity, test_utils::sample_trade_disposition_profile,
+        BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
+        DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
+        InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
+        Place, PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionPayload, BeliefView,
-        DurationExpr, OmniscientBeliefView, RecipeRegistry, TransportActionPayload,
+        DurationExpr, OmniscientBeliefView, RecipeDefinition, RecipeRegistry,
+        TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -573,6 +575,25 @@ mod tests {
         let recipes = RecipeRegistry::new();
         let registries = build_full_action_registries(&recipes).unwrap();
         (registries.defs, registries.handlers)
+    }
+
+    fn build_registry_with_recipes(
+        recipes: &RecipeRegistry,
+    ) -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
+        let registries = build_full_action_registries(recipes).unwrap();
+        (registries.defs, registries.handlers)
+    }
+
+    fn harvest_apple_recipe() -> RecipeDefinition {
+        RecipeDefinition {
+            name: "Harvest Apples".to_string(),
+            inputs: vec![],
+            outputs: vec![(CommodityKind::Apple, Quantity(2))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::OrchardRow),
+            required_tool_kinds: vec![],
+            body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        }
     }
 
     fn insert_hungry_actor(view: &mut TestBeliefView, actor: EntityId) {
@@ -2067,5 +2088,95 @@ mod tests {
         ));
         let put_down = registry.iter().find(|def| def.name == "put_down").unwrap();
         assert_eq!(candidates[0].def_id, put_down.id);
+    }
+
+    #[test]
+    fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
+        let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, orchard_row) = {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            let actor = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+            let orchard_row = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, village_square).unwrap();
+            txn.set_ground_location(orchard_row, orchard_farm).unwrap();
+            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+                .unwrap();
+            txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+                .unwrap();
+            txn.set_component_workstation_marker(
+                orchard_row,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                orchard_row,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(10),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            let mut event_log = EventLog::new();
+            let _ = txn.commit(&mut event_log);
+            (actor, orchard_row)
+        };
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(harvest_apple_recipe());
+        let (registry, handlers) = build_registry_with_recipes(&recipes);
+        let semantics = build_semantics_table(&registry);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([orchard_row]),
+            evidence_places: BTreeSet::from([village_square, orchard_farm]),
+        };
+        let view = OmniscientBeliefView::new(&world);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+        );
+
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &semantics,
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        )
+        .expect("default search budget should find the branchy market-hub restock route");
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(plan.steps.len(), 4);
+        assert_eq!(
+            plan.steps.last().map(|step| step.op_kind),
+            Some(PlannerOpKind::Harvest)
+        );
     }
 }

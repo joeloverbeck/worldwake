@@ -32,7 +32,7 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 | 005 | `archive/tickets/completed/GOLDENE2E-005-bladder-relief-with-travel.md` | Bladder Relief with Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 006 | `archive/tickets/completed/GOLDENE2E-006-goal-switching-during-multi-leg-travel.md` | Goal Switching During Multi-Leg Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 007 | `archive/tickets/completed/GOLDENE2E-007-combat-between-living-agents.md` | Combat Between Living Agents | HIGH | Large | `golden_combat.rs` | 1 |
-| 008 | `GOLDENE2E-008-merchant-restock-travel-sell.md` | Merchant Restock-Travel-Sell Loop | MEDIUM | Large | `golden_trade.rs` (new) | 2 |
+| 008 | `archive/tickets/completed/GOLDENE2E-008-merchant-restock-return-stock.md` | Merchant Restock and Return Stock Loop | MEDIUM | Large | `golden_trade.rs` | 2 |
 | 009 | `GOLDENE2E-009-carry-capacity-exhaustion.md` | Carry Capacity Exhaustion | MEDIUM | Medium | `golden_production.rs` | 2 |
 | 010 | `GOLDENE2E-010-three-way-need-competition.md` | Three-Way Need Competition | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
 | 011 | `GOLDENE2E-011-wash-action.md` | Wash Action | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |

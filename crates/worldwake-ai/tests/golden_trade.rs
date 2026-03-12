@@ -5,9 +5,11 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, CommodityKind, EventTag, HomeostaticNeeds,
-    KnownRecipes, MerchandiseProfile, MetabolismProfile, Quantity, Seed, TradeDispositionProfile,
-    UtilityProfile,
+    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
+    total_live_lot_quantity, CommodityKind, DemandMemory, DemandObservation,
+    DemandObservationReason, EventTag, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
+    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::RecipeRegistry;
 
@@ -17,6 +19,31 @@ fn default_trade_disposition_profile() -> TradeDispositionProfile {
         initial_offer_bias: pm(500),
         concession_rate: pm(100),
         demand_memory_retention_ticks: 48,
+    }
+}
+
+fn enterprise_trade_disposition_profile() -> TradeDispositionProfile {
+    TradeDispositionProfile {
+        demand_memory_retention_ticks: 240,
+        ..default_trade_disposition_profile()
+    }
+}
+
+fn remembered_demand(
+    commodity: CommodityKind,
+    quantity: Quantity,
+    place: worldwake_core::EntityId,
+    counterparty: Option<worldwake_core::EntityId>,
+) -> DemandMemory {
+    DemandMemory {
+        observations: vec![DemandObservation {
+            commodity,
+            quantity,
+            place,
+            tick: Tick(0),
+            counterparty,
+            reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+        }],
     }
 }
 
@@ -163,6 +190,116 @@ fn run_buyer_driven_trade_scenario(
     )
 }
 
+#[allow(clippy::too_many_lines)]
+fn run_merchant_restock_return_stock_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+
+    let merchant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_merchandise_profile(
+        merchant,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+            home_market: Some(general_store),
+        },
+    )
+    .unwrap();
+    txn.set_component_trade_disposition_profile(merchant, enterprise_trade_disposition_profile())
+        .unwrap();
+    txn.set_component_demand_memory(
+        merchant,
+        remembered_demand(CommodityKind::Apple, Quantity(2), general_store, None),
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let initial_merchant_apples = h.agent_commodity_qty(merchant, CommodityKind::Apple);
+    let initial_authoritative_apples =
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+
+    let mut merchant_left_home = false;
+    let mut merchant_controlled_apples_away_from_home = false;
+    let mut merchant_returned_home_with_apples = false;
+
+    for _ in 0..220 {
+        h.step_once();
+
+        let merchant_place = h.world.effective_place(merchant);
+        let merchant_apples = h.agent_commodity_qty(merchant, CommodityKind::Apple);
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+
+        merchant_left_home |=
+            h.world.is_in_transit(merchant) || merchant_place != Some(general_store);
+        merchant_controlled_apples_away_from_home |= merchant_apples > Quantity(0)
+            && (h.world.is_in_transit(merchant) || merchant_place != Some(general_store));
+        merchant_returned_home_with_apples |=
+            merchant_place == Some(general_store) && merchant_apples > Quantity(0);
+
+        assert_eq!(
+            initial_merchant_apples,
+            Quantity(0),
+            "merchant should start with zero apples at the home market"
+        );
+        assert!(
+            authoritative_apples <= initial_authoritative_apples,
+            "authoritative apples should never increase: initial={initial_authoritative_apples}, now={authoritative_apples}"
+        );
+
+        if merchant_left_home
+            && merchant_controlled_apples_away_from_home
+            && merchant_returned_home_with_apples
+        {
+            break;
+        }
+    }
+
+    assert!(
+        merchant_left_home,
+        "merchant should leave the home market before completing the loop"
+    );
+    assert!(
+        merchant_controlled_apples_away_from_home,
+        "merchant should control apples away from the home market after restocking"
+    );
+    assert!(
+        merchant_returned_home_with_apples,
+        "merchant should return apples to the home market after restocking"
+    );
+    assert!(!h.agent_is_dead(merchant), "merchant must stay alive");
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 #[test]
 fn golden_buyer_driven_trade_acquisition() {
     let _ = run_buyer_driven_trade_scenario(Seed([12; 32]));
@@ -176,5 +313,21 @@ fn golden_buyer_driven_trade_acquisition_replays_deterministically() {
     assert_eq!(
         first, second,
         "trade scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_merchant_restock_return_stock() {
+    let _ = run_merchant_restock_return_stock_scenario(Seed([14; 32]));
+}
+
+#[test]
+fn golden_merchant_restock_return_stock_replays_deterministically() {
+    let first = run_merchant_restock_return_stock_scenario(Seed([15; 32]));
+    let second = run_merchant_restock_return_stock_scenario(Seed([15; 32]));
+
+    assert_eq!(
+        first, second,
+        "merchant restock-return stock scenario should replay deterministically"
     );
 }
