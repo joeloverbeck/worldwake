@@ -8,7 +8,7 @@
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 10 tests. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **Test**: `golden_goal_invalidation_by_another_agent`
@@ -106,12 +106,14 @@ The golden suite contains 10 tests. Every test uses the real AI loop (`AgentTick
 
 ### Scenario 8: Death Cascade and Opportunistic Loot
 **Test**: `golden_death_cascade_and_opportunistic_loot`
-**Systems exercised**: Needs (deprivation wounds), Combat (wound accumulation, death), Loot, Conservation
+**Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
+**Systems exercised**: Needs (deprivation wounds), Combat (wound accumulation, death), Loot, Conservation, deterministic replay
 **Setup**: Fragile victim (wound_capacity pm(200), existing pm(150) starvation wound, fast hunger metabolism, 2 hunger-critical-exposure ticks) with 5 coins. Second agent (Looter) at same location, healthy.
 **Emergent behavior proven**:
 - Victim dies from deprivation wounds exceeding wound_capacity.
-- Looter may opportunistically loot the corpse (soft assertion — logged but not required).
+- Looter opportunistically loots the corpse within the 100-tick observation window (hard assertion).
 - Coin lot conservation holds every tick throughout the death + loot sequence.
+- Two runs with the same seed produce identical world and event-log hashes for the death-and-loot scenario.
 **Cross-system chain**: Metabolism → deprivation exposure → wound infliction → wound accumulation → death → corpse creation → loot goal generation → loot action.
 
 ---
@@ -136,7 +138,7 @@ The golden suite contains 10 tests. Every test uses the real AI loop (`AgentTick
 | SellCommodity | **No** | — |
 | RestockCommodity | **No** | — |
 | MoveCargo | **No** | — |
-| LootCorpse | Partial | 8 (soft assert) |
+| LootCorpse | Yes | 8 |
 | BuryCorpse | **No** | — |
 
 **Coverage: 6/16 GoalKinds tested (37.5%), 1 partially tested.**
@@ -153,9 +155,9 @@ The golden suite contains 10 tests. Every test uses the real AI loop (`AgentTick
 | Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
 | Combat (attack, defend) | **No** | — |
 | Care (heal) | **No** | — |
-| Loot | Partial | 8 (soft assert) |
+| Loot | Yes | 8 |
 
-**Coverage: 3/9 domains fully tested, 3 partially, 3 completely untested.**
+**Coverage: 4/9 domains fully tested, 2 partially, 3 completely untested.**
 
 ### Needs Coverage
 
@@ -195,7 +197,7 @@ The golden suite contains 10 tests. Every test uses the real AI loop (`AgentTick
 | Production → materialization → transport → consumption | Yes |
 | Resource depletion → regeneration → re-harvest | Yes |
 | Deprivation → wounds → death | Yes |
-| Death → loot | Partial |
+| Death → loot | Yes |
 | Trade negotiation between two agents | **No** |
 | Combat between two living agents | **No** |
 | Healing a wounded agent with medicine | **No** |
@@ -285,11 +287,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Rationale**: Current tests use at most 2 agents. What happens when 4+ hungry agents compete for a limited resource source? Tests reservation/contention logic and graceful degradation when resources run out.
 **Proves**: 4 agents, resource source with Quantity(4) → agents race to harvest → some succeed, some must seek alternatives → conservation holds → no deadlocks.
 
-#### P14. Loot Corpse (Hard Assertion)
-**Score**: Emergence=3, Bug-catching=4, Effort=1 → **Composite: 6**
-**Rationale**: Scenario 8 only soft-asserts on looting. A dedicated test with a healthier looter and more ticks can hard-assert that LootCorpse works end-to-end. Give the looter low needs so it focuses on looting.
-**Proves**: Corpse with possessions + healthy looter → LootCorpse goal → loot action → possessions transfer → conservation holds.
-
 ### Tier 3: Lower Priority (score <= 2)
 
 #### P15. Put-Down Action (Inventory Management)
@@ -323,10 +320,9 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 ### Recommended Implementation Order (Tier 1)
 
 1. **P1 (Thirst)** — trivial, fills a basic coverage gap
-2. **P14 (Hard Loot)** — trivial, upgrades existing soft assertion
-3. **P4 (Heal)** — new domain, moderate setup
-4. **P5 (Bladder/Latrine)** — new need + new place
-5. **P3 (Multi-Hop Travel)** — tests planner depth
-6. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
-7. **P7 (Combat)** — complex new domain
-8. **P2 (Trade)** — most complex setup (merchant profiles)
+2. **P4 (Heal)** — new domain, moderate setup
+3. **P5 (Bladder/Latrine)** — new need + new place
+4. **P3 (Multi-Hop Travel)** — tests planner depth
+5. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
+6. **P7 (Combat)** — complex new domain
+7. **P2 (Trade)** — most complex setup (merchant profiles)

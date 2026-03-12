@@ -1092,6 +1092,23 @@ fn seed_fragile_deprivation_victim(h: &mut GoldenHarness) -> EntityId {
     agent
 }
 
+fn build_death_and_loot_scenario(seed: Seed) -> (GoldenHarness, EntityId, EntityId, u64) {
+    let mut h = GoldenHarness::new(seed);
+    let victim = seed_fragile_deprivation_victim(&mut h);
+    let looter = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Looter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(100), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+
+    (h, victim, looter, initial_coin_total)
+}
+
 fn run_death_and_loot_observation(
     h: &mut GoldenHarness,
     victim: EntityId,
@@ -1123,6 +1140,26 @@ fn run_death_and_loot_observation(
     }
 
     (victim_died, looter_gained_coin)
+}
+
+fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, victim, looter, initial_coin_total) = build_death_and_loot_scenario(seed);
+    let (victim_died, looter_gained_coin) =
+        run_death_and_loot_observation(&mut h, victim, looter, initial_coin_total);
+
+    assert!(
+        victim_died,
+        "Victim should die from deprivation wounds in the death-and-loot scenario"
+    );
+    assert!(
+        looter_gained_coin,
+        "Looter should gain coin within 100 ticks after the victim dies"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]
@@ -1282,19 +1319,7 @@ fn golden_deprivation_cascade() {
 
 #[test]
 fn golden_death_cascade_and_opportunistic_loot() {
-    let mut h = GoldenHarness::new(Seed([8; 32]));
-    let agent_a = seed_fragile_deprivation_victim(&mut h);
-    let agent_b = seed_agent(
-        &mut h.world,
-        &mut h.event_log,
-        "Looter",
-        VILLAGE_SQUARE,
-        HomeostaticNeeds::new(pm(100), pm(0), pm(100), pm(0), pm(0)),
-        MetabolismProfile::default(),
-        UtilityProfile::default(),
-    );
-
-    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+    let (mut h, agent_a, agent_b, initial_coin_total) = build_death_and_loot_scenario(Seed([8; 32]));
     let (a_died, b_looted) =
         run_death_and_loot_observation(&mut h, agent_a, agent_b, initial_coin_total);
 
@@ -1302,11 +1327,25 @@ fn golden_death_cascade_and_opportunistic_loot() {
         a_died,
         "Agent A should have died from deprivation wounds exceeding wound_capacity"
     );
+    assert!(
+        b_looted,
+        "Agent B should have looted Agent A within 100 ticks after the deprivation death"
+    );
+}
 
-    // Looting may not happen if the AI doesn't generate a loot goal within the tick budget.
-    // The critical assertions are: death occurred and conservation held throughout.
-    // Log whether looting happened for observability.
-    if !b_looted {
-        eprintln!("Note: Agent B did not loot Agent A within 100 ticks (non-fatal)");
-    }
+#[test]
+fn golden_death_cascade_and_opportunistic_loot_replays_deterministically() {
+    let seed = Seed([8; 32]);
+
+    let (world_hash_1, log_hash_1) = run_death_and_loot_scenario(seed);
+    let (world_hash_2, log_hash_2) = run_death_and_loot_scenario(seed);
+
+    assert_eq!(
+        world_hash_1, world_hash_2,
+        "Death-and-loot scenario must replay deterministically"
+    );
+    assert_eq!(
+        log_hash_1, log_hash_2,
+        "Death-and-loot event log must replay deterministically"
+    );
 }
