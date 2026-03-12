@@ -1,3 +1,4 @@
+mod inspect;
 mod tick;
 
 use worldwake_ai::AgentTickDriver;
@@ -9,8 +10,9 @@ use crate::repl::ReplState;
 
 /// Dispatch a parsed CLI command to its handler.
 ///
-/// Tick and Status are implemented; other handlers are stubs
-/// that will be filled in by tickets 007–012.
+/// Tick and Status are implemented in `tick.rs`.
+/// Look, Inspect, Inventory, Needs, Relations are implemented in `inspect.rs`.
+/// Other handlers are stubs that will be filled in by tickets 008–012.
 #[allow(clippy::needless_pass_by_value)]
 pub fn dispatch_command(
     cmd: CliCommand,
@@ -25,10 +27,15 @@ pub fn dispatch_command(
             tick::handle_tick(n.unwrap_or(1), sim, driver, registries, dispatch_table)
         }
         CliCommand::Status => tick::handle_status(sim, registries),
-        CliCommand::Look => {
-            println!("look: not implemented");
-            Ok(CommandOutcome::Continue)
+        CliCommand::Look => inspect::handle_look(sim),
+        CliCommand::Inspect { entity } => inspect::handle_inspect(sim, &entity),
+        CliCommand::Inventory { entity } => {
+            inspect::handle_inventory(sim, entity.as_deref())
         }
+        CliCommand::Needs { entity } => {
+            inspect::handle_needs(sim, entity.as_deref())
+        }
+        CliCommand::Relations { entity } => inspect::handle_relations(sim, &entity),
         CliCommand::Actions => {
             println!("actions: not implemented");
             Ok(CommandOutcome::Continue)
@@ -39,22 +46,6 @@ pub fn dispatch_command(
         }
         CliCommand::Cancel => {
             println!("cancel: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Inventory { .. } => {
-            println!("inventory: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Needs { .. } => {
-            println!("needs: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Inspect { .. } => {
-            println!("inspect: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Relations { .. } => {
-            println!("relations: not implemented");
             Ok(CommandOutcome::Continue)
         }
         CliCommand::Events { .. } => {

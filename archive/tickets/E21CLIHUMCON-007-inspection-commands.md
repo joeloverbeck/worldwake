@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # E21CLIHUMCON-007: Inspection Commands (look, inspect, inventory, needs, relations)
 
 ## Summary
@@ -76,3 +78,16 @@ Implement the state inspection command handlers: `look`, `inspect <entity>`, `in
 - All handlers are read-only — zero world mutation
 - Entity resolution follows the spec protocol (numeric → exact → prefix → error)
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-12
+- **What changed**:
+  - Created `crates/worldwake-cli/src/handlers/inspect.rs` with 5 handlers: `handle_look`, `handle_inspect`, `handle_inventory`, `handle_needs`, `handle_relations`
+  - Modified `crates/worldwake-cli/src/handlers/mod.rs` to wire Look, Inspect, Inventory, Needs, Relations variants to the new handlers (replacing stubs)
+  - 11 acceptance tests added in `inspect.rs`
+- **Deviations from original plan**:
+  - `handle_inspect` checks each component type individually rather than iterating a generic table (component tables are macro-generated and not iterable generically from outside `worldwake-core`)
+  - `handle_needs` uses per-agent `DriveThresholds` component when available, falling back to a default band (ticket said "or a default band")
+  - `handle_relations` queries all public World relation APIs (placement, containment, possession, ownership, factions, loyalty, hostility, offices) since `RelationTables` fields are `pub(crate)`
+- **Verification results**: `cargo clippy -p worldwake-cli` — 0 warnings; `cargo test -p worldwake-cli` — 57 tests pass (all 11 acceptance tests included)
