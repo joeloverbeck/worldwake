@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-003: CLI Args, Bootstrap, and REPL Loop
 
 ## Summary
@@ -79,3 +81,17 @@ struct Cli {
 - `quit` and Ctrl-C/Ctrl-D exit cleanly without panic
 - Invalid commands show usage help, don't crash
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-12
+- **What changed**:
+  - `src/main.rs` rewritten with clap `Cli` struct, bootstrap sequence (load → spawn → AgentTickDriver → run_repl), error handling with `process::exit(1)`
+  - `src/repl.rs` created with `ReplState`, `format_prompt()`, and `run_repl()` using rustyline with history, quit/exit/Ctrl-C/Ctrl-D support
+  - `src/lib.rs` created with module declarations for `repl` and `scenario`
+- **Deviations from plan**:
+  - `lib.rs` declares only `repl` and `scenario` modules (not `commands`, `display`, `handlers`) since those are out of scope for this ticket
+  - `run_repl` takes additional `&ActionRegistries` and `&SystemDispatchTable` params (needed by future command handlers)
+  - Place names resolved via `Topology::place()` rather than `Name` component (places store names in topology, not ECS component tables)
+  - Command dispatch stubbed with `quit`/`exit` recognition and "unknown command" message, since `CliCommand` enum is deferred to E21CLIHUMCON-004
+- **Verification**: 19 tests pass, `cargo build` succeeds, `cargo clippy` clean
