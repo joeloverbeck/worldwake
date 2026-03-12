@@ -1,0 +1,428 @@
+//! Golden tests for production, economy, transport, and conservation.
+
+mod golden_harness;
+
+use golden_harness::*;
+use worldwake_core::{
+    hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
+    verify_authoritative_conservation, verify_live_lot_conservation, CarryCapacity, CommodityKind,
+    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Quantity, ResourceSource, Seed,
+    StateHash, UtilityProfile, WorkstationTag,
+};
+
+// ---------------------------------------------------------------------------
+// Scenario runners (only used by tests in this file)
+// ---------------------------------------------------------------------------
+
+fn run_multi_recipe_craft_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    let apple_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .map(|(id, _)| id)
+        .unwrap();
+    let grain_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Grain")
+        .map(|(id, _)| id)
+        .unwrap();
+    let bread_recipe = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .unwrap();
+
+    let agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Miller",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::with([apple_recipe, grain_recipe, bread_recipe]),
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Firewood,
+        Quantity(1),
+    );
+    place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Mill,
+    );
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 1).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 1).unwrap();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+
+    let initial_hunger = h.agent_hunger(agent);
+    let mut saw_bread_materialize = false;
+    let mut hunger_decreased = false;
+
+    for _ in 0..80 {
+        h.step_once();
+
+        let live_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+        if live_bread > 0 {
+            saw_bread_materialize = true;
+            verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_live_lot_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
+        }
+
+        if saw_bread_materialize && live_bread == 0 && h.agent_hunger(agent) < initial_hunger {
+            hunger_decreased = true;
+            verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 0).unwrap();
+            verify_live_lot_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+            break;
+        }
+    }
+
+    assert!(
+        saw_bread_materialize,
+        "Agent should craft bread when recipe inputs are available and a mill is local"
+    );
+    assert!(
+        hunger_decreased,
+        "Agent should consume crafted bread after it materializes"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Porter",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_carry_capacity(agent, CarryCapacity(LoadUnits(1)))
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, 10).unwrap();
+
+    let initial_hunger = h.agent_hunger(agent);
+    let mut saw_apple_materialize = false;
+    let mut saw_split_pickup = false;
+    let mut hunger_decreased = false;
+
+    for _ in 0..80 {
+        h.step_once();
+
+        let live_apples = total_live_lot_quantity(&h.world, CommodityKind::Apple);
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+
+        if live_apples == 2 {
+            saw_apple_materialize = true;
+            verify_live_lot_conservation(&h.world, CommodityKind::Apple, 2).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Apple, 10).unwrap();
+        }
+
+        if saw_apple_materialize {
+            let apple_lots_at_farm = h
+                .world
+                .entities_effectively_at(ORCHARD_FARM)
+                .into_iter()
+                .filter(|entity| {
+                    h.world
+                        .get_component_item_lot(*entity)
+                        .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
+                })
+                .collect::<Vec<_>>();
+
+            let has_possessed_apples = apple_lots_at_farm
+                .iter()
+                .any(|entity| h.world.possessor_of(*entity) == Some(agent));
+            let has_ground_apples = apple_lots_at_farm
+                .iter()
+                .any(|entity| h.world.possessor_of(*entity).is_none());
+            if has_possessed_apples && has_ground_apples {
+                saw_split_pickup = true;
+            }
+        }
+
+        if saw_split_pickup && h.agent_hunger(agent) < initial_hunger {
+            hunger_decreased = true;
+            assert_eq!(
+                live_apples, 1,
+                "One apple should remain after a split pickup followed by one consumption"
+            );
+            assert_eq!(
+                authoritative_apples, 9,
+                "Authoritative apple total should reflect one consumed apple after harvest"
+            );
+            verify_live_lot_conservation(&h.world, CommodityKind::Apple, 1).unwrap();
+            verify_authoritative_conservation(&h.world, CommodityKind::Apple, 9).unwrap();
+            break;
+        }
+    }
+
+    assert!(
+        saw_apple_materialize,
+        "Harvesting should materialize a two-apple ground lot before pickup"
+    );
+    assert!(
+        saw_split_pickup,
+        "Carry-capacity pressure should force a split pickup with both possessed and ground apple lots"
+    );
+    assert!(
+        hunger_decreased,
+        "Agent should consume an apple after the constrained split pickup"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 3: Resource Contention with Conservation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn golden_resource_contention_with_conservation() {
+    let mut h = GoldenHarness::new(Seed([3; 32]));
+
+    let agent_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Alice",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    // Second agent competes for resources; not referenced directly.
+    seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bob",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // Agent A has bread.
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    // Apple resource at Orchard Farm for B.
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    // Record initial authoritative totals.
+    let initial_apple_auth = total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+    let initial_bread_auth = total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+    let initial_event_count = h.event_log.len();
+
+    for _ in 0..80 {
+        h.step_once();
+
+        // Conservation: lot quantities never exceed authoritative baseline.
+        // (Items can be consumed, reducing totals — that's fine.)
+        let apple_auth = total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        let bread_auth = total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+
+        assert!(
+            apple_auth <= initial_apple_auth,
+            "Apple authoritative total must not increase: was {initial_apple_auth}, now {apple_auth}"
+        );
+        assert!(
+            bread_auth <= initial_bread_auth,
+            "Bread authoritative total must not increase: was {initial_bread_auth}, now {bread_auth}"
+        );
+    }
+
+    // Verify that the simulation was non-trivial — agents actually acted.
+    assert!(
+        h.event_log.len() > initial_event_count,
+        "Event log should have grown — agents should have taken actions"
+    );
+    // Agent A should have consumed its bread.
+    let bread_remaining = h.agent_commodity_qty(agent_a, CommodityKind::Bread);
+    assert_eq!(
+        bread_remaining,
+        Quantity(0),
+        "Agent A should have eaten its bread"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 4: Materialization Barrier Chain
+// ---------------------------------------------------------------------------
+
+#[test]
+fn golden_materialization_barrier_chain() {
+    let mut h = GoldenHarness::new(Seed([4; 32]));
+
+    // Agent at Orchard Farm, critically hungry, no food.
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Dana",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // WorkstationMarker(OrchardRow) + ResourceSource at Orchard Farm.
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(20),
+            max_quantity: Quantity(20),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    let initial_hunger = h.agent_hunger(agent);
+    let mut hunger_decreased = false;
+    let mut acquired_apples = false;
+
+    for _tick in 0..120 {
+        h.step_once();
+
+        // Harvest drops items on the ground; check both possessed and ground lots.
+        let agent_apples = h.agent_commodity_qty(agent, CommodityKind::Apple);
+        let total_apple_lots = total_live_lot_quantity(&h.world, CommodityKind::Apple);
+        if agent_apples > Quantity(0) || total_apple_lots > 0 {
+            acquired_apples = true;
+        }
+
+        let current_hunger = h.agent_hunger(agent);
+        if current_hunger < initial_hunger {
+            hunger_decreased = true;
+            break;
+        }
+    }
+
+    assert!(
+        acquired_apples,
+        "Agent should have harvested apples (lots materialized on ground)"
+    );
+
+    // The harvest action creates apple lots on the ground at the workstation.
+    // This is the materialization barrier in action: items exist in the world
+    // but the agent must replan to acquire them.
+    let apple_lots = total_live_lot_quantity(&h.world, CommodityKind::Apple);
+    assert!(apple_lots > 0, "Apple lots should exist after harvest");
+
+    // Conservation: resource source deducted + lots = consistent.
+    let apple_auth = total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+    // Initial was 20 in resource source + 0 lots = 20.
+    assert!(
+        apple_auth <= 20,
+        "Apple authoritative total should not exceed initial: got {apple_auth}"
+    );
+
+    // Hunger decrease confirms the full barrier chain completed: harvest → pick-up → eat.
+    // If the agent only harvested but never ate, the chain is partial. We allow partial
+    // success because pick-up + eat requires additional replanning cycles.
+    if hunger_decreased {
+        assert!(
+            h.agent_hunger(agent) < initial_hunger,
+            "Hunger should have decreased after eating harvested apples"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 6b: Multi-Recipe Craft Path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn golden_multi_recipe_craft_path() {
+    let seed = Seed([6; 32]);
+
+    let (world_hash_1, log_hash_1) = run_multi_recipe_craft_scenario(seed);
+    let (world_hash_2, log_hash_2) = run_multi_recipe_craft_scenario(seed);
+
+    assert_eq!(
+        world_hash_1, world_hash_2,
+        "Multi-recipe craft scenario must replay deterministically"
+    );
+    assert_eq!(
+        log_hash_1, log_hash_2,
+        "Multi-recipe craft event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_capacity_constrained_ground_lot_pickup() {
+    let seed = Seed([16; 32]);
+
+    let (world_hash_1, log_hash_1) = run_capacity_constrained_ground_lot_pickup_scenario(seed);
+    let (world_hash_2, log_hash_2) = run_capacity_constrained_ground_lot_pickup_scenario(seed);
+
+    assert_eq!(
+        world_hash_1, world_hash_2,
+        "Capacity-constrained ground-lot scenario must replay deterministically"
+    );
+    assert_eq!(
+        log_hash_1, log_hash_2,
+        "Capacity-constrained ground-lot event log must replay deterministically"
+    );
+}

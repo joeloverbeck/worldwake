@@ -1,17 +1,31 @@
 # Golden E2E Suite: Coverage Analysis and Gap Report
 
-**Date**: 2026-03-12
-**Scope**: `crates/worldwake-ai/tests/golden_e2e.rs`
+**Date**: 2026-03-12 (updated 2026-03-12)
+**Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Document proven emergent scenarios, identify coverage gaps, and prioritize missing tests.
+
+---
+
+## File Layout
+
+```
+crates/worldwake-ai/tests/
+  golden_harness/
+    mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
+  golden_ai_decisions.rs      — 4 tests (scenarios 1, 2, 5, 7)
+  golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
+  golden_combat.rs            — 2 tests (scenario 8 + replay)
+  golden_determinism.rs       — 1 test  (scenario 6)
+```
 
 ---
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 11 tests across 4 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
-**Test**: `golden_goal_invalidation_by_another_agent`
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
 **Systems exercised**: Needs, Production (resource source), Travel, AI (candidate generation, planning)
 **Setup**: Two critically hungry agents (Alice, Bob) at Village Square. Alice has 1 bread. Orchard Farm has apples.
 **Emergent behavior proven**:
@@ -21,7 +35,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Cross-system chain**: Needs pressure → goal generation → plan search → action execution → resource consumption.
 
 ### Scenario 2: Priority-Based Interrupt
-**Test**: `golden_priority_based_interrupt`
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_priority_based_interrupt`
 **Systems exercised**: Needs (metabolism), AI (goal switching, interrupt evaluation)
 **Setup**: Single agent (Cara) with high fatigue (pm(800)), low hunger (pm(300)), but extremely fast hunger metabolism (pm(50)/tick). Has 2 bread.
 **Emergent behavior proven**:
@@ -31,7 +45,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Cross-system chain**: Metabolism tick → need escalation → interrupt evaluation → goal switch → action termination → new action start.
 
 ### Scenario 3: Resource Contention with Conservation
-**Test**: `golden_resource_contention_with_conservation`
+**File**: `golden_production.rs` | **Test**: `golden_resource_contention_with_conservation`
 **Systems exercised**: Needs, Production, Travel, Conservation verification
 **Setup**: Two critically hungry agents at Village Square. Alice has 1 bread. Orchard Farm has apples.
 **Emergent behavior proven**:
@@ -41,7 +55,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Invariant enforced**: Per-tick authoritative conservation for both apple and bread commodities.
 
 ### Scenario 4: Materialization Barrier Chain
-**Test**: `golden_materialization_barrier_chain`
+**File**: `golden_production.rs` | **Test**: `golden_materialization_barrier_chain`
 **Systems exercised**: Production (harvest), Transport (pick-up), Needs (eat), AI (multi-step replanning)
 **Setup**: Agent (Dana) at Orchard Farm, critically hungry, no food. OrchardRow workstation with 20 apples in ResourceSource.
 **Emergent behavior proven**:
@@ -52,7 +66,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Cross-system chain**: Harvest (production output on ground) → replan → pick-up (transport) → replan → eat (needs). This is the longest emergent action chain in the suite.
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
-**Test**: `golden_blocked_intent_memory_with_ttl_expiry`
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_blocked_intent_memory_with_ttl_expiry`
 **Systems exercised**: Production (resource regeneration), AI (blocked intent memory, TTL expiry)
 **Setup**: Agent (Eve) at Orchard Farm, critically hungry. ResourceSource is depleted (available_quantity=0) but regenerates at 1 unit per 5 ticks.
 **Emergent behavior proven**:
@@ -63,7 +77,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Cross-system chain**: Depleted resource → failed/deferred plan → resource regeneration ticks → successful harvest.
 
 ### Scenario 6: Deterministic Replay Fidelity
-**Test**: `golden_deterministic_replay_fidelity`
+**File**: `golden_determinism.rs` | **Test**: `golden_deterministic_replay_fidelity`
 **Systems exercised**: All (determinism across entire stack)
 **Setup**: Two agents (Alice, Bob), both hungry, at Village Square. Alice has bread. Orchard Farm has apples. Run for 50 ticks with same seed twice.
 **Emergent behavior proven**:
@@ -72,7 +86,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Invariant enforced**: Full-stack determinism (ChaCha8Rng, BTreeMap ordering, no floats, no wall-clock).
 
 ### Scenario 6b: Multi-Recipe Craft Path
-**Test**: `golden_multi_recipe_craft_path`
+**File**: `golden_production.rs` | **Test**: `golden_multi_recipe_craft_path`
 **Systems exercised**: Production (craft with inputs), Transport, Needs, AI (recipe selection)
 **Setup**: Agent (Miller) at Village Square with 1 firewood. Knows 3 recipes (harvest apples, harvest grain, bake bread). Mill workstation at Village Square.
 **Emergent behavior proven**:
@@ -83,7 +97,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Cross-system chain**: Recipe selection → craft action (input consumption + output materialization) → replan → eat.
 
 ### Scenario 6c: Capacity-Constrained Ground-Lot Pickup
-**Test**: `golden_capacity_constrained_ground_lot_pickup`
+**File**: `golden_production.rs` | **Test**: `golden_capacity_constrained_ground_lot_pickup`
 **Systems exercised**: Production (harvest), Transport (partial pick-up split), Needs, AI (post-barrier replanning)
 **Setup**: Agent (Porter) at Orchard Farm, critically hungry, carry capacity only 1 load unit. OrchardRow workstation has 10 apples; harvest outputs 2-apple ground lots.
 **Emergent behavior proven**:
@@ -95,7 +109,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Cross-system chain**: Harvest materialization → replan → constrained pick-up split → consume.
 
 ### Scenario 7: Deprivation Cascade
-**Test**: `golden_deprivation_cascade`
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_deprivation_cascade`
 **Systems exercised**: Needs (metabolism-driven escalation), AI (threshold-crossing detection)
 **Setup**: Agent (Felix) starts with pm(0) hunger, fast metabolism (pm(20)/tick), has 1 bread.
 **Emergent behavior proven**:
@@ -105,7 +119,7 @@ The golden suite contains 11 tests. Every test uses the real AI loop (`AgentTick
 **Cross-system chain**: Metabolism system → state change → AI threshold detection → goal generation → plan → action.
 
 ### Scenario 8: Death Cascade and Opportunistic Loot
-**Test**: `golden_death_cascade_and_opportunistic_loot`
+**File**: `golden_combat.rs` | **Test**: `golden_death_cascade_and_opportunistic_loot`
 **Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
 **Systems exercised**: Needs (deprivation wounds), Combat (wound accumulation, death), Loot, Conservation, deterministic replay
 **Setup**: Fragile victim (wound_capacity pm(200), existing pm(150) starvation wound, fast hunger metabolism, 2 hunger-critical-exposure ticks) with 5 coins. Second agent (Looter) at same location, healthy.
@@ -217,6 +231,8 @@ Each scenario is rated on three axes:
 - **Implementation effort** (1-5): 1=trivial, 5=requires significant new harness/setup.
 
 Sorted by composite score (emergence + bug-catching - effort) descending.
+
+**Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score >= 6)
 
