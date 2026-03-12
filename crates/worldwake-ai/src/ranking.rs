@@ -255,13 +255,12 @@ fn motive_score(
                 });
             score_product(context.utility.enterprise_weight, signal)
         }
-        GoalKind::MoveCargo { lot, destination } => {
-            let signal = context.view.item_lot_commodity(lot).map_or(
-                Permille::new_unchecked(0),
-                |commodity| {
-                    market_signal_for_place(context.view, context.agent, commodity, destination)
-                },
-            );
+        GoalKind::MoveCargo {
+            commodity,
+            destination,
+        } => {
+            let signal =
+                market_signal_for_place(context.view, context.agent, commodity, destination);
             score_product(context.utility.enterprise_weight, signal)
         }
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 0,
@@ -679,6 +678,36 @@ mod tests {
         let ranked = rank_candidates(
             &[goal(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].motive_score, 200 * 1000);
+    }
+
+    #[test]
+    fn move_cargo_scoring_uses_goal_commodity_directly() {
+        let agent = entity(1);
+        let market = entity(2);
+        let mut view = base_view(agent);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+
+        let ranked = rank_candidates(
+            &[goal(GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination: market,
             })],
             &view,
             agent,

@@ -1120,7 +1120,7 @@ mod tests {
         let hypothetical_id = crate::HypotheticalEntityId(0);
         let created = entity(42);
         let goal = GoalKey::from(GoalKind::MoveCargo {
-            lot: entity(11),
+            commodity: CommodityKind::Bread,
             destination: entity(22),
         });
         let plan = PlannedPlan::new(

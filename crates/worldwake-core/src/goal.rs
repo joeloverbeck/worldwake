@@ -37,7 +37,7 @@ pub enum GoalKind {
         commodity: CommodityKind,
     },
     MoveCargo {
-        lot: EntityId,
+        commodity: CommodityKind,
         destination: EntityId,
     },
     LootCorpse {
@@ -73,7 +73,10 @@ impl From<GoalKind> for GoalKey {
             GoalKind::Heal { target } | GoalKind::LootCorpse { corpse: target } => {
                 (None, Some(target), None)
             }
-            GoalKind::MoveCargo { lot, destination } => (None, Some(lot), Some(destination)),
+            GoalKind::MoveCargo {
+                commodity,
+                destination,
+            } => (Some(commodity), None, Some(destination)),
             GoalKind::BuryCorpse {
                 corpse,
                 burial_site,
@@ -140,12 +143,34 @@ mod tests {
 
     #[test]
     fn goal_key_extracts_entity_and_place_for_move_cargo() {
-        let lot = entity_id(4, 0);
         let destination = entity_id(9, 2);
-        let key = GoalKey::from(GoalKind::MoveCargo { lot, destination });
+        let key = GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Water,
+            destination,
+        });
 
-        assert_eq!(key.entity, Some(lot));
+        assert_eq!(key.commodity, Some(CommodityKind::Water));
+        assert_eq!(key.entity, None);
         assert_eq!(key.place, Some(destination));
+    }
+
+    #[test]
+    fn move_cargo_goal_identity_depends_on_commodity_and_destination_not_lot_identity() {
+        let destination = entity_id(9, 2);
+        let first = GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Water,
+            destination,
+        });
+        let second = GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Water,
+            destination,
+        });
+
+        assert_eq!(first.commodity, second.commodity);
+        assert_eq!(first.entity, None);
+        assert_eq!(second.entity, None);
+        assert_eq!(first.place, second.place);
+        assert_eq!(first, second);
     }
 
     #[test]
