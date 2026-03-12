@@ -79,12 +79,7 @@ These must be separated cleanly.
 2. Allow later hypothetical steps to target those hypothetical entities directly.
 3. Rebind hypothetical entities to authoritative entities when the real action commit creates them.
 4. Make partial `pick_up` exact, including split-off lot identity and quantity.
-5. Generalize the same mechanism for future materializing transitions:
-   - partial loot
-   - partial trade
-   - craft outputs
-   - harvest outputs
-   - future container split/merge flows
+5. Design the mechanism so it naturally extends to future materializing transitions (partial loot, craft outputs, harvest outputs) when those features are implemented.
 6. Preserve Principle 12: systems interact through state, not direct cross-system calls.
 7. Preserve Principle 13: no compatibility shims, no alias API retained alongside the new identity model.
 
@@ -94,6 +89,7 @@ These must be separated cleanly.
 2. This spec does not add global planner omniscience.
 3. This spec does not introduce abstract cargo scores or probabilistic pickup approximations.
 4. This spec does not preserve the old raw-`EntityId` planned-target model as a parallel compatibility path.
+5. This spec does not implement materializing transitions for harvest, craft, trade, or loot — those will be added when their respective systems need them.
 
 ## Design Overview
 
@@ -138,47 +134,34 @@ All planner-internal targeting and all persisted `PlannedStep` targets must use 
 
 This is the central architectural change. It makes identity honest.
 
-### 3. HypotheticalEntity Data
+### 3. HypotheticalEntityMeta (Minimal Registry)
 
-`PlanningState` must own a deterministic table of hypothetical entities:
+`PlanningState` must own a minimal registry of hypothetical entity base data — only information that cannot be expressed as an override in the existing override maps:
 
 ```rust
-pub struct HypotheticalEntity {
+pub struct HypotheticalEntityMeta {
     pub kind: EntityKind,
-    pub effective_place: Option<PlanningEntityRef>,
-    pub direct_container: Option<PlanningEntityRef>,
-    pub direct_possessor: Option<PlanningEntityRef>,
-    pub direct_possessions: BTreeSet<PlanningEntityRef>,
     pub item_lot_commodity: Option<CommodityKind>,
-    pub item_lot_consumable_profile: Option<CommodityConsumableProfile>,
-    pub commodity_quantities: BTreeMap<CommodityKind, Quantity>,
-    pub owner: Option<PlanningEntityRef>,
-    pub lifecycle: SnapshotLifecycle,
 }
 ```
 
-The exact stored fields may be refined, but the resulting hypothetical entity must contain all concrete information required for exact planner reasoning. No abstract "future inventory score" substitutes are allowed.
+All other hypothetical entity data — placement, possession, quantity, container relationships — lives in the same override maps that already exist for authoritative entity overrides, re-keyed from `EntityId` to `PlanningEntityRef`.
 
-### 4. PlanningState Entity Arena
+**Rationale**: A unified key architecture means one code path per query. Check the override map; fall back to the snapshot ONLY for `PlanningEntityRef::Authoritative` refs. Hypothetical entities have no snapshot to fall back to — all their data is in overrides.
 
-`PlanningState` must evolve from "snapshot plus overrides" into:
+### 4. PlanningState Unified Maps
 
-- authoritative snapshot-backed entities
-- override tables for authoritative entities
-- hypothetical entity table
-- deterministic `next_hypothetical_id`
+`PlanningState` must evolve from "snapshot plus `EntityId`-keyed overrides" into unified `PlanningEntityRef`-keyed maps:
+
+- All existing override maps (`position_overrides`, `quantity_overrides`, `possession_overrides`, `removed_entities`, etc.) are re-keyed from `EntityId` to `PlanningEntityRef`
+- `hypothetical_registry: BTreeMap<HypotheticalEntityId, HypotheticalEntityMeta>` — NOT a full entity table, just the minimal base data per hypothetical entity
+- `next_hypothetical_id: u32` — deterministic counter, part of `PlanningState`, cloned correctly during search branching
 
 Required operations:
 
-- `spawn_hypothetical_lot(...) -> HypotheticalEntityId`
-- `resolve_entity_ref(...)`
-- `move_entity_ref(...)`
-- `set_possessor_ref(...)`
-- `set_container_ref(...)`
-- `set_quantity_ref(...)`
-- `mark_removed_ref(...)`
-
-All existing planning queries must work against both authoritative and hypothetical entities through one unified belief surface.
+- `spawn_hypothetical_lot(kind: EntityKind, commodity: CommodityKind) -> HypotheticalEntityId` — allocates from `next_hypothetical_id`, registers in `hypothetical_registry`, returns the new ID
+- Query methods (`effective_place`, `commodity_quantity`, `direct_possessions`, etc.) take `PlanningEntityRef` instead of `EntityId` — check override map first, fall back to snapshot only for `Authoritative` refs
+- `move_entity_ref(...)`, `set_possessor_ref(...)`, `set_quantity_ref(...)`, `mark_removed_ref(...)` — operate on `PlanningEntityRef` keys
 
 ## Belief Surface Extensions Needed For Exact Pickup
 
@@ -188,17 +171,17 @@ Exact partial pickup requires exact carry math. The planner cannot fake this.
 
 Extend the planner-visible concrete state so it can compute exact carry fit:
 
-- `carry_capacity(agent) -> Option<LoadUnits>`
-- `container_capacity(entity) -> Option<LoadUnits>` where relevant
-- enough item/load data to compute exact current carried load recursively
+- `carry_capacity(agent) -> Option<LoadUnits>` — delegates to `Container.capacity` on the agent's body container (the `Container` component in `worldwake-core/src/items.rs`)
+- Enough item/load data to compute exact current carried load recursively
 
 One acceptable shape:
 
 ```rust
-fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
-fn container_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
+fn carry_capacity(&self, entity: PlanningEntityRef) -> Option<LoadUnits>;
 fn load_of_entity(&self, entity: PlanningEntityRef) -> Option<LoadUnits>;
 ```
+
+These should reference the existing load accounting system in `worldwake-core/src/load.rs`: `remaining_container_capacity()`, `load_per_unit()`, `load_of_lot()`.
 
 Alternative shapes are acceptable if they remain concrete and deterministic.
 
@@ -232,13 +215,11 @@ Do not introduce:
 
 The old path must be replaced, not preserved.
 
-### 3. Payloads
+### 3. Payload Resolution at Execution Boundary
 
-If payloads contain entity references, they must also be migrated to use `PlanningEntityRef` or a structurally equivalent target-reference type. This applies to:
+`ActionPayload` variants (`Harvest`, `Craft`, `Trade`, `Combat`, `Loot`) remain `EntityId`-based. They are part of the execution layer and must not be contaminated with planning types.
 
-- loot payloads
-- combat payloads if they ever target hypothetical entities in future
-- any future transport/trade payload referencing split outputs
+Instead: resolve all `PlanningEntityRef` targets to authoritative `EntityId`s BEFORE constructing payloads. This resolution happens at the planning-to-execution boundary in `agent_tick.rs`, not inside the payload types.
 
 ## Planner Transition Semantics
 
@@ -248,42 +229,45 @@ Hypothetical transitions remain owned by planner semantics, not by search.
 
 This spec builds on the recent ownership cleanup and extends it to materializing transitions.
 
-### 2. Materializing Transition Kinds
+### 2. PlannerTransitionKind
 
-Introduce planner transition kinds that may create hypothetical entities, for example:
+Extend the existing `PlannerTransitionKind` enum (currently in `planner_ops.rs`):
 
 ```rust
 pub enum PlannerTransitionKind {
     GoalModelFallback,
-    PickUpLot,
-    PutDownLot,
-    HarvestOutput,
-    CraftOutput,
-    TradeTransfer,
-    LootTransfer,
+    PickUpGroundLot,       // existing — preserved name; "Ground" qualifier is meaningful
+    PutDownGroundLot,      // new — needed for putting down hypothetical lots
 }
 ```
 
-Only the transitions actually implemented need to be active initially, but the system design must support this class of operation cleanly.
+Only transitions for currently implemented features are included. The enum is designed to grow — when harvest, craft, trade, or loot need materializing transitions, new variants will be added alongside their implementations.
 
 ### 3. Exact Pickup Transition
 
-The planner-owned `pick_up` transition must mirror authoritative pickup semantics exactly:
+The planner-owned `PickUpGroundLot` transition (currently `apply_pick_up_transition` in `planner_ops.rs`) must be reworked to mirror authoritative pickup semantics exactly:
 
 1. validate co-location and target shape
 2. compute exact remaining carry capacity from concrete planner-visible state
 3. if the full lot fits:
-   - move the authoritative lot into actor possession
+   - move the authoritative lot into actor possession (current behavior)
 4. if only a partial quantity fits:
-   - reduce the original authoritative lot quantity
-   - create a hypothetical lot with the moved quantity
-   - place that hypothetical lot in actor possession
+   - reduce the original authoritative lot quantity in overrides
+   - call `spawn_hypothetical_lot` to create a hypothetical lot with the moved quantity and same commodity kind
+   - place that hypothetical lot in actor possession via override maps
 5. if nothing fits:
    - transition is invalid
 
 This is the precise rework required for the current pickup issue.
 
-### 4. Exact Representation Example
+### 4. PutDownGroundLot Transition
+
+The new `PutDownGroundLot` transition handles putting down lots (including hypothetical ones):
+
+- If target is `PlanningEntityRef::Hypothetical(...)`: move the hypothetical entity from actor possession to ground at the actor's current (authoritative) place
+- If target is `PlanningEntityRef::Authoritative(...)`: same as current `GoalModelFallback` behavior for put-down
+
+### 5. Exact Representation Example
 
 Input state:
 
@@ -292,10 +276,14 @@ Input state:
 
 After hypothetical partial pickup:
 
-- `Authoritative(L10)` = `Water x 6`
-- `Hypothetical(H1)` = `Water x 4`, possessed by actor
+- `Authoritative(L10)` = `Water x 6` (quantity override)
+- `Hypothetical(H1)` = `Water x 4`, possessed by actor (registry entry + override entries)
 
 If the next step is `put_down(H1)`, the planner must target `Hypothetical(H1)` directly.
+
+### 6. Constraint: Hypothetical Entities at Authoritative Places Only
+
+Hypothetical lots are always placed at authoritative places (the actor's current place). No hypothetical places exist in any current or foreseeable use case. This simplifies placement logic — the place ref in override maps for hypothetical entities is always `PlanningEntityRef::Authoritative(place_id)`.
 
 ## Execution-Time Materialization Binding
 
@@ -313,30 +301,52 @@ pub struct MaterializationBindings {
 }
 ```
 
-This belongs in plan execution runtime state, not in authoritative world ECS.
+This belongs in plan execution runtime state (in `AgentDecisionRuntime`), not in authoritative world ECS.
 
-### 3. Action Materialization Contract
+### 3. CommitOutcome Return Type
 
-Actions whose commit path creates new authoritative entities must publish explicit materialization results.
-
-One acceptable shape:
+Actions whose commit path creates new authoritative entities must report those creations. The current `ActionCommitFn` signature:
 
 ```rust
-pub struct ActionMaterialization {
-    pub role: MaterializationRole,
+pub type ActionCommitFn = for<'w> fn(
+    &ActionDef, &ActionInstance, &mut DeterministicRng, &mut WorldTxn<'w>,
+) -> Result<(), ActionError>;
+```
+
+must change to:
+
+```rust
+pub type ActionCommitFn = for<'w> fn(
+    &ActionDef, &ActionInstance, &mut DeterministicRng, &mut WorldTxn<'w>,
+) -> Result<CommitOutcome, ActionError>;
+```
+
+where:
+
+```rust
+pub struct CommitOutcome {
+    pub materializations: Vec<Materialization>,
+}
+
+pub struct Materialization {
+    pub tag: MaterializationTag,
     pub entity: EntityId,
 }
 
-pub enum MaterializationRole {
-    SplitOffCarryLot,
-    CraftOutputLot { output_index: u16 },
-    HarvestOutputLot { output_index: u16 },
-    TradeReceivedLot,
-    LootTransferredLot,
+pub enum MaterializationTag {
+    SplitOffLot,
+}
+
+impl CommitOutcome {
+    pub fn empty() -> Self {
+        Self { materializations: Vec::new() }
+    }
 }
 ```
 
-The exact API may differ, but the contract must be explicit and typed. It must not rely on parsing ad hoc event tags or guessing from all newly touched entities.
+**`MaterializationTag` is designed to grow** — when harvest, craft, trade, or loot need materialization tracking, new variants will be added alongside their implementations.
+
+All existing action handlers that currently return `Ok(())` must be updated to return `Ok(CommitOutcome::empty())`. This is a cross-cutting change to `worldwake-sim/src/action_handler.rs` and all handler implementations in `worldwake-systems`.
 
 ### 4. Planner Expectation Metadata
 
@@ -344,19 +354,38 @@ Planner steps that create hypothetical entities must carry enough semantics to b
 
 Example:
 
-- pickup partial split step expects one materialized output with role `SplitOffCarryLot`
+- pickup partial split step expects one materialized output with tag `SplitOffLot`
 - runtime binds `H1 -> L27`
 
-### 5. Revalidation Path
+### 5. Target Resolution Before Enqueue
 
-Plan revalidation must:
+Binding resolution happens in `agent_tick.rs` BETWEEN plan step retrieval and input queue submission:
 
-1. resolve each `PlanningEntityRef`
-2. authoritative refs use the current world directly
-3. hypothetical refs must resolve through the binding table
-4. unresolved hypothetical refs fail revalidation
+1. Retrieve the next `PlannedStep` (which has `Vec<PlanningEntityRef>` targets)
+2. Resolve all `PlanningEntityRef` targets through the binding table:
+   - `Authoritative(id)` -> `id` (passthrough)
+   - `Hypothetical(hid)` -> look up in `MaterializationBindings` -> `EntityId`
+3. Any unresolved hypothetical ref -> replan (don't enqueue)
+4. Construct `InputKind::RequestAction` with resolved `Vec<EntityId>` targets
 
-This gives exact failure behavior rather than silent degradation.
+This keeps `InputKind::RequestAction` and the entire scheduler/execution layer using `EntityId` only.
+
+### 6. Revalidation with Hypothetical Refs
+
+`revalidate_next_step()` (in `plan_revalidation.rs`) compares planned targets against affordance targets. Affordances always have `Vec<EntityId>` (real world entities).
+
+For steps with hypothetical targets:
+
+1. Resolve through binding table first
+2. Then compare against affordance `Vec<EntityId>`
+3. Unresolved hypothetical refs -> revalidation fails -> replan
+
+## BeliefView Trait Interaction
+
+- `BeliefView` remains `EntityId`-based — it serves authoritative world queries
+- `PlanningState` continues to implement `BeliefView` for authoritative entity queries (wrapping `Authoritative(id)` internally)
+- Hypothetical entity queries go through `PlanningState`'s own `PlanningEntityRef`-based methods
+- Search and transition logic use `PlanningEntityRef` methods directly, not `BeliefView`
 
 ## Runtime Execution Flow
 
@@ -367,8 +396,10 @@ This gives exact failure behavior rather than silent degradation.
 
 ### Step 2: Execute First Step
 
-- step targets resolve
-- if step commit creates new authoritative entities, runtime receives explicit materialization results
+- step targets are resolved through binding table (Authoritative refs pass through, Hypothetical refs must be bound)
+- any unresolved hypothetical ref -> replan instead of enqueuing
+- resolved `EntityId` targets are used to construct `InputKind::RequestAction` for the scheduler
+- if step commit creates new authoritative entities, runtime receives `CommitOutcome` with explicit materializations
 
 ### Step 3: Bind
 
@@ -384,38 +415,6 @@ This gives exact failure behavior rather than silent degradation.
 
 - unresolved binding, target loss, or semantic mismatch triggers replanning
 
-## Pick Up Rework Requirements
-
-This spec explicitly requires reworking the current pickup issue, not merely supporting it in theory.
-
-### Required Code-Level Rework Areas
-
-- `worldwake-ai/src/planning_state.rs`
-- `worldwake-ai/src/planning_snapshot.rs`
-- `worldwake-ai/src/planner_ops.rs`
-- `worldwake-ai/src/search.rs`
-- `worldwake-ai/src/plan_revalidation.rs`
-- `worldwake-ai/src/agent_tick.rs`
-- `worldwake-sim` action execution APIs where materialization results are surfaced
-- `worldwake-systems/src/transport_actions.rs`
-
-### Required Behavioral End State
-
-The planner must be able to represent exactly:
-
-1. partial pickup of a lot
-2. travel while holding the split-off lot
-3. later actions targeting that exact split-off lot
-
-### Forbidden End State
-
-The implementation fails this spec if it:
-
-- still treats partial pickup as full pickup in planner state
-- stores only aggregate quantity deltas without entity identity
-- invents a compatibility alias path from hypothetical entities to old raw `EntityId` targeting
-- infers bindings by heuristic best effort instead of explicit typed materialization contracts
-
 ## Component Registration
 
 No new authoritative ECS components are required by default.
@@ -423,8 +422,9 @@ No new authoritative ECS components are required by default.
 Explicit requirements:
 
 - `MaterializationBindings` is planner/runtime state, not a world component
-- hypothetical entity arenas are planner state, not world components
-- if any shared identity type is moved into `worldwake-core`, it must be a plain value type, not a registered component
+- hypothetical entity registry and override maps are planner state, not world components
+- `CommitOutcome`, `Materialization`, `MaterializationTag` belong in `worldwake-sim` alongside the action handler types
+- `ActionCommitFn` signature change is a cross-cutting modification to `worldwake-sim/src/action_handler.rs` — all existing handlers in `worldwake-systems` must update their return type
 
 If implementation discovers a genuine need for authoritative component storage, that must be justified in a revision to this spec before coding.
 
@@ -435,13 +435,13 @@ If implementation discovers a genuine need for authoritative component storage, 
 Reads:
 
 - `PlanningSnapshot`
-- concrete cargo/load/capacity beliefs
+- concrete cargo/load/capacity beliefs (referencing `load.rs` accounting)
 - planner transition semantics
 - binding table during revalidation/execution
 
 Writes:
 
-- hypothetical entity arena in `PlanningState`
+- hypothetical entity registry and overrides in `PlanningState`
 - `PlannedPlan` with `PlanningEntityRef` targets
 - runtime materialization bindings
 
@@ -454,7 +454,7 @@ Reads:
 
 Writes:
 
-- explicit action materialization outputs for committing actions that create entities
+- `CommitOutcome` from action handlers that create entities
 
 ### worldwake-systems
 
@@ -465,7 +465,7 @@ Reads:
 Writes:
 
 - normal authoritative entity creation / mutation
-- typed materialization outputs for runtime binding
+- `CommitOutcome` with `Materialization` entries for handlers that create entities (currently: `pick_up` split path in `transport_actions.rs`)
 
 ## Cross-System Interactions (Principle 12)
 
@@ -474,7 +474,7 @@ Writes:
 - interaction occurs through:
   - shared action definitions
   - authoritative world mutations
-  - typed materialization results emitted by action execution
+  - `CommitOutcome` results emitted by action execution
 
 No system-to-system shortcut is allowed.
 
@@ -485,8 +485,8 @@ No system-to-system shortcut is allowed.
 - Exact pickup planning depends on information already local to the actor:
   - visible target lot
   - local containment/possession tree
-  - actor carry capacity
-  - commodity physical load profile
+  - actor carry capacity (via `Container` component)
+  - commodity physical load profile (via `load_per_unit()` in `load.rs`)
 - No global query should answer "can this fit?" on behalf of the planner beyond the planner's own local belief-derived state.
 - Materialization bindings are runtime-local plan execution facts, not world knowledge. They do not violate locality because they are not exposed as global world truth to agents.
 
@@ -497,13 +497,16 @@ No system-to-system shortcut is allowed.
 
 ### Concrete Dampeners
 
-- Planner depth budget
-- beam width budget
-- revalidation on every step
-- explicit binding failure forcing replanning
-- finite carry capacity and concrete lot quantities
+The physical world dampener is **finite carry capacity and concrete lot quantities** — the physical world limits how much cargo can be moved, which naturally bounds the utility of multi-step cargo plans. An agent cannot plan infinite cargo chains because the world's concrete load constraints cap what is achievable.
 
-These are concrete process limits, not arbitrary score clamps.
+Additionally, the planner has process constraints that limit planning scope:
+
+- planner depth budget (limits plan length)
+- beam width budget (limits search breadth)
+- revalidation on every step (forces replanning when world diverges)
+- explicit binding failure forcing replanning
+
+These are execution process limits, not physical world dampeners per se, but they bound computational cost.
 
 ### Stored State vs Derived Read-Model
 
@@ -511,20 +514,20 @@ These are concrete process limits, not arbitrary score clamps.
 
 - world entities and their real `EntityId`s
 - item lot quantities
-- carry capacity components
-- action commit outputs / materialization records
+- carry capacity components (`Container.capacity`)
+- `CommitOutcome` returned from action handlers (consumed immediately by binding logic, not persisted)
 
 **Stored (planner/runtime but non-authoritative):**
 
-- hypothetical entity arena
-- hypothetical entity IDs
-- plan target refs
+- hypothetical entity registry (`BTreeMap<HypotheticalEntityId, HypotheticalEntityMeta>`)
+- `PlanningEntityRef`-keyed override maps
+- plan target refs (`Vec<PlanningEntityRef>`)
 - materialization binding table
 
 **Derived (transient):**
 
-- remaining carry capacity
-- whether a lot fully fits
+- remaining carry capacity (computed from container capacity and current carried load)
+- whether a lot fully fits (computed from remaining capacity and lot load)
 - which hypothetical ref resolves to which authoritative ref at the current execution point
 
 ## Invariants
@@ -537,6 +540,7 @@ These are concrete process limits, not arbitrary score clamps.
 6. Hypothetical-to-authoritative binding is explicit, typed, and deterministic.
 7. Unresolved hypothetical refs fail revalidation rather than degrading silently.
 8. No backward-compatibility alias path remains after migration.
+9. Hypothetical entities are always placed at authoritative places — no hypothetical places exist.
 
 ## Implementation Sections
 
@@ -546,14 +550,14 @@ Implement:
 
 1. `HypotheticalEntityId`
 2. `PlanningEntityRef`
-3. `HypotheticalEntity`
-4. `PlanningState` arena support
+3. `HypotheticalEntityMeta` (minimal registry struct)
+4. `PlanningState` unified `PlanningEntityRef`-keyed override maps with `next_hypothetical_id` counter
 
 ### Section B: Belief & Snapshot Exact Cargo Support
 
 Implement:
 
-1. carry-capacity planner visibility
+1. carry-capacity planner visibility (referencing `Container` component and `load.rs`)
 2. exact planner load computation
 3. any snapshot fields required for exact recursive load accounting
 
@@ -561,25 +565,29 @@ Implement:
 
 Implement:
 
-1. `PlannedStep.targets` migration to typed refs
-2. payload reference migration where needed
-3. revalidation resolution through binding table
+1. `PlannedStep.targets` migration to `Vec<PlanningEntityRef>`
+2. target resolution in `agent_tick.rs` before enqueue (resolve `PlanningEntityRef` -> `EntityId` via binding table)
+3. revalidation resolution through binding table (resolve then compare against affordance `Vec<EntityId>`)
 
-### Section D: Action Materialization Contract
+### Section D: CommitOutcome Contract
 
 Implement:
 
-1. typed materialization outputs from action execution
-2. runtime binding application
-3. deterministic failure behavior on mismatch
+1. `CommitOutcome`, `Materialization`, `MaterializationTag` types in `worldwake-sim`
+2. `ActionCommitFn` signature change from `Result<(), ActionError>` to `Result<CommitOutcome, ActionError>`
+3. update all existing handlers in `worldwake-systems` to return `CommitOutcome::empty()`
+4. runtime binding application in `AgentDecisionRuntime`
+5. deterministic failure behavior on mismatch
 
 ### Section E: Exact Pickup Rework
 
 Implement:
 
-1. exact partial pickup hypothetical transition
-2. exact post-commit binding for split-off carried lot
-3. regression coverage for multi-step exact cargo planning
+1. `PutDownGroundLot` transition variant
+2. exact partial pickup hypothetical transition (rework `apply_pick_up_transition`)
+3. `pick_up` handler in `transport_actions.rs` returns `CommitOutcome` with `SplitOffLot` materialization on split path
+4. exact post-commit binding for split-off carried lot
+5. regression coverage for multi-step exact cargo planning
 
 ## Acceptance Criteria
 
@@ -591,6 +599,7 @@ Implement:
 - [ ] unresolved hypothetical refs fail revalidation cleanly
 - [ ] no compatibility alias path remains
 - [ ] `pick_up` planner semantics are reworked to use the exact identity system
+- [ ] `ActionCommitFn` returns `CommitOutcome` across all handlers
 - [ ] `cargo test --workspace` passes
 - [ ] `cargo clippy --workspace` passes
 
@@ -598,25 +607,26 @@ Implement:
 
 ### Unit Tests
 
-- [ ] `PlanningState` can spawn hypothetical item lots deterministically
-- [ ] `PlanningEntityRef` resolution distinguishes authoritative vs hypothetical refs correctly
+- [ ] `PlanningState` can spawn hypothetical item lots deterministically via `spawn_hypothetical_lot`
+- [ ] `PlanningEntityRef`-keyed override maps correctly distinguish authoritative vs hypothetical refs
+- [ ] hypothetical entity data is queryable through the same methods as authoritative data (unified code path)
 - [ ] exact carry-fit math matches authoritative transport semantics for full fit
 - [ ] exact carry-fit math matches authoritative transport semantics for partial fit
 - [ ] exact carry-fit math rejects zero-fit pickup
 - [ ] binding table resolves hypothetical refs after commit
+- [ ] `CommitOutcome` materialization flow: handler returns `SplitOffLot` -> runtime binds `H1 -> real EntityId`
 - [ ] unresolved hypothetical refs fail revalidation
 
 ### Search / Planner Tests
 
 - [ ] planner can produce a plan with partial `pick_up` followed by `travel`
 - [ ] planner can produce a plan with partial `pick_up` followed by `put_down` of the split-off lot
-- [ ] planner can produce a plan that consumes or trades a split-off lot when that is the correct next action
 - [ ] generic non-materializing actions still work with no behavior regression
 
 ### Transport / Action Tests
 
-- [ ] authoritative partial `pick_up` emits typed materialization output for the split-off lot
-- [ ] full-fit `pick_up` emits no split-off hypothetical binding expectation
+- [ ] authoritative partial `pick_up` returns `CommitOutcome` with `SplitOffLot` materialization for the split-off lot
+- [ ] full-fit `pick_up` returns `CommitOutcome::empty()`
 - [ ] `put_down` after exact partial pickup resolves against the bound authoritative entity
 
 ### End-to-End Tests
@@ -626,13 +636,13 @@ Implement:
 
 ## Suggested Ticket Breakdown
 
-1. `HYPID-001` - Planning entity reference migration
-2. `HYPID-002` - Hypothetical entity arena in `PlanningState`
-3. `HYPID-003` - Belief/snapshot carry-capacity and exact load support
-4. `HYPID-004` - Action materialization output contract
-5. `HYPID-005` - Revalidation and execution binding runtime
-6. `HYPID-006` - Exact partial pickup planner rework
-7. `HYPID-007` - Exact follow-up cargo planning tests and golden scenario
+1. `HYPID-001` - `CommitOutcome` type and `ActionCommitFn` signature change (Section D.1-D.3)
+2. `HYPID-002` - Planning identity model: `HypotheticalEntityId`, `PlanningEntityRef`, `HypotheticalEntityMeta`, unified maps (Section A)
+3. `HYPID-003` - Belief/snapshot carry-capacity and exact load support (Section B)
+4. `HYPID-004` - `PlannedStep` target migration and resolution in `agent_tick.rs` (Section C)
+5. `HYPID-005` - Revalidation and execution binding runtime (Section C.3, D.4-D.5)
+6. `HYPID-006` - Exact partial pickup planner rework + `PutDownGroundLot` transition (Section E)
+7. `HYPID-007` - Exact follow-up cargo planning tests and golden scenario (Section E.5)
 
 ## Cross-References
 
