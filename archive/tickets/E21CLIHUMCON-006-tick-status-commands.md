@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-006: Tick and Status Commands
 
 ## Summary
@@ -25,7 +27,9 @@ Implement the `tick [n]` and `status` command handlers. `tick` advances the simu
 
 ## Deliverables
 
-### `handle_tick(n: u32, sim: &mut SimulationState, driver: &mut AgentTickDriver)`
+### `handle_tick(n: u32, sim: &mut SimulationState, driver: &mut AgentTickDriver, registries: &ActionRegistries, dispatch_table: &SystemDispatchTable)`
+
+> **Corrected**: `step_tick()` requires `TickStepServices` which needs `ActionRegistries` and `SystemDispatchTable`. These are not in `SimulationState` — they live in `SpawnedSimulation`. `dispatch_command()` must also be updated to receive and forward these.
 
 For each of the `n` ticks:
 1. Wrap `driver` in `AutonomousControllerRuntime` as the `TickInputProducer`
@@ -38,8 +42,8 @@ Per spec: AI runs each tick for all `ControlSource::Ai` agents via `AgentTickDri
 
 Requires a controlled agent (error if observer mode). Display:
 - Agent name and location
-- Current action (if any) with remaining ticks
-- Homeostatic needs (all 5) with urgency bands via `format_needs_bar()`
+- Current action (if any) with remaining ticks (look up action name via `ActionDefRegistry`)
+- Homeostatic needs (all 5) with urgency bands via `format_needs_bar()` using a display-only default `ThresholdBand` (no per-agent bands exist yet; this is derived, not authoritative state).
 - Wound count (if any wounds exist)
 - Control source (always `[human]` for controlled agent)
 
@@ -63,3 +67,18 @@ Requires a controlled agent (error if observer mode). Display:
 - Determinism: same scenario + same tick count → same resulting state
 - AI agents run every tick (not skipped)
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-12
+- **What changed**:
+  - Created `crates/worldwake-cli/src/handlers/tick.rs` with `handle_tick()` and `handle_status()`
+  - Updated `crates/worldwake-cli/src/handlers/mod.rs` — wired `Tick`/`Status` variants, added `ActionRegistries` + `SystemDispatchTable` params to `dispatch_command()`
+  - Updated `crates/worldwake-cli/src/repl.rs` — integrated command parsing via `CommandParser` and dispatch through `dispatch_command()`
+  - Added `tick_parts_mut()` to `SimulationState` in `crates/worldwake-sim/src/simulation_state.rs` (public split-borrow accessor)
+- **Deviations from original plan**:
+  1. Handler signatures expanded to include `ActionRegistries` and `SystemDispatchTable` (not in `SimulationState`)
+  2. `handle_status` uses a display-only `default_display_band()` since no per-agent `ThresholdBand` exists yet
+  3. Added `tick_parts_mut()` to `SimulationState` — needed to split borrows for `step_tick()` call (Rust borrow checker limitation through method calls)
+  4. `repl.rs` updated to integrate command parsing and dispatch (not originally listed in "Files to Touch" but necessary for wiring)
+- **Verification**: 46 tests pass (6 new + 40 existing), `cargo clippy --workspace` zero warnings

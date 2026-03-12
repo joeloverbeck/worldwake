@@ -131,6 +131,31 @@ impl SimulationState {
         ))
     }
 
+    /// Split borrow: return mutable references to tick-relevant fields
+    /// plus an immutable reference to `RecipeRegistry`.
+    ///
+    /// This exists because Rust cannot split borrows through individual
+    /// `&mut self` accessor methods in a single expression.
+    pub fn tick_parts_mut(
+        &mut self,
+    ) -> (
+        &mut World,
+        &mut EventLog,
+        &mut Scheduler,
+        &mut ControllerState,
+        &mut DeterministicRng,
+        &RecipeRegistry,
+    ) {
+        (
+            &mut self.world,
+            &mut self.event_log,
+            &mut self.scheduler,
+            &mut self.controller_state,
+            &mut self.rng_state,
+            &self.recipe_registry,
+        )
+    }
+
     pub(crate) fn runtime_parts_mut(
         &mut self,
     ) -> (

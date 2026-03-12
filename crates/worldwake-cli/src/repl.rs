@@ -1,3 +1,4 @@
+use clap::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::error::Error;
@@ -5,6 +6,9 @@ use worldwake_ai::AgentTickDriver;
 use worldwake_core::Name;
 use worldwake_sim::{Affordance, SimulationState, SystemDispatchTable};
 use worldwake_systems::ActionRegistries;
+
+use crate::commands::{CommandOutcome, CommandParser};
+use crate::handlers::dispatch_command;
 
 /// Ephemeral UI state for the REPL session (not serialized, not part of simulation).
 pub struct ReplState {
@@ -57,12 +61,12 @@ pub fn format_prompt(sim: &SimulationState) -> String {
 /// Actual command parsing and dispatch are deferred to later tickets (004+).
 pub fn run_repl(
     sim: &mut SimulationState,
-    _driver: &mut AgentTickDriver,
-    _registries: &ActionRegistries,
-    _dispatch_table: &SystemDispatchTable,
+    driver: &mut AgentTickDriver,
+    registries: &ActionRegistries,
+    dispatch_table: &SystemDispatchTable,
 ) -> Result<(), Box<dyn Error>> {
     let mut editor = DefaultEditor::new()?;
-    let mut _repl_state = ReplState::new();
+    let mut repl_state = ReplState::new();
 
     loop {
         let prompt = format_prompt(sim);
@@ -76,13 +80,29 @@ pub fn run_repl(
 
                 let _ = editor.add_history_entry(trimmed);
 
-                if trimmed == "quit" || trimmed == "exit" {
-                    break;
-                }
+                let words: Vec<&str> = trimmed.split_whitespace().collect();
+                let parsed = CommandParser::try_parse_from(words);
 
-                // Command parsing deferred to E21CLIHUMCON-004.
-                // For now, print an unrecognized-command message.
-                println!("Unknown command: {trimmed}. Command parsing is not yet implemented.");
+                match parsed {
+                    Ok(parser) => {
+                        match dispatch_command(
+                            parser.command,
+                            sim,
+                            driver,
+                            registries,
+                            dispatch_table,
+                            &mut repl_state,
+                        ) {
+                            Ok(CommandOutcome::Quit) => break,
+                            Ok(CommandOutcome::Continue) => {}
+                            Err(e) => println!("error: {e}"),
+                        }
+                    }
+                    Err(e) => {
+                        // Clap parse errors include help text and unknown command messages.
+                        println!("{e}");
+                    }
+                }
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
                 break;
