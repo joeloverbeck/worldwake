@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-005: Display Helpers
 
 ## Summary
@@ -87,3 +89,10 @@ pub fn format_control_source(cs: ControlSource) -> &'static str
 - All functions are pure read-only (no world mutation)
 - Entity resolution is deterministic (BTreeMap iteration order)
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-12
+- **What changed**: Created `crates/worldwake-cli/src/display.rs` with all 6 helper functions (`entity_display_name`, `resolve_entity`, `format_needs_bar`, `format_quantity`, `format_location`, `format_control_source`) and `ResolveError` enum.
+- **Deviations**: None. All deliverables implemented as specified.
+- **Verification**: All 12 tests pass (`cargo test -p worldwake-cli display`), `cargo clippy -p worldwake-cli` clean with no warnings.
