@@ -104,9 +104,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         let previous_holder = self.direct_possessor_ref(lot);
         self.direct_possessor_overrides.insert(lot, Some(holder));
         self.direct_container_overrides.insert(lot, None);
-        if let Some(place) = self.resolve_effective_place_ref(holder, &mut BTreeSet::new()) {
-            self.entity_place_overrides.insert(lot, Some(place));
-        }
+        self.entity_place_overrides.remove(&lot);
 
         if let Some(previous_holder) = previous_holder {
             let current = self.commodity_quantity_ref(previous_holder, commodity);
@@ -254,9 +252,7 @@ impl<'snapshot> PlanningState<'snapshot> {
     ) -> Self {
         self.direct_possessor_overrides.insert(entity, Some(holder));
         self.direct_container_overrides.insert(entity, None);
-        if let Some(place) = self.resolve_effective_place_ref(holder, &mut BTreeSet::new()) {
-            self.entity_place_overrides.insert(entity, Some(place));
-        }
+        self.entity_place_overrides.remove(&entity);
         self
     }
 
@@ -268,9 +264,7 @@ impl<'snapshot> PlanningState<'snapshot> {
     ) -> Self {
         self.direct_container_overrides.insert(entity, Some(container));
         self.direct_possessor_overrides.insert(entity, None);
-        if let Some(place) = self.resolve_effective_place_ref(container, &mut BTreeSet::new()) {
-            self.entity_place_overrides.insert(entity, Some(place));
-        }
+        self.entity_place_overrides.remove(&entity);
         self
     }
 
@@ -519,6 +513,25 @@ impl<'snapshot> PlanningState<'snapshot> {
             .collect()
     }
 
+    #[must_use]
+    pub fn local_controlled_lot_refs_for(
+        &self,
+        agent: PlanningEntityRef,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<PlanningEntityRef> {
+        let mut entities = self
+            .all_entity_refs()
+            .into_iter()
+            .filter(|entity| self.effective_place_ref(*entity) == Some(place))
+            .filter(|entity| self.item_lot_commodity_ref(*entity) == Some(commodity))
+            .filter(|entity| self.can_control_ref(agent, *entity))
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
     fn all_entity_refs(&self) -> Vec<PlanningEntityRef> {
         let mut refs = self
             .snapshot
@@ -534,6 +547,29 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .map(PlanningEntityRef::Hypothetical),
         );
         refs
+    }
+
+    fn can_control_ref(&self, actor: PlanningEntityRef, entity: PlanningEntityRef) -> bool {
+        if self.removed_entities.contains(&actor) || self.removed_entities.contains(&entity) {
+            return false;
+        }
+        if entity == actor {
+            return true;
+        }
+        if let Some(container) = self.direct_container_ref(entity) {
+            return self.can_control_ref(actor, container);
+        }
+        if self.direct_possessor_ref(entity) == Some(actor) {
+            return true;
+        }
+        match entity {
+            PlanningEntityRef::Authoritative(entity) => self
+                .snapshot
+                .entities
+                .get(&entity)
+                .is_some_and(|snapshot| snapshot.action_flags.controllable_by_actor),
+            PlanningEntityRef::Hypothetical(_) => false,
+        }
     }
 }
 
@@ -618,6 +654,40 @@ impl BeliefView for PlanningState<'_> {
 
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
         self.commodity_quantity_ref(PlanningEntityRef::Authoritative(holder), kind)
+    }
+
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity {
+        self.local_controlled_lot_refs_for(PlanningEntityRef::Authoritative(agent), place, commodity)
+            .into_iter()
+            .fold(Quantity(0), |total, entity| {
+                let quantity = self.commodity_quantity_ref(entity, commodity);
+                Quantity(
+                    total
+                        .0
+                        .checked_add(quantity.0)
+                        .expect("local controlled commodity quantity overflowed"),
+                )
+            })
+    }
+
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        self.local_controlled_lot_refs_for(PlanningEntityRef::Authoritative(agent), place, commodity)
+            .into_iter()
+            .filter_map(|entity| match entity {
+                PlanningEntityRef::Authoritative(entity) => Some(entity),
+                PlanningEntityRef::Hypothetical(_) => None,
+            })
+            .collect()
     }
 
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
@@ -1040,6 +1110,41 @@ mod tests {
                 .unwrap_or(Quantity(0))
         }
 
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Quantity {
+            self.local_controlled_lots_for(actor, place, commodity)
+                .into_iter()
+                .fold(Quantity(0), |total, entity| {
+                    let quantity = self
+                        .commodity_quantities
+                        .get(&(entity, commodity))
+                        .copied()
+                        .unwrap_or(Quantity(0));
+                    Quantity(total.0 + quantity.0)
+                })
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            let mut entities = self
+                .entities_at(place)
+                .into_iter()
+                .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+                .filter(|entity| self.can_control(actor, *entity))
+                .collect::<Vec<_>>();
+            entities.sort();
+            entities.dedup();
+            entities
+        }
+
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
             self.item_lot_commodities.get(&entity).copied()
         }
@@ -1341,6 +1446,8 @@ mod tests {
         view.entity_loads.insert(bread, LoadUnits(1));
         view.commodity_quantities
             .insert((actor, CommodityKind::Bread), Quantity(1));
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
         view.needs.insert(
             actor,
             HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
@@ -1585,6 +1692,99 @@ mod tests {
         assert_eq!(
             state.item_lot_commodity_ref(PlanningEntityRef::Authoritative(bread)),
             Some(CommodityKind::Bread)
+        );
+    }
+
+    #[test]
+    fn controlled_commodity_quantity_at_place_counts_local_authoritative_and_hypothetical_stock() {
+        let (view, actor, town, field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let mut state = PlanningState::new(&snapshot);
+        let hid = state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Bread);
+        let hypothetical = PlanningEntityRef::Hypothetical(hid);
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+
+        let local = state
+            .set_possessor_ref(hypothetical, actor_ref)
+            .set_quantity_ref(hypothetical, CommodityKind::Bread, Quantity(2));
+        let moved = local.clone().move_actor_to(field);
+
+        assert_eq!(
+            local.controlled_commodity_quantity_at_place(actor, town, CommodityKind::Bread),
+            Quantity(3)
+        );
+        assert_eq!(
+            local.controlled_commodity_quantity_at_place(actor, field, CommodityKind::Bread),
+            Quantity(0)
+        );
+        assert_eq!(
+            moved.controlled_commodity_quantity_at_place(actor, town, CommodityKind::Bread),
+            Quantity(0)
+        );
+        assert_eq!(
+            moved.controlled_commodity_quantity_at_place(actor, field, CommodityKind::Bread),
+            Quantity(3)
+        );
+        assert_eq!(
+            local.local_controlled_lots_for(actor, town, CommodityKind::Bread),
+            vec![bread]
+        );
+    }
+
+    #[test]
+    fn possessed_entities_follow_holder_movement_without_stale_place_overrides() {
+        let (view, actor, town, field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let mut state = PlanningState::new(&snapshot);
+        let cargo_id = state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Bread);
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let cargo_ref = PlanningEntityRef::Hypothetical(cargo_id);
+
+        let state = state
+            .set_possessor_ref(cargo_ref, actor_ref)
+            .set_quantity_ref(cargo_ref, CommodityKind::Bread, Quantity(2));
+
+        assert_eq!(state.effective_place_ref(cargo_ref), Some(town));
+
+        let moved = state.move_actor_to(field);
+
+        assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
+        assert_eq!(
+            moved.controlled_commodity_quantity_at_place(actor, field, CommodityKind::Bread),
+            Quantity(3)
+        );
+        assert_eq!(moved.local_controlled_lots_for(actor, field, CommodityKind::Bread), vec![bread]);
+    }
+
+    #[test]
+    fn local_controlled_lot_refs_for_tracks_hypotheticals_and_removals() {
+        let (view, actor, town, _field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let mut state = PlanningState::new(&snapshot);
+        let first = state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Bread);
+        let second = state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Bread);
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let first_ref = PlanningEntityRef::Hypothetical(first);
+        let second_ref = PlanningEntityRef::Hypothetical(second);
+
+        let state = state
+            .set_possessor_ref(first_ref, actor_ref)
+            .set_quantity_ref(first_ref, CommodityKind::Bread, Quantity(2))
+            .set_possessor_ref(second_ref, actor_ref)
+            .set_quantity_ref(second_ref, CommodityKind::Bread, Quantity(4));
+        let removed = state.clone().mark_removed_ref(first_ref);
+
+        assert_eq!(
+            state.local_controlled_lot_refs_for(actor_ref, town, CommodityKind::Bread),
+            vec![
+                PlanningEntityRef::Authoritative(bread),
+                first_ref,
+                second_ref
+            ]
+        );
+        assert_eq!(
+            removed.local_controlled_lot_refs_for(actor_ref, town, CommodityKind::Bread),
+            vec![PlanningEntityRef::Authoritative(bread), second_ref]
         );
     }
 

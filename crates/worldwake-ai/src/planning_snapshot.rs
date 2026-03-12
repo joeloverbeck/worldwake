@@ -433,6 +433,22 @@ mod tests {
         fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
             Quantity(0)
         }
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+        fn local_controlled_lots_for(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
 
         fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
             None

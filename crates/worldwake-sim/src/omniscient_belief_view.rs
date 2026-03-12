@@ -127,6 +127,43 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world.controlled_commodity_quantity(holder, kind)
     }
 
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity {
+        self.local_controlled_lots_for(agent, place, commodity)
+            .into_iter()
+            .filter_map(|entity| self.world.get_component_item_lot(entity))
+            .fold(Quantity(0), |total, lot| {
+                Quantity(
+                    total
+                        .0
+                        .checked_add(lot.quantity.0)
+                        .expect("local controlled commodity quantity overflowed"),
+                )
+            })
+    }
+
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        let mut entities = self
+            .world
+            .entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+            .filter(|entity| self.can_control(agent, *entity))
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
         self.world
             .get_component_item_lot(entity)
@@ -635,6 +672,142 @@ mod tests {
         );
         assert!(view.can_control(actor, bag_bread));
         assert!(!view.can_control(actor, foreign_bread));
+    }
+
+    #[test]
+    fn controlled_commodity_quantity_at_place_filters_by_place_and_control() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let remote_place = places[1];
+        let (actor, other, local_owned, local_possessed, remote_owned, local_uncontrolled, local_water) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let local_owned = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            let local_possessed = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            let remote_owned = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(5))
+                .unwrap();
+            let local_uncontrolled = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(7))
+                .unwrap();
+            let local_water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(11))
+                .unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            txn.set_ground_location(local_owned, place).unwrap();
+            txn.set_ground_location(local_possessed, place).unwrap();
+            txn.set_ground_location(remote_owned, remote_place).unwrap();
+            txn.set_ground_location(local_uncontrolled, place).unwrap();
+            txn.set_ground_location(local_water, place).unwrap();
+            txn.set_owner(local_owned, actor).unwrap();
+            txn.set_possessor(local_possessed, actor).unwrap();
+            txn.set_owner(remote_owned, actor).unwrap();
+            txn.set_possessor(local_uncontrolled, other).unwrap();
+            txn.set_owner(local_water, actor).unwrap();
+            commit_txn(txn);
+
+            (
+                actor,
+                other,
+                local_owned,
+                local_possessed,
+                remote_owned,
+                local_uncontrolled,
+                local_water,
+            )
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert_eq!(
+            view.controlled_commodity_quantity_at_place(actor, place, CommodityKind::Bread),
+            Quantity(5)
+        );
+        assert_eq!(
+            view.controlled_commodity_quantity_at_place(actor, remote_place, CommodityKind::Bread),
+            Quantity(5)
+        );
+        assert_eq!(
+            view.controlled_commodity_quantity_at_place(actor, place, CommodityKind::Water),
+            Quantity(11)
+        );
+        assert_eq!(
+            view.controlled_commodity_quantity_at_place(actor, place, CommodityKind::Coin),
+            Quantity(0)
+        );
+        assert!(view.can_control(actor, local_owned));
+        assert!(view.can_control(actor, local_possessed));
+        assert!(view.can_control(actor, remote_owned));
+        assert!(!view.can_control(actor, local_uncontrolled));
+        assert_eq!(view.item_lot_commodity(local_water), Some(CommodityKind::Water));
+        assert!(view.is_alive(other));
+    }
+
+    #[test]
+    fn local_controlled_lots_for_returns_deterministic_local_matches() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let remote_place = places[1];
+        let (actor, other, first, second, remote, uncontrolled, wrong_commodity) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let first = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            let second = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            let remote = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            let uncontrolled = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            let wrong_commodity = txn
+                .create_item_lot(CommodityKind::Water, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            txn.set_ground_location(first, place).unwrap();
+            txn.set_ground_location(second, place).unwrap();
+            txn.set_ground_location(remote, remote_place).unwrap();
+            txn.set_ground_location(uncontrolled, place).unwrap();
+            txn.set_ground_location(wrong_commodity, place).unwrap();
+            txn.set_owner(first, actor).unwrap();
+            txn.set_owner(second, actor).unwrap();
+            txn.set_owner(remote, actor).unwrap();
+            txn.set_possessor(uncontrolled, other).unwrap();
+            txn.set_owner(wrong_commodity, actor).unwrap();
+            commit_txn(txn);
+
+            (actor, other, first, second, remote, uncontrolled, wrong_commodity)
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert_eq!(
+            view.local_controlled_lots_for(actor, place, CommodityKind::Bread),
+            vec![first, second]
+        );
+        assert_eq!(
+            view.local_controlled_lots_for(actor, remote_place, CommodityKind::Bread),
+            vec![remote]
+        );
+        assert_eq!(
+            view.local_controlled_lots_for(actor, place, CommodityKind::Water),
+            vec![wrong_commodity]
+        );
+        assert!(!view.can_control(actor, uncontrolled));
+        assert!(view.is_alive(other));
     }
 
     #[test]

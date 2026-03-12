@@ -18,6 +18,18 @@ pub trait BeliefView {
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity;
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId>;
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;

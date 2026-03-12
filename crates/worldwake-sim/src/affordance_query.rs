@@ -375,6 +375,41 @@ mod tests {
                 .unwrap_or(Quantity(0))
         }
 
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Quantity {
+            self.local_controlled_lots_for(actor, place, commodity)
+                .into_iter()
+                .fold(Quantity(0), |total, entity| {
+                    let quantity = self
+                        .commodities
+                        .get(&(entity, commodity))
+                        .copied()
+                        .unwrap_or(Quantity(0));
+                    Quantity(total.0 + quantity.0)
+                })
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            let mut entities = self
+                .entities_at(place)
+                .into_iter()
+                .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+                .filter(|entity| self.can_control(actor, *entity))
+                .collect::<Vec<_>>();
+            entities.sort();
+            entities.dedup();
+            entities
+        }
+
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
             self.item_lot_commodities.get(&entity).copied()
         }
