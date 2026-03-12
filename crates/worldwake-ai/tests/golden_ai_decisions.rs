@@ -4,8 +4,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    total_live_lot_quantity, CommodityKind, HomeostaticNeeds, MetabolismProfile, Quantity,
-    ResourceSource, Seed, UtilityProfile, WorkstationTag,
+    prototype_place_entity, total_live_lot_quantity, CommodityKind, HomeostaticNeeds,
+    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, UtilityProfile,
+    WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -411,5 +412,106 @@ fn golden_thirst_driven_acquisition() {
     assert!(
         drank_water,
         "Agent should have drunk water after thirst crossed threshold"
+    );
+}
+
+#[test]
+fn golden_multi_hop_travel_plan() {
+    let mut h = GoldenHarness::new(Seed([79; 32]));
+    let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Rook",
+        bandit_camp,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    let initial_hunger = h.agent_hunger(agent);
+    let mut left_bandit_camp = false;
+    let mut saw_in_transit = false;
+    let mut reached_orchard_farm = false;
+    let mut saw_apple_lot_at_orchard = false;
+    let mut hunger_decreased_after_arrival = false;
+    let mut visited_places = vec![bandit_camp];
+
+    for _ in 0..150 {
+        h.step_once();
+
+        if h.world.is_in_transit(agent) {
+            saw_in_transit = true;
+            left_bandit_camp = true;
+        }
+
+        let current_place = h.world.effective_place(agent);
+        if let Some(place) = current_place {
+            if !visited_places.contains(&place) {
+                visited_places.push(place);
+            }
+        }
+        if current_place != Some(bandit_camp) {
+            left_bandit_camp = true;
+        }
+
+        if current_place == Some(ORCHARD_FARM) {
+            reached_orchard_farm = true;
+        }
+
+        let apple_lot_at_orchard = h.world.entities_effectively_at(ORCHARD_FARM).into_iter().any(
+            |entity| {
+                h.world
+                    .get_component_item_lot(entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
+            },
+        );
+        if apple_lot_at_orchard {
+            saw_apple_lot_at_orchard = true;
+        }
+
+        if reached_orchard_farm && h.agent_hunger(agent) < initial_hunger {
+            hunger_decreased_after_arrival = true;
+            break;
+        }
+    }
+
+    assert!(
+        left_bandit_camp,
+        "Agent should leave Bandit Camp to pursue distant food"
+    );
+    assert!(
+        saw_in_transit,
+        "Multi-hop travel should place the agent in transit before arrival"
+    );
+    assert!(
+        reached_orchard_farm,
+        "Agent should eventually reach Orchard Farm from Bandit Camp; visited={visited_places:?}, final_place={:?}, blocked={:?}, active_actions={}",
+        h.world.effective_place(agent),
+        h.world.get_component_blocked_intent_memory(agent),
+        h.scheduler.active_actions().len()
+    );
+    assert!(
+        saw_apple_lot_at_orchard,
+        "Agent should harvest apples at Orchard Farm rather than satisfying hunger locally"
+    );
+    assert!(
+        hunger_decreased_after_arrival,
+        "Agent should reduce hunger after completing the distant acquisition chain"
     );
 }

@@ -44,11 +44,7 @@ pub fn select_best_plan(
     };
 
     if best_plan.goal == current_plan.goal {
-        return Some(if current_plan.steps.is_empty() {
-            best_plan
-        } else {
-            current_plan
-        });
+        return Some(best_plan);
     }
     if matches!(
         compare_goal_switch(
@@ -256,6 +252,61 @@ mod tests {
         assert_eq!(first.goal, faster.goal);
     }
 
+    #[test]
+    fn same_goal_replanning_replaces_stale_in_progress_plan() {
+        let goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let stale_plan = PlannedPlan::new(
+            goal,
+            vec![
+                PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![PlanningEntityRef::Authoritative(entity(11))],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 5,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+                PlannedStep {
+                    def_id: ActionDefId(2),
+                    targets: vec![PlanningEntityRef::Authoritative(entity(12))],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 4,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+            ],
+            PlanTerminalKind::ProgressBarrier,
+        );
+        let refreshed_plan = plan(goal, 3, 2);
+        let candidates = vec![ranked(
+            worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            },
+            GoalPriorityClass::High,
+            900,
+        )];
+        let plans = vec![(goal, Some(refreshed_plan.clone()))];
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(stale_plan),
+            current_step_index: 1,
+            dirty: true,
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default())
+            .unwrap();
+
+        assert_eq!(selected, refreshed_plan);
+    }
+
     fn empty_plan(goal: GoalKey) -> PlannedPlan {
         PlannedPlan::new(goal, Vec::new(), PlanTerminalKind::GoalSatisfied)
     }
@@ -294,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn nonempty_current_plan_retained_over_new_plan_for_same_goal() {
+    fn nonempty_current_plan_is_replaced_by_refreshed_plan_for_same_goal() {
         let eat_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
             commodity: CommodityKind::Bread,
         });
@@ -307,7 +358,7 @@ mod tests {
         )];
         let current = plan(eat_goal, 1, 3);
         let challenger = plan(eat_goal, 2, 1);
-        let plans = vec![(eat_goal, Some(challenger))];
+        let plans = vec![(eat_goal, Some(challenger.clone()))];
         let runtime = AgentDecisionRuntime {
             current_goal: Some(eat_goal),
             current_plan: Some(current.clone()),
@@ -320,8 +371,8 @@ mod tests {
             select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
 
         assert_eq!(
-            selected, current,
-            "non-empty current plan should be retained for same goal"
+            selected, challenger,
+            "same-goal replanning should adopt the refreshed plan from current world state"
         );
     }
 

@@ -25,7 +25,7 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 |---|----------|-------|----------|--------|-------------|------|
 | 001 | `GOLDENE2E-001-thirst-driven-acquisition.md` | Thirst-Driven Acquisition | HIGH | Small | `golden_ai_decisions.rs` | 1 |
 | 002 | `archive/tickets/completed/GOLDENE2E-002-two-agent-trade-negotiation.md` | Two-Agent Trade Negotiation | HIGH | Large | `golden_trade.rs` | 1 |
-| 003 | `GOLDENE2E-003-multi-hop-travel-plan.md` | Multi-Hop Travel Plan | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
+| 003 | `archive/tickets/completed/GOLDENE2E-003-multi-hop-travel-plan.md` | Multi-Hop Travel Plan | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 004 | `GOLDENE2E-004-healing-wounded-agent.md` | Healing a Wounded Agent | HIGH | Medium | `golden_care.rs` (new) | 1 |
 | 005 | `GOLDENE2E-005-bladder-relief-with-travel.md` | Bladder Relief with Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 006 | `GOLDENE2E-006-goal-switching-mid-travel.md` | Goal Switching Mid-Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |

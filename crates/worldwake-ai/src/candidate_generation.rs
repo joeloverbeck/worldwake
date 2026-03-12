@@ -3,7 +3,7 @@ use crate::{
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
     GroundedGoal,
 };
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
     GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
@@ -45,6 +45,7 @@ struct GenerationContext<'a> {
     view: &'a dyn BeliefView,
     agent: EntityId,
     place: Option<EntityId>,
+    travel_horizon: u8,
     enterprise: EnterpriseSignals,
     blocked: &'a BlockedIntentMemory,
     recipes: &'a RecipeRegistry,
@@ -59,6 +60,18 @@ pub fn generate_candidates(
     recipes: &RecipeRegistry,
     current_tick: Tick,
 ) -> Vec<GroundedGoal> {
+    generate_candidates_with_travel_horizon(view, agent, blocked, recipes, current_tick, 6)
+}
+
+#[must_use]
+pub fn generate_candidates_with_travel_horizon(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    blocked: &BlockedIntentMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+) -> Vec<GroundedGoal> {
     if view.is_dead(agent) || !view.is_alive(agent) {
         return Vec::new();
     }
@@ -71,6 +84,7 @@ pub fn generate_candidates(
         view,
         agent,
         place,
+        travel_horizon,
         enterprise: analyze_candidate_enterprise(view, agent, place),
         blocked,
         recipes,
@@ -187,7 +201,14 @@ fn emit_need_driven_candidates(
         }
 
         if let Some(evidence) =
-            acquisition_path_evidence(ctx.view, ctx.agent, ctx.place, commodity, ctx.recipes)
+            acquisition_path_evidence(
+                ctx.view,
+                ctx.agent,
+                ctx.place,
+                commodity,
+                ctx.recipes,
+                ctx.travel_horizon,
+            )
         {
             emit_candidate(
                 candidates,
@@ -393,7 +414,14 @@ fn emit_restock_goals(
             continue;
         }
         if let Some(evidence) =
-            acquisition_path_evidence(ctx.view, ctx.agent, ctx.place, commodity, ctx.recipes)
+            acquisition_path_evidence(
+                ctx.view,
+                ctx.agent,
+                ctx.place,
+                commodity,
+                ctx.recipes,
+                ctx.travel_horizon,
+            )
         {
             emit_candidate(
                 candidates,
@@ -535,43 +563,80 @@ fn acquisition_path_evidence(
     place: Option<EntityId>,
     commodity: CommodityKind,
     recipes: &RecipeRegistry,
+    travel_horizon: u8,
 ) -> Option<Evidence> {
     let place = place?;
     let mut evidence = Evidence::with_place(place);
 
-    for seller in view.agents_selling_at(place, commodity) {
-        if seller != agent {
-            evidence.entities.insert(seller);
+    for candidate_place in reachable_places_within_horizon(view, place, travel_horizon) {
+        let mut place_evidence = Evidence::with_place(candidate_place);
+
+        for seller in view.agents_selling_at(candidate_place, commodity) {
+            if seller != agent {
+                place_evidence.entities.insert(seller);
+            }
         }
-    }
-    if let Some(local_lots) = local_unpossessed_commodity_evidence(view, place, commodity) {
-        evidence.merge(local_lots);
-    }
-    for source in view.resource_sources_at(place, commodity) {
-        evidence.entities.insert(source);
-    }
-    for corpse in view.corpse_entities_at(place) {
-        if corpse_contains_commodity(view, corpse, commodity) {
-            evidence.entities.insert(corpse);
-        }
-    }
-    for recipe_id in view.known_recipes(agent) {
-        let Some(recipe) = recipes.get(recipe_id) else {
-            continue;
-        };
-        if !recipe
-            .outputs
-            .iter()
-            .any(|(output, _)| *output == commodity)
+        if let Some(local_lots) =
+            local_unpossessed_commodity_evidence(view, candidate_place, commodity)
         {
-            continue;
+            place_evidence.merge(local_lots);
         }
-        if let Some(recipe_evidence) = recipe_path_evidence(view, agent, Some(place), recipe) {
-            evidence.merge(recipe_evidence);
+        for source in view.resource_sources_at(candidate_place, commodity) {
+            place_evidence.entities.insert(source);
+        }
+        for corpse in view.corpse_entities_at(candidate_place) {
+            if corpse_contains_commodity(view, corpse, commodity) {
+                place_evidence.entities.insert(corpse);
+            }
+        }
+        for recipe_id in view.known_recipes(agent) {
+            let Some(recipe) = recipes.get(recipe_id) else {
+                continue;
+            };
+            if !recipe
+                .outputs
+                .iter()
+                .any(|(output, _)| *output == commodity)
+            {
+                continue;
+            }
+            if let Some(recipe_evidence) =
+                recipe_path_evidence(view, agent, Some(candidate_place), recipe)
+            {
+                place_evidence.merge(recipe_evidence);
+            }
+        }
+
+        if !place_evidence.is_empty() {
+            evidence.merge(place_evidence);
         }
     }
 
     (!evidence.entities.is_empty()).then_some(evidence)
+}
+
+fn reachable_places_within_horizon(
+    view: &dyn BeliefView,
+    origin: EntityId,
+    travel_horizon: u8,
+) -> Vec<EntityId> {
+    let mut ordered = vec![origin];
+    let mut visited = BTreeSet::from([origin]);
+    let mut frontier = VecDeque::from([(origin, 0u8)]);
+
+    while let Some((place, depth)) = frontier.pop_front() {
+        if depth >= travel_horizon {
+            continue;
+        }
+        for (adjacent, _) in view.adjacent_places_with_travel_ticks(place) {
+            if visited.insert(adjacent) {
+                ordered.push(adjacent);
+                frontier.push_back((adjacent, depth.saturating_add(1)));
+            }
+        }
+    }
+
+    ordered
 }
 
 fn local_unpossessed_commodity_evidence(
@@ -1260,6 +1325,74 @@ mod tests {
     }
 
     #[test]
+    fn remote_harvest_source_within_travel_horizon_emits_acquire_goal() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let crossroads = entity(11);
+        let orchard = entity(12);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(camp, EntityKind::Place);
+        view.entity_kinds.insert(crossroads, EntityKind::Place);
+        view.entity_kinds.insert(orchard, EntityKind::Place);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, camp);
+        view.effective_places.insert(workstation, orchard);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(camp, vec![crossroads]);
+        view.adjacent_places.insert(crossroads, vec![camp, orchard]);
+        view.adjacent_places.insert(orchard, vec![crossroads]);
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((orchard, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let candidates = super::generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+            2,
+        );
+        let goal = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.key.kind
+                    == GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Apple,
+                        purpose: CommodityPurpose::SelfConsume,
+                    }
+            })
+            .expect("reachable remote harvest source should emit acquire goal");
+
+        assert!(goal.evidence_entities.contains(&workstation));
+        assert!(goal.evidence_places.contains(&orchard));
+    }
+
+    #[test]
     fn hunger_below_low_band_emits_no_hunger_goals() {
         let agent = entity(1);
         let mut view = TestBeliefView::default();
@@ -1710,6 +1843,7 @@ mod tests {
             view: &view,
             agent,
             place: Some(place),
+            travel_horizon: 6,
             enterprise: EnterpriseSignals::default(),
             blocked: &blocked,
             recipes: &recipes,

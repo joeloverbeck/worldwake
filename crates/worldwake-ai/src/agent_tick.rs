@@ -1,10 +1,11 @@
 use crate::{
     build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
-    generate_candidates, handle_plan_failure, rank_candidates, resolve_planning_targets_with,
-    revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt,
-    InterruptDecision, PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics,
+    handle_plan_failure, rank_candidates, resolve_planning_targets_with, revalidate_next_step,
+    search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics,
     PlanningBudget, RankedGoal,
 };
+use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use std::collections::BTreeMap;
 use worldwake_core::{
     BlockedIntentMemory, CauseRef, CommodityKind, ControlSource, EntityId, Quantity, Tick,
@@ -71,6 +72,7 @@ struct ReadPhaseContext<'a> {
     recipe_registry: &'a RecipeRegistry,
     utility: &'a worldwake_core::UtilityProfile,
     tick: Tick,
+    travel_horizon: u8,
 }
 
 impl AutonomousController for AgentTickDriver {
@@ -179,6 +181,7 @@ fn process_agent(
             recipe_registry,
             utility: &utility,
             tick,
+            travel_horizon: budget.snapshot_travel_horizon,
         },
     );
     let active_action = active_action_for_agent(ctx, agent);
@@ -310,12 +313,13 @@ fn refresh_runtime_for_read_phase(
         || blocked_changed_from_cleanup
         || snapshot_changed;
 
-    let candidates = generate_candidates(
+    let candidates = generate_candidates_with_travel_horizon(
         &view,
         agent,
         blocked_memory,
         phase.recipe_registry,
         phase.tick,
+        phase.travel_horizon,
     );
     rank_candidates(
         &candidates,
@@ -1479,6 +1483,7 @@ mod tests {
                 recipe_registry: &harness.recipes,
                 utility: &utility,
                 tick: Tick(1),
+                travel_horizon: budget.snapshot_travel_horizon,
             },
         );
         let (next_step, next_step_valid) = plan_and_validate_next_step(
@@ -1555,6 +1560,7 @@ mod tests {
                 recipe_registry: &harness.recipes,
                 utility: &utility,
                 tick: Tick(2),
+                travel_horizon: budget.snapshot_travel_horizon,
             },
         );
         assert!(runtime.dirty);
@@ -1574,7 +1580,7 @@ mod tests {
             travel.op_kind,
             PlannerOpKind::Travel | PlannerOpKind::MoveCargo
         ));
-        assert_eq!(next_step_valid, Some(false));
+        assert_eq!(next_step_valid, Some(true));
     }
 
     #[test]
@@ -1613,6 +1619,7 @@ mod tests {
                 recipe_registry: &harness.recipes,
                 utility: &utility,
                 tick: Tick(2),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
             },
         );
 
@@ -1657,6 +1664,7 @@ mod tests {
                 recipe_registry: &harness.recipes,
                 utility: &utility,
                 tick: Tick(2),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
             },
         );
 
@@ -1686,6 +1694,7 @@ mod tests {
                 recipe_registry: &harness.recipes,
                 utility: &utility,
                 tick: Tick(1),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
             },
         );
 

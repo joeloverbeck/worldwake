@@ -12,7 +12,7 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 5 tests (scenarios 1, 2, 5, 7, 7a)
+  golden_ai_decisions.rs      — 6 tests (scenarios 1, 2, 3b, 5, 7, 7a)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 2 tests (scenario 8 + replay)
   golden_determinism.rs       — 1 test  (scenario 6)
@@ -23,7 +23,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 14 tests across 5 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 15 tests across 5 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -67,6 +67,16 @@ The golden suite contains 14 tests across 5 domain files. Every test uses the re
 - Authoritative commodity totals (apple, bread) never increase — only decrease via consumption.
 - Alice eats her bread. Event log grows (non-trivial simulation).
 **Invariant enforced**: Per-tick authoritative conservation for both apple and bread commodities.
+
+### Scenario 3b: Multi-Hop Travel Plan
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_multi_hop_travel_plan`
+**Systems exercised**: Needs, AI (candidate generation, planning, replanning), Travel, Production
+**Setup**: Critically hungry agent starts at Bandit Camp. Orchard Farm has apples via OrchardRow workstation + ResourceSource. The shortest route is `BanditCamp -> ForestPath -> NorthCrossroads -> EastFieldTrail -> OrchardFarm` (4 edges, 14 travel ticks).
+**Emergent behavior proven**:
+- Agent leaves Bandit Camp and traverses a real multi-edge route to the distant food source.
+- AI replans cleanly after intermediate travel progress instead of reusing a stale pre-travel route prefix.
+- Agent reaches Orchard Farm, harvests apples there, and reduces hunger.
+**Cross-system chain**: Need pressure → distant acquire-goal emission → multi-hop plan search → sequential travel execution → harvest/materialization → downstream hunger relief.
 
 ### Scenario 4: Materialization Barrier Chain
 **File**: `golden_production.rs` | **Test**: `golden_materialization_barrier_chain`
@@ -212,19 +222,19 @@ The golden suite contains 14 tests across 5 domain files. Every test uses the re
 | Place | Used? | Scenarios |
 |-------|-------|-----------|
 | VillageSquare | Yes | All |
-| OrchardFarm | Yes | 1, 3, 4, 5 |
+| OrchardFarm | Yes | 1, 3, 3b, 4, 5 |
 | GeneralStore | **No** | — |
 | CommonHouse | **No** | — |
 | RulersHall | **No** | — |
 | GuardPost | **No** | — |
 | PublicLatrine | **No** | — |
-| NorthCrossroads | **No** | — |
-| ForestPath | **No** | — |
-| BanditCamp | **No** | — |
+| NorthCrossroads | Yes | 3b |
+| ForestPath | Yes | 3b |
+| BanditCamp | Yes | 3b |
 | SouthGate | **No** | — |
-| EastFieldTrail | **No** | — |
+| EastFieldTrail | Yes | 3b |
 
-**Only 2/12 places used. No multi-hop travel tested. Shortest path VillageSquare→OrchardFarm is 7 ticks (VillageSquare→SouthGate(2)→EastFieldTrail(3)→OrchardFarm(2)), never explicitly verified.**
+**6/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route (14 ticks across 4 edges).**
 
 ### Cross-System Interaction Coverage
 
@@ -238,6 +248,7 @@ The golden suite contains 14 tests across 5 domain files. Every test uses the re
 | Deprivation → wounds → death | Yes |
 | Death → loot | Yes |
 | Trade negotiation between two agents | Yes |
+| Multi-hop travel to distant acquisition source | Yes |
 | Combat between two living agents | **No** |
 | Healing a wounded agent with medicine | **No** |
 | Merchant restock → travel → acquire → return → sell | **No** |
@@ -260,11 +271,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score >= 6)
-
-#### P3. Multi-Hop Travel Plan
-**Score**: Emergence=3, Bug-catching=4, Effort=2 → **Composite: 5**
-**Rationale**: All current travel is single-edge (VillageSquare ↔ OrchardFarm via shortest path). The planner's multi-step travel capability (Dijkstra pathfinding → sequential travel actions) is untested. Place agent at BanditCamp with food at OrchardFarm — requires traversing ForestPath → NorthCrossroads → EastFieldTrail → OrchardFarm (4 edges, 14 ticks).
-**Proves**: GOAP search finds multi-hop travel plan → agent traverses 4 edges sequentially → arrives and harvests.
 
 #### P4. Healing a Wounded Agent with Medicine
 **Score**: Emergence=3, Bug-catching=5, Effort=2 → **Composite: 6**
@@ -345,14 +351,13 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 | GoalKind coverage | 6/16 (37.5%) | 12/16 (75%) | 16/16 (100%) |
 | ActionDomain coverage | 5/9 full | 7/9 full | 9/9 full |
 | Needs tested | 3/5 | 4/5 | 5/5 |
-| Places used | 2/12 | 5/12 | 5/12+ |
-| Cross-system chains | 8 | 13 | 18 |
+| Places used | 6/12 | 6/12+ | 6/12+ |
+| Cross-system chains | 9 | 13 | 18 |
 
 ### Recommended Implementation Order (Tier 1)
 
 1. **P1 (Thirst)** — trivial, fills a basic coverage gap
 2. **P4 (Heal)** — new domain, moderate setup
 3. **P5 (Bladder/Latrine)** — new need + new place
-4. **P3 (Multi-Hop Travel)** — tests planner depth
-5. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
-6. **P7 (Combat)** — complex new domain
+4. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
+5. **P7 (Combat)** — complex new domain
