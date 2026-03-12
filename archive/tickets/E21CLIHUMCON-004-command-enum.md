@@ -1,5 +1,7 @@
 # E21CLIHUMCON-004: Command Enum (Clap Subcommands)
 
+**Status**: COMPLETED
+
 ## Summary
 
 Define the `CliCommand` enum with clap derive subcommands for all CLI commands. Pure type definition — no handler logic.
@@ -117,3 +119,13 @@ struct CommandParser {
 - Every command in the spec's command table (lines 64–88) has a corresponding variant
 - No handler logic in this file — only type definitions and dispatch routing
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-12
+- **What changed**:
+  - Created `crates/worldwake-cli/src/commands.rs` — `CliCommand` enum (22 variants), `CommandParser` wrapper (`multicall = true`), `CommandOutcome`, `CommandError`, `CommandResult` types, 9 parse tests
+  - Created `crates/worldwake-cli/src/handlers/mod.rs` — `dispatch_command()` with stub match arms for all variants
+  - Updated `crates/worldwake-cli/src/lib.rs` — added `pub mod commands;` and `pub mod handlers;`
+- **Deviations**: Added `#[allow(clippy::needless_pass_by_value)]` on `dispatch_command()` since stubs don't consume owned data yet; will be naturally resolved when handlers take ownership in tickets 006–012
+- **Verification**: `cargo clippy -p worldwake-cli` clean, `cargo test -p worldwake-cli` 28/28 pass (9 new parse tests + 19 existing)
