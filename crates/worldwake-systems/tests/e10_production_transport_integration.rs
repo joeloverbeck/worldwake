@@ -1,16 +1,19 @@
 use std::collections::BTreeSet;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use worldwake_core::{
-    total_authoritative_commodity_quantity, verify_live_lot_conservation, BodyCostPerTick,
-    CarryCapacity, CauseRef, CommodityKind, ControlSource, EventLog, LoadUnits, Place, Quantity,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn,
+    hash_serializable, total_authoritative_commodity_quantity, verify_authoritative_conservation,
+    verify_live_lot_conservation, BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind,
+    ControlSource, EventLog, LoadUnits, Place, Quantity, ResourceSource, Seed, Tick, Topology,
+    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+    World, WorldTxn,
 };
 use worldwake_sim::{
-    get_affordances, step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
-    ControllerState, DeterministicRng, InputKind, RecipeDefinition, RecipeRegistry, Scheduler,
-    SystemManifest, TickStepError, TickStepResult, TickStepServices,
+    get_affordances, record_tick_checkpoint, replay_and_verify, step_tick, ActionDefId,
+    ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind,
+    RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler,
+    SimulationState, SystemDispatchTable, SystemManifest, TickStepError, TickStepResult,
+    TickStepServices,
 };
 use worldwake_systems::{
     dispatch_table, register_craft_actions, register_harvest_actions, register_transport_actions,
@@ -19,6 +22,10 @@ use worldwake_systems::{
 
 fn nz(value: u32) -> NonZeroU32 {
     NonZeroU32::new(value).unwrap()
+}
+
+fn nz64(value: u64) -> NonZeroU64 {
+    NonZeroU64::new(value).unwrap()
 }
 
 fn entity(slot: u32) -> worldwake_core::EntityId {
@@ -106,6 +113,8 @@ struct Harness {
     defs: ActionDefRegistry,
     handlers: ActionHandlerRegistry,
     recipes: RecipeRegistry,
+    replay_state: ReplayState,
+    systems: SystemDispatchTable,
     actor: worldwake_core::EntityId,
     orchard_place: worldwake_core::EntityId,
     bridge_place: worldwake_core::EntityId,
@@ -160,16 +169,36 @@ impl Harness {
         register_craft_actions(&mut defs, &mut handlers, &recipes);
         let _ = register_transport_actions(&mut defs, &mut handlers);
         let _ = register_travel_actions(&mut defs, &mut handlers);
+        let event_log = EventLog::new();
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let controller = ControllerState::with_entity(actor);
+        let rng = DeterministicRng::new(Seed([7; 32]));
+        let initial_hash = hash_serializable(&(
+            &world,
+            &event_log,
+            &scheduler,
+            &recipes,
+            &controller,
+            &rng,
+        ))
+        .unwrap();
 
         Self {
             world,
-            event_log: EventLog::new(),
-            scheduler: Scheduler::new(SystemManifest::canonical()),
-            controller: ControllerState::with_entity(actor),
-            rng: DeterministicRng::new(Seed([7; 32])),
+            event_log,
+            scheduler,
+            controller,
+            rng,
             defs,
             handlers,
             recipes,
+            replay_state: ReplayState::new(
+                initial_hash,
+                Seed([7; 32]),
+                Tick(0),
+                ReplayRecordingConfig::every(nz64(1)),
+            ),
+            systems: dispatch_table(),
             actor,
             orchard_place,
             bridge_place,
@@ -190,10 +219,20 @@ impl Harness {
                 action_defs: &self.defs,
                 action_handlers: &self.handlers,
                 recipe_registry: &self.recipes,
-                systems: &dispatch_table(),
+                systems: &self.systems,
                 input_producer: None,
             },
         )
+    }
+
+    fn services(&self) -> TickStepServices<'_> {
+        TickStepServices {
+            action_defs: &self.defs,
+            action_handlers: &self.handlers,
+            recipe_registry: &self.recipes,
+            systems: &self.systems,
+            input_producer: None,
+        }
     }
 
     fn queue_action(&mut self, name: &str, targets: Vec<worldwake_core::EntityId>) {
@@ -210,10 +249,53 @@ impl Harness {
         );
     }
 
+    fn queue_action_recorded(&mut self, name: &str, targets: Vec<worldwake_core::EntityId>) {
+        let tick = self.scheduler.current_tick();
+        let def_id = self.action_def_id(name);
+        let input = self
+            .scheduler
+            .input_queue_mut()
+            .enqueue(
+                tick,
+                InputKind::RequestAction {
+                    actor: self.actor,
+                    def_id,
+                    targets,
+                    payload_override: None,
+                },
+            )
+            .clone();
+        self.replay_state.record_input(input).unwrap();
+    }
+
     fn run_queued_action_to_completion(&mut self, max_ticks: u32) {
         let mut completed = false;
         for _ in 0..max_ticks {
             let result = self.step_once().unwrap();
+            completed |= result.actions_completed > 0;
+            if completed && self.scheduler.active_actions().is_empty() {
+                return;
+            }
+        }
+
+        panic!("queued action did not complete within {max_ticks} ticks");
+    }
+
+    fn step_once_recorded(&mut self) -> TickStepResult {
+        let result = self.step_once().unwrap();
+        let mut state = self.snapshot_state(self.replay_state.clone());
+        let _ = record_tick_checkpoint(&mut state, result.tick).unwrap();
+        self.replay_state = state.replay_state().clone();
+        self.replay_state
+            .set_terminal_tick(self.scheduler.current_tick())
+            .unwrap();
+        result
+    }
+
+    fn run_queued_action_to_completion_recorded(&mut self, max_ticks: u32) {
+        let mut completed = false;
+        for _ in 0..max_ticks {
+            let result = self.step_once_recorded();
             completed |= result.actions_completed > 0;
             if completed && self.scheduler.active_actions().is_empty() {
                 return;
@@ -242,6 +324,18 @@ impl Harness {
         .filter(|affordance| affordance.def_id == def_id)
         .map(|affordance| affordance.bound_targets)
         .collect()
+    }
+
+    fn snapshot_state(&self, replay_state: ReplayState) -> SimulationState {
+        SimulationState::new(
+            self.world.clone(),
+            self.event_log.clone(),
+            self.scheduler.clone(),
+            self.recipes.clone(),
+            replay_state,
+            self.controller.clone(),
+            self.rng.clone(),
+        )
     }
 }
 
@@ -534,4 +628,86 @@ fn scheduler_craft_preserves_staged_inputs_and_applies_exact_recipe_deltas() {
         .is_none());
     verify_live_lot_conservation(&harness.world, CommodityKind::Grain, 0).unwrap();
     verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 1).unwrap();
+}
+
+#[test]
+fn scheduler_partial_pickup_travel_put_down_replays_deterministically() {
+    let mut harness = Harness::new(ResourceSource {
+        commodity: CommodityKind::Apple,
+        available_quantity: Quantity(0),
+        max_quantity: Quantity(0),
+        regeneration_ticks_per_unit: None,
+        last_regeneration_tick: None,
+    });
+    let water = add_controlled_lot(&mut harness, CommodityKind::Water, 3);
+    {
+        let mut txn = new_txn(&mut harness.world, 3);
+        txn.set_component_carry_capacity(harness.actor, CarryCapacity(LoadUnits(4)))
+            .unwrap();
+        txn.clear_possessor(water).unwrap();
+        commit_txn(txn);
+    }
+    let initial_hash = hash_serializable(&(
+        &harness.world,
+        &harness.event_log,
+        &harness.scheduler,
+        &harness.recipes,
+        &harness.controller,
+        &harness.rng,
+    ))
+    .unwrap();
+    harness.replay_state = ReplayState::new(
+        initial_hash,
+        Seed([7; 32]),
+        Tick(0),
+        ReplayRecordingConfig::every(nz64(1)),
+    );
+    let mut initial_state = harness.snapshot_state(harness.replay_state.clone());
+    verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+    verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+
+    harness.queue_action_recorded("pick_up", vec![water]);
+    harness.run_queued_action_to_completion_recorded(2);
+
+    let carried_water = harness.world.possessions_of(harness.actor)[0];
+    assert_ne!(carried_water, water);
+    assert_eq!(
+        harness.world.get_component_item_lot(water).unwrap().quantity,
+        Quantity(1)
+    );
+    assert_eq!(
+        harness
+            .world
+            .get_component_item_lot(carried_water)
+            .unwrap()
+            .quantity,
+        Quantity(2)
+    );
+    verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+    verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+
+    harness.queue_action_recorded("travel", vec![harness.bridge_place]);
+    harness.run_queued_action_to_completion_recorded(3);
+    harness.queue_action_recorded("travel", vec![harness.bakery_place]);
+    harness.run_queued_action_to_completion_recorded(3);
+    harness.queue_action_recorded("put_down", vec![carried_water]);
+    harness.run_queued_action_to_completion_recorded(2);
+
+    assert_eq!(harness.world.possessor_of(carried_water), None);
+    assert_eq!(
+        harness.world.effective_place(carried_water),
+        Some(harness.bakery_place)
+    );
+    assert_eq!(harness.world.effective_place(water), Some(harness.orchard_place));
+    verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+    verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+
+    let expected_final_hash = harness
+        .snapshot_state(harness.replay_state.clone())
+        .replay_bootstrap_hash()
+        .unwrap();
+    *initial_state.replay_state_mut() = harness.replay_state.clone();
+    let actual_final_hash = replay_and_verify(&initial_state, harness.services()).unwrap();
+
+    assert_eq!(actual_final_hash, expected_final_hash);
 }

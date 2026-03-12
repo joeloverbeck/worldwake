@@ -1116,6 +1116,99 @@ mod tests {
     }
 
     #[test]
+    fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolution() {
+        let hypothetical_id = crate::HypotheticalEntityId(0);
+        let created = entity(42);
+        let goal = GoalKey::from(GoalKind::MoveCargo {
+            lot: entity(11),
+            destination: entity(22),
+        });
+        let plan = PlannedPlan::new(
+            goal,
+            vec![
+                PlannedStep {
+                    def_id: ActionDefId(4),
+                    targets: vec![PlanningEntityRef::Authoritative(entity(11))],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::MoveCargo,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: vec![ExpectedMaterialization {
+                        tag: MaterializationTag::SplitOffLot,
+                        hypothetical_id,
+                    }],
+                },
+                PlannedStep {
+                    def_id: ActionDefId(5),
+                    targets: vec![PlanningEntityRef::Authoritative(entity(22))],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 2,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+                PlannedStep {
+                    def_id: ActionDefId(6),
+                    targets: vec![PlanningEntityRef::Hypothetical(hypothetical_id)],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::MoveCargo,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+            ],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(plan.clone()),
+            current_step_index: 0,
+            step_in_flight: true,
+            dirty: false,
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        apply_step_materialization_bindings(
+            &mut runtime,
+            &plan.steps[0],
+            &CommitOutcome {
+                materializations: vec![Materialization {
+                    tag: MaterializationTag::SplitOffLot,
+                    entity: created,
+                }],
+            },
+        )
+        .unwrap();
+        runtime.step_in_flight = false;
+        advance_completed_step(&mut runtime);
+
+        assert_eq!(runtime.current_step_index, 1);
+        assert_eq!(
+            runtime.materialization_bindings.resolve(hypothetical_id),
+            Some(created)
+        );
+
+        runtime.step_in_flight = true;
+        apply_step_materialization_bindings(&mut runtime, &plan.steps[1], &CommitOutcome::empty())
+            .unwrap();
+        runtime.step_in_flight = false;
+        advance_completed_step(&mut runtime);
+
+        assert_eq!(runtime.current_step_index, 2);
+        assert_eq!(resolve_step_targets(&runtime, &plan.steps[2]), Some(vec![created]));
+
+        runtime.step_in_flight = true;
+        apply_step_materialization_bindings(&mut runtime, &plan.steps[2], &CommitOutcome::empty())
+            .unwrap();
+        runtime.step_in_flight = false;
+        advance_completed_step(&mut runtime);
+
+        assert!(runtime.current_plan.is_none());
+        assert!(!runtime.step_in_flight);
+        assert!(runtime.materialization_bindings.hypothetical_to_authoritative.is_empty());
+    }
+
+    #[test]
     fn persist_blocked_memory_skips_empty_unchanged_state() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut event_log = EventLog::new();
