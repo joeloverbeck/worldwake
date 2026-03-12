@@ -1,8 +1,9 @@
 use crate::{
-    build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
-    generate_candidates, handle_plan_failure, rank_candidates, revalidate_next_step, search_plan,
-    select_best_plan, AgentDecisionRuntime, InterruptDecision, PlanFailureContext,
-    PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
+    authoritative_targets, build_planning_snapshot, build_semantics_table,
+    clear_resolved_blockers, evaluate_interrupt, generate_candidates, handle_plan_failure,
+    rank_candidates, revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime,
+    InterruptDecision, PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics,
+    PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -11,7 +12,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefId, ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
-    BeliefView, OmniscientBeliefView, RecipeRegistry, ReplanNeeded, Scheduler,
+    BeliefView, InputKind, OmniscientBeliefView, RecipeRegistry, ReplanNeeded, Scheduler,
     SchedulerActionRuntime, TickInputError,
 };
 
@@ -205,15 +206,16 @@ fn process_agent(
 
     if let Some(step) = next_step {
         let valid = next_step_valid.expect("validation result must exist for current step");
-        if valid {
-            let _ = ctx
-                .scheduler
-                .input_queue_mut()
-                .enqueue(tick, step.to_request_action(agent));
-            runtime.step_in_flight = true;
-        } else {
-            handle_current_step_failure(ctx, runtime, &mut blocked_memory, agent, &step, None)?;
-        }
+        enqueue_valid_step_or_handle_failure(
+            ctx,
+            runtime,
+            &mut blocked_memory,
+            agent,
+            tick,
+            &original_blocked,
+            &step,
+            valid,
+        )?;
     }
 
     finalize_agent_tick(
@@ -225,6 +227,47 @@ fn process_agent(
         &blocked_memory,
         runtime,
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enqueue_valid_step_or_handle_failure(
+    ctx: &mut AgentTickContext<'_>,
+    runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut BlockedIntentMemory,
+    agent: EntityId,
+    tick: Tick,
+    original_blocked: &BlockedIntentMemory,
+    step: &PlannedStep,
+    valid: bool,
+) -> Result<(), TickInputError> {
+    if !valid {
+        return handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None);
+    }
+
+    let Some(targets) = authoritative_targets(&step.targets) else {
+        handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None)?;
+        return finalize_agent_tick(
+            ctx.world,
+            ctx.event_log,
+            agent,
+            tick,
+            original_blocked,
+            blocked_memory,
+            runtime,
+        );
+    };
+
+    let _ = ctx.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor: agent,
+            def_id: step.def_id,
+            targets,
+            payload_override: step.payload_override.clone(),
+        },
+    );
+    runtime.step_in_flight = true;
+    Ok(())
 }
 
 fn active_action_for_agent(
@@ -627,7 +670,7 @@ mod tests {
     use crate::PlanningBudget;
     use crate::{
         CommodityPurpose, GoalKey, GoalKind, PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind,
+        PlannerOpKind, PlanningEntityRef,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -756,7 +799,7 @@ mod tests {
     fn barrier_step() -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(8),
-            targets: vec![entity(11)],
+            targets: vec![PlanningEntityRef::Authoritative(entity(11))],
             payload_override: None,
             op_kind: PlannerOpKind::Trade,
             estimated_ticks: 3,

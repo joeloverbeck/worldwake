@@ -1,4 +1,4 @@
-use crate::{AgentDecisionRuntime, PlannedStep, PlannerOpKind, PlanningBudget};
+use crate::{authoritative_target, AgentDecisionRuntime, PlannedStep, PlannerOpKind, PlanningBudget};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, EntityId, GoalKey, GoalKind,
     Quantity, Tick,
@@ -196,7 +196,7 @@ fn classify_production_failure(
         }
     }
 
-    let workstation = step.targets.first().copied()?;
+    let workstation = step.targets.first().copied().and_then(authoritative_target)?;
     if view.has_production_job(workstation) {
         return Some(BlockingFact::WorkstationBusy);
     }
@@ -269,7 +269,7 @@ fn no_known_path(view: &dyn BeliefView, agent: EntityId, step: &PlannedStep) -> 
     let Some(current_place) = view.effective_place(agent) else {
         return false;
     };
-    let Some(target_place) = step.targets.first().copied() else {
+    let Some(target_place) = step.targets.first().copied().and_then(authoritative_target) else {
         return false;
     };
 
@@ -447,19 +447,19 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
             .as_ref()
             .and_then(ActionPayload::as_trade)
             .map(|payload| payload.counterparty)
-            .or_else(|| step.targets.first().copied()),
+            .or_else(|| step.targets.first().copied().and_then(authoritative_target)),
         PlannerOpKind::Attack => step
             .payload_override
             .as_ref()
             .and_then(ActionPayload::as_combat)
             .map(|payload| payload.target)
-            .or_else(|| step.targets.first().copied()),
+            .or_else(|| step.targets.first().copied().and_then(authoritative_target)),
         PlannerOpKind::Loot => step
             .payload_override
             .as_ref()
             .and_then(ActionPayload::as_loot)
             .map(|payload| payload.target)
-            .or_else(|| step.targets.first().copied()),
+            .or_else(|| step.targets.first().copied().and_then(authoritative_target)),
         PlannerOpKind::Travel
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
@@ -469,7 +469,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Craft
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Heal
-        | PlannerOpKind::Defend => step.targets.first().copied(),
+        | PlannerOpKind::Defend => step.targets.first().copied().and_then(authoritative_target),
     }
 }
 
@@ -480,7 +480,7 @@ fn related_place(
     step: &PlannedStep,
 ) -> Option<EntityId> {
     match step.op_kind {
-        PlannerOpKind::Travel => step.targets.first().copied(),
+        PlannerOpKind::Travel => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Trade
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
@@ -522,7 +522,7 @@ mod tests {
     };
     use crate::{
         AgentDecisionRuntime, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlanningBudget,
+        PlanningBudget, PlanningEntityRef,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -760,7 +760,7 @@ mod tests {
     fn trade_step(counterparty: EntityId) -> PlannedStep {
         PlannedStep {
             def_id: worldwake_sim::ActionDefId(1),
-            targets: vec![counterparty],
+            targets: vec![PlanningEntityRef::Authoritative(counterparty)],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty,
                 offered_commodity: CommodityKind::Coin,
@@ -777,7 +777,7 @@ mod tests {
     fn travel_step(place: EntityId) -> PlannedStep {
         PlannedStep {
             def_id: worldwake_sim::ActionDefId(2),
-            targets: vec![place],
+            targets: vec![PlanningEntityRef::Authoritative(place)],
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 2,
@@ -788,7 +788,7 @@ mod tests {
     fn craft_step(workstation: EntityId) -> PlannedStep {
         PlannedStep {
             def_id: worldwake_sim::ActionDefId(3),
-            targets: vec![workstation],
+            targets: vec![PlanningEntityRef::Authoritative(workstation)],
             payload_override: Some(ActionPayload::Craft(CraftActionPayload {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::Mill,
@@ -805,7 +805,7 @@ mod tests {
     fn attack_step(target: EntityId) -> PlannedStep {
         PlannedStep {
             def_id: worldwake_sim::ActionDefId(4),
-            targets: vec![target],
+            targets: vec![PlanningEntityRef::Authoritative(target)],
             payload_override: Some(ActionPayload::Combat(CombatActionPayload {
                 target,
                 weapon: worldwake_core::CombatWeaponRef::Unarmed,

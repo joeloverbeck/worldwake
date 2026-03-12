@@ -88,7 +88,8 @@ mod tests {
     use super::select_best_plan;
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningBudget, RankedGoal,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningBudget,
+        PlanningEntityRef, RankedGoal,
     };
     use std::collections::BTreeSet;
     use worldwake_core::{CommodityKind, EntityId};
@@ -118,7 +119,7 @@ mod tests {
             goal,
             vec![PlannedStep {
                 def_id: ActionDefId(def_id),
-                targets: vec![entity(def_id)],
+                targets: vec![PlanningEntityRef::Authoritative(entity(def_id))],
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: ticks,

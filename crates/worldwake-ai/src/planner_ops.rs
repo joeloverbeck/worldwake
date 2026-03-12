@@ -1,11 +1,12 @@
-use crate::{GoalKindPlannerExt, GoalKey, GoalKindTag, GroundedGoal, PlanningState};
+use crate::{
+    GoalKindPlannerExt, GoalKey, GoalKindTag, GroundedGoal, HypotheticalEntityId,
+    PlanningEntityRef, PlanningState,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{EntityId, Quantity};
 use worldwake_sim::BeliefView;
-use worldwake_sim::{
-    ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload, InputKind,
-};
+use worldwake_sim::{ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
@@ -278,23 +279,50 @@ fn apply_pick_up_transition<'snapshot>(
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PlannedStep {
     pub def_id: ActionDefId,
-    pub targets: Vec<EntityId>,
+    pub targets: Vec<PlanningEntityRef>,
     pub payload_override: Option<ActionPayload>,
     pub op_kind: PlannerOpKind,
     pub estimated_ticks: u32,
     pub is_materialization_barrier: bool,
 }
 
-impl PlannedStep {
-    #[must_use]
-    pub fn to_request_action(&self, actor: EntityId) -> InputKind {
-        InputKind::RequestAction {
-            actor,
-            def_id: self.def_id,
-            targets: self.targets.clone(),
-            payload_override: self.payload_override.clone(),
-        }
+#[must_use]
+pub fn resolve_planning_target_with<F>(
+    target: PlanningEntityRef,
+    resolve_hypothetical: &mut F,
+) -> Option<EntityId>
+where
+    F: FnMut(HypotheticalEntityId) -> Option<EntityId>,
+{
+    match target {
+        PlanningEntityRef::Authoritative(entity) => Some(entity),
+        PlanningEntityRef::Hypothetical(id) => resolve_hypothetical(id),
     }
+}
+
+#[must_use]
+pub fn resolve_planning_targets_with<F>(
+    targets: &[PlanningEntityRef],
+    mut resolve_hypothetical: F,
+) -> Option<Vec<EntityId>>
+where
+    F: FnMut(HypotheticalEntityId) -> Option<EntityId>,
+{
+    targets
+        .iter()
+        .copied()
+        .map(|target| resolve_planning_target_with(target, &mut resolve_hypothetical))
+        .collect()
+}
+
+#[must_use]
+pub fn authoritative_target(target: PlanningEntityRef) -> Option<EntityId> {
+    resolve_planning_target_with(target, &mut |_| None)
+}
+
+#[must_use]
+pub fn authoritative_targets(targets: &[PlanningEntityRef]) -> Option<Vec<EntityId>> {
+    resolve_planning_targets_with(targets, |_| None)
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -334,11 +362,13 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_hypothetical_transition, build_semantics_table, PlanTerminalKind, PlannedPlan,
+        apply_hypothetical_transition, authoritative_target, authoritative_targets,
+        build_semantics_table, resolve_planning_targets_with, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlannerTransitionKind,
     };
     use crate::{
-        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanningState,
+        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GroundedGoal,
+        HypotheticalEntityId, PlanningEntityRef, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -350,7 +380,7 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionDuration,
-        ActionPayload, BeliefView, DurationExpr, InputKind, RecipeDefinition, RecipeRegistry,
+        ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,
         TradeActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
@@ -365,7 +395,10 @@ mod tests {
     fn sample_step() -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(7),
-            targets: vec![entity(3), entity(4)],
+            targets: vec![
+                PlanningEntityRef::Authoritative(entity(3)),
+                PlanningEntityRef::Authoritative(entity(4)),
+            ],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: entity(3),
                 offered_commodity: CommodityKind::Coin,
@@ -660,20 +693,40 @@ mod tests {
     }
 
     #[test]
-    fn planned_step_to_request_action_preserves_exact_execution_identity() {
-        let actor = entity(1);
+    fn authoritative_targets_resolve_without_binding_state() {
         let step = sample_step();
 
-        let request = step.to_request_action(actor);
-
         assert_eq!(
-            request,
-            InputKind::RequestAction {
-                actor,
-                def_id: step.def_id,
-                targets: step.targets.clone(),
-                payload_override: step.payload_override.clone(),
-            }
+            authoritative_targets(&step.targets),
+            Some(vec![entity(3), entity(4)])
+        );
+    }
+
+    #[test]
+    fn hypothetical_targets_require_external_resolution() {
+        let targets = vec![
+            PlanningEntityRef::Authoritative(entity(3)),
+            PlanningEntityRef::Hypothetical(HypotheticalEntityId(9)),
+        ];
+
+        assert_eq!(authoritative_targets(&targets), None);
+        assert_eq!(
+            resolve_planning_targets_with(&targets, |id| {
+                (id == HypotheticalEntityId(9)).then_some(entity(42))
+            }),
+            Some(vec![entity(3), entity(42)])
+        );
+    }
+
+    #[test]
+    fn authoritative_target_rejects_hypothetical_refs() {
+        assert_eq!(
+            authoritative_target(PlanningEntityRef::Authoritative(entity(7))),
+            Some(entity(7))
+        );
+        assert_eq!(
+            authoritative_target(PlanningEntityRef::Hypothetical(HypotheticalEntityId(1))),
+            None
         );
     }
 
@@ -713,7 +766,7 @@ mod tests {
             GoalKey::from(GoalKind::Sleep),
             vec![PlannedStep {
                 def_id: ActionDefId(2),
-                targets: vec![entity(6)],
+                targets: vec![PlanningEntityRef::Authoritative(entity(6))],
                 payload_override: None,
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 1,

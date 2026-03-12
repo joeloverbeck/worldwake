@@ -1,4 +1,4 @@
-use crate::PlannedStep;
+use crate::{authoritative_targets, PlannedStep};
 use worldwake_core::EntityId;
 use worldwake_sim::{get_affordances, ActionDefRegistry, ActionHandlerRegistry, BeliefView};
 
@@ -13,13 +13,16 @@ pub fn revalidate_next_step(
     let Some(def) = registry.get(step.def_id) else {
         return false;
     };
+    let Some(targets) = authoritative_targets(&step.targets) else {
+        return false;
+    };
     get_affordances(view, actor, registry, handlers)
         .into_iter()
         .any(|affordance| {
             affordance.matches_request_identity(
                 def,
                 actor,
-                &step.targets,
+                &targets,
                 step.payload_override.as_ref(),
             )
         })
@@ -28,7 +31,7 @@ pub fn revalidate_next_step(
 #[cfg(test)]
 mod tests {
     use super::revalidate_next_step;
-    use crate::{PlannedStep, PlannerOpKind};
+    use crate::{HypotheticalEntityId, PlannedStep, PlannerOpKind, PlanningEntityRef};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -388,7 +391,7 @@ mod tests {
     fn sample_step(def_id: ActionDefId, target: EntityId) -> PlannedStep {
         PlannedStep {
             def_id,
-            targets: vec![target],
+            targets: vec![PlanningEntityRef::Authoritative(target)],
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
@@ -443,6 +446,27 @@ mod tests {
             &sample_step(ActionDefId(0), missing),
             &registry,
             &handlers,
+        ));
+    }
+
+    #[test]
+    fn hypothetical_targets_fail_revalidation_without_binding() {
+        let actor = entity(1);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+
+        let step = PlannedStep {
+            def_id: ActionDefId(0),
+            targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(3))],
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+        };
+
+        let (registry, handlers) = build_registry();
+        assert!(!revalidate_next_step(
+            &view, actor, &step, &registry, &handlers,
         ));
     }
 

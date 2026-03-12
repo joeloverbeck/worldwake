@@ -1,6 +1,6 @@
 use crate::{
     apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind,
-    PlannedPlan, PlannedStep,
+    PlannedPlan, PlannedStep, PlanningEntityRef,
     PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningSnapshot, PlanningState,
 };
 use std::cmp::Ordering;
@@ -156,7 +156,11 @@ fn build_successor<'snapshot>(
         apply_hypothetical_transition(goal, semantics, node.state.clone(), &affordance.bound_targets);
     let step = PlannedStep {
         def_id: affordance.def_id,
-        targets: affordance.bound_targets,
+        targets: affordance
+            .bound_targets
+            .into_iter()
+            .map(PlanningEntityRef::Authoritative)
+            .collect(),
         payload_override,
         op_kind: semantics.op_kind,
         estimated_ticks,
@@ -216,8 +220,8 @@ mod tests {
     use super::{search_plan, FrontierEntry, SearchNode};
     use crate::{
         build_planning_snapshot, build_semantics_table, CommodityPurpose, GoalKey, GroundedGoal,
-        PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningBudget, PlanningSnapshot,
-        PlanningState,
+        PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningBudget, PlanningEntityRef,
+        PlanningSnapshot, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
@@ -509,7 +513,10 @@ mod tests {
     ) -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(def_id),
-            targets,
+            targets: targets
+                .into_iter()
+                .map(PlanningEntityRef::Authoritative)
+                .collect(),
             payload_override: None,
             op_kind,
             estimated_ticks,
@@ -906,7 +913,10 @@ mod tests {
         assert_eq!(wide_beam_plan.steps.len(), 2);
         assert_eq!(wide_beam_plan.steps[0].op_kind, PlannerOpKind::Travel);
         assert_eq!(wide_beam_plan.steps[1].op_kind, PlannerOpKind::Consume);
-        assert_eq!(wide_beam_plan.steps[0].targets, vec![pantry]);
+        assert_eq!(
+            wide_beam_plan.steps[0].targets,
+            vec![PlanningEntityRef::Authoritative(pantry)]
+        );
     }
 
     #[test]
@@ -973,7 +983,10 @@ mod tests {
             PlanTerminalKind::GoalSatisfied
         );
         assert_eq!(beam_three_plan.steps.len(), 2);
-        assert_eq!(beam_three_plan.steps[0].targets, vec![pantry]);
+        assert_eq!(
+            beam_three_plan.steps[0].targets,
+            vec![PlanningEntityRef::Authoritative(pantry)]
+        );
     }
 
     #[test]
@@ -1041,7 +1054,10 @@ mod tests {
             sufficient_budget_plan.terminal_kind,
             PlanTerminalKind::GoalSatisfied
         );
-        assert_eq!(sufficient_budget_plan.steps[0].targets, vec![pantry]);
+        assert_eq!(
+            sufficient_budget_plan.steps[0].targets,
+            vec![PlanningEntityRef::Authoritative(pantry)]
+        );
     }
 
     #[test]
