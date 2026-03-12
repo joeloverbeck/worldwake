@@ -1,14 +1,15 @@
 use crate::{
-    apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind,
-    PlannedPlan, PlannedStep, PlanningEntityRef,
-    PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningSnapshot, PlanningState,
+    apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal,
+    PlanTerminalKind, PlannedPlan, PlannedStep, PlanningEntityRef, PlannerOpKind,
+    PlannerOpSemantics, PlanningBudget, PlanningSnapshot, PlanningState,
 };
+use crate::planner_ops::planner_only_candidates;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
-use worldwake_core::GoalKind;
+use worldwake_core::{EntityId, GoalKind};
 use worldwake_sim::{
     get_affordances, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
-    Affordance, BeliefView,
+    ActionPayload, Affordance, BeliefView,
 };
 
 #[derive(Clone)]
@@ -20,6 +21,13 @@ struct SearchNode<'snapshot> {
 
 struct FrontierEntry<'snapshot> {
     node: SearchNode<'snapshot>,
+}
+
+struct SearchCandidate {
+    def_id: ActionDefId,
+    authoritative_targets: Vec<EntityId>,
+    planning_targets: Vec<PlanningEntityRef>,
+    payload_override: Option<ActionPayload>,
 }
 
 impl<'snapshot> FrontierEntry<'snapshot> {
@@ -84,11 +92,9 @@ pub fn search_plan(
         }
         expansions = expansions.saturating_add(1);
 
-        let mut successors = get_affordances(&node.state, snapshot.actor(), registry, handlers)
+        let mut successors = search_candidates(&node, semantics_table, registry, handlers)
             .into_iter()
-            .filter_map(|affordance| {
-                build_successor(goal, semantics_table, registry, &node, affordance)
-            })
+            .filter_map(|candidate| build_successor(goal, semantics_table, registry, &node, &candidate))
             .collect::<Vec<_>>();
         successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
         successors.truncate(usize::from(budget.beam_width));
@@ -117,10 +123,10 @@ fn build_successor<'snapshot>(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
-    affordance: Affordance,
+    candidate: &SearchCandidate,
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
-    let def = registry.get(affordance.def_id)?;
-    let semantics = semantics_table.get(&affordance.def_id)?;
+    let def = registry.get(candidate.def_id)?;
+    let semantics = semantics_table.get(&candidate.def_id)?;
     if !goal
         .key
         .kind
@@ -132,9 +138,9 @@ fn build_successor<'snapshot>(
 
     let actor = node.state.snapshot().actor();
     let payload_override = goal.key.kind.build_payload_override(
-        affordance.payload_override.as_ref(),
+        candidate.payload_override.as_ref(),
         &node.state,
-        &affordance.bound_targets,
+        &candidate.authoritative_targets,
         def,
         semantics,
     )
@@ -143,7 +149,7 @@ fn build_successor<'snapshot>(
     let duration = node.state.estimate_duration(
         actor,
         &def.duration,
-        &affordance.bound_targets,
+        &candidate.authoritative_targets,
         effective_payload,
     )?;
     let estimated_ticks = match duration {
@@ -152,22 +158,22 @@ fn build_successor<'snapshot>(
         ActionDuration::Indefinite => 0,
     };
 
-    let post_state =
-        apply_hypothetical_transition(goal, semantics, node.state.clone(), &affordance.bound_targets);
+    let transition = apply_hypothetical_transition(
+        goal,
+        semantics,
+        node.state.clone(),
+        &candidate.planning_targets,
+    )?;
     let step = PlannedStep {
-        def_id: affordance.def_id,
-        targets: affordance
-            .bound_targets
-            .into_iter()
-            .map(PlanningEntityRef::Authoritative)
-            .collect(),
+        def_id: candidate.def_id,
+        targets: transition.targets,
         payload_override,
         op_kind: semantics.op_kind,
         estimated_ticks,
         is_materialization_barrier: semantics.is_materialization_barrier,
-        expected_materializations: Vec::new(),
+        expected_materializations: transition.expected_materializations,
     };
-    let terminal = terminal_kind(goal, &post_state, &step);
+    let terminal = terminal_kind(goal, &transition.state, &step);
     if !semantics.may_appear_mid_plan && terminal.is_none() {
         return None;
     }
@@ -178,11 +184,53 @@ fn build_successor<'snapshot>(
     Some((
         terminal,
         SearchNode {
-            state: post_state,
+            state: transition.state,
             steps,
             total_estimated_ticks,
         },
     ))
+}
+
+fn search_candidates(
+    node: &SearchNode<'_>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+) -> Vec<SearchCandidate> {
+    let mut candidates = get_affordances(&node.state, node.state.snapshot().actor(), registry, handlers)
+        .into_iter()
+        .map(search_candidate_from_affordance)
+        .collect::<Vec<_>>();
+    candidates.extend(
+        planner_only_candidates(&node.state, semantics_table)
+            .into_iter()
+            .map(search_candidate_from_planner),
+    );
+    candidates
+}
+
+fn search_candidate_from_affordance(affordance: Affordance) -> SearchCandidate {
+    let planning_targets = affordance
+        .bound_targets
+        .iter()
+        .copied()
+        .map(PlanningEntityRef::Authoritative)
+        .collect();
+    SearchCandidate {
+        def_id: affordance.def_id,
+        authoritative_targets: affordance.bound_targets,
+        planning_targets,
+        payload_override: affordance.payload_override,
+    }
+}
+
+fn search_candidate_from_planner(candidate: crate::planner_ops::PlannerSyntheticCandidate) -> SearchCandidate {
+    SearchCandidate {
+        def_id: candidate.def_id,
+        authoritative_targets: Vec::new(),
+        planning_targets: candidate.targets,
+        payload_override: candidate.payload_override,
+    }
 }
 
 fn unsupported_goal(goal: &GoalKind) -> bool {
@@ -218,12 +266,16 @@ fn terminal_kind(
 
 #[cfg(test)]
 mod tests {
-    use super::{search_plan, FrontierEntry, SearchNode};
-    use crate::{
-        build_planning_snapshot, build_semantics_table, CommodityPurpose, GoalKey, GroundedGoal,
-        PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningBudget, PlanningEntityRef,
-        PlanningSnapshot, PlanningState,
+    use super::{
+        build_successor, search_plan, search_candidate_from_planner, FrontierEntry, SearchCandidate,
+        SearchNode,
     };
+    use crate::{
+        build_planning_snapshot, build_semantics_table, CommodityPurpose,
+        GoalKey, GroundedGoal, ExpectedMaterialization, PlanTerminalKind, PlannedStep,
+        PlannerOpKind, PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    };
+    use crate::planner_ops::planner_only_candidates;
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -252,6 +304,8 @@ mod tests {
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
@@ -330,11 +384,11 @@ mod tests {
         fn has_control(&self, entity: EntityId) -> bool {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
         }
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
             false
@@ -536,6 +590,60 @@ mod tests {
             steps,
             total_estimated_ticks,
         }
+    }
+
+    fn pickup_node(
+        commodity: CommodityKind,
+        quantity: Quantity,
+        carry_capacity: LoadUnits,
+    ) -> (
+        SearchNode<'static>,
+        EntityId,
+        EntityId,
+        EntityId,
+        ActionDefRegistry,
+        worldwake_sim::ActionHandlerRegistry,
+    ) {
+        let actor = entity(1);
+        let place = entity(10);
+        let lot = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, lot]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(lot, place);
+        view.entities_at.insert(place, vec![actor, lot]);
+        view.controllable.insert((actor, lot));
+        view.lot_commodities.insert(lot, commodity);
+        view.commodity_quantities.insert((lot, commodity), quantity);
+        view.carry_capacities.insert(actor, carry_capacity);
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(
+            lot,
+            LoadUnits(quantity.0.saturating_mul(worldwake_core::load_per_unit(commodity).0)),
+        );
+        let snapshot = Box::leak(Box::new(build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([lot]),
+            &BTreeSet::from([place]),
+            1,
+        )));
+        let (registry, handlers) = build_registry();
+        (
+            SearchNode {
+                state: PlanningState::new(snapshot),
+                steps: Vec::new(),
+                total_estimated_ticks: 0,
+            },
+            actor,
+            place,
+            lot,
+            registry,
+            handlers,
+        )
     }
 
     #[test]
@@ -1177,6 +1285,9 @@ mod tests {
         );
         view.commodity_quantities
             .insert((bread, CommodityKind::Bread), Quantity(1));
+        view.carry_capacities.insert(actor, LoadUnits(4));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(bread, LoadUnits(1));
         view.needs.insert(
             actor,
             HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
@@ -1313,5 +1424,80 @@ mod tests {
             PlannerOpKind::Attack | PlannerOpKind::Defend
         ));
         assert_eq!(plan.terminal_kind, PlanTerminalKind::CombatCommitment);
+    }
+
+    #[test]
+    fn build_successor_uses_transition_metadata_for_partial_pickup() {
+        let (node, _actor, _place, lot, registry, _handlers) =
+            pickup_node(CommodityKind::Water, Quantity(3), LoadUnits(4));
+        let semantics_table = build_semantics_table(&registry);
+        let goal = acquire_goal(CommodityKind::Water);
+        let pick_up = registry.iter().find(|def| def.name == "pick_up").unwrap();
+
+        let candidate = SearchCandidate {
+            def_id: pick_up.id,
+            authoritative_targets: vec![lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
+            payload_override: None,
+        };
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+        )
+        .unwrap();
+
+        let step = &successor.steps[0];
+        assert!(matches!(step.targets[0], PlanningEntityRef::Hypothetical(_)));
+        assert_eq!(
+            step.expected_materializations,
+            vec![ExpectedMaterialization {
+                tag: worldwake_sim::MaterializationTag::SplitOffLot,
+                hypothetical_id: match step.targets[0] {
+                    PlanningEntityRef::Hypothetical(id) => id,
+                    PlanningEntityRef::Authoritative(_) => unreachable!(),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn search_adds_put_down_candidate_for_directly_possessed_hypothetical_lot() {
+        let (node, _actor, _place, lot, registry, _handlers) =
+            pickup_node(CommodityKind::Water, Quantity(3), LoadUnits(4));
+        let semantics_table = build_semantics_table(&registry);
+        let goal = acquire_goal(CommodityKind::Water);
+        let pick_up = registry.iter().find(|def| def.name == "pick_up").unwrap();
+
+        let candidate = SearchCandidate {
+            def_id: pick_up.id,
+            authoritative_targets: vec![lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
+            payload_override: None,
+        };
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+        )
+        .unwrap();
+
+        let candidates = planner_only_candidates(&successor.state, &semantics_table)
+            .into_iter()
+            .map(search_candidate_from_planner)
+            .collect::<Vec<_>>();
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].authoritative_targets.is_empty());
+        assert_eq!(candidates[0].payload_override, None);
+        assert!(matches!(
+            candidates[0].planning_targets.as_slice(),
+            [PlanningEntityRef::Hypothetical(_)]
+        ));
+        let put_down = registry.iter().find(|def| def.name == "put_down").unwrap();
+        assert_eq!(candidates[0].def_id, put_down.id);
     }
 }

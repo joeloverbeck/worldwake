@@ -7,7 +7,8 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, CommitOutcome,
-    Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
+    Constraint, DeterministicRng, DurationExpr, Interruptibility, Materialization,
+    MaterializationTag, Precondition, TargetSpec,
 };
 
 use crate::inventory::{move_entity_to_direct_possession, remaining_capacity};
@@ -238,8 +239,17 @@ fn commit_pick_up(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let target = require_item_lot_target(instance)?;
-    let _ = execute_pick_up(txn, instance.actor, target)?;
-    Ok(CommitOutcome::empty())
+    let moved_entity = execute_pick_up(txn, instance.actor, target)?;
+    if moved_entity == target {
+        Ok(CommitOutcome::empty())
+    } else {
+        Ok(CommitOutcome {
+            materializations: vec![Materialization {
+                tag: MaterializationTag::SplitOffLot,
+                entity: moved_entity,
+            }],
+        })
+    }
 }
 
 fn start_put_down(
@@ -479,7 +489,12 @@ mod tests {
         )
         .unwrap();
 
-        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(
+            outcome,
+            TickOutcome::Committed {
+                outcome: CommitOutcome::empty(),
+            }
+        );
         assert_eq!(world.possessor_of(lot), Some(actor));
         assert_eq!(world.owner_of(lot), None);
         assert_eq!(world.effective_place(lot), Some(place));
@@ -633,10 +648,20 @@ mod tests {
         )
         .unwrap();
 
-        assert!(matches!(outcome, TickOutcome::Committed { .. }));
         let direct_possessions = world.possessions_of(actor);
         assert_eq!(direct_possessions.len(), 1);
         let picked_up = direct_possessions[0];
+        assert_eq!(
+            outcome,
+            TickOutcome::Committed {
+                outcome: CommitOutcome {
+                    materializations: vec![Materialization {
+                        tag: MaterializationTag::SplitOffLot,
+                        entity: picked_up,
+                    }],
+                },
+            }
+        );
         let carried_lot = world.get_component_item_lot(picked_up).unwrap();
         let remaining_lot = world.get_component_item_lot(lot).unwrap();
         assert_eq!(carried_lot.quantity, Quantity(2));

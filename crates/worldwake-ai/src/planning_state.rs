@@ -79,19 +79,33 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     #[must_use]
     pub fn move_lot_to_holder(
-        mut self,
+        self,
         lot: EntityId,
         holder: EntityId,
         commodity: CommodityKind,
         quantity: Quantity,
     ) -> Self {
-        let lot_ref = PlanningEntityRef::Authoritative(lot);
-        let holder_ref = PlanningEntityRef::Authoritative(holder);
-        let previous_holder = self.direct_possessor_ref(lot_ref);
-        self.direct_possessor_overrides.insert(lot_ref, Some(holder_ref));
-        self.direct_container_overrides.insert(lot_ref, None);
-        if let Some(place) = self.resolve_effective_place_ref(holder_ref, &mut BTreeSet::new()) {
-            self.entity_place_overrides.insert(lot_ref, Some(place));
+        self.move_lot_ref_to_holder(
+            PlanningEntityRef::Authoritative(lot),
+            PlanningEntityRef::Authoritative(holder),
+            commodity,
+            quantity,
+        )
+    }
+
+    #[must_use]
+    pub fn move_lot_ref_to_holder(
+        mut self,
+        lot: PlanningEntityRef,
+        holder: PlanningEntityRef,
+        commodity: CommodityKind,
+        quantity: Quantity,
+    ) -> Self {
+        let previous_holder = self.direct_possessor_ref(lot);
+        self.direct_possessor_overrides.insert(lot, Some(holder));
+        self.direct_container_overrides.insert(lot, None);
+        if let Some(place) = self.resolve_effective_place_ref(holder, &mut BTreeSet::new()) {
+            self.entity_place_overrides.insert(lot, Some(place));
         }
 
         if let Some(previous_holder) = previous_holder {
@@ -100,10 +114,30 @@ impl<'snapshot> PlanningState<'snapshot> {
             self.commodity_quantity_overrides
                 .insert((previous_holder, commodity), next);
         }
-        let current = self.commodity_quantity_ref(holder_ref, commodity);
+        let current = self.commodity_quantity_ref(holder, commodity);
         let next = Quantity(current.0.saturating_add(quantity.0));
         self.commodity_quantity_overrides
-            .insert((holder_ref, commodity), next);
+            .insert((holder, commodity), next);
+        self
+    }
+
+    #[must_use]
+    pub fn move_lot_ref_to_ground(
+        mut self,
+        lot: PlanningEntityRef,
+        place: EntityId,
+        commodity: CommodityKind,
+        quantity: Quantity,
+    ) -> Self {
+        if let Some(previous_holder) = self.direct_possessor_ref(lot) {
+            let current = self.commodity_quantity_ref(previous_holder, commodity);
+            let next = Quantity(current.0.saturating_sub(quantity.0));
+            self.commodity_quantity_overrides
+                .insert((previous_holder, commodity), next);
+        }
+        self.direct_possessor_overrides.insert(lot, None);
+        self.direct_container_overrides.insert(lot, None);
+        self.entity_place_overrides.insert(lot, Some(place));
         self
     }
 
@@ -474,6 +508,14 @@ impl<'snapshot> PlanningState<'snapshot> {
                 self.direct_possessor_ref(*entity) == Some(holder)
                     || self.direct_container_ref(*entity) == Some(holder)
             })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn direct_possessions_ref(&self, holder: PlanningEntityRef) -> Vec<PlanningEntityRef> {
+        self.all_entity_refs()
+            .into_iter()
+            .filter(|entity| self.direct_possessor_ref(*entity) == Some(holder))
             .collect()
     }
 
