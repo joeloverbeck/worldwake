@@ -19,6 +19,7 @@ pub enum GoalKindTag {
     Sleep,
     Relieve,
     Wash,
+    EngageHostile,
     ReduceDanger,
     Heal,
     ProduceCommodity,
@@ -76,6 +77,7 @@ const WASH_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::MoveCargo,
 ];
+const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Attack];
 const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Attack,
@@ -119,6 +121,54 @@ pub enum GoalPayloadOverrideError {
     ActorCannotPay,
 }
 
+fn payload_override_from_affordance(
+    goal: &GoalKind,
+    affordance_payload: Option<&ActionPayload>,
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    let Some(payload) = affordance_payload else {
+        return Ok(None);
+    };
+
+    match goal {
+        GoalKind::EngageHostile { target } => payload
+            .as_combat()
+            .filter(|combat| combat.target == *target)
+            .map(|_| Some(payload.clone()))
+            .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
+        _ => Ok(Some(payload.clone())),
+    }
+}
+
+fn build_attack_payload_override(
+    goal: &GoalKind,
+    targets: &[EntityId],
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    match goal {
+        GoalKind::EngageHostile { target } => {
+            let Some(actual_target) = targets.first().copied() else {
+                return Err(GoalPayloadOverrideError::MissingTarget);
+            };
+            if actual_target != *target {
+                return Err(GoalPayloadOverrideError::UnsupportedGoal);
+            }
+            Ok(Some(ActionPayload::Combat(CombatActionPayload {
+                target: actual_target,
+                weapon: worldwake_core::CombatWeaponRef::Unarmed,
+            })))
+        }
+        GoalKind::ReduceDanger => {
+            let Some(target) = targets.first().copied() else {
+                return Err(GoalPayloadOverrideError::MissingTarget);
+            };
+            Ok(Some(ActionPayload::Combat(CombatActionPayload {
+                target,
+                weapon: worldwake_core::CombatWeaponRef::Unarmed,
+            })))
+        }
+        _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+    }
+}
+
 impl GoalKindPlannerExt for GoalKind {
     fn goal_kind_tag(&self) -> GoalKindTag {
         match self {
@@ -127,6 +177,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep => GoalKindTag::Sleep,
             GoalKind::Relieve => GoalKindTag::Relieve,
             GoalKind::Wash => GoalKindTag::Wash,
+            GoalKind::EngageHostile { .. } => GoalKindTag::EngageHostile,
             GoalKind::ReduceDanger => GoalKindTag::ReduceDanger,
             GoalKind::Heal { .. } => GoalKindTag::Heal,
             GoalKind::ProduceCommodity { .. } => GoalKindTag::ProduceCommodity,
@@ -145,6 +196,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep => SLEEP_OPS,
             GoalKind::Relieve => RELIEVE_OPS,
             GoalKind::Wash => WASH_OPS,
+            GoalKind::EngageHostile { .. } => ENGAGE_HOSTILE_OPS,
             GoalKind::ReduceDanger => REDUCE_DANGER_OPS,
             GoalKind::Heal { .. } => HEAL_OPS,
             GoalKind::ProduceCommodity { .. } => PRODUCE_OPS,
@@ -177,6 +229,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
+            | GoalKind::EngageHostile { .. }
             | GoalKind::ReduceDanger
             | GoalKind::Heal { .. }
             | GoalKind::LootCorpse { .. }
@@ -192,8 +245,8 @@ impl GoalKindPlannerExt for GoalKind {
         def: &ActionDef,
         semantics: &PlannerOpSemantics,
     ) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
-        if let Some(payload) = affordance_payload {
-            return Ok(Some(payload.clone()));
+        if let Some(payload) = payload_override_from_affordance(self, affordance_payload)? {
+            return Ok(Some(payload));
         }
 
         let actor = state.snapshot().actor();
@@ -232,15 +285,7 @@ impl GoalKindPlannerExt for GoalKind {
                     requested_quantity: Quantity(1),
                 })))
             }
-            PlannerOpKind::Attack => {
-                let Some(target) = targets.first().copied() else {
-                    return Err(GoalPayloadOverrideError::MissingTarget);
-                };
-                Ok(Some(ActionPayload::Combat(CombatActionPayload {
-                    target,
-                    weapon: worldwake_core::CombatWeaponRef::Unarmed,
-                })))
-            }
+            PlannerOpKind::Attack => build_attack_payload_override(self, targets),
             PlannerOpKind::Loot => {
                 let Some(target) = targets.first().copied() else {
                     return Err(GoalPayloadOverrideError::MissingTarget);
@@ -394,6 +439,9 @@ impl GoalKindPlannerExt for GoalKind {
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
                 .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.medium()),
+            GoalKind::EngageHostile { target } => {
+                state.is_dead(*target) || !state.visible_hostiles_for(actor).contains(target)
+            }
             GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
                 derive_danger_pressure(state, actor) < thresholds.danger.high()
             }),
@@ -585,6 +633,15 @@ mod tests {
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Attack));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Defend));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Heal));
+    }
+
+    #[test]
+    fn engage_hostile_goal_relevant_ops_are_attack_only() {
+        let goal = GoalKind::EngageHostile {
+            target: entity_id(4, 0),
+        };
+
+        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Attack]);
     }
 
     #[test]

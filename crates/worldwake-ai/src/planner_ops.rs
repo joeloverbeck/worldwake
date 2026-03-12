@@ -49,6 +49,7 @@ const GOALS_TRAVEL: &[GoalKindTag] = &[
     GoalKindTag::Sleep,
     GoalKindTag::Relieve,
     GoalKindTag::Wash,
+    GoalKindTag::EngageHostile,
     GoalKindTag::ReduceDanger,
     GoalKindTag::Heal,
     GoalKindTag::ProduceCommodity,
@@ -87,7 +88,7 @@ const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
 ];
 const GOALS_HEAL: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::Heal];
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
-const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
+const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile, GoalKindTag::ReduceDanger];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 
 #[must_use]

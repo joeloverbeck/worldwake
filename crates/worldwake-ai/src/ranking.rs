@@ -135,7 +135,7 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
             |needs| needs.dirtiness,
             |thresholds| thresholds.dirtiness,
         ),
-        GoalKind::ReduceDanger => context.danger_class(),
+        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => context.danger_class(),
         GoalKind::Heal { target } => {
             let target_pain = derive_pain_pressure(context.view, target);
             let pain_class = context
@@ -221,7 +221,7 @@ fn motive_score(
             |needs| needs.dirtiness,
             |utility| utility.dirtiness_weight,
         ),
-        GoalKind::ReduceDanger => {
+        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
         GoalKind::Heal { target } => {
@@ -367,14 +367,15 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::Sleep => 2,
         GoalKind::Relieve => 3,
         GoalKind::Wash => 4,
-        GoalKind::ReduceDanger => 5,
-        GoalKind::Heal { .. } => 6,
-        GoalKind::ProduceCommodity { .. } => 7,
-        GoalKind::SellCommodity { .. } => 8,
-        GoalKind::RestockCommodity { .. } => 9,
-        GoalKind::MoveCargo { .. } => 10,
-        GoalKind::LootCorpse { .. } => 11,
-        GoalKind::BuryCorpse { .. } => 12,
+        GoalKind::EngageHostile { .. } => 5,
+        GoalKind::ReduceDanger => 6,
+        GoalKind::Heal { .. } => 7,
+        GoalKind::ProduceCommodity { .. } => 8,
+        GoalKind::SellCommodity { .. } => 9,
+        GoalKind::RestockCommodity { .. } => 10,
+        GoalKind::MoveCargo { .. } => 11,
+        GoalKind::LootCorpse { .. } => 12,
+        GoalKind::BuryCorpse { .. } => 13,
     }
 }
 

@@ -136,9 +136,39 @@ fn emit_combat_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     ctx: &GenerationContext<'_>,
 ) {
+    emit_engage_hostile_goals(candidates, ctx);
     emit_reduce_danger_goal(candidates, ctx);
     emit_heal_goals(candidates, ctx);
     emit_loot_goals(candidates, ctx);
+}
+
+fn emit_engage_hostile_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
+    let current_attackers = ctx
+        .view
+        .current_attackers_of(ctx.agent)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    for target in local_visible_hostiles(ctx.view, ctx.agent, ctx.place) {
+        if current_attackers.contains(&target) {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(target);
+        if let Some(place) = ctx.place {
+            evidence.places.insert(place);
+        }
+        emit_candidate(
+            candidates,
+            GoalKind::EngageHostile { target },
+            evidence,
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
 }
 
 fn emit_self_consume_candidates(
@@ -283,7 +313,11 @@ fn emit_reduce_danger_goal(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     ctx: &GenerationContext<'_>,
 ) {
-    if derive_danger_pressure(ctx.view, ctx.agent).value() == 0 {
+    let Some(thresholds) = ctx.view.drive_thresholds(ctx.agent) else {
+        return;
+    };
+    let danger_pressure = derive_danger_pressure(ctx.view, ctx.agent);
+    if danger_pressure < thresholds.danger.high() {
         return;
     }
 
@@ -345,6 +379,22 @@ fn emit_heal_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
             ctx.current_tick,
         );
     }
+}
+
+fn local_visible_hostiles(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+) -> Vec<EntityId> {
+    let Some(place) = place else {
+        return Vec::new();
+    };
+
+    view.visible_hostiles_for(agent)
+        .into_iter()
+        .filter(|target| view.entity_kind(*target).is_some_and(|kind| kind == worldwake_core::EntityKind::Agent))
+        .filter(|target| view.effective_place(*target) == Some(place))
+        .collect()
 }
 
 fn emit_produce_goals(
@@ -1665,6 +1715,98 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(5),
         );
+        assert!(contains_goal(&candidates, GoalKind::ReduceDanger));
+    }
+
+    #[test]
+    fn reduce_danger_is_not_emitted_for_medium_visible_hostility() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(10);
+        let adjacent = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(hostile, place);
+        view.entities_at.insert(place, vec![agent, hostile]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![hostile]);
+        view.adjacent_places.insert(place, vec![adjacent]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(&candidates, GoalKind::ReduceDanger));
+    }
+
+    #[test]
+    fn engage_hostile_emits_for_local_visible_hostile_that_is_not_attacking() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(hostile, place);
+        view.entities_at.insert(place, vec![agent, hostile]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![hostile]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::EngageHostile { target: hostile }
+        ));
+    }
+
+    #[test]
+    fn engage_hostile_is_suppressed_for_current_attackers() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(hostile, place);
+        view.entities_at.insert(place, vec![agent, hostile]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![hostile]);
+        view.attackers.insert(agent, vec![hostile]);
+        view.adjacent_places.insert(place, vec![entity(11)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::EngageHostile { target: hostile }
+        ));
         assert!(contains_goal(&candidates, GoalKind::ReduceDanger));
     }
 

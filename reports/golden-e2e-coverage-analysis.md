@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 8 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
-  golden_combat.rs            — 2 tests (scenario 8 + replay)
+  golden_combat.rs            — 4 tests (living combat + scenario 8 + replay)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 2 tests (scenario 2b + replay)
 ```
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 19 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 21 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -184,6 +184,18 @@ The golden suite contains 19 tests across 6 domain files. Every test uses the re
 - Relief completes at the latrine, reducing bladder pressure and materializing waste there without taking the bladder-accident path.
 **Cross-system chain**: Bladder pressure → `Relieve` goal → travel to latrine-tagged place → `toilet` action → bladder relief + waste materialization.
 
+### Scenario 7c: Hostility-Driven Living Combat
+**File**: `golden_combat.rs` | **Tests**: `golden_combat_between_living_agents`, `golden_combat_between_living_agents_replays_deterministically`
+**Systems exercised**: AI (hostility-driven candidate generation, planning), Combat (attack resolution, wounds), Conservation, deterministic replay
+**Setup**: Two sated agents at Village Square with a concrete hostility relation. The attacker has a stronger combat profile; both carry coin so conservation can be checked across the fight.
+**Emergent behavior proven**:
+- The attacker generates a dedicated hostile-engagement goal from concrete local hostility and commits to the combat-domain `attack` action through the normal planner/runtime path.
+- The defender responds through the live combat loop once the first attack is underway.
+- At least one wound is inflicted on a living participant without either actor being pre-scripted via manual queueing.
+- Coin totals remain exactly conserved throughout the encounter.
+- Two runs with the same seed produce identical world and event-log hashes for the scenario.
+**Cross-system chain**: Hostility relation → hostile-engagement goal → attack action start → wound infliction → defender response → deterministic replay + conservation checks.
+
 ### Scenario 8: Death Cascade and Opportunistic Loot
 **File**: `golden_combat.rs` | **Test**: `golden_death_cascade_and_opportunistic_loot`
 **Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
@@ -212,6 +224,7 @@ The golden suite contains 19 tests across 6 domain files. Every test uses the re
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
 | Wash | **No** | — |
+| EngageHostile | Yes | 7c |
 | ReduceDanger | **No** | — |
 | Heal | Yes | 2c |
 | ProduceCommodity | Yes | 6b |
@@ -221,7 +234,7 @@ The golden suite contains 19 tests across 6 domain files. Every test uses the re
 | LootCorpse | Yes | 8 |
 | BuryCorpse | **No** | — |
 
-**Coverage: 7/16 GoalKinds tested (43.75%), 1 partially tested.**
+**Coverage: 8/17 GoalKinds tested (47.1%), 1 partially tested.**
 
 ### ActionDomain Coverage
 
@@ -233,11 +246,11 @@ The golden suite contains 19 tests across 6 domain files. Every test uses the re
 | Trade | Yes | 2b |
 | Travel | Yes | 1, 3 (implicit) |
 | Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
-| Combat (attack, defend) | **No** | — |
+| Combat (attack, defend) | Yes | 7c |
 | Care (heal) | Yes | 2c |
 | Loot | Yes | 8 |
 
-**Coverage: 6/9 domains fully tested, 2 partially, 1 completely untested.**
+**Coverage: 7/9 domains fully tested, 2 partially.**
 
 ### Needs Coverage
 
@@ -282,7 +295,7 @@ The golden suite contains 19 tests across 6 domain files. Every test uses the re
 | Death → loot | Yes |
 | Trade negotiation between two agents | Yes |
 | Multi-hop travel to distant acquisition source | Yes |
-| Combat between two living agents | **No** |
+| Combat between two living agents | Yes |
 | Healing a wounded agent with medicine | Yes |
 | Merchant restock → travel → acquire → return → sell | **No** |
 | Goal switching during multi-leg travel | Yes |
@@ -310,10 +323,10 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Rationale**: The Relieve goal and PublicLatrine place are untested. Agent must recognize bladder pressure, travel to latrine, and relieve. Tests the bladder need pathway end-to-end.
 **Proves**: Bladder crosses threshold → Relieve goal → travel to PublicLatrine → relieve action → bladder decreases.
 
-#### P7. Combat Between Two Living Agents (ReduceDanger)
-**Score**: Emergence=4, Bug-catching=5, Effort=3 → **Composite: 6**
-**Rationale**: The Combat domain (attack, defend) and ReduceDanger goal are completely untested at E2E. This tests the combat system's wound resolution, attack/guard skill interaction, and the AI's decision to fight or flee.
-**Proves**: Two agents, one attacks the other → wound infliction → defender generates ReduceDanger goal → combat resolution → conservation of items.
+#### P7. ReduceDanger Defensive Mitigation Under Active Threat
+**Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
+**Rationale**: Living combat is now covered, but `ReduceDanger` itself is still not proven as a defensive end-to-end behavior. The architecture now keeps offensive hostility separate from defensive danger mitigation, so this remaining gap should test flight/defend behavior under active attack instead of reusing the living-combat scenario.
+**Proves**: Agent comes under active attack pressure → `ReduceDanger` is emitted at high-or-above danger → planner selects a defensive mitigation (`defend`, reposition, or equivalent real path) → danger drops without manual action queueing.
 
 ### Tier 2: Medium Priority (score 3-5)
 
@@ -371,14 +384,14 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| GoalKind coverage | 6/16 (37.5%) | 12/16 (75%) | 16/16 (100%) |
-| ActionDomain coverage | 6/9 full | 7/9 full | 9/9 full |
-| Needs tested | 3/5 | 4/5 | 5/5 |
+| GoalKind coverage | 8/17 (47.1%) | 13/17 (76.5%) | 16/17 (94.1%) |
+| ActionDomain coverage | 7/9 full | 7/9 full | 9/9 full |
+| Needs tested | 4/5 | 4/5 | 5/5 |
 | Places used | 6/12 | 6/12+ | 6/12+ |
-| Cross-system chains | 11 | 13 | 18 |
+| Cross-system chains | 12 | 13 | 18 |
 
 ### Recommended Implementation Order (Tier 1)
 
 1. **P1 (Thirst)** — trivial, fills a basic coverage gap
 2. **P5 (Bladder/Latrine)** — new need + new place
-3. **P7 (Combat)** — complex new domain
+3. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap

@@ -23,6 +23,9 @@ pub enum GoalKind {
     Sleep,
     Relieve,
     Wash,
+    EngageHostile {
+        target: EntityId,
+    },
     ReduceDanger,
     Heal {
         target: EntityId,
@@ -70,7 +73,9 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::AcquireCommodity { commodity, .. }
             | GoalKind::SellCommodity { commodity }
             | GoalKind::RestockCommodity { commodity } => (Some(commodity), None, None),
-            GoalKind::Heal { target } | GoalKind::LootCorpse { corpse: target } => {
+            GoalKind::EngageHostile { target }
+            | GoalKind::Heal { target }
+            | GoalKind::LootCorpse { corpse: target } => {
                 (None, Some(target), None)
             }
             GoalKind::MoveCargo {
@@ -138,6 +143,16 @@ mod tests {
 
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, Some(corpse));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn goal_key_extracts_canonical_entity_for_engage_hostile() {
+        let target = entity_id(8, 2);
+        let key = GoalKey::from(&GoalKind::EngageHostile { target });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(target));
         assert_eq!(key.place, None);
     }
 

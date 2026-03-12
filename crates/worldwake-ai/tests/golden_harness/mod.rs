@@ -241,6 +241,17 @@ pub fn place_workstation(
     ws
 }
 
+pub fn add_hostility(
+    world: &mut World,
+    event_log: &mut EventLog,
+    subject: EntityId,
+    target: EntityId,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.add_hostility(subject, target).unwrap();
+    commit_txn(txn, event_log);
+}
+
 // ---------------------------------------------------------------------------
 // GoldenHarness
 // ---------------------------------------------------------------------------

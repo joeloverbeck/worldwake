@@ -5,8 +5,8 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, CombatProfile, CommodityKind,
-    DeprivationExposure, HomeostaticNeeds, MetabolismProfile, Quantity, Seed, StateHash, Tick,
-    UtilityProfile, WoundList,
+    DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes, MetabolismProfile, Quantity,
+    Seed, StateHash, Tick, UtilityProfile, WoundList,
 };
 
 // ---------------------------------------------------------------------------
@@ -170,6 +170,154 @@ fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn living_combat_attacker_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(1000),
+        pm(700),
+        pm(900),
+        pm(250),
+        pm(40),
+        pm(25),
+        pm(18),
+        pm(160),
+        pm(35),
+        nz(3),
+    )
+}
+
+fn living_combat_defender_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(1000),
+        pm(700),
+        pm(350),
+        pm(650),
+        pm(120),
+        pm(25),
+        pm(18),
+        pm(100),
+        pm(20),
+        nz(6),
+    )
+}
+
+fn build_living_combat_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    u64,
+) {
+    let mut h = GoldenHarness::new(seed);
+    let attacker = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Attacker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let defender = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Defender",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_combat_profile(attacker, living_combat_attacker_profile())
+        .unwrap();
+    txn.set_component_combat_profile(defender, living_combat_defender_profile())
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        attacker,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(3),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        defender,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(2),
+    );
+    add_hostility(&mut h.world, &mut h.event_log, attacker, defender);
+
+    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+    (h, attacker, defender, initial_coin_total)
+}
+
+fn run_living_combat_observation(
+    h: &mut GoldenHarness,
+    attacker: worldwake_core::EntityId,
+    defender: worldwake_core::EntityId,
+    initial_coin_total: u64,
+) -> (bool, bool, bool) {
+    let mut saw_attack_action = false;
+    let mut saw_combat_event = false;
+    let mut defender_wounded = false;
+
+    for _ in 0..40 {
+        h.step_once();
+
+        saw_attack_action |= h.scheduler.active_actions().values().any(|instance| {
+            instance.actor == attacker
+                && h.defs
+                    .get(instance.def_id)
+                    .is_some_and(|def| def.name == "attack")
+        });
+        saw_combat_event |= !h.event_log.events_by_tag(EventTag::Combat).is_empty();
+        defender_wounded |= h.agent_wound_load(defender) > 0;
+
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
+        );
+
+        if saw_attack_action && saw_combat_event && defender_wounded {
+            break;
+        }
+    }
+
+    (saw_attack_action, saw_combat_event, defender_wounded)
+}
+
+fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, attacker, defender, initial_coin_total) = build_living_combat_scenario(seed);
+    let (saw_attack_action, saw_combat_event, defender_wounded) =
+        run_living_combat_observation(&mut h, attacker, defender, initial_coin_total);
+
+    assert!(saw_attack_action, "attacker should commit to an attack action");
+    assert!(
+        saw_combat_event,
+        "living-combat scenario should emit at least one combat-tagged event"
+    );
+    assert!(
+        defender_wounded,
+        "defender should sustain at least one wound from living combat"
+    );
+    assert!(!h.agent_is_dead(attacker), "attacker should survive the scenario");
+    assert!(!h.agent_is_dead(defender), "defender should survive the scenario");
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 8: Death Cascade and Opportunistic Loot
 // ---------------------------------------------------------------------------
@@ -205,5 +353,21 @@ fn golden_death_cascade_and_opportunistic_loot_replays_deterministically() {
     assert_eq!(
         log_hash_1, log_hash_2,
         "Death-and-loot event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_combat_between_living_agents() {
+    let _ = run_living_combat_scenario(Seed([21; 32]));
+}
+
+#[test]
+fn golden_combat_between_living_agents_replays_deterministically() {
+    let first = run_living_combat_scenario(Seed([22; 32]));
+    let second = run_living_combat_scenario(Seed([22; 32]));
+
+    assert_eq!(
+        first, second,
+        "living-combat scenario should replay deterministically"
     );
 }

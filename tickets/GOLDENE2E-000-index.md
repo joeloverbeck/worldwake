@@ -5,7 +5,9 @@
 
 ## Overview
 
-The golden e2e suite has 17 tests covering 37.5% of GoalKinds (6/16), 6/9 ActionDomains, and 3/5 needs. This initiative creates 13 new test scenarios (7 Tier 1 + 6 Tier 2) to continue closing the remaining coverage gaps identified in `reports/golden-e2e-coverage-analysis.md`.
+The golden e2e suite currently covers 8/17 GoalKinds, 7/9 ActionDomains, and 4/5 needs. This initiative continues closing the remaining gaps identified in `reports/golden-e2e-coverage-analysis.md`.
+
+On 2026-03-12, living-agent combat was split architecturally from defensive danger mitigation: proactive hostile engagement is now its own goal family, while `ReduceDanger` remains a separate defensive gap to cover.
 
 All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) with real system dispatch. No manual action queueing. All behavior must be emergent.
 
@@ -13,11 +15,11 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| GoalKind coverage | 6/16 (37.5%) | 13/16 (81%) | 16/16 (100%) |
-| ActionDomain coverage | 5/9 full | 7/9 full | 9/9 full |
-| Needs tested | 3/5 | 4/5 | 5/5 |
-| Places used | 2/12 | 5/12 | 5/12+ |
-| Cross-system chains | 8 | 13 | 18 |
+| GoalKind coverage | 8/17 (47.1%) | 13/17 (76.5%) | 16/17 (94.1%) |
+| ActionDomain coverage | 7/9 full | 7/9 full | 9/9 full |
+| Needs tested | 4/5 | 4/5 | 5/5 |
+| Places used | 7/12 | 7/12+ | 7/12+ |
+| Cross-system chains | 12 | 13 | 18 |
 
 ## Ticket List
 
@@ -29,7 +31,7 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 | 004 | `archive/tickets/completed/GOLDENE2E-004-healing-wounded-agent.md` | Healing a Wounded Agent | HIGH | Medium | `golden_care.rs` (new) | 1 |
 | 005 | `archive/tickets/completed/GOLDENE2E-005-bladder-relief-with-travel.md` | Bladder Relief with Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 006 | `archive/tickets/completed/GOLDENE2E-006-goal-switching-during-multi-leg-travel.md` | Goal Switching During Multi-Leg Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
-| 007 | `GOLDENE2E-007-combat-between-living-agents.md` | Combat Between Living Agents | HIGH | Large | `golden_combat.rs` | 1 |
+| 007 | `archive/tickets/completed/GOLDENE2E-007-combat-between-living-agents.md` | Combat Between Living Agents | HIGH | Large | `golden_combat.rs` | 1 |
 | 008 | `GOLDENE2E-008-merchant-restock-travel-sell.md` | Merchant Restock-Travel-Sell Loop | MEDIUM | Large | `golden_trade.rs` (new) | 2 |
 | 009 | `GOLDENE2E-009-carry-capacity-exhaustion.md` | Carry Capacity Exhaustion | MEDIUM | Medium | `golden_production.rs` | 2 |
 | 010 | `GOLDENE2E-010-three-way-need-competition.md` | Three-Way Need Competition | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
@@ -58,7 +60,7 @@ All other tickets are independent.
 3. GOLDENE2E-005 (Bladder/Latrine) — new need + new place
 4. GOLDENE2E-003 (Multi-Hop Travel) — tests planner depth
 5. GOLDENE2E-006 (Goal Switch Mid-Travel) — depends on 003
-6. GOLDENE2E-007 (Combat) — new Combat domain for living agents
+6. GOLDENE2E-007 (Combat) — living-agent combat via dedicated hostility goal
 7. GOLDENE2E-002 (Trade) — most complex setup
 
 **Tier 2** (order flexible, respecting deps):
