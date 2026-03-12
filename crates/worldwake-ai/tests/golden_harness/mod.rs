@@ -307,6 +307,12 @@ impl GoldenHarness {
             .map_or(pm(0), |n| n.thirst)
     }
 
+    pub fn agent_wound_load(&self, agent: EntityId) -> u32 {
+        self.world
+            .get_component_wound_list(agent)
+            .map_or(0, |wounds| wounds.wound_load())
+    }
+
     pub fn agent_is_dead(&self, agent: EntityId) -> bool {
         self.world.get_component_dead_at(agent).is_some()
     }

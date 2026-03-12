@@ -5,7 +5,7 @@
 
 ## Overview
 
-The golden e2e suite has 14 tests covering 37.5% of GoalKinds (6/16), 5/9 ActionDomains, and 3/5 needs. This initiative creates 13 new test scenarios (7 Tier 1 + 6 Tier 2) to continue closing the remaining coverage gaps identified in `reports/golden-e2e-coverage-analysis.md`.
+The golden e2e suite has 17 tests covering 37.5% of GoalKinds (6/16), 6/9 ActionDomains, and 3/5 needs. This initiative creates 13 new test scenarios (7 Tier 1 + 6 Tier 2) to continue closing the remaining coverage gaps identified in `reports/golden-e2e-coverage-analysis.md`.
 
 All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) with real system dispatch. No manual action queueing. All behavior must be emergent.
 
@@ -23,10 +23,10 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 
 | # | Filename | Title | Priority | Effort | Target File | Tier |
 |---|----------|-------|----------|--------|-------------|------|
-| 001 | `GOLDENE2E-001-thirst-driven-acquisition.md` | Thirst-Driven Acquisition | HIGH | Small | `golden_ai_decisions.rs` | 1 |
+| 001 | `archive/tickets/completed/GOLDENE2E-001-thirst-driven-acquisition.md` | Thirst-Driven Acquisition | HIGH | Small | `golden_ai_decisions.rs` | 1 |
 | 002 | `archive/tickets/completed/GOLDENE2E-002-two-agent-trade-negotiation.md` | Two-Agent Trade Negotiation | HIGH | Large | `golden_trade.rs` | 1 |
 | 003 | `archive/tickets/completed/GOLDENE2E-003-multi-hop-travel-plan.md` | Multi-Hop Travel Plan | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
-| 004 | `GOLDENE2E-004-healing-wounded-agent.md` | Healing a Wounded Agent | HIGH | Medium | `golden_care.rs` (new) | 1 |
+| 004 | `archive/tickets/completed/GOLDENE2E-004-healing-wounded-agent.md` | Healing a Wounded Agent | HIGH | Medium | `golden_care.rs` (new) | 1 |
 | 005 | `GOLDENE2E-005-bladder-relief-with-travel.md` | Bladder Relief with Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 006 | `GOLDENE2E-006-goal-switching-mid-travel.md` | Goal Switching Mid-Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 007 | `GOLDENE2E-007-combat-between-living-agents.md` | Combat Between Living Agents | HIGH | Large | `golden_combat.rs` | 1 |
@@ -71,8 +71,7 @@ All other tickets are independent.
 | Addition | First Needed By |
 |----------|-----------------|
 | `agent_thirst()` helper | GOLDENE2E-001 |
-| `agent_wound_total()` helper | GOLDENE2E-004 |
-| Medicine commodity support in harness | GOLDENE2E-004 |
+| `agent_wound_load()` helper | GOLDENE2E-004 |
 | `PUBLIC_LATRINE` const + `agent_bladder()` helper | GOLDENE2E-005 |
 | `BANDIT_CAMP`, `FOREST_PATH`, `NORTH_CROSSROADS`, `EAST_FIELD_TRAIL` consts + `agent_location()` helper | GOLDENE2E-003 |
 | `agent_dirtiness()` helper | GOLDENE2E-011 |

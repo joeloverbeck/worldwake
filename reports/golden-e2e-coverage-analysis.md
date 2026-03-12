@@ -13,6 +13,7 @@ crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 6 tests (scenarios 1, 2, 3b, 5, 7, 7a)
+  golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 2 tests (scenario 8 + replay)
   golden_determinism.rs       — 1 test  (scenario 6)
@@ -23,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 15 tests across 5 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 17 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -57,6 +58,17 @@ The golden suite contains 15 tests across 5 domain files. Every test uses the re
 - Bread lots never increase and coin lots remain exactly conserved.
 - Two runs with the same seed produce identical world and event-log hashes for the trade scenario.
 **Cross-system chain**: Need pressure → seller discovery via `MerchandiseProfile` → planner trade barrier selection → trade valuation/exchange → consumption.
+
+### Scenario 2c: Healing a Wounded Agent
+**File**: `golden_care.rs` | **Tests**: `golden_healing_wounded_agent`, `golden_healing_wounded_agent_replays_deterministically`
+**Systems exercised**: AI (candidate generation, planning), Care action domain, Combat/wound treatment, Conservation, deterministic replay
+**Setup**: Healthy healer and wounded patient co-located at Village Square. Healer holds 1 medicine. Patient begins with a bleeding starvation wound.
+**Emergent behavior proven**:
+- Healer generates `Heal { target }` from the local wounded target plus medicine in inventory.
+- Planner selects the care-domain heal action through the real action registry.
+- Heal executes through the normal lifecycle: medicine is consumed and the patient's wound load decreases.
+- Two runs with the same seed produce identical world and event-log hashes for the healing scenario.
+**Cross-system chain**: Local wound state → heal-goal generation → planner care-step selection → medicine consumption → wound severity/bleed reduction.
 
 ### Scenario 3: Resource Contention with Conservation
 **File**: `golden_production.rs` | **Test**: `golden_resource_contention_with_conservation`
@@ -181,7 +193,7 @@ The golden suite contains 15 tests across 5 domain files. Every test uses the re
 | Relieve | **No** | — |
 | Wash | **No** | — |
 | ReduceDanger | **No** | — |
-| Heal | **No** | — |
+| Heal | Yes | 2c |
 | ProduceCommodity | Yes | 6b |
 | SellCommodity | **No** | — |
 | RestockCommodity | **No** | — |
@@ -202,10 +214,10 @@ The golden suite contains 15 tests across 5 domain files. Every test uses the re
 | Travel | Yes | 1, 3 (implicit) |
 | Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
 | Combat (attack, defend) | **No** | — |
-| Care (heal) | **No** | — |
+| Care (heal) | Yes | 2c |
 | Loot | Yes | 8 |
 
-**Coverage: 5/9 domains fully tested, 2 partially, 2 completely untested.**
+**Coverage: 6/9 domains fully tested, 2 partially, 1 completely untested.**
 
 ### Needs Coverage
 
@@ -250,7 +262,7 @@ The golden suite contains 15 tests across 5 domain files. Every test uses the re
 | Trade negotiation between two agents | Yes |
 | Multi-hop travel to distant acquisition source | Yes |
 | Combat between two living agents | **No** |
-| Healing a wounded agent with medicine | **No** |
+| Healing a wounded agent with medicine | Yes |
 | Merchant restock → travel → acquire → return → sell | **No** |
 | Goal switching mid-travel | **No** |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
@@ -271,11 +283,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score >= 6)
-
-#### P4. Healing a Wounded Agent with Medicine
-**Score**: Emergence=3, Bug-catching=5, Effort=2 → **Composite: 6**
-**Rationale**: The Heal goal, Care action domain, and medicine consumption path are completely untested. The candidate_generation logic for `emit_heal_goals` requires medicine in inventory + wounded targets at same location.
-**Proves**: Agent with medicine + wounded co-located agent → Heal goal generated → heal action executed → wound severity reduced.
 
 #### P5. Bladder Relief with Travel to Latrine
 **Score**: Emergence=3, Bug-catching=4, Effort=2 → **Composite: 5**
@@ -349,15 +356,14 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
 | GoalKind coverage | 6/16 (37.5%) | 12/16 (75%) | 16/16 (100%) |
-| ActionDomain coverage | 5/9 full | 7/9 full | 9/9 full |
+| ActionDomain coverage | 6/9 full | 7/9 full | 9/9 full |
 | Needs tested | 3/5 | 4/5 | 5/5 |
 | Places used | 6/12 | 6/12+ | 6/12+ |
-| Cross-system chains | 9 | 13 | 18 |
+| Cross-system chains | 10 | 13 | 18 |
 
 ### Recommended Implementation Order (Tier 1)
 
 1. **P1 (Thirst)** — trivial, fills a basic coverage gap
-2. **P4 (Heal)** — new domain, moderate setup
-3. **P5 (Bladder/Latrine)** — new need + new place
-4. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
-5. **P7 (Combat)** — complex new domain
+2. **P5 (Bladder/Latrine)** — new need + new place
+3. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
+4. **P7 (Combat)** — complex new domain
