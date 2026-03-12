@@ -16,13 +16,14 @@ crates/worldwake-ai/tests/
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 2 tests (scenario 8 + replay)
   golden_determinism.rs       — 1 test  (scenario 6)
+  golden_trade.rs             — 2 tests (scenario 2b + replay)
 ```
 
 ---
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 12 tests across 4 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 14 tests across 5 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -43,6 +44,19 @@ The golden suite contains 12 tests across 4 domain files. Every test uses the re
 - Metabolism drives hunger past critical threshold (pm(900)) during sleep.
 - AI interrupts sleep action and switches to eating bread.
 **Cross-system chain**: Metabolism tick → need escalation → interrupt evaluation → goal switch → action termination → new action start.
+
+### Scenario 2b: Buyer-Driven Trade Acquisition
+**File**: `golden_trade.rs` | **Tests**: `golden_buyer_driven_trade_acquisition`, `golden_buyer_driven_trade_acquisition_replays_deterministically`
+**Systems exercised**: Needs, AI (candidate generation, planning), Trade, Conservation, deterministic replay
+**Setup**: Hungry buyer and sated seller co-located at Village Square. Seller advertises bread via `MerchandiseProfile`; buyer holds coins and a `TradeDispositionProfile`.
+**Emergent behavior proven**:
+- Buyer generates `AcquireCommodity { commodity: Bread, purpose: SelfConsume }` from hunger pressure.
+- Planner resolves the acquire goal through a local trade barrier rather than unrelated travel branches.
+- Trade executes through the real action handler: bread transfers to the buyer and coins transfer to the seller.
+- Buyer then consumes the acquired bread, reducing hunger.
+- Bread lots never increase and coin lots remain exactly conserved.
+- Two runs with the same seed produce identical world and event-log hashes for the trade scenario.
+**Cross-system chain**: Need pressure → seller discovery via `MerchandiseProfile` → planner trade barrier selection → trade valuation/exchange → consumption.
 
 ### Scenario 3: Resource Contention with Conservation
 **File**: `golden_production.rs` | **Test**: `golden_resource_contention_with_conservation`
@@ -149,7 +163,7 @@ The golden suite contains 12 tests across 4 domain files. Every test uses the re
 | GoalKind | Tested? | Scenarios |
 |----------|---------|-----------|
 | ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a |
-| AcquireCommodity (SelfConsume) | Yes | 1, 4, 5 |
+| AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | **No** | — |
 | AcquireCommodity (RecipeInput) | **No** | — |
 | AcquireCommodity (Treatment) | **No** | — |
@@ -174,14 +188,14 @@ The golden suite contains 12 tests across 4 domain files. Every test uses the re
 | Generic | Implicit | — |
 | Needs (eat, drink, sleep, relieve, wash) | Partial | eat + drink + sleep |
 | Production (harvest, craft) | Yes | 4, 5, 6b |
-| Trade | **No** | — |
+| Trade | Yes | 2b |
 | Travel | Yes | 1, 3 (implicit) |
 | Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
 | Combat (attack, defend) | **No** | — |
 | Care (heal) | **No** | — |
 | Loot | Yes | 8 |
 
-**Coverage: 4/9 domains fully tested, 2 partially, 3 completely untested.**
+**Coverage: 5/9 domains fully tested, 2 partially, 2 completely untested.**
 
 ### Needs Coverage
 
@@ -223,7 +237,7 @@ The golden suite contains 12 tests across 4 domain files. Every test uses the re
 | Resource depletion → regeneration → re-harvest | Yes |
 | Deprivation → wounds → death | Yes |
 | Death → loot | Yes |
-| Trade negotiation between two agents | **No** |
+| Trade negotiation between two agents | Yes |
 | Combat between two living agents | **No** |
 | Healing a wounded agent with medicine | **No** |
 | Merchant restock → travel → acquire → return → sell | **No** |
@@ -246,11 +260,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score >= 6)
-
-#### P2. Two-Agent Trade Negotiation
-**Score**: Emergence=4, Bug-catching=5, Effort=3 → **Composite: 6**
-**Rationale**: The Trade domain (trade_actions, trade_valuation, MerchandiseProfile, DemandMemory) has zero golden coverage. This is an entire system crate module untested at the E2E level. Requires setting up two agents with MerchandiseProfile, TradeDispositionProfile, and complementary inventory.
-**Proves**: Merchant A has surplus apples, merchant B has surplus bread → trade negotiation → goods exchange → conservation holds.
 
 #### P3. Multi-Hop Travel Plan
 **Score**: Emergence=3, Bug-catching=4, Effort=2 → **Composite: 5**
@@ -333,11 +342,11 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| GoalKind coverage | 6/16 (37.5%) | 13/16 (81%) | 16/16 (100%) |
-| ActionDomain coverage | 3/9 full | 7/9 full | 9/9 full |
+| GoalKind coverage | 6/16 (37.5%) | 12/16 (75%) | 16/16 (100%) |
+| ActionDomain coverage | 5/9 full | 7/9 full | 9/9 full |
 | Needs tested | 3/5 | 4/5 | 5/5 |
 | Places used | 2/12 | 5/12 | 5/12+ |
-| Cross-system chains | 7 | 13 | 18 |
+| Cross-system chains | 8 | 13 | 18 |
 
 ### Recommended Implementation Order (Tier 1)
 
@@ -347,4 +356,3 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 4. **P3 (Multi-Hop Travel)** — tests planner depth
 5. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
 6. **P7 (Combat)** — complex new domain
-7. **P2 (Trade)** — most complex setup (merchant profiles)

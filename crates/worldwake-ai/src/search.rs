@@ -92,12 +92,25 @@ pub fn search_plan(
         }
         expansions = expansions.saturating_add(1);
 
-        let mut successors = search_candidates(&node, semantics_table, registry, handlers)
-            .into_iter()
-            .filter_map(|candidate| {
+        let mut terminal_successors = Vec::new();
+        let mut successors = Vec::new();
+        for candidate in search_candidates(&node, semantics_table, registry, handlers) {
+            let Some((terminal, successor)) =
                 build_successor(goal, semantics_table, registry, &node, &candidate)
-            })
-            .collect::<Vec<_>>();
+            else {
+                continue;
+            };
+            if let Some(terminal_kind) = terminal {
+                terminal_successors.push((terminal_kind, successor));
+            } else {
+                successors.push((terminal, successor));
+            }
+        }
+        if !terminal_successors.is_empty() {
+            terminal_successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+            let (terminal_kind, successor) = terminal_successors.remove(0);
+            return Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
+        }
         successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
         successors.truncate(usize::from(budget.beam_width));
 
@@ -921,6 +934,87 @@ mod tests {
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Trade);
         assert!(matches!(
             plan.steps[1].payload_override,
+            Some(ActionPayload::Trade(_))
+        ));
+    }
+
+    #[test]
+    fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(town),
+            },
+        );
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
+
+        for offset in 0..9 {
+            let branch = entity(20 + offset);
+            view.alive.insert(branch);
+            view.kinds.insert(branch, EntityKind::Place);
+            view.adjacent
+                .entry(town)
+                .or_default()
+                .push((branch, NonZeroU32::new(1).unwrap()));
+            view.adjacent
+                .entry(branch)
+                .or_default()
+                .push((town, NonZeroU32::new(1).unwrap()));
+        }
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        )
+        .expect("local trade barrier should not be pruned by cheaper travel branches");
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
+        assert!(matches!(
+            plan.steps[0].payload_override,
             Some(ActionPayload::Trade(_))
         ));
     }
