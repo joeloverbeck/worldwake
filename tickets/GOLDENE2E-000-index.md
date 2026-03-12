@@ -28,7 +28,7 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 | 003 | `archive/tickets/completed/GOLDENE2E-003-multi-hop-travel-plan.md` | Multi-Hop Travel Plan | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 004 | `archive/tickets/completed/GOLDENE2E-004-healing-wounded-agent.md` | Healing a Wounded Agent | HIGH | Medium | `golden_care.rs` (new) | 1 |
 | 005 | `archive/tickets/completed/GOLDENE2E-005-bladder-relief-with-travel.md` | Bladder Relief with Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
-| 006 | `GOLDENE2E-006-goal-switching-mid-travel.md` | Goal Switching Mid-Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
+| 006 | `archive/tickets/completed/GOLDENE2E-006-goal-switching-during-multi-leg-travel.md` | Goal Switching During Multi-Leg Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 007 | `GOLDENE2E-007-combat-between-living-agents.md` | Combat Between Living Agents | HIGH | Large | `golden_combat.rs` | 1 |
 | 008 | `GOLDENE2E-008-merchant-restock-travel-sell.md` | Merchant Restock-Travel-Sell Loop | MEDIUM | Large | `golden_trade.rs` (new) | 2 |
 | 009 | `GOLDENE2E-009-carry-capacity-exhaustion.md` | Carry Capacity Exhaustion | MEDIUM | Medium | `golden_production.rs` | 2 |

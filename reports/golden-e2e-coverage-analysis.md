@@ -12,7 +12,7 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 7 tests (scenarios 1, 2, 3b, 5, 7, 7a, 7b)
+  golden_ai_decisions.rs      — 8 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 2 tests (scenario 8 + replay)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 18 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 19 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -89,6 +89,16 @@ The golden suite contains 18 tests across 6 domain files. Every test uses the re
 - AI replans cleanly after intermediate travel progress instead of reusing a stale pre-travel route prefix.
 - Agent reaches Orchard Farm, harvests apples there, and reduces hunger.
 **Cross-system chain**: Need pressure → distant acquire-goal emission → multi-hop plan search → sequential travel execution → harvest/materialization → downstream hunger relief.
+
+### Scenario 3c: Goal Switching During Multi-Leg Travel
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_switching_during_multi_leg_travel`
+**Systems exercised**: Needs (metabolism), AI (candidate generation, ranking, replanning), Travel
+**Setup**: Hungry agent starts at Bandit Camp with 1 carried water and no food. Orchard Farm remains the distant food source. Thirst starts low but escalates quickly enough to become critical only after the first travel leg completes.
+**Emergent behavior proven**:
+- Agent begins the distant hunger-driven journey and leaves Bandit Camp.
+- Before reaching Orchard Farm, the agent reprioritizes to a different need and consumes carried water at an intermediate concrete place on the route.
+- The journey is not treated as a rigid commitment to the original destination.
+**Cross-system chain**: Hunger pressure → distant `AcquireCommodity` travel plan → metabolism escalates thirst during journey → intermediate arrival triggers replanning → `ConsumeOwnedCommodity { Water }`.
 
 ### Scenario 4: Materialization Barrier Chain
 **File**: `golden_production.rs` | **Test**: `golden_materialization_barrier_chain`
@@ -234,7 +244,7 @@ The golden suite contains 18 tests across 6 domain files. Every test uses the re
 | Need | Tested as driver? | Tested as interrupt? |
 |------|-------------------|---------------------|
 | Hunger | Yes (all scenarios) | Yes (2) |
-| Thirst | Yes (7a) | **No** |
+| Thirst | Yes (7a, 3c) | Yes (3c) |
 | Fatigue | Yes (2, initial) | **No** |
 | Bladder | Yes (7b) | **No** |
 | Dirtiness | **No** | **No** |
@@ -275,7 +285,7 @@ The golden suite contains 18 tests across 6 domain files. Every test uses the re
 | Combat between two living agents | **No** |
 | Healing a wounded agent with medicine | Yes |
 | Merchant restock → travel → acquire → return → sell | **No** |
-| Goal switching mid-travel | **No** |
+| Goal switching during multi-leg travel | Yes |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multiple competing needs (hunger + thirst + fatigue) | **No** |
 | Wound bleed → clotting → natural recovery | **No** |
@@ -299,11 +309,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Score**: Emergence=3, Bug-catching=4, Effort=2 → **Composite: 5**
 **Rationale**: The Relieve goal and PublicLatrine place are untested. Agent must recognize bladder pressure, travel to latrine, and relieve. Tests the bladder need pathway end-to-end.
 **Proves**: Bladder crosses threshold → Relieve goal → travel to PublicLatrine → relieve action → bladder decreases.
-
-#### P6. Goal Switching Mid-Travel
-**Score**: Emergence=4, Bug-catching=5, Effort=2 → **Composite: 7**
-**Rationale**: No test verifies that an agent can abandon a travel action mid-journey when a higher-priority need emerges. Agent traveling to distant food source has hunger spike to critical — should interrupt travel for available local alternative.
-**Proves**: Agent starts traveling → hunger escalates during travel → interrupt evaluation fires → agent abandons travel → replans for local food.
 
 #### P7. Combat Between Two Living Agents (ReduceDanger)
 **Score**: Emergence=4, Bug-catching=5, Effort=3 → **Composite: 6**
@@ -370,11 +375,10 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 | ActionDomain coverage | 6/9 full | 7/9 full | 9/9 full |
 | Needs tested | 3/5 | 4/5 | 5/5 |
 | Places used | 6/12 | 6/12+ | 6/12+ |
-| Cross-system chains | 10 | 13 | 18 |
+| Cross-system chains | 11 | 13 | 18 |
 
 ### Recommended Implementation Order (Tier 1)
 
 1. **P1 (Thirst)** — trivial, fills a basic coverage gap
 2. **P5 (Bladder/Latrine)** — new need + new place
-3. **P6 (Goal Switch Mid-Travel)** — tests interrupt during travel
-4. **P7 (Combat)** — complex new domain
+3. **P7 (Combat)** — complex new domain

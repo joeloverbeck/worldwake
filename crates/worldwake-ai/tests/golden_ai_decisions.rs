@@ -415,6 +415,7 @@ fn golden_thirst_driven_acquisition() {
     );
 }
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn golden_bladder_relief_with_travel() {
     let mut h = GoldenHarness::new(Seed([80; 32]));
@@ -517,12 +518,130 @@ fn golden_bladder_relief_with_travel() {
         h.scheduler
             .active_actions()
             .values()
-            .map(|instance| h.defs.get(instance.def_id).map(|def| def.name.clone()).unwrap_or_else(|| format!("def-{}", instance.def_id.0)))
+            .map(|instance| {
+                h.defs.get(instance.def_id).map_or_else(
+                    || format!("def-{}", instance.def_id.0),
+                    |def| def.name.clone(),
+                )
+            })
             .collect::<Vec<_>>()
     );
     assert!(
         waste_appeared_at_latrine,
         "Relief should materialize waste at the latrine rather than at the origin; visited={visited_places:?}, final_place={final_place:?}"
+    );
+}
+
+#[test]
+fn golden_goal_switching_during_multi_leg_travel() {
+    let mut h = GoldenHarness::new(Seed([81; 32]));
+    let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+
+    let thirst_escalates_after_first_leg = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(150), // thirst_rate
+        pm(2),
+        pm(4),
+        pm(1),
+        pm(20),
+        nz(480),
+        nz(240),
+        nz(120),
+        nz(40),
+        nz(8),
+        nz(12),
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Vale",
+        bandit_camp,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        thirst_escalates_after_first_leg,
+        UtilityProfile {
+            hunger_weight: pm(500),
+            thirst_weight: pm(1000),
+            ..UtilityProfile::default()
+        },
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        bandit_camp,
+        CommodityKind::Water,
+        Quantity(1),
+    );
+
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    let initial_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+    let initial_water = h.agent_commodity_qty(agent, CommodityKind::Water);
+    let mut left_bandit_camp = false;
+    let mut reached_orchard_before_drink = false;
+    let mut drink_place = None;
+    let mut visited_places = vec![bandit_camp];
+
+    for _ in 0..150 {
+        h.step_once();
+
+        if h.world.is_in_transit(agent) || h.world.effective_place(agent) != Some(bandit_camp) {
+            left_bandit_camp = true;
+        }
+
+        if let Some(place) = h.world.effective_place(agent) {
+            if !visited_places.contains(&place) {
+                visited_places.push(place);
+            }
+            if h.agent_commodity_qty(agent, CommodityKind::Water) < initial_water {
+                drink_place = Some(place);
+                break;
+            }
+            if place == ORCHARD_FARM {
+                reached_orchard_before_drink = true;
+            }
+        }
+
+        let current_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+        assert!(
+            current_water_total <= initial_water_total,
+            "Water lots should not increase — conservation: initial={initial_water_total}, now={current_water_total}"
+        );
+    }
+
+    assert!(
+        left_bandit_camp,
+        "Agent should begin the distant food journey from Bandit Camp"
+    );
+    assert!(
+        !reached_orchard_before_drink,
+        "Agent should change course before reaching Orchard Farm; visited={visited_places:?}, drink_place={drink_place:?}"
+    );
+
+    let drink_place = drink_place.expect(
+        "Agent should consume carried water during the journey before reaching Orchard Farm",
+    );
+    assert_ne!(
+        drink_place, bandit_camp,
+        "Water-driven goal switch should occur after departure, not at the origin"
+    );
+    assert_ne!(
+        drink_place, ORCHARD_FARM,
+        "Water-driven goal switch should happen at an intermediate place, not at the original destination"
     );
 }
 

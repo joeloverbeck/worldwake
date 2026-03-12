@@ -20,6 +20,7 @@ fn default_trade_disposition_profile() -> TradeDispositionProfile {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_buyer_driven_trade_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
