@@ -12,7 +12,7 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 4 tests (scenarios 1, 2, 5, 7)
+  golden_ai_decisions.rs      — 5 tests (scenarios 1, 2, 5, 7, 7a)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 2 tests (scenario 8 + replay)
   golden_determinism.rs       — 1 test  (scenario 6)
@@ -22,7 +22,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 11 tests across 4 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 12 tests across 4 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -118,6 +118,16 @@ The golden suite contains 11 tests across 4 domain files. Every test uses the re
 - Agent eats the bread.
 **Cross-system chain**: Metabolism system → state change → AI threshold detection → goal generation → plan → action.
 
+### Scenario 7a: Thirst-Driven Acquisition
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_thirst_driven_acquisition`
+**Systems exercised**: Needs (metabolism-driven escalation), AI (threshold-crossing detection), Needs actions (drink)
+**Setup**: Agent (Talia) starts with pm(0) thirst, fast thirst metabolism (pm(20)/tick), has 1 water.
+**Emergent behavior proven**:
+- Metabolism pushes thirst from 0 upward over time.
+- When thirst crosses low threshold (pm(200)), AI generates a water consume goal.
+- Agent drinks the water.
+**Cross-system chain**: Metabolism system → thirst escalation → AI threshold detection → consume goal generation → drink action.
+
 ### Scenario 8: Death Cascade and Opportunistic Loot
 **File**: `golden_combat.rs` | **Test**: `golden_death_cascade_and_opportunistic_loot`
 **Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
@@ -138,7 +148,7 @@ The golden suite contains 11 tests across 4 domain files. Every test uses the re
 
 | GoalKind | Tested? | Scenarios |
 |----------|---------|-----------|
-| ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7 |
+| ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a |
 | AcquireCommodity (SelfConsume) | Yes | 1, 4, 5 |
 | AcquireCommodity (Restock) | **No** | — |
 | AcquireCommodity (RecipeInput) | **No** | — |
@@ -162,7 +172,7 @@ The golden suite contains 11 tests across 4 domain files. Every test uses the re
 | Domain | Tested? | How |
 |--------|---------|-----|
 | Generic | Implicit | — |
-| Needs (eat, drink, sleep, relieve, wash) | Partial | eat + sleep only |
+| Needs (eat, drink, sleep, relieve, wash) | Partial | eat + drink + sleep |
 | Production (harvest, craft) | Yes | 4, 5, 6b |
 | Trade | **No** | — |
 | Travel | Yes | 1, 3 (implicit) |
@@ -178,7 +188,7 @@ The golden suite contains 11 tests across 4 domain files. Every test uses the re
 | Need | Tested as driver? | Tested as interrupt? |
 |------|-------------------|---------------------|
 | Hunger | Yes (all scenarios) | Yes (2) |
-| Thirst | **No** | **No** |
+| Thirst | Yes (7a) | **No** |
 | Fatigue | Yes (2, initial) | **No** |
 | Bladder | **No** | **No** |
 | Dirtiness | **No** | **No** |
@@ -208,6 +218,7 @@ The golden suite contains 11 tests across 4 domain files. Every test uses the re
 |-------------|---------|
 | Needs → AI goal generation | Yes |
 | Metabolism → need escalation → eating | Yes |
+| Metabolism → thirst escalation → drinking | Yes |
 | Production → materialization → transport → consumption | Yes |
 | Resource depletion → regeneration → re-harvest | Yes |
 | Deprivation → wounds → death | Yes |
@@ -235,11 +246,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score >= 6)
-
-#### P1. Thirst-Driven Acquisition (Drink Water)
-**Score**: Emergence=2, Bug-catching=4, Effort=1 → **Composite: 5**
-**Rationale**: Thirst is the only other hunger-like need with consume actions, but it's completely untested. The `relieves_thirst` predicate and Water commodity consumption path have zero golden coverage. Trivial to implement — clone Scenario 7 with thirst instead of hunger.
-**Proves**: Thirst threshold crossing → AI generates consume goal for Water → agent drinks.
 
 #### P2. Two-Agent Trade Negotiation
 **Score**: Emergence=4, Bug-catching=5, Effort=3 → **Composite: 6**
@@ -329,9 +335,9 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 |--------|---------|-------------|----------|
 | GoalKind coverage | 6/16 (37.5%) | 13/16 (81%) | 16/16 (100%) |
 | ActionDomain coverage | 3/9 full | 7/9 full | 9/9 full |
-| Needs tested | 2/5 | 4/5 | 5/5 |
+| Needs tested | 3/5 | 4/5 | 5/5 |
 | Places used | 2/12 | 5/12 | 5/12+ |
-| Cross-system chains | 6 | 13 | 18 |
+| Cross-system chains | 7 | 13 | 18 |
 
 ### Recommended Implementation Order (Tier 1)
 

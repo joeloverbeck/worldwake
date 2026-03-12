@@ -1668,6 +1668,7 @@ mod tests {
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         let origin = entity(10);
@@ -1788,7 +1789,7 @@ mod tests {
             })
             .expect("authoritative snapshot should expose cargo pick_up");
         let (terminal, after_pick_up) =
-            build_successor(&goal, &semantics, &registry, &node, &pick_up).unwrap();
+            build_successor(&goal, &semantics, &registry, &node, pick_up).unwrap();
         assert_eq!(terminal, None);
         assert_eq!(
             after_pick_up.steps[0].targets,
@@ -1808,7 +1809,7 @@ mod tests {
             })
             .expect("partial cargo successor should expose travel to destination");
         let (terminal, _) =
-            build_successor(&goal, &semantics, &registry, &after_pick_up, &travel).unwrap();
+            build_successor(&goal, &semantics, &registry, &after_pick_up, travel).unwrap();
 
         assert_eq!(terminal, Some(PlanTerminalKind::GoalSatisfied));
     }

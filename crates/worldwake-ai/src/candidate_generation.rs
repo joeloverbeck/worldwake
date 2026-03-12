@@ -1067,6 +1067,10 @@ mod tests {
         HomeostaticNeeds::new(pm(value), pm(0), pm(0), pm(0), pm(0))
     }
 
+    fn thirst(value: u16) -> HomeostaticNeeds {
+        HomeostaticNeeds::new(pm(0), pm(value), pm(0), pm(0), pm(0))
+    }
+
     fn fatigue(value: u16) -> HomeostaticNeeds {
         HomeostaticNeeds::new(pm(0), pm(0), pm(value), pm(0), pm(0))
     }
@@ -1175,6 +1179,48 @@ mod tests {
             &candidates,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
+            }
+        ));
+    }
+
+    #[test]
+    fn owned_water_emits_consume_goal_when_thirsty() {
+        let agent = entity(1);
+        let place = entity(10);
+        let water = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(water, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(water, place);
+        view.homeostatic_needs.insert(agent, thirst(200));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.direct_possessions.insert(agent, vec![water]);
+        view.direct_possessors.insert(water, agent);
+        view.lot_commodities.insert(water, CommodityKind::Water);
+        view.consumable_profiles.insert(
+            water,
+            CommodityKind::Water.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, water));
+        view.controlled_entities.insert(agent);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Water), Quantity(1));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Water,
             }
         ));
     }

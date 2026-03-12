@@ -149,6 +149,7 @@ pub fn seed_agent(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn seed_agent_with_recipes(
     world: &mut World,
     event_log: &mut EventLog,
@@ -298,6 +299,12 @@ impl GoldenHarness {
         self.world
             .get_component_homeostatic_needs(agent)
             .map_or(pm(0), |n| n.hunger)
+    }
+
+    pub fn agent_thirst(&self, agent: EntityId) -> Permille {
+        self.world
+            .get_component_homeostatic_needs(agent)
+            .map_or(pm(0), |n| n.thirst)
     }
 
     pub fn agent_is_dead(&self, agent: EntityId) -> bool {

@@ -197,7 +197,7 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
 
     // Agent at Orchard Farm, critically hungry.
     // Resource source is DEPLETED (available_quantity 0) but regenerates.
-    let _agent = seed_agent(
+    let agent = seed_agent(
         &mut h.world,
         &mut h.event_log,
         "Eve",
@@ -232,7 +232,7 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
         h.step_once();
 
         // Check for blocked intent memory.
-        if let Some(blocked) = h.world.get_component_blocked_intent_memory(_agent) {
+        if let Some(blocked) = h.world.get_component_blocked_intent_memory(agent) {
             if !blocked.intents.is_empty() {
                 saw_blocker = true;
             }
@@ -340,5 +340,76 @@ fn golden_deprivation_cascade() {
     assert!(
         ate_bread,
         "Agent should have eaten bread after hunger crossed threshold"
+    );
+}
+
+#[test]
+fn golden_thirst_driven_acquisition() {
+    let mut h = GoldenHarness::new(Seed([78; 32]));
+
+    let fast_thirst_metabolism = MetabolismProfile::new(
+        pm(2),
+        pm(20), // thirst_rate
+        pm(2),
+        pm(4),
+        pm(1),
+        pm(20),
+        nz(480),
+        nz(240),
+        nz(120),
+        nz(40),
+        nz(8),
+        nz(12),
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Talia",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        fast_thirst_metabolism,
+        UtilityProfile::default(),
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Water,
+        Quantity(1),
+    );
+
+    let initial_water = h.agent_commodity_qty(agent, CommodityKind::Water);
+    let mut thirst_crossed_threshold = false;
+    let mut drank_water = false;
+
+    for _tick in 0..80 {
+        h.step_once();
+
+        let thirst = h.agent_thirst(agent);
+        let water = h.agent_commodity_qty(agent, CommodityKind::Water);
+
+        if thirst.value() >= 200 {
+            thirst_crossed_threshold = true;
+        }
+
+        if water < initial_water {
+            drank_water = true;
+        }
+
+        if thirst_crossed_threshold && drank_water {
+            break;
+        }
+    }
+
+    assert!(
+        thirst_crossed_threshold,
+        "Thirst should have escalated past the default low threshold via metabolism"
+    );
+    assert!(
+        drank_water,
+        "Agent should have drunk water after thirst crossed threshold"
     );
 }

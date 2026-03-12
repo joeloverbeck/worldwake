@@ -803,6 +803,7 @@ mod tests {
         CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind, PlanTerminalKind,
         PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
     use worldwake_core::{
@@ -929,7 +930,7 @@ mod tests {
                 Place {
                     name: "Origin".to_string(),
                     capacity: None,
-                    tags: Default::default(),
+                    tags: BTreeSet::default(),
                 },
             )
             .unwrap();
@@ -939,7 +940,7 @@ mod tests {
                 Place {
                     name: "Destination".to_string(),
                     capacity: None,
-                    tags: Default::default(),
+                    tags: BTreeSet::default(),
                 },
             )
             .unwrap();
@@ -1392,6 +1393,7 @@ mod tests {
             .is_empty());
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn goal_stability_across_cargo_replan_after_materialization() {
         let (mut harness, original_lot, origin, destination) = cargo_harness(false);

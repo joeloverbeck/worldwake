@@ -1,6 +1,6 @@
 # GOLDENE2E-001: Thirst-Driven Acquisition
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Possible
@@ -20,13 +20,16 @@ Thirst is the only hunger-like need with consume actions, but it has zero golden
 1. `HomeostaticNeeds` has a `thirst` field (confirmed in `crates/worldwake-core/src/needs.rs`).
 2. `MetabolismProfile` has a `thirst_rate` field that drives thirst accumulation per tick (confirmed).
 3. `CommodityKind::Water` exists (confirmed in `crates/worldwake-core/src/items.rs`).
-4. Candidate generation in `crates/worldwake-ai/src/candidate_generation.rs` emits consume goals for water when thirst crosses threshold — needs verification during implementation.
-5. Needs actions in `crates/worldwake-systems/src/needs_actions.rs` include a drink action that consumes Water — needs verification during implementation.
+4. Candidate generation in `crates/worldwake-ai/src/candidate_generation.rs` already emits thirst-driven `ConsumeOwnedCommodity { commodity: Water }` and `AcquireCommodity { commodity: Water, purpose: SelfConsume }` candidates once `needs.thirst >= thresholds.thirst.low()` (confirmed).
+5. Needs actions in `crates/worldwake-systems/src/needs_actions.rs` already register a concrete `drink` action with `ConsumableEffect::Thirst` preconditions and `commit_drink` consumption logic (confirmed).
+6. The ticket's original threshold assumption was stale: default thirst low threshold is `pm(200)`, not `pm(250)` (`DriveThresholds::default()` in `crates/worldwake-core/src/drives.rs`).
+7. Existing golden coverage already proves the analogous hunger pathway via `golden_deprivation_cascade`; this ticket is additive coverage for the parallel thirst path, not an engine-gap investigation.
 
 ## Architecture Check
 
-1. This test mirrors Scenario 7 (Deprivation Cascade) exactly, substituting thirst for hunger and Water for Bread. This is the simplest possible test to add and validates a parallel consumption pathway.
-2. No new test files needed — fits naturally in `golden_ai_decisions.rs`.
+1. The current architecture is already the right shape for this behavior: need-driven candidate generation is commodity-agnostic, and needs actions split `eat` and `drink` cleanly by consumable effect. Extending coverage is more valuable than refactoring because the code path is already explicit, decoupled, and consistent with Principle 12.
+2. The clean change is additive: reuse the existing golden harness, add a single thirst accessor, and add one focused candidate-generation unit test to lock in the threshold-to-goal mapping at the AI layer.
+3. No new test files or compatibility layers are warranted. This belongs in `golden_ai_decisions.rs` plus the existing `candidate_generation.rs` unit-test module.
 
 ## What to Change
 
@@ -47,12 +50,18 @@ In `golden_ai_decisions.rs`:
 - Create agent with `pm(0)` thirst, fast thirst metabolism (e.g., `thirst_rate: pm(20)`).
 - Give agent `Quantity(1)` Water.
 - Run simulation for up to 80 ticks.
-- Assert: thirst crosses low threshold (`pm(250)`).
+- Assert: thirst crosses the agent's default low threshold (`pm(200)`).
 - Assert: agent consumes the Water (quantity decreases).
 
 **Expected emergent chain**: Metabolism system → thirst increases → crosses threshold → AI generates `ConsumeOwnedCommodity { commodity: Water }` → agent drinks.
 
-### 3. Update coverage report
+### 3. Strengthen AI-layer coverage with a focused unit test
+
+In `crates/worldwake-ai/src/candidate_generation.rs`:
+- Add a unit test proving an owned Water lot emits `ConsumeOwnedCommodity { commodity: Water }` once thirst reaches the low threshold.
+- Keep the setup minimal and local to candidate generation so golden coverage remains end-to-end while the unit test isolates the AI invariant.
+
+### 4. Update coverage report
 
 Update `reports/golden-e2e-coverage-analysis.md`:
 - Move P1 (Thirst-Driven Acquisition) from Part 3 backlog to Part 1 with test name and file.
@@ -62,6 +71,7 @@ Update `reports/golden-e2e-coverage-analysis.md`:
 
 - `crates/worldwake-ai/tests/golden_harness/mod.rs` (modify — add `agent_thirst()`)
 - `crates/worldwake-ai/tests/golden_ai_decisions.rs` (modify — add test)
+- `crates/worldwake-ai/src/candidate_generation.rs` (modify — add focused thirst candidate-generation unit test)
 - `reports/golden-e2e-coverage-analysis.md` (modify — update coverage matrices)
 
 ## Out of Scope
@@ -90,11 +100,13 @@ the following protocol applies:
 ### Tests That Must Pass
 
 1. `golden_thirst_driven_acquisition` — agent with fast thirst metabolism and Water in inventory drinks when thirst crosses threshold
-2. Thirst crosses low threshold (`pm(250)`) via metabolism before agent acts
+2. Thirst crosses low threshold (`pm(200)`) via metabolism before agent acts
 3. Agent's Water quantity decreases (consumption occurred)
-4. Coverage report `reports/golden-e2e-coverage-analysis.md` updated: Part 2 matrices reflect Thirst as tested need, scenario moves from Part 3 to Part 1
-5. Existing suite: `cargo test -p worldwake-ai --test golden_ai_decisions`
-6. Full workspace: `cargo test --workspace` and `cargo clippy --workspace`
+4. `crates/worldwake-ai/src/candidate_generation.rs` contains a focused unit test for thirst-driven Water consume-goal emission
+5. Coverage report `reports/golden-e2e-coverage-analysis.md` updated: Part 2 matrices reflect Thirst as tested need, scenario moves from Part 3 to Part 1
+6. Existing suite: `cargo test -p worldwake-ai --test golden_ai_decisions`
+7. Relevant unit coverage: `cargo test -p worldwake-ai candidate_generation`
+8. Full workspace: `cargo test --workspace` and `cargo clippy --workspace`
 
 ### Invariants
 
@@ -107,9 +119,33 @@ the following protocol applies:
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/tests/golden_ai_decisions.rs::golden_thirst_driven_acquisition` — proves thirst-driven consumption pathway
+2. `crates/worldwake-ai/src/candidate_generation.rs` unit test for owned Water under thirst pressure — locks in AI candidate emission at the low threshold
 
 ### Commands
 
 1. `cargo test -p worldwake-ai --test golden_ai_decisions golden_thirst_driven_acquisition`
-2. `cargo test --workspace`
-3. `cargo clippy --workspace`
+2. `cargo test -p worldwake-ai candidate_generation`
+3. `cargo test --workspace`
+4. `cargo clippy --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-12
+
+**What actually changed**:
+- Added `GoldenHarness::agent_thirst()` in `crates/worldwake-ai/tests/golden_harness/mod.rs`.
+- Added `golden_thirst_driven_acquisition` in `crates/worldwake-ai/tests/golden_ai_decisions.rs`.
+- Added `owned_water_emits_consume_goal_when_thirsty` in `crates/worldwake-ai/src/candidate_generation.rs`.
+- Updated `reports/golden-e2e-coverage-analysis.md` to record the delivered thirst scenario and refreshed coverage notes.
+
+**Deviations from original plan**:
+- Corrected the ticket's stale threshold assumption from `pm(250)` to the actual default thirst low threshold `pm(200)`.
+- Confirmed that thirst candidate generation and the `drink` action already existed, so no engine changes were needed.
+- Strengthened scope with a focused AI unit test in addition to the golden E2E scenario because the AI layer had hunger-path coverage but no parallel thirst-path unit coverage.
+
+**Verification results**:
+- `cargo test -p worldwake-ai --test golden_ai_decisions golden_thirst_driven_acquisition --offline -- --exact --nocapture` passed.
+- `cargo test -p worldwake-ai candidate_generation --offline -- --nocapture` passed.
+- `cargo test -p worldwake-ai --test golden_ai_decisions --offline -- --nocapture` passed.
+- `cargo test --workspace` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
