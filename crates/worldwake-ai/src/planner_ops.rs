@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{EntityId, Quantity};
 use worldwake_sim::BeliefView;
-use worldwake_sim::{ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload};
+use worldwake_sim::{
+    ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload, MaterializationTag,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
@@ -277,6 +279,12 @@ fn apply_pick_up_transition<'snapshot>(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ExpectedMaterialization {
+    pub tag: MaterializationTag,
+    pub hypothetical_id: HypotheticalEntityId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PlannedStep {
     pub def_id: ActionDefId,
     pub targets: Vec<PlanningEntityRef>,
@@ -284,6 +292,7 @@ pub struct PlannedStep {
     pub op_kind: PlannerOpKind,
     pub estimated_ticks: u32,
     pub is_materialization_barrier: bool,
+    pub expected_materializations: Vec<ExpectedMaterialization>,
 }
 
 #[must_use]
@@ -409,6 +418,7 @@ mod tests {
             op_kind: PlannerOpKind::Trade,
             estimated_ticks: 5,
             is_materialization_barrier: true,
+            expected_materializations: Vec::new(),
         }
     }
 
@@ -771,6 +781,7 @@ mod tests {
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );

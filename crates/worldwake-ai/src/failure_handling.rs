@@ -24,6 +24,7 @@ pub fn handle_plan_failure(
     budget: &PlanningBudget,
 ) {
     runtime.current_plan = None;
+    runtime.materialization_bindings.clear();
 
     let blocking_fact = derive_blocking_fact(
         context.view,
@@ -771,6 +772,7 @@ mod tests {
             op_kind: PlannerOpKind::Trade,
             estimated_ticks: 3,
             is_materialization_barrier: true,
+            expected_materializations: Vec::new(),
         }
     }
 
@@ -782,6 +784,7 @@ mod tests {
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 2,
             is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
         }
     }
 
@@ -799,6 +802,7 @@ mod tests {
             op_kind: PlannerOpKind::Craft,
             estimated_ticks: 4,
             is_materialization_barrier: true,
+            expected_materializations: Vec::new(),
         }
     }
 
@@ -813,6 +817,7 @@ mod tests {
             op_kind: PlannerOpKind::Attack,
             estimated_ticks: 0,
             is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
         }
     }
 
@@ -1024,6 +1029,7 @@ mod tests {
             op_kind: PlannerOpKind::Sleep,
             estimated_ticks: 1,
             is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
         };
         let signal = ReplanNeeded {
             agent,

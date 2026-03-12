@@ -92,7 +92,7 @@ pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Rep
 pub use save_load::{
     load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
 };
-pub use scheduler::{Scheduler, SchedulerActionRuntime};
+pub use scheduler::{CommittedAction, Scheduler, SchedulerActionRuntime};
 pub use simulation_state::SimulationState;
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};

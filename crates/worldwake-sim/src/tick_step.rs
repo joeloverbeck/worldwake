@@ -333,6 +333,12 @@ fn progress_active_actions(
     let mut actions_aborted = 0u32;
 
     for instance_id in active_action_ids {
+        let instance = runtime
+            .scheduler
+            .active_actions()
+            .get(&instance_id)
+            .cloned()
+            .expect("active action ids must correspond to active actions");
         match runtime
             .scheduler
             .tick_active_action(
@@ -352,7 +358,14 @@ fn progress_active_actions(
             .map_err(TickStepError::Action)?
         {
             TickOutcome::Continuing => {}
-            TickOutcome::Committed { .. } => {
+            TickOutcome::Committed { outcome } => {
+                runtime.scheduler.retain_committed_action(crate::CommittedAction {
+                    actor: instance.actor,
+                    def_id: instance.def_id,
+                    instance_id,
+                    tick,
+                    outcome,
+                });
                 actions_completed = actions_completed
                     .checked_add(1)
                     .expect("tick-step action-complete counter overflowed");
@@ -865,6 +878,57 @@ mod tests {
             hook_log().lock().unwrap().starts,
             vec![ActionDefId(1), ActionDefId(0)]
         );
+    }
+
+    #[test]
+    fn completed_actions_are_retained_on_scheduler_for_next_input_phase() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            crate::InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(1),
+                targets: Vec::new(),
+                payload_override: None,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.actions_completed, 1);
+        assert_eq!(scheduler.committed_actions().len(), 1);
+        let committed = &scheduler.committed_actions()[0];
+        assert_eq!(committed.actor, actor);
+        assert_eq!(committed.def_id, ActionDefId(1));
+        assert_eq!(committed.tick, Tick(0));
+        assert_eq!(committed.outcome, CommitOutcome::empty());
     }
 
     #[test]

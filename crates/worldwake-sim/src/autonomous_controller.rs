@@ -1,6 +1,6 @@
 use crate::{
-    ActionDefRegistry, ActionHandlerRegistry, DeterministicRng, RecipeRegistry, ReplanNeeded,
-    Scheduler, TickInputContext, TickInputError, TickInputProducer,
+    ActionDefRegistry, ActionHandlerRegistry, CommittedAction, DeterministicRng, RecipeRegistry,
+    ReplanNeeded, Scheduler, TickInputContext, TickInputError, TickInputProducer,
 };
 use worldwake_core::{ControlSource, EntityId, EventLog, Tick, World};
 
@@ -25,6 +25,7 @@ pub trait AutonomousController {
         ctx: AutonomousControllerContext<'_>,
         agent: EntityId,
         replan_signals: &[&ReplanNeeded],
+        committed_actions: &[CommittedAction],
     ) -> Result<(), TickInputError>;
 }
 
@@ -77,6 +78,7 @@ impl TickInputProducer for AutonomousControllerRuntime<'_> {
                         .iter()
                         .filter(|signal| signal.agent == agent)
                         .collect::<Vec<_>>();
+                    let agent_commits = scheduler.take_committed_actions_for(agent);
                     self.controllers[*index].produce_agent_input(
                         AutonomousControllerContext {
                             world,
@@ -90,6 +92,7 @@ impl TickInputProducer for AutonomousControllerRuntime<'_> {
                         },
                         agent,
                         &agent_replans,
+                        &agent_commits,
                     )?;
                 }
                 _ => {
@@ -146,9 +149,11 @@ mod tests {
             _ctx: AutonomousControllerContext<'_>,
             agent: EntityId,
             replan_signals: &[&crate::ReplanNeeded],
+            committed_actions: &[crate::CommittedAction],
         ) -> Result<(), crate::TickInputError> {
             self.seen_agents.push(agent);
             self.seen_replan_counts.push(replan_signals.len());
+            assert!(committed_actions.is_empty());
             Ok(())
         }
     }

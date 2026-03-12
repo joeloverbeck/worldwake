@@ -1,9 +1,9 @@
 use crate::{
-    authoritative_targets, build_planning_snapshot, build_semantics_table,
+    build_planning_snapshot, build_semantics_table,
     clear_resolved_blockers, evaluate_interrupt, generate_candidates, handle_plan_failure,
-    rank_candidates, revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime,
-    InterruptDecision, PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics,
-    PlanningBudget, RankedGoal,
+    rank_candidates, resolve_planning_targets_with, revalidate_next_step, search_plan,
+    select_best_plan, AgentDecisionRuntime, InterruptDecision, PlanFailureContext,
+    PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -12,8 +12,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefId, ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
-    BeliefView, InputKind, OmniscientBeliefView, RecipeRegistry, ReplanNeeded, Scheduler,
-    SchedulerActionRuntime, TickInputError,
+    BeliefView, CommittedAction, CommitOutcome, InputKind, OmniscientBeliefView,
+    RecipeRegistry, ReplanNeeded, Scheduler, SchedulerActionRuntime, TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -92,6 +92,7 @@ impl AutonomousController for AgentTickDriver {
         ctx: AutonomousControllerContext<'_>,
         agent: EntityId,
         replan_signals: &[&ReplanNeeded],
+        committed_actions: &[CommittedAction],
     ) -> Result<(), TickInputError> {
         let semantics_table = self.semantics_table(ctx.action_defs).clone();
         process_agent(
@@ -110,15 +111,18 @@ impl AutonomousController for AgentTickDriver {
             &mut self.runtime_by_agent,
             agent,
             replan_signals,
+            committed_actions,
         )
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn process_agent(
     ctx: &mut AgentTickContext<'_>,
     runtime_by_agent: &mut BTreeMap<EntityId, AgentDecisionRuntime>,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
+    committed_actions: &[CommittedAction],
 ) -> Result<(), TickInputError> {
     let action_defs = ctx.action_defs;
     let action_handlers = ctx.action_handlers;
@@ -149,6 +153,7 @@ fn process_agent(
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
             runtime.dirty = false;
+            runtime.materialization_bindings.clear();
             update_runtime_observation_snapshot(&view, agent, runtime);
             return Ok(());
         }
@@ -161,6 +166,7 @@ fn process_agent(
         active_action.as_ref(),
         agent,
         replan_signals,
+        committed_actions,
     )?;
 
     let ranked_candidates = refresh_runtime_for_read_phase(
@@ -244,7 +250,7 @@ fn enqueue_valid_step_or_handle_failure(
         return handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None);
     }
 
-    let Some(targets) = authoritative_targets(&step.targets) else {
+    let Some(targets) = resolve_step_targets(runtime, step) else {
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None)?;
         return finalize_agent_tick(
             ctx.world,
@@ -367,7 +373,15 @@ fn handle_active_action_phase(
                 worldwake_sim::InterruptReason::Reprioritized,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-        reconcile_in_flight_state(ctx, runtime, blocked_memory, None, agent, &[&replan])?;
+        reconcile_in_flight_state(
+            ctx,
+            runtime,
+            blocked_memory,
+            None,
+            agent,
+            &[&replan],
+            &[],
+        )?;
     }
 
     finalize_agent_tick(
@@ -419,6 +433,7 @@ fn plan_and_validate_next_step(
             .collect::<Vec<_>>();
 
         if let Some(selected_plan) = select_best_plan(ranked_candidates, &plans, runtime, budget) {
+            runtime.materialization_bindings.clear();
             runtime.current_goal = Some(selected_plan.goal);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
@@ -428,6 +443,7 @@ fn plan_and_validate_next_step(
                 .find(|candidate| Some(candidate.grounded.key) == runtime.current_goal)
                 .map(|candidate| candidate.priority_class);
         } else {
+            runtime.materialization_bindings.clear();
             runtime.current_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
@@ -442,7 +458,16 @@ fn plan_and_validate_next_step(
     let next_step = current_step(runtime).cloned();
     let next_step_valid = next_step
         .as_ref()
-        .map(|step| revalidate_next_step(&view, agent, step, action_defs, action_handlers));
+        .map(|step| {
+            revalidate_next_step(
+                &view,
+                agent,
+                step,
+                &runtime.materialization_bindings,
+                action_defs,
+                action_handlers,
+            )
+        });
     (next_step, next_step_valid)
 }
 
@@ -478,6 +503,7 @@ fn reconcile_in_flight_state(
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
+    committed_actions: &[CommittedAction],
 ) -> Result<(), TickInputError> {
     if !runtime.step_in_flight {
         return Ok(());
@@ -495,6 +521,15 @@ fn reconcile_in_flight_state(
     if let Some(signal) = failed_signal {
         let _ = ctx.action_defs.get(signal.failed_action_def);
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, Some(signal))?;
+        return Ok(());
+    }
+
+    let Some(committed_action) = committed_action_for_step(&step, committed_actions) else {
+        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
+        return Ok(());
+    };
+    if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
+        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
         return Ok(());
     }
 
@@ -522,12 +557,14 @@ fn advance_completed_step(runtime: &mut AgentDecisionRuntime) {
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.dirty = true;
+            runtime.materialization_bindings.clear();
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
             runtime.current_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.dirty = true;
+            runtime.materialization_bindings.clear();
         }
     }
 }
@@ -575,6 +612,76 @@ fn handle_current_step_failure(
         &BlockedIntentMemory::default(),
         blocked_memory,
     )
+}
+
+fn resolve_step_targets(
+    runtime: &AgentDecisionRuntime,
+    step: &PlannedStep,
+) -> Option<Vec<EntityId>> {
+    resolve_planning_targets_with(&step.targets, |id| runtime.materialization_bindings.resolve(id))
+}
+
+fn committed_action_for_step<'a>(
+    step: &PlannedStep,
+    committed_actions: &'a [CommittedAction],
+) -> Option<&'a CommittedAction> {
+    if committed_actions.len() != 1 {
+        return None;
+    }
+    let committed = &committed_actions[0];
+    (committed.def_id == step.def_id).then_some(committed)
+}
+
+fn apply_step_materialization_bindings(
+    runtime: &mut AgentDecisionRuntime,
+    step: &PlannedStep,
+    outcome: &CommitOutcome,
+) -> Result<(), ()> {
+    use std::collections::BTreeSet;
+
+    let tags = step
+        .expected_materializations
+        .iter()
+        .map(|expected| expected.tag)
+        .chain(outcome.materializations.iter().map(|actual| actual.tag))
+        .collect::<BTreeSet<_>>();
+    let mut newly_bound_entities = BTreeSet::new();
+
+    for tag in tags {
+        let expected = step
+            .expected_materializations
+            .iter()
+            .filter(|expected| expected.tag == tag)
+            .collect::<Vec<_>>();
+        let actual = outcome
+            .materializations
+            .iter()
+            .filter(|materialization| materialization.tag == tag)
+            .collect::<Vec<_>>();
+        if expected.len() != actual.len() {
+            return Err(());
+        }
+
+        for (expected, actual) in expected.into_iter().zip(actual.into_iter()) {
+            if !newly_bound_entities.insert(actual.entity) {
+                return Err(());
+            }
+            if let Some(existing) = runtime
+                .materialization_bindings
+                .resolve(expected.hypothetical_id)
+            {
+                if existing != actual.entity {
+                    return Err(());
+                }
+                continue;
+            }
+            runtime
+                .materialization_bindings
+                .bind(expected.hypothetical_id, actual.entity);
+        }
+    }
+
+    Ok(())
 }
 
 fn persist_blocked_memory(
@@ -666,11 +773,14 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 
 #[cfg(test)]
 mod tests {
-    use super::{advance_completed_step, persist_blocked_memory, AgentTickDriver};
+    use super::{
+        advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
+        persist_blocked_memory, resolve_step_targets, AgentTickDriver,
+    };
     use crate::PlanningBudget;
     use crate::{
-        CommodityPurpose, GoalKey, GoalKind, PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind, PlanningEntityRef,
+        CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind, PlanTerminalKind,
+        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -682,7 +792,8 @@ mod tests {
     };
     use worldwake_sim::{
         step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
-        AutonomousControllerRuntime, ControllerState, DeterministicRng, RecipeRegistry, Scheduler,
+        AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState,
+        DeterministicRng, Materialization, MaterializationTag, RecipeRegistry, Scheduler,
         SystemDispatchTable, SystemManifest, TickStepServices,
     };
     use worldwake_systems::register_needs_actions;
@@ -804,6 +915,24 @@ mod tests {
             op_kind: PlannerOpKind::Trade,
             estimated_ticks: 3,
             is_materialization_barrier: true,
+            expected_materializations: Vec::new(),
+        }
+    }
+
+    fn hypothetical_step(def_id: u32, hypothetical: u32) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(def_id),
+            targets: vec![PlanningEntityRef::Hypothetical(crate::HypotheticalEntityId(
+                hypothetical,
+            ))],
+            payload_override: None,
+            op_kind: PlannerOpKind::MoveCargo,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: vec![ExpectedMaterialization {
+                tag: MaterializationTag::SplitOffLot,
+                hypothetical_id: crate::HypotheticalEntityId(hypothetical),
+            }],
         }
     }
 
@@ -910,6 +1039,80 @@ mod tests {
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert!(runtime.dirty);
+        assert!(runtime.materialization_bindings.hypothetical_to_authoritative.is_empty());
+    }
+
+    #[test]
+    fn apply_step_materialization_bindings_binds_expected_outputs() {
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        let step = hypothetical_step(4, 7);
+        let created = entity(21);
+        let outcome = CommitOutcome {
+            materializations: vec![Materialization {
+                tag: MaterializationTag::SplitOffLot,
+                entity: created,
+            }],
+        };
+
+        apply_step_materialization_bindings(&mut runtime, &step, &outcome).unwrap();
+
+        assert_eq!(
+            runtime
+                .materialization_bindings
+                .resolve(crate::HypotheticalEntityId(7)),
+            Some(created)
+        );
+    }
+
+    #[test]
+    fn apply_step_materialization_bindings_rejects_mismatched_counts() {
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        let step = hypothetical_step(4, 7);
+
+        assert!(apply_step_materialization_bindings(&mut runtime, &step, &CommitOutcome::empty())
+            .is_err());
+    }
+
+    #[test]
+    fn resolve_step_targets_uses_materialization_bindings_for_hypothetical_refs() {
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        let step = hypothetical_step(4, 7);
+        let created = entity(21);
+        runtime
+            .materialization_bindings
+            .bind(crate::HypotheticalEntityId(7), created);
+
+        assert_eq!(resolve_step_targets(&runtime, &step), Some(vec![created]));
+    }
+
+    #[test]
+    fn committed_action_for_step_requires_single_matching_def() {
+        let step = barrier_step();
+        let matching = CommittedAction {
+            actor: entity(1),
+            def_id: step.def_id,
+            instance_id: worldwake_sim::ActionInstanceId(4),
+            tick: Tick(9),
+            outcome: CommitOutcome::empty(),
+        };
+        let mismatched = CommittedAction {
+            def_id: ActionDefId(99),
+            ..matching.clone()
+        };
+
+        assert_eq!(
+            committed_action_for_step(&step, std::slice::from_ref(&matching)),
+            Some(&matching)
+        );
+        assert_eq!(committed_action_for_step(&step, &[]), None);
+        assert_eq!(
+            committed_action_for_step(&step, &[matching.clone(), mismatched.clone()]),
+            None
+        );
+        assert_eq!(
+            committed_action_for_step(&step, std::slice::from_ref(&mismatched)),
+            None
+        );
     }
 
     #[test]

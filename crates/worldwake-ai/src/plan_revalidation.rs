@@ -1,4 +1,4 @@
-use crate::{authoritative_targets, PlannedStep};
+use crate::{resolve_planning_targets_with, MaterializationBindings, PlannedStep};
 use worldwake_core::EntityId;
 use worldwake_sim::{get_affordances, ActionDefRegistry, ActionHandlerRegistry, BeliefView};
 
@@ -7,13 +7,16 @@ pub fn revalidate_next_step(
     view: &dyn BeliefView,
     actor: EntityId,
     step: &PlannedStep,
+    bindings: &MaterializationBindings,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
 ) -> bool {
     let Some(def) = registry.get(step.def_id) else {
         return false;
     };
-    let Some(targets) = authoritative_targets(&step.targets) else {
+    let Some(targets) =
+        resolve_planning_targets_with(&step.targets, |id| bindings.resolve(id))
+    else {
         return false;
     };
     get_affordances(view, actor, registry, handlers)
@@ -31,7 +34,10 @@ pub fn revalidate_next_step(
 #[cfg(test)]
 mod tests {
     use super::revalidate_next_step;
-    use crate::{HypotheticalEntityId, PlannedStep, PlannerOpKind, PlanningEntityRef};
+    use crate::{
+        ExpectedMaterialization, HypotheticalEntityId, MaterializationBindings, PlannedStep,
+        PlannerOpKind, PlanningEntityRef,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -396,6 +402,7 @@ mod tests {
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
             is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
         }
     }
 
@@ -418,6 +425,7 @@ mod tests {
             &view,
             actor,
             &sample_step(ActionDefId(0), destination),
+            &MaterializationBindings::new(),
             &registry,
             &handlers,
         ));
@@ -444,6 +452,7 @@ mod tests {
             &view,
             actor,
             &sample_step(ActionDefId(0), missing),
+            &MaterializationBindings::new(),
             &registry,
             &handlers,
         ));
@@ -462,11 +471,52 @@ mod tests {
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
             is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
         };
 
         let (registry, handlers) = build_registry();
         assert!(!revalidate_next_step(
-            &view, actor, &step, &registry, &handlers,
+            &view,
+            actor,
+            &step,
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        ));
+    }
+
+    #[test]
+    fn hypothetical_targets_revalidate_when_binding_exists() {
+        let actor = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let hypothetical = HypotheticalEntityId(3);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, origin, destination]);
+        view.kinds.insert(origin, EntityKind::Place);
+        view.kinds.insert(destination, EntityKind::Place);
+        view.effective_places.insert(actor, origin);
+        view.adjacent_places.insert(origin, vec![destination]);
+        view.adjacent_with_ticks
+            .insert(origin, vec![(destination, NonZeroU32::new(1).unwrap())]);
+        let step = PlannedStep {
+            def_id: ActionDefId(0),
+            targets: vec![PlanningEntityRef::Hypothetical(hypothetical)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: vec![ExpectedMaterialization {
+                tag: worldwake_sim::MaterializationTag::SplitOffLot,
+                hypothetical_id: hypothetical,
+            }],
+        };
+        let mut bindings = MaterializationBindings::new();
+        bindings.bind(hypothetical, destination);
+
+        let (registry, handlers) = build_registry();
+        assert!(revalidate_next_step(
+            &view, actor, &step, &bindings, &registry, &handlers,
         ));
     }
 
@@ -489,6 +539,7 @@ mod tests {
             &view,
             actor,
             &sample_step(ActionDefId(99), destination),
+            &MaterializationBindings::new(),
             &registry,
             &handlers,
         ));
@@ -514,7 +565,12 @@ mod tests {
 
         let (registry, handlers) = build_payload_registry();
         assert!(!revalidate_next_step(
-            &view, actor, &step, &registry, &handlers,
+            &view,
+            actor,
+            &step,
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
         ));
     }
 
@@ -538,7 +594,12 @@ mod tests {
 
         let (registry, handlers) = build_payload_registry();
         assert!(revalidate_next_step(
-            &view, actor, &step, &registry, &handlers,
+            &view,
+            actor,
+            &step,
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
         ));
     }
 }

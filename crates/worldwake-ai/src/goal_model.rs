@@ -921,6 +921,7 @@ mod tests {
             op_kind: PlannerOpKind::Harvest,
             estimated_ticks: 3,
             is_materialization_barrier: true,
+            expected_materializations: Vec::new(),
         };
 
         assert!(acquire_goal.is_progress_barrier(&barrier_step));

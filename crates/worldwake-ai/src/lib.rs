@@ -24,7 +24,7 @@ pub mod search;
 pub use agent_tick::AgentTickDriver;
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
-pub use decision_runtime::AgentDecisionRuntime;
+pub use decision_runtime::{AgentDecisionRuntime, MaterializationBindings};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
@@ -35,7 +35,7 @@ pub use plan_selection::select_best_plan;
 pub use planner_ops::{
     apply_hypothetical_transition, authoritative_target, authoritative_targets,
     build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,
-    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlannerOpSemantics,
+    ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlannerOpSemantics,
     PlannerTransitionKind,
 };
 pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};

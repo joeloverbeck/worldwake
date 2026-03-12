@@ -165,6 +165,7 @@ fn build_successor<'snapshot>(
         op_kind: semantics.op_kind,
         estimated_ticks,
         is_materialization_barrier: semantics.is_materialization_barrier,
+        expected_materializations: Vec::new(),
     };
     let terminal = terminal_kind(goal, &post_state, &step);
     if !semantics.may_appear_mid_plan && terminal.is_none() {
@@ -521,6 +522,7 @@ mod tests {
             op_kind,
             estimated_ticks,
             is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
         }
     }
 

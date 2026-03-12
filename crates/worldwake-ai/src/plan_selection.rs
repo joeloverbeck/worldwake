@@ -124,6 +124,7 @@ mod tests {
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: ticks,
                 is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         )

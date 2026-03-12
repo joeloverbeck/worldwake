@@ -1,12 +1,21 @@
 use crate::{
-    abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
+    abort_action, start_action, tick_action, ActionDefId, ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-    ActionInstanceId, Affordance, DeterministicRng, ExternalAbortReason, InputEvent, InputQueue,
-    InterruptReason, ReplanNeeded, SystemManifest, TickOutcome,
+    ActionInstanceId, Affordance, CommitOutcome, DeterministicRng, ExternalAbortReason,
+    InputEvent, InputQueue, InterruptReason, ReplanNeeded, SystemManifest, TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{EntityId, EventLog, Tick, World};
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommittedAction {
+    pub actor: EntityId,
+    pub def_id: ActionDefId,
+    pub instance_id: ActionInstanceId,
+    pub tick: Tick,
+    pub outcome: CommitOutcome,
+}
 
 pub struct SchedulerActionRuntime<'a> {
     pub action_defs: &'a ActionDefRegistry,
@@ -23,6 +32,7 @@ pub struct Scheduler {
     system_manifest: SystemManifest,
     input_queue: InputQueue,
     pending_replans: Vec<ReplanNeeded>,
+    committed_actions: Vec<CommittedAction>,
     next_instance_id: ActionInstanceId,
 }
 
@@ -40,6 +50,7 @@ impl Scheduler {
             system_manifest,
             input_queue: InputQueue::new(),
             pending_replans: Vec::new(),
+            committed_actions: Vec::new(),
             next_instance_id: ActionInstanceId(0),
         }
     }
@@ -79,6 +90,28 @@ impl Scheduler {
 
     pub fn retain_replan(&mut self, replan: ReplanNeeded) {
         self.pending_replans.push(replan);
+    }
+
+    #[must_use]
+    pub fn committed_actions(&self) -> &[CommittedAction] {
+        &self.committed_actions
+    }
+
+    pub fn retain_committed_action(&mut self, committed: CommittedAction) {
+        self.committed_actions.push(committed);
+    }
+
+    pub fn take_committed_actions_for(&mut self, actor: EntityId) -> Vec<CommittedAction> {
+        let mut taken = Vec::new();
+        self.committed_actions.retain(|committed| {
+            if committed.actor == actor {
+                taken.push(committed.clone());
+                false
+            } else {
+                true
+            }
+        });
+        taken
     }
 
     pub(crate) fn drain_current_tick_inputs(&mut self) -> Vec<InputEvent> {
@@ -237,10 +270,10 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests {
-    use super::Scheduler;
+    use super::{CommittedAction, Scheduler};
     use crate::{
         ActionDefId, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
-        ActionStatus, InputKind, SystemManifest,
+        ActionStatus, CommitOutcome, InputKind, SystemManifest,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{EntityId, ReservationId, Tick};
@@ -404,5 +437,32 @@ mod tests {
         assert_eq!(restored.allocate_instance_id(), ActionInstanceId(2));
         assert_eq!(restored.input_queue().peek_tick(Tick(14)).len(), 1);
         assert_eq!(restored.input_queue().peek_tick(Tick(16)).len(), 1);
+    }
+
+    #[test]
+    fn committed_actions_can_be_retained_and_taken_per_actor() {
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let actor = entity(2);
+        let other = entity(8);
+        let committed = CommittedAction {
+            actor,
+            def_id: ActionDefId(7),
+            instance_id: ActionInstanceId(9),
+            tick: Tick(11),
+            outcome: CommitOutcome::empty(),
+        };
+        let other_committed = CommittedAction {
+            actor: other,
+            def_id: ActionDefId(3),
+            instance_id: ActionInstanceId(4),
+            tick: Tick(12),
+            outcome: CommitOutcome::empty(),
+        };
+
+        scheduler.retain_committed_action(committed.clone());
+        scheduler.retain_committed_action(other_committed.clone());
+
+        assert_eq!(scheduler.take_committed_actions_for(actor), vec![committed]);
+        assert_eq!(scheduler.committed_actions(), &[other_committed]);
     }
 }
