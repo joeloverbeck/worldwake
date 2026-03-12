@@ -344,7 +344,7 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         BodyCostPerTick, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
         TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
@@ -504,6 +504,14 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {

@@ -288,9 +288,9 @@ mod tests {
         build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile, CombatWeaponRef,
         CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
         DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, Wound,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
+        Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn, Wound,
     };
 
     #[derive(Default)]
@@ -415,6 +415,14 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.control.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
         }
 
         fn reservation_conflicts(

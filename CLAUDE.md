@@ -285,7 +285,7 @@ Do not duplicate or drift this procedure in other files; update `docs/archival-w
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (4704 symbols, 16942 relationships, 300 execution flows).
+This project is indexed by GitNexus as **worldwake** (4720 symbols, 17010 relationships, 300 execution flows).
 
 ## Always Start Here
 

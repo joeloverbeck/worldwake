@@ -530,8 +530,9 @@ mod tests {
         BlockedIntent, BlockedIntentMemory, BlockingFact, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
         DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
+        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionDuration, ActionPayload, BeliefView, CombatActionPayload,
@@ -630,6 +631,14 @@ mod tests {
         }
         fn has_control(&self, entity: EntityId) -> bool {
             self.entity_kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
         }
         fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
             self.reservation_ranges(entity)

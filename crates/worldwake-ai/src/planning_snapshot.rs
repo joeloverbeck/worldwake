@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile,
-    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
-    WorkstationTag, Wound,
+    EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::BeliefView;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SnapshotEntity {
     pub(crate) kind: Option<EntityKind>,
     pub(crate) effective_place: Option<EntityId>,
@@ -20,6 +20,8 @@ pub(crate) struct SnapshotEntity {
     pub(crate) unique_item_counts: BTreeMap<UniqueItemKind, u32>,
     pub(crate) commodity_quantities: BTreeMap<CommodityKind, Quantity>,
     pub(crate) item_lot_commodity: Option<CommodityKind>,
+    pub(crate) carry_capacity: Option<LoadUnits>,
+    pub(crate) intrinsic_load: LoadUnits,
     pub(crate) item_lot_consumable_profile: Option<CommodityConsumableProfile>,
     pub(crate) workstation_tag: Option<WorkstationTag>,
     pub(crate) resource_source: Option<ResourceSource>,
@@ -36,6 +38,41 @@ pub(crate) struct SnapshotEntity {
     pub(crate) demand_memory: Vec<DemandObservation>,
     pub(crate) merchandise_profile: Option<MerchandiseProfile>,
     pub(crate) reservation_ranges: Vec<TickRange>,
+}
+
+impl Default for SnapshotEntity {
+    fn default() -> Self {
+        Self {
+            kind: None,
+            effective_place: None,
+            in_transit_state: None,
+            direct_container: None,
+            direct_possessor: None,
+            direct_possessions: BTreeSet::new(),
+            known_recipes: Vec::new(),
+            unique_item_counts: BTreeMap::new(),
+            commodity_quantities: BTreeMap::new(),
+            item_lot_commodity: None,
+            carry_capacity: None,
+            intrinsic_load: LoadUnits(0),
+            item_lot_consumable_profile: None,
+            workstation_tag: None,
+            resource_source: None,
+            action_flags: SnapshotActionFlags::default(),
+            lifecycle: SnapshotLifecycle::default(),
+            wounds: Vec::new(),
+            homeostatic_needs: None,
+            drive_thresholds: None,
+            metabolism_profile: None,
+            trade_disposition_profile: None,
+            combat_profile: None,
+            visible_hostiles: Vec::new(),
+            current_attackers: Vec::new(),
+            demand_memory: Vec::new(),
+            merchandise_profile: None,
+            reservation_ranges: Vec::new(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -166,6 +203,8 @@ fn build_snapshot_entity(
         unique_item_counts: collect_unique_item_counts(view, entity),
         commodity_quantities: collect_commodity_quantities(view, entity),
         item_lot_commodity: view.item_lot_commodity(entity),
+        carry_capacity: view.carry_capacity(entity),
+        intrinsic_load: view.load_of_entity(entity).unwrap_or(LoadUnits(0)),
         item_lot_consumable_profile: view.item_lot_consumable_profile(entity),
         workstation_tag: view.workstation_tag(entity),
         resource_source: view.resource_source(entity),
@@ -334,7 +373,7 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
@@ -347,6 +386,8 @@ mod tests {
         effective_places: BTreeMap<EntityId, EntityId>,
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
     }
 
     impl BeliefView for StubBeliefView {
@@ -430,6 +471,14 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
+        }
+
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
@@ -628,5 +677,41 @@ mod tests {
         assert!(snapshot.places.contains_key(&place_a));
         assert!(snapshot.places.contains_key(&place_b));
         assert!(!snapshot.places.contains_key(&place_c));
+    }
+
+    #[test]
+    fn build_snapshot_captures_carry_capacity_and_intrinsic_load() {
+        let actor = entity(1);
+        let place = entity(10);
+        let lot = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(place, true);
+        view.alive.insert(lot, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(lot, place);
+        view.entities_at.insert(place, vec![actor, lot]);
+        view.carry_capacities.insert(actor, LoadUnits(9));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(lot, LoadUnits(6));
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
+
+        assert_eq!(
+            snapshot.entities.get(&actor).and_then(|entity| entity.carry_capacity),
+            Some(LoadUnits(9))
+        );
+        assert_eq!(
+            snapshot.entities.get(&lot).map(|entity| entity.intrinsic_load),
+            Some(LoadUnits(6))
+        );
+        assert_eq!(
+            snapshot.entities.get(&place).map(|entity| entity.intrinsic_load),
+            Some(LoadUnits(0))
+        );
     }
 }

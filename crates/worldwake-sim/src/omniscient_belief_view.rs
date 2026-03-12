@@ -5,10 +5,11 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    is_incapacitated, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-    MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TickRange,
-    TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
+    is_incapacitated, load_of_entity, CarryCapacity, CombatProfile, CommodityConsumableProfile,
+    CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
+    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity,
+    RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+    World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -167,6 +168,16 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world
             .get_component_agent_data(entity)
             .is_some_and(|agent_data| agent_data.control_source != ControlSource::None)
+    }
+
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.world
+            .get_component_carry_capacity(entity)
+            .map(|CarryCapacity(capacity)| *capacity)
+    }
+
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+        load_of_entity(self.world, entity).ok()
     }
 
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
@@ -366,12 +377,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, Container,
-        ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-        DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId, WoundList,
+        build_prototype_world, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
+        Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
+        DemandObservationReason, DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge,
+        LoadUnits, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -729,6 +740,32 @@ mod tests {
                 last_regeneration_tick: None,
             })
         );
+    }
+
+    #[test]
+    fn carry_capacity_and_entity_load_reflect_authoritative_world_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, lot, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let lot = txn
+                .create_item_lot(CommodityKind::Water, Quantity(3))
+                .unwrap();
+            let office = txn.create_office("Town Hall").unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(12)))
+                .unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(lot, place).unwrap();
+            commit_txn(txn);
+            (actor, lot, office)
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert_eq!(view.carry_capacity(actor), Some(LoadUnits(12)));
+        assert_eq!(view.load_of_entity(lot), Some(LoadUnits(6)));
+        assert_eq!(view.load_of_entity(office), Some(LoadUnits(0)));
     }
 
     #[allow(clippy::too_many_lines)]

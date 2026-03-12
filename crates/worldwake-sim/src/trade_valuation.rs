@@ -271,8 +271,8 @@ mod tests {
     use worldwake_core::{
         BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandMemory,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille,
-        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundList,
     };
 
@@ -362,6 +362,14 @@ mod tests {
 
         fn has_control(&self, _entity: EntityId) -> bool {
             false
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {

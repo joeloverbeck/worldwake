@@ -34,9 +34,9 @@ mod tests {
     use worldwake_core::{
         BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId,
-        ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
-        WorkstationTag, Wound,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
+        RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
+        VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDef, ActionDefId, ActionDefRegistry, ActionDuration, ActionError, ActionHandler,
@@ -135,6 +135,14 @@ mod tests {
 
         fn has_control(&self, _entity: EntityId) -> bool {
             true
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {

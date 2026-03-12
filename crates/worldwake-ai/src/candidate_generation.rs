@@ -680,8 +680,8 @@ mod tests {
         BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
         DemandObservationReason, DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind,
-        HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille,
-        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
@@ -813,6 +813,14 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.controlled_entities.contains(&entity)
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
         }
 
         fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {

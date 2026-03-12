@@ -2,9 +2,10 @@ use crate::planning_snapshot::PlanningSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    CombatProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind,
-    HomeostaticNeeds, InTransitOnEdge, MetabolismProfile, Permille, Quantity, RecipeId,
-    ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    load_per_unit, CombatProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
+    EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MetabolismProfile, Permille,
+    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, BeliefView, DurationExpr,
@@ -279,6 +280,53 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn carry_capacity_ref(&self, entity: PlanningEntityRef) -> Option<LoadUnits> {
+        if self.removed_entities.contains(&entity) {
+            return None;
+        }
+        match entity {
+            PlanningEntityRef::Authoritative(entity) => self
+                .snapshot
+                .entities
+                .get(&entity)
+                .and_then(|snapshot| snapshot.carry_capacity),
+            PlanningEntityRef::Hypothetical(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn load_of_entity_ref(&self, entity: PlanningEntityRef) -> Option<LoadUnits> {
+        if self.removed_entities.contains(&entity) {
+            return None;
+        }
+        match entity {
+            PlanningEntityRef::Authoritative(entity) => self
+                .snapshot
+                .entities
+                .get(&entity)
+                .map(|snapshot| snapshot.intrinsic_load),
+            PlanningEntityRef::Hypothetical(_) => {
+                if self.entity_kind_ref(entity) != Some(EntityKind::ItemLot) {
+                    return Some(LoadUnits(0));
+                }
+                let commodity = self.item_lot_commodity_ref(entity)?;
+                let quantity = self.commodity_quantity_ref(entity, commodity);
+                quantity
+                    .0
+                    .checked_mul(load_per_unit(commodity).0)
+                    .map(LoadUnits)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn remaining_carry_capacity_ref(&self, entity: PlanningEntityRef) -> Option<LoadUnits> {
+        let capacity = self.carry_capacity_ref(entity)?.0;
+        let carried = self.carried_load_ref(entity)?.0;
+        capacity.checked_sub(carried).map(LoadUnits)
+    }
+
+    #[must_use]
     pub fn consume_commodity(mut self, commodity: CommodityKind) -> Self {
         let actor = self.snapshot.actor();
         let Some(mut needs) = self.homeostatic_needs(actor) else {
@@ -400,6 +448,50 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .and_then(|snapshot| snapshot.effective_place),
             PlanningEntityRef::Hypothetical(_) => None,
         }
+    }
+
+    fn carried_load_ref(&self, holder: PlanningEntityRef) -> Option<LoadUnits> {
+        let mut seen = BTreeSet::new();
+        let mut frontier = self.direct_child_refs(holder);
+        let mut total = 0u32;
+
+        while let Some(entity) = frontier.pop() {
+            if !seen.insert(entity) {
+                continue;
+            }
+
+            total = total.checked_add(self.load_of_entity_ref(entity)?.0)?;
+            frontier.extend(self.direct_child_refs(entity));
+        }
+
+        Some(LoadUnits(total))
+    }
+
+    fn direct_child_refs(&self, holder: PlanningEntityRef) -> Vec<PlanningEntityRef> {
+        self.all_entity_refs()
+            .into_iter()
+            .filter(|entity| {
+                self.direct_possessor_ref(*entity) == Some(holder)
+                    || self.direct_container_ref(*entity) == Some(holder)
+            })
+            .collect()
+    }
+
+    fn all_entity_refs(&self) -> Vec<PlanningEntityRef> {
+        let mut refs = self
+            .snapshot
+            .entities
+            .keys()
+            .copied()
+            .map(PlanningEntityRef::Authoritative)
+            .collect::<Vec<_>>();
+        refs.extend(
+            self.hypothetical_registry
+                .keys()
+                .copied()
+                .map(PlanningEntityRef::Hypothetical),
+        );
+        refs
     }
 }
 
@@ -556,6 +648,14 @@ impl BeliefView for PlanningState<'_> {
             .entities
             .get(&entity)
             .is_some_and(|snapshot| snapshot.action_flags.has_control)
+    }
+
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.carry_capacity_ref(PlanningEntityRef::Authoritative(entity))
+    }
+
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.load_of_entity_ref(PlanningEntityRef::Authoritative(entity))
     }
 
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
@@ -810,8 +910,8 @@ mod tests {
     use worldwake_core::{
         BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, MerchandiseProfile, MetabolismProfile, Permille,
-        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
@@ -829,10 +929,13 @@ mod tests {
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
+        direct_containers: BTreeMap<EntityId, EntityId>,
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
@@ -906,8 +1009,8 @@ mod tests {
             self.consumable_profiles.get(&entity).copied()
         }
 
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
         }
 
         fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
@@ -932,6 +1035,14 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
+        }
+
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
 
         fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
@@ -1183,6 +1294,9 @@ mod tests {
             bread,
             CommodityConsumableProfile::new(NonZeroU32::new(2).unwrap(), pm(250), pm(0), pm(0)),
         );
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(bread, LoadUnits(1));
         view.commodity_quantities
             .insert((actor, CommodityKind::Bread), Quantity(1));
         view.needs.insert(
@@ -1451,5 +1565,123 @@ mod tests {
         assert_eq!(removed.direct_possessor_ref(hypothetical), None);
         assert_eq!(removed.effective_place_ref(hypothetical), None);
         assert_eq!(removed.direct_possessions(actor), vec![bread]);
+    }
+
+    #[test]
+    fn carry_capacity_and_authoritative_load_queries_read_snapshot_data() {
+        let (view, actor, _town, _field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            state.carry_capacity_ref(PlanningEntityRef::Authoritative(actor)),
+            Some(LoadUnits(10))
+        );
+        assert_eq!(
+            state.load_of_entity_ref(PlanningEntityRef::Authoritative(bread)),
+            Some(LoadUnits(1))
+        );
+        assert_eq!(state.carry_capacity(actor), Some(LoadUnits(10)));
+        assert_eq!(state.load_of_entity(bread), Some(LoadUnits(1)));
+    }
+
+    #[test]
+    fn remaining_carry_capacity_counts_nested_and_hypothetical_load() {
+        let actor = entity(1);
+        let town = entity(10);
+        let satchel = entity(20);
+        let water = entity(21);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(town, true);
+        view.alive.insert(satchel, true);
+        view.alive.insert(water, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(satchel, EntityKind::Container);
+        view.kinds.insert(water, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(satchel, town);
+        view.effective_places.insert(water, town);
+        view.entities_at.insert(town, vec![actor, satchel, water]);
+        view.direct_possessions.insert(actor, vec![satchel]);
+        view.direct_possessors.insert(satchel, actor);
+        view.direct_containers.insert(water, satchel);
+        view.item_lot_commodities.insert(water, CommodityKind::Water);
+        view.commodity_quantities
+            .insert((water, CommodityKind::Water), Quantity(2));
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(satchel, LoadUnits(2));
+        view.entity_loads.insert(water, LoadUnits(4));
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
+        let mut state = PlanningState::new(&snapshot);
+        let hypothetical = PlanningEntityRef::Hypothetical(
+            state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple),
+        );
+        let state = state
+            .set_possessor_ref(hypothetical, PlanningEntityRef::Authoritative(actor))
+            .set_quantity_ref(hypothetical, CommodityKind::Apple, Quantity(1));
+
+        assert_eq!(state.load_of_entity_ref(hypothetical), Some(LoadUnits(1)));
+        assert_eq!(
+            state.remaining_carry_capacity_ref(PlanningEntityRef::Authoritative(actor)),
+            Some(LoadUnits(3))
+        );
+    }
+
+    #[test]
+    fn remaining_carry_capacity_supports_full_partial_and_zero_fit_checks() {
+        let (view, actor, _town, _field, _bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let base = PlanningState::new(&snapshot);
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+
+        assert!(base.load_of_entity_ref(actor_ref).is_some());
+        assert!(base.remaining_carry_capacity_ref(actor_ref).is_some());
+
+        let full_fit = base.clone();
+        assert!(full_fit.load_of_entity_ref(PlanningEntityRef::Authoritative(entity(20))).unwrap()
+            <= full_fit.remaining_carry_capacity_ref(actor_ref).unwrap());
+
+        let mut partial_base = base.clone();
+        let ballast = partial_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
+        let hid = partial_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Water);
+        let partial = partial_base
+            .set_possessor_ref(PlanningEntityRef::Hypothetical(ballast), actor_ref)
+            .set_quantity_ref(
+                PlanningEntityRef::Hypothetical(ballast),
+                CommodityKind::Apple,
+                Quantity(7),
+            )
+            .set_quantity_ref(PlanningEntityRef::Hypothetical(hid), CommodityKind::Water, Quantity(2));
+        let remaining = partial.remaining_carry_capacity_ref(actor_ref).unwrap();
+        let water_load = partial
+            .load_of_entity_ref(PlanningEntityRef::Hypothetical(hid))
+            .unwrap();
+        let per_unit = LoadUnits(worldwake_core::load_per_unit(CommodityKind::Water).0);
+        assert!(water_load > remaining);
+        assert!(per_unit <= remaining);
+
+        let mut zero_base = base.clone();
+        let zero_ballast = zero_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Apple);
+        let zero_hid = zero_base.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Firewood);
+        let zero = zero_base
+            .set_possessor_ref(PlanningEntityRef::Hypothetical(zero_ballast), actor_ref)
+            .set_quantity_ref(
+                PlanningEntityRef::Hypothetical(zero_ballast),
+                CommodityKind::Apple,
+                Quantity(7),
+            )
+            .set_quantity_ref(
+                PlanningEntityRef::Hypothetical(zero_hid),
+                CommodityKind::Firewood,
+                Quantity(1),
+            );
+        let zero_remaining = zero.remaining_carry_capacity_ref(actor_ref).unwrap();
+        let firewood_unit = LoadUnits(worldwake_core::load_per_unit(CommodityKind::Firewood).0);
+        assert!(firewood_unit > zero_remaining);
     }
 }
