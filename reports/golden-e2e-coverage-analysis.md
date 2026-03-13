@@ -342,11 +342,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 ### Tier 2: Medium Priority (score 3-5)
 
-#### P9. Carry Capacity Exhaustion
-**Score**: Emergence=3, Bug-catching=4, Effort=2 → **Composite: 5**
-**Rationale**: No test verifies behavior when an agent's CarryCapacity (LoadUnits(50)) is reached. Agent should be unable to pick up more items and must either drop items or choose lighter alternatives.
-**Proves**: Agent acquires items until load limit → transport action rejected → agent replans around capacity constraint.
-
 #### P10. Three-Way Need Competition
 **Score**: Emergence=3, Bug-catching=3, Effort=2 → **Composite: 4**
 **Rationale**: No test exercises an agent with multiple simultaneous critical needs. Tests that the ranking system correctly prioritizes among hunger, thirst, and fatigue when all cross thresholds simultaneously.
@@ -395,10 +390,9 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 | ActionDomain coverage | 7/9 full | 7/9 full | 9/9 full |
 | Needs tested | 4/5 | 4/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 13 | 14 | 17 |
+| Cross-system chains | 13 | 14 | 16 |
 
 ### Recommended Implementation Order (Tier 1)
 
 1. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
-2. **P9 (Carry capacity exhaustion)** — transport/capacity decision gap with high regression value
-3. **P10 (Three-way need competition)** — ranking/regression coverage without major harness expansion
+2. **P10 (Three-way need competition)** — ranking/regression coverage without major harness expansion

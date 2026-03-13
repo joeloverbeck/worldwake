@@ -33,7 +33,7 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 | 006 | `archive/tickets/completed/GOLDENE2E-006-goal-switching-during-multi-leg-travel.md` | Goal Switching During Multi-Leg Travel | HIGH | Medium | `golden_ai_decisions.rs` | 1 |
 | 007 | `archive/tickets/completed/GOLDENE2E-007-combat-between-living-agents.md` | Combat Between Living Agents | HIGH | Large | `golden_combat.rs` | 1 |
 | 008 | `archive/tickets/completed/GOLDENE2E-008-merchant-restock-return-stock.md` | Merchant Restock and Return Stock Loop | MEDIUM | Large | `golden_trade.rs` | 2 |
-| 009 | `GOLDENE2E-009-carry-capacity-exhaustion.md` | Carry Capacity Exhaustion | MEDIUM | Medium | `golden_production.rs` | 2 |
+| 009 | `archive/tickets/completed/GOLDENE2E-009-carry-capacity-exhaustion.md` | Carry Capacity Exhaustion | MEDIUM | Medium | `golden_production.rs` | 2 |
 | 010 | `GOLDENE2E-010-three-way-need-competition.md` | Three-Way Need Competition | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
 | 011 | `GOLDENE2E-011-wash-action.md` | Wash Action | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
 | 012 | `GOLDENE2E-012-death-while-traveling.md` | Death While Traveling | MEDIUM | Large | `golden_combat.rs` | 2 |
@@ -64,7 +64,7 @@ All other tickets are independent.
 7. GOLDENE2E-002 (Trade) — most complex setup
 
 **Tier 2** (order flexible, respecting deps):
-- 009, 010, 011, 013 — can start any time
+- 010, 011, 013 — can start any time
 - 008 — after 002
 - 012 — after 003
 
