@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
-  golden_production.rs        — 6 tests (scenarios 3, 3d, 4, 6b, 6c + replay)
+  golden_production.rs        — 8 tests (scenarios 3, 3d, 4, 6b, 6c, 9 + replays)
   golden_combat.rs            — 6 tests (living combat + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 29 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 31 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -268,6 +268,20 @@ The golden suite contains 29 tests across 6 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes for the death-while-traveling scenario.
 **Cross-system chain**: Hunger pressure → distant acquire-goal emission → travel departure → continued metabolism on route → deprivation wound infliction → death before destination → concrete body placement on route.
 
+### Scenario 9: Exclusive Facility Queue Contention
+**File**: `golden_production.rs` | **Tests**: `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`, `golden_exclusive_queue_contention_replays_deterministically`
+**Systems exercised**: Production (exclusive facility policy, resource source), AI (candidate generation, planning with queue barriers), FacilityQueue (queue_for_facility_use action, facility_queue_system tick), Conservation, deterministic replay
+**Setup**: Four critically hungry agents (Aster, Bram, Cara, Dara) co-located at Orchard Farm. A single OrchardRow workstation with `ExclusiveFacilityPolicy` and `FacilityUseQueue`, containing `Quantity(4)` apples and no regeneration. Grant expiry window is 3 ticks.
+**Emergent behavior proven**:
+- Multiple agents generate harvest goals simultaneously, but the exclusive facility policy forces them through `queue_for_facility_use` before harvesting.
+- A real waiting line materializes on the workstation (`max_waiting_len >= 2`), proving queue contention occurs under the AI loop.
+- The `facility_queue_system()` tick system (prune → expire → promote) grants access to one agent at a time. At least two distinct agents receive grants and complete harvest turns.
+- The first two promoted actors are different agents, proving fair queue rotation rather than one agent monopolizing the facility.
+- The exclusive orchard source is fully exhausted (`Quantity(0)`) after the two granted harvest turns.
+- Authoritative apple conservation holds every tick throughout the contention sequence.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Cross-system chain**: Multi-agent hunger pressure at exclusive facility → queue_for_facility_use action → facility_queue_system promotion → granted harvest → resource depletion → queue rotation to next agent → deterministic replay + conservation.
+
 ---
 
 ## Part 2: Coverage Matrix
@@ -303,6 +317,7 @@ The golden suite contains 29 tests across 6 domain files. Every test uses the re
 | Generic | Implicit | — |
 | Needs (eat, drink, sleep, relieve, wash) | Yes | eat + drink + sleep + relieve + wash |
 | Production (harvest, craft) | Yes | 4, 5, 6b |
+| FacilityQueue (queue_for_facility_use) | Yes | 9 |
 | Trade | Yes | 2b |
 | Travel | Yes | 1, 3 (implicit) |
 | Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
@@ -310,7 +325,7 @@ The golden suite contains 29 tests across 6 domain files. Every test uses the re
 | Care (heal) | Yes | 2c |
 | Loot | Yes | 8 |
 
-**Coverage: 8/9 domains fully tested, 1 partial.**
+**Coverage: 9/10 domains fully tested, 1 partial.**
 
 ### Needs Coverage
 
@@ -364,6 +379,7 @@ The golden suite contains 29 tests across 6 domain files. Every test uses the re
 | Multiple competing needs (hunger + thirst + fatigue) | Yes |
 | Dirtiness pressure → wash → water consumption | Yes |
 | Death after departure on multi-hop travel | Yes |
+| Multi-agent exclusive facility queue rotation → grant promotion → harvest | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
 ---
@@ -379,19 +395,68 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
-### Tier 1: High Priority (score >= 6)
+### Tier 1: High Priority (score >= 5)
 
-#### P5. Bladder Relief with Travel to Latrine
-**Score**: Emergence=3, Bug-catching=4, Effort=2 → **Composite: 5**
-**Rationale**: The Relieve goal and PublicLatrine place are untested. Agent must recognize bladder pressure, travel to latrine, and relieve. Tests the bladder need pathway end-to-end.
-**Proves**: Bladder crosses threshold → Relieve goal → travel to PublicLatrine → relieve action → bladder decreases.
+#### P-NEW-2. InterruptibleWithPenalty Action Semantics
+**Score**: Emergence=3, Bug-catching=5, Effort=2 → **Composite: 6**
+**Rationale**: No test exercises the `InterruptibleWithPenalty` action category. An agent crafting (penalty-interruptible) should NOT be interrupted by a medium-priority need but SHOULD be interrupted by a Critical-class need.
+**Proves**: Agent starts craft action → medium need rises → `InterruptDecision::Continue` → Critical need rises → `InterruptDecision::Interrupt` for penalty actions. Only `Critical` priority class interrupts penalty actions.
+**File**: `golden_ai_decisions.rs`
 
 #### P7. ReduceDanger Defensive Mitigation Under Active Threat
 **Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
 **Rationale**: Living combat is now covered, but `ReduceDanger` itself is still not proven as a defensive end-to-end behavior. The architecture now keeps offensive hostility separate from defensive danger mitigation, so this remaining gap should test flight/defend behavior under active attack instead of reusing the living-combat scenario.
 **Proves**: Agent comes under active attack pressure → `ReduceDanger` is emitted at high-or-above danger → planner selects a defensive mitigation (`defend`, reposition, or equivalent real path) → danger drops without manual action queueing.
+**File**: `golden_ai_decisions.rs`
 
-### Tier 2: Medium Priority (score 3-5)
+#### P-NEW-1. Journey Commitment Suspension and Resumption
+**Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
+**Rationale**: Multi-hop travel is tested, and goal-switching during travel is tested, but journey commitment state transitions (`Active → Suspended → Active`) are not. An agent committed to distant food should suspend the journey for local sleep, then resume the original destination.
+**Proves**: `JourneyCommitmentState::Active → Suspended → Active`, `journey_last_progress_tick`, `consecutive_blocked_leg_ticks`.
+**File**: `golden_ai_decisions.rs`
+
+### Tier 2: Medium Priority (score 3-4)
+
+#### P-NEW-3. Goal-Switch Margin Boundary
+**Score**: Emergence=2, Bug-catching=4, Effort=2 → **Composite: 4**
+**Rationale**: Goal-switching occurs in several scenarios but the exact margin threshold math is never directly exercised. A challenger motive just below margin → no switch; challenger exceeds margin → switch occurs.
+**Proves**: `compare_goal_switch` with exact margin math using `Permille`.
+**File**: `golden_ai_decisions.rs`
+
+#### P-NEW-4. Facility Queue Patience Timeout
+**Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
+**Rationale**: Scenario 9 proves queue contention with successful rotation, but not the abandonment path. Agent joins queue for exclusive facility, queue position never improves (another agent holds grant indefinitely), agent's `queue_patience_ticks` expires → agent abandons queue → replans to alternative.
+**Proves**: `FacilityQueueDispositionProfile`, queue abandonment, replan after patience exhaustion.
+**File**: `golden_production.rs`
+
+#### P-NEW-5. Grant Expiry Before Intended Action
+**Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
+**Rationale**: Scenario 9 shows grants being used promptly. This gap tests what happens when a grant expires before the planner schedules the intended action (e.g., because of goal-switching delay). Agent must re-queue or replan.
+**Proves**: `GrantedFacilityUse::expires_at`, `expire_stale_grant()`, re-queue after expiry.
+**File**: `golden_production.rs`
+
+#### P-NEW-6. Materialization Binding Failure
+**Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
+**Rationale**: Scenario 4 proves the happy-path materialization barrier chain. This gap tests what happens when the chain breaks: agent plans craft → consume, but between craft completion and consume step, another agent picks up the crafted item. Materialization binding can't resolve → plan failure → blocked intent.
+**Proves**: `MaterializationBindings` resolution failure, `handle_plan_failure()`, blocked intent creation.
+**File**: `golden_production.rs`
+
+#### P-NEW-8. Blocked Facility Use Avoidance in Planner
+**Score**: Emergence=2, Bug-catching=4, Effort=2 → **Composite: 4**
+**Rationale**: After a failed queue+execute cycle at facility A, the planner should avoid re-queueing at facility A (via `blocked_facility_uses` in `PlanningState`). If alternative facility B exists, agent routes there.
+**Proves**: `candidate_uses_blocked_facility_use()` filter, `blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>`.
+**File**: `golden_production.rs`
+
+#### P-NEW-7. AcquireCommodity(RecipeInput) Goal
+**Score**: Emergence=3, Bug-catching=3, Effort=3 → **Composite: 3**
+**Rationale**: `AcquireCommodity { purpose: RecipeInput }` is the only untested AcquireCommodity variant besides Treatment. Agent wants to bake bread but has no firewood; must acquire firewood before crafting.
+**Proves**: `AcquireCommodity { purpose: RecipeInput }` goal generation, multi-step plan: travel → acquire input → craft → consume.
+**File**: `golden_production.rs`
+
+#### P17. Seed Sensitivity (Different Seeds, Different Outcomes)
+**Score**: Emergence=1, Bug-catching=3, Effort=1 → **Composite: 3**
+**Rationale**: Scenario 6 proves same-seed determinism. A complementary test proving that different seeds produce different outcomes would strengthen confidence in the RNG integration.
+**File**: `golden_determinism.rs`
 
 ### Tier 3: Lower Priority (score <= 2)
 
@@ -399,17 +464,21 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Score**: Emergence=2, Bug-catching=2, Effort=2 → **Composite: 2**
 **Rationale**: Only pick-up is tested (Scenario 4). Put-down (dropping items) is untested. Lower priority since it's simpler and less likely to have cross-system bugs.
 
-#### P16. BuryCorpse Goal
-**Score**: Emergence=2, Bug-catching=2, Effort=3 → **Composite: 1**
-**Rationale**: BuryCorpse requires a corpse + burial site. This is a complete feature that's untested, but it's also a simpler action with fewer cross-system interactions.
-
-#### P17. Seed Sensitivity (Different Seeds, Different Outcomes)
-**Score**: Emergence=1, Bug-catching=3, Effort=1 → **Composite: 3**
-**Rationale**: Scenario 6 proves same-seed determinism. A complementary test proving that different seeds produce different outcomes would strengthen confidence in the RNG integration.
+#### P-NEW-9. Dead Agent Pruned from Facility Queue
+**Score**: Emergence=2, Bug-catching=3, Effort=3 → **Composite: 2**
+**Rationale**: Agent dies while waiting in facility queue. `prune_invalid_waiters()` removes them. Next agent in line gets promoted.
+**Proves**: `prune_invalid_waiters()`, queue position advancement after death.
+**File**: `golden_combat.rs`
 
 #### P18. Save/Load Round-Trip Under AI
 **Score**: Emergence=2, Bug-catching=3, Effort=3 → **Composite: 2**
 **Rationale**: Save/load is tested in worldwake-sim but not with the full AI loop. Saving mid-simulation, loading, and continuing should produce consistent outcomes.
+**File**: `golden_determinism.rs`
+
+#### P16. BuryCorpse Goal
+**Score**: Emergence=2, Bug-catching=2, Effort=3 → **Composite: 1**
+**Rationale**: BuryCorpse requires a corpse + burial site. This is a complete feature that's untested, but it's also a simpler action with fewer cross-system interactions.
+**File**: `golden_combat.rs`
 
 ---
 
@@ -417,12 +486,15 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| GoalKind coverage | 12/17 (70.6%) | 13/17 (76.5%) | 13/17 (76.5%) |
-| ActionDomain coverage | 8/9 full | 8/9 full | 9/9 full |
+| Proven tests | 31 | 34 | 44 |
+| GoalKind coverage | 12/17 (70.6%) | 13/17 (76.5%) | 14/17 (82.4%) |
+| ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 19 | 20 | 22 |
+| Cross-system chains | 20 | 23 | 30 |
 
 ### Recommended Implementation Order (Tier 1)
 
-1. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
+1. **P-NEW-2 (InterruptibleWithPenalty semantics)** — highest composite score, tests untested interrupt category
+2. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
+3. **P-NEW-1 (Journey commitment suspension)** — exercises journey state machine not yet proven
