@@ -71,7 +71,9 @@ pub use action_semantics::{
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
 pub use affordance::Affordance;
-pub use affordance_query::{get_affordances, requested_affordance_matches};
+pub use affordance_query::{
+    evaluate_constraint, evaluate_precondition, get_affordances, requested_affordance_matches,
+};
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
 };

@@ -130,7 +130,11 @@ fn payload_variants(
 }
 
 #[must_use]
-fn evaluate_constraint(constraint: &Constraint, actor: EntityId, view: &dyn BeliefView) -> bool {
+pub fn evaluate_constraint(
+    constraint: &Constraint,
+    actor: EntityId,
+    view: &dyn BeliefView,
+) -> bool {
     match constraint {
         Constraint::ActorAlive => view.is_alive(actor),
         Constraint::ActorNotIncapacitated => !view.is_incapacitated(actor),
@@ -153,7 +157,7 @@ fn evaluate_constraint(constraint: &Constraint, actor: EntityId, view: &dyn Beli
 }
 
 #[must_use]
-fn evaluate_precondition(
+pub fn evaluate_precondition(
     precondition: Precondition,
     actor: EntityId,
     targets: &[EntityId],

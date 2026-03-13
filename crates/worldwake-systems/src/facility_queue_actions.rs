@@ -149,7 +149,7 @@ fn validate_queue_payload_authoritatively(
     Ok(())
 }
 
-fn exclusive_facility_workstation_tag(def: &ActionDef) -> Option<WorkstationTag> {
+pub(crate) fn exclusive_facility_workstation_tag(def: &ActionDef) -> Option<WorkstationTag> {
     match (&def.targets[..], &def.payload) {
         (
             [TargetSpec::EntityAtActorPlace {

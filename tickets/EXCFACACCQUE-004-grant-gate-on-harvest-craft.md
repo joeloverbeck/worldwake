@@ -7,6 +7,8 @@
 
 Update harvest and craft action preconditions to require a matching `GrantedFacilityUse` before the exclusive operation can start. Starting the real operation consumes the grant. After completion, the agent must re-enter the queue for another turn.
 
+This ticket also closes the architecture gap left intentionally open by `EXCFACACCQUE-003`: the action-start gate and the queue-head promotion logic must share one authoritative notion of exclusive-facility startability. Do not let queue promotion and harvest/craft start validation evolve into parallel legality engines.
+
 ## Deliverables
 
 ### 1. Add grant-check precondition to harvest actions
@@ -26,11 +28,18 @@ In the `start_harvest` and `start_craft` handler functions, after precondition v
 - Call `FacilityUseQueue::clear_grant()` on the facility
 - This happens atomically with the reservation lock acquisition
 
-### 4. One grant = one operation
+### 4. Unify queue promotability with action startability
+
+`EXCFACACCQUE-003` currently promotes queue heads by reusing shared action constraint/precondition evaluation. This ticket must preserve that architecture:
+- Extract or reuse a single helper/classifier for \"exclusive facility action is startable now for `(actor, facility, ActionDefId)`\"
+- `facility_queue_system` promotion and `start_harvest` / `start_craft` grant-gated validation must both depend on that same source of truth
+- The grant-specific check itself may remain layered on top, but base readiness rules for stock, workstation shape, staged craft occupancy, tools, and recipe knowledge must not be duplicated in two diverging code paths
+
+### 5. One grant = one operation
 
 No changes needed beyond the above — the grant is consumed on start, so the agent cannot start a second operation without re-entering the queue. Verify this is the case in tests.
 
-### 5. No compatibility layer
+### 6. No compatibility layer
 
 Remove or disable any path where an autonomous agent can start a harvest/craft at an exclusive facility without a matching grant. The existing best-effort autonomous request handling may remain as a generic engine safety net, but it must not be exercised in the normal contested-harvest path.
 
@@ -59,6 +68,8 @@ Remove or disable any path where an autonomous agent can start a harvest/craft a
 - Unit test: after grant is consumed, a second harvest start by the same actor fails (must re-queue)
 - Unit test: grant for `ActionDefId::X` does not authorize `ActionDefId::Y` on the same facility
 - Unit test: non-exclusive actions (eat, drink, travel) are unaffected — no grant check
+- Unit test: queue-head promotion readiness and action-start readiness stay aligned for a temporarily blocked facility (for example depleted stock or occupied craft workstation)
+- Unit test: queue-head promotion readiness and action-start readiness stay aligned for a structurally invalid facility (for example workstation tag removed)
 - Existing harvest/craft tests updated to set up grants before starting actions (backward compatibility of test infrastructure)
 - `cargo test --workspace` — no regressions
 
@@ -68,3 +79,4 @@ Remove or disable any path where an autonomous agent can start a harvest/craft a
 - Reservation lock still prevents overlap (grants complement, not replace, reservations)
 - Item conservation remains enforced — this ticket does not change what harvest/craft produce
 - Non-exclusive actions are completely unaffected
+- Queue promotion and action start share one authoritative readiness classifier; no duplicated legality logic may drift between `EXCFACACCQUE-003` and this ticket

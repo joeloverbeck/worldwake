@@ -17,7 +17,8 @@ macro_rules! define_system_ids {
             /// - `Needs` runs first so deprivation and wound pressure are visible before economic systems act.
             /// - `Production` runs before `Trade` so newly created goods exist before market exchange.
             /// - `Trade` runs before `Combat` so economic resolution happens before violence mutates the world.
-            /// - `Combat` runs before `Perception` so observers can react to the current tick's outcomes.
+            /// - `Combat` runs before `FacilityQueue` so completed exclusive actions can free the next turn.
+            /// - `FacilityQueue` runs before `Perception` so observers can react to the current tick's queue outcomes.
             /// - `Perception` runs before `Politics` so social systems consume freshly propagated local information.
             ///
             /// Do not reorder this list casually. Any change here changes the simulation's causal sequencing.
@@ -47,6 +48,7 @@ define_system_ids! {
     (Production, "production"),
     (Trade, "trade"),
     (Combat, "combat"),
+    (FacilityQueue, "facility_queue"),
     (Perception, "perception"),
     (Politics, "politics"),
 }
@@ -136,6 +138,7 @@ mod tests {
         assert_eq!(SystemId::Production.to_string(), "production");
         assert_eq!(SystemId::Trade.to_string(), "trade");
         assert_eq!(SystemId::Combat.to_string(), "combat");
+        assert_eq!(SystemId::FacilityQueue.to_string(), "facility_queue");
         assert_eq!(SystemId::Perception.to_string(), "perception");
         assert_eq!(SystemId::Politics.to_string(), "politics");
     }
@@ -149,6 +152,7 @@ mod tests {
                 SystemId::Production,
                 SystemId::Trade,
                 SystemId::Combat,
+                SystemId::FacilityQueue,
                 SystemId::Perception,
                 SystemId::Politics,
             ]
@@ -211,6 +215,7 @@ mod tests {
                 SystemId::Production,
                 SystemId::Trade,
                 SystemId::Combat,
+                SystemId::FacilityQueue,
                 SystemId::Perception,
                 SystemId::Politics,
             ]

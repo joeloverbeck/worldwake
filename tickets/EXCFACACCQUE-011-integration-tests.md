@@ -40,6 +40,14 @@ Queue head with permanently impossible operation (workstation removed) is pruned
 
 Craft stations use the same queue/grant path without a separate fairness subsystem.
 
+### 7a. Queue-promotion/start-gate parity test
+
+Add an explicit regression test for the architecture handoff between `EXCFACACCQUE-003` and `EXCFACACCQUE-004`:
+- when the queue system promotes a head, that same actor can actually start the granted exclusive action under the same world state
+- when the queue system stalls a head for temporary non-readiness, the corresponding exclusive action also remains unstartable
+
+This test exists to prevent queue promotion and action-start validation from drifting into different legality rules over time.
+
 ### 8. Determinism test
 
 Planning snapshot and replay remain deterministic under queue advancement. Run two identical simulations with the same seed and verify identical event log hashes.
@@ -82,10 +90,11 @@ All 11 test scenarios listed above must pass. Specifically:
 7. `test_depleted_stock_stalls_queue` — no pruning on temporary depletion
 8. `test_permanent_impossibility_prunes_with_event` — workstation removal prunes + event
 9. `test_craft_uses_same_queue_path` — craft stations are not special-cased
-10. `test_queue_determinism_under_replay` — identical seeds produce identical hashes
-11. `test_best_effort_not_exercised_in_normal_path` — autonomous agents use queue, not direct starts
-12. `test_grant_abandonment_advances_queue` — unused grant expires, next agent gets turn
-13. `test_non_exclusive_actions_preserve_queue_position` — eat/drink during wait keeps position
+10. `test_queue_promotion_matches_start_gate_readiness` — promoted head can start; stalled head cannot
+11. `test_queue_determinism_under_replay` — identical seeds produce identical hashes
+12. `test_best_effort_not_exercised_in_normal_path` — autonomous agents use queue, not direct starts
+13. `test_grant_abandonment_advances_queue` — unused grant expires, next agent gets turn
+14. `test_non_exclusive_actions_preserve_queue_position` — eat/drink during wait keeps position
 
 - `cargo test --workspace` — no regressions
 
@@ -95,3 +104,4 @@ All 11 test scenarios listed above must pass. Specifically:
 - Tests verify event log contents (causal linking, event tags)
 - Tests verify conservation invariants still hold
 - No test relies on scheduler ordering — contention is resolved through queue state
+- End-to-end tests lock queue promotion and action-start gating to the same effective legality rules
