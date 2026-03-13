@@ -34,6 +34,7 @@ Future economy deepening, post-E22 scheduling only.
 - E11 trade/economy
 - E13 decision architecture
 - E14 perception/beliefs for future expansion
+- `specs/DRAFT-commodity-opportunity-valuation.md` for recipe-aware indirect commodity valuation during bilateral trade acceptance
 
 E14 is not strictly required for the first implementation pass because local sale listings are directly observable, but the design must remain compatible with belief-only planning once richer market information propagation exists.
 
@@ -293,7 +294,7 @@ No new market singleton, market object, or price table component is permitted.
 ### `worldwake-sim`
 - replace seller discovery belief queries with listed-lot belief queries
 - expose listed sale lots in affordance enumeration and planning state
-- keep valuation helper bilateral and bundle-based
+- keep valuation helper bilateral and bundle-based, but source commodity usefulness from `DRAFT-commodity-opportunity-valuation.md` rather than direct-use-only heuristics
 
 ### `worldwake-core`
 - add `SaleListing`
@@ -304,6 +305,7 @@ No new market singleton, market object, or price table component is permitted.
 - E11 trade state influences E13 planning through `SaleListing`, `DemandMemory`, and `MerchandiseProfile`
 - E10 transport influences seller readiness by moving actual sale stock to `home_market`
 - E09 needs influence whether merchants are willing to keep sale stock versus consume it themselves through trade valuation and ranking
+- `DRAFT-commodity-opportunity-valuation.md` determines whether held sale stock also has local indirect recipe utility for the same actor
 - E14/E15 can later feed richer demand-memory updates through witnessed requests and local reports, but no direct system-to-system calls are added here
 
 All interactions remain state-mediated:

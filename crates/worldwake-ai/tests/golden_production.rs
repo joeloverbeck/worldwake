@@ -107,6 +107,108 @@ fn run_multi_recipe_craft_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn run_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    let bread_recipe = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .expect("bake bread recipe should exist");
+
+    let baker = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Baker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::with([bread_recipe]),
+    );
+
+    place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Mill,
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let firewood = txn.create_item_lot(CommodityKind::Firewood, Quantity(1)).unwrap();
+    txn.set_ground_location(firewood, VILLAGE_SQUARE).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 1).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Firewood, 1).unwrap();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Bread, 0).unwrap();
+
+    let initial_hunger = h.agent_hunger(baker);
+    let mut baker_acquired_firewood = false;
+    let mut saw_bake_bread_action = false;
+    let mut saw_bread_materialize = false;
+    let mut hunger_decreased = false;
+
+    for _ in 0..80 {
+        h.step_once();
+
+        let baker_firewood = h.agent_commodity_qty(baker, CommodityKind::Firewood);
+        let live_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+        let authoritative_firewood =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Firewood);
+        let authoritative_bread =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+
+        baker_acquired_firewood |= baker_firewood > Quantity(0);
+        saw_bake_bread_action |= h.agent_active_action_name(baker) == Some("craft:Bake Bread");
+        saw_bread_materialize |= live_bread > 0;
+        hunger_decreased |= h.agent_hunger(baker) < initial_hunger;
+
+        assert!(
+            authoritative_firewood <= 1,
+            "Firewood authority should never exceed the single seller lot"
+        );
+        assert!(
+            authoritative_bread <= 1,
+            "Bread authority should never exceed the single crafted output"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Firewood, authoritative_firewood)
+            .unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Bread, authoritative_bread)
+            .unwrap();
+
+        if baker_acquired_firewood
+            && saw_bake_bread_action
+            && saw_bread_materialize
+            && hunger_decreased
+        {
+            break;
+        }
+    }
+
+    assert!(
+        baker_acquired_firewood,
+        "Baker should first acquire the unpossessed firewood lot before crafting bread"
+    );
+    assert!(
+        saw_bake_bread_action,
+        "Baker should execute the standard craft action after acquiring firewood"
+    );
+    assert!(
+        saw_bread_materialize,
+        "Crafted bread should materialize before the follow-up consume step"
+    );
+    assert!(
+        hunger_decreased,
+        "Baker should consume the crafted bread and reduce hunger"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
     let agent = seed_agent(
@@ -1363,6 +1465,23 @@ fn golden_materialization_barrier_chain() {
 // ---------------------------------------------------------------------------
 // Scenario 6b: Multi-Recipe Craft Path
 // ---------------------------------------------------------------------------
+
+#[test]
+fn golden_acquire_commodity_recipe_input() {
+    let seed = Seed([19; 32]);
+
+    let (world_hash_1, log_hash_1) = run_acquire_recipe_input_scenario(seed);
+    let (world_hash_2, log_hash_2) = run_acquire_recipe_input_scenario(seed);
+
+    assert_eq!(
+        world_hash_1, world_hash_2,
+        "Recipe-input acquisition scenario must replay deterministically"
+    );
+    assert_eq!(
+        log_hash_1, log_hash_2,
+        "Recipe-input acquisition event log must replay deterministically"
+    );
+}
 
 #[test]
 fn golden_multi_recipe_craft_path() {

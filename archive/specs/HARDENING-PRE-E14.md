@@ -1,5 +1,7 @@
 # Pre-E14 Hardening Spec
 
+**Status**: COMPLETED
+
 ## Scope
 
 Harden and clean up the Phase 1+2 foundation (E01–E13) before E14 (Perception & Belief System) changes the landscape. The golden e2e test (`crates/worldwake-ai/tests/golden_e2e.rs`) proves the architecture works end-to-end; this spec addresses extensibility friction, robustness gaps, performance inefficiencies, and test coverage weaknesses discovered during E13 implementation.
@@ -368,3 +370,10 @@ For every ticket in this spec:
 | `crates/worldwake-sim/src/system_manifest.rs` | A04 |
 | `crates/worldwake-ai/src/planning_state.rs` | C03 |
 | `crates/worldwake-ai/src/decision_runtime.rs` | B04 |
+
+## Outcome
+
+- Completed: 2026-03-13
+- What changed: the Pre-E14 hardening work was delivered across the HARPREE14 ticket series, covering system ordering documentation, handler completeness validation, prototype world accessors, search beam/budget tests, `BinaryHeap` search frontier selection, candidate-generation modularization, recipe name lookup, enterprise decoupling, per-tick belief-view cleanup, extracted goal semantics, multi-recipe golden coverage, observation snapshot relevance filtering, stronger golden assertions, planning clone-overhead assessment, planner-owned pickup transitions, and follow-on constrained transport coverage.
+- Deviations from original plan: the work landed as discrete ticketed increments rather than as a single batch, and the hardening track expanded beyond the original ticket list with follow-on tickets for authoritative hypothetical action transitions and constrained transport coverage.
+- Verification results: the implemented tickets record targeted verification across workspace tests, search and planner test modules, golden end-to-end scenarios, and clippy/workspace validation where applicable; this spec is being archived after those deliverables were completed.

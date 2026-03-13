@@ -24,7 +24,7 @@ pub fn rank_candidates(
         .filter(|candidate| !is_suppressed(candidate, &context))
         .map(|candidate| RankedGoal {
             grounded: candidate.clone(),
-            priority_class: priority_class(candidate, &context),
+            priority_class: priority_class(candidate, &context, recipes),
             motive_score: motive_score(candidate, &context, recipes),
         })
         .collect::<Vec<_>>();
@@ -97,7 +97,11 @@ fn is_suppressed(candidate: &GroundedGoal, context: &RankingContext<'_>) -> bool
     ) && (context.danger_high_or_above() || context.self_care_high_or_above())
 }
 
-fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> GoalPriorityClass {
+fn priority_class(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> GoalPriorityClass {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
         | GoalKind::AcquireCommodity {
@@ -115,6 +119,10 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
                     &thresholds.pain,
                 )
             }),
+        GoalKind::AcquireCommodity {
+            commodity: _,
+            purpose: CommodityPurpose::RecipeInput(recipe_id),
+        } => recipe_output_priority(recipe_id, context, recipes),
         GoalKind::AcquireCommodity { .. }
         | GoalKind::ProduceCommodity { .. }
         | GoalKind::SellCommodity { .. }
@@ -203,6 +211,10 @@ fn motive_score(
             commodity,
             purpose: CommodityPurpose::Treatment,
         } => treatment_score(commodity, context),
+        GoalKind::AcquireCommodity {
+            commodity: _,
+            purpose: CommodityPurpose::RecipeInput(recipe_id),
+        } => recipe_output_motive_score(recipe_id, context, recipes),
         GoalKind::AcquireCommodity { commodity, .. }
         | GoalKind::SellCommodity { commodity }
         | GoalKind::RestockCommodity { commodity } => enterprise_score(commodity, context),
@@ -292,6 +304,85 @@ fn treatment_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u3
     } else {
         pain_score + score_product(context.utility.danger_weight, context.danger_pressure)
     }
+}
+
+fn recipe_output_priority(
+    recipe_id: worldwake_core::RecipeId,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> GoalPriorityClass {
+    recipes
+        .get(recipe_id)
+        .map_or(GoalPriorityClass::Background, |recipe| {
+            recipe
+                .outputs
+                .iter()
+                .map(|(commodity, _)| commodity_goal_priority(*commodity, context))
+                .max()
+                .unwrap_or(GoalPriorityClass::Background)
+        })
+}
+
+fn commodity_goal_priority(
+    commodity: CommodityKind,
+    context: &RankingContext<'_>,
+) -> GoalPriorityClass {
+    let self_consume = self_consume_priority(commodity, context);
+    if self_consume > GoalPriorityClass::Background {
+        return self_consume;
+    }
+
+    if commodity.spec().treatment_profile.is_some() {
+        return context
+            .thresholds
+            .map_or(GoalPriorityClass::Background, |thresholds| {
+                classify_band(
+                    derive_pain_pressure(context.view, context.agent),
+                    &thresholds.pain,
+                )
+            });
+    }
+
+    if enterprise_score(commodity, context) > 0 {
+        GoalPriorityClass::Medium
+    } else {
+        GoalPriorityClass::Background
+    }
+}
+
+fn recipe_output_motive_score(
+    recipe_id: worldwake_core::RecipeId,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> u32 {
+    recipes
+        .get(recipe_id)
+        .map_or(0, |recipe| {
+            recipe
+                .outputs
+                .iter()
+                .map(|(commodity, _)| commodity_goal_motive_score(*commodity, context))
+                .max()
+                .unwrap_or(0)
+        })
+}
+
+fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
+    let self_consume = relevant_self_consume_factors(commodity, context)
+        .into_iter()
+        .map(|(pressure, weight, _)| score_product(weight, pressure))
+        .max()
+        .unwrap_or(0);
+    if self_consume > 0 {
+        return self_consume;
+    }
+
+    let treatment = treatment_score(commodity, context);
+    if treatment > 0 {
+        return treatment;
+    }
+
+    enterprise_score(commodity, context)
 }
 
 fn relevant_self_consume_factors(
@@ -387,11 +478,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         BodyCostPerTick, BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause,
-        WoundId,
+        CommodityPurpose, DemandObservation, DemandObservationReason, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
+        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -710,6 +801,42 @@ mod tests {
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 200 * 1000);
+    }
+
+    #[test]
+    fn recipe_input_goals_inherit_downstream_self_care_priority_and_score() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+
+        let ranked = rank_candidates(
+            &[goal(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Firewood,
+                purpose: CommodityPurpose::RecipeInput(recipe_id),
+            })],
+            &view,
+            agent,
+            &utility(),
+            &recipes,
+        );
+
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(ranked[0].motive_score, 900 * 900);
     }
 
     #[test]

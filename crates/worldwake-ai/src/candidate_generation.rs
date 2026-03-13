@@ -416,10 +416,6 @@ fn emit_produce_goals(
         let Some(recipe) = ctx.recipes.get(recipe_id) else {
             continue;
         };
-        let Some(mut evidence) = recipe_path_evidence(ctx.view, ctx.agent, ctx.place, recipe)
-        else {
-            continue;
-        };
 
         let serves_self_consume = needs.zip(thresholds).is_some_and(|(needs, thresholds)| {
             recipe.outputs.iter().any(|(commodity, _)| {
@@ -445,16 +441,21 @@ fn emit_produce_goals(
             continue;
         }
 
-        if let Some(place) = ctx.place {
-            evidence.places.insert(place);
+        if let Some(mut evidence) = recipe_path_evidence(ctx.view, ctx.agent, ctx.place, recipe) {
+            if let Some(place) = ctx.place {
+                evidence.places.insert(place);
+            }
+            emit_candidate(
+                candidates,
+                GoalKind::ProduceCommodity { recipe_id },
+                evidence,
+                ctx.blocked,
+                ctx.current_tick,
+            );
+            continue;
         }
-        emit_candidate(
-            candidates,
-            GoalKind::ProduceCommodity { recipe_id },
-            evidence,
-            ctx.blocked,
-            ctx.current_tick,
-        );
+
+        emit_missing_recipe_input_goals(candidates, ctx, recipe_id, recipe);
     }
 }
 
@@ -746,14 +747,72 @@ fn recipe_path_evidence(
         return (!evidence.entities.is_empty()).then_some(evidence);
     }
 
-    let mut evidence = Evidence::with_place(place);
     for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
         if view.commodity_quantity(agent, commodity) < required_quantity {
             return None;
         }
     }
 
-    let available_workstations = workstations
+    available_recipe_workstation_evidence(view, agent, Some(place), recipe)
+}
+
+fn emit_missing_recipe_input_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+    recipe_id: worldwake_core::RecipeId,
+    recipe: &RecipeDefinition,
+) {
+    if recipe.inputs.is_empty() {
+        return;
+    }
+    if available_recipe_workstation_evidence(ctx.view, ctx.agent, ctx.place, recipe).is_none() {
+        return;
+    }
+
+    for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
+        if ctx.view.commodity_quantity(ctx.agent, commodity) >= required_quantity {
+            continue;
+        }
+        let Some(evidence) = acquisition_path_evidence(
+            ctx.view,
+            ctx.agent,
+            ctx.place,
+            commodity,
+            ctx.recipes,
+            ctx.travel_horizon,
+        ) else {
+            continue;
+        };
+        emit_candidate(
+            candidates,
+            GoalKind::AcquireCommodity {
+                commodity,
+                purpose: CommodityPurpose::RecipeInput(recipe_id),
+            },
+            evidence,
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
+}
+
+fn available_recipe_workstation_evidence(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    recipe: &RecipeDefinition,
+) -> Option<Evidence> {
+    let place = place?;
+    let workstation_tag = recipe.required_workstation_tag?;
+
+    for required_tool in &recipe.required_tool_kinds {
+        if view.unique_item_count(agent, *required_tool) == 0 {
+            return None;
+        }
+    }
+
+    let available_workstations = view
+        .matching_workstations_at(place, workstation_tag)
         .into_iter()
         .filter(|workstation| !view.has_production_job(*workstation))
         .collect::<Vec<_>>();
@@ -761,6 +820,7 @@ fn recipe_path_evidence(
         return None;
     }
 
+    let mut evidence = Evidence::with_place(place);
     evidence.entities.extend(available_workstations);
     Some(evidence)
 }
@@ -1937,6 +1997,62 @@ mod tests {
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(0)
             }
+        ));
+    }
+
+    #[test]
+    fn missing_recipe_input_emits_acquire_goal_and_suppresses_produce_goal() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let workstation = entity(20);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.effective_places.insert(workstation, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.workstations
+            .insert((place, WorkstationTag::Mill), vec![workstation]);
+        view.sellers
+            .insert((place, CommodityKind::Firewood), vec![seller]);
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Firewood,
+                purpose: CommodityPurpose::RecipeInput(recipe_id),
+            }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ProduceCommodity { recipe_id }
         ));
     }
 

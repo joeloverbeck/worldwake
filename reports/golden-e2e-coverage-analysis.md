@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
-  golden_production.rs        — 11 tests (scenarios 3, 3d, 4, 6b, 6c, 6d, 9, 9b, 9c + replays)
+  golden_production.rs        — 13 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c + replays)
   golden_combat.rs            — 7 tests (living combat + defensive mitigation + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 35 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 37 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -158,6 +158,17 @@ The golden suite contains 35 tests across 6 domain files. Every test uses the re
 - Identical seeds produce identical `StateHash` for both world and event log.
 - World state differs from initial (non-trivial simulation occurred).
 **Invariant enforced**: Full-stack determinism (ChaCha8Rng, BTreeMap ordering, no floats, no wall-clock).
+
+### Scenario 6a: Recipe-Input Acquisition Chain
+**File**: `golden_production.rs` | **Test**: `golden_acquire_commodity_recipe_input`
+**Systems exercised**: AI (candidate generation, ranking, planning), Transport, Production (craft), Needs, Conservation, deterministic replay
+**Setup**: Hungry baker starts at Village Square with the `Bake Bread` recipe, a local mill, and no firewood. A single unpossessed firewood lot is available locally.
+**Emergent behavior proven**:
+- Candidate generation/ranking now surfaces `AcquireCommodity { commodity: Firewood, purpose: RecipeInput(bake_bread) }` as the missing bridge for the hunger-driven bread path.
+- Baker first acquires the unpossessed firewood lot through the standard acquire path.
+- Baker then crafts bread via the normal production action and consumes it to reduce hunger.
+- Firewood is consumed exactly once, bread is produced and then consumed, and the same-seed run replays to identical world and event-log hashes.
+**Cross-system chain**: Hunger pressure → missing recipe-input acquire goal → acquire local input lot → craft progress barrier → consume crafted output.
 
 ### Scenario 6b: Multi-Recipe Craft Path
 **File**: `golden_production.rs` | **Test**: `golden_multi_recipe_craft_path`
@@ -344,7 +355,7 @@ The golden suite contains 35 tests across 6 domain files. Every test uses the re
 | ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a |
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | Yes | 2d |
-| AcquireCommodity (RecipeInput) | **No** | — |
+| AcquireCommodity (RecipeInput) | Yes | 6a |
 | AcquireCommodity (Treatment) | **No** | — |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
@@ -359,7 +370,7 @@ The golden suite contains 35 tests across 6 domain files. Every test uses the re
 | LootCorpse | Yes | 8 |
 | BuryCorpse | **No** | — |
 
-**Coverage: 13/17 GoalKinds tested (76.5%).**
+**Coverage: 14/17 GoalKinds tested (82.4%).**
 
 ### ActionDomain Coverage
 
@@ -460,12 +471,6 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 `P-NEW-8 Blocked Facility Use Avoidance in Planner` was removed from the golden backlog on 2026-03-13. Reassessment showed the behavior was already proven by Scenario 9b, `golden_facility_queue_patience_timeout`, while planner/runtime unit tests already cover the lower-layer blocked-facility projection and candidate filtering. A second behavior-duplicate golden scenario would not improve the architecture or coverage durability.
 
-#### P-NEW-7. AcquireCommodity(RecipeInput) Goal
-**Score**: Emergence=3, Bug-catching=3, Effort=3 → **Composite: 3**
-**Rationale**: `AcquireCommodity { purpose: RecipeInput }` is the only untested AcquireCommodity variant besides Treatment. Agent wants to bake bread but has no firewood; must acquire firewood before crafting.
-**Proves**: `AcquireCommodity { purpose: RecipeInput }` goal generation, multi-step plan: travel → acquire input → craft → consume.
-**File**: `golden_production.rs`
-
 #### P17. Seed Sensitivity (Different Seeds, Different Outcomes)
 **Score**: Emergence=1, Bug-catching=3, Effort=1 → **Composite: 3**
 **Rationale**: Scenario 6 proves same-seed determinism. A complementary test proving that different seeds produce different outcomes would strengthen confidence in the RNG integration.
@@ -499,12 +504,12 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 36 | 36 | 42 |
-| GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 15/17 (88.2%) |
+| Proven tests | 37 | 37 | 42 |
+| GoalKind coverage | 14/17 (82.4%) | 14/17 (82.4%) | 15/17 (88.2%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 25 | 25 | 25+ |
+| Cross-system chains | 26 | 26 | 26+ |
 
 ### Recommended Implementation Order (Tier 1)
 

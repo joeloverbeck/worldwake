@@ -646,7 +646,7 @@ Implement:
 
 ## Cross-References
 
-- [HARDENING-PRE-E14.md](/home/joeloverbeck/projects/worldwake/specs/HARDENING-PRE-E14.md)
+- [HARDENING-PRE-E14.md](/home/joeloverbeck/projects/worldwake/archive/specs/HARDENING-PRE-E14.md)
 - [E10-production-transport.md](/home/joeloverbeck/projects/worldwake/archive/specs/E10-production-transport.md)
 - [HARPREE14-015-authoritative-hypothetical-action-transitions.md](/home/joeloverbeck/projects/worldwake/archive/tickets/HARPREE14-015-authoritative-hypothetical-action-transitions.md)
 - [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)

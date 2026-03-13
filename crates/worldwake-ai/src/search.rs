@@ -1249,6 +1249,73 @@ mod tests {
     }
 
     #[test]
+    fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Firewood]),
+                home_market: Some(town),
+            },
+        );
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Firewood), Quantity(1));
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Firewood,
+                purpose: CommodityPurpose::RecipeInput(RecipeId(0)),
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        )
+        .expect("local recipe-input acquire goal should plan through trade");
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
+        assert!(matches!(
+            plan.steps[0].payload_override,
+            Some(ActionPayload::Trade(_))
+        ));
+    }
+
+    #[test]
     fn search_respects_plan_depth_budget() {
         let actor = entity(1);
         let town = entity(10);
