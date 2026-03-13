@@ -8,8 +8,8 @@ use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, CarryCapacity, CommodityKind,
-    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Quantity, ResourceSource, Seed,
-    StateHash, UtilityProfile, WorkstationTag,
+    EntityId, EventTag, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Quantity,
+    ResourceSource, Seed, StateHash, UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -332,6 +332,160 @@ fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOu
     }
 }
 
+struct ExclusiveQueueContentionOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    max_waiting_len: usize,
+    saw_granted_state: bool,
+    promoted_actors: Vec<EntityId>,
+    final_source_quantity: Quantity,
+}
+
+fn seed_exclusive_orchard_contenders(h: &mut GoldenHarness) -> [EntityId; 4] {
+    [
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Aster",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Bram",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Cara",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Dara",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+    ]
+}
+
+fn record_new_promotions(
+    h: &GoldenHarness,
+    workstation: EntityId,
+    previous_promotions: &mut usize,
+    promoted_actors: &mut Vec<EntityId>,
+) {
+    let promotion_ids = h.event_log.events_by_tag(EventTag::QueueGrantPromoted);
+    if promotion_ids.len() <= *previous_promotions {
+        return;
+    }
+
+    for event_id in &promotion_ids[*previous_promotions..] {
+        let record = h
+            .event_log
+            .get(*event_id)
+            .expect("queue promotion event should exist");
+        let promoted_actor = record
+            .target_ids
+            .iter()
+            .copied()
+            .find(|target| *target != workstation)
+            .expect("queue promotion event should target the promoted actor");
+        promoted_actors.push(promoted_actor);
+    }
+    *previous_promotions = promotion_ids.len();
+}
+
+fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContentionOutcome {
+    let mut h = GoldenHarness::new(seed);
+    let agents = seed_exclusive_orchard_contenders(&mut h);
+
+    let workstation = place_exclusive_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        nz(3),
+    );
+
+    let mut max_waiting_len = 0;
+    let mut saw_granted_state = false;
+    let mut previous_promotions = 0;
+    let mut promoted_actors = Vec::new();
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, 4).unwrap();
+
+    for _ in 0..150 {
+        h.step_once();
+
+        let queue = h
+            .world
+            .get_component_facility_use_queue(workstation)
+            .expect("exclusive workstation should retain queue state");
+        max_waiting_len = max_waiting_len.max(queue.waiting.len());
+        saw_granted_state |= queue.granted.is_some();
+        record_new_promotions(&h, workstation, &mut previous_promotions, &mut promoted_actors);
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        assert!(
+            authoritative_apples <= 4,
+            "Authoritative apple quantity must never exceed the initial exclusive orchard stock"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
+            .unwrap();
+
+        if h.world
+            .get_component_resource_source(workstation)
+            .expect("exclusive workstation should retain resource source")
+            .available_quantity
+            == Quantity(0)
+            && promoted_actors.len() >= 2
+            && agents
+                .iter()
+                .filter(|agent| h.agent_hunger(**agent) < pm(900))
+                .count()
+                >= 1
+        {
+            break;
+        }
+    }
+
+    ExclusiveQueueContentionOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        max_waiting_len,
+        saw_granted_state,
+        promoted_actors,
+        final_source_quantity: h
+            .world
+            .get_component_resource_source(workstation)
+            .expect("exclusive workstation should retain resource source")
+            .available_quantity,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 3: Resource Contention with Conservation
 // ---------------------------------------------------------------------------
@@ -446,6 +600,33 @@ fn golden_resource_exhaustion_race() {
     assert!(
         !outcome.agents_with_hunger_relief.is_empty(),
         "At least one agent should complete the harvest/pick-up/eat chain under contention"
+    );
+}
+
+#[test]
+fn golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns() {
+    let outcome = run_exclusive_queue_contention_scenario(Seed([18; 32]));
+
+    assert!(
+        outcome.max_waiting_len >= 2,
+        "Exclusive contention should materialize a real waiting line on the facility"
+    );
+    assert!(
+        outcome.saw_granted_state || outcome.promoted_actors.len() >= 2,
+        "Exclusive contention should exercise facility grants, not only incidental start collisions"
+    );
+    assert!(
+        outcome.promoted_actors.len() >= 2,
+        "Finite exclusive contention should promote at least two harvest turns"
+    );
+    assert_ne!(
+        outcome.promoted_actors[0], outcome.promoted_actors[1],
+        "The first two exclusive orchard turns should rotate across distinct queued actors"
+    );
+    assert_eq!(
+        outcome.final_source_quantity,
+        Quantity(0),
+        "The exclusive orchard source should be exhausted after two granted harvest turns"
     );
 }
 
@@ -586,5 +767,26 @@ fn golden_resource_exhaustion_race_replays_deterministically() {
     assert_eq!(
         outcome_1.log_hash, outcome_2.log_hash,
         "Resource exhaustion race event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_exclusive_queue_contention_replays_deterministically() {
+    let seed = Seed([18; 32]);
+
+    let outcome_1 = run_exclusive_queue_contention_scenario(seed);
+    let outcome_2 = run_exclusive_queue_contention_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Exclusive queue contention scenario must replay deterministically"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Exclusive queue contention event log must replay deterministically"
+    );
+    assert_eq!(
+        outcome_1.promoted_actors, outcome_2.promoted_actors,
+        "Exclusive queue contention should promote the same actor sequence for a fixed seed"
     );
 }

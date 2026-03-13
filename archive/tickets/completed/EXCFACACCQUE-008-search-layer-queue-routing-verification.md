@@ -2,7 +2,7 @@
 
 **Status**: COMPLETED
 
-**Spec sections**: `specs/DRAFT-exclusive-facility-access-queues.md` §11
+**Spec sections**: `archive/specs/exclusive-facility-access-queues.md` §11
 **Crates**: `worldwake-ai`
 
 ## Summary

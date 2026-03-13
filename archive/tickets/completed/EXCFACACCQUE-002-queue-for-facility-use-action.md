@@ -3,7 +3,7 @@
 **Status**: COMPLETED
 
 **Spec sections**: §3
-**Draft ref**: `specs/DRAFT-exclusive-facility-access-queues.md`
+**Draft ref**: `archive/specs/exclusive-facility-access-queues.md`
 **Crates**: `worldwake-systems`, `worldwake-sim`
 
 ## Summary

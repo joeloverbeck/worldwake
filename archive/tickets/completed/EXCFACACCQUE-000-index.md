@@ -1,6 +1,8 @@
 # EXCFACACCQUE-000 — Exclusive Facility Access Queues: Index
 
-**Spec**: `specs/DRAFT-exclusive-facility-access-queues.md`
+**Status**: COMPLETED
+
+**Spec**: `archive/specs/exclusive-facility-access-queues.md`
 **Phase**: Post-E22, future production/AI hardening
 **Dependencies**: E10 (production/transport), E13 (decision architecture)
 
@@ -27,3 +29,17 @@
 - One queue per facility, one grant at a time, one operation per grant.
 - Pruning is permanent-impossibility-only; temporary stock depletion stalls the queue.
 - No compatibility layer: exclusive facilities route through queue/grant, not direct contention.
+
+## Outcome
+
+- Completion date: 2026-03-13
+- What actually changed:
+  - the full exclusive-facility queue/grant architecture landed across core, sim, systems, and ai
+  - localized regressions were added alongside the owning implementation modules
+  - final archival work added explicit end-to-end golden coverage for contested exclusive orchard behavior and deterministic replay
+- Deviations from original plan:
+  - the implementation did not remain split across `EXCFACACCQUE-001` through `EXCFACACCQUE-010` ticket files in the repository; the code landed before those child tickets were authored here
+  - the final integration coverage was completed by strengthening existing golden test infrastructure rather than by introducing a separate ticket-specific integration test tree
+- Verification results:
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

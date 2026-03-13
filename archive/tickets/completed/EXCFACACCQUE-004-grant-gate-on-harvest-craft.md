@@ -1,7 +1,7 @@
 # EXCFACACCQUE-004 — Grant Requirement Gate on Harvest and Craft Starts
 
 **Status**: Completed
-**Spec sections**: `specs/DRAFT-exclusive-facility-access-queues.md` §5, §6, §13
+**Spec sections**: `archive/specs/exclusive-facility-access-queues.md` §5, §6, §13
 **Crates**: `worldwake-sim`, `worldwake-systems`
 **Depends on**: implemented queue/grant groundwork from `EXCFACACCQUE-001` through `EXCFACACCQUE-003`
 

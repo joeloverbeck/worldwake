@@ -12,9 +12,10 @@ use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_prototype_world, prototype_place_entity, BlockedIntentMemory, BodyCostPerTick,
     CarryCapacity, CauseRef, CombatProfile, CommodityKind, ControlSource, DeprivationExposure,
-    DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
+    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Permille, PrototypePlace,
+    Quantity, RecipeId, ResourceSource, Seed, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
@@ -222,6 +223,28 @@ pub fn place_workstation_with_source(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
+    commit_txn(txn, event_log);
+    ws
+}
+
+pub fn place_exclusive_workstation_with_source(
+    world: &mut World,
+    event_log: &mut EventLog,
+    place: EntityId,
+    tag: WorkstationTag,
+    source: ResourceSource,
+    grant_hold_ticks: NonZeroU32,
+) -> EntityId {
+    let mut txn = new_txn(world, 0);
+    let ws = txn.create_entity(EntityKind::Facility);
+    txn.set_ground_location(ws, place).unwrap();
+    txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
+        .unwrap();
+    txn.set_component_resource_source(ws, source).unwrap();
+    txn.set_component_exclusive_facility_policy(ws, ExclusiveFacilityPolicy { grant_hold_ticks })
+        .unwrap();
+    txn.set_component_facility_use_queue(ws, FacilityUseQueue::default())
+        .unwrap();
     commit_txn(txn, event_log);
     ws
 }

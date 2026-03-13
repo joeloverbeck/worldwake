@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: COMPLETED
 
 # Exclusive Facility Access Queues
 
@@ -416,3 +416,19 @@ Derived transient read-model:
 - [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
 - [FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)
 - [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md)
+
+## Outcome
+
+- Completion date: 2026-03-13
+- What actually changed:
+  - `ActionDefId` now lives in `worldwake-core`, allowing queue/grant components to reference intended actions directly
+  - authoritative exclusive-facility policy and queue state were added in `worldwake-core`
+  - belief-view, planning snapshot/state, search, and runtime logic were updated so exclusive facility use routes through queue/grant state
+  - systems-side queue action, queue maintenance system, and harvest/craft grant gating were implemented
+  - final archival validation added explicit AI golden coverage for contested exclusive orchard behavior and deterministic replay
+- Deviations from original plan:
+  - many localized regressions landed directly beside the implementation modules instead of in separate standalone integration files
+  - the existing non-exclusive production race golden remained useful, but an additional explicitly exclusive scenario was needed to prove the intended architecture was actually exercised end to end
+- Verification results:
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

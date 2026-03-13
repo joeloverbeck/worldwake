@@ -1,7 +1,7 @@
 # EXCFACACCQUE-007 — `QueueForFacilityUse` Planner Op + Semantics
 
 **Status**: COMPLETED
-**Spec sections**: `specs/DRAFT-exclusive-facility-access-queues.md` §10
+**Spec sections**: `archive/specs/exclusive-facility-access-queues.md` §10
 **Crates**: `worldwake-ai`, `worldwake-sim`
 
 ## Summary
