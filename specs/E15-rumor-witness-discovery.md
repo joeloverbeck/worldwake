@@ -13,7 +13,7 @@ Phase 3: Information & Politics
 - E14 (perception and belief system)
 
 ## Dependency Note
-Inventory-audit discovery is only as good as the ownership model underneath it. Produced goods need explicit owner/claim state so the system can distinguish theft from depletion of unowned goods. See [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md).
+Inventory-audit discovery is only as good as the ownership model underneath it. Produced goods need explicit owner/claim state so the system can distinguish theft from depletion of unowned goods. See [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md).
 
 ## Deliverables
 
@@ -21,13 +21,13 @@ Inventory-audit discovery is only as good as the ownership model underneath it. 
 - Events emit witness data (from E06 WitnessData)
 - Agents present at event location automatically become witnesses
 - Witness status recorded: who saw what, when, with what clarity
-- Witness reliability: direct witnesses have confidence 1.0
+- Witness reliability: direct witnesses have `confidence = Permille(1000)`
 
 ### Rumor Creation
 - Witness shares information via social interaction:
   - **Tell** action: agent at same place as another agent → share a known fact
   - Precondition: both agents at same place, speaker knows the fact
-  - Effect: listener gains BelievesFact with source=Rumor, confidence < 1.0
+  - Effect: listener gains `BelievesFact` with `source = Rumor` and lower `Permille` confidence than direct observation
   - Duration: 1-3 ticks
 
 ### Rumor Propagation
@@ -40,10 +40,10 @@ Inventory-audit discovery is only as good as the ownership model underneath it. 
 
 ### Information Reliability
 - Confidence scoring by source:
-  - DirectObservation: 1.0
-  - FirstHandRumor: 0.7-0.8
-  - SecondHandRumor: 0.4-0.6
-  - ThirdHand+: 0.2-0.3
+  - `DirectObservation`: `Permille(1000)`
+  - `FirstHandRumor`: lower than direct observation, typically high but not certain
+  - `SecondHandRumor`: materially degraded from firsthand rumor
+  - `ThirdHand+`: lower still
 - Conflicting rumors: agent may hold contradictory beliefs
   - Resolution: prefer higher confidence, more recent
 - Rumor accuracy: rumors faithfully transmit the believed fact (no telephone game distortion in v0)

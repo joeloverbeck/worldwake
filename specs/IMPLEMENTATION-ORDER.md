@@ -46,7 +46,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 ### FND-02 Gate (specs/FND-02-foundations-alignment-phase2.md)
 
 **Step 8.5a** (parallel, spec/analysis work):
-- **FND02-001**: Fix E14 spec — `f32`→`Permille`, `HashMap`→`BTreeMap`, add Section H analysis, LoyalTo resolution, OmniscientBeliefView full replacement requirement
+- **FND02-001**: Fix E14 spec — `f32`→`Permille`, `HashMap`→`BTreeMap`, add Section H analysis, define the E14/E16 loyalty evidence boundary, require full `OmniscientBeliefView` replacement
 - **FND02-004**: Dampening audit across Phase 2 systems — document all amplifying loops and their physical dampeners
 
 **Step 8.5b** (parallel, code work):
@@ -71,8 +71,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 **Step 9** (needs FND-02 gate):
 - **E14**: Perception & Belief System
   - Replaces `OmniscientBeliefView` entirely
-  - Resolves `LoyalTo.strength` through concrete relational state
   - Implements FND02-001 belief-side requirements
+  - Establishes the belief/evidence inputs later social systems use for loyalty/support modeling
   - Satisfies FND-01 Section B deferred information pipeline requirements
 
 **Step 10** (parallel after E14):

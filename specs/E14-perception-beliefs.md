@@ -32,13 +32,13 @@ Phase 3: Information & Politics
 
 ### Memory System
 - `Memory` component per agent:
-  - `known_facts: HashMap<FactId, PerceivedFact>`
+  - `known_facts: BTreeMap<FactId, PerceivedFact>`
   - Each fact records: what, where, when observed, source (direct/rumor)
 - `PerceivedFact` struct:
   - `fact_type: FactType` (location of entity, stock level, ownership, death, crime, etc.)
   - `observed_tick: Tick`
   - `source: PerceptionSource` (DirectObservation, Rumor, Report, Inference)
-  - `confidence: f32` (1.0 for direct, degrades for rumors)
+  - `confidence: Permille` (`Permille(1000)` for direct observation; lower values for indirect sources such as reports and rumors)
 
 ### Belief Staleness
 - Beliefs can become outdated:
@@ -59,6 +59,16 @@ Phase 3: Information & Politics
 - API enforcement: belief query functions separate from world query functions
 - Compile-time or runtime guard: planner context has no reference to World
 
+### Social Evidence Boundary
+- E14 owns the belief-side capture of social evidence, not the loyalty model itself.
+- The system must preserve belief-traceable records for later social reasoning, including:
+  - witnessed cooperation or conflict
+  - fulfilled or broken obligations
+  - public records, reports, and testimony
+  - co-presence or shared travel history when it matters to later social inference
+- E14 must not introduce belief APIs that expose or depend on omniscient scalar loyalty truth.
+- The concrete replacement of `LoyalTo.strength` belongs to the later social/institutional work, which will consume these concrete records instead of adding another abstract score.
+
 ## Invariants Enforced
 - 9.11: World/belief separation - agents react only to perceived, inferred, remembered, or told facts
 - 9.15: Off-camera continuity - perception works regardless of any camera/visibility concept
@@ -78,6 +88,7 @@ Phase 3: Information & Politics
 - Memory system with staleness tracking
 - Hard separation between world state and agent beliefs
 - Planner API enforces belief-only access
+- `OmniscientBeliefView` is a temporary stand-in and must be fully removed by the E14 implementation rather than wrapped indefinitely
 
 ## FND-01 Section B — Deferred Information Pipeline Requirements
 
@@ -90,6 +101,35 @@ The following requirements were identified in `specs/FND-01-phase1-foundations-a
 
 These constraints derive from Principle 7 (Locality of Interaction and Information) in `docs/FOUNDATIONS.md`.
 
+## FND-01 Section H — Foundations Analysis
+
+### H1. Information-Path Analysis
+- Direct perception path: event occurs at a place -> co-located witness records a `PerceivedFact` -> fact enters that agent's `Memory`.
+- Report / rumor path: witness or record-holder shares information through co-location or consultation at a place -> listener stores a new `PerceivedFact` with source metadata and reduced `Permille` confidence.
+- Record consultation path: agent physically reaches the record location -> consults the record -> adds or refreshes the related `PerceivedFact`.
+- Re-observation path: later direct perception updates the same fact entry with fresher observation metadata.
+
+### H2. Positive-Feedback Analysis
+- Information -> action -> new information: more perceived facts can cause more travel, reporting, investigation, or conflict, which in turn creates more observable events.
+- Public discovery cascades: a visible event or consulted record can cause several nearby agents to act, creating secondary witness chains.
+
+### H3. Concrete Dampeners
+- Locality and travel time limit how quickly information can propagate between places.
+- Co-location, consultation, and action durations occupy time and prevent free global spread.
+- Belief staleness and source confidence limit how strongly indirect information should drive later behavior.
+- Records, witnesses, and aftermath must exist at concrete places; no hidden manager can inject beliefs globally.
+
+### H4. Stored State vs. Derived Read-Models
+- Stored authoritative state:
+  - per-agent `Memory` / fact entries
+  - witness records and consulted records
+  - source metadata, observation tick, and `Permille` confidence stored with perceived facts
+- Derived read-models:
+  - staleness queries derived from `current_tick - observed_tick`
+  - confidence interpretation and filtering views
+  - planner-facing belief queries assembled from stored fact records
+  - any later social summaries derived from concrete witness/report/record history rather than stored as separate truth
+
 ## Spec References
 - Section 3.5 (separate world truth from agent belief)
 - Section 5.4 (knows_fact, believes_fact relations)
@@ -97,3 +137,5 @@ These constraints derive from Principle 7 (Locality of Interaction and Informati
 - Section 7.3 (informational propagation channel)
 - Section 9.11 (world/belief separation)
 - `specs/FND-01-phase1-foundations-alignment.md` Section B (deferred requirements)
+- `specs/E15-rumor-witness-discovery.md` (confidence propagation and discovery follow-on)
+- `specs/E16-offices-succession-factions.md` (later consumer of belief-side social evidence)

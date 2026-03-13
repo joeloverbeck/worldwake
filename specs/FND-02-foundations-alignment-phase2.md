@@ -32,7 +32,7 @@ Eliminate remaining architectural gaps where Phase 2 code and specs violate foun
 
 Additionally, the E14 spec lacks the FND-01 Section H analysis (information-path, positive-feedback, concrete dampeners, stored vs derived) now required for all specs.
 
-Finally, `LoyalTo.strength: Permille` must be resolved through E14 by replacing the abstract scalar with concrete relational state derived from shared experiences, obligations, and betrayals.
+Finally, the E14/E16 boundary is underspecified. E14 must define the belief-side evidence pipeline that later loyalty and support systems consume, while the concrete replacement of `LoyalTo.strength: Permille` belongs to the social/institutional work rather than to the perception epic alone.
 
 ### Required Changes
 
@@ -48,16 +48,18 @@ Finally, `LoyalTo.strength: Permille` must be resolved through E14 by replacing 
    - Concrete dampeners: For each loop, specify the physical world mechanism that limits it.
    - Stored state vs. derived read-model list: Enumerate what is authoritative (belief stores, witness records) vs. derived (belief queries, staleness checks).
 
-4. **Add LoyalTo resolution requirement**: The E14 implementation must replace `LoyalTo.strength: Permille` with concrete relational state. Loyalty emerges from: shared experiences (witnessed cooperation, saved life), fulfilled obligations, betrayals, and time spent together. The abstract `strength` field becomes a derived read-model computed from these concrete records.
+4. **Add an E14/E16 loyalty boundary requirement**: E14 must specify which concrete social evidence enters belief state (for example witnessed cooperation, fulfilled obligations, betrayals, and public records/reports), and it must forbid new belief APIs from depending on omniscient or scalar-loyalty shortcuts. The downstream social spec owns the concrete replacement of `LoyalTo.strength: Permille`.
 
 5. **Require full OmniscientBeliefView replacement**: E14 must fully replace `OmniscientBeliefView` (not wrap it). After E14, no code path may use `OmniscientBeliefView`.
+
+6. **Keep immediate downstream specs consistent**: Update E15 confidence language to `Permille` terminology and align planning docs so they do not assign the loyalty-model redesign to E14 alone.
 
 ### Acceptance Criteria
 
 - [ ] E14 spec contains no `HashMap` in authoritative state definitions.
 - [ ] E14 spec contains no `f32` in authoritative state definitions.
 - [ ] E14 spec includes complete FND-01 Section H analysis.
-- [ ] E14 spec documents LoyalTo resolution through concrete relational state.
+- [ ] E14 spec documents the E14/E16 belief-to-social boundary for later loyalty redesign.
 - [ ] E14 spec requires full OmniscientBeliefView removal (not wrapping).
 
 ---
