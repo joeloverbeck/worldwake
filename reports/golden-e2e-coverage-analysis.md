@@ -16,7 +16,7 @@ crates/worldwake-ai/tests/
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 15 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
   golden_combat.rs            — 8 tests (living combat + seed sensitivity + defensive mitigation + death scenarios + replays)
-  golden_determinism.rs       — 1 test  (scenario 6)
+  golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
 
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 40 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
+The golden suite contains 41 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -159,6 +159,17 @@ The golden suite contains 40 tests across 6 domain files. Every test uses the re
 - Identical seeds produce identical `StateHash` for both world and event log.
 - World state differs from initial (non-trivial simulation occurred).
 **Invariant enforced**: Full-stack determinism (ChaCha8Rng, BTreeMap ordering, no floats, no wall-clock).
+
+### Scenario 6e: Save/Load Round-Trip Under AI
+**File**: `golden_determinism.rs` | **Test**: `golden_save_load_round_trip_under_ai`
+**Systems exercised**: AI loop, save/load, scheduler continuation, deterministic RNG continuation
+**Setup**: The standard two-agent deterministic golden scenario runs for 20 ticks under the real AI loop, snapshots through `SimulationState`, round-trips through `save_to_bytes()` / `load_from_bytes()`, then resumes for 30 more ticks with a fresh `AgentTickDriver`. A parallel uninterrupted run continues for the same total 50 ticks.
+**Emergent behavior proven**:
+- The save boundary occurs after non-trivial AI progress rather than at an idle initial state.
+- Save/load preserves the authoritative scheduler, controller state, recipe registry, and deterministic RNG continuation needed for resumed simulation.
+- A freshly reconstructed AI controller runtime is sufficient to resume coherent behavior; no serialized `AgentDecisionRuntime` or `AutonomousControllerRuntime` is required.
+- The resumed run reaches identical final world and event-log hashes, and matching scheduler/controller/RNG state, relative to uninterrupted execution.
+**Cross-system chain**: AI planning/runtime progress → authoritative simulation snapshot → save/load round-trip → fresh controller reconstruction → identical continuation.
 
 ### Scenario 6a: Recipe-Input Acquisition Chain
 **File**: `golden_production.rs` | **Test**: `golden_acquire_commodity_recipe_input`
@@ -461,6 +472,7 @@ The golden suite contains 40 tests across 6 domain files. Every test uses the re
 | Queue patience timeout → authoritative dequeue → alternative facility recovery | Yes |
 | Death while waiting in exclusive facility queue → authoritative prune → next-waiter promotion | Yes |
 | Materialized output theft → fresh replanning to distant fallback | Yes |
+| Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
 ---
@@ -490,11 +502,6 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 ### Tier 3: Lower Priority (score <= 2)
 
-#### P18. Save/Load Round-Trip Under AI
-**Score**: Emergence=2, Bug-catching=3, Effort=3 → **Composite: 2**
-**Rationale**: Save/load is tested in worldwake-sim but not with the full AI loop. Saving mid-simulation, loading, and continuing should produce consistent outcomes.
-**File**: `golden_determinism.rs`
-
 #### P16. BuryCorpse Goal
 **Score**: Emergence=2, Bug-catching=2, Effort=3 → **Composite: 1**
 **Rationale**: BuryCorpse requires a corpse + burial site. This is a complete feature that's untested, but it's also a simpler action with fewer cross-system interactions.
@@ -502,18 +509,20 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 `P-NEW-9 Dead Agent Pruned from Facility Queue` was removed from the golden backlog on 2026-03-13. The ticket assumptions were corrected first: the scenario belongs in `golden_production.rs` with the existing exclusive-facility queue coverage, not in `golden_combat.rs`. Scenario 9d now proves deprivation death while queued, authoritative queue pruning, and next-waiter promotion through the real AI loop.
 
+`P18 Save/Load Round-Trip Under AI` was removed from the golden backlog on 2026-03-13. Reassessment showed the architecture already persists the authoritative simulation roots while intentionally rebuilding transient AI controller runtime on resume. Scenario 6e now proves that design directly by round-tripping `SimulationState`, resuming with a fresh `AgentTickDriver`, and matching uninterrupted execution.
+
 ---
 
 ## Part 4: Summary Statistics
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 40 | 40 | 42 |
+| Proven tests | 41 | 41 | 42 |
 | GoalKind coverage | 14/17 (82.4%) | 14/17 (82.4%) | 15/17 (88.2%) |
 | ActionDomain coverage | 10/10 full | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 27 | 27 | 27+ |
+| Cross-system chains | 28 | 28 | 28+ |
 
 ### Recommended Implementation Order (Tier 1)
 

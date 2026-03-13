@@ -10,18 +10,19 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
-    build_prototype_world, prototype_place_entity, BlockedIntentMemory, BodyCostPerTick,
-    CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind, ControlSource,
-    DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
+    build_prototype_world, hash_serializable, prototype_place_entity, BlockedIntentMemory,
+    BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
+    ControlSource, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
     KnownRecipes, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId,
     ResourceSource, Seed, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
     WorldTxn, WoundList,
 };
 use worldwake_sim::{
-    step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
-    ControllerState, DeterministicRng, RecipeDefinition, RecipeRegistry, Scheduler, SystemManifest,
-    TickStepResult, TickStepServices,
+    load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
+    AutonomousControllerRuntime, ControllerState, DeterministicRng, RecipeDefinition,
+    RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState,
+    SystemManifest, TickStepResult, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -348,6 +349,58 @@ impl GoldenHarness {
             },
         )
         .unwrap()
+    }
+
+    pub fn snapshot_state(&self) -> SimulationState {
+        let replay_state = ReplayState::new(
+            hash_serializable(&(
+                &self.world,
+                &self.event_log,
+                &self.scheduler,
+                &self.recipes,
+                &self.controller,
+                &self.rng,
+            ))
+            .expect("golden harness runtime roots should hash canonically"),
+            self.rng.seed(),
+            self.scheduler.current_tick(),
+            ReplayRecordingConfig::disabled(),
+        );
+
+        SimulationState::new(
+            self.world.clone(),
+            self.event_log.clone(),
+            self.scheduler.clone(),
+            self.recipes.clone(),
+            replay_state,
+            self.controller.clone(),
+            self.rng.clone(),
+        )
+    }
+
+    pub fn save_load_roundtrip(&self) -> SimulationState {
+        load_from_bytes(
+            &save_to_bytes(&self.snapshot_state())
+                .expect("golden harness simulation state should serialize"),
+        )
+        .expect("golden harness simulation state should deserialize")
+    }
+
+    pub fn from_simulation_state(state: &SimulationState) -> Self {
+        let recipes = state.recipe_registry().clone();
+        let (defs, handlers) = build_full_registries(&recipes);
+
+        Self {
+            world: state.world().clone(),
+            event_log: state.event_log().clone(),
+            scheduler: state.scheduler().clone(),
+            controller: state.controller_state().clone(),
+            rng: state.rng_state().clone(),
+            defs,
+            handlers,
+            recipes,
+            driver: AgentTickDriver::new(PlanningBudget::default()),
+        }
     }
 
     pub fn agent_hunger(&self, agent: EntityId) -> Permille {

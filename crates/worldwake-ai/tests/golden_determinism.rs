@@ -72,6 +72,63 @@ fn run_deterministic_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn run_save_load_roundtrip_scenario(seed: Seed) -> GoldenHarness {
+    const SAVE_AFTER_TICKS: u64 = 20;
+    const RESUME_TICKS: u64 = 30;
+
+    let mut uninterrupted = build_deterministic_scenario(seed);
+    for _ in 0..SAVE_AFTER_TICKS {
+        uninterrupted.step_once();
+    }
+
+    let save_boundary_world_hash = hash_world(&uninterrupted.world).unwrap();
+    let initial_world_hash = {
+        let initial = build_deterministic_scenario(seed);
+        hash_world(&initial.world).unwrap()
+    };
+    assert_ne!(
+        save_boundary_world_hash, initial_world_hash,
+        "Save boundary should occur after non-trivial AI progress"
+    );
+
+    let resumed_state = uninterrupted.save_load_roundtrip();
+    let mut resumed = GoldenHarness::from_simulation_state(&resumed_state);
+
+    for _ in 0..RESUME_TICKS {
+        uninterrupted.step_once();
+        resumed.step_once();
+    }
+
+    assert_eq!(
+        resumed.scheduler, uninterrupted.scheduler,
+        "Scheduler state should match after resuming with a fresh AI runtime"
+    );
+    assert_eq!(
+        resumed.controller, uninterrupted.controller,
+        "Controller state should match after resuming with a fresh AI runtime"
+    );
+    assert_eq!(
+        resumed.rng, uninterrupted.rng,
+        "Deterministic RNG continuation should match across save/load"
+    );
+    assert_eq!(
+        resumed.recipes, uninterrupted.recipes,
+        "Recipe registry should remain unchanged across save/load"
+    );
+    assert_eq!(
+        hash_world(&resumed.world).unwrap(),
+        hash_world(&uninterrupted.world).unwrap(),
+        "World state should match uninterrupted execution after save/load resume"
+    );
+    assert_eq!(
+        hash_event_log(&resumed.event_log).unwrap(),
+        hash_event_log(&uninterrupted.event_log).unwrap(),
+        "Event log should match uninterrupted execution after save/load resume"
+    );
+
+    resumed
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 6: Deterministic Replay Fidelity
 // ---------------------------------------------------------------------------
@@ -104,5 +161,17 @@ fn golden_deterministic_replay_fidelity() {
     assert_ne!(
         log_hash_1, initial_log_hash,
         "Event log should have changed from initial state"
+    );
+}
+
+#[test]
+fn golden_save_load_round_trip_under_ai() {
+    let seed = Seed([77; 32]);
+    let resumed = run_save_load_roundtrip_scenario(seed);
+
+    assert_eq!(
+        resumed.scheduler.current_tick().0,
+        50,
+        "Resumed scenario should reach the same terminal tick as uninterrupted execution"
     );
 }

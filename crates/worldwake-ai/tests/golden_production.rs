@@ -864,6 +864,7 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_dead_agent_pruned_from_facility_queue_scenario(
     seed: Seed,
 ) -> DeadAgentPrunedFromFacilityQueueOutcome {
