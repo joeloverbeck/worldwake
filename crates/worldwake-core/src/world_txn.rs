@@ -1228,10 +1228,11 @@ mod tests {
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
+            sample_travel_disposition_profile,
             sample_utility_profile,
         },
         BlockedIntentMemory, DemandMemory, MerchandiseProfile, SubstitutePreferences,
-        TradeDispositionProfile, UtilityProfile,
+        TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -2237,6 +2238,47 @@ mod tests {
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(
             world.get_component_trade_disposition_profile(agent),
+            Some(&after)
+        );
+    }
+
+    #[test]
+    fn set_component_travel_disposition_profile_records_component_delta_and_updates_world_on_commit(
+    ) {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before: TravelDispositionProfile = sample_travel_disposition_profile();
+        let after = TravelDispositionProfile {
+            route_replan_margin: Permille::new(240).unwrap(),
+            ..before.clone()
+        };
+        world
+            .insert_component_travel_disposition_profile(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_travel_disposition_profile(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::TravelDispositionProfile,
+                before: Some(ComponentValue::TravelDispositionProfile(before)),
+                after: ComponentValue::TravelDispositionProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(
+            world.get_component_travel_disposition_profile(agent),
             Some(&after)
         );
     }

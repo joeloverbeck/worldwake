@@ -12,6 +12,7 @@ use crate::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
         WorkstationMarker,
     },
+    travel_disposition::TravelDispositionProfile,
     trade::{DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile},
     utility_profile::UtilityProfile,
     wounds::WoundList,
@@ -113,6 +114,7 @@ mod tests {
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
+            sample_travel_disposition_profile,
             sample_utility_profile,
         },
         BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
@@ -150,6 +152,7 @@ mod tests {
         assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_known_recipes().count(), 0);
         assert_eq!(tables.iter_demand_memories().count(), 0);
+        assert_eq!(tables.iter_travel_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_trade_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_merchandise_profiles().count(), 0);
         assert_eq!(tables.iter_substitute_preferences().count(), 0);
@@ -376,6 +379,22 @@ mod tests {
         assert!(tables.has_trade_disposition_profile(id));
         assert_eq!(tables.remove_trade_disposition_profile(id), Some(profile));
         assert_eq!(tables.get_trade_disposition_profile(id), None);
+    }
+
+    #[test]
+    fn travel_disposition_profile_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let id = entity(33);
+        let profile = sample_travel_disposition_profile();
+
+        assert_eq!(
+            tables.insert_travel_disposition_profile(id, profile.clone()),
+            None
+        );
+        assert_eq!(tables.get_travel_disposition_profile(id), Some(&profile));
+        assert!(tables.has_travel_disposition_profile(id));
+        assert_eq!(tables.remove_travel_disposition_profile(id), Some(profile));
+        assert_eq!(tables.get_travel_disposition_profile(id), None);
     }
 
     #[test]

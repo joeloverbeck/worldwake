@@ -447,6 +447,7 @@ fn authoritative_schema_includes_expected_shared_e09_and_e12_components_and_fiel
             ComponentKind::CarryCapacity,
             ComponentKind::KnownRecipes,
             ComponentKind::DemandMemory,
+            ComponentKind::TravelDispositionProfile,
             ComponentKind::TradeDispositionProfile,
             ComponentKind::MerchandiseProfile,
             ComponentKind::SubstitutePreferences,

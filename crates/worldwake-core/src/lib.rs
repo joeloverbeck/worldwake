@@ -51,6 +51,7 @@ pub mod production;
 pub mod relations;
 pub mod test_utils;
 pub mod topology;
+pub mod travel_disposition;
 pub mod trade;
 pub mod traits;
 pub mod utility_profile;
@@ -109,6 +110,7 @@ pub use topology::{
     build_prototype_world, prototype_place_entity, Place, PlaceTag, PrototypePlace, Route,
     Topology, TravelEdge,
 };
+pub use travel_disposition::TravelDispositionProfile;
 pub use trade::{
     DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
     SubstitutePreferences, TradeDispositionProfile,

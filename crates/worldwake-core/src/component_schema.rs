@@ -380,6 +380,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                travel_disposition_profiles,
+                TravelDispositionProfile,
+                insert_travel_disposition_profile,
+                get_travel_disposition_profile,
+                get_travel_disposition_profile_mut,
+                remove_travel_disposition_profile,
+                has_travel_disposition_profile,
+                iter_travel_disposition_profiles,
+                insert_component_travel_disposition_profile,
+                get_component_travel_disposition_profile,
+                get_component_travel_disposition_profile_mut,
+                remove_component_travel_disposition_profile,
+                has_component_travel_disposition_profile,
+                entities_with_travel_disposition_profile,
+                query_travel_disposition_profile,
+                count_with_travel_disposition_profile,
+                "TravelDispositionProfile",
+                |kind| kind == EntityKind::Agent,
+                TravelDispositionProfile,
+                crate::TravelDispositionProfile,
+                set_component_travel_disposition_profile,
+                clear_component_travel_disposition_profile,
+                txn_simple_set
+            }
+            {
                 trade_disposition_profiles,
                 TradeDispositionProfile,
                 insert_trade_disposition_profile,
@@ -1007,6 +1032,31 @@ macro_rules! with_component_schema_entries {
                 crate::DemandMemory,
                 set_component_demand_memory,
                 clear_component_demand_memory,
+                txn_simple_set
+            }
+            {
+                travel_disposition_profiles,
+                TravelDispositionProfile,
+                insert_travel_disposition_profile,
+                get_travel_disposition_profile,
+                get_travel_disposition_profile_mut,
+                remove_travel_disposition_profile,
+                has_travel_disposition_profile,
+                iter_travel_disposition_profiles,
+                insert_component_travel_disposition_profile,
+                get_component_travel_disposition_profile,
+                get_component_travel_disposition_profile_mut,
+                remove_component_travel_disposition_profile,
+                has_component_travel_disposition_profile,
+                entities_with_travel_disposition_profile,
+                query_travel_disposition_profile,
+                count_with_travel_disposition_profile,
+                "TravelDispositionProfile",
+                |kind| kind == EntityKind::Agent,
+                TravelDispositionProfile,
+                crate::TravelDispositionProfile,
+                set_component_travel_disposition_profile,
+                clear_component_travel_disposition_profile,
                 txn_simple_set
             }
             {

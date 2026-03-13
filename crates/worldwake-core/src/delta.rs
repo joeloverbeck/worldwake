@@ -6,7 +6,8 @@ use crate::{
     DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds,
     InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille,
     ProductionJob, Quantity, ReservationRecord, ResourceSource, SubstitutePreferences,
-    TradeDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UtilityProfile,
+    WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -219,6 +220,7 @@ mod tests {
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
+            sample_travel_disposition_profile,
             sample_utility_profile,
         },
         AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
@@ -303,6 +305,7 @@ mod tests {
                 crate::RecipeId(7),
             ])),
             ComponentValue::DemandMemory(sample_demand_memory()),
+            ComponentValue::TravelDispositionProfile(sample_travel_disposition_profile()),
             ComponentValue::TradeDispositionProfile(sample_trade_disposition_profile()),
             ComponentValue::MerchandiseProfile(sample_merchandise_profile()),
             ComponentValue::SubstitutePreferences(sample_substitute_preferences()),
@@ -442,6 +445,7 @@ mod tests {
                 ComponentKind::CarryCapacity,
                 ComponentKind::KnownRecipes,
                 ComponentKind::DemandMemory,
+                ComponentKind::TravelDispositionProfile,
                 ComponentKind::TradeDispositionProfile,
                 ComponentKind::MerchandiseProfile,
                 ComponentKind::SubstitutePreferences,

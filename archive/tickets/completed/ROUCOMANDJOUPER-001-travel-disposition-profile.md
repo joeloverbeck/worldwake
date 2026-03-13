@@ -1,6 +1,6 @@
 # ROUCOMANDJOUPER-001: TravelDispositionProfile Component
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new component type in worldwake-core
@@ -17,11 +17,14 @@ The decision architecture has no per-agent parameter for route persistence behav
 3. `Permille` is defined in `worldwake-core::numerics` and is already used in `PlanningBudget::switch_margin_permille` — confirmed.
 4. `NonZeroU32` from `std::num` is already used in the codebase (e.g., travel edge ticks) — confirmed.
 5. The `Component` trait is defined in `worldwake-core::traits` — confirmed.
+6. In this repo, adding an authoritative component is not limited to `lib.rs` + `component_schema.rs`: the new type must also be imported into macro-driven component storage and world API surfaces (`component_tables.rs`, `world.rs`, `world_txn.rs`, `delta.rs`) and covered by their regression tests — confirmed by comparing the existing `TradeDispositionProfile` path end to end.
+7. The current codebase does not already have a travel-domain profile component or a `BeliefView` accessor for it — confirmed. A belief-view accessor is still unnecessary for this ticket because no runtime or planner code reads the component yet.
 
 ## Architecture Check
 
 1. Following the existing pattern of per-agent profile components (`CombatProfile`, `MetabolismProfile`, `TradeDispositionProfile`, `UtilityProfile`). This is the established approach for agent-diverse parameters.
 2. No backwards-compatibility aliasing or shims. Pure additive change.
+3. `TravelDispositionProfile` should live in its own travel-focused core module rather than inside `trade.rs`. Route commitment is a travel/runtime concern; keeping it separate avoids cross-domain leakage and makes later AI integration cleaner.
 
 ## What to Change
 
@@ -61,8 +64,13 @@ Ensure `TravelDispositionProfile` is publicly exported from the crate root, foll
 ## Files to Touch
 
 - `crates/worldwake-core/src/lib.rs` (modify — add module declaration and re-export)
-- `crates/worldwake-core/src/travel_disposition.rs` (new — struct definition and Component impl) OR add to an existing appropriate module
+- `crates/worldwake-core/src/travel_disposition.rs` (new — struct definition, `Component` impl, local round-trip tests)
 - `crates/worldwake-core/src/component_schema.rs` (modify — add schema entry)
+- `crates/worldwake-core/src/component_tables.rs` (modify — import new type and extend component-table regression tests)
+- `crates/worldwake-core/src/world.rs` (modify — import new type; add world-level round-trip and non-agent rejection coverage)
+- `crates/worldwake-core/src/world_txn.rs` (modify — import new type; add transaction delta coverage)
+- `crates/worldwake-core/src/delta.rs` (modify — import new type; extend `ComponentKind` / `ComponentValue` regression coverage)
+- `crates/worldwake-core/src/test_utils.rs` (modify — add deterministic fixture for the new component)
 
 ## Out of Scope
 
@@ -79,8 +87,10 @@ Ensure `TravelDispositionProfile` is publicly exported from the crate root, foll
 
 1. `TravelDispositionProfile` implements `Component` trait — confirmed by compilation.
 2. `TravelDispositionProfile` can be inserted, retrieved, and removed from `ComponentTables` for an Agent entity — round-trip test.
-3. `TravelDispositionProfile` insertion is rejected for non-Agent entity kinds (if the schema enforces this).
-4. `TravelDispositionProfile` serializes and deserializes correctly via bincode — round-trip test matching the pattern in `component_tables.rs` tests.
+3. `World` rejects `TravelDispositionProfile` insertion on non-Agent entity kinds — this is where entity-kind enforcement actually happens in the current architecture.
+4. `TravelDispositionProfile` serializes and deserializes correctly via bincode — round-trip test matching existing profile-component module patterns.
+5. `WorldTxn::set_component_travel_disposition_profile` records the correct `ComponentDelta` and commits the updated component value.
+6. `delta.rs` regression coverage includes the new `ComponentKind` / `ComponentValue` variant so event-log typing stays exhaustive.
 5. Existing suite: `cargo test -p worldwake-core`
 6. Existing suite: `cargo clippy --workspace`
 
@@ -88,19 +98,40 @@ Ensure `TravelDispositionProfile` is publicly exported from the crate root, foll
 
 1. `TravelDispositionProfile` is an authoritative stored component, not transient runtime state.
 2. No new cross-crate dependencies introduced.
-3. `AgentDecisionRuntime` is NOT affected by this ticket (confirmed by separate test that it is not in component schema).
+3. `AgentDecisionRuntime` is NOT affected by this ticket. No AI runtime field, planner, or belief-view changes belong here.
 4. The `Permille` and `NonZeroU32` types enforce correct value domains at the type level — no runtime validation needed.
+5. No extension of unrelated profile components (`TradeDispositionProfile`, `UtilityProfile`) is allowed; travel commitment remains isolated in its own domain type.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-core/src/travel_disposition.rs` (or equivalent) — unit test: struct construction, field access, equality
-2. `crates/worldwake-core/src/component_tables.rs` tests section — integration test: insert/get/remove round-trip for `TravelDispositionProfile`
-3. `crates/worldwake-core/src/component_tables.rs` tests section — serialization round-trip test
+1. `crates/worldwake-core/src/travel_disposition.rs` — unit tests: trait bounds and bincode round-trip
+2. `crates/worldwake-core/src/component_tables.rs` — integration test: insert/get/remove/has cycle for `TravelDispositionProfile`
+3. `crates/worldwake-core/src/world.rs` — world-level round-trip test on an agent
+4. `crates/worldwake-core/src/world.rs` — non-agent rejection test
+5. `crates/worldwake-core/src/world_txn.rs` — transaction delta/commit test
+6. `crates/worldwake-core/src/delta.rs` — component enum coverage updated to include the new variant
 
 ### Commands
 
 1. `cargo test -p worldwake-core`
 2. `cargo clippy --workspace`
 3. `cargo build --workspace`
+
+## Outcome
+
+- Completed: 2026-03-13
+- What actually changed:
+  - Added a dedicated `TravelDispositionProfile` authoritative component in a new `worldwake-core::travel_disposition` module.
+  - Registered the component through the macro-driven authoritative schema so it now participates in `ComponentTables`, `World`, `WorldTxn`, and typed event-log delta surfaces.
+  - Added deterministic test fixtures and regression coverage for core round-trip, non-agent rejection, delta typing, and transaction commit behavior.
+  - Updated the downstream E09 schema-contract integration test to include the new authoritative component kind.
+- Deviations from original plan:
+  - The ticket originally understated scope as only `lib.rs` + `component_schema.rs` + one component file. Actual implementation required the full authoritative-component plumbing used by this repo, plus downstream schema-contract test maintenance.
+  - The component was implemented in a dedicated `travel_disposition.rs` module rather than being folded into an existing module. This keeps travel commitment concerns isolated from trade-domain profiles.
+- Verification results:
+  - `cargo test -p worldwake-core` ✅
+  - `cargo test -p worldwake-systems --test e09_needs_integration` ✅
+  - `cargo clippy --workspace` ✅
+  - `cargo build --workspace` ✅
