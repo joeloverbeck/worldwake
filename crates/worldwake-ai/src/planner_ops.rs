@@ -23,6 +23,7 @@ pub enum PlannerOpKind {
     MoveCargo,
     Heal,
     Loot,
+    Bury,
     Attack,
     Defend,
 }
@@ -97,6 +98,7 @@ const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
 ];
 const GOALS_HEAL: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::Heal];
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
+const GOALS_BURY: &[GoalKindTag] = &[GoalKindTag::BuryCorpse];
 const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 
@@ -133,7 +135,8 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         }
         (ActionDomain::Transport, "pick_up" | "put_down", _) => Some(PlannerOpKind::MoveCargo),
         (ActionDomain::Care, "heal", _) => Some(PlannerOpKind::Heal),
-        (ActionDomain::Loot, "loot", _) => Some(PlannerOpKind::Loot),
+        (ActionDomain::Corpse, "loot", _) => Some(PlannerOpKind::Loot),
+        (ActionDomain::Corpse, "bury", _) => Some(PlannerOpKind::Bury),
         (ActionDomain::Combat, "attack", _) => Some(PlannerOpKind::Attack),
         (ActionDomain::Combat, "defend", _) => Some(PlannerOpKind::Defend),
         _ => None,
@@ -227,6 +230,13 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             true,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_LOOT,
+        ),
+        PlannerOpKind::Bury => base_semantics(
+            op_kind,
+            false,
+            true,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_BURY,
         ),
         PlannerOpKind::Attack => base_semantics(
             op_kind,
@@ -1206,11 +1216,12 @@ mod tests {
             PlannerOpKind::MoveCargo,
             PlannerOpKind::Heal,
             PlannerOpKind::Loot,
+            PlannerOpKind::Bury,
             PlannerOpKind::Attack,
             PlannerOpKind::Defend,
         ];
 
-        assert_eq!(all.len(), 14);
+        assert_eq!(all.len(), 15);
     }
 
     #[test]
@@ -1295,6 +1306,10 @@ mod tests {
             PlannerOpKind::Loot
         );
         assert_eq!(
+            semantics_by_name.get("bury").unwrap().op_kind,
+            PlannerOpKind::Bury
+        );
+        assert_eq!(
             semantics_by_name.get("heal").unwrap().op_kind,
             PlannerOpKind::Heal
         );
@@ -1316,6 +1331,7 @@ mod tests {
         for def in defs.iter() {
             let semantics = table.get(&def.id).unwrap();
             let should_be_barrier = def.name == "trade"
+                || def.name == "bury"
                 || def.name == "loot"
                 || def.name.starts_with("harvest:")
                 || def.name.starts_with("craft:");
@@ -1327,7 +1343,7 @@ mod tests {
         }
         assert!(defs
             .iter()
-            .filter(|def| matches!(def.name.as_str(), "attack" | "defend"))
+            .filter(|def| matches!(def.name.as_str(), "attack" | "defend" | "bury"))
             .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
     }
 

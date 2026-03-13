@@ -1,5 +1,5 @@
 use crate::{
-    register_attack_action, register_craft_actions, register_defend_action,
+    register_attack_action, register_bury_action, register_craft_actions, register_defend_action,
     register_harvest_actions, register_heal_action, register_loot_action, register_needs_actions,
     register_queue_for_facility_use_action, register_trade_action, register_transport_actions,
     register_travel_actions,
@@ -30,6 +30,7 @@ pub fn register_all_actions(
     let _ = register_attack_action(defs, handlers);
     let _ = register_defend_action(defs, handlers);
     let _ = register_loot_action(defs, handlers);
+    let _ = register_bury_action(defs, handlers);
     let _ = register_heal_action(defs, handlers);
 }
 
@@ -76,6 +77,7 @@ mod tests {
             "attack",
             "defend",
             "loot",
+            "bury",
             "heal",
         ] {
             assert!(

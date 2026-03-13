@@ -8,7 +8,7 @@ use golden_harness::*;
 use worldwake_ai::derive_danger_pressure;
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, CombatProfile, CombatStance,
-    CommodityKind, DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes,
+    CommodityKind, DeadAt, DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes,
     MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, WoundList,
 };
@@ -173,6 +173,60 @@ fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
         hash_world(&h.world).unwrap(),
         hash_event_log(&h.event_log).unwrap(),
     )
+}
+
+#[test]
+fn golden_bury_corpse() {
+    let mut h = GoldenHarness::new(Seed([14; 32]));
+    let _burier = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Burier",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let corpse = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Corpse",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let grave_plot = place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::GravePlot,
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    for _ in 0..50 {
+        h.step_once();
+        if h.world.direct_container(corpse).is_some() {
+            break;
+        }
+    }
+
+    let grave = h
+        .world
+        .direct_container(corpse)
+        .expect("corpse should be buried into a grave container");
+    assert_eq!(h.world.effective_place(grave), Some(VILLAGE_SQUARE));
+    assert_eq!(h.world.effective_place(corpse), Some(VILLAGE_SQUARE));
+    assert_eq!(h.world.get_component_dead_at(corpse), Some(&DeadAt(Tick(0))));
+    assert!(h.world.is_alive(corpse), "burial should not delete the corpse entity");
+    assert_eq!(
+        h.world.get_component_workstation_marker(grave_plot).unwrap().0,
+        WorkstationTag::GravePlot
+    );
 }
 
 fn build_death_while_traveling_scenario(

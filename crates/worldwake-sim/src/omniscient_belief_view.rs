@@ -425,7 +425,7 @@ impl BeliefView for OmniscientBeliefView<'_> {
 
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
         self.local_agent_entities_at(place)
-            .filter(|entity| self.is_dead(*entity))
+            .filter(|entity| self.is_dead(*entity) && self.world.direct_container(*entity).is_none())
             .collect()
     }
 
@@ -1331,6 +1331,35 @@ mod tests {
         );
         assert_eq!(view.corpse_entities_at(local_place), vec![local_corpse]);
         assert_eq!(view.corpse_entities_at(remote_place), vec![remote_corpse]);
+    }
+
+    #[test]
+    fn corpse_entities_at_excludes_contained_corpses() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let corpse = {
+            let mut txn = new_txn(&mut world, 1);
+            let corpse = txn.create_agent("Fara", ControlSource::None).unwrap();
+            let grave = txn
+                .create_container(worldwake_core::Container {
+                    capacity: LoadUnits(10),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                })
+                .unwrap();
+            txn.set_ground_location(grave, place).unwrap();
+            txn.set_ground_location(corpse, place).unwrap();
+            txn.set_component_dead_at(corpse, DeadAt(Tick(1))).unwrap();
+            txn.put_into_container(corpse, grave).unwrap();
+            commit_txn(txn);
+            corpse
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert!(view.corpse_entities_at(place).is_empty());
+        assert!(world.direct_container(corpse).is_some());
     }
 
     #[allow(clippy::too_many_lines)]

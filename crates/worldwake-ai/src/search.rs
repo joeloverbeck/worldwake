@@ -398,10 +398,7 @@ fn search_candidate_from_planner(
 }
 
 fn unsupported_goal(goal: &GoalKind) -> bool {
-    matches!(
-        goal,
-        GoalKind::SellCommodity { .. } | GoalKind::BuryCorpse { .. }
-    )
+    matches!(goal, GoalKind::SellCommodity { .. })
 }
 
 fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {

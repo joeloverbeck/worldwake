@@ -10,7 +10,7 @@ pub enum ActionDomain {
     Transport,
     Combat,
     Care,
-    Loot,
+    Corpse,
 }
 
 impl ActionDomain {
@@ -39,7 +39,7 @@ mod tests {
         ActionDomain::Transport,
         ActionDomain::Combat,
         ActionDomain::Care,
-        ActionDomain::Loot,
+        ActionDomain::Corpse,
     ];
 
     #[test]

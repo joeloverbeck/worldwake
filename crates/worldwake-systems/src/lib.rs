@@ -19,8 +19,8 @@ pub mod travel_actions;
 
 pub use action_registry::{build_full_action_registries, register_all_actions, ActionRegistries};
 pub use combat::{
-    combat_system, register_attack_action, register_defend_action, register_heal_action,
-    register_loot_action,
+    combat_system, register_attack_action, register_bury_action, register_defend_action,
+    register_heal_action, register_loot_action,
 };
 pub use facility_queue::facility_queue_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;

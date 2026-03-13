@@ -140,6 +140,7 @@ fn emit_combat_candidates(
     emit_reduce_danger_goal(candidates, ctx);
     emit_heal_goals(candidates, ctx);
     emit_loot_goals(candidates, ctx);
+    emit_bury_goals(candidates, ctx);
 }
 
 fn emit_engage_hostile_goals(
@@ -575,6 +576,36 @@ fn emit_loot_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         emit_candidate(
             candidates,
             GoalKind::LootCorpse { corpse },
+            evidence,
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
+}
+
+fn emit_bury_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
+    let Some(place) = ctx.place else {
+        return;
+    };
+    let Some(burial_site) = ctx
+        .view
+        .matching_workstations_at(place, worldwake_core::WorkstationTag::GravePlot)
+        .into_iter()
+        .next()
+    else {
+        return;
+    };
+
+    for corpse in ctx.view.corpse_entities_at(place) {
+        let mut evidence = Evidence::with_entity(corpse);
+        evidence.entities.insert(burial_site);
+        evidence.places.insert(place);
+        emit_candidate(
+            candidates,
+            GoalKind::BuryCorpse {
+                corpse,
+                burial_site,
+            },
             evidence,
             ctx.blocked,
             ctx.current_tick,
@@ -2237,9 +2268,44 @@ mod tests {
         assert!(!candidates.iter().any(|candidate| {
             matches!(
                 candidate.key.kind,
-                GoalKind::SellCommodity { .. } | GoalKind::BuryCorpse { .. }
+                GoalKind::SellCommodity { .. }
             )
         }));
+    }
+
+    #[test]
+    fn local_corpse_with_grave_plot_emits_bury_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let corpse = entity(2);
+        let grave_plot = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.entity_kinds.insert(grave_plot, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(corpse, place);
+        view.effective_places.insert(grave_plot, place);
+        view.corpses_at.insert(place, vec![corpse]);
+        view.workstations
+            .insert((place, WorkstationTag::GravePlot), vec![grave_plot]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::BuryCorpse {
+                corpse,
+                burial_site: grave_plot,
+            }
+        ));
     }
 
     #[test]

@@ -6,10 +6,10 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     is_wound_load_fatal, load_per_unit, ActionDefId, BodyCostPerTick, BodyPart, CauseRef,
-    CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, DeadAt,
-    DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EvidenceRef, HomeostaticNeeds,
-    Permille, Quantity, StateDelta, VisibilitySpec, WitnessData, WorldTxn, Wound, WoundCause,
-    WoundList,
+    CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container,
+    DeadAt, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EvidenceRef,
+    HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec, WitnessData,
+    WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionDomain, ActionError,
@@ -61,6 +61,19 @@ pub fn register_loot_action(
             .with_affordance_payloads(enumerate_loot_payloads),
     );
     defs.register(loot_action_def(ActionDefId(defs.len() as u32), handler))
+}
+
+pub fn register_bury_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(ActionHandler::new(
+        start_bury,
+        tick_bury,
+        commit_bury,
+        abort_bury,
+    ));
+    defs.register(bury_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
 pub fn register_heal_action(
@@ -400,12 +413,13 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         Precondition::TargetAtActorPlace(0),
         Precondition::TargetDead(0),
         Precondition::TargetIsAgent(0),
+        Precondition::TargetNotInContainer(0),
     ];
 
     ActionDef {
         id,
         name: "loot".to_string(),
-        domain: ActionDomain::Loot,
+        domain: ActionDomain::Corpse,
         actor_constraints: vec![
             Constraint::ActorAlive,
             Constraint::ActorNotDead,
@@ -428,6 +442,58 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
             EventTag::Inventory,
             EventTag::Transfer,
         ]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
+fn bury_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    let preconditions = vec![
+        Precondition::ActorAlive,
+        Precondition::TargetExists(0),
+        Precondition::TargetAtActorPlace(0),
+        Precondition::TargetDead(0),
+        Precondition::TargetIsAgent(0),
+        Precondition::TargetNotInContainer(0),
+        Precondition::TargetExists(1),
+        Precondition::TargetAtActorPlace(1),
+        Precondition::TargetKind {
+            target_index: 1,
+            kind: EntityKind::Facility,
+        },
+        Precondition::TargetHasWorkstationTag {
+            target_index: 1,
+            tag: WorkstationTag::GravePlot,
+        },
+    ];
+
+    ActionDef {
+        id,
+        name: "bury".to_string(),
+        domain: ActionDomain::Corpse,
+        actor_constraints: vec![
+            Constraint::ActorAlive,
+            Constraint::ActorNotDead,
+            Constraint::ActorNotIncapacitated,
+            Constraint::ActorNotInTransit,
+            Constraint::ActorHasControl,
+        ],
+        targets: vec![
+            TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            },
+            TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Facility,
+            },
+        ],
+        preconditions: preconditions.clone(),
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::Fixed(NonZeroU32::MIN),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: preconditions,
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
     }
@@ -606,7 +672,47 @@ fn validate_loot_context(
             ActionAbortRequestReason::TargetNotDead { target },
         ));
     }
+    if txn.direct_container(target).is_some() {
+        return Err(ActionError::PreconditionFailed(
+            "TargetNotInContainer(0)".to_string(),
+        ));
+    }
     Ok((target, place))
+}
+
+fn validate_bury_context(
+    txn: &WorldTxn<'_>,
+    instance: &ActionInstance,
+) -> Result<(EntityId, EntityId, EntityId), ActionError> {
+    let corpse = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    let burial_site = *instance
+        .targets
+        .get(1)
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    let (_, place) = validate_loot_context(txn, instance)?;
+    if txn.entity_kind(burial_site) != Some(EntityKind::Facility) {
+        return Err(ActionError::InvalidTarget(burial_site));
+    }
+    if txn.effective_place(burial_site) != Some(place) {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TargetNotColocated {
+                actor: instance.actor,
+                target: burial_site,
+            },
+        ));
+    }
+    if txn
+        .get_component_workstation_marker(burial_site)
+        .is_none_or(|marker| marker.0 != WorkstationTag::GravePlot)
+    {
+        return Err(ActionError::PreconditionFailed(
+            "TargetHasWorkstationTag { target_index: 1, tag: GravePlot }".to_string(),
+        ));
+    }
+    Ok((corpse, burial_site, place))
 }
 
 fn validate_attack_context(
@@ -988,7 +1094,28 @@ fn start_loot(
 }
 
 #[allow(clippy::unnecessary_wraps)]
+fn start_bury(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let _ = validate_bury_context(txn, instance)?;
+    Ok(None)
+}
+
+#[allow(clippy::unnecessary_wraps)]
 fn tick_loot(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_bury(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _rng: &mut DeterministicRng,
@@ -1041,6 +1168,38 @@ fn commit_loot(
     for entity in direct_loot_entities(txn, corpse) {
         let _ = transferable_loot_entity(txn, instance.actor, corpse, entity, place)?;
     }
+    Ok(CommitOutcome::empty())
+}
+
+fn create_grave_container(
+    txn: &mut WorldTxn<'_>,
+    corpse: EntityId,
+    place: EntityId,
+) -> Result<EntityId, ActionError> {
+    let capacity = controlled_entity_load(txn, corpse)?;
+    let grave = txn
+        .create_container(Container {
+            capacity: LoadUnits(capacity.0.max(1)),
+            allowed_commodities: None,
+            allows_unique_items: true,
+            allows_nested_containers: true,
+        })
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.set_ground_location(grave, place)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    Ok(grave)
+}
+
+fn commit_bury(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let (corpse, _burial_site, place) = validate_bury_context(txn, instance)?;
+    let grave = create_grave_container(txn, corpse, place)?;
+    txn.put_into_container(corpse, grave)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
     Ok(CommitOutcome::empty())
 }
 
@@ -1140,6 +1299,17 @@ fn abort_loot(
 }
 
 #[allow(clippy::unnecessary_wraps)]
+fn abort_bury(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
 fn commit_heal(
     _def: &ActionDef,
     _instance: &ActionInstance,
@@ -1163,19 +1333,21 @@ fn abort_heal(
 #[cfg(test)]
 mod tests {
     use super::{
-        combat_system, effective_guard_skill, register_attack_action, register_defend_action,
-        register_heal_action, register_loot_action, resolve_attack_wound, AttackResolutionActor,
-        AttackResolutionContext, AttackResolutionTarget,
+        combat_system, effective_guard_skill, register_attack_action, register_bury_action,
+        register_defend_action, register_heal_action, register_loot_action,
+        resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
+        AttackResolutionTarget,
     };
     use crate::dispatch_table;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance,
         CombatWeaponRef, CommodityKind, Container, ControlSource, DeadAt, DeprivationKind,
-        DriveThresholds, EventLog, EventTag, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille,
-        Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause,
-        WoundId, WoundList,
+        DriveThresholds, EntityKind, EventLog, EventTag, EvidenceRef, HomeostaticNeeds,
+        LoadUnits, Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+        WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
@@ -1337,6 +1509,20 @@ mod tests {
         (container, lot)
     }
 
+    fn add_grave_plot(
+        world: &mut World,
+        place: worldwake_core::EntityId,
+        tick: u64,
+    ) -> worldwake_core::EntityId {
+        let mut txn = new_txn(world, tick);
+        let facility = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(facility, place).unwrap();
+        txn.set_component_workstation_marker(facility, WorkstationMarker(WorkstationTag::GravePlot))
+            .unwrap();
+        commit_txn(txn);
+        facility
+    }
+
     fn set_recovery_state(
         world: &mut World,
         entity: worldwake_core::EntityId,
@@ -1411,7 +1597,7 @@ mod tests {
         let loot = defs.get(loot_id).unwrap();
 
         assert_eq!(loot.name, "loot");
-        assert_eq!(loot.domain, worldwake_sim::ActionDomain::Loot);
+        assert_eq!(loot.domain, worldwake_sim::ActionDomain::Corpse);
         assert_eq!(loot.duration, DurationExpr::Fixed(NonZeroU32::MIN));
         assert_eq!(loot.interruptibility, Interruptibility::FreelyInterruptible);
         assert_eq!(loot.visibility, VisibilitySpec::SamePlace);
@@ -1425,8 +1611,37 @@ mod tests {
         assert!(loot
             .preconditions
             .contains(&worldwake_sim::Precondition::TargetIsAgent(0)));
+        assert!(loot
+            .preconditions
+            .contains(&worldwake_sim::Precondition::TargetNotInContainer(0)));
         assert!(loot.causal_event_tags.contains(&EventTag::Inventory));
         assert!(loot.causal_event_tags.contains(&EventTag::Transfer));
+    }
+
+    #[test]
+    fn register_bury_action_creates_public_corpse_definition() {
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let bury_id = register_bury_action(&mut defs, &mut handlers);
+        let bury = defs.get(bury_id).unwrap();
+
+        assert_eq!(bury.name, "bury");
+        assert_eq!(bury.domain, worldwake_sim::ActionDomain::Corpse);
+        assert_eq!(bury.duration, DurationExpr::Fixed(NonZeroU32::MIN));
+        assert_eq!(bury.interruptibility, Interruptibility::FreelyInterruptible);
+        assert_eq!(bury.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(bury.payload, ActionPayload::None);
+        assert_eq!(bury.targets.len(), 2);
+        assert!(bury
+            .preconditions
+            .contains(&worldwake_sim::Precondition::TargetNotInContainer(0)));
+        assert!(bury.preconditions.contains(
+            &worldwake_sim::Precondition::TargetHasWorkstationTag {
+                target_index: 1,
+                tag: WorkstationTag::GravePlot,
+            }
+        ));
+        assert_eq!(bury.causal_event_tags, BTreeSet::from([EventTag::WorldMutation]));
     }
 
     #[test]
@@ -1970,6 +2185,90 @@ mod tests {
             world.controlled_commodity_quantity(corpse, CommodityKind::Bread),
             Quantity(0)
         );
+    }
+
+    #[test]
+    fn bury_moves_corpse_into_grave_container_and_blocks_loot_affordance() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let buriar = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let place = world.effective_place(buriar).unwrap();
+        let grave_plot = add_grave_plot(&mut world, place, 3);
+        let bread = add_carried_lot(&mut world, corpse, 4, CommodityKind::Bread, 2);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let bury_id = register_bury_action(&mut defs, &mut handlers);
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let affordance =
+            get_affordances(&OmniscientBeliefView::new(&world), buriar, &defs, &handlers)
+                .into_iter()
+                .find(|affordance| {
+                    affordance.def_id == bury_id
+                        && affordance.bound_targets == vec![corpse, grave_plot]
+                })
+                .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x25);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(7),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        let grave = world.direct_container(corpse).unwrap();
+        assert_eq!(world.effective_place(grave), Some(place));
+        assert_eq!(world.effective_place(corpse), Some(place));
+        assert_eq!(world.possessor_of(bread), Some(corpse));
+        assert_eq!(world.direct_container(corpse), Some(grave));
+        assert!(world
+            .direct_contents_of(grave)
+            .into_iter()
+            .any(|entity| entity == corpse));
+
+        let post_bury_affordances =
+            get_affordances(&OmniscientBeliefView::new(&world), buriar, &defs, &handlers);
+        assert!(!post_bury_affordances.iter().any(|affordance| {
+            affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+        }));
     }
 
     #[allow(clippy::too_many_lines)]

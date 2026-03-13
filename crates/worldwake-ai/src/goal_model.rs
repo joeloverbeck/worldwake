@@ -114,7 +114,7 @@ const RESTOCK_OPS: &[PlannerOpKind] = &[
 ];
 const MOVE_CARGO_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::MoveCargo];
 const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
-const NO_OPS: &[PlannerOpKind] = &[];
+const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -200,7 +200,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::RestockCommodity { .. } => RESTOCK_OPS,
             GoalKind::MoveCargo { .. } => MOVE_CARGO_OPS,
             GoalKind::LootCorpse { .. } => LOOT_OPS,
-            GoalKind::BuryCorpse { .. } => NO_OPS,
+            GoalKind::BuryCorpse { .. } => BURY_OPS,
         }
     }
 
@@ -408,7 +408,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::AcquireCommodity { .. }
             | GoalKind::ProduceCommodity { .. }
             | GoalKind::RestockCommodity { .. }
-            | GoalKind::LootCorpse { .. } => true,
+            | GoalKind::LootCorpse { .. }
+            | GoalKind::BuryCorpse { .. } => true,
             GoalKind::ConsumeOwnedCommodity { .. } => matches!(
                 step.op_kind,
                 PlannerOpKind::Trade
@@ -742,13 +743,13 @@ mod tests {
     }
 
     #[test]
-    fn bury_goal_has_no_relevant_ops_until_action_family_exists() {
+    fn bury_goal_uses_bury_op_family() {
         let goal = GoalKind::BuryCorpse {
             corpse: entity_id(1, 0),
             burial_site: entity_id(2, 0),
         };
 
-        assert!(goal.relevant_op_kinds().is_empty());
+        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Bury]);
     }
 
     #[test]

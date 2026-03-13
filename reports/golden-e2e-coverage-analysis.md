@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 15 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
-  golden_combat.rs            — 8 tests (living combat + seed sensitivity + defensive mitigation + death scenarios + replays)
+  golden_combat.rs            — 9 tests (living combat + defensive mitigation + death/loot/burial scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 41 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
+The golden suite contains 42 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -295,7 +295,7 @@ The golden suite contains 41 tests across 6 domain files. Every test uses the re
 ### Scenario 8: Death Cascade and Opportunistic Loot
 **File**: `golden_combat.rs` | **Test**: `golden_death_cascade_and_opportunistic_loot`
 **Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
-**Systems exercised**: Needs (deprivation wounds), Combat (wound accumulation, death), Loot, Conservation, deterministic replay
+**Systems exercised**: Needs (deprivation wounds), Combat (wound accumulation, death), Corpse actions (`loot`), Conservation, deterministic replay
 **Setup**: Fragile victim (wound_capacity pm(200), existing pm(150) starvation wound, fast hunger metabolism, 2 hunger-critical-exposure ticks) with 5 coins. Second agent (Looter) at same location, healthy.
 **Emergent behavior proven**:
 - Victim dies from deprivation wounds exceeding wound_capacity.
@@ -304,7 +304,18 @@ The golden suite contains 41 tests across 6 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes for the death-and-loot scenario.
 **Cross-system chain**: Metabolism → deprivation exposure → wound infliction → wound accumulation → death → corpse creation → loot goal generation → loot action.
 
-### Scenario 8b: Death While Traveling
+### Scenario 8b: Corpse Burial
+**File**: `golden_combat.rs` | **Test**: `golden_bury_corpse`
+**Systems exercised**: AI (candidate generation, planning), Corpse actions (`bury`), containment/access rules, Conservation
+**Setup**: A dead agent and a living burier are co-located at Village Square with a concrete `GravePlot` facility and no competing self-care pressure.
+**Emergent behavior proven**:
+- The local corpse + local grave plot emit the `BuryCorpse` path through the normal AI stack.
+- The agent completes the real `bury` action rather than a scripted queue injection.
+- Burial creates a concrete grave container and moves the corpse into containment.
+- The corpse remains a persistent entity at the same place, but it is no longer directly targetable by the normal loot path.
+**Cross-system chain**: Local corpse evidence + local grave-site evidence → `BuryCorpse` goal → planner leaf selection → bury action → concrete containment-based inaccessibility.
+
+### Scenario 8c: Death While Traveling
 **File**: `golden_combat.rs` | **Test**: `golden_death_while_traveling`
 **Companion replay test**: `golden_death_while_traveling_replays_deterministically`
 **Systems exercised**: Needs (metabolism, deprivation exposure), AI (distant acquire planning), Travel, Combat (fatal wound resolution), Conservation, deterministic replay
@@ -393,9 +404,9 @@ The golden suite contains 41 tests across 6 domain files. Every test uses the re
 | RestockCommodity | Yes | 2d |
 | MoveCargo | Yes | 2d |
 | LootCorpse | Yes | 8 |
-| BuryCorpse | **No** | — |
+| BuryCorpse | Yes | 8b |
 
-**Coverage: 14/17 GoalKinds tested (82.4%).**
+**Coverage: 15/17 GoalKinds tested (88.2%).**
 
 ### ActionDomain Coverage
 
@@ -410,7 +421,7 @@ The golden suite contains 41 tests across 6 domain files. Every test uses the re
 | Transport | Yes | pick-up/materialization (4, 6c) + destination-local cargo delivery semantics (2d) |
 | Combat (attack, defend) | Yes | 7c, 7f |
 | Care (heal) | Yes | 2c |
-| Loot | Yes | 8 |
+| Corpse (`loot`, `bury`) | Yes | 8, 8b |
 
 **Coverage: 10/10 domains fully tested.**
 
@@ -455,6 +466,7 @@ The golden suite contains 41 tests across 6 domain files. Every test uses the re
 | Resource depletion → regeneration → re-harvest | Yes |
 | Deprivation → wounds → death | Yes |
 | Death → loot | Yes |
+| Corpse burial → containment-based inaccessibility | Yes |
 | Trade negotiation between two agents | Yes |
 | Multi-hop travel to distant acquisition source | Yes |
 | Combat between two living agents | Yes |
@@ -502,10 +514,7 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 ### Tier 3: Lower Priority (score <= 2)
 
-#### P16. BuryCorpse Goal
-**Score**: Emergence=2, Bug-catching=2, Effort=3 → **Composite: 1**
-**Rationale**: BuryCorpse requires a corpse + burial site. This is a complete feature that's untested, but it's also a simpler action with fewer cross-system interactions.
-**File**: `golden_combat.rs`
+No remaining Tier 3 golden backlog items. `P16 BuryCorpse Goal` was removed on 2026-03-13 after implementation. The ticket assumptions were corrected first: `BuryCorpse` was only a placeholder goal/ranking concept, so the shipped work added a concrete corpse-action architecture (`loot` + `bury` under the `Corpse` domain), grave-plot facilities, and containment-based burial inaccessibility before proving the path in `golden_bury_corpse`.
 
 `P-NEW-9 Dead Agent Pruned from Facility Queue` was removed from the golden backlog on 2026-03-13. The ticket assumptions were corrected first: the scenario belongs in `golden_production.rs` with the existing exclusive-facility queue coverage, not in `golden_combat.rs`. Scenario 9d now proves deprivation death while queued, authoritative queue pruning, and next-waiter promotion through the real AI loop.
 
@@ -517,12 +526,12 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 41 | 41 | 42 |
-| GoalKind coverage | 14/17 (82.4%) | 14/17 (82.4%) | 15/17 (88.2%) |
+| Proven tests | 42 | 42 | 42 |
+| GoalKind coverage | 15/17 (88.2%) | 15/17 (88.2%) | 15/17 (88.2%) |
 | ActionDomain coverage | 10/10 full | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 28 | 28 | 28+ |
+| Cross-system chains | 29 | 29 | 29 |
 
 ### Recommended Implementation Order (Tier 1)
 
