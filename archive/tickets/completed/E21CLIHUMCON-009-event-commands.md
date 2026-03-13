@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-009: Event Commands (events, event, trace)
 
 ## Summary
@@ -76,3 +78,16 @@ Implement the event log viewer: `events [n]` shows recent events, `event <id>` s
 - Trace walks backward only (via `CauseRef`), never forward
 - Event IDs displayed consistently as `[E{id}]`
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-13
+- **What changed**:
+  - Created `crates/worldwake-cli/src/handlers/events.rs` with `handle_events()`, `handle_event()`, `handle_trace()`
+  - Modified `crates/worldwake-cli/src/handlers/mod.rs` to wire `Events`, `Event`, `Trace` dispatch variants
+- **Deviations from original plan**:
+  - `handle_events` signature uses `Option<usize>` (not bare `usize`) to handle default directly
+  - `state_deltas` displayed via `Debug` formatting of `StateDelta` enum (covers ComponentDelta, RelationDelta, QuantityDelta, EntityDelta, ReservationDelta)
+  - `CauseRef` display handles all 4 variants (Event, SystemTick, Bootstrap, ExternalInput), not just "event ID or none"
+  - `handle_events` has `#[allow(clippy::unnecessary_wraps)]` since it must return `CommandResult` for the dispatch interface despite never erroring
+- **Verification results**: All 8 required tests pass, 74 total crate tests pass, `cargo clippy -p worldwake-cli` clean

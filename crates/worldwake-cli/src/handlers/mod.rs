@@ -1,4 +1,5 @@
 pub(crate) mod actions;
+mod events;
 mod inspect;
 pub(crate) mod tick;
 
@@ -41,18 +42,9 @@ pub fn dispatch_command(
         CliCommand::Actions => actions::handle_actions(sim, registries, repl_state),
         CliCommand::Do { n } => actions::handle_do(n, sim, registries, repl_state),
         CliCommand::Cancel => actions::handle_cancel(sim),
-        CliCommand::Events { .. } => {
-            println!("events: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Event { .. } => {
-            println!("event: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Trace { .. } => {
-            println!("trace: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
+        CliCommand::Events { n } => events::handle_events(sim, n),
+        CliCommand::Event { id } => events::handle_event(sim, id),
+        CliCommand::Trace { id } => events::handle_trace(sim, id),
         CliCommand::Switch { .. } => {
             println!("switch: not implemented");
             Ok(CommandOutcome::Continue)
