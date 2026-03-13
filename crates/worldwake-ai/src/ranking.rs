@@ -526,6 +526,12 @@ mod tests {
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
+        fn travel_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::TravelDispositionProfile> {
+            None
+        }
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }

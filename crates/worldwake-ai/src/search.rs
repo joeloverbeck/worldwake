@@ -481,6 +481,12 @@ mod tests {
         fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
             self.trade_profiles.get(&agent).cloned()
         }
+        fn travel_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::TravelDispositionProfile> {
+            None
+        }
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             Some(CombatProfile::new(
                 pm(1000),

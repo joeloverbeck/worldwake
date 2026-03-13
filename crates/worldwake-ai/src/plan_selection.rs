@@ -1,15 +1,16 @@
 use crate::{
     goal_switching::{compare_goal_switch, GoalSwitchKind},
-    AgentDecisionRuntime, GoalKey, GoalPriorityClass, PlannedPlan, PlanningBudget, RankedGoal,
+    AgentDecisionRuntime, GoalKey, GoalPriorityClass, PlannedPlan, RankedGoal,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use worldwake_core::Permille;
 
 pub fn select_best_plan(
     candidates: &[RankedGoal],
     plans: &[(GoalKey, Option<PlannedPlan>)],
     current: &AgentDecisionRuntime,
-    budget: &PlanningBudget,
+    switch_margin: Permille,
 ) -> Option<PlannedPlan> {
     let candidate_scores = candidates
         .iter()
@@ -52,7 +53,7 @@ pub fn select_best_plan(
             Some(current_motive),
             best_class,
             best_motive,
-            budget.switch_margin_permille,
+            switch_margin,
         ),
         Some(GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin)
     ) {
@@ -84,11 +85,10 @@ mod tests {
     use super::select_best_plan;
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningBudget,
-        PlanningEntityRef, RankedGoal,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
     };
     use std::collections::BTreeSet;
-    use worldwake_core::{CommodityKind, EntityId};
+    use worldwake_core::{CommodityKind, EntityId, Permille};
     use worldwake_sim::ActionDefId;
 
     fn entity(slot: u32) -> EntityId {
@@ -126,6 +126,10 @@ mod tests {
         )
     }
 
+    fn default_switch_margin() -> Permille {
+        Permille::new(100).unwrap()
+    }
+
     #[test]
     fn selection_prefers_higher_priority_class_before_cost() {
         let sleep_goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
@@ -155,7 +159,7 @@ mod tests {
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
-            &PlanningBudget::default(),
+            default_switch_margin(),
         )
         .unwrap();
 
@@ -205,7 +209,7 @@ mod tests {
         };
 
         let selected =
-            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
 
         assert_eq!(selected.goal, current_goal);
     }
@@ -237,14 +241,14 @@ mod tests {
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
-            &PlanningBudget::default(),
+            default_switch_margin(),
         )
         .unwrap();
         let second = select_best_plan(
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
-            &PlanningBudget::default(),
+            default_switch_margin(),
         )
         .unwrap();
 
@@ -302,7 +306,7 @@ mod tests {
         };
 
         let selected =
-            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
 
         assert_eq!(selected, refreshed_plan);
     }
@@ -334,7 +338,7 @@ mod tests {
         };
 
         let selected =
-            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
 
         assert_eq!(selected.goal, eat_goal);
         assert_eq!(
@@ -368,7 +372,7 @@ mod tests {
         };
 
         let selected =
-            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
 
         assert_eq!(
             selected, challenger,
@@ -398,12 +402,68 @@ mod tests {
         };
 
         let selected =
-            select_best_plan(&candidates, &plans, &runtime, &PlanningBudget::default()).unwrap();
+            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
 
         assert_eq!(selected.goal, eat_goal);
         assert!(
             selected.steps.is_empty(),
             "both plans are empty — best is selected but also empty"
         );
+    }
+
+    #[test]
+    fn higher_effective_margin_raises_plan_switch_threshold() {
+        let current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let challenger_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let current_plan = plan(current_goal, 1, 3);
+        let challenger_plan = plan(challenger_goal, 2, 2);
+        let candidates = vec![
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_000,
+            ),
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_350,
+            ),
+        ];
+        let plans = vec![
+            (current_goal, Some(current_plan.clone())),
+            (challenger_goal, Some(challenger_plan.clone())),
+        ];
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(current_goal),
+            current_plan: Some(current_plan),
+            dirty: false,
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let conservative = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            Permille::new(400).unwrap(),
+        )
+        .unwrap();
+        let permissive =
+            select_best_plan(&candidates, &plans, &runtime, Permille::new(300).unwrap()).unwrap();
+
+        assert_eq!(conservative.goal, current_goal);
+        assert_eq!(permissive.goal, challenger_goal);
     }
 }

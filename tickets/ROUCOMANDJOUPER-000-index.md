@@ -15,7 +15,7 @@ Adds explicit journey tracking to the AI runtime layer so agents can persist tow
 | 001 | `ROUCOMANDJOUPER-001-travel-disposition-profile.md` | TravelDispositionProfile component | HIGH | Small | None |
 | 002 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-002-journey-temporal-fields.md` | Journey temporal fields on AgentDecisionRuntime | HIGH | Small | None |
 | 003 | `ROUCOMANDJOUPER-003-journey-aware-goal-switching.md` | Journey-aware goal switching margin override | HIGH | Small | 001, 002 |
-| 004 | `ROUCOMANDJOUPER-004-plan-selection-journey-margin.md` | Controller-level journey switch margin policy | HIGH | Medium | 003 |
+| 004 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-004-plan-selection-journey-margin.md` | Controller-level journey switch margin policy | HIGH | Medium | 003 |
 | 005 | `ROUCOMANDJOUPER-005-journey-field-advancement.md` | Journey field advancement on arrival and blockage tracking | HIGH | Medium | 002 |
 | 006 | `ROUCOMANDJOUPER-006-journey-clearing-conditions.md` | Journey clearing conditions and blocked-intent integration | HIGH | Medium | 001, 002, 004, 005 |
 | 007 | `ROUCOMANDJOUPER-007-debug-surface.md` | Observable debug surface for journey state | MEDIUM | Small | 002, 004, 005 |

@@ -8,8 +8,8 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, CarryCapacity, CombatProfile, CommodityConsumableProfile,
     CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
     HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag,
-    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
-    WorkstationTag, World, Wound,
+    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -274,6 +274,12 @@ impl BeliefView for OmniscientBeliefView<'_> {
             .cloned()
     }
 
+    fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile> {
+        self.world
+            .get_component_travel_disposition_profile(agent)
+            .cloned()
+    }
+
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         self.world.get_component_combat_profile(agent).copied()
     }
@@ -422,8 +428,8 @@ mod tests {
         Container, ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
         DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
         MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId, WoundList,
+        TravelDispositionProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+        World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -1018,6 +1024,14 @@ mod tests {
             .unwrap();
             txn.set_component_drive_thresholds(actor, DriveThresholds::default())
                 .unwrap();
+            txn.set_component_travel_disposition_profile(
+                actor,
+                TravelDispositionProfile {
+                    route_replan_margin: pm(300),
+                    blocked_leg_patience_ticks: NonZeroU32::new(4).unwrap(),
+                },
+            )
+            .unwrap();
             txn.set_component_wound_list(
                 actor,
                 WoundList {
@@ -1142,6 +1156,13 @@ mod tests {
         assert_eq!(
             view.drive_thresholds(actor),
             Some(DriveThresholds::default())
+        );
+        assert_eq!(
+            view.travel_disposition_profile(actor),
+            Some(TravelDispositionProfile {
+                route_replan_margin: pm(300),
+                blocked_leg_patience_ticks: NonZeroU32::new(4).unwrap(),
+            })
         );
         assert_eq!(view.wounds(actor).len(), 1);
         assert!(view.has_wounds(actor));

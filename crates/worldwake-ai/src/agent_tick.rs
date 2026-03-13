@@ -9,7 +9,7 @@ use crate::{
 use std::collections::BTreeMap;
 use worldwake_core::{
     BlockedIntentMemory, CauseRef, CommodityKind, ControlSource, EntityId, Quantity, Tick,
-    UniqueItemKind, VisibilitySpec, WitnessData, WorldTxn,
+    UniqueItemKind, VisibilitySpec, WitnessData, WorldTxn, Permille,
 };
 use worldwake_sim::{
     ActionDefId, ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
@@ -185,6 +185,10 @@ fn process_agent(
         },
     );
     let active_action = active_action_for_agent(ctx, agent);
+    let switch_margin = {
+        let view = OmniscientBeliefView::new(ctx.world);
+        effective_goal_switch_margin(&view, agent, runtime, budget)
+    };
 
     if let Some(active_action) = active_action {
         return handle_active_action_phase(
@@ -195,7 +199,7 @@ fn process_agent(
             agent,
             &ranked_candidates,
             &active_action,
-            budget,
+            switch_margin,
             tick,
             action_defs,
             action_handlers,
@@ -207,6 +211,7 @@ fn process_agent(
         runtime,
         agent,
         &ranked_candidates,
+        switch_margin,
         budget,
         semantics_table,
         action_defs,
@@ -339,7 +344,7 @@ fn handle_active_action_phase(
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     active_action: &worldwake_sim::ActionInstance,
-    budget: &PlanningBudget,
+    switch_margin: Permille,
     tick: Tick,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -358,7 +363,7 @@ fn handle_active_action_phase(
         interruptibility,
         ranked_candidates,
         plan_valid,
-        budget,
+        switch_margin,
     ) {
         let replan = ctx
             .scheduler
@@ -392,12 +397,28 @@ fn handle_active_action_phase(
     )
 }
 
+fn effective_goal_switch_margin(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    runtime: &AgentDecisionRuntime,
+    budget: &PlanningBudget,
+) -> Permille {
+    if runtime.has_active_journey() {
+        if let Some(profile) = view.travel_disposition_profile(agent) {
+            return profile.route_replan_margin;
+        }
+    }
+
+    budget.switch_margin_permille
+}
+
 #[allow(clippy::too_many_arguments)]
 fn plan_and_validate_next_step(
     world: &worldwake_core::World,
     runtime: &mut AgentDecisionRuntime,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
+    switch_margin: Permille,
     budget: &PlanningBudget,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
@@ -429,7 +450,9 @@ fn plan_and_validate_next_step(
             })
             .collect::<Vec<_>>();
 
-        if let Some(selected_plan) = select_best_plan(ranked_candidates, &plans, runtime, budget) {
+        if let Some(selected_plan) =
+            select_best_plan(ranked_candidates, &plans, runtime, switch_margin)
+        {
             runtime.materialization_bindings.clear();
             runtime.current_goal = Some(selected_plan.goal);
             runtime.current_plan = Some(selected_plan);
@@ -804,9 +827,9 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 mod tests {
     use super::{
         advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
-        persist_blocked_memory, plan_and_validate_next_step, refresh_runtime_for_read_phase,
-        resolve_step_targets, update_runtime_observation_snapshot, AgentTickDriver,
-        ReadPhaseContext,
+        effective_goal_switch_margin, persist_blocked_memory, plan_and_validate_next_step,
+        refresh_runtime_for_read_phase, resolve_step_targets, update_runtime_observation_snapshot,
+        AgentTickDriver, ReadPhaseContext,
     };
     use crate::PlanningBudget;
     use crate::{
@@ -820,8 +843,9 @@ mod tests {
         build_prototype_world, BlockedIntent, BlockedIntentMemory, BlockingFact, CarryCapacity,
         CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EventLog,
-        HomeostaticNeeds, LoadUnits, MerchandiseProfile, MetabolismProfile, Place, Quantity, Seed,
-        Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
+        HomeostaticNeeds, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place,
+        Quantity, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
@@ -1082,6 +1106,18 @@ mod tests {
         }
     }
 
+    fn travel_step(def_id: u32, target: EntityId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(def_id),
+            targets: vec![PlanningEntityRef::Authoritative(target)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
     fn hypothetical_step(def_id: u32, hypothetical: u32) -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(def_id),
@@ -1113,6 +1149,65 @@ mod tests {
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
         }
+    }
+
+    #[test]
+    fn effective_goal_switch_margin_uses_route_margin_only_for_active_journey() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_travel_disposition_profile(
+                actor,
+                TravelDispositionProfile {
+                    route_replan_margin: Permille::new(300).unwrap(),
+                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let budget = PlanningBudget::default();
+        let view = OmniscientBeliefView::new(&world);
+        let active_journey = crate::AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                GoalKey::from(GoalKind::Sleep),
+                vec![travel_step(1, place)],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            journey_established_at: Some(Tick(7)),
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let not_a_journey = crate::AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                GoalKey::from(GoalKind::Sleep),
+                vec![barrier_step()],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            journey_established_at: Some(Tick(7)),
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        assert_eq!(
+            effective_goal_switch_margin(&view, actor, &active_journey, &budget),
+            Permille::new(300).unwrap()
+        );
+        assert_eq!(
+            effective_goal_switch_margin(&view, actor, &not_a_journey, &budget),
+            budget.switch_margin_permille
+        );
+        assert_eq!(
+            effective_goal_switch_margin(
+                &view,
+                entity(999),
+                &active_journey,
+                &budget,
+            ),
+            budget.switch_margin_permille
+        );
     }
 
     #[test]
@@ -1495,6 +1590,7 @@ mod tests {
             runtime,
             harness.actor,
             &ranked,
+            budget.switch_margin_permille,
             &budget,
             &semantics,
             &harness.defs,
@@ -1576,6 +1672,7 @@ mod tests {
             runtime,
             harness.actor,
             &ranked_after_pickup,
+            budget.switch_margin_permille,
             &budget,
             &semantics,
             &harness.defs,

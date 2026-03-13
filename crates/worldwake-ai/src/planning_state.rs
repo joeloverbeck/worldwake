@@ -876,6 +876,13 @@ impl BeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
     }
 
+    fn travel_disposition_profile(
+        &self,
+        _agent: EntityId,
+    ) -> Option<worldwake_core::TravelDispositionProfile> {
+        None
+    }
+
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         self.snapshot
             .entities
@@ -1255,6 +1262,13 @@ mod tests {
         }
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn travel_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::TravelDispositionProfile> {
             None
         }
 

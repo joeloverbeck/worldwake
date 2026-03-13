@@ -911,6 +911,13 @@ mod tests {
             None
         }
 
+        fn travel_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::TravelDispositionProfile> {
+            None
+        }
+
         fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
             None
         }

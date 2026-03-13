@@ -4,7 +4,8 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
     DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
     LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
-    TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag,
+    Wound,
 };
 
 pub trait BeliefView {
@@ -54,6 +55,7 @@ pub trait BeliefView {
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
+    fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile>;
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;

@@ -2,10 +2,8 @@ use crate::{
     goal_switching::{compare_goal_switch, GoalSwitchKind},
     AgentDecisionRuntime, GoalPriorityClass, RankedGoal,
 };
-use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
+use worldwake_core::{CommodityPurpose, GoalKey, GoalKind, Permille};
 use worldwake_sim::Interruptibility;
-
-use crate::PlanningBudget;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InterruptDecision {
@@ -28,7 +26,7 @@ pub fn evaluate_interrupt(
     current_action_interruptibility: Interruptibility,
     ranked_candidates: &[RankedGoal],
     plan_valid: bool,
-    budget: &PlanningBudget,
+    switch_margin: Permille,
 ) -> InterruptDecision {
     if current_action_interruptibility == Interruptibility::NonInterruptible {
         return InterruptDecision::NoInterrupt;
@@ -48,7 +46,7 @@ pub fn evaluate_interrupt(
         Interruptibility::NonInterruptible => InterruptDecision::NoInterrupt,
         Interruptibility::InterruptibleWithPenalty => interrupt_with_penalty(challenger),
         Interruptibility::FreelyInterruptible => {
-            interrupt_freely(runtime, challenger, ranked_candidates, budget)
+            interrupt_freely(runtime, challenger, ranked_candidates, switch_margin)
         }
     }
 }
@@ -75,7 +73,7 @@ fn interrupt_freely(
     runtime: &AgentDecisionRuntime,
     challenger: &RankedGoal,
     ranked_candidates: &[RankedGoal],
-    budget: &PlanningBudget,
+    switch_margin: Permille,
 ) -> InterruptDecision {
     if matches!(challenger.grounded.key.kind, GoalKind::LootCorpse { .. }) {
         return if no_medium_or_above_self_care_or_danger(ranked_candidates) {
@@ -95,7 +93,7 @@ fn interrupt_freely(
         current_motive,
         challenger.priority_class,
         challenger.motive_score,
-        budget.switch_margin_permille,
+        switch_margin,
     ) else {
         return InterruptDecision::NoInterrupt;
     };
@@ -182,11 +180,10 @@ fn no_medium_or_above_self_care_or_danger(ranked_candidates: &[RankedGoal]) -> b
 mod tests {
     use super::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal,
-        PlanningBudget, RankedGoal,
+        AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal, RankedGoal,
     };
     use std::collections::BTreeSet;
-    use worldwake_core::{CommodityKind, EntityId, GoalKind};
+    use worldwake_core::{CommodityKind, EntityId, GoalKind, Permille};
     use worldwake_sim::Interruptibility;
 
     fn entity(slot: u32) -> EntityId {
@@ -221,6 +218,10 @@ mod tests {
         }
     }
 
+    fn default_switch_margin() -> Permille {
+        Permille::new(100).unwrap()
+    }
+
     #[test]
     fn non_interruptible_actions_ignore_even_critical_challengers() {
         let current_goal = GoalKind::RestockCommodity {
@@ -236,7 +237,7 @@ mod tests {
             Interruptibility::NonInterruptible,
             &challengers,
             true,
-            &PlanningBudget::default(),
+            default_switch_margin(),
         );
 
         assert_eq!(decision, InterruptDecision::NoInterrupt);
@@ -257,7 +258,7 @@ mod tests {
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
             true,
-            &PlanningBudget::default(),
+            default_switch_margin(),
         );
 
         assert_eq!(
@@ -283,7 +284,7 @@ mod tests {
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
             true,
-            &PlanningBudget::default(),
+            default_switch_margin(),
         );
 
         assert_eq!(decision, InterruptDecision::NoInterrupt);
@@ -299,7 +300,7 @@ mod tests {
             Interruptibility::InterruptibleWithPenalty,
             &[ranked(current_goal, GoalPriorityClass::Medium, 100)],
             false,
-            &PlanningBudget::default(),
+            default_switch_margin(),
         );
 
         assert_eq!(
@@ -332,7 +333,7 @@ mod tests {
             Interruptibility::FreelyInterruptible,
             &challengers,
             true,
-            &PlanningBudget::default(),
+            default_switch_margin(),
         );
 
         assert_eq!(
@@ -379,7 +380,7 @@ mod tests {
                 Interruptibility::FreelyInterruptible,
                 &below_margin,
                 true,
-                &PlanningBudget::default(),
+                default_switch_margin(),
             ),
             InterruptDecision::NoInterrupt
         );
@@ -389,7 +390,7 @@ mod tests {
                 Interruptibility::FreelyInterruptible,
                 &at_margin,
                 true,
-                &PlanningBudget::default(),
+                default_switch_margin(),
             ),
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::SuperiorSameClassPlan,
@@ -436,7 +437,7 @@ mod tests {
                 Interruptibility::FreelyInterruptible,
                 &no_pressure,
                 true,
-                &PlanningBudget::default(),
+                default_switch_margin(),
             ),
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::OpportunisticLoot,
@@ -448,7 +449,7 @@ mod tests {
                 Interruptibility::FreelyInterruptible,
                 &blocked_by_hunger,
                 true,
-                &PlanningBudget::default(),
+                default_switch_margin(),
             ),
             InterruptDecision::NoInterrupt
         );
@@ -473,9 +474,52 @@ mod tests {
             Interruptibility::FreelyInterruptible,
             &challengers,
             true,
-            &PlanningBudget::default(),
+            default_switch_margin(),
         );
 
         assert_eq!(decision, InterruptDecision::NoInterrupt);
+    }
+
+    #[test]
+    fn higher_effective_margin_raises_interrupt_switch_threshold() {
+        let current_goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let runtime = runtime(current_goal, GoalPriorityClass::High);
+        let challengers = vec![
+            ranked(current_goal, GoalPriorityClass::High, 1_000),
+            ranked(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_350,
+            ),
+        ];
+
+        let conservative = evaluate_interrupt(
+            &runtime,
+            Interruptibility::FreelyInterruptible,
+            &challengers,
+            true,
+            Permille::new(400).unwrap(),
+        );
+        let permissive = evaluate_interrupt(
+            &runtime,
+            Interruptibility::FreelyInterruptible,
+            &challengers,
+            true,
+            Permille::new(300).unwrap(),
+        );
+
+        assert_eq!(conservative, InterruptDecision::NoInterrupt);
+        assert_eq!(
+            permissive,
+            InterruptDecision::InterruptForReplan {
+                trigger: InterruptTrigger::SuperiorSameClassPlan,
+            }
+        );
     }
 }
