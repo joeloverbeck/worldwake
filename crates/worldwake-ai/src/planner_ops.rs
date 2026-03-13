@@ -1,5 +1,5 @@
 use crate::{
-    GoalKey, GoalKindPlannerExt, GoalKindTag, GroundedGoal, HypotheticalEntityId,
+    GoalKey, GoalKind, GoalKindPlannerExt, GoalKindTag, GroundedGoal, HypotheticalEntityId,
     PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
@@ -258,6 +258,11 @@ pub fn apply_hypothetical_transition<'snapshot>(
     targets: &[PlanningEntityRef],
     payload_override: Option<&ActionPayload>,
 ) -> Option<HypotheticalTransition<'snapshot>> {
+    if semantics.op_kind == PlannerOpKind::Consume
+        && !consume_transition_matches_goal(&goal.key.kind, &state, targets)
+    {
+        return None;
+    }
     let authoritative_targets = authoritative_targets(targets).unwrap_or_default();
     let state = goal
         .key
@@ -274,6 +279,21 @@ pub fn apply_hypothetical_transition<'snapshot>(
             apply_pick_up_transition(state, targets, payload_override)
         }
         PlannerTransitionKind::PutDownGroundLot => apply_put_down_transition(state, targets),
+    }
+}
+
+fn consume_transition_matches_goal(
+    goal_kind: &GoalKind,
+    state: &PlanningState<'_>,
+    targets: &[PlanningEntityRef],
+) -> bool {
+    match goal_kind {
+        GoalKind::ConsumeOwnedCommodity { commodity } => targets
+            .first()
+            .copied()
+            .and_then(|target| state.item_lot_commodity_ref(target))
+            .is_some_and(|target_commodity| target_commodity == *commodity),
+        _ => true,
     }
 }
 
@@ -1150,7 +1170,7 @@ mod tests {
 
     #[test]
     fn hypothetical_transition_preserves_goal_model_fallback_for_non_pickup_ops() {
-        let (state, actor, _town, _bread) = sample_snapshot();
+        let (state, actor, _town, bread) = sample_snapshot();
         let goal = GroundedGoal {
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
@@ -1164,12 +1184,38 @@ mod tests {
             .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
             .unwrap();
 
-        let advanced = apply_hypothetical_transition(&goal, &semantics, state, &[], None)
-            .unwrap()
-            .state;
+        let advanced = apply_hypothetical_transition(
+            &goal,
+            &semantics,
+            state,
+            &[PlanningEntityRef::Authoritative(bread)],
+            None,
+        )
+        .unwrap()
+        .state;
         let thresholds = advanced.drive_thresholds(actor).unwrap();
 
         assert!(advanced.homeostatic_needs(actor).unwrap().hunger < thresholds.hunger.low());
+    }
+
+    #[test]
+    fn consume_transition_rejects_mismatched_target_commodity() {
+        let (state, _actor, _place, lot) =
+            pickup_snapshot(CommodityKind::Water, Quantity(1), LoadUnits(4));
+        let semantics = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "drink")
+            .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
+            .unwrap();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+
+        assert!(apply_hypothetical_transition(&goal, &semantics, state, &[lot], None).is_none());
     }
 
     #[test]

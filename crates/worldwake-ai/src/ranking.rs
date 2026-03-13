@@ -1009,4 +1009,57 @@ mod tests {
 
         assert_eq!(first, second);
     }
+
+    #[test]
+    fn simultaneous_critical_self_care_needs_rank_by_weighted_order() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                thresholds.hunger.critical(),
+                thresholds.thirst.critical(),
+                thresholds.fatigue.critical(),
+                pm(0),
+                pm(0),
+            ),
+        );
+        let utility = UtilityProfile {
+            hunger_weight: pm(800),
+            thirst_weight: pm(600),
+            fatigue_weight: pm(400),
+            ..UtilityProfile::default()
+        };
+
+        let ranked = rank_candidates(
+            &[
+                goal(GoalKind::Sleep),
+                goal(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Water,
+                }),
+                goal(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                }),
+            ],
+            &view,
+            agent,
+            &utility,
+            &RecipeRegistry::new(),
+        );
+
+        assert!(matches!(
+            ranked[0].grounded.key.kind,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread
+            }
+        ));
+        assert!(matches!(
+            ranked[1].grounded.key.kind,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Water
+            }
+        ));
+        assert!(matches!(ranked[2].grounded.key.kind, GoalKind::Sleep));
+    }
 }

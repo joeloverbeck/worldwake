@@ -12,7 +12,7 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 8 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b)
+  golden_ai_decisions.rs      — 9 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 4 tests (living combat + scenario 8 + replay)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 23 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 24 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -196,6 +196,17 @@ The golden suite contains 23 tests across 6 domain files. Every test uses the re
 - Relief completes at the latrine, reducing bladder pressure and materializing waste there without taking the bladder-accident path.
 **Cross-system chain**: Bladder pressure → `Relieve` goal → travel to latrine-tagged place → `toilet` action → bladder relief + waste materialization.
 
+### Scenario 7d: Three-Way Need Competition
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_three_way_need_competition`
+**Systems exercised**: Needs, AI (candidate generation, ranking, replanning), Needs actions (`eat`, `drink`, `sleep`)
+**Setup**: Single agent at Village Square with critical hunger, thirst, and fatigue. The agent carries 2 bread and 2 water, and its `UtilityProfile` weights hunger above thirst above fatigue.
+**Emergent behavior proven**:
+- The first started self-care action is `eat`, confirming that the runtime opens on the highest-weight hunger path under simultaneous local pressure.
+- The agent also consumes water in the same local scenario rather than stalling on a single need.
+- Fatigue is eventually reduced after thirst has been handled, proving the runtime keeps re-ranking instead of deadlocking.
+- The scenario exposed a planner bug: hypothetical consume transitions were commodity-blind, so a `drink` step could satisfy a bread-consume goal in planning. Tightening consume transitions to require a commodity match fixed that without adding shims.
+**Cross-system chain**: Simultaneous hunger + thirst + fatigue pressure → candidate generation → ranking picks hunger path first → interruptible local consume actions update needs → replanning handles thirst → later rest reduces fatigue.
+
 ### Scenario 7c: Hostility-Driven Living Combat
 **File**: `golden_combat.rs` | **Tests**: `golden_combat_between_living_agents`, `golden_combat_between_living_agents_replays_deterministically`
 **Systems exercised**: AI (hostility-driven candidate generation, planning), Combat (attack resolution, wounds), Conservation, deterministic replay
@@ -312,7 +323,7 @@ The golden suite contains 23 tests across 6 domain files. Every test uses the re
 | Merchant restock → travel → acquire → return stock to home market | Yes |
 | Goal switching during multi-leg travel | Yes |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
-| Multiple competing needs (hunger + thirst + fatigue) | **No** |
+| Multiple competing needs (hunger + thirst + fatigue) | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
 ---
@@ -341,11 +352,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Proves**: Agent comes under active attack pressure → `ReduceDanger` is emitted at high-or-above danger → planner selects a defensive mitigation (`defend`, reposition, or equivalent real path) → danger drops without manual action queueing.
 
 ### Tier 2: Medium Priority (score 3-5)
-
-#### P10. Three-Way Need Competition
-**Score**: Emergence=3, Bug-catching=3, Effort=2 → **Composite: 4**
-**Rationale**: No test exercises an agent with multiple simultaneous critical needs. Tests that the ranking system correctly prioritizes among hunger, thirst, and fatigue when all cross thresholds simultaneously.
-**Proves**: Agent with critical hunger + critical thirst + critical fatigue → ranking selects highest-utility need → agent addresses it first → then re-ranks.
 
 #### P11. Wash Action (Dirtiness + Water)
 **Score**: Emergence=2, Bug-catching=3, Effort=2 → **Composite: 3**
@@ -390,9 +396,8 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 | ActionDomain coverage | 7/9 full | 7/9 full | 9/9 full |
 | Needs tested | 4/5 | 4/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 13 | 14 | 16 |
+| Cross-system chains | 14 | 15 | 16 |
 
 ### Recommended Implementation Order (Tier 1)
 
 1. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
-2. **P10 (Three-way need competition)** — ranking/regression coverage without major harness expansion

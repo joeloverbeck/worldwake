@@ -415,6 +415,127 @@ fn golden_thirst_driven_acquisition() {
     );
 }
 
+#[test]
+fn golden_three_way_need_competition() {
+    let mut h = GoldenHarness::new(Seed([81; 32]));
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Nia",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(900), pm(920), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(800),
+            thirst_weight: pm(600),
+            fatigue_weight: pm(400),
+            ..UtilityProfile::default()
+        },
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Water,
+        Quantity(2),
+    );
+
+    let initial_bread = h.agent_commodity_qty(agent, CommodityKind::Bread);
+    let initial_water = h.agent_commodity_qty(agent, CommodityKind::Water);
+    let initial_fatigue = h
+        .world
+        .get_component_homeostatic_needs(agent)
+        .map(|needs| needs.fatigue)
+        .expect("seeded agent should have homeostatic needs");
+    let initial_bread_total = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+    let initial_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+
+    let mut first_action_name = None;
+    let mut bread_tick = None;
+    let mut water_tick = None;
+    let mut fatigue_relief_tick = None;
+
+    for tick in 0..100 {
+        h.step_once();
+
+        if first_action_name.is_none() {
+            first_action_name = h
+                .scheduler
+                .active_actions()
+                .values()
+                .find(|instance| instance.actor == agent)
+                .and_then(|instance| h.defs.get(instance.def_id))
+                .map(|def| def.name.clone());
+        }
+
+        let current_bread_total = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+        let current_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+        assert!(
+            current_bread_total <= initial_bread_total,
+            "Bread lots should not increase during multi-need competition: initial={initial_bread_total}, now={current_bread_total}"
+        );
+        assert!(
+            current_water_total <= initial_water_total,
+            "Water lots should not increase during multi-need competition: initial={initial_water_total}, now={current_water_total}"
+        );
+
+        if bread_tick.is_none() && h.agent_commodity_qty(agent, CommodityKind::Bread) < initial_bread {
+            bread_tick = Some(tick);
+        }
+        if water_tick.is_none() && h.agent_commodity_qty(agent, CommodityKind::Water) < initial_water {
+            water_tick = Some(tick);
+        }
+
+        let fatigue = h
+            .world
+            .get_component_homeostatic_needs(agent)
+            .map(|needs| needs.fatigue)
+            .expect("seeded agent should retain homeostatic needs");
+        if bread_tick.is_some()
+            && water_tick.is_some()
+            && fatigue_relief_tick.is_none()
+            && fatigue < initial_fatigue
+        {
+            fatigue_relief_tick = Some(tick);
+        }
+
+        if first_action_name.is_some()
+            && bread_tick.is_some()
+            && water_tick.is_some()
+            && fatigue_relief_tick.is_some()
+        {
+            break;
+        }
+    }
+
+    let first_action_name =
+        first_action_name.expect("Agent should start a local self-care action under triple pressure");
+    let bread_tick = bread_tick.expect("Agent should consume bread under simultaneous hunger pressure");
+    let water_tick = water_tick.expect("Agent should consume water during the same local scenario");
+    let fatigue_relief_tick =
+        fatigue_relief_tick.expect("Agent should eventually reduce fatigue after hunger and thirst are addressed");
+
+    assert_eq!(
+        first_action_name, "eat",
+        "The first started self-care action should follow the highest-weight hunger path"
+    );
+    assert!(
+        fatigue_relief_tick > water_tick,
+        "Fatigue relief should occur after thirst has been handled in the local scenario; bread_tick={bread_tick}, water_tick={water_tick}, fatigue_relief_tick={fatigue_relief_tick}"
+    );
+}
+
 #[allow(clippy::too_many_lines)]
 #[test]
 fn golden_bladder_relief_with_travel() {
