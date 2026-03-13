@@ -13,9 +13,10 @@ use worldwake_core::{
     build_prototype_world, prototype_place_entity, BlockedIntentMemory, BodyCostPerTick,
     CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind, ControlSource,
     DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-    ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
+    KnownRecipes, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId,
+    ResourceSource, Seed, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
@@ -204,6 +205,23 @@ pub fn give_commodity(
     txn.set_possessor(lot, agent).unwrap();
     commit_txn(txn, event_log);
     lot
+}
+
+pub fn set_queue_patience(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    queue_patience_ticks: Option<NonZeroU32>,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_facility_queue_disposition_profile(
+        agent,
+        FacilityQueueDispositionProfile {
+            queue_patience_ticks,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, event_log);
 }
 
 /// Place a workstation+resource-source entity at a location.

@@ -767,6 +767,28 @@ impl<'w> WorldTxn<'w> {
         )
     }
 
+    pub fn set_component_facility_queue_disposition_profile(
+        &mut self,
+        entity: EntityId,
+        component: crate::FacilityQueueDispositionProfile,
+    ) -> Result<(), WorldError> {
+        self.replace_simple_component(
+            entity,
+            component,
+            |world, entity| {
+                world
+                    .get_component_facility_queue_disposition_profile(entity)
+                    .cloned()
+            },
+            super::world::World::remove_component_facility_queue_disposition_profile,
+            |world, entity, component: crate::FacilityQueueDispositionProfile| {
+                world.insert_component_facility_queue_disposition_profile(entity, component)
+            },
+            ComponentKind::FacilityQueueDispositionProfile,
+            ComponentValue::FacilityQueueDispositionProfile,
+        )
+    }
+
     with_component_schema_entries!(
         select_txn_simple_set_components,
         world_txn_component_setters

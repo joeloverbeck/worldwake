@@ -217,6 +217,8 @@ fn process_agent(
         committed_actions,
     )?;
 
+    let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
+
     let ranked_candidates = refresh_runtime_for_read_phase(
         ctx.world,
         ctx.scheduler,
@@ -387,6 +389,77 @@ fn active_action_for_agent(
         .values()
         .find(|instance| instance.actor == agent)
         .cloned()
+}
+
+fn abandon_expired_facility_queues(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+) -> Result<bool, TickInputError> {
+    let limit = {
+        let view = OmniscientBeliefView::new(world);
+        let Some(limit) = view.facility_queue_patience_ticks(agent) else {
+            return Ok(false);
+        };
+        limit
+    };
+
+    abandon_expired_facility_queues_with_limit(world, event_log, agent, tick, limit)
+}
+
+fn abandon_expired_facility_queues_with_limit(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    limit: std::num::NonZeroU32,
+) -> Result<bool, TickInputError> {
+    let expired_facilities = {
+        let view = OmniscientBeliefView::new(world);
+        let Some(place) = view.effective_place(agent) else {
+            return Ok(false);
+        };
+
+        view.entities_at(place)
+            .into_iter()
+            .filter(|facility| view.has_exclusive_facility_policy(*facility))
+            .filter(|facility| {
+                view.facility_grant(*facility)
+                    .is_none_or(|grant| grant.actor != agent)
+            })
+            .filter(|facility| {
+                view.facility_queue_join_tick(*facility, agent)
+                    .is_some_and(|queued_at| tick >= queued_at + u64::from(limit.get()))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let mut changed = false;
+    for facility in expired_facilities {
+        let Some(mut queue) = world.get_component_facility_use_queue(facility).cloned() else {
+            continue;
+        };
+        if !queue.remove_actor(agent) {
+            continue;
+        }
+
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::SystemTick(tick),
+            None,
+            world.effective_place(facility),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.set_component_facility_use_queue(facility, queue)
+            .map_err(|error| TickInputError::new(error.to_string()))?;
+        let _ = txn.commit(event_log);
+        changed = true;
+    }
+
+    Ok(changed)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1253,7 +1326,8 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 #[cfg(test)]
 mod tests {
     use super::{
-        advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
+        abandon_expired_facility_queues_with_limit, advance_completed_step,
+        apply_step_materialization_bindings, committed_action_for_step,
         effective_goal_switch_margin, facility_queue_patience_exhausted,
         handle_recoverable_travel_step_blockage, persist_blocked_memory,
         plan_and_validate_next_step, refresh_runtime_for_read_phase, resolve_step_targets,
@@ -2081,6 +2155,89 @@ mod tests {
         };
 
         assert!(facility_queue_patience_exhausted(&view, agent, Tick(4)));
+    }
+
+    #[test]
+    fn abandon_expired_facility_queues_removes_actor_from_authoritative_queue() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
+
+        assert!(abandon_expired_facility_queues_with_limit(
+            &mut harness.world,
+            &mut harness.event_log,
+            harness.actor,
+            Tick(4),
+            NonZeroU32::new(3).unwrap(),
+        )
+        .unwrap());
+
+        let queue = harness
+            .world
+            .get_component_facility_use_queue(facility)
+            .expect("facility queue should remain attached");
+        assert_eq!(
+            queue.position_of(harness.actor),
+            None,
+            "Patience expiry should remove the actor from authoritative queue state"
+        );
+    }
+
+    #[test]
+    fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
+        let goal = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        });
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            ..crate::AgentDecisionRuntime::default()
+        };
+        runtime.queued_facility_intents.insert(
+            facility,
+            QueuedFacilityIntent {
+                goal_key: goal,
+                intended_action: ActionDefId(77),
+            },
+        );
+        let initial_view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
+
+        assert!(abandon_expired_facility_queues_with_limit(
+            &mut harness.world,
+            &mut harness.event_log,
+            harness.actor,
+            Tick(4),
+            NonZeroU32::new(3).unwrap(),
+        )
+        .unwrap());
+
+        let mut blocked = BlockedIntentMemory::default();
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            &harness.scheduler,
+            &harness.defs,
+            &mut runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &UtilityProfile::default(),
+                tick: Tick(4),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
+            },
+        );
+
+        assert_eq!(blocked.intents.len(), 1);
+        assert_eq!(
+            blocked.intents[0].blocking_fact,
+            BlockingFact::ExclusiveFacilityUnavailable
+        );
+        assert_eq!(blocked.intents[0].related_entity, Some(facility));
+        assert_eq!(blocked.intents[0].related_action, Some(ActionDefId(77)));
+        assert!(runtime.queued_facility_intents.is_empty());
     }
 
     #[test]

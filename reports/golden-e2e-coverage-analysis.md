@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
-  golden_production.rs        — 8 tests (scenarios 3, 3d, 4, 6b, 6c, 9 + replays)
+  golden_production.rs        — 9 tests (scenarios 3, 3d, 4, 6b, 6c, 9, 9b + replays)
   golden_combat.rs            — 7 tests (living combat + defensive mitigation + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 32 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 33 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -297,6 +297,18 @@ The golden suite contains 32 tests across 6 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes.
 **Cross-system chain**: Multi-agent hunger pressure at exclusive facility → queue_for_facility_use action → facility_queue_system promotion → granted harvest → resource depletion → queue rotation to next agent → deterministic replay + conservation.
 
+### Scenario 9b: Facility Queue Patience Timeout
+**File**: `golden_production.rs` | **Test**: `golden_facility_queue_patience_timeout`
+**Systems exercised**: Production (exclusive facility policy, resource source), AI runtime (patience expiry, blocked-facility memory, replanning), FacilityQueue, Travel, Conservation
+**Setup**: Hungry agent starts at Orchard Farm with a per-agent `FacilityQueueDispositionProfile`. Facility A is a local exclusive orchard already monopolized by another actor's long-lived grant. Facility B is a reachable alternative exclusive orchard at Village Square.
+**Emergent behavior proven**:
+- The hungry agent initially queues at the local facility A through the real `queue_for_facility_use` path.
+- When the queue does not progress within the configured patience window, the runtime removes the agent from facility A's authoritative queue instead of merely marking a dirty replan hint.
+- The queue disappearance flows through the existing blocked-facility pipeline, recording `ExclusiveFacilityUnavailable` for facility A rather than introducing a special-case alias path.
+- The agent then replans to the alternative facility B, uses it, and reduces hunger there.
+- The monopolized facility A remains unused by the waiting agent; the alternative facility B is the one whose stock decreases.
+**Cross-system chain**: Local hunger pressure → queue_for_facility_use at local exclusive facility → patience-based authoritative dequeue → blocked-facility planning memory → alternative-facility travel/queue/use → harvest/materialization → hunger relief.
+
 ---
 
 ## Part 2: Coverage Matrix
@@ -397,6 +409,7 @@ The golden suite contains 32 tests across 6 domain files. Every test uses the re
 | Active attack pressure → ReduceDanger → defensive mitigation | Yes |
 | Death after departure on multi-hop travel | Yes |
 | Multi-agent exclusive facility queue rotation → grant promotion → harvest | Yes |
+| Queue patience timeout → authoritative dequeue → alternative facility recovery | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
 ---
@@ -419,12 +432,6 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 ### Tier 2: Medium Priority (score 3-4)
 
 `P-NEW-3 Goal-Switch Margin Boundary` was removed from the golden backlog on 2026-03-13. Reassessment showed the exact boundary is already covered by focused tests in `goal_switching.rs`, `interrupts.rs`, `plan_selection.rs`, and `journey_switch_policy.rs`, while existing golden scenarios already cover behavior-level switching. A new golden arithmetic-threshold scenario would duplicate lower-layer guarantees without adding durable cross-system coverage.
-
-#### P-NEW-4. Facility Queue Patience Timeout
-**Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
-**Rationale**: Scenario 9 proves queue contention with successful rotation, but not the abandonment path. Agent joins queue for exclusive facility, queue position never improves (another agent holds grant indefinitely), agent's `queue_patience_ticks` expires → agent abandons queue → replans to alternative.
-**Proves**: `FacilityQueueDispositionProfile`, queue abandonment, replan after patience exhaustion.
-**File**: `golden_production.rs`
 
 #### P-NEW-5. Grant Expiry Before Intended Action
 **Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
@@ -483,12 +490,12 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 32 | 32 | 40 |
+| Proven tests | 33 | 33 | 39 |
 | GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 14/17 (82.4%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 22 | 22 | 26 |
+| Cross-system chains | 23 | 23 | 25 |
 
 ### Recommended Implementation Order (Tier 1)
 

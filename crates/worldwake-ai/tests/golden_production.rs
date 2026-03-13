@@ -8,8 +8,9 @@ use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, CarryCapacity, CommodityKind,
-    EntityId, EventTag, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Quantity,
-    ResourceSource, Seed, StateHash, UtilityProfile, WorkstationTag,
+    EntityId, EventTag, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MetabolismProfile, Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
+    WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -486,6 +487,183 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
     }
 }
 
+struct FacilityQueuePatienceTimeoutOutcome {
+    joined_facility_a: bool,
+    abandoned_facility_a: bool,
+    recorded_blocked_facility_a: bool,
+    used_facility_b: bool,
+    hunger_decreased: bool,
+    facility_a_final_source_quantity: Quantity,
+    facility_b_final_source_quantity: Quantity,
+}
+
+fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePatienceTimeoutOutcome {
+    let mut h = GoldenHarness::new(seed);
+    let patient = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Patient",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let monopolist = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Monopolist",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_queue_patience(&mut h.world, &mut h.event_log, patient, Some(nz(3)));
+
+    let facility_a = place_exclusive_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        nz(12),
+    );
+    let facility_b = place_exclusive_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        nz(3),
+    );
+
+    let harvest_action = h
+        .defs
+        .iter()
+        .find(|def| def.name == "harvest:Harvest Apples")
+        .map(|def| def.id)
+        .expect("harvest action should be registered");
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        let mut queue = txn
+            .get_component_facility_use_queue(facility_a)
+            .cloned()
+            .expect("exclusive facility A should have queue state");
+        queue.granted = Some(GrantedFacilityUse {
+            actor: monopolist,
+            intended_action: harvest_action,
+            granted_at: Tick(0),
+            expires_at: Tick(12),
+        });
+        txn.set_component_facility_use_queue(facility_a, queue).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let initial_hunger = h.agent_hunger(patient);
+    let mut joined_facility_a = false;
+    let mut abandoned_facility_a = false;
+    let mut recorded_blocked_facility_a = false;
+    let mut used_facility_b = false;
+    let mut hunger_decreased = false;
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, 8).unwrap();
+
+    for _ in 0..120 {
+        h.step_once();
+
+        let queue_a = h
+            .world
+            .get_component_facility_use_queue(facility_a)
+            .expect("facility A should retain queue state");
+        let queue_b = h
+            .world
+            .get_component_facility_use_queue(facility_b)
+            .expect("facility B should retain queue state");
+
+        if queue_a.position_of(patient).is_some() {
+            joined_facility_a = true;
+        }
+        if joined_facility_a
+            && queue_a.position_of(patient).is_none()
+            && queue_a
+                .granted
+                .as_ref()
+                .is_none_or(|granted| granted.actor != patient)
+        {
+            abandoned_facility_a = true;
+        }
+
+        if h.world
+            .get_component_blocked_intent_memory(patient)
+            .is_some_and(|memory| {
+                memory.intents.iter().any(|intent| {
+                    intent.blocking_fact == worldwake_core::BlockingFact::ExclusiveFacilityUnavailable
+                        && intent.related_entity == Some(facility_a)
+                        && intent.related_action == Some(harvest_action)
+                })
+            })
+        {
+            recorded_blocked_facility_a = true;
+        }
+
+        if queue_b
+            .granted
+            .as_ref()
+            .is_some_and(|granted| granted.actor == patient)
+            || h.world
+                .get_component_resource_source(facility_b)
+                .is_some_and(|source| source.available_quantity < Quantity(4))
+        {
+            used_facility_b = true;
+        }
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        assert!(
+            authoritative_apples <= 8,
+            "Authoritative apple quantity must never exceed the initial combined stock"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
+            .unwrap();
+
+        if h.agent_hunger(patient) < initial_hunger {
+            hunger_decreased = true;
+            break;
+        }
+    }
+
+    FacilityQueuePatienceTimeoutOutcome {
+        joined_facility_a,
+        abandoned_facility_a,
+        recorded_blocked_facility_a,
+        used_facility_b,
+        hunger_decreased,
+        facility_a_final_source_quantity: h
+            .world
+            .get_component_resource_source(facility_a)
+            .expect("facility A should retain resource source")
+            .available_quantity,
+        facility_b_final_source_quantity: h
+            .world
+            .get_component_resource_source(facility_b)
+            .expect("facility B should retain resource source")
+            .available_quantity,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 3: Resource Contention with Conservation
 // ---------------------------------------------------------------------------
@@ -627,6 +805,41 @@ fn golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns()
         outcome.final_source_quantity,
         Quantity(0),
         "The exclusive orchard source should be exhausted after two granted harvest turns"
+    );
+}
+
+#[test]
+fn golden_facility_queue_patience_timeout() {
+    let outcome = run_facility_queue_patience_timeout_scenario(Seed([19; 32]));
+
+    assert!(
+        outcome.joined_facility_a,
+        "Agent should initially queue at the local exclusive facility"
+    );
+    assert!(
+        outcome.abandoned_facility_a,
+        "Patience expiry should remove the agent from facility A's authoritative queue"
+    );
+    assert!(
+        outcome.recorded_blocked_facility_a,
+        "Queue abandonment should feed the existing blocked-facility memory pipeline"
+    );
+    assert!(
+        outcome.used_facility_b,
+        "After abandoning facility A, the agent should route to the alternative facility"
+    );
+    assert!(
+        outcome.hunger_decreased,
+        "The alternative facility path should still satisfy the original hunger-driven goal"
+    );
+    assert_eq!(
+        outcome.facility_a_final_source_quantity,
+        Quantity(4),
+        "The monopolized facility should remain unused while the patient abandons its queue"
+    );
+    assert!(
+        outcome.facility_b_final_source_quantity < Quantity(4),
+        "The alternative facility should be the one that actually gets used"
     );
 }
 
