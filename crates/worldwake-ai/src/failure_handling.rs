@@ -49,6 +49,7 @@ pub fn handle_plan_failure(
             &context.goal_key,
             context.failed_step,
         ),
+        related_action: None,
         observed_tick: context.current_tick,
         expires_tick,
     });
@@ -419,6 +420,7 @@ fn blocker_resolved(view: &dyn BeliefView, agent: EntityId, intent: &BlockedInte
         BlockingFact::TooExpensive => {
             view.commodity_quantity(agent, CommodityKind::Coin) > Quantity(0)
         }
+        BlockingFact::ExclusiveFacilityUnavailable | BlockingFact::Unknown => false,
         BlockingFact::SourceDepleted => {
             let Some(source) = intent.related_entity else {
                 return false;
@@ -448,7 +450,6 @@ fn blocker_resolved(view: &dyn BeliefView, agent: EntityId, intent: &BlockedInte
             view.current_attackers_of(agent).is_empty()
                 && view.visible_hostiles_for(agent).is_empty()
         }
-        BlockingFact::Unknown => false,
     }
 }
 
@@ -515,6 +516,7 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
         BlockingFact::SellerOutOfStock
         | BlockingFact::WorkstationBusy
         | BlockingFact::ReservationConflict
+        | BlockingFact::ExclusiveFacilityUnavailable
         | BlockingFact::TargetGone
         | BlockingFact::Unknown => budget.transient_block_ticks,
         BlockingFact::NoKnownPath
@@ -1131,6 +1133,7 @@ mod tests {
                     blocking_fact: BlockingFact::SellerOutOfStock,
                     related_entity: Some(seller),
                     related_place: Some(place),
+                    related_action: None,
                     observed_tick: Tick(1),
                     expires_tick: Tick(30),
                 },
@@ -1141,6 +1144,7 @@ mod tests {
                     blocking_fact: BlockingFact::WorkstationBusy,
                     related_entity: Some(workstation),
                     related_place: Some(place),
+                    related_action: None,
                     observed_tick: Tick(1),
                     expires_tick: Tick(30),
                 },
@@ -1149,6 +1153,7 @@ mod tests {
                     blocking_fact: BlockingFact::Unknown,
                     related_entity: None,
                     related_place: None,
+                    related_action: None,
                     observed_tick: Tick(1),
                     expires_tick: Tick(5),
                 },

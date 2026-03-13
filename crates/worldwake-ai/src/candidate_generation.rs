@@ -1501,6 +1501,7 @@ mod tests {
                 blocking_fact: BlockingFact::NoKnownSeller,
                 related_entity: Some(seller),
                 related_place: Some(place),
+                related_action: None,
                 observed_tick: Tick(1),
                 expires_tick: Tick(10),
             }],

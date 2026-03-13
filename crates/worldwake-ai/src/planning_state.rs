@@ -76,6 +76,17 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn is_facility_use_blocked(
+        &self,
+        facility: EntityId,
+        intended_action: ActionDefId,
+    ) -> bool {
+        self.snapshot
+            .blocked_facility_uses
+            .contains(&(facility, intended_action))
+    }
+
+    #[must_use]
     pub fn move_entity(self, entity: EntityId, destination: EntityId) -> Self {
         self.move_entity_ref(PlanningEntityRef::Authoritative(entity), destination)
     }

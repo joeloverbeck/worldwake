@@ -1,6 +1,6 @@
 //! Authoritative blocked-intent memory stored on agents.
 
-use crate::{CommodityKind, Component, EntityId, GoalKey, Tick, UniqueItemKind};
+use crate::{ActionDefId, CommodityKind, Component, EntityId, GoalKey, Tick, UniqueItemKind};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -12,7 +12,11 @@ impl BlockedIntentMemory {
     pub fn is_blocked(&self, key: &GoalKey, current_tick: Tick) -> bool {
         self.intents
             .iter()
-            .any(|intent| intent.goal_key == *key && intent.expires_tick > current_tick)
+            .any(|intent| {
+                intent.goal_key == *key
+                    && intent.expires_tick > current_tick
+                    && intent.blocks_goal_generation()
+            })
     }
 
     pub fn record(&mut self, intent: BlockedIntent) {
@@ -39,8 +43,16 @@ pub struct BlockedIntent {
     pub blocking_fact: BlockingFact,
     pub related_entity: Option<EntityId>,
     pub related_place: Option<EntityId>,
+    pub related_action: Option<ActionDefId>,
     pub observed_tick: Tick,
     pub expires_tick: Tick,
+}
+
+impl BlockedIntent {
+    #[must_use]
+    pub const fn blocks_goal_generation(&self) -> bool {
+        !matches!(self.blocking_fact, BlockingFact::ExclusiveFacilityUnavailable)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -52,6 +64,7 @@ pub enum BlockingFact {
     SourceDepleted,
     WorkstationBusy,
     ReservationConflict,
+    ExclusiveFacilityUnavailable,
     MissingTool(UniqueItemKind),
     MissingInput(CommodityKind),
     TargetGone,
@@ -66,7 +79,7 @@ mod tests {
     use crate::{
         test_utils::{entity_id, sample_blocked_intent, sample_goal_key},
         traits::Component,
-        CommodityKind, GoalKind, Tick, UniqueItemKind,
+        ActionDefId, CommodityKind, GoalKind, Tick, UniqueItemKind,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
@@ -103,6 +116,7 @@ mod tests {
                     blocking_fact: BlockingFact::DangerTooHigh,
                     related_entity: None,
                     related_place: None,
+                    related_action: None,
                     observed_tick: Tick(8),
                     expires_tick: Tick(20),
                 },
@@ -126,6 +140,7 @@ mod tests {
             blocking_fact: BlockingFact::MissingTool(UniqueItemKind::SimpleTool),
             related_entity: Some(entity_id(7, 0)),
             related_place: Some(entity_id(3, 0)),
+            related_action: Some(ActionDefId(44)),
             observed_tick: Tick(11),
             expires_tick: Tick(19),
         };
@@ -157,6 +172,7 @@ mod tests {
                     blocking_fact: BlockingFact::Unknown,
                     related_entity: None,
                     related_place: None,
+                    related_action: None,
                     observed_tick: Tick(9),
                     expires_tick: Tick(15),
                 },
@@ -181,6 +197,7 @@ mod tests {
                     blocking_fact: BlockingFact::TargetGone,
                     related_entity: Some(entity_id(10, 1)),
                     related_place: None,
+                    related_action: None,
                     observed_tick: Tick(8),
                     expires_tick: Tick(17),
                 },
@@ -189,6 +206,7 @@ mod tests {
                     blocking_fact: BlockingFact::CombatTooRisky,
                     related_entity: None,
                     related_place: Some(entity_id(12, 0)),
+                    related_action: None,
                     observed_tick: Tick(6),
                     expires_tick: Tick(30),
                 },
@@ -211,5 +229,23 @@ mod tests {
         let roundtrip: BlockedIntentMemory = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, memory);
+    }
+
+    #[test]
+    fn exclusive_facility_blockers_do_not_block_goal_generation() {
+        let key = sample_goal_key();
+        let memory = BlockedIntentMemory {
+            intents: vec![BlockedIntent {
+                goal_key: key,
+                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+                related_entity: Some(entity_id(4, 0)),
+                related_place: Some(entity_id(2, 0)),
+                related_action: Some(ActionDefId(9)),
+                observed_tick: Tick(10),
+                expires_tick: Tick(30),
+            }],
+        };
+
+        assert!(!memory.is_blocked(&key, Tick(11)));
     }
 }

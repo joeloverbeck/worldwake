@@ -48,6 +48,12 @@ pub struct MaterializationBindings {
     pub hypothetical_to_authoritative: BTreeMap<HypotheticalEntityId, EntityId>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QueuedFacilityIntent {
+    pub goal_key: GoalKey,
+    pub intended_action: ActionDefId,
+}
+
 impl MaterializationBindings {
     #[must_use]
     pub fn new() -> Self {
@@ -89,6 +95,7 @@ pub struct AgentDecisionRuntime {
     pub last_commodity_signature: Vec<(CommodityKind, Quantity)>,
     pub last_unique_item_signature: Vec<(UniqueItemKind, u32)>,
     pub last_facility_access_signature: Vec<(EntityId, bool, Option<ActionDefId>)>,
+    pub queued_facility_intents: BTreeMap<EntityId, QueuedFacilityIntent>,
     pub materialization_bindings: MaterializationBindings,
 }
 

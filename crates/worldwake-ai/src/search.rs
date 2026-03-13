@@ -234,7 +234,45 @@ fn search_candidates(
             .into_iter()
             .map(search_candidate_from_planner),
     );
+    candidates.retain(|candidate| {
+        !candidate_uses_blocked_facility_use(candidate, &node.state, registry)
+    });
     candidates
+}
+
+fn candidate_uses_blocked_facility_use(
+    candidate: &SearchCandidate,
+    state: &PlanningState<'_>,
+    registry: &ActionDefRegistry,
+) -> bool {
+    let Some(facility) = candidate.authoritative_targets.first().copied() else {
+        return false;
+    };
+    let Some(intended_action) = intended_exclusive_action(candidate, registry) else {
+        return false;
+    };
+
+    state.is_facility_use_blocked(facility, intended_action)
+}
+
+fn intended_exclusive_action(
+    candidate: &SearchCandidate,
+    registry: &ActionDefRegistry,
+) -> Option<ActionDefId> {
+    if let Some(payload) = candidate
+        .payload_override
+        .as_ref()
+        .and_then(ActionPayload::as_queue_for_facility_use)
+    {
+        return Some(payload.intended_action);
+    }
+
+    let payload = candidate
+        .payload_override
+        .as_ref()
+        .or_else(|| registry.get(candidate.def_id).map(|def| &def.payload))?;
+    matches!(payload, ActionPayload::Harvest(_) | ActionPayload::Craft(_))
+        .then_some(candidate.def_id)
 }
 
 fn search_candidates_from_affordance(
@@ -398,23 +436,25 @@ mod tests {
     };
     use crate::planner_ops::planner_only_candidates;
     use crate::{
-        build_planning_snapshot, build_semantics_table, CommodityPurpose, GoalKey, GoalKind,
-        GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
-        PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
+        build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
+        build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal,
+        PlanTerminalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget,
+        PlanningEntityRef, PlanningSnapshot, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, prototype_place_entity,
-        test_utils::sample_trade_disposition_profile, ActionDefId, BodyCostPerTick, CarryCapacity,
-        CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
-        DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
-        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
-        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, Place, PrototypePlace, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
-        TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound,
+        test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent,
+        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId,
+        EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
+        HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Permille, Place, PrototypePlace, Quantity, RecipeId, ResourceSource,
+        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, BeliefView,
@@ -2613,6 +2653,154 @@ mod tests {
             candidate.def_id == queue_def
                 && candidate.authoritative_targets == vec![fixture.orchard_row]
         }));
+    }
+
+    #[test]
+    fn search_filters_blocked_facility_use_from_queue_candidates() {
+        let fixture = build_exclusive_orchard_fixture(false);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([fixture.orchard_row]),
+            evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        };
+        let blocked = BlockedIntentMemory {
+            intents: vec![BlockedIntent {
+                goal_key: goal.key,
+                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+                related_entity: Some(fixture.orchard_row),
+                related_place: Some(fixture.orchard_farm),
+                related_action: Some(fixture.harvest_action),
+                observed_tick: Tick(2),
+                expires_tick: Tick(20),
+            }],
+        };
+        let view = OmniscientBeliefView::new(&fixture.world);
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            fixture.actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+            &blocked,
+            Tick(3),
+        );
+        let queue_def = fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_facility_use")
+            .map(|def| def.id)
+            .expect("queue action should be registered");
+
+        let candidates = search_candidates(
+            &goal,
+            &root_node(&snapshot),
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+        );
+
+        assert!(!candidates.iter().any(|candidate| {
+            candidate.def_id == queue_def
+                && candidate.authoritative_targets == vec![fixture.orchard_row]
+        }));
+    }
+
+    #[test]
+    fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
+        let mut fixture = build_exclusive_orchard_fixture(false);
+        let second_orchard = {
+            let mut txn = WorldTxn::new(
+                &mut fixture.world,
+                Tick(2),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            let orchard_row = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(orchard_row, fixture.orchard_farm)
+                .unwrap();
+            txn.set_component_workstation_marker(
+                orchard_row,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                orchard_row,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(10),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_exclusive_facility_policy(
+                orchard_row,
+                ExclusiveFacilityPolicy {
+                    grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+                .unwrap();
+            let mut event_log = EventLog::new();
+            let _ = txn.commit(&mut event_log);
+            orchard_row
+        };
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([fixture.orchard_row, second_orchard]),
+            evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        };
+        let blocked = BlockedIntentMemory {
+            intents: vec![BlockedIntent {
+                goal_key: goal.key,
+                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+                related_entity: Some(fixture.orchard_row),
+                related_place: Some(fixture.orchard_farm),
+                related_action: Some(fixture.harvest_action),
+                observed_tick: Tick(2),
+                expires_tick: Tick(20),
+            }],
+        };
+        let view = OmniscientBeliefView::new(&fixture.world);
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            fixture.actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+            &blocked,
+            Tick(3),
+        );
+
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+            &PlanningBudget::default(),
+        )
+        .expect("second facility should still yield a queue-backed plan");
+
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+        assert_eq!(
+            plan.steps[0]
+                .targets
+                .first()
+                .copied()
+                .and_then(crate::authoritative_target),
+            Some(second_orchard)
+        );
     }
 
     #[allow(clippy::too_many_lines)]

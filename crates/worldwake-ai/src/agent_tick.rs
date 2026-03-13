@@ -1,16 +1,18 @@
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::{
-    authoritative_target, build_planning_snapshot, build_semantics_table, clear_resolved_blockers,
-    evaluate_interrupt, handle_plan_failure, rank_candidates, resolve_planning_targets_with,
-    revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt,
-    InterruptDecision, JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot,
-    PlanFailureContext, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    PlanningBudget, RankedGoal,
+    authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
+    build_semantics_table, clear_resolved_blockers, evaluate_interrupt, handle_plan_failure,
+    rank_candidates, resolve_planning_targets_with, revalidate_next_step, search_plan,
+    select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision,
+    JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot, PlanFailureContext,
+    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget,
+    QueuedFacilityIntent, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, BlockedIntent, BlockedIntentMemory, CauseRef, CommodityKind, ControlSource,
-    EntityId, Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorldTxn,
+    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CauseRef, CommodityKind,
+    ControlSource, EntityId, Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec,
+    WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, BeliefView,
@@ -104,6 +106,7 @@ struct ReadPhaseContext<'a> {
     utility: &'a worldwake_core::UtilityProfile,
     tick: Tick,
     travel_horizon: u8,
+    structural_block_ticks: u32,
 }
 
 impl AutonomousController for AgentTickDriver {
@@ -214,6 +217,7 @@ fn process_agent(
             utility: &utility,
             tick,
             travel_horizon: budget.snapshot_travel_horizon,
+            structural_block_ticks: budget.structural_block_ticks,
         },
     );
     let active_action = active_action_for_agent(ctx, agent);
@@ -245,6 +249,7 @@ fn process_agent(
         runtime,
         agent,
         &ranked_candidates,
+        &blocked_memory,
         default_switch_margin,
         journey_switch_margin,
         tick,
@@ -375,6 +380,8 @@ fn refresh_runtime_for_read_phase(
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = OmniscientBeliefView::new(world);
     let before = blocked_memory.clone();
+    let queue_transition_changed =
+        handle_facility_queue_transitions(&view, runtime, blocked_memory, agent, phase.tick, phase);
     clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
     let blocked_changed_from_cleanup = *blocked_memory != before;
     let snapshot_changed =
@@ -385,6 +392,7 @@ fn refresh_runtime_for_read_phase(
         || runtime.current_plan.is_none()
         || plan_finished(runtime)
         || !replan_signals.is_empty()
+        || queue_transition_changed
         || blocked_changed_from_cleanup
         || snapshot_changed
         || queue_patience_exhausted;
@@ -404,6 +412,56 @@ fn refresh_runtime_for_read_phase(
         phase.utility,
         phase.recipe_registry,
     )
+}
+
+fn handle_facility_queue_transitions(
+    view: &dyn BeliefView,
+    runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut BlockedIntentMemory,
+    agent: EntityId,
+    tick: Tick,
+    phase: ReadPhaseContext<'_>,
+) -> bool {
+    let previous_place = runtime.last_effective_place;
+    let current_place = view.effective_place(agent);
+    let current_signature = facility_access_signature(view, agent);
+    let current_by_facility = current_signature
+        .iter()
+        .copied()
+        .map(|(facility, queued, grant)| (facility, (queued, grant)))
+        .collect::<BTreeMap<_, _>>();
+    let mut changed = false;
+
+    for (facility, was_queued, previous_grant) in runtime.last_facility_access_signature.clone() {
+        let current = current_by_facility.get(&facility).copied();
+        let now_queued = current.is_some_and(|(queued, _)| queued);
+        let now_granted = current.and_then(|(_, grant)| grant);
+
+        if was_queued && !now_queued && now_granted.is_none() {
+            if previous_place == current_place {
+                if let Some(intent) = runtime.queued_facility_intents.remove(&facility) {
+                    blocked_memory.record(BlockedIntent {
+                        goal_key: intent.goal_key,
+                        blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+                        related_entity: Some(facility),
+                        related_place: current_place,
+                        related_action: Some(intent.intended_action),
+                        observed_tick: tick,
+                        expires_tick: tick + u64::from(phase.structural_block_ticks),
+                    });
+                    changed = true;
+                }
+            } else if runtime.queued_facility_intents.remove(&facility).is_some() {
+                changed = true;
+            }
+        }
+
+        if previous_grant.is_some() && now_granted.is_none() {
+            changed |= runtime.queued_facility_intents.remove(&facility).is_some();
+        }
+    }
+
+    changed
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -435,6 +493,8 @@ fn handle_active_action_phase(
             ctx.world,
             agent,
             ranked_candidates,
+            blocked_memory,
+            tick,
             ctx.budget,
             ctx.semantics_table,
             action_defs,
@@ -517,6 +577,8 @@ fn build_candidate_plans(
     world: &worldwake_core::World,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
+    blocked_memory: &BlockedIntentMemory,
+    current_tick: Tick,
     budget: &PlanningBudget,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
@@ -527,12 +589,14 @@ fn build_candidate_plans(
         .iter()
         .take(usize::from(budget.max_candidates_to_plan))
         .map(|ranked| {
-            let snapshot = build_planning_snapshot(
+            let snapshot = build_planning_snapshot_with_blocked_facility_uses(
                 &view,
                 agent,
                 &ranked.grounded.evidence_entities,
                 &ranked.grounded.evidence_places,
                 budget.snapshot_travel_horizon,
+                blocked_memory,
+                current_tick,
             );
             let plan = search_plan(
                 &snapshot,
@@ -553,6 +617,7 @@ fn plan_and_validate_next_step(
     runtime: &mut AgentDecisionRuntime,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
+    blocked_memory: &BlockedIntentMemory,
     default_switch_margin: Permille,
     journey_switch_margin: Permille,
     tick: Tick,
@@ -568,6 +633,8 @@ fn plan_and_validate_next_step(
             world,
             agent,
             ranked_candidates,
+            blocked_memory,
+            tick,
             budget,
             semantics_table,
             action_defs,
@@ -676,6 +743,7 @@ fn reconcile_in_flight_state(
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
         return Ok(());
     };
+    reconcile_committed_facility_queue_intents(runtime, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
         return Ok(());
@@ -684,6 +752,53 @@ fn reconcile_in_flight_state(
     runtime.step_in_flight = false;
     advance_completed_step(runtime, step.op_kind, ctx.tick);
     Ok(())
+}
+
+fn reconcile_committed_facility_queue_intents(
+    runtime: &mut AgentDecisionRuntime,
+    step: &PlannedStep,
+) {
+    let Some(facility) = step.targets.first().copied().and_then(authoritative_target) else {
+        return;
+    };
+
+    match step.op_kind {
+        crate::PlannerOpKind::QueueForFacilityUse => {
+            let Some(goal_key) = runtime.current_goal.or_else(|| {
+                runtime.current_plan.as_ref().map(|plan| plan.goal)
+            }) else {
+                return;
+            };
+            let Some(payload) = step
+                .payload_override
+                .as_ref()
+                .and_then(worldwake_sim::ActionPayload::as_queue_for_facility_use)
+            else {
+                return;
+            };
+            runtime.queued_facility_intents.insert(
+                facility,
+                QueuedFacilityIntent {
+                    goal_key,
+                    intended_action: payload.intended_action,
+                },
+            );
+        }
+        crate::PlannerOpKind::Harvest | crate::PlannerOpKind::Craft => {
+            runtime.queued_facility_intents.remove(&facility);
+        }
+        crate::PlannerOpKind::Travel
+        | crate::PlannerOpKind::Sleep
+        | crate::PlannerOpKind::Relieve
+        | crate::PlannerOpKind::Trade
+        | crate::PlannerOpKind::Consume
+        | crate::PlannerOpKind::Wash
+        | crate::PlannerOpKind::Heal
+        | crate::PlannerOpKind::MoveCargo
+        | crate::PlannerOpKind::Loot
+        | crate::PlannerOpKind::Attack
+        | crate::PlannerOpKind::Defend => {}
+    }
 }
 
 fn advance_completed_step(
@@ -848,6 +963,7 @@ fn handle_recoverable_travel_step_blockage(
             blocking_fact: worldwake_core::BlockingFact::NoKnownPath,
             related_entity: None,
             related_place: blocked_leg_target(step),
+            related_action: None,
             observed_tick: tick,
             expires_tick: tick + u64::from(budget.structural_block_ticks),
         });
@@ -1116,7 +1232,7 @@ mod tests {
     use crate::{
         build_semantics_table, CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind,
         JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
+        PlannedStep, PlannerOpKind, PlanningEntityRef, QueuedFacilityIntent, RankedGoal,
     };
     use std::collections::BTreeSet;
     use std::fs;
@@ -1495,6 +1611,18 @@ mod tests {
         } else {
             queue.enqueue(actor, ActionDefId(77), Tick(queued_at)).unwrap();
         }
+        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        commit_txn(txn);
+    }
+
+    fn clear_local_queue_state(world: &mut World, facility: EntityId, tick: u64) {
+        let mut txn = new_txn(world, tick.max(1));
+        let mut queue = txn
+            .get_component_facility_use_queue(facility)
+            .cloned()
+            .unwrap_or_default();
+        queue.waiting.clear();
+        queue.granted = None;
         txn.set_component_facility_use_queue(facility, queue).unwrap();
         commit_txn(txn);
     }
@@ -1896,6 +2024,7 @@ mod tests {
                 utility: &UtilityProfile::default(),
                 tick: Tick(2),
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
         );
 
@@ -1977,6 +2106,7 @@ mod tests {
                 utility: &UtilityProfile::default(),
                 tick: Tick(2),
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
         );
         assert!(runtime.dirty);
@@ -1994,6 +2124,7 @@ mod tests {
             &mut runtime,
             harness.actor,
             std::slice::from_ref(&goal),
+            &blocked,
             PlanningBudget::default().switch_margin_permille,
             PlanningBudget::default().switch_margin_permille,
             Tick(2),
@@ -2010,6 +2141,100 @@ mod tests {
                 .op_kind,
             PlannerOpKind::Harvest
         );
+    }
+
+    #[test]
+    fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
+        let goal = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        });
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            ..crate::AgentDecisionRuntime::default()
+        };
+        runtime.queued_facility_intents.insert(
+            facility,
+            QueuedFacilityIntent {
+                goal_key: goal,
+                intended_action: ActionDefId(77),
+            },
+        );
+        let initial_view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
+
+        clear_local_queue_state(&mut harness.world, facility, 2);
+
+        let mut blocked = BlockedIntentMemory::default();
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            &mut runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &UtilityProfile::default(),
+                tick: Tick(2),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
+            },
+        );
+
+        assert_eq!(blocked.intents.len(), 1);
+        assert_eq!(
+            blocked.intents[0].blocking_fact,
+            BlockingFact::ExclusiveFacilityUnavailable
+        );
+        assert_eq!(blocked.intents[0].related_entity, Some(facility));
+        assert_eq!(blocked.intents[0].related_action, Some(ActionDefId(77)));
+        assert!(runtime.queued_facility_intents.is_empty());
+    }
+
+    #[test]
+    fn grant_loss_does_not_record_hard_blocker() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
+        let goal = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        });
+        set_local_queue_state(&mut harness.world, harness.actor, facility, 1, Some(ActionDefId(77)));
+
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            ..crate::AgentDecisionRuntime::default()
+        };
+        runtime.queued_facility_intents.insert(
+            facility,
+            QueuedFacilityIntent {
+                goal_key: goal,
+                intended_action: ActionDefId(77),
+            },
+        );
+        let initial_view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
+
+        clear_local_queue_state(&mut harness.world, facility, 2);
+
+        let mut blocked = BlockedIntentMemory::default();
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            &mut runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &UtilityProfile::default(),
+                tick: Tick(2),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
+            },
+        );
+
+        assert!(blocked.intents.is_empty());
+        assert!(runtime.queued_facility_intents.is_empty());
     }
 
     #[test]
@@ -2872,6 +3097,7 @@ mod tests {
                 utility: &utility,
                 tick: Tick(1),
                 travel_horizon: budget.snapshot_travel_horizon,
+                structural_block_ticks: budget.structural_block_ticks,
             },
         );
         let (next_step, next_step_valid) = plan_and_validate_next_step(
@@ -2879,6 +3105,7 @@ mod tests {
             runtime,
             harness.actor,
             &ranked,
+            &blocked,
             budget.switch_margin_permille,
             budget.switch_margin_permille,
             Tick(1),
@@ -2955,6 +3182,7 @@ mod tests {
                 utility: &utility,
                 tick: Tick(2),
                 travel_horizon: budget.snapshot_travel_horizon,
+                structural_block_ticks: budget.structural_block_ticks,
             },
         );
         assert!(runtime.dirty);
@@ -2963,6 +3191,7 @@ mod tests {
             runtime,
             harness.actor,
             &ranked_after_pickup,
+            &blocked,
             budget.switch_margin_permille,
             budget.switch_margin_permille,
             Tick(2),
@@ -3019,6 +3248,7 @@ mod tests {
                 utility: &utility,
                 tick: Tick(2),
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
         );
 
@@ -3068,6 +3298,7 @@ mod tests {
                 utility: &utility,
                 tick: Tick(2),
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
         );
 
@@ -3098,6 +3329,7 @@ mod tests {
                 utility: &utility,
                 tick: Tick(1),
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
         );
 
@@ -3201,6 +3433,7 @@ mod tests {
                 blocking_fact: BlockingFact::Unknown,
                 related_entity: None,
                 related_place: None,
+                related_action: None,
                 observed_tick: Tick(2),
                 expires_tick: Tick(7),
             }],

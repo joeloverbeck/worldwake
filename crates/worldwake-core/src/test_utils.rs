@@ -4,7 +4,8 @@
 //! deterministic testing.
 
 use crate::{
-    BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, CommodityPurpose,
+    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind,
+    CommodityPurpose,
     DemandMemory, DemandObservation, DemandObservationReason, EntityId,
     FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
     Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
@@ -105,6 +106,7 @@ pub fn sample_blocked_intent() -> BlockedIntent {
         blocking_fact: BlockingFact::SellerOutOfStock,
         related_entity: Some(entity_id(8, 0)),
         related_place: Some(entity_id(3, 0)),
+        related_action: Some(ActionDefId(2)),
         observed_tick: Tick(10),
         expires_tick: Tick(15),
     }

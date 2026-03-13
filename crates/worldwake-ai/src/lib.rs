@@ -27,7 +27,7 @@ pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
     AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation,
-    JourneyRuntimeSnapshot, MaterializationBindings,
+    JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
@@ -42,7 +42,9 @@ pub use planner_ops::{
     ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
     PlannerOpSemantics, PlannerTransitionKind,
 };
-pub use planning_snapshot::{build_planning_snapshot, PlanningSnapshot};
+pub use planning_snapshot::{
+    build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses, PlanningSnapshot,
+};
 pub use planning_state::{
     HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
 };

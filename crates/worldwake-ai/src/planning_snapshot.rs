@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TickRange,
-    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    ActionDefId, BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile,
+    CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag,
+    Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::BeliefView;
 
@@ -108,6 +109,7 @@ pub struct PlanningSnapshot {
     pub(crate) actor: EntityId,
     pub(crate) entities: BTreeMap<EntityId, SnapshotEntity>,
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
+    pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
 }
 
 impl PlanningSnapshot {
@@ -118,6 +120,25 @@ impl PlanningSnapshot {
         evidence_entities: &BTreeSet<EntityId>,
         evidence_places: &BTreeSet<EntityId>,
         travel_horizon: u8,
+    ) -> Self {
+        Self::build_with_blocked_facility_uses(
+            view,
+            actor,
+            evidence_entities,
+            evidence_places,
+            travel_horizon,
+            &BTreeSet::new(),
+        )
+    }
+
+    #[must_use]
+    pub fn build_with_blocked_facility_uses(
+        view: &dyn BeliefView,
+        actor: EntityId,
+        evidence_entities: &BTreeSet<EntityId>,
+        evidence_places: &BTreeSet<EntityId>,
+        travel_horizon: u8,
+        blocked_facility_uses: &BTreeSet<(EntityId, ActionDefId)>,
     ) -> Self {
         let included_places = collect_places(
             view,
@@ -143,6 +164,7 @@ impl PlanningSnapshot {
             actor,
             entities,
             places,
+            blocked_facility_uses: blocked_facility_uses.clone(),
         }
     }
 
@@ -304,6 +326,39 @@ pub fn build_planning_snapshot(
         evidence_places,
         travel_horizon,
     )
+}
+
+#[must_use]
+pub fn build_planning_snapshot_with_blocked_facility_uses(
+    view: &dyn BeliefView,
+    actor: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    evidence_places: &BTreeSet<EntityId>,
+    travel_horizon: u8,
+    blocked_memory: &BlockedIntentMemory,
+    current_tick: Tick,
+) -> PlanningSnapshot {
+    PlanningSnapshot::build_with_blocked_facility_uses(
+        view,
+        actor,
+        evidence_entities,
+        evidence_places,
+        travel_horizon,
+        &blocked_facility_uses(blocked_memory, current_tick),
+    )
+}
+
+fn blocked_facility_uses(
+    blocked_memory: &BlockedIntentMemory,
+    current_tick: Tick,
+) -> BTreeSet<(EntityId, ActionDefId)> {
+    blocked_memory
+        .intents
+        .iter()
+        .filter(|intent| intent.expires_tick > current_tick)
+        .filter(|intent| intent.blocking_fact == BlockingFact::ExclusiveFacilityUnavailable)
+        .filter_map(|intent| intent.related_entity.zip(intent.related_action))
+        .collect()
 }
 
 fn collect_places(
