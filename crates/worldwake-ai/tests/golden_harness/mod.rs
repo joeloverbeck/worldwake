@@ -327,6 +327,12 @@ impl GoldenHarness {
             .map_or(pm(0), |n| n.bladder)
     }
 
+    pub fn agent_dirtiness(&self, agent: EntityId) -> Permille {
+        self.world
+            .get_component_homeostatic_needs(agent)
+            .map_or(pm(0), |n| n.dirtiness)
+    }
+
     pub fn agent_wound_load(&self, agent: EntityId) -> u32 {
         self.world
             .get_component_wound_list(agent)

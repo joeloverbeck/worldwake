@@ -5,7 +5,7 @@
 
 ## Overview
 
-The golden e2e suite currently covers 8/17 GoalKinds, 7/9 ActionDomains, and 4/5 needs. This initiative continues closing the remaining gaps identified in `reports/golden-e2e-coverage-analysis.md`.
+The golden e2e suite currently covers 12/17 GoalKinds, 8/9 ActionDomains, and 5/5 needs. This initiative continues closing the remaining gaps identified in `reports/golden-e2e-coverage-analysis.md`.
 
 On 2026-03-12, living-agent combat was split architecturally from defensive danger mitigation: proactive hostile engagement is now its own goal family, while `ReduceDanger` remains a separate defensive gap to cover.
 
@@ -15,9 +15,9 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| GoalKind coverage | 8/17 (47.1%) | 13/17 (76.5%) | 16/17 (94.1%) |
-| ActionDomain coverage | 7/9 full | 7/9 full | 9/9 full |
-| Needs tested | 4/5 | 4/5 | 5/5 |
+| GoalKind coverage | 12/17 (70.6%) | 13/17 (76.5%) | 13/17 (76.5%) |
+| ActionDomain coverage | 8/9 full | 8/9 full | 9/9 full |
+| Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 7/12 | 7/12+ | 7/12+ |
 | Cross-system chains | 12 | 13 | 18 |
 
@@ -35,7 +35,7 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 | 008 | `archive/tickets/completed/GOLDENE2E-008-merchant-restock-return-stock.md` | Merchant Restock and Return Stock Loop | MEDIUM | Large | `golden_trade.rs` | 2 |
 | 009 | `archive/tickets/completed/GOLDENE2E-009-carry-capacity-exhaustion.md` | Carry Capacity Exhaustion | MEDIUM | Medium | `golden_production.rs` | 2 |
 | 010 | `archive/tickets/completed/GOLDENE2E-010-three-way-need-competition.md` | Three-Way Need Competition | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
-| 011 | `GOLDENE2E-011-wash-action.md` | Wash Action | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
+| 011 | `archive/tickets/completed/GOLDENE2E-011-wash-action.md` | Wash Action | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
 | 012 | `GOLDENE2E-012-death-while-traveling.md` | Death While Traveling | MEDIUM | Large | `golden_combat.rs` | 2 |
 | 013 | `GOLDENE2E-013-resource-exhaustion-race.md` | Resource Exhaustion Race | MEDIUM | Large | `golden_production.rs` | 2 |
 

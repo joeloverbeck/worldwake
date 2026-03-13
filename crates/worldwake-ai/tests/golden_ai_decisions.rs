@@ -416,6 +416,62 @@ fn golden_thirst_driven_acquisition() {
 }
 
 #[test]
+fn golden_wash_action() {
+    let mut h = GoldenHarness::new(Seed([79; 32]));
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Sana",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(800)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            dirtiness_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Water,
+        Quantity(1),
+    );
+
+    let initial_dirtiness = h.agent_dirtiness(agent);
+    let initial_water = h.agent_commodity_qty(agent, CommodityKind::Water);
+    let initial_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+    let mut washed = false;
+
+    for _tick in 0..80 {
+        h.step_once();
+
+        let current_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+        assert!(
+            current_water_total <= initial_water_total,
+            "Water lots should not increase during washing: initial={initial_water_total}, now={current_water_total}"
+        );
+
+        if h.agent_commodity_qty(agent, CommodityKind::Water) < initial_water
+            && h.agent_dirtiness(agent) < initial_dirtiness
+        {
+            washed = true;
+            break;
+        }
+    }
+
+    assert!(
+        washed,
+        "Agent should wash when dirtiness is high and water is locally controlled; initial_dirtiness={initial_dirtiness}, final_dirtiness={}, initial_water={initial_water}, final_water={}",
+        h.agent_dirtiness(agent),
+        h.agent_commodity_qty(agent, CommodityKind::Water)
+    );
+}
+
+#[test]
 fn golden_three_way_need_competition() {
     let mut h = GoldenHarness::new(Seed([81; 32]));
 

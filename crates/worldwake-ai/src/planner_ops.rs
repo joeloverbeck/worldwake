@@ -38,6 +38,7 @@ pub struct PlannerOpSemantics {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PlannerTransitionKind {
     GoalModelFallback,
+    ConsumeMatchingTargetCommodity,
     PickUpGroundLot,
     PutDownGroundLot,
 }
@@ -157,7 +158,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             op_kind,
             true,
             false,
-            PlannerTransitionKind::GoalModelFallback,
+            PlannerTransitionKind::ConsumeMatchingTargetCommodity,
             GOALS_CONSUME,
         ),
         PlannerOpKind::Sleep => base_semantics(
@@ -258,28 +259,62 @@ pub fn apply_hypothetical_transition<'snapshot>(
     targets: &[PlanningEntityRef],
     payload_override: Option<&ActionPayload>,
 ) -> Option<HypotheticalTransition<'snapshot>> {
-    if semantics.op_kind == PlannerOpKind::Consume
-        && !consume_transition_matches_goal(&goal.key.kind, &state, targets)
-    {
-        return None;
-    }
-    let authoritative_targets = authoritative_targets(targets).unwrap_or_default();
-    let state = goal
-        .key
-        .kind
-        .apply_planner_step(state, semantics.op_kind, &authoritative_targets);
-
     match semantics.transition_kind {
-        PlannerTransitionKind::GoalModelFallback => Some(HypotheticalTransition {
-            targets: targets.to_vec(),
-            state,
-            expected_materializations: Vec::new(),
-        }),
+        PlannerTransitionKind::GoalModelFallback => Some(apply_goal_model_fallback_transition(
+            goal, semantics, state, targets,
+        )),
+        PlannerTransitionKind::ConsumeMatchingTargetCommodity => {
+            apply_consume_matching_target_transition(goal, semantics, state, targets)
+        }
         PlannerTransitionKind::PickUpGroundLot => {
+            let state = apply_goal_model_fallback_state(goal, semantics, state, targets);
             apply_pick_up_transition(state, targets, payload_override)
         }
-        PlannerTransitionKind::PutDownGroundLot => apply_put_down_transition(state, targets),
+        PlannerTransitionKind::PutDownGroundLot => {
+            let state = apply_goal_model_fallback_state(goal, semantics, state, targets);
+            apply_put_down_transition(state, targets)
+        }
     }
+}
+
+fn apply_goal_model_fallback_state<'snapshot>(
+    goal: &GroundedGoal,
+    semantics: &PlannerOpSemantics,
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> PlanningState<'snapshot> {
+    let authoritative_targets = authoritative_targets(targets).unwrap_or_default();
+    goal.key
+        .kind
+        .apply_planner_step(state, semantics.op_kind, &authoritative_targets)
+}
+
+fn apply_goal_model_fallback_transition<'snapshot>(
+    goal: &GroundedGoal,
+    semantics: &PlannerOpSemantics,
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> HypotheticalTransition<'snapshot> {
+    HypotheticalTransition {
+        targets: targets.to_vec(),
+        state: apply_goal_model_fallback_state(goal, semantics, state, targets),
+        expected_materializations: Vec::new(),
+    }
+}
+
+fn apply_consume_matching_target_transition<'snapshot>(
+    goal: &GroundedGoal,
+    semantics: &PlannerOpSemantics,
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> Option<HypotheticalTransition<'snapshot>> {
+    if !consume_transition_matches_goal(&goal.key.kind, &state, targets) {
+        return None;
+    }
+
+    Some(apply_goal_model_fallback_transition(
+        goal, semantics, state, targets,
+    ))
 }
 
 fn consume_transition_matches_goal(
@@ -1084,6 +1119,14 @@ mod tests {
             PlannerOpKind::Consume
         );
         assert_eq!(
+            semantics_by_name.get("eat").unwrap().transition_kind,
+            PlannerTransitionKind::ConsumeMatchingTargetCommodity
+        );
+        assert_eq!(
+            semantics_by_name.get("drink").unwrap().transition_kind,
+            PlannerTransitionKind::ConsumeMatchingTargetCommodity
+        );
+        assert_eq!(
             semantics_by_name.get("sleep").unwrap().op_kind,
             PlannerOpKind::Sleep
         );
@@ -1189,6 +1232,36 @@ mod tests {
             &semantics,
             state,
             &[PlanningEntityRef::Authoritative(bread)],
+            None,
+        )
+        .unwrap()
+        .state;
+        let thresholds = advanced.drive_thresholds(actor).unwrap();
+
+        assert!(advanced.homeostatic_needs(actor).unwrap().hunger < thresholds.hunger.low());
+    }
+
+    #[test]
+    fn consume_transition_accepts_matching_target_commodity() {
+        let (state, actor, _place, lot) = sample_snapshot();
+        let semantics = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "eat")
+            .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
+            .unwrap();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+
+        let advanced = apply_hypothetical_transition(
+            &goal,
+            &semantics,
+            state,
+            &[PlanningEntityRef::Authoritative(lot)],
             None,
         )
         .unwrap()

@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Analysis and Gap Report
 
-**Date**: 2026-03-12 (updated 2026-03-12)
+**Date**: 2026-03-12 (updated 2026-03-13)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Document proven emergent scenarios, identify coverage gaps, and prioritize missing tests.
 
@@ -12,7 +12,7 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 9 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d)
+  golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
   golden_combat.rs            — 4 tests (living combat + scenario 8 + replay)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 24 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 25 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -186,6 +186,17 @@ The golden suite contains 24 tests across 6 domain files. Every test uses the re
 - Agent drinks the water.
 **Cross-system chain**: Metabolism system → thirst escalation → AI threshold detection → consume goal generation → drink action.
 
+### Scenario 7e: Wash Action
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_wash_action`
+**Systems exercised**: Needs, AI (candidate generation, planning), Needs actions (`wash`), Conservation
+**Setup**: Agent at Village Square with high dirtiness and 1 controlled Water. All other needs are low.
+**Emergent behavior proven**:
+- High dirtiness emits the `Wash` goal through the real AI loop.
+- Agent executes the real `wash` action without manual queueing.
+- Dirtiness decreases and Water is consumed.
+- Water lot totals never increase during the scenario.
+**Cross-system chain**: Dirtiness pressure + local Water → `Wash` goal → wash action → dirtiness relief + Water consumption.
+
 ### Scenario 7b: Bladder Relief with Travel
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_bladder_relief_with_travel`
 **Systems exercised**: Needs (bladder pressure), AI (candidate generation, planning), Travel, Needs actions (`toilet`)
@@ -246,7 +257,7 @@ The golden suite contains 24 tests across 6 domain files. Every test uses the re
 | AcquireCommodity (Treatment) | **No** | — |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
-| Wash | **No** | — |
+| Wash | Yes | 7e |
 | EngageHostile | Yes | 7c |
 | ReduceDanger | **No** | — |
 | Heal | Yes | 2c |
@@ -257,14 +268,14 @@ The golden suite contains 24 tests across 6 domain files. Every test uses the re
 | LootCorpse | Yes | 8 |
 | BuryCorpse | **No** | — |
 
-**Coverage: 11/17 GoalKinds tested (64.7%).**
+**Coverage: 12/17 GoalKinds tested (70.6%).**
 
 ### ActionDomain Coverage
 
 | Domain | Tested? | How |
 |--------|---------|-----|
 | Generic | Implicit | — |
-| Needs (eat, drink, sleep, relieve, wash) | Partial | eat + drink + sleep |
+| Needs (eat, drink, sleep, relieve, wash) | Yes | eat + drink + sleep + relieve + wash |
 | Production (harvest, craft) | Yes | 4, 5, 6b |
 | Trade | Yes | 2b |
 | Travel | Yes | 1, 3 (implicit) |
@@ -273,7 +284,7 @@ The golden suite contains 24 tests across 6 domain files. Every test uses the re
 | Care (heal) | Yes | 2c |
 | Loot | Yes | 8 |
 
-**Coverage: 7/9 domains fully tested, 2 partially.**
+**Coverage: 8/9 domains fully tested, 1 partial.**
 
 ### Needs Coverage
 
@@ -283,7 +294,7 @@ The golden suite contains 24 tests across 6 domain files. Every test uses the re
 | Thirst | Yes (7a, 3c) | Yes (3c) |
 | Fatigue | Yes (2, initial) | **No** |
 | Bladder | Yes (7b) | **No** |
-| Dirtiness | **No** | **No** |
+| Dirtiness | Yes (7e) | **No** |
 
 ### Topology Coverage
 
@@ -324,6 +335,7 @@ The golden suite contains 24 tests across 6 domain files. Every test uses the re
 | Goal switching during multi-leg travel | Yes |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multiple competing needs (hunger + thirst + fatigue) | Yes |
+| Dirtiness pressure → wash → water consumption | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
 ---
@@ -352,11 +364,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Proves**: Agent comes under active attack pressure → `ReduceDanger` is emitted at high-or-above danger → planner selects a defensive mitigation (`defend`, reposition, or equivalent real path) → danger drops without manual action queueing.
 
 ### Tier 2: Medium Priority (score 3-5)
-
-#### P11. Wash Action (Dirtiness + Water)
-**Score**: Emergence=2, Bug-catching=3, Effort=2 → **Composite: 3**
-**Rationale**: Wash goal requires dirtiness above threshold AND Water in inventory. This pathway and the dirtiness need are untested.
-**Proves**: Dirtiness crosses threshold → agent with water → Wash goal → wash action → dirtiness decreases + water consumed.
 
 #### P12. Death While Traveling
 **Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
@@ -392,11 +399,11 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| GoalKind coverage | 11/17 (64.7%) | 12/17 (70.6%) | 13/17 (76.5%) |
-| ActionDomain coverage | 7/9 full | 7/9 full | 9/9 full |
-| Needs tested | 4/5 | 4/5 | 5/5 |
+| GoalKind coverage | 12/17 (70.6%) | 13/17 (76.5%) | 13/17 (76.5%) |
+| ActionDomain coverage | 8/9 full | 8/9 full | 9/9 full |
+| Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 14 | 15 | 16 |
+| Cross-system chains | 15 | 16 | 16 |
 
 ### Recommended Implementation Order (Tier 1)
 
