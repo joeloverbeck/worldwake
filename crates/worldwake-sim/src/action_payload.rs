@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind, WorkstationTag,
+    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
+    WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -13,6 +14,7 @@ pub enum ActionPayload {
     Trade(TradeActionPayload),
     Combat(CombatActionPayload),
     Loot(LootActionPayload),
+    QueueForFacilityUse(QueueForFacilityUsePayload),
 }
 
 impl ActionPayload {
@@ -25,7 +27,8 @@ impl ActionPayload {
             | Self::Craft(_)
             | Self::Trade(_)
             | Self::Combat(_)
-            | Self::Loot(_) => None,
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
         }
     }
 
@@ -38,7 +41,8 @@ impl ActionPayload {
             | Self::Craft(_)
             | Self::Trade(_)
             | Self::Combat(_)
-            | Self::Loot(_) => None,
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
         }
     }
 
@@ -51,7 +55,8 @@ impl ActionPayload {
             | Self::Harvest(_)
             | Self::Trade(_)
             | Self::Combat(_)
-            | Self::Loot(_) => None,
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
         }
     }
 
@@ -64,7 +69,8 @@ impl ActionPayload {
             | Self::Harvest(_)
             | Self::Craft(_)
             | Self::Combat(_)
-            | Self::Loot(_) => None,
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
         }
     }
 
@@ -77,7 +83,8 @@ impl ActionPayload {
             | Self::Harvest(_)
             | Self::Craft(_)
             | Self::Trade(_)
-            | Self::Loot(_) => None,
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
         }
     }
 
@@ -90,7 +97,22 @@ impl ActionPayload {
             | Self::Harvest(_)
             | Self::Craft(_)
             | Self::Trade(_)
-            | Self::Combat(_) => None,
+            | Self::Combat(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_queue_for_facility_use(&self) -> Option<&QueueForFacilityUsePayload> {
+        match self {
+            Self::QueueForFacilityUse(payload) => Some(payload),
+            Self::None
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_) => None,
         }
     }
 }
@@ -138,15 +160,21 @@ pub struct LootActionPayload {
     pub target: EntityId,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct QueueForFacilityUsePayload {
+    pub intended_action: ActionDefId,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-        LootActionPayload, TradeActionPayload, TransportActionPayload,
+        LootActionPayload, QueueForFacilityUsePayload, TradeActionPayload,
+        TransportActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
-        CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
+        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
         WorkstationTag,
     };
 
@@ -204,6 +232,12 @@ mod tests {
         }
     }
 
+    fn sample_queue_payload() -> QueueForFacilityUsePayload {
+        QueueForFacilityUsePayload {
+            intended_action: ActionDefId(19),
+        }
+    }
+
     #[test]
     fn action_payload_satisfies_required_traits() {
         assert_traits::<ActionPayload>();
@@ -213,6 +247,7 @@ mod tests {
         assert_traits::<TradeActionPayload>();
         assert_traits::<CombatActionPayload>();
         assert_traits::<LootActionPayload>();
+        assert_traits::<QueueForFacilityUsePayload>();
     }
 
     #[test]
@@ -230,6 +265,7 @@ mod tests {
         let trade = ActionPayload::Trade(sample_trade_payload());
         let combat = ActionPayload::Combat(sample_combat_payload());
         let loot = ActionPayload::Loot(sample_loot_payload());
+        let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
         let none = ActionPayload::None;
 
         assert_eq!(
@@ -243,6 +279,7 @@ mod tests {
         assert_eq!(transport.as_trade(), None);
         assert_eq!(transport.as_combat(), None);
         assert_eq!(transport.as_loot(), None);
+        assert_eq!(transport.as_queue_for_facility_use(), None);
 
         assert_eq!(harvest.as_harvest(), Some(&sample_payload()));
         assert_eq!(harvest.as_transport(), None);
@@ -250,6 +287,7 @@ mod tests {
         assert_eq!(harvest.as_trade(), None);
         assert_eq!(harvest.as_combat(), None);
         assert_eq!(harvest.as_loot(), None);
+        assert_eq!(harvest.as_queue_for_facility_use(), None);
 
         assert_eq!(craft.as_harvest(), None);
         assert_eq!(craft.as_transport(), None);
@@ -257,6 +295,7 @@ mod tests {
         assert_eq!(craft.as_trade(), None);
         assert_eq!(craft.as_combat(), None);
         assert_eq!(craft.as_loot(), None);
+        assert_eq!(craft.as_queue_for_facility_use(), None);
 
         assert_eq!(trade.as_harvest(), None);
         assert_eq!(trade.as_transport(), None);
@@ -264,6 +303,7 @@ mod tests {
         assert_eq!(trade.as_trade(), Some(&sample_trade_payload()));
         assert_eq!(trade.as_combat(), None);
         assert_eq!(trade.as_loot(), None);
+        assert_eq!(trade.as_queue_for_facility_use(), None);
 
         assert_eq!(combat.as_harvest(), None);
         assert_eq!(combat.as_transport(), None);
@@ -271,6 +311,7 @@ mod tests {
         assert_eq!(combat.as_trade(), None);
         assert_eq!(combat.as_combat(), Some(&sample_combat_payload()));
         assert_eq!(combat.as_loot(), None);
+        assert_eq!(combat.as_queue_for_facility_use(), None);
 
         assert_eq!(loot.as_harvest(), None);
         assert_eq!(loot.as_transport(), None);
@@ -278,6 +319,15 @@ mod tests {
         assert_eq!(loot.as_trade(), None);
         assert_eq!(loot.as_combat(), None);
         assert_eq!(loot.as_loot(), Some(&sample_loot_payload()));
+        assert_eq!(loot.as_queue_for_facility_use(), None);
+
+        assert_eq!(queue.as_harvest(), None);
+        assert_eq!(queue.as_transport(), None);
+        assert_eq!(queue.as_craft(), None);
+        assert_eq!(queue.as_trade(), None);
+        assert_eq!(queue.as_combat(), None);
+        assert_eq!(queue.as_loot(), None);
+        assert_eq!(queue.as_queue_for_facility_use(), Some(&sample_queue_payload()));
 
         assert_eq!(none.as_harvest(), None);
         assert_eq!(none.as_transport(), None);
@@ -285,6 +335,7 @@ mod tests {
         assert_eq!(none.as_trade(), None);
         assert_eq!(none.as_combat(), None);
         assert_eq!(none.as_loot(), None);
+        assert_eq!(none.as_queue_for_facility_use(), None);
     }
 
     #[test]
@@ -330,6 +381,16 @@ mod tests {
     #[test]
     fn loot_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::Loot(sample_loot_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn queue_for_facility_use_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::QueueForFacilityUse(sample_queue_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

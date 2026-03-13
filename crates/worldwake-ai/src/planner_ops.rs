@@ -17,6 +17,7 @@ pub enum PlannerOpKind {
     Relieve,
     Wash,
     Trade,
+    QueueForFacilityUse,
     Harvest,
     Craft,
     MoveCargo,
@@ -71,6 +72,13 @@ const GOALS_HARVEST: &[GoalKindTag] = &[
     GoalKindTag::AcquireCommodity,
     GoalKindTag::RestockCommodity,
 ];
+const GOALS_QUEUE: &[GoalKindTag] = &[
+    GoalKindTag::ConsumeOwnedCommodity,
+    GoalKindTag::AcquireCommodity,
+    GoalKindTag::Heal,
+    GoalKindTag::ProduceCommodity,
+    GoalKindTag::RestockCommodity,
+];
 const GOALS_PRODUCE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
     GoalKindTag::AcquireCommodity,
@@ -112,6 +120,9 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Needs, "toilet", _) => Some(PlannerOpKind::Relieve),
         (ActionDomain::Needs, "wash", _) => Some(PlannerOpKind::Wash),
         (ActionDomain::Trade, "trade", _) => Some(PlannerOpKind::Trade),
+        (ActionDomain::Production, "queue_for_facility_use", ActionPayload::None) => {
+            Some(PlannerOpKind::QueueForFacilityUse)
+        }
         (ActionDomain::Production, name, ActionPayload::Harvest(_))
             if name.starts_with("harvest:") =>
         {
@@ -161,33 +172,22 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             PlannerTransitionKind::ConsumeMatchingTargetCommodity,
             GOALS_CONSUME,
         ),
-        PlannerOpKind::Sleep => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            &[GoalKindTag::Sleep],
-        ),
-        PlannerOpKind::Relieve => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            &[GoalKindTag::Relieve],
-        ),
-        PlannerOpKind::Wash => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            &[GoalKindTag::Wash],
-        ),
+        PlannerOpKind::Sleep => single_goal_semantics(op_kind, GoalKindTag::Sleep),
+        PlannerOpKind::Relieve => single_goal_semantics(op_kind, GoalKindTag::Relieve),
+        PlannerOpKind::Wash => single_goal_semantics(op_kind, GoalKindTag::Wash),
         PlannerOpKind::Trade => base_semantics(
             op_kind,
             true,
             true,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_ACQUIRE,
+        ),
+        PlannerOpKind::QueueForFacilityUse => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_QUEUE,
         ),
         PlannerOpKind::Harvest => base_semantics(
             op_kind,
@@ -243,6 +243,21 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             GOALS_DEFEND,
         ),
     }
+}
+
+fn single_goal_semantics(op_kind: PlannerOpKind, goal_kind: GoalKindTag) -> PlannerOpSemantics {
+    base_semantics(
+        op_kind,
+        true,
+        false,
+        PlannerTransitionKind::GoalModelFallback,
+        match goal_kind {
+            GoalKindTag::Sleep => &[GoalKindTag::Sleep],
+            GoalKindTag::Relieve => &[GoalKindTag::Relieve],
+            GoalKindTag::Wash => &[GoalKindTag::Wash],
+            _ => unreachable!("single_goal_semantics only supports self-care leaf goals"),
+        },
+    )
 }
 
 #[must_use]
@@ -1174,6 +1189,7 @@ mod tests {
             PlannerOpKind::Relieve,
             PlannerOpKind::Wash,
             PlannerOpKind::Trade,
+            PlannerOpKind::QueueForFacilityUse,
             PlannerOpKind::Harvest,
             PlannerOpKind::Craft,
             PlannerOpKind::MoveCargo,
@@ -1183,7 +1199,7 @@ mod tests {
             PlannerOpKind::Defend,
         ];
 
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 14);
     }
 
     #[test]
@@ -1247,6 +1263,10 @@ mod tests {
         assert_eq!(
             semantics_by_name.get("trade").unwrap().op_kind,
             PlannerOpKind::Trade
+        );
+        assert_eq!(
+            semantics_by_name.get("queue_for_facility_use").unwrap().op_kind,
+            PlannerOpKind::QueueForFacilityUse
         );
         assert_eq!(
             semantics_by_name.get("attack").unwrap().op_kind,

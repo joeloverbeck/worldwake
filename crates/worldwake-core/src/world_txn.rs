@@ -727,6 +727,42 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    pub fn set_component_exclusive_facility_policy(
+        &mut self,
+        entity: EntityId,
+        component: crate::ExclusiveFacilityPolicy,
+    ) -> Result<(), WorldError> {
+        self.replace_simple_component(
+            entity,
+            component,
+            |world, entity| world.get_component_exclusive_facility_policy(entity).cloned(),
+            super::world::World::remove_component_exclusive_facility_policy,
+            |world, entity, component: crate::ExclusiveFacilityPolicy| {
+                world.insert_component_exclusive_facility_policy(entity, component)
+            },
+            ComponentKind::ExclusiveFacilityPolicy,
+            ComponentValue::ExclusiveFacilityPolicy,
+        )
+    }
+
+    pub fn set_component_facility_use_queue(
+        &mut self,
+        entity: EntityId,
+        component: crate::FacilityUseQueue,
+    ) -> Result<(), WorldError> {
+        self.replace_simple_component(
+            entity,
+            component,
+            |world, entity| world.get_component_facility_use_queue(entity).cloned(),
+            super::world::World::remove_component_facility_use_queue,
+            |world, entity, component: crate::FacilityUseQueue| {
+                world.insert_component_facility_use_queue(entity, component)
+            },
+            ComponentKind::FacilityUseQueue,
+            ComponentValue::FacilityUseQueue,
+        )
+    }
+
     with_component_schema_entries!(
         select_txn_simple_set_components,
         world_txn_component_setters

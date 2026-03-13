@@ -5,6 +5,7 @@
 
 pub mod action_registry;
 pub mod combat;
+pub mod facility_queue_actions;
 mod inventory;
 pub mod needs;
 pub mod needs_actions;
@@ -20,6 +21,7 @@ pub use combat::{
     combat_system, register_attack_action, register_defend_action, register_heal_action,
     register_loot_action,
 };
+pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
 pub use production::resource_regeneration_system;

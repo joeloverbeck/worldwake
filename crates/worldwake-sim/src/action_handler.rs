@@ -1,9 +1,10 @@
 use crate::{
-    ActionDef, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
-    ActionStatus, BeliefView, DeterministicRng, Interruptibility, Precondition, TradeAcceptance,
+    ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstance, ActionInstanceId,
+    ActionPayload, ActionState, ActionStatus, BeliefView, DeterministicRng, Interruptibility,
+    Precondition, TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
-use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, WorldTxn};
+use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, World, WorldTxn};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommitOutcome {
@@ -57,6 +58,14 @@ pub type AffordancePayloadFn =
     fn(&ActionDef, EntityId, &[EntityId], &dyn BeliefView) -> Vec<ActionPayload>;
 pub type PayloadOverrideValidatorFn =
     fn(&ActionDef, EntityId, &[EntityId], &ActionPayload, &dyn BeliefView) -> bool;
+pub type AuthoritativePayloadValidatorFn = fn(
+    &ActionDef,
+    &ActionDefRegistry,
+    EntityId,
+    &[EntityId],
+    &ActionPayload,
+    &World,
+) -> Result<(), ActionError>;
 
 #[derive(Copy, Clone)]
 pub struct ActionHandler {
@@ -66,6 +75,7 @@ pub struct ActionHandler {
     pub on_abort: ActionAbortFn,
     pub affordance_payloads: AffordancePayloadFn,
     pub payload_override_is_valid: PayloadOverrideValidatorFn,
+    pub authoritative_payload_is_valid: AuthoritativePayloadValidatorFn,
 }
 
 impl ActionHandler {
@@ -83,6 +93,7 @@ impl ActionHandler {
             on_abort,
             affordance_payloads: no_affordance_payloads,
             payload_override_is_valid: no_payload_override_validator,
+            authoritative_payload_is_valid: no_authoritative_payload_validator,
         }
     }
 
@@ -101,6 +112,15 @@ impl ActionHandler {
         payload_override_is_valid: PayloadOverrideValidatorFn,
     ) -> Self {
         self.payload_override_is_valid = payload_override_is_valid;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_authoritative_payload_validator(
+        mut self,
+        authoritative_payload_is_valid: AuthoritativePayloadValidatorFn,
+    ) -> Self {
+        self.authoritative_payload_is_valid = authoritative_payload_is_valid;
         self
     }
 }
@@ -122,6 +142,18 @@ fn no_payload_override_validator(
     _view: &dyn BeliefView,
 ) -> bool {
     false
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn no_authoritative_payload_validator(
+    _def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    _actor: EntityId,
+    _targets: &[EntityId],
+    _payload: &ActionPayload,
+    _world: &World,
+) -> Result<(), ActionError> {
+    Ok(())
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]

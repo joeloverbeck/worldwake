@@ -52,15 +52,17 @@ pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
-    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, CommitOutcome, ExternalAbortReason,
-    InterruptReason, Materialization, MaterializationTag, PayloadEntityRole, SelfTargetActionKind,
+    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn,
+    AuthoritativePayloadValidatorFn, CommitOutcome, ExternalAbortReason, InterruptReason,
+    Materialization, MaterializationTag, PayloadEntityRole, PayloadOverrideValidatorFn,
+    SelfTargetActionKind,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
     ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-    LootActionPayload, TradeActionPayload, TransportActionPayload,
+    LootActionPayload, QueueForFacilityUsePayload, TradeActionPayload, TransportActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,

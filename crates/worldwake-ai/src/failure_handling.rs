@@ -106,6 +106,7 @@ fn derive_blocking_fact(
         }
         PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
+        | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Loot => {}
     }
@@ -236,6 +237,7 @@ fn classify_input_failure(
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Trade
+        | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
         | PlannerOpKind::MoveCargo
@@ -259,6 +261,7 @@ fn target_gone(view: &dyn BeliefView, step: &PlannedStep) -> bool {
 
     match step.op_kind {
         PlannerOpKind::Trade
+        | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Loot
         | PlannerOpKind::Harvest
@@ -474,6 +477,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash => None,
         PlannerOpKind::Consume
+        | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
         | PlannerOpKind::MoveCargo
@@ -491,6 +495,7 @@ fn related_place(
     match step.op_kind {
         PlannerOpKind::Travel => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Trade
+        | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
         | PlannerOpKind::MoveCargo => view.effective_place(agent).or(goal_key.place),

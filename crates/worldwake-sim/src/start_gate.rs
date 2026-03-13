@@ -30,24 +30,19 @@ pub fn start_action(
         .get(def.handler)
         .ok_or(ActionError::UnknownActionHandler(def.handler))?;
 
-    for constraint in &def.actor_constraints {
-        if !evaluate_constraint_authoritatively(world, constraint, affordance.actor) {
-            return Err(ActionError::ConstraintFailed(format!("{constraint:?}")));
-        }
-    }
-
-    for precondition in &def.preconditions {
-        if !evaluate_precondition_authoritatively(
-            world,
-            *precondition,
-            affordance.actor,
-            &affordance.bound_targets,
-        ) {
-            return Err(ActionError::PreconditionFailed(format!("{precondition:?}")));
-        }
-    }
+    validate_start_requirements(def, affordance, world)?;
 
     let actor_place = world.effective_place(affordance.actor);
+    let effective_payload = resolve_effective_payload(affordance, def);
+    validate_authoritative_payload(
+        handler,
+        def,
+        registry,
+        affordance.actor,
+        &affordance.bound_targets,
+        effective_payload,
+        world,
+    )?;
 
     let duration = resolve_action_duration(world, def, affordance)?;
     let mut txn = WorldTxn::new(
@@ -153,15 +148,58 @@ fn resolve_action_duration(
     def: &crate::ActionDef,
     affordance: &Affordance,
 ) -> Result<ActionDuration, ActionError> {
-    let effective_payload = affordance.payload_override.as_ref().unwrap_or(&def.payload);
     def.duration
         .resolve_for(
             world,
             affordance.actor,
             &affordance.bound_targets,
-            effective_payload,
+            affordance.payload_override.as_ref().unwrap_or(&def.payload),
         )
         .map_err(ActionError::PreconditionFailed)
+}
+
+fn resolve_effective_payload<'a>(
+    affordance: &'a Affordance,
+    def: &'a crate::ActionDef,
+) -> &'a crate::ActionPayload {
+    affordance.payload_override.as_ref().unwrap_or(&def.payload)
+}
+
+fn validate_authoritative_payload(
+    handler: &crate::ActionHandler,
+    def: &crate::ActionDef,
+    registry: &ActionDefRegistry,
+    actor: worldwake_core::EntityId,
+    targets: &[worldwake_core::EntityId],
+    payload: &crate::ActionPayload,
+    world: &worldwake_core::World,
+) -> Result<(), ActionError> {
+    (handler.authoritative_payload_is_valid)(def, registry, actor, targets, payload, world)
+}
+
+fn validate_start_requirements(
+    def: &crate::ActionDef,
+    affordance: &Affordance,
+    world: &worldwake_core::World,
+) -> Result<(), ActionError> {
+    for constraint in &def.actor_constraints {
+        if !evaluate_constraint_authoritatively(world, constraint, affordance.actor) {
+            return Err(ActionError::ConstraintFailed(format!("{constraint:?}")));
+        }
+    }
+
+    for precondition in &def.preconditions {
+        if !evaluate_precondition_authoritatively(
+            world,
+            *precondition,
+            affordance.actor,
+            &affordance.bound_targets,
+        ) {
+            return Err(ActionError::PreconditionFailed(format!("{precondition:?}")));
+        }
+    }
+
+    Ok(())
 }
 
 fn reservation_range(

@@ -1,7 +1,8 @@
 use crate::{
     register_attack_action, register_craft_actions, register_defend_action,
     register_harvest_actions, register_heal_action, register_loot_action, register_needs_actions,
-    register_trade_action, register_transport_actions, register_travel_actions,
+    register_queue_for_facility_use_action, register_trade_action, register_transport_actions,
+    register_travel_actions,
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
@@ -20,6 +21,7 @@ pub fn register_all_actions(
     recipes: &RecipeRegistry,
 ) {
     register_needs_actions(defs, handlers);
+    let _ = register_queue_for_facility_use_action(defs, handlers);
     let _ = register_harvest_actions(defs, handlers, recipes);
     let _ = register_craft_actions(defs, handlers, recipes);
     let _ = register_trade_action(defs, handlers);
@@ -61,8 +63,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         for required in [
-            "eat", "drink", "sleep", "toilet", "wash", "trade", "travel", "pick_up", "put_down",
-            "attack", "defend", "loot", "heal",
+            "eat", "drink", "sleep", "toilet", "wash", "queue_for_facility_use", "trade",
+            "travel", "pick_up", "put_down", "attack", "defend", "loot", "heal",
         ] {
             assert!(
                 action_names.contains(&required),
