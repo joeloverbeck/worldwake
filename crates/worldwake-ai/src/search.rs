@@ -605,6 +605,24 @@ mod tests {
         view.thresholds.insert(actor, DriveThresholds::default());
     }
 
+    fn insert_consumable_lot(
+        view: &mut TestBeliefView,
+        actor: EntityId,
+        lot: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+        entities_at_place: &mut Vec<EntityId>,
+    ) {
+        view.alive.insert(lot);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.effective_places.insert(lot, place);
+        view.controllable.insert((actor, lot));
+        view.lot_commodities.insert(lot, commodity);
+        view.consumable_profiles
+            .insert(lot, commodity.spec().consumable_profile.unwrap());
+        entities_at_place.push(lot);
+    }
+
     fn insert_bread_lot(
         view: &mut TestBeliefView,
         actor: EntityId,
@@ -612,16 +630,14 @@ mod tests {
         place: EntityId,
         entities_at_place: &mut Vec<EntityId>,
     ) {
-        view.alive.insert(bread);
-        view.kinds.insert(bread, EntityKind::ItemLot);
-        view.effective_places.insert(bread, place);
-        view.controllable.insert((actor, bread));
-        view.lot_commodities.insert(bread, CommodityKind::Bread);
-        view.consumable_profiles.insert(
+        insert_consumable_lot(
+            view,
+            actor,
             bread,
-            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+            place,
+            CommodityKind::Bread,
+            entities_at_place,
         );
-        entities_at_place.push(bread);
     }
 
     fn consume_goal(commodity: CommodityKind) -> GroundedGoal {
@@ -879,6 +895,42 @@ mod tests {
         assert_eq!(plan.steps.len(), 2);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Consume);
+    }
+
+    #[test]
+    fn search_returns_none_when_only_wrong_local_consumable_is_controllable() {
+        let actor = entity(1);
+        let town = entity(10);
+        let water = entity(20);
+        let mut view = TestBeliefView::default();
+        let mut town_entities = vec![actor];
+        view.alive.extend([actor, town]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        insert_consumable_lot(
+            &mut view,
+            actor,
+            water,
+            town,
+            CommodityKind::Water,
+            &mut town_entities,
+        );
+        view.entities_at.insert(town, town_entities);
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        // Protects the search_plan -> apply_hypothetical_transition seam for consume targets.
+        let plan = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+        );
+
+        assert_eq!(plan, None);
     }
 
     #[test]
