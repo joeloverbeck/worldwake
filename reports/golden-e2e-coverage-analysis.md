@@ -120,11 +120,13 @@ The golden suite contains 32 tests across 6 domain files. Every test uses the re
 **Setup**: Hungry agent starts at Bandit Camp with 1 carried water and no food. Orchard Farm remains the distant food source. Thirst starts low but escalates quickly enough to become critical only after the first travel leg completes.
 **Emergent behavior proven**:
 - Agent begins the distant hunger-driven journey and leaves Bandit Camp.
+- Runtime establishes an active journey commitment to Orchard Farm, records travel progress after leg completion, and later exposes the same commitment as suspended during the local thirst detour.
 - The penalty-interruptible travel action continues while thirst rises through the subcritical medium/high bands.
 - The agent does not consume carried water before thirst reaches the critical threshold.
 - Once thirst becomes critical, the running travel plan is interrupted and the agent consumes carried water at an intermediate concrete place on the route.
+- After the detour, the runtime reactivates the original Orchard Farm commitment, unless the detour resolves at Orchard Farm itself.
 - The journey is not treated as a rigid commitment to the original destination.
-**Cross-system chain**: Hunger pressure → distant `AcquireCommodity` travel plan → metabolism escalates thirst during journey → intermediate arrival triggers replanning → `ConsumeOwnedCommodity { Water }`.
+**Cross-system chain**: Hunger pressure → distant `AcquireCommodity` travel plan → journey commitment established → metabolism escalates thirst during journey → intermediate arrival triggers replanning and commitment suspension → `ConsumeOwnedCommodity { Water }` → commitment reactivation or arrival at destination.
 
 ### Scenario 4: Materialization Barrier Chain
 **File**: `golden_production.rs` | **Test**: `golden_materialization_barrier_chain`
@@ -412,11 +414,7 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 ### Tier 1: High Priority (score >= 5)
 
-#### P-NEW-1. Journey Commitment Suspension and Resumption
-**Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
-**Rationale**: Multi-hop travel is tested, and goal-switching during travel is tested, but journey commitment state transitions (`Active → Suspended → Active`) are not. An agent committed to distant food should suspend the journey for local sleep, then resume the original destination.
-**Proves**: `JourneyCommitmentState::Active → Suspended → Active`, `journey_last_progress_tick`, `consecutive_blocked_leg_ticks`.
-**File**: `golden_ai_decisions.rs`
+No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now covered directly in Scenario 3c.
 
 ### Tier 2: Medium Priority (score 3-4)
 
@@ -489,13 +487,13 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 32 | 33 | 42 |
+| Proven tests | 32 | 32 | 41 |
 | GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 14/17 (82.4%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 22 | 23 | 28 |
+| Cross-system chains | 22 | 22 | 27 |
 
 ### Recommended Implementation Order (Tier 1)
 
-1. **P-NEW-1 (Journey commitment suspension)** — exercises journey state machine not yet proven
+No Tier 1 backlog remains.

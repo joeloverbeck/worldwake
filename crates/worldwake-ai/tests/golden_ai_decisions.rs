@@ -3,6 +3,7 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::JourneyCommitmentState;
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, CommodityKind, HomeostaticNeeds,
     MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, TravelDispositionProfile,
@@ -875,6 +876,10 @@ fn golden_goal_switching_during_multi_leg_travel() {
     let mut drink_place = None;
     let mut resumed_to_orchard_after_drink = false;
     let mut hunger_relieved_after_drink = false;
+    let mut saw_active_commitment_to_orchard = false;
+    let mut saw_suspended_commitment_to_orchard = false;
+    let mut saw_reactivated_commitment_to_orchard = false;
+    let mut saw_progress_tick_recorded = false;
     let mut visited_places = vec![bandit_camp];
 
     for _ in 0..150 {
@@ -888,6 +893,23 @@ fn golden_goal_switching_during_multi_leg_travel() {
             .find(|instance| instance.actor == agent)
             .and_then(|instance| h.defs.get(instance.def_id))
             .map(|def| def.name.as_str());
+        let journey_snapshot = h
+            .driver
+            .journey_snapshot(&h.world, agent)
+            .expect("golden harness should retain runtime state for the seeded AI agent");
+
+        if journey_snapshot.runtime.committed_destination == Some(ORCHARD_FARM) {
+            if journey_snapshot.runtime.commitment_state == JourneyCommitmentState::Active {
+                saw_active_commitment_to_orchard = true;
+                if saw_suspended_commitment_to_orchard {
+                    saw_reactivated_commitment_to_orchard = true;
+                }
+            }
+            if journey_snapshot.runtime.commitment_state == JourneyCommitmentState::Suspended {
+                saw_suspended_commitment_to_orchard = true;
+            }
+        }
+        saw_progress_tick_recorded |= journey_snapshot.runtime.last_progress_tick.is_some();
 
         if h.world.is_in_transit(agent) || h.world.effective_place(agent) != Some(bandit_camp) {
             left_bandit_camp = true;
@@ -936,6 +958,14 @@ fn golden_goal_switching_during_multi_leg_travel() {
         "Agent should begin the distant food journey from Bandit Camp"
     );
     assert!(
+        saw_active_commitment_to_orchard,
+        "The runtime should establish an active journey commitment to Orchard Farm before the detour"
+    );
+    assert!(
+        saw_progress_tick_recorded,
+        "The runtime should record journey progress after completing at least one travel leg"
+    );
+    assert!(
         saw_travel_with_medium_thirst,
         "The penalty-interruptible travel action should continue after thirst reaches the medium band"
     );
@@ -951,6 +981,10 @@ fn golden_goal_switching_during_multi_leg_travel() {
         thirst_reached_critical_before_drink,
         "The water detour should only happen after thirst reaches the critical band"
     );
+    assert!(
+        saw_suspended_commitment_to_orchard,
+        "The runtime should preserve but suspend the Orchard Farm commitment while the local thirst detour is active"
+    );
     let drink_place = drink_place
         .expect("Agent should consume carried water after departing on the food journey");
     assert_ne!(
@@ -960,6 +994,10 @@ fn golden_goal_switching_during_multi_leg_travel() {
     assert!(
         resumed_to_orchard_after_drink || drink_place == ORCHARD_FARM,
         "Agent should either resume the original food journey after drinking or already be at the destination when the local thirst detour resolves; visited={visited_places:?}, drink_place={drink_place:?}"
+    );
+    assert!(
+        saw_reactivated_commitment_to_orchard || drink_place == ORCHARD_FARM,
+        "The runtime should reactivate the original Orchard Farm commitment after the detour, unless the detour resolves at Orchard Farm itself; visited={visited_places:?}, drink_place={drink_place:?}"
     );
     assert!(
         hunger_relieved_after_drink,
