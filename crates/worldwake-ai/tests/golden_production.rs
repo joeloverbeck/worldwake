@@ -7,10 +7,10 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, CarryCapacity, CommodityKind,
-    EntityId, EventTag, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
-    WorkstationTag,
+    verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact,
+    CarryCapacity, CommodityKind, EntityId, EventTag, GrantedFacilityUse, HomeostaticNeeds,
+    KnownRecipes, LoadUnits, MetabolismProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
+    UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -215,6 +215,197 @@ fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash
         hash_world(&h.world).unwrap(),
         hash_event_log(&h.event_log).unwrap(),
     )
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum MaterializedOutputTheftMilestone {
+    BreadMaterialized,
+    ThiefAteCraftedBreadBeforeOrchardUse,
+    CrafterRecordedMissingBreadBlocker,
+    CrafterRecoveredViaOrchard,
+}
+
+struct MaterializedOutputTheftOutcome {
+    milestones: BTreeSet<MaterializedOutputTheftMilestone>,
+}
+
+impl MaterializedOutputTheftOutcome {
+    fn has(&self, milestone: MaterializedOutputTheftMilestone) -> bool {
+        self.milestones.contains(&milestone)
+    }
+}
+
+struct MaterializedOutputTheftScenario {
+    harness: GoldenHarness,
+    thief: EntityId,
+    crafter: EntityId,
+    orchard: EntityId,
+    initial_thief_hunger: worldwake_core::Permille,
+    initial_crafter_hunger: worldwake_core::Permille,
+    initial_orchard_quantity: Quantity,
+}
+
+fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputTheftScenario {
+    let mut harness = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    let apple_recipe = harness
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .map(|(id, _)| id)
+        .expect("harvest apples recipe should exist");
+    let bread_recipe = harness
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .expect("bake bread recipe should exist");
+    let thief = seed_agent_with_recipes(
+        &mut harness.world,
+        &mut harness.event_log,
+        "Thief",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let crafter = seed_agent_with_recipes(
+        &mut harness.world,
+        &mut harness.event_log,
+        "Crafter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::with([apple_recipe, bread_recipe]),
+    );
+    give_commodity(
+        &mut harness.world,
+        &mut harness.event_log,
+        crafter,
+        VILLAGE_SQUARE,
+        CommodityKind::Firewood,
+        Quantity(1),
+    );
+    place_workstation(
+        &mut harness.world,
+        &mut harness.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Mill,
+    );
+    let orchard = place_workstation_with_source(
+        &mut harness.world,
+        &mut harness.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(20),
+            max_quantity: Quantity(20),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    MaterializedOutputTheftScenario {
+        initial_thief_hunger: harness.agent_hunger(thief),
+        initial_crafter_hunger: harness.agent_hunger(crafter),
+        initial_orchard_quantity: harness
+            .world
+            .get_component_resource_source(orchard)
+            .expect("orchard workstation should retain resource source")
+            .available_quantity,
+        harness,
+        thief,
+        crafter,
+        orchard,
+    }
+}
+
+fn record_materialized_output_theft_milestones(
+    scenario: &MaterializedOutputTheftScenario,
+    milestones: &mut BTreeSet<MaterializedOutputTheftMilestone>,
+) {
+    let orchard_quantity = scenario
+        .harness
+        .world
+        .get_component_resource_source(scenario.orchard)
+        .expect("orchard workstation should retain resource source")
+        .available_quantity;
+
+    if total_live_lot_quantity(&scenario.harness.world, CommodityKind::Bread) > 0 {
+        milestones.insert(MaterializedOutputTheftMilestone::BreadMaterialized);
+    }
+
+    if milestones.contains(&MaterializedOutputTheftMilestone::BreadMaterialized)
+        && scenario.harness.agent_hunger(scenario.thief) < scenario.initial_thief_hunger
+        && orchard_quantity == scenario.initial_orchard_quantity
+    {
+        milestones.insert(
+            MaterializedOutputTheftMilestone::ThiefAteCraftedBreadBeforeOrchardUse,
+        );
+    }
+
+    if scenario
+        .harness
+        .world
+        .get_component_blocked_intent_memory(scenario.crafter)
+        .is_some_and(|memory| {
+            memory.intents.iter().any(|intent| {
+                intent.blocking_fact == BlockingFact::MissingInput(CommodityKind::Bread)
+            })
+        })
+    {
+        milestones.insert(MaterializedOutputTheftMilestone::CrafterRecordedMissingBreadBlocker);
+    }
+
+    if orchard_quantity < scenario.initial_orchard_quantity
+        && scenario.harness.agent_hunger(scenario.crafter) < scenario.initial_crafter_hunger
+    {
+        milestones.insert(MaterializedOutputTheftMilestone::CrafterRecoveredViaOrchard);
+    }
+}
+
+fn assert_materialized_output_theft_conservation(world: &worldwake_core::World) {
+    let live_bread = total_live_lot_quantity(world, CommodityKind::Bread);
+    let live_apples = total_live_lot_quantity(world, CommodityKind::Apple);
+    let authoritative_bread = total_authoritative_commodity_quantity(world, CommodityKind::Bread);
+    let authoritative_apples = total_authoritative_commodity_quantity(world, CommodityKind::Apple);
+    let authoritative_firewood =
+        total_authoritative_commodity_quantity(world, CommodityKind::Firewood);
+
+    assert!(
+        authoritative_bread <= 1,
+        "Bread authority should never exceed the single crafted output"
+    );
+    assert!(
+        authoritative_firewood <= 1,
+        "Firewood authority should never exceed the single seeded input"
+    );
+    assert!(
+        authoritative_apples <= 20,
+        "Apple authority should never exceed the orchard source stock"
+    );
+    verify_live_lot_conservation(world, CommodityKind::Bread, live_bread).unwrap();
+    verify_authoritative_conservation(world, CommodityKind::Bread, authoritative_bread).unwrap();
+    verify_live_lot_conservation(world, CommodityKind::Apple, live_apples).unwrap();
+    verify_authoritative_conservation(world, CommodityKind::Apple, authoritative_apples).unwrap();
+    verify_authoritative_conservation(world, CommodityKind::Firewood, authoritative_firewood)
+        .unwrap();
+}
+
+fn run_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputTheftOutcome {
+    let mut scenario = setup_materialized_output_theft_scenario(seed);
+    let mut milestones = BTreeSet::new();
+
+    for _ in 0..160 {
+        scenario.harness.step_once();
+        record_materialized_output_theft_milestones(&scenario, &mut milestones);
+        assert_materialized_output_theft_conservation(&scenario.harness.world);
+        if milestones.contains(&MaterializedOutputTheftMilestone::CrafterRecoveredViaOrchard) {
+            break;
+        }
+    }
+
+    MaterializedOutputTheftOutcome { milestones }
 }
 
 struct ResourceExhaustionRaceOutcome {
@@ -1039,6 +1230,28 @@ fn golden_grant_expiry_before_intended_action() {
     assert!(
         outcome.final_source_quantity < Quantity(4),
         "The exclusive orchard should eventually be used after the recovered re-queue path"
+    );
+}
+
+#[test]
+fn golden_materialized_output_theft_forces_replan() {
+    let outcome = run_materialized_output_theft_scenario(Seed([21; 32]));
+
+    assert!(
+        outcome.has(MaterializedOutputTheftMilestone::BreadMaterialized),
+        "Crafter should first complete the local bread craft and materialize a ground lot"
+    );
+    assert!(
+        outcome.has(MaterializedOutputTheftMilestone::ThiefAteCraftedBreadBeforeOrchardUse),
+        "A co-located hungry agent should opportunistically consume the crafted bread before any orchard fallback is used"
+    );
+    assert!(
+        !outcome.has(MaterializedOutputTheftMilestone::CrafterRecordedMissingBreadBlocker),
+        "Craft completion should end at a progress barrier, so losing the unowned output before the next plan is adopted should trigger fresh replanning rather than a stale MissingInput(Bread) blocker"
+    );
+    assert!(
+        outcome.has(MaterializedOutputTheftMilestone::CrafterRecoveredViaOrchard),
+        "After the theft invalidates the local follow-up plan, the crafter should recover by replanning to the orchard path"
     );
 }
 

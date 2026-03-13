@@ -12,6 +12,9 @@ Phase 3: Information & Politics
 ## Dependencies
 - E14 (perception and belief system)
 
+## Dependency Note
+Inventory-audit discovery is only as good as the ownership model underneath it. Produced goods need explicit owner/claim state so the system can distinguish theft from depletion of unowned goods. See [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md).
+
 ## Deliverables
 
 ### Witness System

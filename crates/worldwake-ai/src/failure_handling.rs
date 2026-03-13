@@ -537,8 +537,8 @@ mod tests {
         PlanFailureContext,
     };
     use crate::{
-        AgentDecisionRuntime, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlanningBudget, PlanningEntityRef,
+        AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
+        PlannerOpKind, PlanningBudget, PlanningEntityRef,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -858,6 +858,18 @@ mod tests {
         }
     }
 
+    fn hypothetical_consume_step() -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(5),
+            targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(9))],
+            payload_override: None,
+            op_kind: PlannerOpKind::Consume,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
     fn runtime_with_plan(goal: GoalKey, step: PlannedStep) -> AgentDecisionRuntime {
         AgentDecisionRuntime {
             current_goal: Some(goal),
@@ -983,6 +995,26 @@ mod tests {
             None,
         );
         assert_eq!(fact, BlockingFact::TargetGone);
+    }
+
+    #[test]
+    fn derive_blocking_fact_treats_hypothetical_consume_loss_as_missing_input() {
+        let agent = entity(1);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+
+        let fact = derive_blocking_fact(
+            &view,
+            agent,
+            &GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            &hypothetical_consume_step(),
+            None,
+        );
+
+        assert_eq!(fact, BlockingFact::MissingInput(CommodityKind::Bread));
     }
 
     #[test]

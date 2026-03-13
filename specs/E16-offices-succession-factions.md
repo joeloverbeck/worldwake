@@ -12,6 +12,9 @@ Phase 3: Information & Politics
 ## Dependencies
 - E14 (beliefs needed for loyalty decisions and succession awareness)
 
+## Dependency Note
+Institutional producers need a way to own the goods they produce through ordinary world relations. Workshop/source output claim policy should be established before office- or faction-owned facilities are expected to accumulate assets cleanly. See [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md).
+
 ## Deliverables
 
 ### Office Component

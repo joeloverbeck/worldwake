@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
-  golden_production.rs        — 10 tests (scenarios 3, 3d, 4, 6b, 6c, 9, 9b, 9c + replays)
+  golden_production.rs        — 11 tests (scenarios 3, 3d, 4, 6b, 6c, 6d, 9, 9b, 9c + replays)
   golden_combat.rs            — 7 tests (living combat + defensive mitigation + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 34 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 35 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -181,6 +181,17 @@ The golden suite contains 34 tests across 6 domain files. Every test uses the re
 - Conservation checkpoints hold: 10 authoritative apples after harvest, then 9 after one apple is consumed.
 - Deterministic replay: two runs with the same seed produce identical hashes.
 **Cross-system chain**: Harvest materialization → replan → constrained pick-up split → consume.
+
+### Scenario 6d: Materialized Output Theft Forces Fresh Replanning
+**File**: `golden_production.rs` | **Test**: `golden_materialized_output_theft_forces_replan`
+**Systems exercised**: Production (craft), Needs, AI runtime (progress barriers, fresh replanning), Travel, Conservation
+**Setup**: Two hungry agents share Village Square. Crafter has firewood, knows `Bake Bread` and `Harvest Apples`, and has a local mill. Thief has no recipes and waits for local food. Orchard Farm provides the distant fallback food source.
+**Emergent behavior proven**:
+- Crafter crafts bread locally and the output materializes as an unowned ground lot.
+- Thief opportunistically consumes that bread before Orchard Farm stock is touched, proving the local crafted output was actually contested.
+- Crafter does not carry a stale bread-follow-up plan across the craft progress barrier and therefore does not record a stale `MissingInput(Bread)` blocker for this case.
+- Crafter instead replans from updated authoritative state, travels to Orchard Farm, and recovers hunger there.
+**Cross-system chain**: Local craft/materialization → opportunistic theft by another agent → progress-barrier replan from fresh state → distant harvest fallback → hunger relief.
 
 ### Scenario 7: Deprivation Cascade
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_deprivation_cascade`
@@ -422,6 +433,7 @@ The golden suite contains 34 tests across 6 domain files. Every test uses the re
 | Death after departure on multi-hop travel | Yes |
 | Multi-agent exclusive facility queue rotation → grant promotion → harvest | Yes |
 | Queue patience timeout → authoritative dequeue → alternative facility recovery | Yes |
+| Materialized output theft → fresh replanning to distant fallback | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
 ---
@@ -444,12 +456,6 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 ### Tier 2: Medium Priority (score 3-4)
 
 `P-NEW-3 Goal-Switch Margin Boundary` was removed from the golden backlog on 2026-03-13. Reassessment showed the exact boundary is already covered by focused tests in `goal_switching.rs`, `interrupts.rs`, `plan_selection.rs`, and `journey_switch_policy.rs`, while existing golden scenarios already cover behavior-level switching. A new golden arithmetic-threshold scenario would duplicate lower-layer guarantees without adding durable cross-system coverage.
-
-#### P-NEW-6. Materialization Binding Failure
-**Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
-**Rationale**: Scenario 4 proves the happy-path materialization barrier chain. This gap tests what happens when the chain breaks: agent plans craft → consume, but between craft completion and consume step, another agent picks up the crafted item. Materialization binding can't resolve → plan failure → blocked intent.
-**Proves**: `MaterializationBindings` resolution failure, `handle_plan_failure()`, blocked intent creation.
-**File**: `golden_production.rs`
 
 #### P-NEW-8. Blocked Facility Use Avoidance in Planner
 **Score**: Emergence=2, Bug-catching=4, Effort=2 → **Composite: 4**
@@ -496,12 +502,12 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 34 | 34 | 39 |
-| GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 14/17 (82.4%) |
+| Proven tests | 35 | 35 | 42 |
+| GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 15/17 (88.2%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 24 | 24 | 25 |
+| Cross-system chains | 25 | 25 | 25+ |
 
 ### Recommended Implementation Order (Tier 1)
 

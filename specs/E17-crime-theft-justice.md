@@ -12,6 +12,9 @@ Phase 3: Information & Politics (final epic before Phase 3 gate)
 ## Dependencies
 - E15 (rumor and discovery system for crime detection)
 
+## Dependency Note
+This epic assumes ownership-aware produced goods already exist. Unauthorized taking of owned-but-unpossessed goods must not remain a lawful `pick_up` path, or theft will be bypassed. See [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md).
+
 ## Deliverables
 
 ### Theft Action
