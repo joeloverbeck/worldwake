@@ -418,11 +418,7 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 ### Tier 2: Medium Priority (score 3-4)
 
-#### P-NEW-3. Goal-Switch Margin Boundary
-**Score**: Emergence=2, Bug-catching=4, Effort=2 → **Composite: 4**
-**Rationale**: Goal-switching occurs in several scenarios but the exact margin threshold math is never directly exercised. A challenger motive just below margin → no switch; challenger exceeds margin → switch occurs.
-**Proves**: `compare_goal_switch` with exact margin math using `Permille`.
-**File**: `golden_ai_decisions.rs`
+`P-NEW-3 Goal-Switch Margin Boundary` was removed from the golden backlog on 2026-03-13. Reassessment showed the exact boundary is already covered by focused tests in `goal_switching.rs`, `interrupts.rs`, `plan_selection.rs`, and `journey_switch_policy.rs`, while existing golden scenarios already cover behavior-level switching. A new golden arithmetic-threshold scenario would duplicate lower-layer guarantees without adding durable cross-system coverage.
 
 #### P-NEW-4. Facility Queue Patience Timeout
 **Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
@@ -487,12 +483,12 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 32 | 32 | 41 |
+| Proven tests | 32 | 32 | 40 |
 | GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 14/17 (82.4%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 22 | 22 | 27 |
+| Cross-system chains | 22 | 22 | 26 |
 
 ### Recommended Implementation Order (Tier 1)
 
