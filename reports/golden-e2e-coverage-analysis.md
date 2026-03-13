@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
-  golden_production.rs        — 13 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c + replays)
+  golden_production.rs        — 15 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
   golden_combat.rs            — 8 tests (living combat + seed sensitivity + defensive mitigation + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 38 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 40 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -346,6 +346,18 @@ The golden suite contains 38 tests across 6 domain files. Every test uses the re
 - No engine-specific grant recovery shim was required; the existing queue/grant transition runtime already handles the dirty/replan path cleanly.
 **Cross-system chain**: Hunger pressure → queue_for_facility_use → queue promotion → metabolism-driven thirst spike → local water detour → authoritative grant expiry → normal queue recovery/promotion → harvest/materialization → hunger relief.
 
+### Scenario 9d: Dead Agent Pruned from Facility Queue
+**File**: `golden_production.rs` | **Tests**: `golden_dead_agent_pruned_from_facility_queue`, `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`
+**Systems exercised**: Needs (deprivation exposure, metabolism), Combat (fatal deprivation wound resolution), Production (exclusive facility policy, resource source), FacilityQueue (authoritative prune + later promotion), deterministic replay
+**Setup**: Exclusive OrchardRow workstation at Orchard Farm starts with an existing grant holder blocking access. A fragile hungry waiter queues first with pre-existing starvation damage, and a second healthy hungry waiter queues behind them for the same orchard.
+**Emergent behavior proven**:
+- Both hungry waiters enter the real exclusive-facility queue while the initial grant blocks access.
+- The fragile waiter dies from deprivation while still queued and never receives a grant.
+- `prune_invalid_waiters()` removes the dead waiter from the authoritative queue without any AI-side death/queue shim.
+- The next living waiter becomes queue head and later receives a real `QueueGrantPromoted` event.
+- Two runs with the same seed produce identical world and event-log hashes for the death-in-queue scenario.
+**Cross-system chain**: Hunger pressure under blocked exclusive access → queue_for_facility_use → deprivation death while queued → authoritative queue prune → next-waiter promotion → deterministic replay.
+
 ---
 
 ## Part 2: Coverage Matrix
@@ -447,6 +459,7 @@ The golden suite contains 38 tests across 6 domain files. Every test uses the re
 | Death after departure on multi-hop travel | Yes |
 | Multi-agent exclusive facility queue rotation → grant promotion → harvest | Yes |
 | Queue patience timeout → authoritative dequeue → alternative facility recovery | Yes |
+| Death while waiting in exclusive facility queue → authoritative prune → next-waiter promotion | Yes |
 | Materialized output theft → fresh replanning to distant fallback | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
@@ -477,12 +490,6 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 ### Tier 3: Lower Priority (score <= 2)
 
-#### P-NEW-9. Dead Agent Pruned from Facility Queue
-**Score**: Emergence=2, Bug-catching=3, Effort=3 → **Composite: 2**
-**Rationale**: Agent dies while waiting in facility queue. `prune_invalid_waiters()` removes them. Next agent in line gets promoted.
-**Proves**: `prune_invalid_waiters()`, queue position advancement after death.
-**File**: `golden_combat.rs`
-
 #### P18. Save/Load Round-Trip Under AI
 **Score**: Emergence=2, Bug-catching=3, Effort=3 → **Composite: 2**
 **Rationale**: Save/load is tested in worldwake-sim but not with the full AI loop. Saving mid-simulation, loading, and continuing should produce consistent outcomes.
@@ -493,18 +500,20 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 **Rationale**: BuryCorpse requires a corpse + burial site. This is a complete feature that's untested, but it's also a simpler action with fewer cross-system interactions.
 **File**: `golden_combat.rs`
 
+`P-NEW-9 Dead Agent Pruned from Facility Queue` was removed from the golden backlog on 2026-03-13. The ticket assumptions were corrected first: the scenario belongs in `golden_production.rs` with the existing exclusive-facility queue coverage, not in `golden_combat.rs`. Scenario 9d now proves deprivation death while queued, authoritative queue pruning, and next-waiter promotion through the real AI loop.
+
 ---
 
 ## Part 4: Summary Statistics
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 38 | 38 | 41 |
+| Proven tests | 40 | 40 | 42 |
 | GoalKind coverage | 14/17 (82.4%) | 14/17 (82.4%) | 15/17 (88.2%) |
 | ActionDomain coverage | 10/10 full | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 26 | 26 | 26+ |
+| Cross-system chains | 27 | 27 | 27+ |
 
 ### Recommended Implementation Order (Tier 1)
 

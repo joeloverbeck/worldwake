@@ -8,9 +8,10 @@ use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact,
-    CarryCapacity, CommodityKind, EntityId, EventTag, GrantedFacilityUse, HomeostaticNeeds,
-    KnownRecipes, LoadUnits, MetabolismProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag,
+    BodyPart, CarryCapacity, CombatProfile, CommodityKind, DeprivationExposure,
+    DeprivationKind, EntityId, EventTag, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes,
+    LoadUnits, MetabolismProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
+    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 
 // ---------------------------------------------------------------------------
@@ -635,6 +636,19 @@ struct ExclusiveQueueContentionOutcome {
     final_source_quantity: Quantity,
 }
 
+#[allow(clippy::struct_excessive_bools)]
+struct DeadAgentPrunedFromFacilityQueueOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    saw_fragile_join_queue: bool,
+    saw_healthy_join_behind_fragile: bool,
+    fragile_died: bool,
+    fragile_never_granted: bool,
+    fragile_pruned_after_death: bool,
+    healthy_became_head_after_prune: bool,
+    healthy_promoted: bool,
+}
+
 fn seed_exclusive_orchard_contenders(h: &mut GoldenHarness) -> [EntityId; 4] {
     [
         seed_agent(
@@ -674,6 +688,76 @@ fn seed_exclusive_orchard_contenders(h: &mut GoldenHarness) -> [EntityId; 4] {
             UtilityProfile::default(),
         ),
     ]
+}
+
+fn seed_fragile_queued_waiter(h: &mut GoldenHarness) -> EntityId {
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bram",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::new(
+            pm(25),
+            pm(3),
+            pm(2),
+            pm(4),
+            pm(1),
+            pm(20),
+            nz(3),
+            nz(240),
+            nz(120),
+            nz(40),
+            nz(8),
+            nz(12),
+        ),
+        UtilityProfile::default(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_combat_profile(
+        agent,
+        CombatProfile::new(
+            pm(200),
+            pm(150),
+            pm(500),
+            pm(500),
+            pm(80),
+            pm(25),
+            pm(18),
+            pm(120),
+            pm(35),
+            nz(6),
+        ),
+    )
+    .unwrap();
+    txn.set_component_wound_list(
+        agent,
+        WoundList {
+            wounds: vec![Wound {
+                id: WoundId(1),
+                body_part: BodyPart::Torso,
+                cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                severity: pm(100),
+                inflicted_at: Tick(0),
+                bleed_rate_per_tick: pm(0),
+            }],
+        },
+    )
+    .unwrap();
+    txn.set_component_deprivation_exposure(
+        agent,
+        DeprivationExposure {
+            hunger_critical_ticks: 0,
+            thirst_critical_ticks: 0,
+            fatigue_critical_ticks: 0,
+            bladder_critical_ticks: 0,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    agent
 }
 
 fn record_new_promotions(
@@ -777,6 +861,142 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
             .get_component_resource_source(workstation)
             .expect("exclusive workstation should retain resource source")
             .available_quantity,
+    }
+}
+
+fn run_dead_agent_pruned_from_facility_queue_scenario(
+    seed: Seed,
+) -> DeadAgentPrunedFromFacilityQueueOutcome {
+    let mut h = GoldenHarness::new(seed);
+    let grant_holder = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Aster",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let fragile = seed_fragile_queued_waiter(&mut h);
+    let healthy = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Cara",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let workstation = place_exclusive_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        nz(12),
+    );
+
+    let harvest_action = h
+        .defs
+        .iter()
+        .find(|def| def.name == "harvest:Harvest Apples")
+        .map(|def| def.id)
+        .expect("harvest action should be registered");
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        let mut queue = txn
+            .get_component_facility_use_queue(workstation)
+            .cloned()
+            .expect("exclusive workstation should have queue state");
+        queue.granted = Some(GrantedFacilityUse {
+            actor: grant_holder,
+            intended_action: harvest_action,
+            granted_at: Tick(0),
+            expires_at: Tick(12),
+        });
+        txn.set_component_facility_use_queue(workstation, queue).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let mut saw_fragile_join_queue = false;
+    let mut saw_healthy_join_behind_fragile = false;
+    let mut fragile_died = false;
+    let mut saw_fragile_granted = false;
+    let mut fragile_pruned_after_death = false;
+    let mut healthy_became_head_after_prune = false;
+    let mut healthy_promoted = false;
+    let mut previous_promotions = 0usize;
+    let mut promoted_actors = Vec::new();
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, 4).unwrap();
+
+    for _ in 0..80 {
+        h.step_once();
+
+        let queue = h
+            .world
+            .get_component_facility_use_queue(workstation)
+            .expect("exclusive workstation should retain queue state");
+        let fragile_position = queue.position_of(fragile);
+        let healthy_position = queue.position_of(healthy);
+
+        saw_fragile_join_queue |= fragile_position.is_some();
+        saw_healthy_join_behind_fragile |= matches!(
+            (fragile_position, healthy_position),
+            (Some(fragile_idx), Some(healthy_idx)) if healthy_idx > fragile_idx
+        );
+        saw_fragile_granted |= queue
+            .granted
+            .as_ref()
+            .is_some_and(|granted| granted.actor == fragile);
+
+        if h.agent_is_dead(fragile) {
+            fragile_died = true;
+            fragile_pruned_after_death |= fragile_position.is_none();
+            healthy_became_head_after_prune |= healthy_position == Some(0);
+        }
+
+        record_new_promotions(
+            &h,
+            workstation,
+            &mut previous_promotions,
+            &mut promoted_actors,
+        );
+        healthy_promoted |= promoted_actors.contains(&healthy);
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        assert!(
+            authoritative_apples <= 4,
+            "Authoritative apple quantity must never exceed the initial exclusive orchard stock"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
+            .unwrap();
+
+        if fragile_died && fragile_pruned_after_death && healthy_became_head_after_prune && healthy_promoted {
+            break;
+        }
+    }
+
+    DeadAgentPrunedFromFacilityQueueOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        saw_fragile_join_queue,
+        saw_healthy_join_behind_fragile,
+        fragile_died,
+        fragile_never_granted: !saw_fragile_granted,
+        fragile_pruned_after_death,
+        healthy_became_head_after_prune,
+        healthy_promoted,
     }
 }
 
@@ -1271,6 +1491,40 @@ fn golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns()
 }
 
 #[test]
+fn golden_dead_agent_pruned_from_facility_queue() {
+    let outcome = run_dead_agent_pruned_from_facility_queue_scenario(Seed([24; 32]));
+
+    assert!(
+        outcome.saw_fragile_join_queue,
+        "Fragile agent should enter the real exclusive-facility queue"
+    );
+    assert!(
+        outcome.saw_healthy_join_behind_fragile,
+        "Healthy agent should queue behind the fragile waiter before the death-driven prune"
+    );
+    assert!(
+        outcome.fragile_died,
+        "Fragile queued waiter should die from deprivation while the initial grant blocks the facility"
+    );
+    assert!(
+        outcome.fragile_never_granted,
+        "Fragile waiter should die while waiting, not after receiving a grant"
+    );
+    assert!(
+        outcome.fragile_pruned_after_death,
+        "Dead waiter should be removed by the authoritative facility queue prune"
+    );
+    assert!(
+        outcome.healthy_became_head_after_prune,
+        "The next living waiter should inherit queue head position after the dead waiter is pruned"
+    );
+    assert!(
+        outcome.healthy_promoted,
+        "The next living waiter should later receive a real queue promotion event"
+    );
+}
+
+#[test]
 fn golden_facility_queue_patience_timeout() {
     let outcome = run_facility_queue_patience_timeout_scenario(Seed([19; 32]));
 
@@ -1552,5 +1806,22 @@ fn golden_exclusive_queue_contention_replays_deterministically() {
     assert_eq!(
         outcome_1.promoted_actors, outcome_2.promoted_actors,
         "Exclusive queue contention should promote the same actor sequence for a fixed seed"
+    );
+}
+
+#[test]
+fn golden_dead_agent_pruned_from_facility_queue_replays_deterministically() {
+    let seed = Seed([24; 32]);
+
+    let outcome_1 = run_dead_agent_pruned_from_facility_queue_scenario(seed);
+    let outcome_2 = run_dead_agent_pruned_from_facility_queue_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Dead-agent queue prune scenario should replay to the same world hash"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Dead-agent queue prune scenario should replay to the same event log hash"
     );
 }
