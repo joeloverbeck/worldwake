@@ -98,6 +98,15 @@ impl SimulationState {
         &mut self.rng_state
     }
 
+    /// Borrow the world and event log mutably at the same time.
+    ///
+    /// This is necessary for constructing a `WorldTxn` (which borrows `&mut World`)
+    /// and then committing it (which borrows `&mut EventLog`) from within a single
+    /// `SimulationState`.
+    pub fn world_and_event_log_mut(&mut self) -> (&mut World, &mut EventLog) {
+        (&mut self.world, &mut self.event_log)
+    }
+
     pub fn hash(&self) -> Result<StateHash, CanonicalError> {
         hash_serializable(self)
     }
@@ -129,6 +138,31 @@ impl SimulationState {
             controller_state,
             rng_state,
         ))
+    }
+
+    /// Split borrow: return mutable references to tick-relevant fields
+    /// plus an immutable reference to `RecipeRegistry`.
+    ///
+    /// This exists because Rust cannot split borrows through individual
+    /// `&mut self` accessor methods in a single expression.
+    pub fn tick_parts_mut(
+        &mut self,
+    ) -> (
+        &mut World,
+        &mut EventLog,
+        &mut Scheduler,
+        &mut ControllerState,
+        &mut DeterministicRng,
+        &RecipeRegistry,
+    ) {
+        (
+            &mut self.world,
+            &mut self.event_log,
+            &mut self.scheduler,
+            &mut self.controller_state,
+            &mut self.rng_state,
+            &self.recipe_registry,
+        )
     }
 
     pub(crate) fn runtime_parts_mut(
