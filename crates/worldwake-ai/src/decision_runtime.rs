@@ -34,6 +34,8 @@ pub struct AgentDecisionRuntime {
     pub current_goal: Option<GoalKey>,
     pub current_plan: Option<PlannedPlan>,
     pub current_step_index: usize,
+    pub journey_committed_goal: Option<GoalKey>,
+    pub journey_committed_destination: Option<EntityId>,
     pub journey_established_at: Option<Tick>,
     pub journey_last_progress_tick: Option<Tick>,
     pub consecutive_blocked_leg_ticks: u32,
@@ -50,22 +52,36 @@ pub struct AgentDecisionRuntime {
 
 impl AgentDecisionRuntime {
     #[must_use]
-    pub fn has_active_journey(&self) -> bool {
-        self.journey_established_at.is_some()
-            && self
-                .current_plan
-                .as_ref()
-                .is_some_and(|plan| plan.has_remaining_travel_steps_from(self.current_step_index))
+    pub fn has_journey_commitment(&self) -> bool {
+        self.journey_committed_goal.is_some() && self.journey_committed_destination.is_some()
+    }
+
+    #[must_use]
+    pub fn has_active_journey_travel(&self) -> bool {
+        self.has_journey_commitment()
+            && self.journey_established_at.is_some()
+            && self.current_plan.as_ref().is_some_and(|plan| {
+                plan.has_remaining_travel_steps_from(self.current_step_index)
+                    && plan.terminal_travel_destination() == self.journey_committed_destination
+            })
     }
 
     #[must_use]
     pub fn remaining_travel_steps(&self) -> usize {
-        self.current_plan
-            .as_ref()
-            .map_or(0, |plan| plan.remaining_travel_steps_from(self.current_step_index))
+        self.current_plan.as_ref().map_or(0, |plan| {
+            plan.remaining_travel_steps_from(self.current_step_index)
+        })
     }
 
-    pub fn clear_journey_fields(&mut self) {
+    pub fn journey_committed_destination(&self) -> Option<EntityId> {
+        self.has_journey_commitment()
+            .then_some(self.journey_committed_destination)
+            .flatten()
+    }
+
+    pub fn clear_journey_commitment(&mut self) {
+        self.journey_committed_goal = None;
+        self.journey_committed_destination = None;
         self.journey_established_at = None;
         self.journey_last_progress_tick = None;
         self.consecutive_blocked_leg_ticks = 0;
@@ -119,6 +135,8 @@ mod tests {
         assert_eq!(runtime.current_goal, None);
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
+        assert_eq!(runtime.journey_committed_goal, None);
+        assert_eq!(runtime.journey_committed_destination, None);
         assert_eq!(runtime.journey_established_at, None);
         assert_eq!(runtime.journey_last_progress_tick, None);
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
@@ -168,30 +186,71 @@ mod tests {
     }
 
     #[test]
-    fn has_active_journey_requires_established_tick_and_travel_steps() {
-        let no_established_tick = AgentDecisionRuntime {
+    fn has_journey_commitment_requires_goal_and_destination() {
+        let goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
+        let destination = entity(77);
+        assert!(!AgentDecisionRuntime::default().has_journey_commitment());
+        assert!(!AgentDecisionRuntime {
+            journey_committed_goal: Some(goal),
+            ..AgentDecisionRuntime::default()
+        }
+        .has_journey_commitment());
+        assert!(!AgentDecisionRuntime {
+            journey_committed_destination: Some(destination),
+            ..AgentDecisionRuntime::default()
+        }
+        .has_journey_commitment());
+        assert!(AgentDecisionRuntime {
+            journey_committed_goal: Some(goal),
+            journey_committed_destination: Some(destination),
+            ..AgentDecisionRuntime::default()
+        }
+        .has_journey_commitment());
+    }
+
+    #[test]
+    fn has_active_journey_travel_requires_commitment_and_matching_travel_steps() {
+        let destination = entity(77);
+        let no_commitment = AgentDecisionRuntime {
             current_plan: Some(sample_plan(vec![sample_step(1, PlannerOpKind::Travel)])),
             ..AgentDecisionRuntime::default()
         };
-        assert!(!no_established_tick.has_active_journey());
+        assert!(!no_commitment.has_active_journey_travel());
 
         let no_remaining_travel = AgentDecisionRuntime {
             current_plan: Some(sample_plan(vec![sample_step(1, PlannerOpKind::Consume)])),
+            journey_committed_goal: Some(GoalKey::from(worldwake_core::GoalKind::Sleep)),
+            journey_committed_destination: Some(destination),
             journey_established_at: Some(Tick(7)),
             ..AgentDecisionRuntime::default()
         };
-        assert!(!no_remaining_travel.has_active_journey());
+        assert!(!no_remaining_travel.has_active_journey_travel());
 
-        let current_travel_step_counts = AgentDecisionRuntime {
-            current_plan: Some(sample_plan(vec![
-                sample_step(1, PlannerOpKind::Travel),
-                sample_step(2, PlannerOpKind::Consume),
-            ])),
+        let mismatched_destination = AgentDecisionRuntime {
+            current_plan: Some(sample_plan(vec![sample_step(1, PlannerOpKind::Travel)])),
+            journey_committed_goal: Some(GoalKey::from(worldwake_core::GoalKind::Sleep)),
+            journey_committed_destination: Some(destination),
             journey_established_at: Some(Tick(7)),
             current_step_index: 0,
             ..AgentDecisionRuntime::default()
         };
-        assert!(current_travel_step_counts.has_active_journey());
+        assert!(!mismatched_destination.has_active_journey_travel());
+
+        let current_travel_step_counts = AgentDecisionRuntime {
+            current_plan: Some(sample_plan(vec![
+                PlannedStep {
+                    targets: vec![PlanningEntityRef::Authoritative(destination)],
+                    ..sample_step(1, PlannerOpKind::Travel)
+                },
+                sample_step(2, PlannerOpKind::Consume),
+            ])),
+            journey_committed_goal: Some(GoalKey::from(worldwake_core::GoalKind::Sleep)),
+            journey_committed_destination: Some(destination),
+            journey_established_at: Some(Tick(7)),
+            current_step_index: 0,
+            ..AgentDecisionRuntime::default()
+        };
+        assert!(current_travel_step_counts.has_active_journey_travel());
     }
 
     #[test]
@@ -219,16 +278,39 @@ mod tests {
     }
 
     #[test]
-    fn clear_journey_fields_resets_all_temporal_state() {
+    fn journey_committed_destination_requires_full_commitment() {
+        let goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
+        let destination = entity(55);
+        assert_eq!(
+            AgentDecisionRuntime::default().journey_committed_destination(),
+            None
+        );
+        assert_eq!(
+            AgentDecisionRuntime {
+                journey_committed_goal: Some(goal),
+                journey_committed_destination: Some(destination),
+                ..AgentDecisionRuntime::default()
+            }
+            .journey_committed_destination(),
+            Some(destination)
+        );
+    }
+
+    #[test]
+    fn clear_journey_commitment_resets_anchor_and_temporal_state() {
         let mut runtime = AgentDecisionRuntime {
+            journey_committed_goal: Some(GoalKey::from(worldwake_core::GoalKind::Sleep)),
+            journey_committed_destination: Some(entity(77)),
             journey_established_at: Some(Tick(3)),
             journey_last_progress_tick: Some(Tick(8)),
             consecutive_blocked_leg_ticks: 5,
             ..AgentDecisionRuntime::default()
         };
 
-        runtime.clear_journey_fields();
+        runtime.clear_journey_commitment();
 
+        assert_eq!(runtime.journey_committed_goal, None);
+        assert_eq!(runtime.journey_committed_destination, None);
         assert_eq!(runtime.journey_established_at, None);
         assert_eq!(runtime.journey_last_progress_tick, None);
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);

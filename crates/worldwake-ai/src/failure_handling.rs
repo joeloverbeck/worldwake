@@ -26,6 +26,7 @@ pub fn handle_plan_failure(
     budget: &PlanningBudget,
 ) {
     runtime.current_plan = None;
+    runtime.clear_journey_commitment();
     runtime.materialization_bindings.clear();
 
     let blocking_fact = derive_blocking_fact(
@@ -857,6 +858,9 @@ mod tests {
                 vec![step],
                 PlanTerminalKind::ProgressBarrier,
             )),
+            journey_committed_goal: Some(goal),
+            journey_committed_destination: Some(entity(99)),
+            journey_established_at: Some(Tick(10)),
             dirty: false,
             last_priority_class: None,
             ..AgentDecisionRuntime::default()
@@ -899,6 +903,9 @@ mod tests {
         assert_eq!(runtime.current_plan, None);
         assert!(runtime.dirty);
         assert_eq!(runtime.current_goal, Some(goal));
+        assert_eq!(runtime.journey_committed_goal, None);
+        assert_eq!(runtime.journey_committed_destination, None);
+        assert_eq!(runtime.journey_established_at, None);
         assert!(blocked.is_blocked(&goal, Tick(20)));
         assert_eq!(blocked.intents.len(), 1);
         assert_eq!(

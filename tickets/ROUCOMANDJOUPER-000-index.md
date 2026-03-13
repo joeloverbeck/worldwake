@@ -19,7 +19,7 @@ Adds explicit journey tracking to the AI runtime layer so agents can persist tow
 | 005 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-005-journey-field-advancement.md` | Journey field advancement on arrival and blockage tracking | HIGH | Medium | 002, 004 |
 | 006 | `ROUCOMANDJOUPER-006-journey-clearing-conditions.md` | Journey clearing conditions and blocked-intent integration | HIGH | Medium | 001, 002, 004, 005, 008, 009 |
 | 007 | `ROUCOMANDJOUPER-007-debug-surface.md` | Observable debug surface for journey state | MEDIUM | Small | 002, 004, 005, 008, 009 |
-| 008 | `ROUCOMANDJOUPER-008-explicit-journey-commitment-anchor.md` | Explicit journey commitment anchor on AgentDecisionRuntime | HIGH | Medium | 002, 004, 005 |
+| 008 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-008-explicit-journey-commitment-anchor.md` | Explicit journey commitment anchor on AgentDecisionRuntime | HIGH | Medium | 002, 004, 005 |
 | 009 | `ROUCOMANDJOUPER-009-journey-preserving-detour-policy.md` | Journey-preserving detour and abandonment policy | HIGH | Large | 004, 005, 008 |
 
 ## Dependencies
@@ -91,6 +91,6 @@ Steps 1 and 2 can be done in parallel. Ticket 004 should land before the later c
 - Journey fields are transient runtime state, never serialized
 - No `JourneyCommitment` struct — fields live on `AgentDecisionRuntime`
 - No `Vec<EntityId>` or `Vec<TravelEdgeId>` route storage
-- Route/destination derived from plan's remaining Travel steps
+- Route remains derived from plan travel steps; committed destination may be retained transiently across planless replanning seams after ROUCOMANDJOUPER-008
 - No abstract scores — only concrete temporal and threshold fields (Principle 3)
 - System decoupling (Principle 12) preserved — no cross-system direct calls
