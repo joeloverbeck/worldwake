@@ -2,6 +2,8 @@
 
 mod golden_harness;
 
+use std::collections::BTreeSet;
+
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
@@ -214,6 +216,122 @@ fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash
     )
 }
 
+struct ResourceExhaustionRaceOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    observed_source_quantities: BTreeSet<u32>,
+    agents_with_hunger_relief: BTreeSet<worldwake_core::EntityId>,
+    saw_live_apple_lots: bool,
+    final_source_quantity: Quantity,
+}
+
+fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOutcome {
+    let mut h = GoldenHarness::new(seed);
+    let agents = [
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Aster",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Bram",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Cara",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Dara",
+            ORCHARD_FARM,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+    ];
+
+    let initial_hunger = agents.map(|agent| h.agent_hunger(agent));
+    let workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    let mut observed_source_quantities = BTreeSet::from([4_u32]);
+    let mut agents_with_hunger_relief = BTreeSet::new();
+    let mut saw_live_apple_lots = false;
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, 4).unwrap();
+
+    for _ in 0..150 {
+        h.step_once();
+
+        let source_quantity = h
+            .world
+            .get_component_resource_source(workstation)
+            .expect("workstation should retain resource source during golden scenario")
+            .available_quantity;
+        observed_source_quantities.insert(source_quantity.0);
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        assert!(
+            authoritative_apples <= 4,
+            "Authoritative apple quantity must never exceed the initial source stock"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
+            .unwrap();
+
+        if total_live_lot_quantity(&h.world, CommodityKind::Apple) > 0 {
+            saw_live_apple_lots = true;
+        }
+
+        for (index, agent) in agents.iter().copied().enumerate() {
+            if h.agent_hunger(agent) < initial_hunger[index] {
+                agents_with_hunger_relief.insert(agent);
+            }
+        }
+    }
+
+    ResourceExhaustionRaceOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        observed_source_quantities,
+        agents_with_hunger_relief,
+        saw_live_apple_lots,
+        final_source_quantity: h
+            .world
+            .get_component_resource_source(workstation)
+            .expect("workstation should retain resource source through scenario")
+            .available_quantity,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 3: Resource Contention with Conservation
 // ---------------------------------------------------------------------------
@@ -301,6 +419,33 @@ fn golden_resource_contention_with_conservation() {
         bread_remaining,
         Quantity(0),
         "Agent A should have eaten its bread"
+    );
+}
+
+#[test]
+fn golden_resource_exhaustion_race() {
+    let outcome = run_resource_exhaustion_race_scenario(Seed([17; 32]));
+
+    assert!(
+        outcome.saw_live_apple_lots,
+        "Finite harvest stock should materialize apple lots during the contention race"
+    );
+    assert!(
+        outcome.observed_source_quantities.contains(&2),
+        "The orchard source should be observed after exactly one committed harvest batch"
+    );
+    assert!(
+        outcome.observed_source_quantities.contains(&0),
+        "The orchard source should deplete to zero after two committed harvest batches"
+    );
+    assert_eq!(
+        outcome.final_source_quantity,
+        Quantity(0),
+        "The finite orchard source should end depleted in the no-regeneration scenario"
+    );
+    assert!(
+        outcome.agents_with_hunger_relief.len() >= 1,
+        "At least one agent should complete the harvest/pick-up/eat chain under contention"
     );
 }
 
@@ -424,5 +569,22 @@ fn golden_capacity_constrained_ground_lot_pickup() {
     assert_eq!(
         log_hash_1, log_hash_2,
         "Capacity-constrained ground-lot event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_resource_exhaustion_race_replays_deterministically() {
+    let seed = Seed([17; 32]);
+
+    let outcome_1 = run_resource_exhaustion_race_scenario(seed);
+    let outcome_2 = run_resource_exhaustion_race_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Resource exhaustion race scenario must replay deterministically"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Resource exhaustion race event log must replay deterministically"
     );
 }

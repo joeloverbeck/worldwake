@@ -227,6 +227,7 @@ mod tests {
                 def_id: ActionDefId(7),
                 targets: vec![entity(2)],
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         }
     }

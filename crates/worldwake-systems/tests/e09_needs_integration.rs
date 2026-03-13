@@ -104,6 +104,7 @@ impl Harness {
                 def_id,
                 targets,
                 payload_override: None,
+                mode: worldwake_sim::ActionRequestMode::Strict,
             },
         );
     }

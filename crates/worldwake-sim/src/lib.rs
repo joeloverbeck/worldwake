@@ -76,7 +76,7 @@ pub use autonomous_controller::{
 pub use belief_view::{estimate_duration_from_beliefs, BeliefView};
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
-pub use input_event::{InputEvent, InputKind};
+pub use input_event::{ActionRequestMode, InputEvent, InputKind};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use omniscient_belief_view::{OmniscientBeliefRuntime, OmniscientBeliefView};

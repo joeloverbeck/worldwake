@@ -346,6 +346,7 @@ fn enqueue_valid_step_or_handle_failure(
             def_id: step.def_id,
             targets,
             payload_override: step.payload_override.clone(),
+            mode: worldwake_sim::ActionRequestMode::BestEffort,
         },
     );
     runtime.step_in_flight = true;

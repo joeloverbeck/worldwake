@@ -1,7 +1,8 @@
 //! Action command handlers: actions, do, cancel.
 
 use worldwake_sim::{
-    get_affordances, InputKind, OmniscientBeliefRuntime, OmniscientBeliefView, SimulationState,
+    get_affordances, ActionRequestMode, InputKind, OmniscientBeliefRuntime, OmniscientBeliefView,
+    SimulationState,
 };
 use worldwake_systems::ActionRegistries;
 
@@ -110,6 +111,7 @@ pub fn handle_do(
             def_id: affordance.def_id,
             targets: affordance.bound_targets.clone(),
             payload_override: affordance.payload_override.clone(),
+            mode: ActionRequestMode::Strict,
         },
     );
 

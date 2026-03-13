@@ -199,6 +199,7 @@ impl CombatHarness {
                     target,
                     weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
                 })),
+                mode: worldwake_sim::ActionRequestMode::Strict,
             },
         );
     }
@@ -215,6 +216,7 @@ impl CombatHarness {
                 payload_override: Some(ActionPayload::Loot(worldwake_sim::LootActionPayload {
                     target,
                 })),
+                mode: worldwake_sim::ActionRequestMode::Strict,
             },
         );
     }
@@ -237,6 +239,7 @@ impl CombatHarness {
                         target,
                         weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
                     })),
+                    mode: worldwake_sim::ActionRequestMode::Strict,
                 },
             )
         }
@@ -261,6 +264,7 @@ impl CombatHarness {
                     payload_override: Some(ActionPayload::Loot(worldwake_sim::LootActionPayload {
                         target,
                     })),
+                    mode: worldwake_sim::ActionRequestMode::Strict,
                 },
             )
         }

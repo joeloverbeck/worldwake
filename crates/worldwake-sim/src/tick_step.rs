@@ -203,6 +203,7 @@ fn apply_input(
             def_id,
             targets,
             payload_override,
+            mode,
         } => {
             let affordance = resolve_affordance(
                 runtime.world,
@@ -213,23 +214,27 @@ fn apply_input(
                 &targets,
                 payload_override,
             )?;
-            runtime
-                .scheduler
-                .start_affordance(
-                    &affordance,
-                    SchedulerActionRuntime {
-                        action_defs: services.action_defs,
-                        action_handlers: services.action_handlers,
-                        world: runtime.world,
-                        event_log: runtime.event_log,
-                        rng: runtime.rng,
-                    },
-                    ActionExecutionContext {
-                        cause: CauseRef::ExternalInput(sequence_no),
-                        tick,
-                    },
-                )
-                .map_err(TickStepError::Action)?;
+            if let Err(err) = runtime.scheduler.start_affordance(
+                &affordance,
+                SchedulerActionRuntime {
+                    action_defs: services.action_defs,
+                    action_handlers: services.action_handlers,
+                    world: runtime.world,
+                    event_log: runtime.event_log,
+                    rng: runtime.rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::ExternalInput(sequence_no),
+                    tick,
+                },
+            ) {
+                if mode == crate::ActionRequestMode::BestEffort
+                    && is_best_effort_start_failure(&err)
+                {
+                    return Ok(InputOutcome::default());
+                }
+                return Err(TickStepError::Action(err));
+            }
             Ok(InputOutcome {
                 actions_started: 1,
                 actions_aborted: 0,
@@ -265,6 +270,15 @@ fn apply_input(
             })
         }
     }
+}
+
+fn is_best_effort_start_failure(error: &ActionError) -> bool {
+    matches!(
+        error,
+        ActionError::ReservationUnavailable(_)
+            | ActionError::PreconditionFailed(_)
+            | ActionError::InvalidTarget(_)
+    )
 }
 
 fn resolve_affordance(
@@ -526,17 +540,18 @@ mod tests {
     use crate::{
         get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
         ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome, ControllerState,
-        DeterministicRng, DurationExpr, InputKind, Interruptibility, RecipeRegistry, Scheduler,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TickInputContext,
-        TickInputError, TickInputProducer,
+        ActionPayload, ActionProgress, ActionRequestMode, ActionState, ActionStatus,
+        CommitOutcome, ControllerState, DeterministicRng, DurationExpr, InputKind,
+        Interruptibility, Precondition, RecipeRegistry, ReservationReq, Scheduler,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
+        TickInputContext, TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, DeadAt, EntityId,
-        EventLog, EventTag, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        EntityKind, EventLog, EventTag, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -721,6 +736,40 @@ mod tests {
         registry
     }
 
+    fn reservation_action_registry() -> ActionDefRegistry {
+        let mut registry = action_registry();
+        registry.register(ActionDef {
+            id: ActionDefId(2),
+            name: "reserved-target".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: vec![crate::Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetIsAgent(0),
+            ],
+            reservation_requirements: vec![ReservationReq { target_index: 0 }],
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetIsAgent(0),
+            ],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+        registry
+    }
+
     fn ordered_systems() -> SystemDispatchTable {
         SystemDispatchTable::from_handlers([record_system; crate::SystemId::ALL.len()])
     }
@@ -785,6 +834,7 @@ mod tests {
                     def_id: self.def_id,
                     targets: Vec::new(),
                     payload_override: None,
+                    mode: crate::ActionRequestMode::Strict,
                 },
             );
             Ok(())
@@ -864,6 +914,7 @@ mod tests {
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -873,6 +924,7 @@ mod tests {
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
 
@@ -922,6 +974,7 @@ mod tests {
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
 
@@ -973,6 +1026,7 @@ mod tests {
                 def_id: ActionDefId(99),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
 
@@ -1001,6 +1055,69 @@ mod tests {
                 payload_override: None,
             }
         );
+    }
+
+    #[test]
+    fn best_effort_request_drops_recoverable_start_failure_without_failing_tick() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = spawn_agent(&mut world, 1, ControlSource::Ai);
+        {
+            let place = world.topology().place_ids().next().unwrap();
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(actor, place).unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        let mut event_log = EventLog::new();
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut controller = ControllerState::with_entity(actor);
+        let mut rng = DeterministicRng::new(Seed([10; 32]));
+        let recipes = RecipeRegistry::new();
+        let defs = reservation_action_registry();
+        let handlers = handler_registry();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(2),
+                targets: vec![actor],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(2),
+                targets: vec![actor],
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.inputs_processed, 2);
+        assert_eq!(result.actions_started, 1);
+        assert_eq!(scheduler.active_actions().len(), 1);
+        assert_eq!(scheduler.current_tick(), Tick(1));
     }
 
     #[test]
@@ -1073,6 +1190,7 @@ mod tests {
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
         step_tick(
@@ -1195,6 +1313,7 @@ mod tests {
                     def_id: ActionDefId(0),
                     targets: Vec::new(),
                     payload_override: None,
+                    mode: crate::ActionRequestMode::Strict,
                 },
             );
         }
@@ -1248,6 +1367,7 @@ mod tests {
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
 
@@ -1463,6 +1583,7 @@ mod tests {
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
 
@@ -1638,6 +1759,7 @@ mod tests {
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
 

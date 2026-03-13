@@ -423,6 +423,7 @@ mod tests {
                 def_id: ActionDefId(8),
                 targets: vec![entity(9)],
                 payload_override: None,
+                mode: crate::ActionRequestMode::Strict,
             },
         );
         scheduler.insert_action(sample_action(4));

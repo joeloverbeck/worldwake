@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
-  golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
+  golden_production.rs        — 6 tests (scenarios 3, 3d, 4, 6b, 6c + replay)
   golden_combat.rs            — 6 tests (living combat + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 27 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 29 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -91,6 +91,18 @@ The golden suite contains 27 tests across 6 domain files. Every test uses the re
 - Authoritative commodity totals (apple, bread) never increase — only decrease via consumption.
 - Alice eats her bread. Event log grows (non-trivial simulation).
 **Invariant enforced**: Per-tick authoritative conservation for both apple and bread commodities.
+
+### Scenario 3d: Resource Exhaustion Race
+**File**: `golden_production.rs` | **Tests**: `golden_resource_exhaustion_race`, `golden_resource_exhaustion_race_replays_deterministically`
+**Systems exercised**: Needs, Production, AI planning/runtime, reservation handling, Conservation, deterministic replay
+**Setup**: Four critically hungry agents start co-located at Orchard Farm with no food. One OrchardRow workstation exposes a finite `ResourceSource` with exactly `Quantity(4)` apples and no regeneration.
+**Emergent behavior proven**:
+- Multiple hungry agents can queue against the same finite source through the real AI loop without crashing the tick when same-tick reservation contention occurs.
+- The orchard source is observed stepping `4 -> 2 -> 0`, proving exactly two harvest commits exhaust the stock.
+- Apple lots materialize from the source and at least one agent completes the downstream harvest/pick-up/eat chain.
+- Authoritative apple quantity never exceeds the initial 4, and the same-seed run replays to identical world and event-log hashes.
+- The scenario exposed and fixed an engine gap: autonomous same-tick start requests were previously strict, so a second valid-from-snapshot harvest request could fail with `ReservationUnavailable` and abort the whole tick. The input path now distinguishes strict manual requests from best-effort autonomous requests, allowing the AI runtime to reconcile contention on the next tick without shims.
+**Cross-system chain**: Shared hunger pressure at one place → multiple harvest plans from one snapshot → reservation-backed start contention → finite source depletion across two harvest commits → materialization/pick-up/eat → deterministic replay.
 
 ### Scenario 3b: Multi-Hop Travel Plan
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_multi_hop_travel_plan`
@@ -348,6 +360,7 @@ The golden suite contains 27 tests across 6 domain files. Every test uses the re
 | Merchant restock → travel → acquire → return stock to home market | Yes |
 | Goal switching during multi-leg travel | Yes |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
+| Multi-agent reservation-backed resource exhaustion | Yes |
 | Multiple competing needs (hunger + thirst + fatigue) | Yes |
 | Dirtiness pressure → wash → water consumption | Yes |
 | Death after departure on multi-hop travel | Yes |
@@ -380,11 +393,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 ### Tier 2: Medium Priority (score 3-5)
 
-#### P13. Resource Exhaustion Race (Many Agents, Finite Resources)
-**Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
-**Rationale**: Current tests use at most 2 agents. What happens when 4+ hungry agents compete for a limited resource source? Tests reservation/contention logic and graceful degradation when resources run out.
-**Proves**: 4 agents, resource source with Quantity(4) → agents race to harvest → some succeed, some must seek alternatives → conservation holds → no deadlocks.
-
 ### Tier 3: Lower Priority (score <= 2)
 
 #### P15. Put-Down Action (Inventory Management)
@@ -413,7 +421,7 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 | ActionDomain coverage | 8/9 full | 8/9 full | 9/9 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 16 | 16 | 16 |
+| Cross-system chains | 19 | 20 | 22 |
 
 ### Recommended Implementation Order (Tier 1)
 

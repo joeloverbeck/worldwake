@@ -1,11 +1,11 @@
 # GOLDENE2E-000: Golden E2E Coverage Expansion Index
 
-**Status**: ACTIVE
+**Status**: COMPLETED
 **Initiative**: Systematically close golden E2E coverage gaps identified in `reports/golden-e2e-coverage-analysis.md`
 
 ## Overview
 
-The golden e2e suite currently covers 12/17 GoalKinds, 8/9 ActionDomains, and 5/5 needs. This initiative continues closing the remaining gaps identified in `reports/golden-e2e-coverage-analysis.md`.
+This initiative closed the targeted golden e2e backlog identified in `reports/golden-e2e-coverage-analysis.md`. The remaining gaps in that report are now ordinary follow-on backlog items rather than open tickets in this initiative.
 
 On 2026-03-12, living-agent combat was split architecturally from defensive danger mitigation: proactive hostile engagement is now its own goal family, while `ReduceDanger` remains a separate defensive gap to cover.
 
@@ -37,7 +37,7 @@ All tests use the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime
 | 010 | `archive/tickets/completed/GOLDENE2E-010-three-way-need-competition.md` | Three-Way Need Competition | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
 | 011 | `archive/tickets/completed/GOLDENE2E-011-wash-action.md` | Wash Action | MEDIUM | Medium | `golden_ai_decisions.rs` | 2 |
 | 012 | `archive/tickets/completed/GOLDENE2E-012-death-while-traveling.md` | Death While Traveling | MEDIUM | Large | `golden_combat.rs` | 2 |
-| 013 | `GOLDENE2E-013-resource-exhaustion-race.md` | Resource Exhaustion Race | MEDIUM | Large | `golden_production.rs` | 2 |
+| 013 | `archive/tickets/completed/GOLDENE2E-013-resource-exhaustion-race.md` | Resource Exhaustion Race | MEDIUM | Large | `golden_production.rs` | 2 |
 
 ## Dependencies
 
@@ -99,3 +99,17 @@ This initiative exercises emergent behavior through the real AI loop. If impleme
 - `crates/worldwake-ai/tests/golden_production.rs` — production/economy tests
 - `crates/worldwake-ai/tests/golden_combat.rs` — combat/death tests
 - `crates/worldwake-ai/tests/golden_determinism.rs` — determinism tests
+
+## Outcome
+
+**Completion date**: 2026-03-13
+
+**What actually changed**:
+- Completed and archived all GOLDENE2E tickets from `001` through `013`.
+- Expanded the golden suite across AI, care, combat, production, trade, and determinism coverage with the real autonomous loop and real system dispatch.
+- Closed the final active ticket, `GOLDENE2E-013`, with both golden coverage and a supporting engine fix for best-effort autonomous request contention.
+- Updated `reports/golden-e2e-coverage-analysis.md` so the resource exhaustion race is recorded as proven rather than planned.
+
+**Deviations from original plan**:
+- The initiative began as a pure coverage expansion index, but several tickets, including `GOLDENE2E-013`, surfaced genuine engine defects that required architecturally clean forward fixes instead of test-only work.
+- The initiative therefore ended with both broader golden coverage and targeted engine hardening, while preserving the no-shims rule.
