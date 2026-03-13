@@ -1,10 +1,7 @@
 use crate::{
-    action_validation::{
-        evaluate_constraint_authoritatively, evaluate_precondition_authoritatively,
-    },
-    ActionDefRegistry, ActionDuration, ActionError, ActionExecutionAuthority,
-    ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus,
-    Affordance,
+    action_validation::validate_action_def_authoritatively, ActionDefRegistry, ActionDuration,
+    ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
+    ActionInstance, ActionInstanceId, ActionStatus, Affordance,
 };
 use worldwake_core::{EventTag, Tick, TickRange, WitnessData, WorldError, WorldTxn};
 
@@ -182,24 +179,7 @@ fn validate_start_requirements(
     affordance: &Affordance,
     world: &worldwake_core::World,
 ) -> Result<(), ActionError> {
-    for constraint in &def.actor_constraints {
-        if !evaluate_constraint_authoritatively(world, constraint, affordance.actor) {
-            return Err(ActionError::ConstraintFailed(format!("{constraint:?}")));
-        }
-    }
-
-    for precondition in &def.preconditions {
-        if !evaluate_precondition_authoritatively(
-            world,
-            *precondition,
-            affordance.actor,
-            &affordance.bound_targets,
-        ) {
-            return Err(ActionError::PreconditionFailed(format!("{precondition:?}")));
-        }
-    }
-
-    Ok(())
+    validate_action_def_authoritatively(world, def, affordance.actor, &affordance.bound_targets)
 }
 
 fn reservation_range(

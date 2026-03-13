@@ -50,6 +50,7 @@ pub use action_def_registry::ActionDefRegistry;
 pub use action_domain::ActionDomain;
 pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
+pub use action_validation::validate_action_def_authoritatively;
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
     ActionHandler, ActionProgress, ActionStartFn, ActionTickFn,

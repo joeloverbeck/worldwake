@@ -1,6 +1,6 @@
 use worldwake_core::{is_incapacitated, ControlSource, EntityId, EntityKind, World, WorldTxn};
 
-use crate::{Constraint, ConsumableEffect, Precondition};
+use crate::{ActionDef, ActionError, Constraint, ConsumableEffect, Precondition};
 
 pub(crate) fn evaluate_constraint_authoritatively(
     world: &World,
@@ -126,6 +126,27 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .and_then(|target| world.get_component_wound_list(*target))
             .is_some_and(|wounds| !wounds.wounds.is_empty()),
     }
+}
+
+pub fn validate_action_def_authoritatively(
+    world: &World,
+    def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+) -> Result<(), ActionError> {
+    for constraint in &def.actor_constraints {
+        if !evaluate_constraint_authoritatively(world, constraint, actor) {
+            return Err(ActionError::ConstraintFailed(format!("{constraint:?}")));
+        }
+    }
+
+    for precondition in &def.preconditions {
+        if !evaluate_precondition_authoritatively(world, *precondition, actor, targets) {
+            return Err(ActionError::PreconditionFailed(format!("{precondition:?}")));
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) fn evaluate_txn_precondition_authoritatively(

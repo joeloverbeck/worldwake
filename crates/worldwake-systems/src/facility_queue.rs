@@ -5,8 +5,8 @@ use worldwake_core::{
     WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
-    evaluate_constraint, evaluate_precondition, ActionDefRegistry, ActionInstance, ActionStatus,
-    OmniscientBeliefRuntime, OmniscientBeliefView, SystemError, SystemExecutionContext,
+    validate_action_def_authoritatively, ActionDefRegistry, ActionInstance, ActionStatus,
+    SystemError, SystemExecutionContext,
 };
 
 pub fn facility_queue_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -196,20 +196,10 @@ fn head_is_ready_to_start(
     let Some(def) = action_defs.get(intended_action) else {
         return false;
     };
-    let view = OmniscientBeliefView::with_runtime(
-        world,
-        OmniscientBeliefRuntime::new(active_actions, action_defs),
-    );
     let targets = [facility];
 
-    def.actor_constraints
-        .iter()
-        .all(|constraint| evaluate_constraint(constraint, actor, &view))
-        && def
-            .preconditions
-            .iter()
-            .copied()
-            .all(|precondition| evaluate_precondition(precondition, actor, &targets, &view))
+    validate_action_def_authoritatively(world, def, actor, &targets).is_ok()
+        && !active_exclusive_action_on_facility(active_actions, action_defs, facility)
 }
 
 fn active_exclusive_action_on_facility(

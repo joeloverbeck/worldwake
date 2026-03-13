@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits, Quantity,
-    VisibilitySpec, WorkstationMarker, WorldTxn,
+    VisibilitySpec, WorkstationMarker, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -16,12 +16,10 @@ pub fn register_harvest_actions(
     handlers: &mut ActionHandlerRegistry,
     recipes: &RecipeRegistry,
 ) -> Vec<ActionDefId> {
-    let handler = handlers.register(ActionHandler::new(
-        start_harvest,
-        tick_harvest,
-        commit_harvest,
-        abort_harvest,
-    ));
+    let handler = handlers.register(
+        ActionHandler::new(start_harvest, tick_harvest, commit_harvest, abort_harvest)
+            .with_authoritative_payload_validator(validate_exclusive_facility_grant),
+    );
 
     let mut ids = Vec::new();
     for (recipe_id, recipe) in recipes.iter() {
@@ -40,12 +38,10 @@ pub fn register_craft_actions(
     handlers: &mut ActionHandlerRegistry,
     recipes: &RecipeRegistry,
 ) -> Vec<ActionDefId> {
-    let handler = handlers.register(ActionHandler::new(
-        start_craft,
-        tick_craft,
-        commit_craft,
-        abort_craft,
-    ));
+    let handler = handlers.register(
+        ActionHandler::new(start_craft, tick_craft, commit_craft, abort_craft)
+            .with_authoritative_payload_validator(validate_exclusive_facility_grant),
+    );
 
     let mut ids = Vec::new();
     for (recipe_id, recipe) in recipes.iter() {
@@ -328,14 +324,89 @@ fn consume_staged_inputs(txn: &mut WorldTxn<'_>, container: EntityId) -> Result<
     Ok(())
 }
 
-#[allow(clippy::unnecessary_wraps)]
+fn ensure_matching_facility_grant(
+    world: &World,
+    actor: EntityId,
+    facility: EntityId,
+    action_def: ActionDefId,
+) -> Result<(), ActionError> {
+    let policy = world.get_component_exclusive_facility_policy(facility);
+    let queue = world.get_component_facility_use_queue(facility);
+    let queue = match (policy, queue) {
+        (None, None) => return Ok(()),
+        (Some(_), Some(queue)) => queue,
+        (Some(_), None) => {
+            return Err(ActionError::PreconditionFailed(format!(
+                "facility {facility} is exclusive but lacks FacilityUseQueue grant state"
+            )))
+        }
+        (None, Some(_)) => {
+            return Err(ActionError::PreconditionFailed(format!(
+                "facility {facility} has FacilityUseQueue grant state without ExclusiveFacilityPolicy"
+            )))
+        }
+    };
+    match queue.granted.as_ref() {
+        Some(granted) if granted.actor == actor && granted.intended_action == action_def => Ok(()),
+        Some(granted) => Err(ActionError::PreconditionFailed(format!(
+            "facility {facility} grant belongs to actor {} action {:?}, not actor {actor} action {:?}",
+            granted.actor, granted.intended_action, action_def
+        ))),
+        None => Err(ActionError::PreconditionFailed(format!(
+            "facility {facility} has no matching grant for actor {actor} action {action_def:?}"
+        ))),
+    }
+}
+
+fn consume_matching_facility_grant(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    facility: EntityId,
+    action_def: ActionDefId,
+) -> Result<(), ActionError> {
+    ensure_matching_facility_grant(txn, actor, facility, action_def)?;
+    if txn.get_component_exclusive_facility_policy(facility).is_none()
+        && txn.get_component_facility_use_queue(facility).is_none()
+    {
+        return Ok(());
+    }
+    let mut queue = txn
+        .get_component_facility_use_queue(facility)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "facility {facility} lacks FacilityUseQueue grant state"
+            ))
+        })?;
+    queue.clear_grant();
+    txn.set_component_facility_use_queue(facility, queue)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
+}
+
+fn validate_exclusive_facility_grant(
+    def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    actor: EntityId,
+    targets: &[EntityId],
+    _payload: &ActionPayload,
+    world: &World,
+) -> Result<(), ActionError> {
+    let facility = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
+    ensure_matching_facility_grant(world, actor, facility, def.id)
+}
+
 fn start_harvest(
     def: &ActionDef,
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let _ = harvest_payload(def, instance)?;
+    let workstation = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    consume_matching_facility_grant(txn, instance.actor, workstation, def.id)?;
     Ok(None)
 }
 
@@ -360,6 +431,7 @@ fn start_craft(
         .targets
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    consume_matching_facility_grant(txn, instance.actor, workstation, def.id)?;
     if txn.has_component_production_job(workstation) {
         return Err(ActionError::PreconditionFailed(format!(
             "workstation {workstation} already has production job"
@@ -565,7 +637,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, Container, ControlSource,
-        DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog, HomeostaticNeeds,
+        DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog,
+        ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
         LoadUnits, MetabolismProfile, Permille, Quantity, ResourceSource, Seed, Tick,
         VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
@@ -826,6 +899,50 @@ mod tests {
         commit_txn(txn);
     }
 
+    fn grant_facility_use(
+        world: &mut World,
+        facility: EntityId,
+        actor: EntityId,
+        intended_action: ActionDefId,
+        granted_at: u64,
+    ) {
+        let mut txn = new_txn(world, granted_at);
+        let mut queue = ensure_facility_queue_components(&mut txn, facility);
+        queue.granted = Some(GrantedFacilityUse {
+            actor,
+            intended_action,
+            granted_at: Tick(granted_at),
+            expires_at: Tick(granted_at + 3),
+        });
+        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        commit_txn(txn);
+    }
+
+    fn provision_facility_queue(world: &mut World, facility: EntityId, tick: u64) {
+        let mut txn = new_txn(world, tick);
+        let queue = ensure_facility_queue_components(&mut txn, facility);
+        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        commit_txn(txn);
+    }
+
+    fn ensure_facility_queue_components(
+        txn: &mut WorldTxn<'_>,
+        facility: EntityId,
+    ) -> FacilityUseQueue {
+        if txn.get_component_exclusive_facility_policy(facility).is_none() {
+            txn.set_component_exclusive_facility_policy(
+                facility,
+                ExclusiveFacilityPolicy {
+                    grant_hold_ticks: nz(3),
+                },
+            )
+            .unwrap();
+        }
+        txn.get_component_facility_use_queue(facility)
+            .cloned()
+            .unwrap_or_else(FacilityUseQueue::default)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn run_to_completion(
         world: &mut World,
@@ -966,10 +1083,11 @@ mod tests {
     #[test]
     fn harvest_happy_path_reduces_source_and_creates_output_lot() {
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
-        let (defs, handlers, _) = setup_registries(&recipes);
+        let (defs, handlers, ids) = setup_registries(&recipes);
         let (mut world, actor, workstation, place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
         let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
@@ -1098,9 +1216,139 @@ mod tests {
     }
 
     #[test]
+    fn harvest_start_requires_matching_grant_and_consumes_it() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor, recipe_id);
+        provision_facility_queue(&mut world, workstation, 9);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x91);
+        let mut next_id = ActionInstanceId(0);
+
+        let missing_grant_err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            missing_grant_err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("no matching grant")
+        ));
+
+        grant_facility_use(&mut world, workstation, actor, ActionDefId(999), 10);
+        let wrong_grant_err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            wrong_grant_err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("grant belongs")
+        ));
+
+        grant_facility_use(&mut world, workstation, actor, ids[0], 12);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(12),
+            },
+        )
+        .unwrap();
+
+        assert!(
+            world
+                .get_component_facility_use_queue(workstation)
+                .unwrap()
+                .granted
+                .is_none()
+        );
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(13),
+            },
+            worldwake_sim::ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        let consumed_grant_err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(14),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            consumed_grant_err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("no matching grant")
+        ));
+    }
+
+    #[test]
     fn harvest_reservation_blocks_second_actor_and_abort_preserves_source() {
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
-        let (defs, handlers, _) = setup_registries(&recipes);
+        let (defs, handlers, ids) = setup_registries(&recipes);
         let (mut world, actor_a, workstation, _place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor_a, recipe_id);
@@ -1114,6 +1362,7 @@ mod tests {
             let _ = txn.commit(&mut EventLog::new());
             actor
         };
+        grant_facility_use(&mut world, workstation, actor_a, ids[0], 9);
 
         let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
         let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
@@ -1158,6 +1407,32 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             second_start,
+            ActionError::PreconditionFailed(format!(
+                "facility {workstation} has no matching grant for actor {} action {:?}",
+                actor_b, ids[0]
+            ))
+        );
+
+        grant_facility_use(&mut world, workstation, actor_b, ids[0], 10);
+        let second_with_grant = start_action(
+            &affordance_b,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            second_with_grant,
             ActionError::ReservationUnavailable(workstation)
         );
 
@@ -1192,9 +1467,11 @@ mod tests {
     fn harvest_body_cost_flows_through_needs_system() {
         let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
         let (recipes, recipe_id) = harvest_recipe_registry(body_cost);
-        let (defs, handlers, _) = setup_registries(&recipes);
-        let (mut world, actor, _workstation, _) = setup_world(false, WorkstationTag::OrchardRow, 5);
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, _) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
         let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
@@ -1365,10 +1642,11 @@ mod tests {
     #[test]
     fn craft_stages_inputs_tracks_wip_and_produces_outputs() {
         let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
-        let (defs, handlers, _) = setup_craft_registries(&recipes);
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
         let (mut world, actor, workstation, place) = craft_fixture(false);
         grant_recipe(&mut world, actor, recipe_id);
         let source_lot = add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
         let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
@@ -1561,12 +1839,96 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_craft_preserves_job_and_staged_inputs() {
+    fn craft_start_requires_matching_grant_and_consumes_it() {
         let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
-        let (defs, handlers, _) = setup_craft_registries(&recipes);
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
         let (mut world, actor, workstation, place) = craft_fixture(false);
         grant_recipe(&mut world, actor, recipe_id);
         add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 2);
+        provision_facility_queue(&mut world, workstation, 9);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x92);
+        let mut next_id = ActionInstanceId(0);
+
+        let missing_grant_err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            missing_grant_err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("no matching grant")
+        ));
+
+        grant_facility_use(&mut world, workstation, actor, ids[0], 11);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert!(
+            world
+                .get_component_facility_use_queue(workstation)
+                .unwrap()
+                .granted
+                .is_none()
+        );
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(12),
+            },
+            worldwake_sim::ExternalAbortReason::Other,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn interrupted_craft_preserves_job_and_staged_inputs() {
+        let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
+        grant_recipe(&mut world, actor, recipe_id);
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 2);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
         let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
@@ -1634,10 +1996,11 @@ mod tests {
     fn craft_body_cost_flows_through_needs_system() {
         let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
         let (recipes, recipe_id) = craft_recipe_registry(body_cost, Vec::new());
-        let (defs, handlers, _) = setup_craft_registries(&recipes);
-        let (mut world, actor, _workstation, place) = craft_fixture(false);
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
         grant_recipe(&mut world, actor, recipe_id);
         add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 2);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
         let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
