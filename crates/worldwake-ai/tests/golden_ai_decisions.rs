@@ -5,8 +5,8 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, CommodityKind, HomeostaticNeeds,
-    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, UtilityProfile,
-    WorkstationTag,
+    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed,
+    TravelDispositionProfile, UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -781,6 +781,7 @@ fn golden_bladder_relief_with_travel() {
     );
 }
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn golden_goal_switching_during_multi_leg_travel() {
     let mut h = GoldenHarness::new(Seed([81; 32]));
@@ -814,6 +815,18 @@ fn golden_goal_switching_during_multi_leg_travel() {
             ..UtilityProfile::default()
         },
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_travel_disposition_profile(
+            agent,
+            TravelDispositionProfile {
+                route_replan_margin: pm(0),
+                blocked_leg_patience_ticks: nz(4),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
 
     give_commodity(
         &mut h.world,

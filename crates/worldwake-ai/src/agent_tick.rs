@@ -212,6 +212,7 @@ fn process_agent(
         agent,
         &ranked_candidates,
         switch_margin,
+        tick,
         budget,
         semantics_table,
         action_defs,
@@ -255,10 +256,24 @@ fn enqueue_valid_step_or_handle_failure(
     valid: bool,
 ) -> Result<(), TickInputError> {
     if !valid {
+        if handle_recoverable_travel_step_blockage(runtime, step) {
+            return Ok(());
+        }
         return handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None);
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
+        if handle_recoverable_travel_step_blockage(runtime, step) {
+            return finalize_agent_tick(
+                ctx.world,
+                ctx.event_log,
+                agent,
+                tick,
+                original_blocked,
+                blocked_memory,
+                runtime,
+            );
+        }
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None)?;
         return finalize_agent_tick(
             ctx.world,
@@ -419,6 +434,7 @@ fn plan_and_validate_next_step(
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     switch_margin: Permille,
+    tick: Tick,
     budget: &PlanningBudget,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
@@ -453,8 +469,15 @@ fn plan_and_validate_next_step(
         if let Some(selected_plan) =
             select_best_plan(ranked_candidates, &plans, runtime, switch_margin)
         {
+            let previous_goal = runtime.current_goal;
             runtime.materialization_bindings.clear();
             runtime.current_goal = Some(selected_plan.goal);
+            update_journey_fields_for_adopted_plan(
+                runtime,
+                &selected_plan,
+                previous_goal,
+                tick,
+            );
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -552,11 +575,20 @@ fn reconcile_in_flight_state(
     }
 
     runtime.step_in_flight = false;
-    advance_completed_step(runtime);
+    advance_completed_step(runtime, step.op_kind, ctx.tick);
     Ok(())
 }
 
-fn advance_completed_step(runtime: &mut AgentDecisionRuntime) {
+fn advance_completed_step(
+    runtime: &mut AgentDecisionRuntime,
+    completed_op_kind: crate::PlannerOpKind,
+    tick: Tick,
+) {
+    if completed_op_kind == crate::PlannerOpKind::Travel {
+        runtime.journey_last_progress_tick = Some(tick);
+        runtime.consecutive_blocked_leg_ticks = 0;
+    }
+
     runtime.current_step_index = runtime
         .current_step_index
         .checked_add(1)
@@ -630,6 +662,45 @@ fn handle_current_step_failure(
         &BlockedIntentMemory::default(),
         blocked_memory,
     )
+}
+
+fn update_journey_fields_for_adopted_plan(
+    runtime: &mut AgentDecisionRuntime,
+    selected_plan: &crate::PlannedPlan,
+    previous_goal: Option<crate::GoalKey>,
+    tick: Tick,
+) {
+    if !selected_plan.has_remaining_travel_steps_from(0) {
+        runtime.clear_journey_fields();
+        return;
+    }
+
+    if runtime.journey_established_at.is_some() && previous_goal == Some(selected_plan.goal) {
+        return;
+    }
+
+    runtime.journey_established_at = Some(tick);
+    runtime.journey_last_progress_tick = None;
+    runtime.consecutive_blocked_leg_ticks = 0;
+}
+
+fn handle_recoverable_travel_step_blockage(
+    runtime: &mut AgentDecisionRuntime,
+    step: &PlannedStep,
+) -> bool {
+    if step.op_kind != crate::PlannerOpKind::Travel || !runtime.has_active_journey() {
+        return false;
+    }
+
+    runtime.consecutive_blocked_leg_ticks = runtime
+        .consecutive_blocked_leg_ticks
+        .checked_add(1)
+        .expect("consecutive blocked leg ticks overflowed");
+    runtime.current_plan = None;
+    runtime.current_step_index = 0;
+    runtime.materialization_bindings.clear();
+    runtime.dirty = true;
+    true
 }
 
 fn resolve_step_targets(
@@ -827,9 +898,10 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 mod tests {
     use super::{
         advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
-        effective_goal_switch_margin, persist_blocked_memory, plan_and_validate_next_step,
-        refresh_runtime_for_read_phase, resolve_step_targets, update_runtime_observation_snapshot,
-        AgentTickDriver, ReadPhaseContext,
+        effective_goal_switch_margin, handle_recoverable_travel_step_blockage,
+        persist_blocked_memory, plan_and_validate_next_step, refresh_runtime_for_read_phase,
+        resolve_step_targets, update_journey_fields_for_adopted_plan,
+        update_runtime_observation_snapshot, AgentTickDriver, ReadPhaseContext,
     };
     use crate::PlanningBudget;
     use crate::{
@@ -1211,6 +1283,118 @@ mod tests {
     }
 
     #[test]
+    fn travel_led_plan_adoption_sets_journey_established_at() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let plan = PlannedPlan::new(
+            goal,
+            vec![travel_step(1, entity(11)), barrier_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime::default();
+
+        update_journey_fields_for_adopted_plan(&mut runtime, &plan, None, Tick(9));
+
+        assert_eq!(runtime.journey_established_at, Some(Tick(9)));
+        assert_eq!(runtime.journey_last_progress_tick, None);
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+    }
+
+    #[test]
+    fn non_travel_plan_adoption_clears_journey_fields() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let plan = PlannedPlan::new(goal, vec![barrier_step()], PlanTerminalKind::GoalSatisfied);
+        let mut runtime = crate::AgentDecisionRuntime {
+            journey_established_at: Some(Tick(3)),
+            journey_last_progress_tick: Some(Tick(7)),
+            consecutive_blocked_leg_ticks: 2,
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        update_journey_fields_for_adopted_plan(&mut runtime, &plan, None, Tick(9));
+
+        assert_eq!(runtime.journey_established_at, None);
+        assert_eq!(runtime.journey_last_progress_tick, None);
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+    }
+
+    #[test]
+    fn same_goal_replan_preserves_journey_established_at() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let plan = PlannedPlan::new(
+            goal,
+            vec![travel_step(1, entity(11)), barrier_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            journey_established_at: Some(Tick(4)),
+            journey_last_progress_tick: Some(Tick(6)),
+            consecutive_blocked_leg_ticks: 3,
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Some(goal), Tick(9));
+
+        assert_eq!(runtime.journey_established_at, Some(Tick(4)));
+        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(6)));
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 3);
+    }
+
+    #[test]
+    fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(PlannedPlan::new(
+                goal,
+                vec![travel_step(1, entity(11)), barrier_step()],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            current_step_index: 0,
+            journey_established_at: Some(Tick(1)),
+            consecutive_blocked_leg_ticks: 5,
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        advance_completed_step(&mut runtime, PlannerOpKind::Travel, Tick(9));
+
+        assert_eq!(runtime.current_step_index, 1);
+        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(9)));
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+    }
+
+    #[test]
+    fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forces_replan() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let plan = PlannedPlan::new(
+            goal,
+            vec![travel_step(1, entity(11)), barrier_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let step = plan.steps[0].clone();
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(plan.clone()),
+            current_step_index: 0,
+            journey_established_at: Some(Tick(2)),
+            consecutive_blocked_leg_ticks: 1,
+            dirty: false,
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        assert!(handle_recoverable_travel_step_blockage(&mut runtime, &step));
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 2);
+        assert!(runtime.dirty);
+        assert_eq!(runtime.current_goal, Some(goal));
+        assert_eq!(runtime.current_plan, None);
+        assert_eq!(runtime.current_step_index, 0);
+        assert!(runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty());
+    }
+
+    #[test]
     fn hungry_ai_agent_emits_request_and_starts_consume_action() {
         let mut harness = Harness::new(ControlSource::Ai);
 
@@ -1307,7 +1491,7 @@ mod tests {
             ..crate::AgentDecisionRuntime::default()
         };
 
-        advance_completed_step(&mut runtime);
+        advance_completed_step(&mut runtime, PlannerOpKind::Trade, Tick(4));
 
         assert_eq!(runtime.current_goal, Some(goal));
         assert_eq!(runtime.current_plan, None);
@@ -1459,7 +1643,7 @@ mod tests {
         )
         .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime);
+        advance_completed_step(&mut runtime, PlannerOpKind::MoveCargo, Tick(3));
 
         assert_eq!(runtime.current_step_index, 1);
         assert_eq!(
@@ -1471,7 +1655,7 @@ mod tests {
         apply_step_materialization_bindings(&mut runtime, &plan.steps[1], &CommitOutcome::empty())
             .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime);
+        advance_completed_step(&mut runtime, PlannerOpKind::Travel, Tick(4));
 
         assert_eq!(runtime.current_step_index, 2);
         assert_eq!(
@@ -1483,7 +1667,7 @@ mod tests {
         apply_step_materialization_bindings(&mut runtime, &plan.steps[2], &CommitOutcome::empty())
             .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime);
+        advance_completed_step(&mut runtime, PlannerOpKind::MoveCargo, Tick(5));
 
         assert!(runtime.current_plan.is_none());
         assert!(!runtime.step_in_flight);
@@ -1591,6 +1775,7 @@ mod tests {
             harness.actor,
             &ranked,
             budget.switch_margin_permille,
+            Tick(1),
             &budget,
             &semantics,
             &harness.defs,
@@ -1650,7 +1835,7 @@ mod tests {
         )
         .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(runtime);
+        advance_completed_step(runtime, PlannerOpKind::MoveCargo, Tick(2));
         assert_eq!(runtime.current_goal, Some(expected_goal));
 
         let ranked_after_pickup = refresh_runtime_for_read_phase(
@@ -1673,6 +1858,7 @@ mod tests {
             harness.actor,
             &ranked_after_pickup,
             budget.switch_margin_permille,
+            Tick(2),
             &budget,
             &semantics,
             &harness.defs,
