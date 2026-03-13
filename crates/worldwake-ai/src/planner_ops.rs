@@ -97,7 +97,7 @@ const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
 ];
 const GOALS_HEAL: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::Heal];
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
-const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile, GoalKindTag::ReduceDanger];
+const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 
 #[must_use]

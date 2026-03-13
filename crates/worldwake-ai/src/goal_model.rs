@@ -83,7 +83,6 @@ const WASH_OPS: &[PlannerOpKind] = &[
 const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Attack];
 const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
-    PlannerOpKind::Attack,
     PlannerOpKind::Defend,
     PlannerOpKind::Heal,
 ];
@@ -159,15 +158,6 @@ fn build_attack_payload_override(
             }
             Ok(Some(ActionPayload::Combat(CombatActionPayload {
                 target: actual_target,
-                weapon: worldwake_core::CombatWeaponRef::Unarmed,
-            })))
-        }
-        GoalKind::ReduceDanger => {
-            let Some(target) = targets.first().copied() else {
-                return Err(GoalPayloadOverrideError::MissingTarget);
-            };
-            Ok(Some(ActionPayload::Combat(CombatActionPayload {
-                target,
                 weapon: worldwake_core::CombatWeaponRef::Unarmed,
             })))
         }
@@ -660,9 +650,9 @@ mod tests {
         let goal = GoalKind::ReduceDanger;
 
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
-        assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Attack));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Defend));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Heal));
+        assert!(!goal.relevant_op_kinds().contains(&PlannerOpKind::Attack));
     }
 
     #[test]

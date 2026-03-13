@@ -11,11 +11,11 @@ use std::num::NonZeroU32;
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_prototype_world, prototype_place_entity, BlockedIntentMemory, BodyCostPerTick,
-    CarryCapacity, CauseRef, CombatProfile, CommodityKind, ControlSource, DeprivationExposure,
-    DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
-    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, Permille, PrototypePlace,
-    Quantity, RecipeId, ResourceSource, Seed, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, WoundList,
+    CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind, ControlSource,
+    DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
+    ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed,
+    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
@@ -371,6 +371,19 @@ impl GoldenHarness {
             .active_actions()
             .values()
             .any(|instance| instance.actor == agent)
+    }
+
+    pub fn agent_active_action_name(&self, agent: EntityId) -> Option<&str> {
+        self.scheduler
+            .active_actions()
+            .values()
+            .find(|instance| instance.actor == agent)
+            .and_then(|instance| self.defs.get(instance.def_id))
+            .map(|def| def.name.as_str())
+    }
+
+    pub fn agent_combat_stance(&self, agent: EntityId) -> Option<CombatStance> {
+        self.world.get_component_combat_stance(agent).copied()
     }
 
     pub fn agent_commodity_qty(&self, agent: EntityId, kind: CommodityKind) -> Quantity {

@@ -16,8 +16,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, BeliefView,
-    CommitOutcome, CommittedAction, InputKind, OmniscientBeliefView, RecipeRegistry, ReplanNeeded,
-    Scheduler, SchedulerActionRuntime, TickInputError,
+    CommitOutcome, CommittedAction, InputKind, OmniscientBeliefRuntime, OmniscientBeliefView,
+    RecipeRegistry, ReplanNeeded, Scheduler, SchedulerActionRuntime, TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -85,6 +85,17 @@ impl AgentTickDriver {
             switch_margin_source,
         })
     }
+}
+
+fn runtime_belief_view<'a>(
+    world: &'a worldwake_core::World,
+    scheduler: &'a Scheduler,
+    action_defs: &'a worldwake_sim::ActionDefRegistry,
+) -> OmniscientBeliefView<'a> {
+    OmniscientBeliefView::with_runtime(
+        world,
+        OmniscientBeliefRuntime::new(scheduler.active_actions(), action_defs),
+    )
 }
 
 struct AgentTickContext<'a> {
@@ -182,7 +193,7 @@ fn process_agent(
     let active_action = active_action_for_agent(ctx, agent);
 
     {
-        let view = OmniscientBeliefView::new(ctx.world);
+        let view = runtime_belief_view(ctx.world, ctx.scheduler, action_defs);
         if view.is_dead(agent) || !view.is_alive(agent) {
             runtime.clear_journey_commitment_with_reason(JourneyClearReason::Death);
             runtime.current_goal = None;
@@ -208,6 +219,8 @@ fn process_agent(
 
     let ranked_candidates = refresh_runtime_for_read_phase(
         ctx.world,
+        ctx.scheduler,
+        action_defs,
         runtime,
         &mut blocked_memory,
         agent,
@@ -222,7 +235,7 @@ fn process_agent(
     );
     let active_action = active_action_for_agent(ctx, agent);
     let journey_switch_margin = {
-        let view = OmniscientBeliefView::new(ctx.world);
+        let view = runtime_belief_view(ctx.world, ctx.scheduler, action_defs);
         effective_goal_switch_margin(&view, agent, runtime, budget)
     };
     let default_switch_margin = budget.switch_margin_permille;
@@ -246,6 +259,7 @@ fn process_agent(
 
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         ctx.world,
+        ctx.scheduler,
         runtime,
         agent,
         &ranked_candidates,
@@ -276,6 +290,8 @@ fn process_agent(
     finalize_agent_tick(
         ctx.world,
         ctx.event_log,
+        ctx.scheduler,
+        action_defs,
         agent,
         tick,
         &original_blocked,
@@ -296,7 +312,7 @@ fn enqueue_valid_step_or_handle_failure(
     valid: bool,
 ) -> Result<(), TickInputError> {
     if !valid {
-        let view = OmniscientBeliefView::new(ctx.world);
+        let view = runtime_belief_view(ctx.world, ctx.scheduler, ctx.action_defs);
         if handle_recoverable_travel_step_blockage(
             &view,
             runtime,
@@ -312,7 +328,7 @@ fn enqueue_valid_step_or_handle_failure(
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
-        let view = OmniscientBeliefView::new(ctx.world);
+        let view = runtime_belief_view(ctx.world, ctx.scheduler, ctx.action_defs);
         if handle_recoverable_travel_step_blockage(
             &view,
             runtime,
@@ -325,6 +341,8 @@ fn enqueue_valid_step_or_handle_failure(
             return finalize_agent_tick(
                 ctx.world,
                 ctx.event_log,
+                ctx.scheduler,
+                ctx.action_defs,
                 agent,
                 tick,
                 original_blocked,
@@ -336,6 +354,8 @@ fn enqueue_valid_step_or_handle_failure(
         return finalize_agent_tick(
             ctx.world,
             ctx.event_log,
+            ctx.scheduler,
+            ctx.action_defs,
             agent,
             tick,
             original_blocked,
@@ -369,8 +389,11 @@ fn active_action_for_agent(
         .cloned()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn refresh_runtime_for_read_phase(
     world: &worldwake_core::World,
+    scheduler: &Scheduler,
+    action_defs: &worldwake_sim::ActionDefRegistry,
     runtime: &mut AgentDecisionRuntime,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
@@ -378,7 +401,7 @@ fn refresh_runtime_for_read_phase(
     phase: ReadPhaseContext<'_>,
 ) -> Vec<RankedGoal> {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
-    let view = OmniscientBeliefView::new(world);
+    let view = runtime_belief_view(world, scheduler, action_defs);
     let before = blocked_memory.clone();
     let queue_transition_changed =
         handle_facility_queue_transitions(&view, runtime, blocked_memory, agent, phase.tick, phase);
@@ -491,6 +514,7 @@ fn handle_active_action_phase(
     let planned_candidates = runtime.has_journey_commitment().then(|| {
         build_candidate_plans(
             ctx.world,
+            ctx.scheduler,
             agent,
             ranked_candidates,
             blocked_memory,
@@ -534,6 +558,8 @@ fn handle_active_action_phase(
     finalize_agent_tick(
         ctx.world,
         ctx.event_log,
+        ctx.scheduler,
+        action_defs,
         agent,
         tick,
         original_blocked,
@@ -575,6 +601,7 @@ fn goal_switch_margin_details(
 #[allow(clippy::too_many_arguments)]
 fn build_candidate_plans(
     world: &worldwake_core::World,
+    scheduler: &Scheduler,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
@@ -584,7 +611,7 @@ fn build_candidate_plans(
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
 ) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
-    let view = OmniscientBeliefView::new(world);
+    let view = runtime_belief_view(world, scheduler, action_defs);
     ranked_candidates
         .iter()
         .take(usize::from(budget.max_candidates_to_plan))
@@ -614,6 +641,7 @@ fn build_candidate_plans(
 #[allow(clippy::too_many_arguments)]
 fn plan_and_validate_next_step(
     world: &worldwake_core::World,
+    scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
@@ -627,10 +655,11 @@ fn plan_and_validate_next_step(
     action_handlers: &ActionHandlerRegistry,
 ) -> (Option<PlannedStep>, Option<bool>) {
     // A second read view covers plan selection and step validation after the active-action fork.
-    let view = OmniscientBeliefView::new(world);
+    let view = runtime_belief_view(world, scheduler, action_defs);
     if runtime.dirty {
         let plans = build_candidate_plans(
             world,
+            scheduler,
             agent,
             ranked_candidates,
             blocked_memory,
@@ -686,9 +715,12 @@ fn plan_and_validate_next_step(
     (next_step, next_step_valid)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finalize_agent_tick(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
+    scheduler: &Scheduler,
+    action_defs: &worldwake_sim::ActionDefRegistry,
     agent: EntityId,
     tick: Tick,
     original_blocked: &BlockedIntentMemory,
@@ -705,7 +737,7 @@ fn finalize_agent_tick(
     )?;
     {
         // Snapshot the post-mutation world state before ending the tick.
-        let view = OmniscientBeliefView::new(world);
+        let view = runtime_belief_view(world, scheduler, action_defs);
         update_runtime_observation_snapshot(&view, agent, runtime);
     }
     Ok(())
@@ -1518,6 +1550,7 @@ mod tests {
         recipes: RecipeRegistry,
         defs: ActionDefRegistry,
         handlers: ActionHandlerRegistry,
+        scheduler: Scheduler,
         actor: EntityId,
         orchard_farm: EntityId,
         orchard_row: EntityId,
@@ -1581,6 +1614,7 @@ mod tests {
             recipes,
             defs: registries.defs,
             handlers: registries.handlers,
+            scheduler: Scheduler::new(SystemManifest::canonical()),
             actor,
             orchard_farm,
             orchard_row,
@@ -2015,6 +2049,8 @@ mod tests {
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             &mut runtime,
             &mut blocked,
             harness.actor,
@@ -2097,6 +2133,8 @@ mod tests {
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             &mut runtime,
             &mut blocked,
             harness.actor,
@@ -2121,6 +2159,7 @@ mod tests {
         let semantics = build_semantics_table(&harness.defs);
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
+            &harness.scheduler,
             &mut runtime,
             harness.actor,
             std::slice::from_ref(&goal),
@@ -2169,6 +2208,8 @@ mod tests {
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             &mut runtime,
             &mut blocked,
             harness.actor,
@@ -2220,6 +2261,8 @@ mod tests {
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             &mut runtime,
             &mut blocked,
             harness.actor,
@@ -3088,6 +3131,8 @@ mod tests {
             .or_default();
         let ranked = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             runtime,
             &mut blocked,
             harness.actor,
@@ -3102,6 +3147,7 @@ mod tests {
         );
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
+            &harness.scheduler,
             runtime,
             harness.actor,
             &ranked,
@@ -3173,6 +3219,8 @@ mod tests {
 
         let ranked_after_pickup = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             runtime,
             &mut blocked,
             harness.actor,
@@ -3188,6 +3236,7 @@ mod tests {
         assert!(runtime.dirty);
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
+            &harness.scheduler,
             runtime,
             harness.actor,
             &ranked_after_pickup,
@@ -3239,6 +3288,8 @@ mod tests {
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             runtime,
             &mut blocked,
             harness.actor,
@@ -3289,6 +3340,8 @@ mod tests {
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             runtime,
             &mut blocked,
             harness.actor,
@@ -3320,6 +3373,8 @@ mod tests {
 
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
+            &harness.scheduler,
+            &harness.defs,
             &mut runtime,
             &mut blocked,
             harness.actor,

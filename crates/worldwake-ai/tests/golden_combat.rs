@@ -2,13 +2,17 @@
 
 mod golden_harness;
 
+use std::collections::BTreeSet;
+
 use golden_harness::*;
+use worldwake_ai::derive_danger_pressure;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, CombatProfile, CommodityKind,
-    DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
-    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
-    WorkstationTag, WoundList,
+    hash_event_log, hash_world, total_live_lot_quantity, CombatProfile, CombatStance,
+    CommodityKind, DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes,
+    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
+    UtilityProfile, WorkstationTag, WoundList,
 };
+use worldwake_sim::{OmniscientBeliefRuntime, OmniscientBeliefView};
 
 // ---------------------------------------------------------------------------
 // Combat-specific helpers (only used by tests in this file)
@@ -492,6 +496,76 @@ fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
         hash_world(&h.world).unwrap(),
         hash_event_log(&h.event_log).unwrap(),
     )
+}
+
+#[test]
+fn golden_reduce_danger_defensive_mitigation() {
+    let (mut h, attacker, defender, initial_coin_total) = build_living_combat_scenario(Seed([23; 32]));
+    let danger_high_threshold = h
+        .world
+        .get_component_drive_thresholds(defender)
+        .expect("defender should have drive thresholds")
+        .danger
+        .high();
+    let origin = h
+        .world
+        .effective_place(defender)
+        .expect("defender should start at a concrete place");
+
+    let mut saw_attacker_attack = false;
+    let mut saw_defender_high_danger = false;
+    let mut saw_defender_defend_action = false;
+    let mut saw_defender_defending_stance = false;
+    let mut saw_defender_relocate = false;
+    let mut defender_actions = BTreeSet::new();
+
+    for _ in 0..40 {
+        h.step_once();
+
+        let view = OmniscientBeliefView::with_runtime(
+            &h.world,
+            OmniscientBeliefRuntime::new(h.scheduler.active_actions(), &h.defs),
+        );
+        let defender_danger = derive_danger_pressure(&view, defender);
+        saw_defender_high_danger |= defender_danger >= danger_high_threshold;
+
+        saw_attacker_attack |= h.agent_active_action_name(attacker) == Some("attack");
+        if let Some(action_name) = h.agent_active_action_name(defender) {
+            defender_actions.insert(action_name.to_string());
+        }
+        saw_defender_defend_action |= h.agent_active_action_name(defender) == Some("defend");
+        saw_defender_defending_stance |=
+            h.agent_combat_stance(defender) == Some(CombatStance::Defending);
+        saw_defender_relocate |= h.world.effective_place(defender) != Some(origin);
+
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
+        );
+
+        if saw_attacker_attack
+            && saw_defender_high_danger
+            && (saw_defender_defend_action
+                || saw_defender_defending_stance
+                || saw_defender_relocate)
+        {
+            break;
+        }
+    }
+
+    assert!(
+        saw_attacker_attack,
+        "attacker should initiate combat through the real attack action"
+    );
+    assert!(
+        saw_defender_high_danger,
+        "defender should reach high-or-above danger pressure under active attack"
+    );
+    assert!(
+        saw_defender_defend_action || saw_defender_defending_stance || saw_defender_relocate,
+        "defender should autonomously enter a concrete mitigation path such as defend or relocation; observed defender actions: {defender_actions:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

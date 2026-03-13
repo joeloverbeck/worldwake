@@ -146,13 +146,19 @@ fn emit_engage_hostile_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     ctx: &GenerationContext<'_>,
 ) {
+    if ctx.view.drive_thresholds(ctx.agent).is_some_and(|thresholds| {
+        derive_danger_pressure(ctx.view, ctx.agent) >= thresholds.danger.high()
+    }) {
+        return;
+    }
+
     let current_attackers = ctx
         .view
         .current_attackers_of(ctx.agent)
         .into_iter()
         .collect::<BTreeSet<_>>();
 
-    for target in local_visible_hostiles(ctx.view, ctx.agent, ctx.place) {
+    for target in local_hostility_targets(ctx.view, ctx.agent, ctx.place) {
         if current_attackers.contains(&target) {
             continue;
         }
@@ -381,7 +387,7 @@ fn emit_heal_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
     }
 }
 
-fn local_visible_hostiles(
+fn local_hostility_targets(
     view: &dyn BeliefView,
     agent: EntityId,
     place: Option<EntityId>,
@@ -390,7 +396,7 @@ fn local_visible_hostiles(
         return Vec::new();
     };
 
-    view.visible_hostiles_for(agent)
+    view.hostile_targets_of(agent)
         .into_iter()
         .filter(|target| {
             view.entity_kind(*target)
@@ -1812,6 +1818,41 @@ mod tests {
             &BlockedIntentMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::EngageHostile { target: hostile }
+        ));
+        assert!(contains_goal(&candidates, GoalKind::ReduceDanger));
+    }
+
+    #[test]
+    fn engage_hostile_is_suppressed_when_high_danger_requires_defense() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(10);
+        let refuge = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile, refuge]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.entity_kinds.insert(refuge, EntityKind::Place);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(hostile, place);
+        view.entities_at.insert(place, vec![agent, hostile]);
+        view.adjacent_places.insert(place, vec![refuge]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![hostile]);
+        view.wounds.insert(agent, vec![wound(120)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(0),
         );
 
         assert!(!contains_goal(

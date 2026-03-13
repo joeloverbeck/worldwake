@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 8 tests (scenarios 3, 3d, 4, 6b, 6c, 9 + replays)
-  golden_combat.rs            — 6 tests (living combat + death scenarios + replays)
+  golden_combat.rs            — 7 tests (living combat + defensive mitigation + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 31 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 32 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -244,6 +244,17 @@ The golden suite contains 31 tests across 6 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes for the scenario.
 **Cross-system chain**: Hostility relation → hostile-engagement goal → attack action start → wound infliction → defender response → deterministic replay + conservation checks.
 
+### Scenario 7f: ReduceDanger Defensive Mitigation Under Active Threat
+**File**: `golden_combat.rs` | **Test**: `golden_reduce_danger_defensive_mitigation`
+**Systems exercised**: AI (danger pressure, candidate generation, planning), Combat (`attack`, `defend`), authoritative belief/runtime integration, Conservation
+**Setup**: Two sated agents at Village Square. The attacker has a concrete hostility relation toward the defender and a stronger combat profile. The defender has no outgoing hostility relation and is therefore purely reactive.
+**Emergent behavior proven**:
+- The attacker opens combat through the normal `EngageHostile` path.
+- The defender observes live attack pressure through the real runtime-aware belief view instead of relying on a test shim or queue injection.
+- The defender does not alias incoming hostility into proactive `EngageHostile`; instead it enters a real `ReduceDanger` mitigation path and manifests concrete defensive behavior (`defend`/defending stance).
+- Coin totals remain exactly conserved throughout the encounter.
+**Cross-system chain**: Outgoing hostility → attack action start → current-attacker danger signal → `ReduceDanger` emission → defensive mitigation action.
+
 ### Scenario 8: Death Cascade and Opportunistic Loot
 **File**: `golden_combat.rs` | **Test**: `golden_death_cascade_and_opportunistic_loot`
 **Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
@@ -301,7 +312,7 @@ The golden suite contains 31 tests across 6 domain files. Every test uses the re
 | Relieve | Yes | 7b |
 | Wash | Yes | 7e |
 | EngageHostile | Yes | 7c |
-| ReduceDanger | **No** | — |
+| ReduceDanger | Yes | 7f |
 | Heal | Yes | 2c |
 | ProduceCommodity | Yes | 6b |
 | SellCommodity | **No** | — |
@@ -310,7 +321,7 @@ The golden suite contains 31 tests across 6 domain files. Every test uses the re
 | LootCorpse | Yes | 8 |
 | BuryCorpse | **No** | — |
 
-**Coverage: 12/17 GoalKinds tested (70.6%).**
+**Coverage: 13/17 GoalKinds tested (76.5%).**
 
 ### ActionDomain Coverage
 
@@ -323,7 +334,7 @@ The golden suite contains 31 tests across 6 domain files. Every test uses the re
 | Trade | Yes | 2b |
 | Travel | Yes | 1, 3 (implicit) |
 | Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
-| Combat (attack, defend) | Yes | 7c |
+| Combat (attack, defend) | Yes | 7c, 7f |
 | Care (heal) | Yes | 2c |
 | Loot | Yes | 8 |
 
@@ -381,6 +392,7 @@ The golden suite contains 31 tests across 6 domain files. Every test uses the re
 | Multiple competing needs (hunger + thirst + fatigue) | Yes |
 | Penalty-interrupt threshold (subcritical continue, critical interrupt) | Yes |
 | Dirtiness pressure → wash → water consumption | Yes |
+| Active attack pressure → ReduceDanger → defensive mitigation | Yes |
 | Death after departure on multi-hop travel | Yes |
 | Multi-agent exclusive facility queue rotation → grant promotion → harvest | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
@@ -399,12 +411,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score >= 5)
-
-#### P7. ReduceDanger Defensive Mitigation Under Active Threat
-**Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
-**Rationale**: Living combat is now covered, but `ReduceDanger` itself is still not proven as a defensive end-to-end behavior. The architecture now keeps offensive hostility separate from defensive danger mitigation, so this remaining gap should test flight/defend behavior under active attack instead of reusing the living-combat scenario.
-**Proves**: Agent comes under active attack pressure → `ReduceDanger` is emitted at high-or-above danger → planner selects a defensive mitigation (`defend`, reposition, or equivalent real path) → danger drops without manual action queueing.
-**File**: `golden_ai_decisions.rs`
 
 #### P-NEW-1. Journey Commitment Suspension and Resumption
 **Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
@@ -483,14 +489,13 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 31 | 33 | 43 |
-| GoalKind coverage | 12/17 (70.6%) | 13/17 (76.5%) | 14/17 (82.4%) |
+| Proven tests | 32 | 33 | 42 |
+| GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 14/17 (82.4%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 21 | 23 | 29 |
+| Cross-system chains | 22 | 23 | 28 |
 
 ### Recommended Implementation Order (Tier 1)
 
-1. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
-2. **P-NEW-1 (Journey commitment suspension)** — exercises journey state machine not yet proven
+1. **P-NEW-1 (Journey commitment suspension)** — exercises journey state machine not yet proven

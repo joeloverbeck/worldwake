@@ -327,9 +327,19 @@ impl BeliefView for OmniscientBeliefView<'_> {
             .unwrap_or_default()
     }
 
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        self.world
+            .hostile_targets_of(agent)
+            .into_iter()
+            .filter(|entity| self.world.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
         let mut hostiles = self
-            .world
             .hostile_targets_of(agent)
             .into_iter()
             .chain(self.world.hostile_towards(agent))

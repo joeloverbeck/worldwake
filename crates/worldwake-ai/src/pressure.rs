@@ -24,7 +24,9 @@ pub fn derive_danger_pressure(view: &dyn BeliefView, agent: EntityId) -> Permill
         || (!attackers.is_empty() && (view.has_wounds(agent) || view.is_incapacitated(agent)))
     {
         thresholds.danger.critical()
-    } else if !attackers.is_empty() {
+    } else if !attackers.is_empty()
+        || (!hostiles.is_empty() && (view.has_wounds(agent) || view.is_incapacitated(agent)))
+    {
         thresholds.danger.high()
     } else {
         thresholds.danger.medium()
@@ -351,6 +353,22 @@ mod tests {
         assert_eq!(
             derive_danger_pressure(&incapacitated_view, agent),
             thresholds.danger.critical()
+        );
+    }
+
+    #[test]
+    fn danger_pressure_promotes_visible_hostile_when_already_wounded() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let thresholds = DriveThresholds::default();
+        let mut view = TestBeliefView::default();
+        view.thresholds.insert(agent, thresholds);
+        view.hostiles.insert(agent, vec![hostile]);
+        view.wounds.insert(agent, vec![wound(120)]);
+
+        assert_eq!(
+            derive_danger_pressure(&view, agent),
+            thresholds.danger.high()
         );
     }
 

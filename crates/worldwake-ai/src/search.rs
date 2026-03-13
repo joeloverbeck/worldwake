@@ -2190,10 +2190,7 @@ mod tests {
         assert!(matches!(
             (plan.steps[0].op_kind, plan.terminal_kind),
             (PlannerOpKind::Travel, PlanTerminalKind::GoalSatisfied)
-                | (
-                    PlannerOpKind::Attack | PlannerOpKind::Defend,
-                    PlanTerminalKind::CombatCommitment
-                )
+                | (PlannerOpKind::Defend, PlanTerminalKind::CombatCommitment)
         ));
     }
 

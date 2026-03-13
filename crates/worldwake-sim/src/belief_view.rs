@@ -78,6 +78,9 @@ pub trait BeliefView {
     fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile>;
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        self.visible_hostiles_for(agent)
+    }
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
     fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId>;
     fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
