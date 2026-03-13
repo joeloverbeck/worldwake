@@ -3,9 +3,9 @@ use crate::{
     authoritative_target, build_planning_snapshot, build_semantics_table,
     clear_resolved_blockers, evaluate_interrupt, handle_plan_failure, rank_candidates,
     resolve_planning_targets_with, revalidate_next_step, search_plan, select_best_plan,
-    AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision, JourneyCommitmentState,
-    PlanFailureContext, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    PlanningBudget, RankedGoal,
+    AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision, JourneyClearReason,
+    JourneyCommitmentState, JourneyRuntimeSnapshot, PlanFailureContext, PlanTerminalKind,
+    PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -22,6 +22,19 @@ pub struct AgentTickDriver {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
     budget: PlanningBudget,
     semantics_cache: Option<(usize, BTreeMap<ActionDefId, PlannerOpSemantics>)>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum JourneySwitchMarginSource {
+    BudgetDefault,
+    JourneyProfile,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JourneyDebugSnapshot {
+    pub runtime: JourneyRuntimeSnapshot,
+    pub effective_switch_margin: Permille,
+    pub switch_margin_source: JourneySwitchMarginSource,
 }
 
 impl AgentTickDriver {
@@ -52,6 +65,23 @@ impl AgentTickDriver {
             .as_ref()
             .expect("semantics cache must exist after rebuild")
             .1
+    }
+
+    #[must_use]
+    pub fn journey_snapshot(
+        &self,
+        world: &worldwake_core::World,
+        agent: EntityId,
+    ) -> Option<JourneyDebugSnapshot> {
+        let runtime = self.runtime_by_agent.get(&agent)?;
+        let view = OmniscientBeliefView::new(world);
+        let (effective_switch_margin, switch_margin_source) =
+            goal_switch_margin_details(&view, agent, runtime, &self.budget);
+        Some(JourneyDebugSnapshot {
+            runtime: runtime.journey_runtime_snapshot(),
+            effective_switch_margin,
+            switch_margin_source,
+        })
     }
 }
 
@@ -151,7 +181,7 @@ fn process_agent(
     {
         let view = OmniscientBeliefView::new(ctx.world);
         if view.is_dead(agent) || !view.is_alive(agent) {
-            runtime.clear_journey_commitment();
+            runtime.clear_journey_commitment_with_reason(JourneyClearReason::Death);
             runtime.current_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
@@ -455,13 +485,28 @@ fn effective_goal_switch_margin(
     runtime: &AgentDecisionRuntime,
     budget: &PlanningBudget,
 ) -> Permille {
+    goal_switch_margin_details(view, agent, runtime, budget).0
+}
+
+fn goal_switch_margin_details(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    runtime: &AgentDecisionRuntime,
+    budget: &PlanningBudget,
+) -> (Permille, JourneySwitchMarginSource) {
     if runtime.has_journey_commitment() {
         if let Some(profile) = view.travel_disposition_profile(agent) {
-            return profile.route_replan_margin;
+            return (
+                profile.route_replan_margin,
+                JourneySwitchMarginSource::JourneyProfile,
+            );
         }
     }
 
-    budget.switch_margin_permille
+    (
+        budget.switch_margin_permille,
+        JourneySwitchMarginSource::BudgetDefault,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -544,7 +589,7 @@ fn plan_and_validate_next_step(
                 .find(|candidate| Some(candidate.grounded.key) == runtime.current_goal)
                 .map(|candidate| candidate.priority_class);
         } else {
-            runtime.clear_journey_commitment();
+            runtime.clear_journey_commitment_with_reason(JourneyClearReason::LostTravelPlan);
             runtime.materialization_bindings.clear();
             runtime.current_goal = None;
             runtime.current_plan = None;
@@ -679,7 +724,7 @@ fn advance_completed_step(
             {
                 runtime.journey_commitment_state = JourneyCommitmentState::Active;
             } else {
-                runtime.clear_journey_commitment();
+                runtime.clear_journey_commitment_with_reason(JourneyClearReason::GoalSatisfied);
             }
             runtime.current_goal = None;
             runtime.current_plan = None;
@@ -748,7 +793,7 @@ fn update_journey_fields_for_adopted_plan(
     }
 
     let Some(destination) = selected_plan.terminal_travel_destination() else {
-        runtime.clear_journey_commitment();
+        runtime.clear_journey_commitment_with_reason(JourneyClearReason::LostTravelPlan);
         return;
     };
 
@@ -805,7 +850,7 @@ fn handle_recoverable_travel_step_blockage(
             observed_tick: tick,
             expires_tick: tick + u64::from(budget.structural_block_ticks),
         });
-        runtime.clear_journey_commitment();
+        runtime.clear_journey_commitment_with_reason(JourneyClearReason::PatienceExhausted);
     }
 
     runtime.current_plan = None;
@@ -1021,7 +1066,8 @@ mod tests {
     };
     use crate::{
         CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind, JourneyCommitmentState,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef,
     };
     use crate::PlanningBudget;
     use std::collections::BTreeSet;
@@ -1406,6 +1452,90 @@ mod tests {
     }
 
     #[test]
+    fn journey_snapshot_reports_profile_margin_source_for_active_journey() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_travel_disposition_profile(
+                actor,
+                TravelDispositionProfile {
+                    route_replan_margin: Permille::new(300).unwrap(),
+                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        driver.runtime_by_agent.insert(
+            actor,
+            crate::AgentDecisionRuntime {
+                current_plan: Some(PlannedPlan::new(
+                    GoalKey::from(GoalKind::Sleep),
+                    vec![travel_step(1, place)],
+                    PlanTerminalKind::GoalSatisfied,
+                )),
+                journey_committed_goal: Some(GoalKey::from(GoalKind::Sleep)),
+                journey_committed_destination: Some(place),
+                journey_established_at: Some(Tick(7)),
+                ..crate::AgentDecisionRuntime::default()
+            },
+        );
+
+        let snapshot = driver.journey_snapshot(&world, actor).unwrap();
+
+        assert_eq!(
+            snapshot.switch_margin_source,
+            JourneySwitchMarginSource::JourneyProfile
+        );
+        assert_eq!(snapshot.effective_switch_margin, Permille::new(300).unwrap());
+        assert_eq!(snapshot.runtime.committed_destination, Some(place));
+        assert_eq!(snapshot.runtime.active_plan_destination, Some(place));
+        assert!(snapshot.runtime.has_active_journey_travel);
+    }
+
+    #[test]
+    fn journey_snapshot_reports_budget_margin_when_no_profile_override_applies() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let budget = PlanningBudget::default();
+        let mut driver = AgentTickDriver::new(budget.clone());
+        driver.runtime_by_agent.insert(
+            actor,
+            crate::AgentDecisionRuntime {
+                current_plan: Some(PlannedPlan::new(
+                    GoalKey::from(GoalKind::Sleep),
+                    vec![barrier_step()],
+                    PlanTerminalKind::GoalSatisfied,
+                )),
+                ..crate::AgentDecisionRuntime::default()
+            },
+        );
+
+        let snapshot = driver.journey_snapshot(&world, actor).unwrap();
+
+        assert_eq!(
+            snapshot.switch_margin_source,
+            JourneySwitchMarginSource::BudgetDefault
+        );
+        assert_eq!(snapshot.effective_switch_margin, budget.switch_margin_permille);
+        assert_eq!(snapshot.runtime.committed_destination, None);
+        assert_eq!(snapshot.runtime.active_plan_destination, None);
+        assert!(!snapshot.runtime.has_active_journey_travel);
+    }
+
+    #[test]
     fn travel_led_plan_adoption_sets_journey_commitment_anchor() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let destination = entity(11);
@@ -1449,6 +1579,7 @@ mod tests {
         assert_eq!(runtime.journey_established_at, Some(Tick(3)));
         assert_eq!(runtime.journey_last_progress_tick, Some(Tick(7)));
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 2);
+        assert_eq!(runtime.last_journey_clear_reason, None);
     }
 
     #[test]
@@ -1659,6 +1790,10 @@ mod tests {
         assert_eq!(runtime.journey_established_at, None);
         assert_eq!(runtime.journey_last_progress_tick, None);
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+        assert_eq!(
+            runtime.last_journey_clear_reason,
+            Some(crate::JourneyClearReason::PatienceExhausted)
+        );
         assert_eq!(blocked_memory.intents.len(), 1);
         assert_eq!(blocked_memory.intents[0].goal_key, goal);
         assert_eq!(blocked_memory.intents[0].blocking_fact, BlockingFact::NoKnownPath);
@@ -1730,6 +1865,15 @@ mod tests {
     #[test]
     fn dead_ai_agent_is_skipped_by_ai_driver() {
         let mut harness = Harness::new(ControlSource::Ai);
+        harness.driver.runtime_by_agent.insert(
+            harness.actor,
+            crate::AgentDecisionRuntime {
+                journey_committed_goal: Some(GoalKey::from(GoalKind::Sleep)),
+                journey_committed_destination: Some(entity(11)),
+                journey_established_at: Some(Tick(1)),
+                ..crate::AgentDecisionRuntime::default()
+            },
+        );
         {
             let mut txn = new_txn(&mut harness.world, 2);
             txn.set_component_dead_at(harness.actor, worldwake_core::DeadAt(Tick(2)))
@@ -1746,6 +1890,10 @@ mod tests {
                 .world
                 .controlled_commodity_quantity(harness.actor, CommodityKind::Bread),
             Quantity(1)
+        );
+        assert_eq!(
+            harness.runtime().unwrap().last_journey_clear_reason,
+            Some(crate::JourneyClearReason::Death)
         );
     }
 
@@ -1833,7 +1981,36 @@ mod tests {
         assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
         assert_eq!(runtime.journey_established_at, Some(Tick(1)));
         assert_eq!(runtime.journey_last_progress_tick, Some(Tick(3)));
+        assert_eq!(runtime.last_journey_clear_reason, None);
         assert!(runtime.dirty);
+    }
+
+    #[test]
+    fn goal_completion_records_goal_satisfied_clear_reason() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let destination = entity(11);
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(PlannedPlan::new(
+                goal,
+                vec![travel_step(1, destination)],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            current_step_index: 0,
+            journey_committed_goal: Some(goal),
+            journey_committed_destination: Some(destination),
+            journey_established_at: Some(Tick(1)),
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        advance_completed_step(&mut runtime, PlannerOpKind::Travel, Tick(4));
+
+        assert_eq!(
+            runtime.last_journey_clear_reason,
+            Some(crate::JourneyClearReason::GoalSatisfied)
+        );
+        assert_eq!(runtime.journey_committed_goal, None);
+        assert_eq!(runtime.journey_committed_destination, None);
     }
 
     #[test]

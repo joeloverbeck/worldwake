@@ -1,5 +1,6 @@
 use crate::{
-    authoritative_target, AgentDecisionRuntime, PlannedStep, PlannerOpKind, PlanningBudget,
+    authoritative_target, AgentDecisionRuntime, JourneyClearReason, PlannedStep, PlannerOpKind,
+    PlanningBudget,
 };
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, EntityId, GoalKey, GoalKind,
@@ -26,7 +27,7 @@ pub fn handle_plan_failure(
     budget: &PlanningBudget,
 ) {
     runtime.current_plan = None;
-    runtime.clear_journey_commitment();
+    runtime.clear_journey_commitment_with_reason(JourneyClearReason::PlanFailed);
     runtime.materialization_bindings.clear();
 
     let blocking_fact = derive_blocking_fact(

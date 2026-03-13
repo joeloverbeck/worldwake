@@ -1,6 +1,6 @@
 # ROUCOMANDJOUPER-000: Route Commitment and Journey Persistence Index
 
-**Status**: ACTIVE
+**Status**: COMPLETED
 **Spec**: `specs/DRAFT-route-commitment-and-journey-persistence.md`
 **Phase**: Future AI/runtime hardening, post-E22 scheduling only
 
@@ -94,3 +94,16 @@ Steps 1 and 2 can be done in parallel. Ticket 004 should land before the later c
 - Route remains derived from plan travel steps; committed destination may be retained transiently across planless replanning seams after ROUCOMANDJOUPER-008
 - No abstract scores — only concrete temporal and threshold fields (Principle 3)
 - System decoupling (Principle 12) preserved — no cross-system direct calls
+
+## Outcome
+
+- Completion date: 2026-03-13
+- What changed:
+  - The full route-commitment ticket sequence landed, including travel disposition, controller-level switch-margin policy, temporal/blockage lifecycle, durable commitment anchoring, detour suspension semantics, patience exhaustion, and the final debug surface.
+  - The implemented architecture kept per-leg authoritative travel intact while adding transient journey commitment/runtime read-models in `worldwake-ai`.
+- Deviations from original plan:
+  - The final debug surface exposes both the durable committed destination and the current plan terminal travel destination instead of collapsing them into one plan-derived accessor.
+  - Non-travel detours suspend commitment instead of clearing it, and the archived debug ticket reflects that final architecture.
+- Verification results:
+  - `cargo test -p worldwake-ai`
+  - `cargo clippy --workspace`

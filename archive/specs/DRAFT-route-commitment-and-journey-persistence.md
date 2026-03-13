@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: COMPLETED
 
 # Route Commitment And Journey Persistence
 
@@ -306,3 +306,17 @@ Route extraction inherits the canonical shortest-path tie-break already defined 
 - [golden_ai_decisions.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_ai_decisions.rs)
 - [travel_actions.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/travel_actions.rs)
 - [decision_runtime.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_runtime.rs)
+
+## Outcome
+
+- Completion date: 2026-03-13
+- What actually changed:
+  - Added `TravelDispositionProfile`, journey temporal fields, controller-level journey switch-margin policy, durable commitment anchoring, detour suspension semantics, patience exhaustion handling, and debug read-models in the AI runtime/controller layer.
+  - Preserved adjacent-place authoritative travel and kept all journey state transient to `worldwake-ai`.
+- Deviations from original plan:
+  - The final debug surface exposes both committed destination and current-plan destination instead of introducing a single plan-derived journey destination accessor.
+  - Non-travel detours suspend commitment instead of clearing it, matching the later 008/009 ticket architecture.
+  - Clear reasons are tracked as transient debug/runtime instrumentation, not serialized state.
+- Verification results:
+  - `cargo test -p worldwake-ai`
+  - `cargo clippy --workspace`

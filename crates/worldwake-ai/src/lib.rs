@@ -22,11 +22,12 @@ pub mod pressure;
 pub mod ranking;
 pub mod search;
 
-pub use agent_tick::AgentTickDriver;
+pub use agent_tick::{AgentTickDriver, JourneyDebugSnapshot, JourneySwitchMarginSource};
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
-    AgentDecisionRuntime, JourneyCommitmentState, JourneyPlanRelation, MaterializationBindings,
+    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation,
+    JourneyRuntimeSnapshot, MaterializationBindings,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
