@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-011: World Overview Commands (world, places, agents, goods)
 
 ## Summary
@@ -91,3 +93,14 @@ Goods:
 - Deterministic output ordering (BTreeMap-based iteration)
 - Counts match actual entity/component state (no caching that could go stale)
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-13
+- **What changed**:
+  - Created `crates/worldwake-cli/src/handlers/world_overview.rs` with `handle_world`, `handle_places`, `handle_agents`, `handle_goods` + 9 acceptance tests
+  - Modified `crates/worldwake-cli/src/handlers/mod.rs` — added `mod world_overview`, replaced 4 stub arms with real dispatch
+- **Deviations**:
+  - `handle_agents` takes `&ActionRegistries` in addition to `&SimulationState` (needed to resolve action def names for display); other 3 handlers match ticket signature
+  - Used `outgoing_edges()` + `edge()` API instead of assumed `edges_from()` (actual topology API)
+- **Verification**: `cargo clippy -p worldwake-cli` clean, `cargo test -p worldwake-cli` 91/91 pass

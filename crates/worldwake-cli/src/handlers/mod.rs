@@ -3,6 +3,7 @@ mod control;
 mod events;
 mod inspect;
 pub(crate) mod tick;
+mod world_overview;
 
 use worldwake_ai::AgentTickDriver;
 use worldwake_sim::{SimulationState, SystemDispatchTable};
@@ -48,22 +49,10 @@ pub fn dispatch_command(
         CliCommand::Trace { id } => events::handle_trace(sim, id),
         CliCommand::Switch { name } => control::handle_switch(sim, &name),
         CliCommand::Observe => control::handle_observe(sim),
-        CliCommand::World => {
-            println!("world: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Places => {
-            println!("places: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Agents => {
-            println!("agents: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Goods => {
-            println!("goods: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
+        CliCommand::World => world_overview::handle_world(sim),
+        CliCommand::Places => world_overview::handle_places(sim),
+        CliCommand::Agents => world_overview::handle_agents(sim, registries),
+        CliCommand::Goods => world_overview::handle_goods(sim),
         CliCommand::Save { .. } => {
             println!("save: not implemented");
             Ok(CommandOutcome::Continue)
