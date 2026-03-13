@@ -7,7 +7,7 @@
 
 ## Goal
 
-Eliminate remaining architectural gaps where Phase 2 code and specs violate foundational principles — specifically: abstract float confidence scores in E14 spec, non-deterministic HashMap in E14 spec, missing GoalKind candidate emissions (SellCommodity, AcquireCommodity for Treatment), undocumented feedback dampeners across Phase 2 systems, and missing debuggability APIs.
+Eliminate remaining architectural gaps where Phase 2 code and specs violate foundational principles — specifically: abstract float confidence scores in E14 spec, non-deterministic HashMap in E14 spec, missing GoalKind candidate emission for treatment acquisition, stale assumptions about premature `SellCommodity` wiring, undocumented feedback dampeners across Phase 2 systems, and missing debuggability APIs.
 
 ## Non-Goals
 
@@ -64,41 +64,46 @@ Finally, the E14/E16 boundary is underspecified. E14 must define the belief-side
 
 ---
 
-## Section B — Wire SellCommodity Goal Emission (FND02-002)
+## Section B — Preserve `SellCommodity` Deferral Until S04 (FND02-002)
 
 **Ticket**: FND02-002
 **Principles violated**: 28 (Every New System Spec Must Declare Its Causal Hooks — completeness), 18 (Resource-Bounded Practical Reasoning Over Scripts)
 
 ### Problem
 
-`GoalKind::SellCommodity` exists in `crates/worldwake-core/src/goal.rs` but `crates/worldwake-ai/src/candidate_generation.rs` has no emission logic for it. The goal kind is defined but unreachable through the candidate generation pipeline — agents with merchandise can never autonomously decide to sell.
+The original FND-02 assumption was stale. `GoalKind::SellCommodity` exists in `crates/worldwake-core/src/goal.rs`, but current Phase 2 architecture intentionally does not make it real yet:
+
+- `crates/worldwake-ai/src/search.rs` explicitly treats `SellCommodity` as unsupported.
+- `crates/worldwake-ai/src/candidate_generation.rs` contains regression coverage asserting deferred goal kinds like `SellCommodity` are not emitted.
+- `specs/S04-merchant-selling-market-presence.md` defines the concrete architecture that makes seller-side selling valid: `SaleListing`, `staff_market`, listed-lot discovery, and removal of profile-inferred seller visibility.
+
+Emitting `SellCommodity` in FND-02 would create a ranked but unsatisfiable goal and would strengthen the pre-S04 abstraction that S04 is meant to replace.
 
 ### Required Changes
 
 **File**: `crates/worldwake-ai/src/candidate_generation.rs`
 
-1. **Add sell-candidate emission function**: When an agent has a `MerchandiseProfile` and holds commodity quantity above their restock threshold at a place with other agents (potential buyers), emit `GoalKind::SellCommodity { commodity }` candidates.
+1. **Do not emit `SellCommodity` in FND-02**: Keep seller-side selling deferred until S04 introduces concrete seller-market state and satisfiable planning semantics.
 
-2. **Emission conditions**:
-   - Agent has `MerchandiseProfile` component.
-   - Agent holds at least one commodity where current stock exceeds restock threshold (surplus to sell).
-   - Agent is at a place (not in transit).
-   - Evidence: the commodity entity and the place.
+2. **Strengthen the regression coverage**:
+   - Prove `SellCommodity` is still not emitted even when an agent has `MerchandiseProfile`, local stock, a valid `home_market`, and remembered demand.
+   - Preserve the existing regression that deferred goal kinds are not emitted.
 
-3. **Priority/motive**: Sell goals should have enterprise-class priority, below survival needs but competitive with restock goals.
+3. **Preserve current enterprise behavior**:
+   - `RestockCommodity` and `MoveCargo` remain the active enterprise goals in Phase 2 / FND-02.
+   - `MerchandiseProfile` continues to express enterprise intent, not active sale visibility.
 
 ### Test
 
-- Golden e2e test proving emergent sell behavior: merchant with surplus commodity at market emits SellCommodity candidate.
-- Unit test: agent without MerchandiseProfile does not emit sell candidates.
-- Unit test: agent with MerchandiseProfile but no surplus does not emit sell candidates.
+- Unit test: merchant with stock, `home_market`, and remembered demand still does not emit `SellCommodity` before S04.
+- Unit test: deferred-goal regression still proves `SellCommodity` is not emitted.
 
 ### Acceptance Criteria
 
-- [ ] `SellCommodity` candidates emitted when conditions met.
-- [ ] No sell candidates when agent lacks MerchandiseProfile.
-- [ ] No sell candidates when no surplus above restock threshold.
-- [ ] Golden e2e test passes.
+- [ ] `SellCommodity` remains deferred in FND-02.
+- [ ] Regression coverage proves `SellCommodity` is not emitted even for merchants with stock, `home_market`, and demand memory.
+- [ ] Existing deferred-goal regression still passes.
+- [ ] No partial seller-side market-presence behavior is introduced ahead of S04.
 
 ---
 
@@ -300,7 +305,7 @@ Six DRAFT specs in `specs/` represent valuable architectural work from Phase 2 a
 
 1. **FND02-001** (Section A): Fix E14 spec — spec-only change, no code
 2. **FND02-004** (Section D): Dampening audit — analysis + documentation + possible code fixes
-3. **FND02-002** (Section B): Wire SellCommodity — code change in candidate_generation.rs
+3. **FND02-002** (Section B): Preserve `SellCommodity` deferral until S04 — ticket correction + regression coverage
 4. **FND02-003** (Section C): Wire AcquireCommodity(Treatment) — code change in candidate_generation.rs
 5. **FND02-005** (Section E): Debuggability APIs — new files in ai and sim crates
 6. **FND02-006** (Section F): DRAFT promotion — file renames + spec amendments
@@ -314,7 +319,7 @@ Ticket 6 (DRAFT promotion file renames) is done as part of this FND-02 creation.
 Before proceeding to Phase 3 (E14 implementation):
 
 - [ ] E14 spec is determinism-safe (no `f32`, no `HashMap` in authoritative state)
-- [ ] GoalKind candidate coverage: all defined GoalKind variants have emission paths
+- [ ] Phase 2 / FND-02 goal candidate coverage is complete for currently supported, satisfiable goal variants; `SellCommodity` remains explicitly deferred to S04
 - [ ] Dampening audit documented in `docs/dampening-audit-phase2.md`
 - [ ] `explain_goal()` and `trace_event_cause()` APIs exist and tested
 - [ ] 6 DRAFTs promoted to S01-S06 and integrated into implementation order
@@ -334,7 +339,7 @@ Before proceeding to Phase 3 (E14 implementation):
 | Ticket | Test | Description |
 |--------|------|-------------|
 | FND02-001 | spec review | E14 spec contains no f32 or HashMap in authoritative state |
-| FND02-002 | golden e2e + unit | Merchant with surplus emits SellCommodity; no emission without MerchandiseProfile or surplus |
+| FND02-002 | unit | `SellCommodity` remains deferred before S04 even for merchants with stock, `home_market`, and demand memory |
 | FND02-003 | golden e2e + unit | Wounded agent/healer emits AcquireCommodity(Treatment); no emission without wounds |
 | FND02-004 | audit document | All Phase 2 loops documented with physical dampeners |
 | FND02-005 | unit tests | explain_goal returns structured explanation; trace_event_cause returns causal ancestry |

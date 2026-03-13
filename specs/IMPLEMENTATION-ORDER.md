@@ -50,7 +50,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **FND02-004**: Dampening audit across Phase 2 systems — document all amplifying loops and their physical dampeners
 
 **Step 8.5b** (parallel, code work):
-- **FND02-002**: Wire `SellCommodity` emission in `candidate_generation.rs` — merchant surplus → sell goal
+- **FND02-002**: Preserve `SellCommodity` deferral until S04 — keep seller-side selling out of FND-02 and cover the invariant with regression tests
 - **FND02-003**: Wire `AcquireCommodity(Treatment)` emission in `candidate_generation.rs` — wounds → medicine-seeking
 - **FND02-005**: Debuggability APIs — `explain_goal()` in ai crate, `trace_event_cause()` in sim crate
 
@@ -58,7 +58,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 
 #### FND-02 Gate Criteria
 - [ ] E14 spec determinism-safe (no `f32`, no `HashMap` in authoritative state)
-- [ ] GoalKind candidate coverage complete (all defined variants have emission paths)
+- [ ] Phase 2 / FND-02 candidate coverage complete for currently supported, satisfiable goal variants; `SellCommodity` remains explicitly deferred to S04
 - [ ] Dampening audit documented (`docs/dampening-audit-phase2.md`)
 - [ ] Debuggability APIs (`explain_goal`, `trace_event_cause`) exist and tested
 - [ ] 6 DRAFTs promoted to S01–S06 ✅

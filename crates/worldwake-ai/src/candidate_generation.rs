@@ -2274,6 +2274,62 @@ mod tests {
     }
 
     #[test]
+    fn merchant_with_stock_and_demand_still_does_not_emit_sell_commodity_before_s04() {
+        let agent = entity(1);
+        let place = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, place, bread]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(place, EntityKind::Place);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread, place);
+        view.entities_at.insert(place, vec![agent, bread]);
+        view.direct_possessions.insert(agent, vec![bread]);
+        view.direct_possessors.insert(bread, agent);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Bread), Quantity(3));
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((agent, bread));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(place),
+            },
+        );
+        view.demand_memory.insert(
+            agent,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+                place,
+                tick: Tick(2),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        ));
+    }
+
+    #[test]
     fn local_corpse_with_grave_plot_emits_bury_goal() {
         let agent = entity(1);
         let place = entity(10);
