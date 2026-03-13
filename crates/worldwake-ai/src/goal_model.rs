@@ -50,6 +50,7 @@ pub trait GoalKindPlannerExt {
         state: PlanningState<'snapshot>,
         op_kind: PlannerOpKind,
         targets: &[EntityId],
+        payload_override: Option<&ActionPayload>,
     ) -> PlanningState<'snapshot>;
     fn is_progress_barrier(&self, step: &PlannedStep) -> bool;
     fn is_satisfied(&self, state: &PlanningState<'_>) -> bool;
@@ -59,6 +60,7 @@ const CONSUME_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Consume,
     PlannerOpKind::Travel,
     PlannerOpKind::Trade,
+    PlannerOpKind::QueueForFacilityUse,
     PlannerOpKind::Harvest,
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
@@ -66,6 +68,7 @@ const CONSUME_OPS: &[PlannerOpKind] = &[
 const ACQUIRE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Trade,
+    PlannerOpKind::QueueForFacilityUse,
     PlannerOpKind::Harvest,
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
@@ -88,10 +91,12 @@ const HEAL_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Heal,
     PlannerOpKind::Trade,
+    PlannerOpKind::QueueForFacilityUse,
     PlannerOpKind::Craft,
 ];
 const PRODUCE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
+    PlannerOpKind::QueueForFacilityUse,
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
 ];
@@ -103,6 +108,7 @@ const SELL_OPS: &[PlannerOpKind] = &[
 const RESTOCK_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Trade,
+    PlannerOpKind::QueueForFacilityUse,
     PlannerOpKind::Harvest,
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
@@ -336,6 +342,7 @@ impl GoalKindPlannerExt for GoalKind {
         state: PlanningState<'snapshot>,
         op_kind: PlannerOpKind,
         targets: &[EntityId],
+        payload_override: Option<&ActionPayload>,
     ) -> PlanningState<'snapshot> {
         // Cargo uses transport transition kinds in planner_ops.rs for hypothetical state changes,
         // so MoveCargo intentionally falls through the default no-op path here.
@@ -372,11 +379,34 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => state,
             },
+            PlannerOpKind::QueueForFacilityUse => {
+                let queued_use = targets.first().copied().zip(
+                    payload_override
+                        .and_then(ActionPayload::as_queue_for_facility_use)
+                        .map(|payload| payload.intended_action),
+                );
+                if let Some((facility, intended_action)) = queued_use {
+                    state.simulate_queue_join(facility, intended_action)
+                } else {
+                    state
+                }
+            }
             _ => state,
         }
     }
 
     fn is_progress_barrier(&self, step: &PlannedStep) -> bool {
+        if step.op_kind == PlannerOpKind::QueueForFacilityUse {
+            return matches!(
+                self,
+                GoalKind::ConsumeOwnedCommodity { .. }
+                    | GoalKind::AcquireCommodity { .. }
+                    | GoalKind::Heal { .. }
+                    | GoalKind::ProduceCommodity { .. }
+                    | GoalKind::RestockCommodity { .. }
+            );
+        }
+
         if !step.is_materialization_barrier {
             return false;
         }
@@ -525,8 +555,8 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionPayload, BeliefView, DurationExpr, Interruptibility, TradeActionPayload,
-        TransportActionPayload,
+        ActionPayload, BeliefView, DurationExpr, Interruptibility, QueueForFacilityUsePayload,
+        TradeActionPayload, TransportActionPayload,
     };
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
@@ -713,6 +743,7 @@ mod tests {
 
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Trade));
+        assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::QueueForFacilityUse));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Harvest));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Craft));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::MoveCargo));
@@ -1381,11 +1412,64 @@ mod tests {
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
         let base_state = PlanningState::new(&snapshot);
 
-        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Consume, &[]);
+        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Consume, &[], None);
 
         assert!(
             advanced.homeostatic_needs(actor).unwrap().hunger
                 < DriveThresholds::default().hunger.low()
         );
+    }
+
+    #[test]
+    fn queue_for_facility_use_step_simulates_queue_join_from_payload() {
+        let (view, actor, _seller) = base_view();
+        let field = entity(30);
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
+        let goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        };
+
+        let advanced = goal.apply_planner_step(
+            PlanningState::new(&snapshot),
+            PlannerOpKind::QueueForFacilityUse,
+            &[field],
+            Some(&ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: ActionDefId(44),
+                },
+            )),
+        );
+
+        assert!(advanced.is_actor_queued_at_facility(field));
+        assert!(!advanced.has_actor_facility_grant(field, ActionDefId(44)));
+    }
+
+    #[test]
+    fn queue_for_facility_use_is_progress_barrier_for_exclusive_goal_families() {
+        let queue_step = PlannedStep {
+            def_id: ActionDefId(7),
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: ActionDefId(19),
+                },
+            )),
+            op_kind: PlannerOpKind::QueueForFacilityUse,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+
+        assert!(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::Restock,
+        }
+        .is_progress_barrier(&queue_step));
+        assert!(GoalKind::ProduceCommodity {
+            recipe_id: RecipeId(0),
+        }
+        .is_progress_barrier(&queue_step));
+        assert!(!GoalKind::Sleep.is_progress_barrier(&queue_step));
     }
 }

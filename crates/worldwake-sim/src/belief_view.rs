@@ -36,6 +36,10 @@ pub trait BeliefView {
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
+    fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+        let _ = entity;
+        false
+    }
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
         let _ = (facility, actor);
         None

@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BinaryHeap};
 use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
     get_affordances, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
-    Affordance, BeliefView,
+    Affordance, BeliefView, QueueForFacilityUsePayload,
 };
 
 #[derive(Clone)]
@@ -23,6 +23,7 @@ struct FrontierEntry<'snapshot> {
     node: SearchNode<'snapshot>,
 }
 
+#[derive(Clone)]
 struct SearchCandidate {
     def_id: ActionDefId,
     authoritative_targets: Vec<EntityId>,
@@ -94,7 +95,7 @@ pub fn search_plan(
 
         let mut terminal_successors = Vec::new();
         let mut successors = Vec::new();
-        for candidate in search_candidates(&node, semantics_table, registry, handlers) {
+        for candidate in search_candidates(goal, &node, semantics_table, registry, handlers) {
             let Some((terminal, successor)) =
                 build_successor(goal, semantics_table, registry, &node, &candidate)
             else {
@@ -211,20 +212,18 @@ fn build_successor<'snapshot>(
 }
 
 fn search_candidates(
+    goal: &GroundedGoal,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
 ) -> Vec<SearchCandidate> {
-    let mut candidates = get_affordances(
-        &node.state,
-        node.state.snapshot().actor(),
-        registry,
-        handlers,
-    )
-    .into_iter()
-    .map(search_candidate_from_affordance)
-    .collect::<Vec<_>>();
+    let mut candidates = get_affordances(&node.state, node.state.snapshot().actor(), registry, handlers)
+        .into_iter()
+        .flat_map(|affordance| {
+            search_candidates_from_affordance(goal, &node.state, registry, &affordance)
+        })
+        .collect::<Vec<_>>();
     candidates.extend(
         planner_only_candidates(&node.state, semantics_table)
             .into_iter()
@@ -233,19 +232,118 @@ fn search_candidates(
     candidates
 }
 
-fn search_candidate_from_affordance(affordance: Affordance) -> SearchCandidate {
+fn search_candidates_from_affordance(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    registry: &ActionDefRegistry,
+    affordance: &Affordance,
+) -> Vec<SearchCandidate> {
     let planning_targets = affordance
         .bound_targets
         .iter()
         .copied()
         .map(PlanningEntityRef::Authoritative)
-        .collect();
-    SearchCandidate {
+        .collect::<Vec<_>>();
+    let base = SearchCandidate {
         def_id: affordance.def_id,
-        authoritative_targets: affordance.bound_targets,
+        authoritative_targets: affordance.bound_targets.clone(),
         planning_targets,
-        payload_override: affordance.payload_override,
+        payload_override: affordance.payload_override.clone(),
+    };
+
+    let Some(def) = registry.get(affordance.def_id) else {
+        return vec![base];
+    };
+    if def.name != "queue_for_facility_use" {
+        return vec![base];
     }
+    if base.payload_override.is_some() {
+        return vec![base];
+    }
+
+    let Some(facility) = affordance.bound_targets.first().copied() else {
+        return Vec::new();
+    };
+    if state
+        .snapshot()
+        .entities
+        .get(&facility)
+        .and_then(|entity| entity.facility_queue.as_ref())
+        .is_none()
+    {
+        return Vec::new();
+    }
+    let Some((workstation_tag, intended_actions)) =
+        queue_intended_actions_for(goal, state, registry, facility)
+    else {
+        return Vec::new();
+    };
+    if state.is_actor_queued_at_facility(facility) {
+        return Vec::new();
+    }
+
+    intended_actions
+        .into_iter()
+        .filter(|action_id| !state.has_actor_facility_grant(facility, *action_id))
+        .map(|action_id| SearchCandidate {
+            payload_override: Some(ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: action_id,
+                },
+            )),
+            ..base.clone()
+        })
+        .filter(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|_| state.workstation_tag(facility) == Some(workstation_tag))
+        })
+        .collect()
+}
+
+fn queue_intended_actions_for(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    registry: &ActionDefRegistry,
+    facility: EntityId,
+) -> Option<(worldwake_core::WorkstationTag, Vec<ActionDefId>)> {
+    let workstation_tag = state.workstation_tag(facility)?;
+    let actions = match goal.key.kind {
+        GoalKind::ProduceCommodity { recipe_id } => registry
+            .iter()
+            .filter_map(|def| {
+                let payload = def.payload.as_craft()?;
+                (payload.recipe_id == recipe_id
+                    && payload.required_workstation_tag == workstation_tag)
+                    .then_some(def.id)
+            })
+            .collect::<Vec<_>>(),
+        GoalKind::AcquireCommodity { commodity, .. }
+        | GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::RestockCommodity { commodity } => registry
+            .iter()
+            .filter_map(|def| {
+                if let Some(payload) = def.payload.as_harvest() {
+                    return (payload.output_commodity == commodity
+                        && payload.required_workstation_tag == workstation_tag)
+                        .then_some(def.id);
+                }
+                def.payload.as_craft().and_then(|payload| {
+                    (payload.required_workstation_tag == workstation_tag
+                        && payload
+                            .outputs
+                            .iter()
+                            .any(|(output, quantity)| {
+                                *output == commodity && *quantity > worldwake_core::Quantity(0)
+                            }))
+                    .then_some(def.id)
+                })
+            })
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+
+    (!actions.is_empty()).then_some((workstation_tag, actions))
 }
 
 fn search_candidate_from_planner(
@@ -299,8 +397,8 @@ mod tests {
     use crate::planner_ops::planner_only_candidates;
     use crate::{
         build_planning_snapshot, build_semantics_table, CommodityPurpose, GoalKey, GoalKind,
-        GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningBudget,
-        PlanningEntityRef, PlanningSnapshot, PlanningState,
+        GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
+        PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
@@ -309,15 +407,17 @@ mod tests {
         test_utils::sample_trade_disposition_profile, ActionDefId, BodyCostPerTick, CarryCapacity,
         CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
         DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
-        DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge,
-        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place,
-        PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
+        FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place, PrototypePlace,
+        Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile,
+        TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, BeliefView, DurationExpr,
-        OmniscientBeliefView, RecipeDefinition, RecipeRegistry, TransportActionPayload,
+        OmniscientBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
+        TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1951,7 +2051,8 @@ mod tests {
             total_estimated_ticks: 0,
         };
 
-        let initial_candidates = search_candidates(&node, &semantics, &registry, &handlers);
+        let initial_candidates =
+            search_candidates(&goal, &node, &semantics, &registry, &handlers);
         let pick_up = initial_candidates
             .iter()
             .find(|candidate| {
@@ -1970,7 +2071,7 @@ mod tests {
         assert!(!after_pick_up.steps[0].expected_materializations.is_empty());
 
         let follow_up_candidates =
-            search_candidates(&after_pick_up, &semantics, &registry, &handlers);
+            search_candidates(&goal, &after_pick_up, &semantics, &registry, &handlers);
         let travel = follow_up_candidates
             .iter()
             .find(|candidate| {
@@ -2236,5 +2337,201 @@ mod tests {
             plan.steps.last().map(|step| step.op_kind),
             Some(PlannerOpKind::Harvest)
         );
+    }
+
+    struct ExclusiveOrchardFixture {
+        world: World,
+        actor: EntityId,
+        orchard_farm: EntityId,
+        orchard_row: EntityId,
+        harvest_action: ActionDefId,
+        registry: ActionDefRegistry,
+        handlers: worldwake_sim::ActionHandlerRegistry,
+        semantics: BTreeMap<ActionDefId, PlannerOpSemantics>,
+    }
+
+    fn build_exclusive_orchard_fixture(granted: bool) -> ExclusiveOrchardFixture {
+        let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(harvest_apple_recipe());
+        let (registry, handlers) = build_registry_with_recipes(&recipes);
+        let harvest_action = registry
+            .iter()
+            .find(|def| def.name == "harvest:Harvest Apples")
+            .map(|def| def.id)
+            .expect("harvest action should be registered");
+        let semantics = build_semantics_table(&registry);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, orchard_row) = {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            let actor = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+            let orchard_row = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, orchard_farm).unwrap();
+            txn.set_ground_location(orchard_row, orchard_farm).unwrap();
+            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+                .unwrap();
+            txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+                .unwrap();
+            txn.set_component_workstation_marker(
+                orchard_row,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                orchard_row,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(10),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_exclusive_facility_policy(
+                orchard_row,
+                ExclusiveFacilityPolicy {
+                    grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                },
+            )
+            .unwrap();
+            let granted = granted.then_some(GrantedFacilityUse {
+                actor,
+                intended_action: harvest_action,
+                granted_at: Tick(2),
+                expires_at: Tick(5),
+            });
+            txn.set_component_facility_use_queue(
+                orchard_row,
+                FacilityUseQueue {
+                    granted,
+                    ..FacilityUseQueue::default()
+                },
+            )
+            .unwrap();
+            let mut event_log = EventLog::new();
+            let _ = txn.commit(&mut event_log);
+            (actor, orchard_row)
+        };
+
+        ExclusiveOrchardFixture {
+            world,
+            actor,
+            orchard_farm,
+            orchard_row,
+            harvest_action,
+            registry,
+            handlers,
+            semantics,
+        }
+    }
+
+    #[test]
+    fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
+        let fixture = build_exclusive_orchard_fixture(false);
+
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([fixture.orchard_row]),
+            evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        };
+        let view = OmniscientBeliefView::new(&fixture.world);
+        let snapshot = build_planning_snapshot(
+            &view,
+            fixture.actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+        );
+
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+            &PlanningBudget::default(),
+        )
+        .expect("exclusive orchard should yield a queue barrier plan");
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+        assert_eq!(
+            plan.steps[0].payload_override,
+            Some(ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: fixture.harvest_action,
+                },
+            ))
+        );
+        assert_eq!(
+            plan.steps[0].targets,
+            vec![PlanningEntityRef::Authoritative(fixture.orchard_row)]
+        );
+    }
+
+    #[test]
+    fn search_skips_queue_when_matching_grant_is_already_active() {
+        let fixture = build_exclusive_orchard_fixture(true);
+
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([fixture.orchard_row]),
+            evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        };
+        let view = OmniscientBeliefView::new(&fixture.world);
+        let snapshot = build_planning_snapshot(
+            &view,
+            fixture.actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+        );
+
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+            &PlanningBudget::default(),
+        )
+        .expect("matching grant should allow direct harvest plan");
+
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Harvest);
+        assert_eq!(
+            plan.steps[0].payload_override.as_ref().and_then(ActionPayload::as_harvest),
+            Some(&worldwake_sim::HarvestActionPayload {
+                recipe_id: RecipeId(0),
+                required_workstation_tag: WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(2),
+                required_tool_kinds: Vec::new(),
+            })
+        );
+        assert_ne!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
     }
 }

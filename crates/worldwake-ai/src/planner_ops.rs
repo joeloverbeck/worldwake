@@ -276,17 +276,23 @@ pub fn apply_hypothetical_transition<'snapshot>(
 ) -> Option<HypotheticalTransition<'snapshot>> {
     match semantics.transition_kind {
         PlannerTransitionKind::GoalModelFallback => Some(apply_goal_model_fallback_transition(
-            goal, semantics, state, targets,
+            goal,
+            semantics,
+            state,
+            targets,
+            payload_override,
         )),
         PlannerTransitionKind::ConsumeMatchingTargetCommodity => {
             apply_consume_matching_target_transition(goal, semantics, state, targets)
         }
         PlannerTransitionKind::PickUpGroundLot => {
-            let state = apply_goal_model_fallback_state(goal, semantics, state, targets);
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
             apply_pick_up_transition(state, targets, payload_override)
         }
         PlannerTransitionKind::PutDownGroundLot => {
-            let state = apply_goal_model_fallback_state(goal, semantics, state, targets);
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
             apply_put_down_transition(state, targets)
         }
     }
@@ -297,11 +303,15 @@ fn apply_goal_model_fallback_state<'snapshot>(
     semantics: &PlannerOpSemantics,
     state: PlanningState<'snapshot>,
     targets: &[PlanningEntityRef],
+    payload_override: Option<&ActionPayload>,
 ) -> PlanningState<'snapshot> {
     let authoritative_targets = authoritative_targets(targets).unwrap_or_default();
-    goal.key
-        .kind
-        .apply_planner_step(state, semantics.op_kind, &authoritative_targets)
+    goal.key.kind.apply_planner_step(
+        state,
+        semantics.op_kind,
+        &authoritative_targets,
+        payload_override,
+    )
 }
 
 fn apply_goal_model_fallback_transition<'snapshot>(
@@ -309,10 +319,11 @@ fn apply_goal_model_fallback_transition<'snapshot>(
     semantics: &PlannerOpSemantics,
     state: PlanningState<'snapshot>,
     targets: &[PlanningEntityRef],
+    payload_override: Option<&ActionPayload>,
 ) -> HypotheticalTransition<'snapshot> {
     HypotheticalTransition {
         targets: targets.to_vec(),
-        state: apply_goal_model_fallback_state(goal, semantics, state, targets),
+        state: apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override),
         expected_materializations: Vec::new(),
     }
 }
@@ -328,7 +339,11 @@ fn apply_consume_matching_target_transition<'snapshot>(
     }
 
     Some(apply_goal_model_fallback_transition(
-        goal, semantics, state, targets,
+        goal,
+        semantics,
+        state,
+        targets,
+        None,
     ))
 }
 

@@ -252,12 +252,15 @@ fn snapshot_facility_queue(
     actor: EntityId,
     entity: EntityId,
 ) -> Option<SnapshotFacilityQueue> {
+    let has_policy = view.has_exclusive_facility_policy(entity);
     let actor_queue_position = view.facility_queue_position(entity, actor);
     let active_grant = view.facility_grant(entity).cloned();
-    (actor_queue_position.is_some() || active_grant.is_some()).then_some(SnapshotFacilityQueue {
+    (has_policy || actor_queue_position.is_some() || active_grant.is_some()).then_some(
+        SnapshotFacilityQueue {
         actor_queue_position,
         active_grant,
-    })
+    },
+    )
 }
 
 fn collect_unique_item_counts(
@@ -396,7 +399,7 @@ fn included_entities_contains(
 
 #[cfg(test)]
 mod tests {
-    use super::build_planning_snapshot;
+    use super::{build_planning_snapshot, SnapshotFacilityQueue};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -417,6 +420,7 @@ mod tests {
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
+        exclusive_facilities: BTreeSet<EntityId>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
     }
@@ -502,6 +506,10 @@ mod tests {
 
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
+        }
+
+        fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+            self.exclusive_facilities.contains(&entity)
         }
 
         fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
@@ -890,6 +898,38 @@ mod tests {
                 .get(&facility)
                 .and_then(|entity| entity.facility_queue.as_ref()),
             None
+        );
+    }
+
+    #[test]
+    fn build_snapshot_keeps_empty_facility_queue_data_for_exclusive_facility() {
+        let actor = entity(1);
+        let place = entity(10);
+        let facility = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(place, true);
+        view.alive.insert(facility, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(facility, place);
+        view.entities_at.insert(place, vec![actor, facility]);
+        view.exclusive_facilities.insert(facility);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
+
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&facility)
+                .and_then(|entity| entity.facility_queue.as_ref()),
+            Some(&SnapshotFacilityQueue {
+                actor_queue_position: None,
+                active_grant: None,
+            })
         );
     }
 }

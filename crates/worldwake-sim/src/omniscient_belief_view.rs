@@ -190,6 +190,12 @@ impl BeliefView for OmniscientBeliefView<'_> {
             .map(|marker| marker.0)
     }
 
+    fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+        self.world
+            .get_component_exclusive_facility_policy(entity)
+            .is_some()
+    }
+
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
         self.world
             .get_component_facility_use_queue(facility)
