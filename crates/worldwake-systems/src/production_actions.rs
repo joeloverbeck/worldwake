@@ -1215,6 +1215,7 @@ mod tests {
         assert_eq!(affordances.len(), 1);
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn harvest_start_requires_matching_grant_and_consumes_it() {
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
@@ -1345,6 +1346,7 @@ mod tests {
         ));
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn harvest_reservation_blocks_second_actor_and_abort_preserves_source() {
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());

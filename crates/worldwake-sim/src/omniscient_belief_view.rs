@@ -7,9 +7,10 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     is_incapacitated, load_of_entity, CarryCapacity, CombatProfile, CommodityConsumableProfile,
     CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
-    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag,
-    Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
+    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TickRange,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, World,
+    Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -187,6 +188,18 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world
             .get_component_workstation_marker(entity)
             .map(|marker| marker.0)
+    }
+
+    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        self.world
+            .get_component_facility_use_queue(facility)
+            .and_then(|queue| queue.position_of(actor))
+    }
+
+    fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+        self.world
+            .get_component_facility_use_queue(facility)
+            .and_then(|queue| queue.granted.as_ref())
     }
 
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
@@ -426,10 +439,11 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
         CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
-        DemandObservationReason, DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge,
-        LoadUnits, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, TravelDispositionProfile, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        DemandObservationReason, DriveThresholds, EntityKind, EventLog, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TravelDispositionProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+        World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -942,6 +956,84 @@ mod tests {
                 last_regeneration_tick: None,
             })
         );
+    }
+
+    #[test]
+    fn facility_queue_queries_reflect_authoritative_queue_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (facility, head, third, absent) = {
+            let mut txn = new_txn(&mut world, 1);
+            let facility = txn.create_entity(EntityKind::Facility);
+            let head = txn.create_agent("Head", ControlSource::Ai).unwrap();
+            let second = txn.create_agent("Second", ControlSource::Ai).unwrap();
+            let third = txn.create_agent("Third", ControlSource::Ai).unwrap();
+            let absent = txn.create_agent("Absent", ControlSource::Ai).unwrap();
+            txn.set_ground_location(facility, place).unwrap();
+            txn.set_ground_location(head, place).unwrap();
+            txn.set_ground_location(second, place).unwrap();
+            txn.set_ground_location(third, place).unwrap();
+            txn.set_ground_location(absent, place).unwrap();
+            let mut queue = FacilityUseQueue::default();
+            queue.enqueue(head, ActionDefId(10), Tick(1)).unwrap();
+            queue.enqueue(second, ActionDefId(11), Tick(2)).unwrap();
+            queue.enqueue(third, ActionDefId(12), Tick(3)).unwrap();
+            txn.set_component_facility_use_queue(facility, queue).unwrap();
+            commit_txn(txn);
+            (facility, head, third, absent)
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert_eq!(view.facility_queue_position(facility, head), Some(0));
+        assert_eq!(view.facility_queue_position(facility, third), Some(2));
+        assert_eq!(view.facility_queue_position(facility, absent), None);
+    }
+
+    #[test]
+    fn facility_grant_queries_reflect_active_and_missing_grants() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (facility_with_grant, idle_facility, missing_queue_facility, actor) = {
+            let mut txn = new_txn(&mut world, 1);
+            let facility_with_grant = txn.create_entity(EntityKind::Facility);
+            let idle_facility = txn.create_entity(EntityKind::Facility);
+            let missing_queue_facility = txn.create_entity(EntityKind::Facility);
+            let actor = txn.create_agent("Granted", ControlSource::Ai).unwrap();
+            txn.set_ground_location(facility_with_grant, place).unwrap();
+            txn.set_ground_location(idle_facility, place).unwrap();
+            txn.set_ground_location(missing_queue_facility, place).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            let granted_queue = FacilityUseQueue {
+                granted: Some(GrantedFacilityUse {
+                    actor,
+                    intended_action: ActionDefId(77),
+                    granted_at: Tick(5),
+                    expires_at: Tick(8),
+                }),
+                ..FacilityUseQueue::default()
+            };
+            txn.set_component_facility_use_queue(facility_with_grant, granted_queue)
+                .unwrap();
+            txn.set_component_facility_use_queue(idle_facility, FacilityUseQueue::default())
+                .unwrap();
+            commit_txn(txn);
+            (facility_with_grant, idle_facility, missing_queue_facility, actor)
+        };
+
+        let view = OmniscientBeliefView::new(&world);
+
+        assert_eq!(
+            view.facility_grant(facility_with_grant),
+            Some(&GrantedFacilityUse {
+                actor,
+                intended_action: ActionDefId(77),
+                granted_at: Tick(5),
+                expires_at: Tick(8),
+            })
+        );
+        assert_eq!(view.facility_grant(idle_facility), None);
+        assert_eq!(view.facility_grant(missing_queue_facility), None);
     }
 
     #[test]

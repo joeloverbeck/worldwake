@@ -744,6 +744,14 @@ impl BeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.workstation_tag)
     }
 
+    fn facility_queue_position(&self, _facility: EntityId, _actor: EntityId) -> Option<u32> {
+        None
+    }
+
+    fn facility_grant(&self, _facility: EntityId) -> Option<&worldwake_core::GrantedFacilityUse> {
+        None
+    }
+
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
         self.snapshot
             .places
@@ -1549,6 +1557,17 @@ mod tests {
             Quantity(1)
         );
         assert_eq!(state.demand_memory(actor), view.demand_memory(actor));
+    }
+
+    #[test]
+    fn planning_state_queue_queries_remain_none_until_snapshot_support_lands() {
+        let (view, actor, _town, field, _bread) = test_view();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(state.facility_queue_position(field, actor), None);
+        assert_eq!(state.facility_grant(field), None);
     }
 
     #[test]
