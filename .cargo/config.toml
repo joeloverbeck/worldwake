@@ -1,0 +1,2 @@
+[alias]
+ww = "run -p worldwake-cli --"
