@@ -122,6 +122,39 @@ fn build_death_and_loot_scenario(
     (h, victim, looter, initial_coin_total)
 }
 
+fn seed_bleeding_recovery_patient(h: &mut GoldenHarness) -> worldwake_core::EntityId {
+    let patient = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Recovery Patient",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_wound_list(
+        patient,
+        WoundList {
+            wounds: vec![worldwake_core::Wound {
+                id: worldwake_core::WoundId(1),
+                body_part: worldwake_core::BodyPart::Torso,
+                cause: worldwake_core::WoundCause::Deprivation(
+                    worldwake_core::DeprivationKind::Starvation,
+                ),
+                severity: pm(50),
+                inflicted_at: Tick(0),
+                bleed_rate_per_tick: pm(100),
+            }],
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    patient
+}
+
 fn run_death_and_loot_observation(
     h: &mut GoldenHarness,
     victim: worldwake_core::EntityId,
@@ -153,6 +186,93 @@ fn run_death_and_loot_observation(
     }
 
     (victim_died, looter_gained_coin)
+}
+
+fn run_wound_bleed_clotting_natural_recovery_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    let patient = seed_bleeding_recovery_patient(&mut h);
+    let mut previous_severity = pm(50);
+    let mut previous_bleed_rate = pm(100);
+    let mut saw_bleed_phase = false;
+    let mut saw_clotting = false;
+    let mut saw_zero_bleed = false;
+    let mut saw_recovery_phase = false;
+    let mut wound_pruned = false;
+
+    for _ in 0..32 {
+        h.step_once();
+
+        assert!(
+            !h.agent_is_dead(patient),
+            "recovery patient must stay alive throughout the wound lifecycle"
+        );
+        assert!(
+            !h.agent_has_active_action(patient),
+            "recovery patient should remain idle; this scenario should exercise passive wound progression rather than unrelated actions"
+        );
+
+        let needs = h
+            .world
+            .get_component_homeostatic_needs(patient)
+            .expect("recovery patient should retain homeostatic needs");
+        let thresholds = h
+            .world
+            .get_component_drive_thresholds(patient)
+            .expect("recovery patient should retain drive thresholds");
+        assert!(
+            needs.hunger < thresholds.hunger.high()
+                && needs.thirst < thresholds.thirst.high()
+                && needs.fatigue < thresholds.fatigue.high(),
+            "recovery gate should remain open on physiology throughout the scenario"
+        );
+
+        let wound_list = h
+            .world
+            .get_component_wound_list(patient)
+            .expect("recovery patient should retain wound state component");
+
+        if wound_list.wounds.is_empty() {
+            wound_pruned = true;
+            break;
+        }
+
+        let wound = &wound_list.wounds[0];
+        saw_bleed_phase |= wound.severity > previous_severity;
+        saw_clotting |= wound.bleed_rate_per_tick < previous_bleed_rate;
+        saw_zero_bleed |= wound.bleed_rate_per_tick == pm(0);
+
+        if previous_bleed_rate.value() > 0 {
+            assert!(
+                wound.severity >= previous_severity,
+                "severity must not recover while the wound is still bleeding"
+            );
+        } else {
+            saw_recovery_phase |= wound.severity < previous_severity;
+        }
+
+        previous_severity = wound.severity;
+        previous_bleed_rate = wound.bleed_rate_per_tick;
+    }
+
+    assert!(saw_bleed_phase, "wound severity should rise during the bleed phase");
+    assert!(
+        saw_clotting,
+        "bleed rate should fall under natural clot resistance"
+    );
+    assert!(
+        saw_zero_bleed,
+        "bleed rate should eventually reach zero before recovery begins"
+    );
+    assert!(
+        saw_recovery_phase,
+        "wound severity should fall after clotting completes"
+    );
+    assert!(wound_pruned, "recovered wound should be pruned from WoundList");
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
@@ -619,6 +739,22 @@ fn golden_reduce_danger_defensive_mitigation() {
     assert!(
         saw_defender_defend_action || saw_defender_defending_stance || saw_defender_relocate,
         "defender should autonomously enter a concrete mitigation path such as defend or relocation; observed defender actions: {defender_actions:?}"
+    );
+}
+
+#[test]
+fn golden_wound_bleed_clotting_natural_recovery() {
+    let _ = run_wound_bleed_clotting_natural_recovery_scenario(Seed([27; 32]));
+}
+
+#[test]
+fn golden_wound_bleed_clotting_natural_recovery_replays_deterministically() {
+    let first = run_wound_bleed_clotting_natural_recovery_scenario(Seed([28; 32]));
+    let second = run_wound_bleed_clotting_natural_recovery_scenario(Seed([28; 32]));
+
+    assert_eq!(
+        first, second,
+        "wound bleed/clot/recovery scenario should replay deterministically"
     );
 }
 

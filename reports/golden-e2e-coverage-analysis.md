@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Analysis and Gap Report
 
-**Date**: 2026-03-12 (updated 2026-03-14)
+**Date**: 2026-03-12 (updated 2026-03-13)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Document proven emergent scenarios, identify coverage gaps, and prioritize missing tests.
 
@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 15 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
-  golden_combat.rs            — 9 tests (living combat + defensive mitigation + death/loot/burial scenarios + replays)
+  golden_combat.rs            — 11 tests (living combat + wound recovery + defensive mitigation + death/loot/burial scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 42 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
+The golden suite contains 44 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -292,6 +292,18 @@ The golden suite contains 42 tests across 6 domain files. Every test uses the re
 - Coin totals remain exactly conserved throughout the encounter.
 **Cross-system chain**: Outgoing hostility → attack action start → current-attacker danger signal → `ReduceDanger` emission → defensive mitigation action.
 
+### Scenario 7g: Wound Bleed, Clotting, and Natural Recovery
+**File**: `golden_combat.rs` | **Tests**: `golden_wound_bleed_clotting_natural_recovery`, `golden_wound_bleed_clotting_natural_recovery_replays_deterministically`
+**Systems exercised**: Combat (authoritative wound progression and pruning), Needs (physiology thresholds remaining below recovery gate), deterministic replay
+**Setup**: Single sated agent at Village Square with one injected bleeding wound (`severity pm(50)`, `bleed_rate pm(100)`) and otherwise default golden-harness physiology/combat parameters.
+**Emergent behavior proven**:
+- The wound progresses through the authoritative combat tick instead of a unit-level helper or direct function call.
+- Severity rises while the wound is bleeding, and bleed rate falls each tick under `natural_clot_resistance`.
+- Recovery does not begin before bleed rate reaches zero.
+- Once clotting completes and physiology stays below the hunger/thirst/fatigue `high()` thresholds, severity falls and the wound is eventually pruned from `WoundList`.
+- Two runs with the same seed produce identical world and event-log hashes for the full wound-lifecycle scenario.
+**Cross-system chain**: Authoritative wound state → combat-system bleed progression → natural clotting → physiology-gated recovery → wound pruning → deterministic replay.
+
 ### Scenario 8: Death Cascade and Opportunistic Loot
 **File**: `golden_combat.rs` | **Test**: `golden_death_cascade_and_opportunistic_loot`
 **Companion replay test**: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
@@ -485,7 +497,7 @@ The golden suite contains 42 tests across 6 domain files. Every test uses the re
 | Death while waiting in exclusive facility queue → authoritative prune → next-waiter promotion | Yes |
 | Materialized output theft → fresh replanning to distant fallback | Yes |
 | Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
-| Wound bleed → clotting → natural recovery | **No** |
+| Wound bleed → clotting → natural recovery | Yes |
 | Loot/bury suppression under self-care pressure → relief → suppression lift | **No** |
 
 ---
@@ -500,16 +512,6 @@ Each scenario is rated on three axes:
 Sorted by composite score (emergence + bug-catching - effort) descending.
 
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
-
-### Tier 1: High Priority (score >= 5)
-
-**P-NEW-10 Wound Bleed → Clotting → Natural Recovery** (score: 6 = 4+4-2)
-- Emergence: 4 — wound infliction → bleed progression → clotting via `natural_clot_resistance` → recovery gate (`combat.rs:229-245` checks hunger/thirst/fatigue < high AND not in combat) → severity reduction
-- Bug-catching: 4 — the `recovery_conditions_met()` function gates recovery on multiple needs thresholds AND combat state; this multi-condition gate is never exercised e2e
-- Effort: 2 — single agent, one wound, let ticks run, assert severity curve
-- Setup: Agent with bleeding wound, well-fed/hydrated/rested (recovery conditions met), high wound capacity to survive bleed phase. Assert: severity rises (bleed), bleed_rate falls (clotting), severity falls (recovery)
-- Target: `golden_combat.rs`
-- Key refs: `combat.rs:202-219` (bleed/clot/recovery tick), `combat.rs:229-245` (recovery gate)
 
 ### Tier 2: Medium Priority (score 3-4)
 
@@ -535,6 +537,8 @@ No remaining Tier 3 golden backlog items. `P16 BuryCorpse Goal` was removed on 2
 
 `P18 Save/Load Round-Trip Under AI` was removed from the golden backlog on 2026-03-13. Reassessment showed the architecture already persists the authoritative simulation roots while intentionally rebuilding transient AI controller runtime on resume. Scenario 6e now proves that design directly by round-tripping `SimulationState`, resuming with a fresh `AgentTickDriver`, and matching uninterrupted execution.
 
+`P-NEW-10 Wound Bleed → Clotting → Natural Recovery` was removed from the golden backlog on 2026-03-13 after implementation. The ticket assumptions were corrected first: the gap was golden-only, because focused combat-system tests already covered the lower-layer wound logic. The shipped scenario intentionally kept the architecture lean by using one idle, sated agent plus one injected wound, proving the authoritative bleed→clot→recover→prune lifecycle without adding harness abstractions or unrelated food/water scaffolding.
+
 ### Evaluated and Rejected Scenarios
 
 The following scenarios were considered during the 2026-03-14 coverage review and rejected with architectural justification:
@@ -553,15 +557,15 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 ## Part 4: Summary Statistics
 
-| Metric | Current | With Tier 1 | With All |
-|--------|---------|-------------|----------|
-| Proven tests | 42 | 43 | 44 |
-| GoalKind coverage | 15/17 (88.2%) | 15/17 (88.2%) | 15/17 (88.2%) |
-| ActionDomain coverage | 10/10 full | 10/10 full | 10/10 full |
-| Needs tested | 5/5 | 5/5 | 5/5 |
-| Places used | 9/12 | 9/12 | 9/12 |
-| Cross-system chains | 29 | 30 | 31 |
+| Metric | Current | Remaining Backlog Applied |
+|--------|---------|---------------------------|
+| Proven tests | 44 | 45 |
+| GoalKind coverage | 15/17 (88.2%) | 15/17 (88.2%) |
+| ActionDomain coverage | 10/10 full | 10/10 full |
+| Needs tested | 5/5 | 5/5 |
+| Places used | 9/12 | 9/12 |
+| Cross-system chains | 30 | 31 |
 
-### Recommended Implementation Order (Tier 1)
+### Recommended Implementation Order
 
-P-NEW-10 (Wound Bleed → Clotting → Natural Recovery) — single agent, low setup complexity, exercises the multi-condition recovery gate in `combat.rs:229-245`.
+P-NEW-11 (Loot/Bury Suppression Under Self-Care Pressure) — remaining medium-priority gap that would prove ranking suppression against corpse-interaction opportunities under competing self-care pressure.
