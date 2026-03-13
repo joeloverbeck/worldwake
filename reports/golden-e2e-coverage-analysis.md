@@ -309,7 +309,7 @@ The golden suite contains 35 tests across 6 domain files. Every test uses the re
 **Cross-system chain**: Multi-agent hunger pressure at exclusive facility → queue_for_facility_use action → facility_queue_system promotion → granted harvest → resource depletion → queue rotation to next agent → deterministic replay + conservation.
 
 ### Scenario 9b: Facility Queue Patience Timeout
-**File**: `golden_production.rs` | **Test**: `golden_facility_queue_patience_timeout`
+**File**: `golden_production.rs` | **Tests**: `golden_facility_queue_patience_timeout`, `golden_facility_queue_patience_timeout_replays_deterministically`
 **Systems exercised**: Production (exclusive facility policy, resource source), AI runtime (patience expiry, blocked-facility memory, replanning), FacilityQueue, Travel, Conservation
 **Setup**: Hungry agent starts at Orchard Farm with a per-agent `FacilityQueueDispositionProfile`. Facility A is a local exclusive orchard already monopolized by another actor's long-lived grant. Facility B is a reachable alternative exclusive orchard at Village Square.
 **Emergent behavior proven**:
@@ -318,6 +318,7 @@ The golden suite contains 35 tests across 6 domain files. Every test uses the re
 - The queue disappearance flows through the existing blocked-facility pipeline, recording `ExclusiveFacilityUnavailable` for facility A rather than introducing a special-case alias path.
 - The agent then replans to the alternative facility B, uses it, and reduces hunger there.
 - The monopolized facility A remains unused by the waiting agent; the alternative facility B is the one whose stock decreases.
+- Two runs with the same seed produce identical world and event-log hashes for this timing-sensitive queue abandonment path.
 **Cross-system chain**: Local hunger pressure → queue_for_facility_use at local exclusive facility → patience-based authoritative dequeue → blocked-facility planning memory → alternative-facility travel/queue/use → harvest/materialization → hunger relief.
 
 ### Scenario 9c: Grant Expiry Before Intended Action
@@ -457,11 +458,7 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 `P-NEW-3 Goal-Switch Margin Boundary` was removed from the golden backlog on 2026-03-13. Reassessment showed the exact boundary is already covered by focused tests in `goal_switching.rs`, `interrupts.rs`, `plan_selection.rs`, and `journey_switch_policy.rs`, while existing golden scenarios already cover behavior-level switching. A new golden arithmetic-threshold scenario would duplicate lower-layer guarantees without adding durable cross-system coverage.
 
-#### P-NEW-8. Blocked Facility Use Avoidance in Planner
-**Score**: Emergence=2, Bug-catching=4, Effort=2 → **Composite: 4**
-**Rationale**: After a failed queue+execute cycle at facility A, the planner should avoid re-queueing at facility A (via `blocked_facility_uses` in `PlanningState`). If alternative facility B exists, agent routes there.
-**Proves**: `candidate_uses_blocked_facility_use()` filter, `blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>`.
-**File**: `golden_production.rs`
+`P-NEW-8 Blocked Facility Use Avoidance in Planner` was removed from the golden backlog on 2026-03-13. Reassessment showed the behavior was already proven by Scenario 9b, `golden_facility_queue_patience_timeout`, while planner/runtime unit tests already cover the lower-layer blocked-facility projection and candidate filtering. A second behavior-duplicate golden scenario would not improve the architecture or coverage durability.
 
 #### P-NEW-7. AcquireCommodity(RecipeInput) Goal
 **Score**: Emergence=3, Bug-catching=3, Effort=3 → **Composite: 3**
@@ -502,7 +499,7 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 35 | 35 | 42 |
+| Proven tests | 36 | 36 | 42 |
 | GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 15/17 (88.2%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |

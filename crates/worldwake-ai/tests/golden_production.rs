@@ -680,6 +680,8 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
 
 #[allow(clippy::struct_excessive_bools)]
 struct FacilityQueuePatienceTimeoutOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
     joined_facility_a: bool,
     abandoned_facility_a: bool,
     recorded_blocked_facility_a: bool,
@@ -839,6 +841,8 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
     }
 
     FacilityQueuePatienceTimeoutOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
         joined_facility_a,
         abandoned_facility_a,
         recorded_blocked_facility_a,
@@ -1196,6 +1200,22 @@ fn golden_facility_queue_patience_timeout() {
     assert!(
         outcome.facility_b_final_source_quantity < Quantity(4),
         "The alternative facility should be the one that actually gets used"
+    );
+}
+
+#[test]
+fn golden_facility_queue_patience_timeout_replays_deterministically() {
+    let seed = Seed([23; 32]);
+    let outcome_1 = run_facility_queue_patience_timeout_scenario(seed);
+    let outcome_2 = run_facility_queue_patience_timeout_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Facility queue patience timeout should replay to the same world hash"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Facility queue patience timeout should replay to the same event log hash"
     );
 }
 
