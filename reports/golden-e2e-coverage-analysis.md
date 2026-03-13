@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
-  golden_production.rs        — 9 tests (scenarios 3, 3d, 4, 6b, 6c, 9, 9b + replays)
+  golden_production.rs        — 10 tests (scenarios 3, 3d, 4, 6b, 6c, 9, 9b, 9c + replays)
   golden_combat.rs            — 7 tests (living combat + defensive mitigation + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 33 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 34 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -309,6 +309,18 @@ The golden suite contains 33 tests across 6 domain files. Every test uses the re
 - The monopolized facility A remains unused by the waiting agent; the alternative facility B is the one whose stock decreases.
 **Cross-system chain**: Local hunger pressure → queue_for_facility_use at local exclusive facility → patience-based authoritative dequeue → blocked-facility planning memory → alternative-facility travel/queue/use → harvest/materialization → hunger relief.
 
+### Scenario 9c: Grant Expiry Before Intended Action
+**File**: `golden_production.rs` | **Test**: `golden_grant_expiry_before_intended_action`
+**Systems exercised**: Production (exclusive facility policy, resource source), Needs (metabolism + local water relief), AI runtime (goal switching, queue/grant transition handling, replanning), FacilityQueue, Conservation
+**Setup**: Hungry agent starts at Orchard Farm with 1 carried water beside a single exclusive OrchardRow workstation. The workstation uses `grant_hold_ticks = 1`, and the agent's thirst metabolism spikes high enough that thirst becomes the higher-priority local goal immediately after the first queue promotion.
+**Emergent behavior proven**:
+- The agent enters the real exclusive-facility queue path and receives a real grant.
+- Before any harvest starts, the agent takes a same-place water-consumption detour because thirst legitimately becomes the higher-priority need.
+- The original grant expires unused and emits `QueueGrantExpired` while the orchard stock remains untouched, proving grant expiry is authoritative rather than inferred from resource depletion.
+- After the detour resolves, the agent re-enters the normal queue path, receives a second real promotion, and eventually harvests/eats to reduce hunger.
+- No engine-specific grant recovery shim was required; the existing queue/grant transition runtime already handles the dirty/replan path cleanly.
+**Cross-system chain**: Hunger pressure → queue_for_facility_use → queue promotion → metabolism-driven thirst spike → local water detour → authoritative grant expiry → normal queue recovery/promotion → harvest/materialization → hunger relief.
+
 ---
 
 ## Part 2: Coverage Matrix
@@ -433,12 +445,6 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 `P-NEW-3 Goal-Switch Margin Boundary` was removed from the golden backlog on 2026-03-13. Reassessment showed the exact boundary is already covered by focused tests in `goal_switching.rs`, `interrupts.rs`, `plan_selection.rs`, and `journey_switch_policy.rs`, while existing golden scenarios already cover behavior-level switching. A new golden arithmetic-threshold scenario would duplicate lower-layer guarantees without adding durable cross-system coverage.
 
-#### P-NEW-5. Grant Expiry Before Intended Action
-**Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
-**Rationale**: Scenario 9 shows grants being used promptly. This gap tests what happens when a grant expires before the planner schedules the intended action (e.g., because of goal-switching delay). Agent must re-queue or replan.
-**Proves**: `GrantedFacilityUse::expires_at`, `expire_stale_grant()`, re-queue after expiry.
-**File**: `golden_production.rs`
-
 #### P-NEW-6. Materialization Binding Failure
 **Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
 **Rationale**: Scenario 4 proves the happy-path materialization barrier chain. This gap tests what happens when the chain breaks: agent plans craft → consume, but between craft completion and consume step, another agent picks up the crafted item. Materialization binding can't resolve → plan failure → blocked intent.
@@ -490,12 +496,12 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 33 | 33 | 39 |
+| Proven tests | 34 | 34 | 39 |
 | GoalKind coverage | 13/17 (76.5%) | 13/17 (76.5%) | 14/17 (82.4%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 23 | 23 | 25 |
+| Cross-system chains | 24 | 24 | 25 |
 
 ### Recommended Implementation Order (Tier 1)
 
