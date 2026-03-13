@@ -78,6 +78,7 @@ The golden suite contains 38 tests across 6 domain files. Every test uses the re
 - Merchant generates the enterprise `RestockCommodity { Apple }` path from concrete remembered demand rather than from a magic stock threshold.
 - Merchant leaves General Store, reaches Orchard Farm, and acquires apples through the real harvest path.
 - Merchant controls apples away from the home market and later returns that stock to General Store, exercising `MoveCargo`.
+- The current cargo architecture does not require a terminal `put_down` step here. Destination-local controlled stock is sufficient to satisfy the restock delivery path, and focused cargo tests already lock that invariant in.
 - The scenario exposed a planner-budget gap: the default search node-expansion budget was too low for the branch-heavy restock route from Village Square. Raising the default node-expansion budget fixed the real runtime path without adding special cases.
 - Two runs with the same seed produce identical world and event-log hashes for the merchant restock scenario.
 **Cross-system chain**: Demand memory at home market → enterprise restock signal → multi-leg travel → harvest/materialization → cargo return to home market.
@@ -383,12 +384,12 @@ The golden suite contains 38 tests across 6 domain files. Every test uses the re
 | FacilityQueue (queue_for_facility_use) | Yes | 9 |
 | Trade | Yes | 2b |
 | Travel | Yes | 1, 3 (implicit) |
-| Transport (pick-up, put-down) | Partial | pick-up only (4, 6c) |
+| Transport | Yes | pick-up/materialization (4, 6c) + destination-local cargo delivery semantics (2d) |
 | Combat (attack, defend) | Yes | 7c, 7f |
 | Care (heal) | Yes | 2c |
 | Loot | Yes | 8 |
 
-**Coverage: 9/10 domains fully tested, 1 partial.**
+**Coverage: 10/10 domains fully tested.**
 
 ### Needs Coverage
 
@@ -472,11 +473,9 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 `P-NEW-8 Blocked Facility Use Avoidance in Planner` was removed from the golden backlog on 2026-03-13. Reassessment showed the behavior was already proven by Scenario 9b, `golden_facility_queue_patience_timeout`, while planner/runtime unit tests already cover the lower-layer blocked-facility projection and candidate filtering. A second behavior-duplicate golden scenario would not improve the architecture or coverage durability.
 
-### Tier 3: Lower Priority (score <= 2)
+`P15 Put-Down Action` was removed from the golden backlog on 2026-03-13. Reassessment showed the ticket premise was stale: `put_down` already has focused action/integration coverage, while the current AI cargo architecture intentionally treats destination-local controlled stock as sufficient for `MoveCargo` and merchant restock. Adding a golden test that required `put_down` through the AI loop would validate a different architecture than the one currently implemented.
 
-#### P15. Put-Down Action (Inventory Management)
-**Score**: Emergence=2, Bug-catching=2, Effort=2 → **Composite: 2**
-**Rationale**: Only pick-up is tested (Scenario 4). Put-down (dropping items) is untested. Lower priority since it's simpler and less likely to have cross-system bugs.
+### Tier 3: Lower Priority (score <= 2)
 
 #### P-NEW-9. Dead Agent Pruned from Facility Queue
 **Score**: Emergence=2, Bug-catching=3, Effort=3 → **Composite: 2**
@@ -500,9 +499,9 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 38 | 38 | 42 |
+| Proven tests | 38 | 38 | 41 |
 | GoalKind coverage | 14/17 (82.4%) | 14/17 (82.4%) | 15/17 (88.2%) |
-| ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
+| ActionDomain coverage | 10/10 full | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
 | Cross-system chains | 26 | 26 | 26+ |

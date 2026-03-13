@@ -7,6 +7,8 @@ Design proactive seller-side merchant behavior for Worldwake without adding abst
 
 This spec is intentionally forward-looking. It extends archived E11 trade/economy and the E13 decision architecture, but it is not part of the active E14-E22 implementation sequence. Do not schedule implementation ahead of the current phase gates in `specs/IMPLEMENTATION-ORDER.md`.
 
+Note: this draft intentionally models a first seller-side market-presence pass where sale lots remain directly possessed by the seller. If the project wants a cleaner longer-term distinction between carried stock, stored stock, and displayed sale stock, see [DRAFT-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-stock-storage-and-stalls.md). That follow-on draft upgrades this design from direct-possession sale readiness to explicit facility stock and display custody.
+
 ## Why This Exists
 Current trade is buyer-driven:
 - a buyer generates `AcquireCommodity`
@@ -156,7 +158,7 @@ A lot may be listed only if:
 - its commodity is in `MerchandiseProfile.sale_kinds`
 - the seller is at `MerchandiseProfile.home_market`
 
-This spec intentionally does not introduce a separate "display container" or stall entity. Those can be added later if the world grows a concrete market-facility layer.
+This spec intentionally does not introduce a separate "display container" or stall entity. Those can be added later if the world grows a concrete market-facility layer. The planned direction for that deeper architecture now lives in [DRAFT-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-stock-storage-and-stalls.md).
 
 ### 7. `SellCommodity` Candidate Generation
 Emit `SellCommodity { commodity }` when all of the following hold:
@@ -388,5 +390,6 @@ Derived transient read-model:
 ## References
 - [E11-trade-economy.md](/home/joeloverbeck/projects/worldwake/archive/specs/E11-trade-economy.md)
 - [E13-decision-architecture.md](/home/joeloverbeck/projects/worldwake/archive/specs/E13-decision-architecture.md)
+- [DRAFT-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-stock-storage-and-stalls.md)
 - [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md)
 - [FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)
