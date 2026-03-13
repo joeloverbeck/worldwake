@@ -1,5 +1,6 @@
+pub(crate) mod actions;
 mod inspect;
-mod tick;
+pub(crate) mod tick;
 
 use worldwake_ai::AgentTickDriver;
 use worldwake_sim::{SimulationState, SystemDispatchTable};
@@ -12,7 +13,8 @@ use crate::repl::ReplState;
 ///
 /// Tick and Status are implemented in `tick.rs`.
 /// Look, Inspect, Inventory, Needs, Relations are implemented in `inspect.rs`.
-/// Other handlers are stubs that will be filled in by tickets 008–012.
+/// Actions, Do, Cancel are implemented in `actions.rs`.
+/// Other handlers are stubs that will be filled in by tickets 009–012.
 #[allow(clippy::needless_pass_by_value)]
 pub fn dispatch_command(
     cmd: CliCommand,
@@ -20,7 +22,7 @@ pub fn dispatch_command(
     driver: &mut AgentTickDriver,
     registries: &ActionRegistries,
     dispatch_table: &SystemDispatchTable,
-    _repl_state: &mut ReplState,
+    repl_state: &mut ReplState,
 ) -> CommandResult {
     match cmd {
         CliCommand::Tick { n } => {
@@ -36,18 +38,9 @@ pub fn dispatch_command(
             inspect::handle_needs(sim, entity.as_deref())
         }
         CliCommand::Relations { entity } => inspect::handle_relations(sim, &entity),
-        CliCommand::Actions => {
-            println!("actions: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Do { .. } => {
-            println!("do: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Cancel => {
-            println!("cancel: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
+        CliCommand::Actions => actions::handle_actions(sim, registries, repl_state),
+        CliCommand::Do { n } => actions::handle_do(n, sim, registries, repl_state),
+        CliCommand::Cancel => actions::handle_cancel(sim),
         CliCommand::Events { .. } => {
             println!("events: not implemented");
             Ok(CommandOutcome::Continue)

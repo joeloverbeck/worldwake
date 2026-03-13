@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-008: Action Commands (actions, do, cancel)
 
 ## Summary
@@ -77,3 +79,20 @@ Implement the affordance-based action menu: `actions` lists available actions vi
 - Invariant 9.12: same affordance query as AI agents — no special player actions
 - Action execution only happens in `step_tick()` (next tick command)
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-13
+- **What changed**:
+  - Created `crates/worldwake-cli/src/handlers/actions.rs` with `handle_actions()`, `handle_do()`, `handle_cancel()`
+  - Modified `crates/worldwake-cli/src/handlers/mod.rs` to wire `Actions`, `Do`, `Cancel` variants to the new handlers
+- **Deviations from original plan**:
+  - Function signatures include `&ActionRegistries` parameter (needed for `get_affordances()` and action name lookup) — not explicitly stated in ticket but required by the API
+  - Input queue accessed via `sim.scheduler_mut().input_queue_mut()` rather than `sim.input_queue` as stated in ticket
+  - Added 3 extra tests beyond the 7 required: `test_do_zero_out_of_range`, `test_do_no_controlled_agent`, `test_cancel_no_controlled_agent`
+- **Verification results**:
+  - `cargo build -p worldwake-cli` — passes
+  - `cargo test -p worldwake-cli` — 67 tests pass (10 new action tests)
+  - `cargo clippy -p worldwake-cli` — clean, no warnings
+  - All 7 acceptance criteria tests pass
+  - Invariants 9.1 and 9.12 preserved
