@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Analysis and Gap Report
 
-**Date**: 2026-03-12 (updated 2026-03-13)
+**Date**: 2026-03-12 (updated 2026-03-14)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Document proven emergent scenarios, identify coverage gaps, and prioritize missing tests.
 
@@ -486,6 +486,7 @@ The golden suite contains 42 tests across 6 domain files. Every test uses the re
 | Materialized output theft → fresh replanning to distant fallback | Yes |
 | Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
+| Loot/bury suppression under self-care pressure → relief → suppression lift | **No** |
 
 ---
 
@@ -502,9 +503,23 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 ### Tier 1: High Priority (score >= 5)
 
-No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now covered directly in Scenario 3c.
+**P-NEW-10 Wound Bleed → Clotting → Natural Recovery** (score: 6 = 4+4-2)
+- Emergence: 4 — wound infliction → bleed progression → clotting via `natural_clot_resistance` → recovery gate (`combat.rs:229-245` checks hunger/thirst/fatigue < high AND not in combat) → severity reduction
+- Bug-catching: 4 — the `recovery_conditions_met()` function gates recovery on multiple needs thresholds AND combat state; this multi-condition gate is never exercised e2e
+- Effort: 2 — single agent, one wound, let ticks run, assert severity curve
+- Setup: Agent with bleeding wound, well-fed/hydrated/rested (recovery conditions met), high wound capacity to survive bleed phase. Assert: severity rises (bleed), bleed_rate falls (clotting), severity falls (recovery)
+- Target: `golden_combat.rs`
+- Key refs: `combat.rs:202-219` (bleed/clot/recovery tick), `combat.rs:229-245` (recovery gate)
 
 ### Tier 2: Medium Priority (score 3-4)
+
+**P-NEW-11 Loot/Bury Suppression Under Self-Care Pressure** (score: 4 = 3+3-2)
+- Emergence: 3 — hunger pressure + corpse evidence → `is_suppressed()` filters loot → self-care wins → after relief, suppression lifts → loot activates
+- Bug-catching: 3 — `ranking.rs:93-98` (`is_suppressed()`) is a concrete ranking filter never exercised in any golden test; a regression removing it silently allows starving agents to loot instead of eat
+- Effort: 2 — two agents (one dead), food available, assert eat-before-loot ordering
+- Setup: Critically hungry agent + corpse with coins + bread in inventory. Assert: agent eats first, then loots after hunger relief
+- Target: `golden_combat.rs`
+- Key refs: `ranking.rs:93-98` (`is_suppressed()`), `ranking.rs:57-59` (`self_care_high_or_above()`)
 
 `P-NEW-3 Goal-Switch Margin Boundary` was removed from the golden backlog on 2026-03-13. Reassessment showed the exact boundary is already covered by focused tests in `goal_switching.rs`, `interrupts.rs`, `plan_selection.rs`, and `journey_switch_policy.rs`, while existing golden scenarios already cover behavior-level switching. A new golden arithmetic-threshold scenario would duplicate lower-layer guarantees without adding durable cross-system coverage.
 
@@ -520,19 +535,33 @@ No remaining Tier 3 golden backlog items. `P16 BuryCorpse Goal` was removed on 2
 
 `P18 Save/Load Round-Trip Under AI` was removed from the golden backlog on 2026-03-13. Reassessment showed the architecture already persists the authoritative simulation roots while intentionally rebuilding transient AI controller runtime on resume. Scenario 6e now proves that design directly by round-tripping `SimulationState`, resuming with a fresh `AgentTickDriver`, and matching uninterrupted execution.
 
+### Evaluated and Rejected Scenarios
+
+The following scenarios were considered during the 2026-03-14 coverage review and rejected with architectural justification:
+
+1. **Fatigue/Bladder/Dirtiness as interrupt** — `interrupts.rs` branches on `GoalPriorityClass`, not need type. `is_critical_survival_goal()` treats Sleep/Relieve/Wash identically to hunger/thirst interrupts. Same code path as Scenario 2; a fatigue-specific interrupt golden test would exercise no additional logic.
+
+2. **Multi-attacker danger escalation (2v1)** — `attackers.len() >= 2 → CRITICAL` is already unit-tested in `pressure.rs`. The behavioral consequence (defensive response under danger) is already golden-tested via Scenario 7f. The gap between unit coverage and golden coverage is too narrow to justify a high-setup multi-agent combat scenario.
+
+3. **Journey abandonment (vs suspension)** — `AbandonsCommitment` classification is already unit-tested in `decision_runtime.rs`. High setup complexity (must engineer a scenario where the original destination becomes permanently unreachable or irrelevant mid-journey) for limited code path difference from Scenario 3c's suspension/reactivation path.
+
+4. **SellCommodity** — `GoalKind::SellCommodity` variant exists but `candidate_generation.rs` lacks sell-specific emission logic. Not testable as a golden scenario without first implementing new system code to generate sell candidates.
+
+5. **AcquireCommodity(Treatment)** — Requires candidate generation to chain "need medicine to heal someone," which is not wired in the current pipeline. The heal action itself is already proven via Scenario 2c with pre-placed medicine; the missing piece is upstream candidate generation, not downstream execution.
+
 ---
 
 ## Part 4: Summary Statistics
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 42 | 42 | 42 |
+| Proven tests | 42 | 43 | 44 |
 | GoalKind coverage | 15/17 (88.2%) | 15/17 (88.2%) | 15/17 (88.2%) |
 | ActionDomain coverage | 10/10 full | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
-| Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 29 | 29 | 29 |
+| Places used | 9/12 | 9/12 | 9/12 |
+| Cross-system chains | 29 | 30 | 31 |
 
 ### Recommended Implementation Order (Tier 1)
 
-No Tier 1 backlog remains.
+P-NEW-10 (Wound Bleed → Clotting → Natural Recovery) — single agent, low setup complexity, exercises the multi-condition recovery gate in `combat.rs:229-245`.
