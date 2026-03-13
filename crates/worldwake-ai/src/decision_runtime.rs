@@ -1,7 +1,8 @@
 use crate::{GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    CommodityKind, EntityId, HomeostaticNeeds, Quantity, Tick, UniqueItemKind, Wound,
+    ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, Quantity, Tick, UniqueItemKind,
+    Wound,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -87,6 +88,7 @@ pub struct AgentDecisionRuntime {
     pub last_wounds: Vec<Wound>,
     pub last_commodity_signature: Vec<(CommodityKind, Quantity)>,
     pub last_unique_item_signature: Vec<(UniqueItemKind, u32)>,
+    pub last_facility_access_signature: Vec<(EntityId, bool, Option<ActionDefId>)>,
     pub materialization_bindings: MaterializationBindings,
 }
 

@@ -2615,6 +2615,7 @@ mod tests {
         }));
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);

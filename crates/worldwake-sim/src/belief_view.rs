@@ -4,8 +4,8 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
     DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
     InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity,
-    RecipeId, ResourceSource, TickRange, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 
 pub trait BeliefView {
@@ -46,6 +46,14 @@ pub trait BeliefView {
     }
     fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
         let _ = facility;
+        None
+    }
+    fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
+        let _ = (facility, actor);
+        None
+    }
+    fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<NonZeroU32> {
+        let _ = agent;
         None
     }
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {

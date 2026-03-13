@@ -379,13 +379,15 @@ fn refresh_runtime_for_read_phase(
     let blocked_changed_from_cleanup = *blocked_memory != before;
     let snapshot_changed =
         observation_snapshot_changed(&view, agent, runtime, phase.recipe_registry);
+    let queue_patience_exhausted = facility_queue_patience_exhausted(&view, agent, phase.tick);
 
     runtime.dirty = runtime.dirty
         || runtime.current_plan.is_none()
         || plan_finished(runtime)
         || !replan_signals.is_empty()
         || blocked_changed_from_cleanup
-        || snapshot_changed;
+        || snapshot_changed
+        || queue_patience_exhausted;
 
     let candidates = generate_candidates_with_travel_horizon(
         &view,
@@ -1006,6 +1008,7 @@ fn observation_snapshot_changed(
             commodity_filter.as_ref(),
         )
         || runtime.last_unique_item_signature != unique_item_signature(view, agent)
+        || runtime.last_facility_access_signature != facility_access_signature(view, agent)
 }
 
 fn update_runtime_observation_snapshot(
@@ -1018,6 +1021,51 @@ fn update_runtime_observation_snapshot(
     runtime.last_wounds = view.wounds(agent);
     runtime.last_commodity_signature = commodity_signature(view, agent);
     runtime.last_unique_item_signature = unique_item_signature(view, agent);
+    runtime.last_facility_access_signature = facility_access_signature(view, agent);
+}
+
+fn facility_access_signature(
+    view: &dyn BeliefView,
+    agent: EntityId,
+) -> Vec<(EntityId, bool, Option<ActionDefId>)> {
+    let Some(place) = view.effective_place(agent) else {
+        return Vec::new();
+    };
+
+    view.entities_at(place)
+        .into_iter()
+        .filter(|entity| view.has_exclusive_facility_policy(*entity))
+        .filter_map(|facility| {
+            let queued = view.facility_queue_position(facility, agent).is_some();
+            let matching_grant = view.facility_grant(facility).and_then(|grant| {
+                (grant.actor == agent).then_some(grant.intended_action)
+            });
+            (queued || matching_grant.is_some()).then_some((facility, queued, matching_grant))
+        })
+        .collect()
+}
+
+fn facility_queue_patience_exhausted(view: &dyn BeliefView, agent: EntityId, tick: Tick) -> bool {
+    let Some(limit) = view.facility_queue_patience_ticks(agent) else {
+        return false;
+    };
+    let Some(place) = view.effective_place(agent) else {
+        return false;
+    };
+
+    view.entities_at(place).into_iter().any(|facility| {
+        if !view.has_exclusive_facility_policy(facility) {
+            return false;
+        }
+        if view
+            .facility_grant(facility)
+            .is_some_and(|grant| grant.actor == agent)
+        {
+            return false;
+        }
+        view.facility_queue_join_tick(facility, agent)
+            .is_some_and(|queued_at| tick >= queued_at + u64::from(limit.get()))
+    })
 }
 
 fn commodity_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(CommodityKind, Quantity)> {
@@ -1058,33 +1106,39 @@ fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueI
 mod tests {
     use super::{
         advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
-        effective_goal_switch_margin, handle_recoverable_travel_step_blockage,
-        persist_blocked_memory, plan_and_validate_next_step, refresh_runtime_for_read_phase,
-        resolve_step_targets, update_journey_fields_for_adopted_plan,
-        update_runtime_observation_snapshot, AgentTickDriver, ReadPhaseContext,
+        effective_goal_switch_margin, facility_queue_patience_exhausted,
+        handle_recoverable_travel_step_blockage, persist_blocked_memory,
+        plan_and_validate_next_step, refresh_runtime_for_read_phase, resolve_step_targets,
+        update_journey_fields_for_adopted_plan, update_runtime_observation_snapshot,
+        AgentTickDriver, ReadPhaseContext,
     };
     use crate::PlanningBudget;
     use crate::{
-        CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind, JourneyCommitmentState,
-        JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlanningEntityRef,
+        build_semantics_table, CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind,
+        JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
+        PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
     };
     use std::collections::BTreeSet;
     use std::fs;
+    use std::num::NonZeroU32;
     use std::path::PathBuf;
     use worldwake_core::{
         build_prototype_world, ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact,
-        CarryCapacity, CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
-        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EventLog,
-        HomeostaticNeeds, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place,
-        Quantity, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource, DemandMemory,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
+        EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds,
+        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place,
+        Quantity, RecipeId, ResourceSource, Seed, Tick, Topology, TravelDispositionProfile,
+        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
-        step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
-        CommitOutcome, CommittedAction, ControllerState, DeterministicRng, Materialization,
-        MaterializationTag, OmniscientBeliefView, RecipeRegistry, Scheduler, SystemDispatchTable,
-        SystemManifest, TickStepServices,
+        step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
+        AutonomousControllerRuntime, BeliefView, CommitOutcome, CommittedAction, ControllerState,
+        DeterministicRng, DurationExpr, Materialization, MaterializationTag, OmniscientBeliefView,
+        RecipeDefinition, RecipeRegistry, Scheduler, SystemDispatchTable, SystemManifest,
+        TickStepServices,
     };
     use worldwake_systems::{build_full_action_registries, register_needs_actions};
 
@@ -1327,6 +1381,150 @@ mod tests {
         }
     }
 
+    fn pm(value: u16) -> Permille {
+        Permille::new(value).unwrap()
+    }
+
+    fn harvest_apple_recipe() -> RecipeDefinition {
+        RecipeDefinition {
+            name: "Harvest Apples".to_string(),
+            inputs: vec![],
+            outputs: vec![(CommodityKind::Apple, Quantity(2))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::OrchardRow),
+            required_tool_kinds: vec![],
+            body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        }
+    }
+
+    struct ExclusiveQueueHarness {
+        world: World,
+        recipes: RecipeRegistry,
+        defs: ActionDefRegistry,
+        handlers: ActionHandlerRegistry,
+        actor: EntityId,
+        orchard_farm: EntityId,
+        orchard_row: EntityId,
+    }
+
+    fn build_exclusive_queue_harness() -> ExclusiveQueueHarness {
+        let orchard_farm = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(harvest_apple_recipe());
+        let registries = build_full_action_registries(&recipes).unwrap();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, orchard_row) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+            let orchard_row = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, orchard_farm).unwrap();
+            txn.set_ground_location(orchard_row, orchard_farm).unwrap();
+            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+                .unwrap();
+            txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+                .unwrap();
+            txn.set_component_workstation_marker(
+                orchard_row,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                orchard_row,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(10),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_exclusive_facility_policy(
+                orchard_row,
+                ExclusiveFacilityPolicy {
+                    grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+                .unwrap();
+            commit_txn(txn);
+            (actor, orchard_row)
+        };
+
+        ExclusiveQueueHarness {
+            world,
+            recipes,
+            defs: registries.defs,
+            handlers: registries.handlers,
+            actor,
+            orchard_farm,
+            orchard_row,
+        }
+    }
+
+    fn set_local_queue_state(
+        world: &mut World,
+        actor: EntityId,
+        facility: EntityId,
+        queued_at: u64,
+        grant_action: Option<ActionDefId>,
+    ) {
+        let mut txn = new_txn(world, queued_at.max(1));
+        let mut queue = txn
+            .get_component_facility_use_queue(facility)
+            .cloned()
+            .unwrap_or_default();
+        queue.waiting.clear();
+        queue.granted = None;
+        if let Some(action_def) = grant_action {
+            queue.granted = Some(GrantedFacilityUse {
+                actor,
+                intended_action: action_def,
+                granted_at: Tick(queued_at),
+                expires_at: Tick(queued_at + 3),
+            });
+        } else {
+            queue.enqueue(actor, ActionDefId(77), Tick(queued_at)).unwrap();
+        }
+        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        commit_txn(txn);
+    }
+
+    fn add_local_queued_facility(
+        world: &mut World,
+        actor: EntityId,
+        queued_at: u64,
+    ) -> EntityId {
+        let place = world.effective_place(actor).unwrap();
+        let facility = {
+            let mut txn = new_txn(world, queued_at.max(1));
+            let facility = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(facility, place).unwrap();
+            txn.set_component_exclusive_facility_policy(
+                facility,
+                ExclusiveFacilityPolicy {
+                    grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_facility_use_queue(facility, FacilityUseQueue::default())
+                .unwrap();
+            commit_txn(txn);
+            facility
+        };
+        set_local_queue_state(world, actor, facility, queued_at, None);
+        facility
+    }
+
     fn barrier_step() -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(8),
@@ -1381,6 +1579,226 @@ mod tests {
             step_in_flight: false,
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
+        }
+    }
+
+    fn ranked_goal(
+        goal: GoalKind,
+        evidence_entities: impl IntoIterator<Item = EntityId>,
+        evidence_places: impl IntoIterator<Item = EntityId>,
+    ) -> RankedGoal {
+        RankedGoal {
+            grounded: crate::GroundedGoal {
+                key: GoalKey::from(goal),
+                evidence_entities: evidence_entities.into_iter().collect(),
+                evidence_places: evidence_places.into_iter().collect(),
+            },
+            priority_class: crate::GoalPriorityClass::Medium,
+            motive_score: 500,
+        }
+    }
+
+    #[derive(Default)]
+    struct QueuePatienceBeliefView {
+        place: Option<EntityId>,
+        facilities_at_place: Vec<EntityId>,
+        queue_join_ticks: std::collections::BTreeMap<EntityId, Tick>,
+        grants: std::collections::BTreeMap<EntityId, GrantedFacilityUse>,
+        patience_ticks: Option<NonZeroU32>,
+    }
+
+    impl BeliefView for QueuePatienceBeliefView {
+        fn is_alive(&self, _entity: EntityId) -> bool {
+            true
+        }
+        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
+            None
+        }
+        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
+            self.place
+        }
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            self.facilities_at_place.clone()
+        }
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+        fn unique_item_count(&self, _holder: EntityId, _kind: worldwake_core::UniqueItemKind) -> u32 {
+            0
+        }
+        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+            Quantity(0)
+        }
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+        fn local_controlled_lots_for(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<worldwake_core::CommodityConsumableProfile> {
+            None
+        }
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+        fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+            self.facilities_at_place.contains(&entity)
+        }
+        fn facility_queue_position(&self, facility: EntityId, _actor: EntityId) -> Option<u32> {
+            self.queue_join_ticks.contains_key(&facility).then_some(0)
+        }
+        fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+            self.grants.get(&facility)
+        }
+        fn facility_queue_join_tick(&self, facility: EntityId, _actor: EntityId) -> Option<Tick> {
+            self.queue_join_ticks.get(&facility).copied()
+        }
+        fn facility_queue_patience_ticks(&self, _agent: EntityId) -> Option<NonZeroU32> {
+            self.patience_ticks
+        }
+        fn place_has_tag(&self, _place: EntityId, _tag: worldwake_core::PlaceTag) -> bool {
+            false
+        }
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+        fn reservation_conflicts(&self, _entity: EntityId, _range: worldwake_core::TickRange) -> bool {
+            false
+        }
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
+            Vec::new()
+        }
+        fn is_dead(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+        fn trade_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::TradeDispositionProfile> {
+            None
+        }
+        fn travel_disposition_profile(&self, _agent: EntityId) -> Option<TravelDispositionProfile> {
+            None
+        }
+        fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
+            None
+        }
+        fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
+            Vec::new()
+        }
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
+            None
+        }
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &worldwake_sim::ActionPayload,
+        ) -> Option<ActionDuration> {
+            None
         }
     }
 
@@ -1448,6 +1866,166 @@ mod tests {
             effective_goal_switch_margin(&view, entity(999), &active_journey, &budget,),
             budget.switch_margin_permille
         );
+    }
+
+    #[test]
+    fn grant_arrival_marks_runtime_dirty_from_facility_access_snapshot() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
+        let mut runtime = active_runtime(GoalKind::Sleep);
+        let view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
+
+        set_local_queue_state(
+            &mut harness.world,
+            harness.actor,
+            facility,
+            2,
+            Some(ActionDefId(77)),
+        );
+
+        let mut blocked = BlockedIntentMemory::default();
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            &mut runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &UtilityProfile::default(),
+                tick: Tick(2),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+            },
+        );
+
+        assert!(runtime.dirty);
+    }
+
+    #[test]
+    fn queue_patience_exhaustion_marks_runtime_dirty() {
+        let agent = entity(1);
+        let place = entity(2);
+        let facility = entity(3);
+        let view = QueuePatienceBeliefView {
+            place: Some(place),
+            facilities_at_place: vec![facility],
+            queue_join_ticks: [(facility, Tick(1))].into_iter().collect(),
+            patience_ticks: NonZeroU32::new(3),
+            ..QueuePatienceBeliefView::default()
+        };
+
+        assert!(facility_queue_patience_exhausted(&view, agent, Tick(4)));
+    }
+
+    #[test]
+    fn missing_queue_patience_profile_does_not_mark_runtime_dirty() {
+        let agent = entity(1);
+        let place = entity(2);
+        let facility = entity(3);
+        let view = QueuePatienceBeliefView {
+            place: Some(place),
+            facilities_at_place: vec![facility],
+            queue_join_ticks: [(facility, Tick(1))].into_iter().collect(),
+            patience_ticks: None,
+            ..QueuePatienceBeliefView::default()
+        };
+
+        assert!(!facility_queue_patience_exhausted(&view, agent, Tick(10)));
+    }
+
+    #[test]
+    fn grant_arrival_replan_can_select_direct_harvest_step() {
+        let mut harness = build_exclusive_queue_harness();
+        let harvest_action = harness
+            .defs
+            .iter()
+            .find(|def| def.name == "harvest:Harvest Apples")
+            .map(|def| def.id)
+            .expect("harvest action should be registered");
+        let mut txn = new_txn(&mut harness.world, 1);
+        let mut queue = txn
+            .get_component_facility_use_queue(harness.orchard_row)
+            .cloned()
+            .expect("exclusive orchard should have queue state");
+        queue.enqueue(harness.actor, harvest_action, Tick(1)).unwrap();
+        txn.set_component_facility_use_queue(harness.orchard_row, queue)
+            .unwrap();
+        commit_txn(txn);
+
+        let mut runtime = active_runtime(GoalKind::Sleep);
+        let initial_view = OmniscientBeliefView::new(&harness.world);
+        update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
+
+        set_local_queue_state(
+            &mut harness.world,
+            harness.actor,
+            harness.orchard_row,
+            2,
+            Some(harvest_action),
+        );
+
+        let mut blocked = BlockedIntentMemory::default();
+        let _ = refresh_runtime_for_read_phase(
+            &harness.world,
+            &mut runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &UtilityProfile::default(),
+                tick: Tick(2),
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+            },
+        );
+        assert!(runtime.dirty);
+
+        let goal = ranked_goal(
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            [harness.orchard_row],
+            [harness.orchard_farm],
+        );
+        let semantics = build_semantics_table(&harness.defs);
+        let (next_step, next_step_valid) = plan_and_validate_next_step(
+            &harness.world,
+            &mut runtime,
+            harness.actor,
+            std::slice::from_ref(&goal),
+            PlanningBudget::default().switch_margin_permille,
+            PlanningBudget::default().switch_margin_permille,
+            Tick(2),
+            &PlanningBudget::default(),
+            &semantics,
+            &harness.defs,
+            &harness.handlers,
+        );
+
+        assert_eq!(runtime.current_goal, Some(goal.grounded.key));
+        assert_eq!(next_step_valid, Some(true));
+        assert_eq!(
+            next_step.expect("grant arrival should yield an executable exclusive step")
+                .op_kind,
+            PlannerOpKind::Harvest
+        );
+    }
+
+    #[test]
+    fn queued_actor_can_eat_without_losing_queue_membership() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
+
+        let result = harness.step_once();
+
+        assert_eq!(result.actions_started, 1);
+        assert_eq!(harness.active_action_name(), Some("eat"));
+        let queue = harness
+            .world
+            .get_component_facility_use_queue(facility)
+            .expect("queued facility should still exist");
+        assert!(queue.waiting.values().any(|queued| queued.actor == harness.actor));
     }
 
     #[test]

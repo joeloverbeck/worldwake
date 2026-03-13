@@ -8,7 +8,7 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, CarryCapacity, CombatProfile, CommodityConsumableProfile,
     CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TickRange,
+    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, Tick, TickRange,
     TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, World,
     Wound,
 };
@@ -206,6 +206,23 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world
             .get_component_facility_use_queue(facility)
             .and_then(|queue| queue.granted.as_ref())
+    }
+
+    fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
+        self.world
+            .get_component_facility_use_queue(facility)
+            .and_then(|queue| {
+                queue.waiting
+                    .values()
+                    .find(|queued| queued.actor == actor)
+                    .map(|queued| queued.queued_at)
+            })
+    }
+
+    fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<std::num::NonZeroU32> {
+        self.world
+            .get_component_facility_queue_disposition_profile(agent)
+            .and_then(|profile| profile.queue_patience_ticks)
     }
 
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
