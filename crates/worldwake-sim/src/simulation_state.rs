@@ -98,6 +98,15 @@ impl SimulationState {
         &mut self.rng_state
     }
 
+    /// Borrow the world and event log mutably at the same time.
+    ///
+    /// This is necessary for constructing a `WorldTxn` (which borrows `&mut World`)
+    /// and then committing it (which borrows `&mut EventLog`) from within a single
+    /// `SimulationState`.
+    pub fn world_and_event_log_mut(&mut self) -> (&mut World, &mut EventLog) {
+        (&mut self.world, &mut self.event_log)
+    }
+
     pub fn hash(&self) -> Result<StateHash, CanonicalError> {
         hash_serializable(self)
     }

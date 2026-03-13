@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-010: Control Commands (switch, observe)
 
 ## Summary
@@ -76,3 +78,18 @@ Per spec lines 110–111:
 - At most one agent has `ControlSource::Human` at any time
 - World simulation state is preserved across switches (no reset)
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-13
+- **What changed**:
+  - Created `crates/worldwake-cli/src/handlers/control.rs` with `handle_switch()`, `handle_observe()`, and `set_control_source()` helper
+  - Modified `crates/worldwake-cli/src/handlers/mod.rs` to wire `Switch`/`Observe` variants
+  - Added `world_and_event_log_mut()` split-borrow method to `SimulationState` in `crates/worldwake-sim/src/simulation_state.rs` (needed to construct `WorldTxn` and commit from a single `SimulationState`)
+- **Deviations from original plan**:
+  - Ticket scoped changes to `worldwake-cli` only, but `SimulationState::world_and_event_log_mut()` was added in `worldwake-sim` to solve the split-borrow problem required by `WorldTxn` usage. This is a minimal, general-purpose accessor that benefits other callers too.
+  - Control source mutations use `CauseRef::ExternalInput(0)` and `VisibilitySpec::Hidden` to mark them as meta-operations rather than simulation events.
+- **Verification results**:
+  - 8/8 tests pass (`cargo test -p worldwake-cli --lib handlers::control`)
+  - `cargo clippy -p worldwake-cli` clean (0 warnings)
+  - `worldwake-sim` tests unaffected by split-borrow addition

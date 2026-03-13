@@ -1,4 +1,5 @@
 pub(crate) mod actions;
+mod control;
 mod events;
 mod inspect;
 pub(crate) mod tick;
@@ -45,14 +46,8 @@ pub fn dispatch_command(
         CliCommand::Events { n } => events::handle_events(sim, n),
         CliCommand::Event { id } => events::handle_event(sim, id),
         CliCommand::Trace { id } => events::handle_trace(sim, id),
-        CliCommand::Switch { .. } => {
-            println!("switch: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Observe => {
-            println!("observe: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
+        CliCommand::Switch { name } => control::handle_switch(sim, &name),
+        CliCommand::Observe => control::handle_observe(sim),
         CliCommand::World => {
             println!("world: not implemented");
             Ok(CommandOutcome::Continue)
