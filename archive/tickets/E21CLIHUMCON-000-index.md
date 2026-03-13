@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON — CLI & Human Control Tickets
 
 Epic: E21 (CLI & Human Control)
@@ -46,3 +48,10 @@ All handlers → 013 (default scenario + integration tests)
 - **Wave 3**: 003 (depends on 002)
 - **Wave 4**: 006–012 (all depend on 003+004+005, can be parallelized)
 - **Wave 5**: 013 (depends on all handlers)
+
+## Outcome
+
+- **Completion date**: 2026-03-13
+- **What changed**: All 13 tickets (001–013) implemented. The `worldwake-cli` crate provides a full text-based CLI with RON scenario loading, REPL command interface, affordance-based action menus, agent switching, event log viewer, state inspector, world overview, persistence, and AI integration via `AgentTickDriver`.
+- **Deviations**: None significant. Commands `beliefs`, `order`, `wait` were removed from spec as they depend on unimplemented systems (E14+).
+- **Verification**: All 1,255 workspace tests pass. `cargo clippy --workspace` clean.

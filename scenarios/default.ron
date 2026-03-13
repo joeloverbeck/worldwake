@@ -1,0 +1,54 @@
+// Default scenario for Worldwake — a small world for testing and play.
+//
+// 3 places connected by travel edges, 3 agents (1 human, 2 AI),
+// items, a workstation facility, and a resource source.
+(
+    seed: 42,
+    places: [
+        (name: "Market Square", tags: [Village, Store]),
+        (name: "Forest Clearing", tags: [Forest]),
+        (name: "Mountain Pass", tags: [Trail]),
+    ],
+    edges: [
+        (from: "Market Square", to: "Forest Clearing", travel_ticks: 3, bidirectional: true),
+        (from: "Market Square", to: "Mountain Pass", travel_ticks: 5, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Kael",
+            location: "Market Square",
+            control: Human,
+        ),
+        (
+            name: "Merchant Vara",
+            location: "Market Square",
+            control: Ai,
+            merchandise_profile: (
+                sale_kinds: [Grain, Apple],
+                home_market: "Market Square",
+            ),
+            trade_disposition: (
+                negotiation_round_ticks: 2,
+                initial_offer_bias: 600,
+                concession_rate: 100,
+                demand_memory_retention_ticks: 50,
+            ),
+        ),
+        (
+            name: "Forager Lina",
+            location: "Forest Clearing",
+            control: Ai,
+        ),
+    ],
+    items: [
+        (commodity: Grain, quantity: 10, location: "Market Square"),
+        (commodity: Water, quantity: 5, location: "Kael"),
+        (commodity: Apple, quantity: 8, location: "Forest Clearing"),
+    ],
+    facilities: [
+        (workstation: Mill, location: "Market Square"),
+    ],
+    resource_sources: [
+        (commodity: Apple, location: "Forest Clearing", regeneration_ticks_per_unit: 2, capacity: 20),
+    ],
+)

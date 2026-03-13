@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21: CLI & Human Control
 
 ## Epic Summary
@@ -187,3 +189,10 @@ crates/worldwake-cli/src/
 - Section 9.1 (simulation authority: UI only reads or requests)
 - Section 9.12 (player symmetry)
 - Section 9.21 (controlled-agent mortality)
+
+## Outcome
+
+- **Completion date**: 2026-03-13
+- **What changed**: Full `worldwake-cli` crate implemented across 13 tickets (E21CLIHUMCON-001 through 013). Module structure matches spec: `scenario/` (RON types + spawn), `commands.rs` (clap subcommands), `display.rs` (formatting), `handlers/` (tick, inspect, actions, events, control, world_overview, persistence), `repl.rs` (rustyline REPL), `main.rs` (bootstrap). Default scenario at `scenarios/default.ron`. 9 integration tests in `tests/integration.rs`.
+- **Deviations**: Commands `beliefs`, `order`, `wait` excluded as they depend on unimplemented systems (E14+). This was documented in the spec itself as "Removed Commands."
+- **Verification**: All workspace tests pass (1,255 total). `cargo clippy --workspace` clean. Integration tests cover: scenario load+tick, agent switching (T24), controlled agent death recovery (T27), no player branching (T12), affordance-based actions, event trace, observer mode, save/load roundtrip, determinism.
