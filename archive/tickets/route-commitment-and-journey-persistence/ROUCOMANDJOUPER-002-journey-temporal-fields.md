@@ -1,6 +1,6 @@
 # ROUCOMANDJOUPER-002: Journey Temporal Fields on AgentDecisionRuntime
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new fields on AgentDecisionRuntime
@@ -20,8 +20,9 @@ The decision runtime has no memory that "this journey is already in progress tow
 
 ## Architecture Check
 
-1. Adding temporal fields to the existing struct follows the established pattern (it already has `last_effective_place`, `last_needs`, etc. for change detection). Journey temporal fields are the same kind of transient observation state.
-2. No backwards-compatibility aliasing or shims. The new fields default to `None`/0, so all existing code continues to work.
+1. Adding temporal fields to the existing struct fits the current runtime architecture: `AgentDecisionRuntime` already holds transient per-agent controller state (`current_plan`, `current_step_index`, observation snapshots, and materialization bindings). Journey fields belong in that transient runtime layer rather than authoritative world state.
+2. These fields are semantically different from the existing observation-cache fields (`last_effective_place`, `last_needs`, etc.). They represent commitment lifecycle state, not world-observation snapshots, so follow-up tickets should keep lifecycle mutations centralized instead of scattering direct field writes.
+3. No backwards-compatibility aliasing or shims. The new fields default to `None`/0, so existing construction sites continue to compile while later tickets wire the lifecycle behavior.
 
 ## What to Change
 
@@ -46,7 +47,7 @@ On `AgentDecisionRuntime`, add:
 
 ```rust
 /// Returns true if the agent has an active journey — i.e., the current plan
-/// has remaining Travel steps beyond `current_step_index` and
+/// has remaining Travel steps at or beyond `current_step_index` and
 /// `journey_established_at` is `Some`.
 pub fn has_active_journey(&self) -> bool { ... }
 
@@ -84,7 +85,7 @@ Update `agent_decision_runtime_defaults_to_empty_clean_state` to assert that the
 1. `AgentDecisionRuntime::default()` has `journey_established_at == None`, `journey_last_progress_tick == None`, `consecutive_blocked_leg_ticks == 0`.
 2. `has_active_journey()` returns `false` when `journey_established_at` is `None`.
 3. `has_active_journey()` returns `false` when `journey_established_at` is `Some` but current plan has no remaining Travel steps.
-4. `has_active_journey()` returns `true` when `journey_established_at` is `Some` and current plan has remaining Travel steps beyond `current_step_index`.
+4. `has_active_journey()` returns `true` when `journey_established_at` is `Some` and current plan has remaining Travel steps at or beyond `current_step_index`.
 5. `remaining_travel_steps()` returns 0 when plan is `None`.
 6. `remaining_travel_steps()` correctly counts Travel-typed steps from `current_step_index` onward.
 7. `clear_journey_fields()` resets all three fields to defaults.
@@ -112,3 +113,22 @@ Update `agent_decision_runtime_defaults_to_empty_clean_state` to assert that the
 1. `cargo test -p worldwake-ai decision_runtime`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- Outcome amended: 2026-03-13
+
+- Completion date: 2026-03-13
+- What actually changed:
+  - Added `journey_established_at`, `journey_last_progress_tick`, and `consecutive_blocked_leg_ticks` to `AgentDecisionRuntime`.
+  - Added `has_active_journey()`, `remaining_travel_steps()`, and `clear_journey_fields()` on `AgentDecisionRuntime`.
+  - Strengthened `decision_runtime.rs` unit coverage for defaults, active-journey detection, travel-step counting, and field clearing.
+  - Corrected the ticket itself before implementation so journey detection consistently counts travel steps from `current_step_index` onward.
+  - Follow-up architectural refinement moved plan-derived route inspection onto `PlannedPlan` (`remaining_travel_steps_from`, `has_remaining_travel_steps_from`, `terminal_travel_destination`) so runtime helpers delegate instead of re-scanning raw step lists directly.
+- Deviations from original plan:
+  - The original implementation landed in `crates/worldwake-ai/src/decision_runtime.rs`, then a same-day refinement added plan-level read helpers in `crates/worldwake-ai/src/planner_ops.rs` to keep route/destination derivation attached to the plan model.
+  - The ticket wording was tightened to distinguish transient commitment lifecycle state from the existing observation-cache fields.
+- Verification results:
+  - `cargo test -p worldwake-ai decision_runtime` ✅
+  - `cargo test -p worldwake-ai` ✅
+  - `cargo clippy --workspace` ✅

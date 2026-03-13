@@ -26,6 +26,7 @@ The journey temporal fields added in ticket 002 exist on `AgentDecisionRuntime` 
 1. Journey establishment and advancement belong in `agent_tick.rs` because that's where plan selection results are applied and action completion is processed. No new module needed.
 2. No backwards-compatibility aliasing or shims.
 3. The blockage counter increment should happen when the agent has an active journey but cannot start the next Travel step. The exact detection mechanism depends on how `agent_tick.rs` handles "step not started this tick" — this needs careful integration with the existing replan/retry flow.
+4. Route-inspection helpers should live on `PlannedPlan`, not as ad hoc free functions in `agent_tick.rs`. `AgentDecisionRuntime` can delegate to plan helpers, but plan-derived facts such as "remaining Travel steps from index N" belong with the plan data structure.
 
 ## What to Change
 
@@ -35,7 +36,7 @@ After `select_best_plan()` returns a new plan and it is assigned to `runtime.cur
 
 ```rust
 // After plan assignment:
-if plan_has_remaining_travel_steps(&new_plan, 0) {
+if new_plan.has_remaining_travel_steps_from(0) {
     if runtime.journey_established_at.is_none() {
         runtime.journey_established_at = Some(current_tick);
         runtime.journey_last_progress_tick = Some(current_tick);
@@ -67,22 +68,19 @@ When the agent has an active journey and the next step is Travel but the action 
 runtime.consecutive_blocked_leg_ticks += 1;
 ```
 
-### 4. Add helper: `plan_has_remaining_travel_steps`
+### 4. Reuse the existing `PlannedPlan` route-inspection helpers
 
-A free function or method on `PlannedPlan`:
+Use the plan-level helpers instead of introducing a new local helper:
 
 ```rust
-fn plan_has_remaining_travel_steps(plan: &PlannedPlan, from_index: usize) -> bool {
-    plan.steps[from_index..]
-        .iter()
-        .any(|step| step.op_kind == PlannerOpKind::Travel)
-}
+plan.has_remaining_travel_steps_from(from_index)
+plan.remaining_travel_steps_from(from_index)
 ```
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/agent_tick.rs` (modify — add journey establishment, advancement, and blockage hooks)
-- `crates/worldwake-ai/src/decision_runtime.rs` (modify — add `plan_has_remaining_travel_steps` helper if placed here)
+- `crates/worldwake-ai/src/planner_ops.rs` (use existing plan-level route-inspection helpers; only extend if lifecycle work needs an additional plan-derived query)
 
 ## Out of Scope
 

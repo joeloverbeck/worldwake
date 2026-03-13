@@ -23,6 +23,7 @@ Tests and CLI inspection need to observe journey state: whether an agent has an 
 1. The debug surface consists of read-only query methods on `AgentDecisionRuntime`. These are controller/runtime inspection, not authoritative world component exposure. This follows the existing pattern where runtime state is queried for debugging.
 2. No backwards-compatibility aliasing or shims.
 3. Journey clearing reasons are best exposed through a log/debug mechanism rather than stored state — storing clearing reasons would add transient state for debugging only.
+4. Plan-derived route facts should be computed on `PlannedPlan` and exposed through thin runtime delegates. `AgentDecisionRuntime` should not become the place that re-scans raw step lists for every destination/route query.
 
 ## What to Change
 
@@ -37,12 +38,9 @@ pub fn journey_destination(&self) -> Option<EntityId> {
     if self.journey_established_at.is_none() {
         return None;
     }
-    let plan = self.current_plan.as_ref()?;
-    // Find the last Travel step in the plan
-    plan.steps.iter().rev()
-        .find(|step| step.op_kind == PlannerOpKind::Travel)
-        .and_then(|step| step.targets.first().copied())
-        .and_then(authoritative_target)
+    self.current_plan
+        .as_ref()
+        .and_then(PlannedPlan::terminal_travel_destination)
 }
 ```
 
@@ -109,7 +107,8 @@ impl AgentTickDriver {
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/decision_runtime.rs` (modify — add `journey_destination()`, `JourneySnapshot`, `journey_snapshot()`, `JourneyClearReason`, `clear_journey_fields_with_reason()`)
+- `crates/worldwake-ai/src/planner_ops.rs` (read existing `terminal_travel_destination()` helper; extend only if another plan-derived route query is genuinely needed)
+- `crates/worldwake-ai/src/decision_runtime.rs` (modify — add `journey_destination()` as a thin delegate, `JourneySnapshot`, `journey_snapshot()`, `JourneyClearReason`, `clear_journey_fields_with_reason()`)
 - `crates/worldwake-ai/src/agent_tick.rs` (modify — add `journey_snapshot()` accessor on driver)
 
 ## Out of Scope
@@ -139,7 +138,7 @@ impl AgentTickDriver {
 ### Invariants
 
 1. All debug surface methods are read-only — they do not mutate state.
-2. `journey_destination()` derives from the plan, not from stored route state (no `Vec<EntityId>` route storage).
+2. `journey_destination()` derives from the plan via plan-level helpers, not from stored route state (no `Vec<EntityId>` route storage).
 3. `JourneySnapshot` is a transient read-model, not serialized.
 4. No new authoritative component for journey state.
 

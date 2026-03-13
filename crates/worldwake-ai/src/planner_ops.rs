@@ -578,6 +578,30 @@ impl PlannedPlan {
             terminal_kind,
         }
     }
+
+    #[must_use]
+    pub fn remaining_travel_steps_from(&self, from_index: usize) -> usize {
+        self.steps
+            .iter()
+            .skip(from_index)
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .count()
+    }
+
+    #[must_use]
+    pub fn has_remaining_travel_steps_from(&self, from_index: usize) -> bool {
+        self.remaining_travel_steps_from(from_index) > 0
+    }
+
+    #[must_use]
+    pub fn terminal_travel_destination(&self) -> Option<EntityId> {
+        self.steps
+            .iter()
+            .rev()
+            .find(|step| step.op_kind == PlannerOpKind::Travel)
+            .and_then(|step| step.targets.first().copied())
+            .and_then(authoritative_target)
+    }
 }
 
 fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
@@ -643,6 +667,18 @@ mod tests {
         }
     }
 
+    fn travel_step(target: EntityId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(8),
+            targets: vec![PlanningEntityRef::Authoritative(target)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 2,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
     fn build_phase_two_registry() -> ActionDefRegistry {
         let mut recipes = RecipeRegistry::new();
         recipes.register(RecipeDefinition {
@@ -664,6 +700,49 @@ mod tests {
             body_cost_per_tick: BodyCostPerTick::zero(),
         });
         build_full_action_registries(&recipes).unwrap().defs
+    }
+
+    #[test]
+    fn planned_plan_remaining_travel_steps_counts_from_index() {
+        let plan = PlannedPlan::new(
+            GoalKey::from(GoalKind::Sleep),
+            vec![
+                travel_step(entity(11)),
+                sample_step(),
+                travel_step(entity(12)),
+                travel_step(entity(13)),
+            ],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        assert_eq!(plan.remaining_travel_steps_from(0), 3);
+        assert_eq!(plan.remaining_travel_steps_from(2), 2);
+        assert!(plan.has_remaining_travel_steps_from(2));
+        assert_eq!(plan.remaining_travel_steps_from(10), 0);
+        assert!(!plan.has_remaining_travel_steps_from(10));
+    }
+
+    #[test]
+    fn planned_plan_terminal_travel_destination_uses_last_travel_step() {
+        let last_target = entity(13);
+        let plan = PlannedPlan::new(
+            GoalKey::from(GoalKind::Sleep),
+            vec![
+                travel_step(entity(11)),
+                sample_step(),
+                travel_step(last_target),
+            ],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        assert_eq!(plan.terminal_travel_destination(), Some(last_target));
+
+        let non_travel_plan = PlannedPlan::new(
+            GoalKey::from(GoalKind::Sleep),
+            vec![sample_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        assert_eq!(non_travel_plan.terminal_travel_destination(), None);
     }
 
     #[derive(Default)]

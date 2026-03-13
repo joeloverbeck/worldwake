@@ -1,6 +1,8 @@
 use crate::{GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
-use worldwake_core::{CommodityKind, EntityId, HomeostaticNeeds, Quantity, UniqueItemKind, Wound};
+use worldwake_core::{
+    CommodityKind, EntityId, HomeostaticNeeds, Quantity, Tick, UniqueItemKind, Wound,
+};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MaterializationBindings {
@@ -32,6 +34,9 @@ pub struct AgentDecisionRuntime {
     pub current_goal: Option<GoalKey>,
     pub current_plan: Option<PlannedPlan>,
     pub current_step_index: usize,
+    pub journey_established_at: Option<Tick>,
+    pub journey_last_progress_tick: Option<Tick>,
+    pub consecutive_blocked_leg_ticks: u32,
     pub step_in_flight: bool,
     pub dirty: bool,
     pub last_priority_class: Option<GoalPriorityClass>,
@@ -43,17 +48,68 @@ pub struct AgentDecisionRuntime {
     pub materialization_bindings: MaterializationBindings,
 }
 
+impl AgentDecisionRuntime {
+    #[must_use]
+    pub fn has_active_journey(&self) -> bool {
+        self.journey_established_at.is_some()
+            && self
+                .current_plan
+                .as_ref()
+                .is_some_and(|plan| plan.has_remaining_travel_steps_from(self.current_step_index))
+    }
+
+    #[must_use]
+    pub fn remaining_travel_steps(&self) -> usize {
+        self.current_plan
+            .as_ref()
+            .map_or(0, |plan| plan.remaining_travel_steps_from(self.current_step_index))
+    }
+
+    pub fn clear_journey_fields(&mut self) {
+        self.journey_established_at = None;
+        self.journey_last_progress_tick = None;
+        self.consecutive_blocked_leg_ticks = 0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{AgentDecisionRuntime, MaterializationBindings};
-    use crate::HypotheticalEntityId;
-    use worldwake_core::EntityId;
+    use crate::{
+        CommodityPurpose, GoalKey, HypotheticalEntityId, PlanTerminalKind, PlannedPlan,
+        PlannedStep, PlannerOpKind, PlanningEntityRef,
+    };
+    use worldwake_core::{CommodityKind, EntityId, Tick};
+    use worldwake_sim::ActionDefId;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
             slot,
             generation: 0,
         }
+    }
+
+    fn sample_step(def_id: u32, op_kind: PlannerOpKind) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(def_id),
+            targets: vec![PlanningEntityRef::Authoritative(entity(def_id + 100))],
+            payload_override: None,
+            op_kind,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
+    fn sample_plan(steps: Vec<PlannedStep>) -> PlannedPlan {
+        PlannedPlan::new(
+            GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            steps,
+            PlanTerminalKind::GoalSatisfied,
+        )
     }
 
     #[test]
@@ -63,6 +119,9 @@ mod tests {
         assert_eq!(runtime.current_goal, None);
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
+        assert_eq!(runtime.journey_established_at, None);
+        assert_eq!(runtime.journey_last_progress_tick, None);
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
         assert!(!runtime.step_in_flight);
         assert!(!runtime.dirty);
         assert_eq!(runtime.last_priority_class, None);
@@ -106,5 +165,72 @@ mod tests {
         assert_eq!(bindings.resolve(HypotheticalEntityId(1)), None);
         assert_eq!(bindings.resolve(HypotheticalEntityId(3)), None);
         assert!(bindings.hypothetical_to_authoritative.is_empty());
+    }
+
+    #[test]
+    fn has_active_journey_requires_established_tick_and_travel_steps() {
+        let no_established_tick = AgentDecisionRuntime {
+            current_plan: Some(sample_plan(vec![sample_step(1, PlannerOpKind::Travel)])),
+            ..AgentDecisionRuntime::default()
+        };
+        assert!(!no_established_tick.has_active_journey());
+
+        let no_remaining_travel = AgentDecisionRuntime {
+            current_plan: Some(sample_plan(vec![sample_step(1, PlannerOpKind::Consume)])),
+            journey_established_at: Some(Tick(7)),
+            ..AgentDecisionRuntime::default()
+        };
+        assert!(!no_remaining_travel.has_active_journey());
+
+        let current_travel_step_counts = AgentDecisionRuntime {
+            current_plan: Some(sample_plan(vec![
+                sample_step(1, PlannerOpKind::Travel),
+                sample_step(2, PlannerOpKind::Consume),
+            ])),
+            journey_established_at: Some(Tick(7)),
+            current_step_index: 0,
+            ..AgentDecisionRuntime::default()
+        };
+        assert!(current_travel_step_counts.has_active_journey());
+    }
+
+    #[test]
+    fn remaining_travel_steps_counts_from_current_index() {
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(sample_plan(vec![
+                sample_step(1, PlannerOpKind::Travel),
+                sample_step(2, PlannerOpKind::Consume),
+                sample_step(3, PlannerOpKind::Travel),
+                sample_step(4, PlannerOpKind::Travel),
+            ])),
+            current_step_index: 2,
+            ..AgentDecisionRuntime::default()
+        };
+
+        assert_eq!(runtime.remaining_travel_steps(), 2);
+
+        let beyond_end = AgentDecisionRuntime {
+            current_plan: runtime.current_plan.clone(),
+            current_step_index: 10,
+            ..AgentDecisionRuntime::default()
+        };
+        assert_eq!(beyond_end.remaining_travel_steps(), 0);
+        assert_eq!(AgentDecisionRuntime::default().remaining_travel_steps(), 0);
+    }
+
+    #[test]
+    fn clear_journey_fields_resets_all_temporal_state() {
+        let mut runtime = AgentDecisionRuntime {
+            journey_established_at: Some(Tick(3)),
+            journey_last_progress_tick: Some(Tick(8)),
+            consecutive_blocked_leg_ticks: 5,
+            ..AgentDecisionRuntime::default()
+        };
+
+        runtime.clear_journey_fields();
+
+        assert_eq!(runtime.journey_established_at, None);
+        assert_eq!(runtime.journey_last_progress_tick, None);
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
     }
 }
