@@ -120,7 +120,9 @@ The golden suite contains 31 tests across 6 domain files. Every test uses the re
 **Setup**: Hungry agent starts at Bandit Camp with 1 carried water and no food. Orchard Farm remains the distant food source. Thirst starts low but escalates quickly enough to become critical only after the first travel leg completes.
 **Emergent behavior proven**:
 - Agent begins the distant hunger-driven journey and leaves Bandit Camp.
-- Before reaching Orchard Farm, the agent reprioritizes to a different need and consumes carried water at an intermediate concrete place on the route.
+- The penalty-interruptible travel action continues while thirst rises through the subcritical medium/high bands.
+- The agent does not consume carried water before thirst reaches the critical threshold.
+- Once thirst becomes critical, the running travel plan is interrupted and the agent consumes carried water at an intermediate concrete place on the route.
 - The journey is not treated as a rigid commitment to the original destination.
 **Cross-system chain**: Hunger pressure → distant `AcquireCommodity` travel plan → metabolism escalates thirst during journey → intermediate arrival triggers replanning → `ConsumeOwnedCommodity { Water }`.
 
@@ -377,6 +379,7 @@ The golden suite contains 31 tests across 6 domain files. Every test uses the re
 | Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multi-agent reservation-backed resource exhaustion | Yes |
 | Multiple competing needs (hunger + thirst + fatigue) | Yes |
+| Penalty-interrupt threshold (subcritical continue, critical interrupt) | Yes |
 | Dirtiness pressure → wash → water consumption | Yes |
 | Death after departure on multi-hop travel | Yes |
 | Multi-agent exclusive facility queue rotation → grant promotion → harvest | Yes |
@@ -396,12 +399,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score >= 5)
-
-#### P-NEW-2. InterruptibleWithPenalty Action Semantics
-**Score**: Emergence=3, Bug-catching=5, Effort=2 → **Composite: 6**
-**Rationale**: No test exercises the `InterruptibleWithPenalty` action category. An agent crafting (penalty-interruptible) should NOT be interrupted by a medium-priority need but SHOULD be interrupted by a Critical-class need.
-**Proves**: Agent starts craft action → medium need rises → `InterruptDecision::Continue` → Critical need rises → `InterruptDecision::Interrupt` for penalty actions. Only `Critical` priority class interrupts penalty actions.
-**File**: `golden_ai_decisions.rs`
 
 #### P7. ReduceDanger Defensive Mitigation Under Active Threat
 **Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
@@ -486,15 +483,14 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 31 | 34 | 44 |
+| Proven tests | 31 | 33 | 43 |
 | GoalKind coverage | 12/17 (70.6%) | 13/17 (76.5%) | 14/17 (82.4%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 20 | 23 | 30 |
+| Cross-system chains | 21 | 23 | 29 |
 
 ### Recommended Implementation Order (Tier 1)
 
-1. **P-NEW-2 (InterruptibleWithPenalty semantics)** — highest composite score, tests untested interrupt category
-2. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
-3. **P-NEW-1 (Journey commitment suspension)** — exercises journey state machine not yet proven
+1. **P7 (ReduceDanger defensive mitigation)** — still-open defensive combat gap
+2. **P-NEW-1 (Journey commitment suspension)** — exercises journey state machine not yet proven
