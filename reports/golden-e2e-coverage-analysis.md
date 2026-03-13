@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 15 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
-  golden_combat.rs            — 11 tests (living combat + wound recovery + defensive mitigation + death/loot/burial scenarios + replays)
+  golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 44 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
+The golden suite contains 46 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -327,7 +327,19 @@ The golden suite contains 44 tests across 6 domain files. Every test uses the re
 - The corpse remains a persistent entity at the same place, but it is no longer directly targetable by the normal loot path.
 **Cross-system chain**: Local corpse evidence + local grave-site evidence → `BuryCorpse` goal → planner leaf selection → bury action → concrete containment-based inaccessibility.
 
-### Scenario 8c: Death While Traveling
+### Scenario 8c: Loot Suppression Under Self-Care Pressure
+**File**: `golden_combat.rs` | **Tests**: `golden_loot_suppressed_under_self_care_pressure`, `golden_loot_suppressed_under_self_care_pressure_replays_deterministically`
+**Systems exercised**: Needs, AI (candidate generation, ranking suppression, planning), Corpse actions (`loot`), Conservation, deterministic replay
+**Setup**: A hungry scavenger (`hunger pm(800)`) stands at Village Square with one carried bread. A pre-seeded corpse with direct coin possession is co-located. No other self-care or danger pressures compete.
+**Emergent behavior proven**:
+- While hunger remains at the default `high()` threshold or above, the scavenger never gains corpse coins.
+- The scavenger begins the real `eat` action before any corpse loot resolves.
+- One bread relieves hunger below the `high()` threshold, after which the scavenger proceeds to loot the corpse.
+- Coin lot conservation holds throughout the suppression-then-lift sequence.
+- Two runs with the same seed produce identical world and event-log hashes for the scenario.
+**Cross-system chain**: High hunger pressure + local corpse evidence → corpse-loot suppression in ranking → local self-care action (`eat`) → hunger relief below `high()` → loot candidate becomes behaviorally available → deterministic replay.
+
+### Scenario 8d: Death While Traveling
 **File**: `golden_combat.rs` | **Test**: `golden_death_while_traveling`
 **Companion replay test**: `golden_death_while_traveling_replays_deterministically`
 **Systems exercised**: Needs (metabolism, deprivation exposure), AI (distant acquire planning), Travel, Combat (fatal wound resolution), Conservation, deterministic replay
@@ -498,7 +510,7 @@ The golden suite contains 44 tests across 6 domain files. Every test uses the re
 | Materialized output theft → fresh replanning to distant fallback | Yes |
 | Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
 | Wound bleed → clotting → natural recovery | Yes |
-| Loot/bury suppression under self-care pressure → relief → suppression lift | **No** |
+| Loot/bury suppression under self-care pressure → relief → suppression lift | Yes |
 
 ---
 
@@ -515,13 +527,7 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 ### Tier 2: Medium Priority (score 3-4)
 
-**P-NEW-11 Loot/Bury Suppression Under Self-Care Pressure** (score: 4 = 3+3-2)
-- Emergence: 3 — hunger pressure + corpse evidence → `is_suppressed()` filters loot → self-care wins → after relief, suppression lifts → loot activates
-- Bug-catching: 3 — `ranking.rs:93-98` (`is_suppressed()`) is a concrete ranking filter never exercised in any golden test; a regression removing it silently allows starving agents to loot instead of eat
-- Effort: 2 — two agents (one dead), food available, assert eat-before-loot ordering
-- Setup: Critically hungry agent + corpse with coins + bread in inventory. Assert: agent eats first, then loots after hunger relief
-- Target: `golden_combat.rs`
-- Key refs: `ranking.rs:93-98` (`is_suppressed()`), `ranking.rs:57-59` (`self_care_high_or_above()`)
+No remaining Tier 2 golden backlog items. `P-NEW-11 Loot/Bury Suppression Under Self-Care Pressure` was removed on 2026-03-13 after implementation. The ticket assumptions were corrected first: the durable proof is a direct-corpse setup, not a deprivation-death cascade, and the shipped scenario proves the behavioral contract cleanly without overclaiming direct isolated proof of `is_suppressed()`.
 
 `P-NEW-3 Goal-Switch Margin Boundary` was removed from the golden backlog on 2026-03-13. Reassessment showed the exact boundary is already covered by focused tests in `goal_switching.rs`, `interrupts.rs`, `plan_selection.rs`, and `journey_switch_policy.rs`, while existing golden scenarios already cover behavior-level switching. A new golden arithmetic-threshold scenario would duplicate lower-layer guarantees without adding durable cross-system coverage.
 
@@ -559,13 +565,13 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 | Metric | Current | Remaining Backlog Applied |
 |--------|---------|---------------------------|
-| Proven tests | 44 | 45 |
+| Proven tests | 46 | 46 |
 | GoalKind coverage | 15/17 (88.2%) | 15/17 (88.2%) |
 | ActionDomain coverage | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 30 | 31 |
+| Cross-system chains | 31 | 31 |
 
 ### Recommended Implementation Order
 
-P-NEW-11 (Loot/Bury Suppression Under Self-Care Pressure) — remaining medium-priority gap that would prove ranking suppression against corpse-interaction opportunities under competing self-care pressure.
+No remaining golden backlog items currently require implementation ordering.

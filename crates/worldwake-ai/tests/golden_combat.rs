@@ -122,6 +122,67 @@ fn build_death_and_loot_scenario(
     (h, victim, looter, initial_coin_total)
 }
 
+fn build_loot_suppressed_under_self_care_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    u64,
+    worldwake_core::Permille,
+) {
+    let mut h = GoldenHarness::new(seed);
+    let scavenger = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Scavenger",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        scavenger,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    let corpse = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Corpse",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+    let hunger_high = h
+        .world
+        .get_component_drive_thresholds(scavenger)
+        .expect("scavenger should have drive thresholds")
+        .hunger
+        .high();
+
+    (h, scavenger, initial_coin_total, hunger_high)
+}
+
 fn seed_bleeding_recovery_patient(h: &mut GoldenHarness) -> worldwake_core::EntityId {
     let patient = seed_agent(
         &mut h.world,
@@ -186,6 +247,73 @@ fn run_death_and_loot_observation(
     }
 
     (victim_died, looter_gained_coin)
+}
+
+fn run_loot_suppressed_under_self_care_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, scavenger, initial_coin_total, hunger_high) =
+        build_loot_suppressed_under_self_care_scenario(seed);
+    let mut first_eat_tick = None;
+    let mut first_hunger_below_high_tick = None;
+    let mut first_loot_tick = None;
+
+    for tick in 0..40 {
+        h.step_once();
+
+        if first_eat_tick.is_none() && h.agent_active_action_name(scavenger) == Some("eat") {
+            first_eat_tick = Some(tick);
+        }
+
+        let hunger = h.agent_hunger(scavenger);
+        if first_hunger_below_high_tick.is_none() && hunger < hunger_high {
+            first_hunger_below_high_tick = Some(tick);
+        }
+
+        let scavenger_coin = h.agent_commodity_qty(scavenger, CommodityKind::Coin);
+        if first_loot_tick.is_none() && scavenger_coin > Quantity(0) {
+            first_loot_tick = Some(tick);
+        }
+
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
+        );
+
+        if hunger >= hunger_high {
+            assert_eq!(
+                scavenger_coin,
+                Quantity(0),
+                "Scavenger should not gain corpse coins while hunger remains high-or-above"
+            );
+        }
+
+        if first_eat_tick.is_some()
+            && first_hunger_below_high_tick.is_some()
+            && first_loot_tick.is_some()
+        {
+            break;
+        }
+    }
+
+    let eat_tick = first_eat_tick.expect("Scavenger should begin eating before looting");
+    let hunger_relief_tick = first_hunger_below_high_tick
+        .expect("Scavenger hunger should fall below the high threshold after eating");
+    let loot_tick =
+        first_loot_tick.expect("Scavenger should loot the corpse after self-care pressure lifts");
+
+    assert!(
+        eat_tick < loot_tick,
+        "Scavenger should start eating before corpse loot resolves"
+    );
+    assert!(
+        hunger_relief_tick < loot_tick,
+        "Corpse loot should only resolve after hunger falls below the high threshold"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 fn run_wound_bleed_clotting_natural_recovery_scenario(seed: Seed) -> (StateHash, StateHash) {
@@ -793,6 +921,24 @@ fn golden_death_cascade_and_opportunistic_loot_replays_deterministically() {
     assert_eq!(
         log_hash_1, log_hash_2,
         "Death-and-loot event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_loot_suppressed_under_self_care_pressure() {
+    let _ = run_loot_suppressed_under_self_care_scenario(Seed([29; 32]));
+}
+
+#[test]
+fn golden_loot_suppressed_under_self_care_pressure_replays_deterministically() {
+    let seed = Seed([29; 32]);
+
+    let first = run_loot_suppressed_under_self_care_scenario(seed);
+    let second = run_loot_suppressed_under_self_care_scenario(seed);
+
+    assert_eq!(
+        first, second,
+        "loot suppression under self-care pressure should replay deterministically"
     );
 }
 
