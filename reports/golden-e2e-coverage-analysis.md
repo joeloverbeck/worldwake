@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 13 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c + replays)
-  golden_combat.rs            — 7 tests (living combat + defensive mitigation + death scenarios + replays)
+  golden_combat.rs            — 8 tests (living combat + seed sensitivity + defensive mitigation + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 37 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 38 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -257,7 +257,7 @@ The golden suite contains 37 tests across 6 domain files. Every test uses the re
 **Cross-system chain**: Simultaneous hunger + thirst + fatigue pressure → candidate generation → ranking picks hunger path first → interruptible local consume actions update needs → replanning handles thirst → later rest reduces fatigue.
 
 ### Scenario 7c: Hostility-Driven Living Combat
-**File**: `golden_combat.rs` | **Tests**: `golden_combat_between_living_agents`, `golden_combat_between_living_agents_replays_deterministically`
+**File**: `golden_combat.rs` | **Tests**: `golden_combat_between_living_agents`, `golden_seed_sensitivity_living_combat_different_outcomes`, `golden_combat_between_living_agents_replays_deterministically`
 **Systems exercised**: AI (hostility-driven candidate generation, planning), Combat (attack resolution, wounds), Conservation, deterministic replay
 **Setup**: Two sated agents at Village Square with a concrete hostility relation. The attacker has a stronger combat profile; both carry coin so conservation can be checked across the fight.
 **Emergent behavior proven**:
@@ -265,6 +265,7 @@ The golden suite contains 37 tests across 6 domain files. Every test uses the re
 - The defender responds through the live combat loop once the first attack is underway.
 - At least one wound is inflicted on a living participant without either actor being pre-scripted via manual queueing.
 - Coin totals remain exactly conserved throughout the encounter.
+- A fixed set of distinct seeds produces more than one valid world/event-log outcome for the same living-combat setup, proving that this golden path is stochastic where the production architecture says it should be.
 - Two runs with the same seed produce identical world and event-log hashes for the scenario.
 **Cross-system chain**: Hostility relation → hostile-engagement goal → attack action start → wound infliction → defender response → deterministic replay + conservation checks.
 
@@ -471,11 +472,6 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 `P-NEW-8 Blocked Facility Use Avoidance in Planner` was removed from the golden backlog on 2026-03-13. Reassessment showed the behavior was already proven by Scenario 9b, `golden_facility_queue_patience_timeout`, while planner/runtime unit tests already cover the lower-layer blocked-facility projection and candidate filtering. A second behavior-duplicate golden scenario would not improve the architecture or coverage durability.
 
-#### P17. Seed Sensitivity (Different Seeds, Different Outcomes)
-**Score**: Emergence=1, Bug-catching=3, Effort=1 → **Composite: 3**
-**Rationale**: Scenario 6 proves same-seed determinism. A complementary test proving that different seeds produce different outcomes would strengthen confidence in the RNG integration.
-**File**: `golden_determinism.rs`
-
 ### Tier 3: Lower Priority (score <= 2)
 
 #### P15. Put-Down Action (Inventory Management)
@@ -504,7 +500,7 @@ No remaining Tier 1 backlog items. The prior journey-commitment proof gap is now
 
 | Metric | Current | With Tier 1 | With All |
 |--------|---------|-------------|----------|
-| Proven tests | 37 | 37 | 42 |
+| Proven tests | 38 | 38 | 42 |
 | GoalKind coverage | 14/17 (82.4%) | 14/17 (82.4%) | 15/17 (88.2%) |
 | ActionDomain coverage | 9/10 full | 9/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |

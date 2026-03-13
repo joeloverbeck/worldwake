@@ -628,6 +628,28 @@ fn golden_combat_between_living_agents() {
 }
 
 #[test]
+fn golden_seed_sensitivity_living_combat_different_outcomes() {
+    let seeds = [
+        Seed([21; 32]),
+        Seed([22; 32]),
+        Seed([23; 32]),
+        Seed([24; 32]),
+        Seed([25; 32]),
+        Seed([26; 32]),
+    ];
+    let mut outcomes = BTreeSet::new();
+
+    for seed in seeds {
+        outcomes.insert(run_living_combat_scenario(seed));
+    }
+
+    assert!(
+        outcomes.len() > 1,
+        "living-combat scenario should produce more than one valid outcome across a fixed set of distinct seeds"
+    );
+}
+
+#[test]
 fn golden_combat_between_living_agents_replays_deterministically() {
     let first = run_living_combat_scenario(Seed([22; 32]));
     let second = run_living_combat_scenario(Seed([22; 32]));
