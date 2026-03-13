@@ -55,9 +55,10 @@ pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
 mod tests {
     use crate::{PlanningSnapshot, PlanningState};
     use std::any::type_name;
+    use worldwake_core::ActionDefId;
     use worldwake_sim::{
-        ActionDefId, ActionDefRegistry, ActionPayload, Affordance, BeliefView, InputEvent,
-        InputKind, OmniscientBeliefView, ReplanNeeded,
+        ActionDefRegistry, ActionPayload, Affordance, BeliefView, InputEvent, InputKind,
+        OmniscientBeliefView, ReplanNeeded,
     };
 
     fn assert_type_is_available<T>() -> &'static str {
@@ -76,7 +77,7 @@ mod tests {
         );
         assert_eq!(
             assert_type_is_available::<ActionDefId>(),
-            "worldwake_sim::action_ids::ActionDefId"
+            "worldwake_core::ids::ActionDefId"
         );
         assert_eq!(
             assert_type_is_available::<ActionPayload>(),

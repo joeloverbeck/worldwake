@@ -56,7 +56,7 @@ pub use action_handler::{
     InterruptReason, Materialization, MaterializationTag, PayloadEntityRole, SelfTargetActionKind,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
-pub use action_ids::{ActionDefId, ActionHandlerId, ActionInstanceId};
+pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
     ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,

@@ -4,11 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use worldwake_core::{
-    entity::EntityKind,
-    ids::EntityId,
-    items::CommodityKind,
-};
+use worldwake_core::{entity::EntityKind, ids::EntityId, items::CommodityKind};
 use worldwake_sim::{ActionDuration, SimulationState};
 use worldwake_systems::ActionRegistries;
 
@@ -82,11 +78,7 @@ pub fn handle_places(sim: &SimulationState) -> CommandResult {
                 .topology()
                 .place(edge.to())
                 .expect("edge destination must be valid place");
-            println!(
-                "    → {} ({} ticks)",
-                dest.name,
-                edge.travel_time_ticks()
-            );
+            println!("    → {} ({} ticks)", dest.name, edge.travel_time_ticks());
         }
     }
 
@@ -158,7 +150,9 @@ pub fn handle_goods(sim: &SimulationState) -> CommandResult {
             .and_then(|pid| world.topology().place(pid))
             .map_or_else(|| "unknown".to_string(), |p| p.name.clone());
 
-        let entry = totals.entry(lot.commodity).or_insert_with(|| (0, BTreeMap::new()));
+        let entry = totals
+            .entry(lot.commodity)
+            .or_insert_with(|| (0, BTreeMap::new()));
         entry.0 += lot.quantity.0;
         *entry.1.entry(place_name).or_insert(0) += lot.quantity.0;
     }
@@ -175,10 +169,7 @@ pub fn handle_goods(sim: &SimulationState) -> CommandResult {
             .iter()
             .map(|(place, qty)| format!("{place}: {qty}"))
             .collect();
-        println!(
-            "  {kind:?}: {total} total ({})",
-            breakdown.join(", ")
-        );
+        println!("  {kind:?}: {total} total ({})", breakdown.join(", "));
     }
 
     Ok(CommandOutcome::Continue)
@@ -188,7 +179,9 @@ pub fn handle_goods(sim: &SimulationState) -> CommandResult {
 mod tests {
     use super::*;
     use crate::scenario::{spawn_scenario, types::*};
-    use worldwake_core::{control::ControlSource, items::CommodityKind, numerics::Quantity, topology::PlaceTag};
+    use worldwake_core::{
+        control::ControlSource, items::CommodityKind, numerics::Quantity, topology::PlaceTag,
+    };
 
     /// Multi-place scenario with agents, items, and travel edges.
     fn overview_scenario() -> crate::scenario::SpawnedSimulation {

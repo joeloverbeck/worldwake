@@ -1,8 +1,6 @@
-use crate::{
-    ActionDefId, ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
-};
+use crate::{ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{EntityId, ReservationId, Tick};
+use worldwake_core::{ActionDefId, EntityId, ReservationId, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionInstance {
@@ -21,12 +19,9 @@ pub struct ActionInstance {
 #[cfg(test)]
 mod tests {
     use super::ActionInstance;
-    use crate::{
-        ActionDefId, ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
-    };
+    use crate::{ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{CommodityKind, Quantity};
-    use worldwake_core::{EntityId, ReservationId, Tick};
+    use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, ReservationId, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

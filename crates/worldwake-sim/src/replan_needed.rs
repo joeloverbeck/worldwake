@@ -1,6 +1,6 @@
-use crate::{AbortReason, ActionDefId, ActionInstanceId};
+use crate::{AbortReason, ActionInstanceId};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{EntityId, Tick};
+use worldwake_core::{ActionDefId, EntityId, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReplanNeeded {
@@ -14,9 +14,9 @@ pub struct ReplanNeeded {
 #[cfg(test)]
 mod tests {
     use super::ReplanNeeded;
-    use crate::{AbortReason, ActionDefId, ActionInstanceId, InterruptReason};
+    use crate::{AbortReason, ActionInstanceId, InterruptReason};
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{EntityId, Tick};
+    use worldwake_core::{ActionDefId, EntityId, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

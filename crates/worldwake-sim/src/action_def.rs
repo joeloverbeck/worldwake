@@ -1,10 +1,10 @@
 use crate::{
-    ActionDefId, ActionDomain, ActionHandlerId, ActionPayload, Constraint, DurationExpr,
-    Interruptibility, Precondition, ReservationReq, TargetSpec,
+    ActionDomain, ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility,
+    Precondition, ReservationReq, TargetSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use worldwake_core::{BodyCostPerTick, EventTag, VisibilitySpec};
+use worldwake_core::{ActionDefId, BodyCostPerTick, EventTag, VisibilitySpec};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionDef {
@@ -29,15 +29,15 @@ pub struct ActionDef {
 mod tests {
     use super::ActionDef;
     use crate::{
-        ActionDefId, ActionDomain, ActionHandlerId, ActionPayload, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionDomain, ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, Permille, Quantity,
-        VisibilitySpec,
+        ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, Permille,
+        Quantity, VisibilitySpec,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

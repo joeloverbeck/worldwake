@@ -141,8 +141,8 @@ impl InputQueue {
 #[cfg(test)]
 mod tests {
     use super::{InputQueue, InputQueueError};
-    use crate::{ActionDefId, ActionInstanceId, ActionRequestMode, InputKind};
-    use worldwake_core::{EntityId, Tick};
+    use crate::{ActionInstanceId, ActionRequestMode, InputKind};
+    use worldwake_core::{ActionDefId, EntityId, Tick};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

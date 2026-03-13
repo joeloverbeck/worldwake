@@ -536,7 +536,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BlockedIntent, BlockedIntentMemory, BlockingFact, CombatProfile,
+        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
         DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
         InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
@@ -790,7 +790,7 @@ mod tests {
 
     fn trade_step(counterparty: EntityId) -> PlannedStep {
         PlannedStep {
-            def_id: worldwake_sim::ActionDefId(1),
+            def_id: ActionDefId(1),
             targets: vec![PlanningEntityRef::Authoritative(counterparty)],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty,
@@ -808,7 +808,7 @@ mod tests {
 
     fn travel_step(place: EntityId) -> PlannedStep {
         PlannedStep {
-            def_id: worldwake_sim::ActionDefId(2),
+            def_id: ActionDefId(2),
             targets: vec![PlanningEntityRef::Authoritative(place)],
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
@@ -820,7 +820,7 @@ mod tests {
 
     fn craft_step(workstation: EntityId) -> PlannedStep {
         PlannedStep {
-            def_id: worldwake_sim::ActionDefId(3),
+            def_id: ActionDefId(3),
             targets: vec![PlanningEntityRef::Authoritative(workstation)],
             payload_override: Some(ActionPayload::Craft(CraftActionPayload {
                 recipe_id: RecipeId(4),
@@ -838,7 +838,7 @@ mod tests {
 
     fn attack_step(target: EntityId) -> PlannedStep {
         PlannedStep {
-            def_id: worldwake_sim::ActionDefId(4),
+            def_id: ActionDefId(4),
             targets: vec![PlanningEntityRef::Authoritative(target)],
             payload_override: Some(ActionPayload::Combat(CombatActionPayload {
                 target,
@@ -1059,7 +1059,7 @@ mod tests {
         view.alive.insert(agent);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         let step = PlannedStep {
-            def_id: worldwake_sim::ActionDefId(5),
+            def_id: ActionDefId(5),
             targets: Vec::new(),
             payload_override: None,
             op_kind: PlannerOpKind::Sleep,
@@ -1069,7 +1069,7 @@ mod tests {
         };
         let signal = ReplanNeeded {
             agent,
-            failed_action_def: worldwake_sim::ActionDefId(5),
+            failed_action_def: ActionDefId(5),
             failed_instance: worldwake_sim::ActionInstanceId(7),
             reason: AbortReason::interrupted(InterruptReason::DangerNearby),
             tick: Tick(4),

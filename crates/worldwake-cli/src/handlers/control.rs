@@ -1,10 +1,8 @@
 //! Handlers for agent control commands: `switch` and `observe`.
 
 use worldwake_core::{
-    components::AgentData,
-    control::ControlSource,
-    ids::EntityId,
-    CauseRef, VisibilitySpec, WitnessData, WorldTxn,
+    components::AgentData, control::ControlSource, ids::EntityId, CauseRef, VisibilitySpec,
+    WitnessData, WorldTxn,
 };
 use worldwake_sim::SimulationState;
 
@@ -186,10 +184,7 @@ mod tests {
         sim.world()
             .query_name_and_agent_data()
             .find(|(_, n, _)| n.0 == name)
-            .map_or_else(
-                || panic!("agent \"{name}\" not found"),
-                |(id, _, _)| id,
-            )
+            .map_or_else(|| panic!("agent \"{name}\" not found"), |(id, _, _)| id)
     }
 
     // ── T24: switch transfers control ──────────────────────────────
@@ -403,8 +398,7 @@ mod tests {
             spawned.state.scheduler().active_actions(),
             &spawned.action_registries.defs,
         );
-        let view =
-            OmniscientBeliefView::with_runtime(spawned.state.world(), runtime);
+        let view = OmniscientBeliefView::with_runtime(spawned.state.world(), runtime);
 
         // Affordances come from the merchant's context (invariant 9.12).
         let affordances = get_affordances(

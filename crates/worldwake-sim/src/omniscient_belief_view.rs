@@ -417,19 +417,19 @@ impl BeliefView for OmniscientBeliefView<'_> {
 mod tests {
     use super::{OmniscientBeliefRuntime, OmniscientBeliefView};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
+        ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
         ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, BeliefView, Constraint,
         DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
-        Container, ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-        DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TravelDispositionProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-        World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        build_prototype_world, ActionDefId, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
+        CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
+        DemandObservationReason, DriveThresholds, EventLog, HomeostaticNeeds, InTransitOnEdge,
+        LoadUnits, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TravelDispositionProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
 
     fn assert_belief_view<T: BeliefView>() {}

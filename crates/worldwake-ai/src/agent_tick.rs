@@ -1,21 +1,21 @@
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::{
-    authoritative_target, build_planning_snapshot, build_semantics_table,
-    clear_resolved_blockers, evaluate_interrupt, handle_plan_failure, rank_candidates,
-    resolve_planning_targets_with, revalidate_next_step, search_plan, select_best_plan,
-    AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision, JourneyClearReason,
-    JourneyCommitmentState, JourneyRuntimeSnapshot, PlanFailureContext, PlanTerminalKind,
-    PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
+    authoritative_target, build_planning_snapshot, build_semantics_table, clear_resolved_blockers,
+    evaluate_interrupt, handle_plan_failure, rank_candidates, resolve_planning_targets_with,
+    revalidate_next_step, search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt,
+    InterruptDecision, JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot,
+    PlanFailureContext, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
+    PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, CauseRef, CommodityKind, ControlSource, EntityId,
-    Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorldTxn,
+    ActionDefId, BlockedIntent, BlockedIntentMemory, CauseRef, CommodityKind, ControlSource,
+    EntityId, Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
-    ActionDefId, ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
-    BeliefView, CommitOutcome, CommittedAction, InputKind, OmniscientBeliefView, RecipeRegistry,
-    ReplanNeeded, Scheduler, SchedulerActionRuntime, TickInputError,
+    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, BeliefView,
+    CommitOutcome, CommittedAction, InputKind, OmniscientBeliefView, RecipeRegistry, ReplanNeeded,
+    Scheduler, SchedulerActionRuntime, TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -720,9 +720,7 @@ fn advance_completed_step(
             runtime.materialization_bindings.clear();
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
-            if completed_plan_relation
-                == Some(crate::JourneyPlanRelation::SuspendsCommitment)
-            {
+            if completed_plan_relation == Some(crate::JourneyPlanRelation::SuspendsCommitment) {
                 runtime.journey_commitment_state = JourneyCommitmentState::Active;
             } else {
                 runtime.clear_journey_commitment_with_reason(JourneyClearReason::GoalSatisfied);
@@ -1065,28 +1063,28 @@ mod tests {
         resolve_step_targets, update_journey_fields_for_adopted_plan,
         update_runtime_observation_snapshot, AgentTickDriver, ReadPhaseContext,
     };
+    use crate::PlanningBudget;
     use crate::{
         CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind, JourneyCommitmentState,
         JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
         PlanningEntityRef,
     };
-    use crate::PlanningBudget;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
     use worldwake_core::{
-        build_prototype_world, BlockedIntent, BlockedIntentMemory, BlockingFact, CarryCapacity,
-        CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+        build_prototype_world, ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact,
+        CarryCapacity, CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EventLog,
         HomeostaticNeeds, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place,
         Quantity, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry,
-        AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState,
-        DeterministicRng, Materialization, MaterializationTag, OmniscientBeliefView,
-        RecipeRegistry, Scheduler, SystemDispatchTable, SystemManifest, TickStepServices,
+        step_tick, ActionDefRegistry, ActionHandlerRegistry, AutonomousControllerRuntime,
+        CommitOutcome, CommittedAction, ControllerState, DeterministicRng, Materialization,
+        MaterializationTag, OmniscientBeliefView, RecipeRegistry, Scheduler, SystemDispatchTable,
+        SystemManifest, TickStepServices,
     };
     use worldwake_systems::{build_full_action_registries, register_needs_actions};
 
@@ -1493,7 +1491,10 @@ mod tests {
             snapshot.switch_margin_source,
             JourneySwitchMarginSource::JourneyProfile
         );
-        assert_eq!(snapshot.effective_switch_margin, Permille::new(300).unwrap());
+        assert_eq!(
+            snapshot.effective_switch_margin,
+            Permille::new(300).unwrap()
+        );
         assert_eq!(snapshot.runtime.committed_destination, Some(place));
         assert_eq!(snapshot.runtime.active_plan_destination, Some(place));
         assert!(snapshot.runtime.has_active_journey_travel);
@@ -1530,7 +1531,10 @@ mod tests {
             snapshot.switch_margin_source,
             JourneySwitchMarginSource::BudgetDefault
         );
-        assert_eq!(snapshot.effective_switch_margin, budget.switch_margin_permille);
+        assert_eq!(
+            snapshot.effective_switch_margin,
+            budget.switch_margin_permille
+        );
         assert_eq!(snapshot.runtime.committed_destination, None);
         assert_eq!(snapshot.runtime.active_plan_destination, None);
         assert!(!snapshot.runtime.has_active_journey_travel);
@@ -1606,7 +1610,10 @@ mod tests {
 
         assert_eq!(runtime.journey_committed_goal, Some(goal));
         assert_eq!(runtime.journey_committed_destination, Some(destination));
-        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
+        assert_eq!(
+            runtime.journey_commitment_state,
+            JourneyCommitmentState::Active
+        );
         assert_eq!(runtime.journey_established_at, Some(Tick(4)));
         assert_eq!(runtime.journey_last_progress_tick, Some(Tick(6)));
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 3);
@@ -1636,7 +1643,10 @@ mod tests {
 
         assert_eq!(runtime.journey_committed_goal, Some(goal));
         assert_eq!(runtime.journey_committed_destination, Some(new_destination));
-        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
+        assert_eq!(
+            runtime.journey_commitment_state,
+            JourneyCommitmentState::Active
+        );
         assert_eq!(runtime.journey_established_at, Some(Tick(9)));
         assert_eq!(runtime.journey_last_progress_tick, None);
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
@@ -1797,7 +1807,10 @@ mod tests {
         );
         assert_eq!(blocked_memory.intents.len(), 1);
         assert_eq!(blocked_memory.intents[0].goal_key, goal);
-        assert_eq!(blocked_memory.intents[0].blocking_fact, BlockingFact::NoKnownPath);
+        assert_eq!(
+            blocked_memory.intents[0].blocking_fact,
+            BlockingFact::NoKnownPath
+        );
         assert_eq!(blocked_memory.intents[0].related_entity, None);
         assert_eq!(blocked_memory.intents[0].related_place, Some(destination));
         assert_eq!(blocked_memory.intents[0].observed_tick, Tick(9));
@@ -1979,7 +1992,10 @@ mod tests {
         assert_eq!(runtime.current_step_index, 0);
         assert_eq!(runtime.journey_committed_goal, Some(committed_goal));
         assert_eq!(runtime.journey_committed_destination, Some(destination));
-        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
+        assert_eq!(
+            runtime.journey_commitment_state,
+            JourneyCommitmentState::Active
+        );
         assert_eq!(runtime.journey_established_at, Some(Tick(1)));
         assert_eq!(runtime.journey_last_progress_tick, Some(Tick(3)));
         assert_eq!(runtime.last_journey_clear_reason, None);

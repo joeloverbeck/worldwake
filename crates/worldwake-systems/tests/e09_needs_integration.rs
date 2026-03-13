@@ -1,15 +1,14 @@
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    build_prototype_world, prototype_place_entity, CauseRef, CommodityKind, ComponentKind,
-    Container, ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds, EventLog,
-    HomeostaticNeeds, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, Seed, Tick,
-    VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
+    build_prototype_world, prototype_place_entity, ActionDefId, CauseRef, CommodityKind,
+    ComponentKind, Container, ControlSource, DeprivationExposure, DeprivationKind, DriveThresholds,
+    EventLog, HomeostaticNeeds, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity,
+    Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
 };
 use worldwake_sim::{
-    step_tick, ActionDefId, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
-    DeterministicRng, InputKind, RecipeRegistry, Scheduler, SystemManifest, TickStepError,
-    TickStepServices,
+    step_tick, ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng,
+    InputKind, RecipeRegistry, Scheduler, SystemManifest, TickStepError, TickStepServices,
 };
 use worldwake_systems::{dispatch_table, register_needs_actions};
 
@@ -439,6 +438,7 @@ fn authoritative_schema_includes_expected_shared_e09_and_e12_components_and_fiel
             ComponentKind::CombatProfile,
             ComponentKind::DeadAt,
             ComponentKind::CombatStance,
+            ComponentKind::FacilityQueueDispositionProfile,
             ComponentKind::UtilityProfile,
             ComponentKind::BlockedIntentMemory,
             ComponentKind::DriveThresholds,
@@ -452,6 +452,8 @@ fn authoritative_schema_includes_expected_shared_e09_and_e12_components_and_fiel
             ComponentKind::TradeDispositionProfile,
             ComponentKind::MerchandiseProfile,
             ComponentKind::SubstitutePreferences,
+            ComponentKind::ExclusiveFacilityPolicy,
+            ComponentKind::FacilityUseQueue,
             ComponentKind::WorkstationMarker,
             ComponentKind::ResourceSource,
             ComponentKind::ProductionJob,

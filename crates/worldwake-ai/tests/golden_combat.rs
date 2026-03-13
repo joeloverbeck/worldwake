@@ -5,9 +5,9 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, CombatProfile, CommodityKind,
-    DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes, MetabolismProfile, Quantity,
-    PrototypePlace, ResourceSource, Seed, StateHash, Tick, UtilityProfile, WorkstationTag,
-    WoundList,
+    DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
+    WorkstationTag, WoundList,
 };
 
 // ---------------------------------------------------------------------------
@@ -173,7 +173,12 @@ fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
 
 fn build_death_while_traveling_scenario(
     seed: Seed,
-) -> (GoldenHarness, worldwake_core::EntityId, u64, worldwake_core::EntityId) {
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    u64,
+    worldwake_core::EntityId,
+) {
     let mut h = GoldenHarness::new(seed);
     let bandit_camp = worldwake_core::prototype_place_entity(PrototypePlace::BanditCamp);
 
@@ -305,7 +310,10 @@ fn run_death_while_traveling_scenario(seed: Seed) -> (StateHash, StateHash) {
         }
     }
 
-    assert!(left_origin, "Traveler should leave the origin to pursue distant food");
+    assert!(
+        left_origin,
+        "Traveler should leave the origin to pursue distant food"
+    );
     assert!(
         saw_in_transit,
         "Traveler should enter real in-transit state before death"
@@ -459,7 +467,10 @@ fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
     let (saw_attack_action, saw_combat_event, defender_wounded) =
         run_living_combat_observation(&mut h, attacker, defender, initial_coin_total);
 
-    assert!(saw_attack_action, "attacker should commit to an attack action");
+    assert!(
+        saw_attack_action,
+        "attacker should commit to an attack action"
+    );
     assert!(
         saw_combat_event,
         "living-combat scenario should emit at least one combat-tagged event"
@@ -468,8 +479,14 @@ fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
         defender_wounded,
         "defender should sustain at least one wound from living combat"
     );
-    assert!(!h.agent_is_dead(attacker), "attacker should survive the scenario");
-    assert!(!h.agent_is_dead(defender), "defender should survive the scenario");
+    assert!(
+        !h.agent_is_dead(attacker),
+        "attacker should survive the scenario"
+    );
+    assert!(
+        !h.agent_is_dead(defender),
+        "defender should survive the scenario"
+    );
 
     (
         hash_world(&h.world).unwrap(),

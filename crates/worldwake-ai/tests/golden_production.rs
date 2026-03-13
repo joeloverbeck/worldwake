@@ -444,7 +444,7 @@ fn golden_resource_exhaustion_race() {
         "The finite orchard source should end depleted in the no-regeneration scenario"
     );
     assert!(
-        outcome.agents_with_hunger_relief.len() >= 1,
+        !outcome.agents_with_hunger_relief.is_empty(),
         "At least one agent should complete the harvest/pick-up/eat chain under contention"
     );
 }

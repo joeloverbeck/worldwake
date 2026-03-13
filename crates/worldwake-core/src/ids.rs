@@ -9,6 +9,33 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Sub};
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! worldwake_prefixed_id_type {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty, $prefix:literal);) => {
+        $(#[$meta])*
+        #[derive(
+            Copy,
+            Clone,
+            Eq,
+            PartialEq,
+            Ord,
+            PartialOrd,
+            Hash,
+            Debug,
+            serde::Serialize,
+            serde::Deserialize,
+        )]
+        $vis struct $name(pub $inner);
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, concat!($prefix, "{}"), self.0)
+            }
+        }
+    };
+}
+
 /// Stable entity identifier with generational slot reuse detection.
 ///
 /// `slot` identifies the allocator slot; `generation` is bumped on
@@ -49,35 +76,25 @@ impl Sub<u64> for Tick {
     }
 }
 
-/// Unique identifier for an event in the append-only log.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
-pub struct EventId(pub u64);
+crate::worldwake_prefixed_id_type!(
+    /// Unique identifier for an event in the append-only log.
+    pub struct EventId(u64, "ev");
+);
 
-impl fmt::Display for EventId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ev{}", self.0)
-    }
-}
+crate::worldwake_prefixed_id_type!(
+    /// Stable identifier for a registered action definition.
+    pub struct ActionDefId(u32, "adef");
+);
 
-/// Unique identifier for a reservation record in the relation layer.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
-pub struct ReservationId(pub u64);
+crate::worldwake_prefixed_id_type!(
+    /// Unique identifier for a reservation record in the relation layer.
+    pub struct ReservationId(u64, "r");
+);
 
-impl fmt::Display for ReservationId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "r{}", self.0)
-    }
-}
-
-/// Unique identifier for an opaque fact handle in the relation layer.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
-pub struct FactId(pub u64);
-
-impl fmt::Display for FactId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "f{}", self.0)
-    }
-}
+crate::worldwake_prefixed_id_type!(
+    /// Unique identifier for an opaque fact handle in the relation layer.
+    pub struct FactId(u64, "f");
+);
 
 /// Half-open tick interval `[start, end)` used for reservation windows.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize)]
@@ -134,15 +151,10 @@ impl fmt::Display for TickRange {
     }
 }
 
-/// Unique identifier for a directed travel edge in the topology graph.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
-pub struct TravelEdgeId(pub u32);
-
-impl fmt::Display for TravelEdgeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "te{}", self.0)
-    }
-}
+crate::worldwake_prefixed_id_type!(
+    /// Unique identifier for a directed travel edge in the topology graph.
+    pub struct TravelEdgeId(u32, "te");
+);
 
 /// Deterministic seed for `ChaCha8Rng`.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -248,6 +260,7 @@ mod tests {
         assert_bounds::<EntityId>();
         assert_bounds::<Tick>();
         assert_bounds::<EventId>();
+        assert_bounds::<ActionDefId>();
         assert_bounds::<ReservationId>();
         assert_bounds::<FactId>();
         assert_bounds::<TickRange>();
@@ -281,6 +294,16 @@ mod tests {
         let val = EventId(999);
         let bytes = bincode::serialize(&val).unwrap();
         let back: EventId = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(val, back);
+    }
+
+    #[test]
+    fn action_def_id_display_and_bincode_roundtrip() {
+        let val = ActionDefId(14);
+        assert_eq!(val.to_string(), "adef14");
+
+        let bytes = bincode::serialize(&val).unwrap();
+        let back: ActionDefId = bincode::deserialize(&bytes).unwrap();
         assert_eq!(val, back);
     }
 

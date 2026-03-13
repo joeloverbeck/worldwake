@@ -69,10 +69,7 @@ fn find_agent(sim: &SimulationState, name: &str) -> EntityId {
     sim.world()
         .query_name_and_agent_data()
         .find(|(_, n, _)| n.0 == name)
-        .map_or_else(
-            || panic!("agent \"{name}\" not found"),
-            |(id, _, _)| id,
-        )
+        .map_or_else(|| panic!("agent \"{name}\" not found"), |(id, _, _)| id)
 }
 
 // ── test_scenario_loads_and_ticks (spec T-integration line 171) ──────
@@ -82,7 +79,11 @@ fn test_scenario_loads_and_ticks() {
     let mut ctx = TestContext::load_default();
 
     // Verify entity counts: 3 agents, 3 places, items present.
-    let agents: Vec<_> = ctx.sim.world().entities_with_name_and_agent_data().collect();
+    let agents: Vec<_> = ctx
+        .sim
+        .world()
+        .entities_with_name_and_agent_data()
+        .collect();
     assert_eq!(agents.len(), 3, "should have 3 agents");
 
     let place_count = ctx.sim.world().topology().place_ids().count();
@@ -208,10 +209,8 @@ fn test_no_player_branching() {
     .unwrap();
 
     let vara = find_agent(&ctx.sim, "Merchant Vara");
-    let runtime_vara = OmniscientBeliefRuntime::new(
-        ctx.sim.scheduler().active_actions(),
-        &ctx.registries.defs,
-    );
+    let runtime_vara =
+        OmniscientBeliefRuntime::new(ctx.sim.scheduler().active_actions(), &ctx.registries.defs);
     let view_vara = OmniscientBeliefView::with_runtime(ctx.sim.world(), runtime_vara);
     let affordances_vara = get_affordances(
         &view_vara,
@@ -227,10 +226,8 @@ fn test_no_player_branching() {
     .unwrap();
 
     let lina = find_agent(&ctx.sim, "Forager Lina");
-    let runtime_lina = OmniscientBeliefRuntime::new(
-        ctx.sim.scheduler().active_actions(),
-        &ctx.registries.defs,
-    );
+    let runtime_lina =
+        OmniscientBeliefRuntime::new(ctx.sim.scheduler().active_actions(), &ctx.registries.defs);
     let view_lina = OmniscientBeliefView::with_runtime(ctx.sim.world(), runtime_lina);
     let affordances_lina = get_affordances(
         &view_lina,
@@ -373,8 +370,7 @@ fn test_save_load_roundtrip() {
     assert!(save_path.exists(), "save file should be created");
 
     // Load from temp file.
-    ctx.dispatch(CliCommand::Load { path: save_str })
-        .unwrap();
+    ctx.dispatch(CliCommand::Load { path: save_str }).unwrap();
 
     // Verify state matches.
     assert_eq!(ctx.sim.scheduler().current_tick(), tick_before);

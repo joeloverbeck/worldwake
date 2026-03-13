@@ -189,20 +189,20 @@ fn txn_has_effects(txn: &WorldTxn<'_>) -> bool {
 mod tests {
     use super::{tick_action, TickOutcome};
     use crate::{
-        start_action, AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain,
-        ActionDuration, ActionError, ActionExecutionAuthority, ActionExecutionContext,
-        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionState, ActionStatus, Affordance, CommitOutcome,
-        Constraint, DeterministicRng, DurationExpr, Interruptibility, Materialization,
-        MaterializationTag, Precondition, ReplanNeeded, ReservationReq, TargetSpec,
+        start_action, AbortReason, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,
+        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionProgress, ActionState, ActionStatus, Affordance, CommitOutcome, Constraint,
+        DeterministicRng, DurationExpr, Interruptibility, Materialization, MaterializationTag,
+        Precondition, ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EntityKind, EventLog, EventTag, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
+        ControlSource, EntityId, EntityKind, EventLog, EventTag, Quantity, Seed, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]

@@ -6,14 +6,15 @@ use crate::{
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     drives::DriveThresholds,
+    facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
         WorkstationMarker,
     },
-    travel_disposition::TravelDispositionProfile,
     trade::{DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile},
+    travel_disposition::TravelDispositionProfile,
     utility_profile::UtilityProfile,
     wounds::WoundList,
     EntityId,
@@ -112,17 +113,17 @@ mod tests {
     use crate::{
         components::{AgentData, Name},
         test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_blocked_intent_memory, sample_demand_memory,
+            sample_facility_queue_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_travel_disposition_profile,
-            sample_utility_profile,
+            sample_travel_disposition_profile, sample_utility_profile,
         },
-        BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
-        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, HomeostaticNeeds,
-        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
-        Permille, ProductionJob, ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
-        WoundList,
+        ActionDefId, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
+        ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
+        ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProductionJob,
+        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -143,6 +144,7 @@ mod tests {
         assert_eq!(tables.iter_wound_lists().count(), 0);
         assert_eq!(tables.iter_combat_profiles().count(), 0);
         assert_eq!(tables.iter_dead_ats().count(), 0);
+        assert_eq!(tables.iter_facility_queue_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_utility_profiles().count(), 0);
         assert_eq!(tables.iter_blocked_intent_memories().count(), 0);
         assert_eq!(tables.iter_drive_thresholds().count(), 0);
@@ -156,6 +158,8 @@ mod tests {
         assert_eq!(tables.iter_trade_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_merchandise_profiles().count(), 0);
         assert_eq!(tables.iter_substitute_preferences().count(), 0);
+        assert_eq!(tables.iter_exclusive_facility_policies().count(), 0);
+        assert_eq!(tables.iter_facility_use_queues().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
@@ -398,9 +402,31 @@ mod tests {
     }
 
     #[test]
-    fn insert_and_get_utility_profile() {
+    fn facility_queue_disposition_profile_insert_get_remove_has_cycle() {
         let mut tables = ComponentTables::default();
         let id = entity(34);
+        let profile = sample_facility_queue_disposition_profile();
+
+        assert_eq!(
+            tables.insert_facility_queue_disposition_profile(id, profile.clone()),
+            None
+        );
+        assert_eq!(
+            tables.get_facility_queue_disposition_profile(id),
+            Some(&profile)
+        );
+        assert!(tables.has_facility_queue_disposition_profile(id));
+        assert_eq!(
+            tables.remove_facility_queue_disposition_profile(id),
+            Some(profile)
+        );
+        assert_eq!(tables.get_facility_queue_disposition_profile(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_utility_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(35);
         let profile = sample_utility_profile();
 
         assert_eq!(tables.insert_utility_profile(id, profile.clone()), None);
@@ -467,6 +493,36 @@ mod tests {
         assert!(tables.has_workstation_marker(id));
         assert_eq!(tables.remove_workstation_marker(id), Some(marker));
         assert_eq!(tables.get_workstation_marker(id), None);
+    }
+
+    #[test]
+    fn facility_queue_components_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let facility = entity(41);
+        let policy = ExclusiveFacilityPolicy {
+            grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+        };
+        let mut queue = FacilityUseQueue::default();
+        queue.enqueue(entity(99), ActionDefId(7), Tick(3)).unwrap();
+
+        assert_eq!(
+            tables.insert_exclusive_facility_policy(facility, policy.clone()),
+            None
+        );
+        assert_eq!(
+            tables.get_exclusive_facility_policy(facility),
+            Some(&policy)
+        );
+        assert_eq!(
+            tables.insert_facility_use_queue(facility, queue.clone()),
+            None
+        );
+        assert_eq!(tables.get_facility_use_queue(facility), Some(&queue));
+        assert_eq!(
+            tables.remove_exclusive_facility_policy(facility),
+            Some(policy)
+        );
+        assert_eq!(tables.remove_facility_use_queue(facility), Some(queue));
     }
 
     #[test]

@@ -3,11 +3,7 @@
 //! All handlers are read-only — zero world mutation.
 
 use worldwake_core::{
-    drives::ThresholdBand,
-    ids::EntityId,
-    load::load_of_entity,
-    numerics::Permille,
-    world::World,
+    drives::ThresholdBand, ids::EntityId, load::load_of_entity, numerics::Permille, world::World,
 };
 use worldwake_sim::SimulationState;
 
@@ -138,13 +134,18 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!("  AgentData: control={:?}", agent_data.control_source);
     }
     if let Some(needs) = world.get_component_homeostatic_needs(entity) {
-        println!("  HomeostaticNeeds: hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}",
-            needs.hunger, needs.thirst, needs.fatigue, needs.bladder, needs.dirtiness);
+        println!(
+            "  HomeostaticNeeds: hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}",
+            needs.hunger, needs.thirst, needs.fatigue, needs.bladder, needs.dirtiness
+        );
     }
     if let Some(wounds) = world.get_component_wound_list(entity) {
         println!("  WoundList: {} wound(s)", wounds.wounds.len());
         for w in &wounds.wounds {
-            println!("    {:?} on {:?}, severity={}, tick={}", w.cause, w.body_part, w.severity, w.inflicted_at.0);
+            println!(
+                "    {:?} on {:?}, severity={}, tick={}",
+                w.cause, w.body_part, w.severity, w.inflicted_at.0
+            );
         }
     }
     if let Some(cp) = world.get_component_combat_profile(entity) {
@@ -202,7 +203,10 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!("  ProductionJob: {pj:?}");
     }
     if let Some(rs) = world.get_component_resource_source(entity) {
-        println!("  ResourceSource: {:?} {}/{}", rs.commodity, rs.available_quantity.0, rs.max_quantity.0);
+        println!(
+            "  ResourceSource: {:?} {}/{}",
+            rs.commodity, rs.available_quantity.0, rs.max_quantity.0
+        );
     }
     if let Some(transit) = world.get_component_in_transit_on_edge(entity) {
         println!("  InTransitOnEdge: {transit:?}");
@@ -223,12 +227,9 @@ pub fn handle_inventory(sim: &SimulationState, entity_input: Option<&str>) -> Co
 
     let entity = match entity_input {
         Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error)?,
-        None => sim
-            .controller_state()
-            .controlled_entity()
-            .ok_or_else(|| {
-                CommandError::new("no controlled agent (observer mode) — specify an entity")
-            })?,
+        None => sim.controller_state().controlled_entity().ok_or_else(|| {
+            CommandError::new("no controlled agent (observer mode) — specify an entity")
+        })?,
     };
 
     let name = entity_display_name(world, entity);
@@ -275,12 +276,9 @@ pub fn handle_needs(sim: &SimulationState, entity_input: Option<&str>) -> Comman
 
     let entity = match entity_input {
         Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error)?,
-        None => sim
-            .controller_state()
-            .controlled_entity()
-            .ok_or_else(|| {
-                CommandError::new("no controlled agent (observer mode) — specify an entity")
-            })?,
+        None => sim.controller_state().controlled_entity().ok_or_else(|| {
+            CommandError::new("no controlled agent (observer mode) — specify an entity")
+        })?,
     };
 
     // Must be an agent.
@@ -295,11 +293,30 @@ pub fn handle_needs(sim: &SimulationState, entity_input: Option<&str>) -> Comman
     match needs {
         Some(n) => {
             println!("{name} needs:");
-            println!("  {}", format_needs_bar("hunger", n.hunger, &need_band(world, entity, "hunger")));
-            println!("  {}", format_needs_bar("thirst", n.thirst, &need_band(world, entity, "thirst")));
-            println!("  {}", format_needs_bar("fatigue", n.fatigue, &need_band(world, entity, "fatigue")));
-            println!("  {}", format_needs_bar("bladder", n.bladder, &need_band(world, entity, "bladder")));
-            println!("  {}", format_needs_bar("dirtiness", n.dirtiness, &need_band(world, entity, "dirtiness")));
+            println!(
+                "  {}",
+                format_needs_bar("hunger", n.hunger, &need_band(world, entity, "hunger"))
+            );
+            println!(
+                "  {}",
+                format_needs_bar("thirst", n.thirst, &need_band(world, entity, "thirst"))
+            );
+            println!(
+                "  {}",
+                format_needs_bar("fatigue", n.fatigue, &need_band(world, entity, "fatigue"))
+            );
+            println!(
+                "  {}",
+                format_needs_bar("bladder", n.bladder, &need_band(world, entity, "bladder"))
+            );
+            println!(
+                "  {}",
+                format_needs_bar(
+                    "dirtiness",
+                    n.dirtiness,
+                    &need_band(world, entity, "dirtiness")
+                )
+            );
         }
         None => {
             println!("{name}: (no needs data)");
@@ -354,7 +371,11 @@ pub fn handle_relations(sim: &SimulationState, entity_input: &str) -> CommandRes
     for p in &possessions {
         let item_name = entity_display_name(world, *p);
         if let Some(lot) = world.get_component_item_lot(*p) {
-            println!("  possesses {} ({:?})", format_quantity(lot.commodity, lot.quantity), item_name);
+            println!(
+                "  possesses {} ({:?})",
+                format_quantity(lot.commodity, lot.quantity),
+                item_name
+            );
         } else {
             println!("  possesses {item_name}");
         }
@@ -378,7 +399,11 @@ pub fn handle_relations(sim: &SimulationState, entity_input: &str) -> CommandRes
     // Social: loyalty.
     let loyal_targets = world.loyal_targets_of(entity);
     for (target, strength) in &loyal_targets {
-        println!("  loyal to {} ({})", entity_display_name(world, *target), strength);
+        println!(
+            "  loyal to {} ({})",
+            entity_display_name(world, *target),
+            strength
+        );
         any = true;
     }
 
@@ -503,7 +528,11 @@ mod tests {
         let result = handle_look(&spawned.state);
         assert_eq!(result.unwrap(), CommandOutcome::Continue);
         // The place name "Market Square" is in the output (verified via topology).
-        let entity = spawned.state.controller_state().controlled_entity().unwrap();
+        let entity = spawned
+            .state
+            .controller_state()
+            .controlled_entity()
+            .unwrap();
         let place_id = spawned.state.world().effective_place(entity).unwrap();
         let place = spawned.state.world().topology().place(place_id).unwrap();
         assert_eq!(place.name, "Market Square");

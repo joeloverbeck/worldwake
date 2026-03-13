@@ -3,9 +3,10 @@ use crate::{
     register_harvest_actions, register_heal_action, register_loot_action, register_needs_actions,
     register_trade_action, register_transport_actions, register_travel_actions,
 };
+use worldwake_core::ActionDefId;
 use worldwake_sim::{
-    action_handler_registry::verify_completeness, ActionDefId, ActionDefRegistry,
-    ActionHandlerRegistry, RecipeRegistry,
+    action_handler_registry::verify_completeness, ActionDefRegistry, ActionHandlerRegistry,
+    RecipeRegistry,
 };
 
 pub struct ActionRegistries {

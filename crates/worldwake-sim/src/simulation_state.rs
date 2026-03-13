@@ -193,16 +193,15 @@ impl SimulationState {
 mod tests {
     use super::SimulationState;
     use crate::{
-        ActionDefId, ControllerState, DeterministicRng, InputEvent, InputKind, RecipeDefinition,
-        RecipeRegistry, ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler,
-        SystemManifest,
+        ControllerState, DeterministicRng, InputEvent, InputKind, RecipeDefinition, RecipeRegistry,
+        ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler, SystemManifest,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::num::NonZeroU64;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EventLog, PendingEvent, Quantity, Seed, StateHash, Tick, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
+        ControlSource, EntityId, EventLog, PendingEvent, Quantity, Seed, StateHash, Tick,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

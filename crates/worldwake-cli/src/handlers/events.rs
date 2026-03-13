@@ -2,11 +2,7 @@
 //!
 //! All handlers are read-only — zero world mutation.
 
-use worldwake_core::{
-    cause::CauseRef,
-    event_log::EventLog,
-    ids::EventId,
-};
+use worldwake_core::{cause::CauseRef, event_log::EventLog, ids::EventId};
 use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
@@ -183,9 +179,7 @@ pub fn handle_trace(sim: &SimulationState, id: u64) -> CommandResult {
     }
 
     if capped {
-        println!(
-            "  ... trace capped at {MAX_TRACE_HOPS} hops (chain may be longer)"
-        );
+        println!("  ... trace capped at {MAX_TRACE_HOPS} hops (chain may be longer)");
     }
 
     Ok(CommandOutcome::Continue)
@@ -220,17 +214,11 @@ fn trace_cause_chain_capped(log: &EventLog, start: EventId) -> Vec<EventId> {
 mod tests {
     use super::*;
     use crate::scenario::{spawn_scenario, types::*};
-    use worldwake_core::{
-        cause::CauseRef,
-        control::ControlSource,
-        event_record::PendingEvent,
-        event_tag::EventTag,
-        ids::EventId,
-        topology::PlaceTag,
-        visibility::VisibilitySpec,
-        witness::WitnessData,
-    };
     use std::collections::BTreeSet;
+    use worldwake_core::{
+        cause::CauseRef, control::ControlSource, event_record::PendingEvent, event_tag::EventTag,
+        ids::EventId, topology::PlaceTag, visibility::VisibilitySpec, witness::WitnessData,
+    };
 
     fn minimal_scenario() -> ScenarioDef {
         ScenarioDef {

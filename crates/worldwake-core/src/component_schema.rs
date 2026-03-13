@@ -155,6 +155,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                facility_queue_disposition_profiles,
+                FacilityQueueDispositionProfile,
+                insert_facility_queue_disposition_profile,
+                get_facility_queue_disposition_profile,
+                get_facility_queue_disposition_profile_mut,
+                remove_facility_queue_disposition_profile,
+                has_facility_queue_disposition_profile,
+                iter_facility_queue_disposition_profiles,
+                insert_component_facility_queue_disposition_profile,
+                get_component_facility_queue_disposition_profile,
+                get_component_facility_queue_disposition_profile_mut,
+                remove_component_facility_queue_disposition_profile,
+                has_component_facility_queue_disposition_profile,
+                entities_with_facility_queue_disposition_profile,
+                query_facility_queue_disposition_profile,
+                count_with_facility_queue_disposition_profile,
+                "FacilityQueueDispositionProfile",
+                |kind| kind == EntityKind::Agent,
+                FacilityQueueDispositionProfile,
+                crate::FacilityQueueDispositionProfile,
+                set_component_facility_queue_disposition_profile,
+                clear_component_facility_queue_disposition_profile,
+                txn_simple_set
+            }
+            {
                 utility_profiles,
                 UtilityProfile,
                 insert_utility_profile,
@@ -477,6 +502,56 @@ macro_rules! with_component_schema_entries {
                 crate::SubstitutePreferences,
                 set_component_substitute_preferences,
                 clear_component_substitute_preferences,
+                txn_simple_set
+            }
+            {
+                exclusive_facility_policies,
+                ExclusiveFacilityPolicy,
+                insert_exclusive_facility_policy,
+                get_exclusive_facility_policy,
+                get_exclusive_facility_policy_mut,
+                remove_exclusive_facility_policy,
+                has_exclusive_facility_policy,
+                iter_exclusive_facility_policies,
+                insert_component_exclusive_facility_policy,
+                get_component_exclusive_facility_policy,
+                get_component_exclusive_facility_policy_mut,
+                remove_component_exclusive_facility_policy,
+                has_component_exclusive_facility_policy,
+                entities_with_exclusive_facility_policy,
+                query_exclusive_facility_policy,
+                count_with_exclusive_facility_policy,
+                "ExclusiveFacilityPolicy",
+                |kind| kind == EntityKind::Facility,
+                ExclusiveFacilityPolicy,
+                crate::ExclusiveFacilityPolicy,
+                set_component_exclusive_facility_policy,
+                clear_component_exclusive_facility_policy,
+                txn_simple_set
+            }
+            {
+                facility_use_queues,
+                FacilityUseQueue,
+                insert_facility_use_queue,
+                get_facility_use_queue,
+                get_facility_use_queue_mut,
+                remove_facility_use_queue,
+                has_facility_use_queue,
+                iter_facility_use_queues,
+                insert_component_facility_use_queue,
+                get_component_facility_use_queue,
+                get_component_facility_use_queue_mut,
+                remove_component_facility_use_queue,
+                has_component_facility_use_queue,
+                entities_with_facility_use_queue,
+                query_facility_use_queue,
+                count_with_facility_use_queue,
+                "FacilityUseQueue",
+                |kind| kind == EntityKind::Facility,
+                FacilityUseQueue,
+                crate::FacilityUseQueue,
+                set_component_facility_use_queue,
+                clear_component_facility_use_queue,
                 txn_simple_set
             }
             {

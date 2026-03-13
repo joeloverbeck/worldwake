@@ -5,9 +5,10 @@
 
 use crate::{
     BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, CommodityPurpose,
-    DemandMemory, DemandObservation, DemandObservationReason, EntityId, GoalKey, GoalKind,
-    MerchandiseProfile, Permille, Quantity, Seed, SubstitutePreferences, Tick, TradeCategory,
-    TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
+    DemandMemory, DemandObservation, DemandObservationReason, EntityId,
+    FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
+    Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
+    TravelDispositionProfile, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -65,6 +66,13 @@ pub fn sample_travel_disposition_profile() -> TravelDispositionProfile {
     TravelDispositionProfile {
         route_replan_margin: Permille::new(180).unwrap(),
         blocked_leg_patience_ticks: NonZeroU32::new(9).unwrap(),
+    }
+}
+
+/// Returns a representative facility-queue disposition fixture.
+pub fn sample_facility_queue_disposition_profile() -> FacilityQueueDispositionProfile {
+    FacilityQueueDispositionProfile {
+        queue_patience_ticks: NonZeroU32::new(12),
     }
 }
 

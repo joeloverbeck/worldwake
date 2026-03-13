@@ -1,10 +1,7 @@
 //! Tick and status command handlers.
 
 use worldwake_ai::AgentTickDriver;
-use worldwake_core::{
-    drives::ThresholdBand,
-    numerics::Permille,
-};
+use worldwake_core::{drives::ThresholdBand, numerics::Permille};
 use worldwake_sim::{
     step_tick, ActionDuration, AutonomousControllerRuntime, SimulationState, SystemDispatchTable,
     TickStepServices,
@@ -49,8 +46,7 @@ pub fn handle_tick(
     for _ in 0..n {
         let mut controllers = AutonomousControllerRuntime::new(vec![driver]);
 
-        let (world, event_log, scheduler, controller, rng, recipe_registry) =
-            sim.tick_parts_mut();
+        let (world, event_log, scheduler, controller, rng, recipe_registry) = sim.tick_parts_mut();
 
         let result = step_tick(
             world,
@@ -78,10 +74,7 @@ pub fn handle_tick(
 }
 
 /// Show the controlled agent's status.
-pub fn handle_status(
-    sim: &SimulationState,
-    registries: &ActionRegistries,
-) -> CommandResult {
+pub fn handle_status(sim: &SimulationState, registries: &ActionRegistries) -> CommandResult {
     let entity = sim
         .controller_state()
         .controlled_entity()
@@ -122,10 +115,7 @@ pub fn handle_status(
         println!("{}", format_needs_bar("thirst", needs.thirst, &band));
         println!("{}", format_needs_bar("fatigue", needs.fatigue, &band));
         println!("{}", format_needs_bar("bladder", needs.bladder, &band));
-        println!(
-            "{}",
-            format_needs_bar("dirtiness", needs.dirtiness, &band)
-        );
+        println!("{}", format_needs_bar("dirtiness", needs.dirtiness, &band));
     } else {
         println!("(no needs data)");
     }
@@ -152,10 +142,7 @@ mod tests {
     use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
     use worldwake_ai::PlanningBudget;
     use worldwake_core::{
-        control::ControlSource,
-        ids::EntityId,
-        needs::HomeostaticNeeds,
-        numerics::Permille,
+        control::ControlSource, ids::EntityId, needs::HomeostaticNeeds, numerics::Permille,
         topology::PlaceTag,
     };
 

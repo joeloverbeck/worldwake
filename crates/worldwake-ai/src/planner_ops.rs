@@ -4,9 +4,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{load_per_unit, EntityId, EntityKind, Quantity};
+use worldwake_core::{load_per_unit, ActionDefId, EntityId, EntityKind, Quantity};
 use worldwake_sim::{
-    ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionPayload, MaterializationTag,
+    ActionDef, ActionDefRegistry, ActionDomain, ActionPayload, MaterializationTag,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -626,16 +626,16 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        load_per_unit, BodyCostPerTick, CommodityConsumableProfile, CommodityKind,
+        load_per_unit, ActionDefId, BodyCostPerTick, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
         InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
         RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionDuration,
-        ActionPayload, BeliefView, DurationExpr, MaterializationTag, RecipeDefinition,
-        RecipeRegistry, TradeActionPayload, TransportActionPayload,
+        estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionPayload,
+        BeliefView, DurationExpr, MaterializationTag, RecipeDefinition, RecipeRegistry,
+        TradeActionPayload, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 

@@ -75,9 +75,7 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::RestockCommodity { commodity } => (Some(commodity), None, None),
             GoalKind::EngageHostile { target }
             | GoalKind::Heal { target }
-            | GoalKind::LootCorpse { corpse: target } => {
-                (None, Some(target), None)
-            }
+            | GoalKind::LootCorpse { corpse: target } => (None, Some(target), None),
             GoalKind::MoveCargo {
                 commodity,
                 destination,

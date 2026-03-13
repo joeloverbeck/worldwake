@@ -10,15 +10,15 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    CauseRef, ControlSource, EntityId, EntityKind, EventLog, MerchandiseProfile, Place,
+    hash_world, CauseRef, ControlSource, EntityId, EntityKind, EventLog, MerchandiseProfile, Place,
     ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn, hash_world,
+    WorkstationMarker, World, WorldTxn,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
     Scheduler, SimulationState, SystemDispatchTable, SystemManifest,
 };
-use worldwake_systems::{build_full_action_registries, ActionRegistries, dispatch_table};
+use worldwake_systems::{build_full_action_registries, dispatch_table, ActionRegistries};
 
 /// Bundled result of scenario spawning: persistent simulation state plus
 /// transient runtime artifacts (action registries, dispatch table).
@@ -106,13 +106,12 @@ pub fn spawn_scenario(def: &ScenarioDef) -> Result<SpawnedSimulation, ScenarioEr
     spawn_entities(def, &mut world, &mut event_log, &mut names, &place_names)?;
 
     let recipe_registry = RecipeRegistry::new();
-    let action_registries =
-        build_full_action_registries(&recipe_registry).map_err(|orphans| {
-            ScenarioError::Validation(format!(
-                "action registry incomplete: {} orphaned defs",
-                orphans.len()
-            ))
-        })?;
+    let action_registries = build_full_action_registries(&recipe_registry).map_err(|orphans| {
+        ScenarioError::Validation(format!(
+            "action registry incomplete: {} orphaned defs",
+            orphans.len()
+        ))
+    })?;
     let dispatch = dispatch_table();
 
     let state = assemble_state(def, &names, world, event_log, recipe_registry)?;
@@ -135,9 +134,8 @@ fn build_topology(
 
     for (slot, place_def) in def.places.iter().enumerate() {
         let place_id = EntityId {
-            slot: u32::try_from(slot).map_err(|_| {
-                ScenarioError::Validation("too many places (exceeds u32)".into())
-            })?,
+            slot: u32::try_from(slot)
+                .map_err(|_| ScenarioError::Validation("too many places (exceeds u32)".into()))?,
             generation: 0,
         };
 
@@ -353,16 +351,13 @@ fn assemble_state(
         .iter()
         .find(|a| a.control == ControlSource::Human)
         .and_then(|a| names.get(&a.name))
-        .map_or_else(ControllerState::new, |&id| {
-            ControllerState::with_entity(id)
-        });
+        .map_or_else(ControllerState::new, |&id| ControllerState::with_entity(id));
 
     let seed_bytes = seed_from_u64(def.seed);
     let rng = DeterministicRng::new(Seed(seed_bytes));
 
-    let initial_hash = hash_world(&world).map_err(|e| {
-        ScenarioError::Validation(format!("failed to hash initial world: {e}"))
-    })?;
+    let initial_hash = hash_world(&world)
+        .map_err(|e| ScenarioError::Validation(format!("failed to hash initial world: {e}")))?;
     let replay_state = ReplayState::new(
         initial_hash,
         Seed(seed_bytes),
@@ -390,9 +385,7 @@ fn resolve_name(
     context: &str,
 ) -> Result<EntityId, ScenarioError> {
     names.get(name).copied().ok_or_else(|| {
-        ScenarioError::Validation(format!(
-            "{context} references nonexistent entity '{name}'"
-        ))
+        ScenarioError::Validation(format!("{context} references nonexistent entity '{name}'"))
     })
 }
 
@@ -407,11 +400,11 @@ fn seed_from_u64(seed: u64) -> [u8; 32] {
 mod tests {
     use super::*;
     use crate::scenario::types::*;
+    use std::num::NonZeroU32;
+    use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
         CommodityKind, ControlSource, HomeostaticNeeds, Permille, Quantity, WorkstationTag,
     };
-    use worldwake_core::topology::PlaceTag;
-    use std::num::NonZeroU32;
 
     /// Helper: build a minimal `ScenarioDef` with given places and agents.
     fn minimal_def() -> ScenarioDef {
@@ -466,8 +459,14 @@ mod tests {
         let def = ScenarioDef {
             seed: 1,
             places: vec![
-                PlaceDef { name: "Town".into(), tags: vec![] },
-                PlaceDef { name: "Forest".into(), tags: vec![] },
+                PlaceDef {
+                    name: "Town".into(),
+                    tags: vec![],
+                },
+                PlaceDef {
+                    name: "Forest".into(),
+                    tags: vec![],
+                },
             ],
             edges: vec![],
             agents: vec![
@@ -504,12 +503,14 @@ mod tests {
         assert_eq!(agents.len(), 2);
 
         // Find Alice and Bob by name
-        let alice = agents.iter().find(|&&id| {
-            world.get_component_name(id).unwrap().0 == "Alice"
-        }).unwrap();
-        let bob = agents.iter().find(|&&id| {
-            world.get_component_name(id).unwrap().0 == "Bob"
-        }).unwrap();
+        let alice = agents
+            .iter()
+            .find(|&&id| world.get_component_name(id).unwrap().0 == "Alice")
+            .unwrap();
+        let bob = agents
+            .iter()
+            .find(|&&id| world.get_component_name(id).unwrap().0 == "Bob")
+            .unwrap();
 
         // Verify placements
         let alice_place = world.effective_place(*alice).unwrap();
@@ -523,7 +524,10 @@ mod tests {
     fn test_spawn_items_at_place() {
         let def = ScenarioDef {
             seed: 1,
-            places: vec![PlaceDef { name: "Market".into(), tags: vec![] }],
+            places: vec![PlaceDef {
+                name: "Market".into(),
+                tags: vec![],
+            }],
             edges: vec![],
             agents: vec![AgentDef {
                 name: "Trader".into(),
@@ -549,16 +553,19 @@ mod tests {
         let world = spawned.state.world();
 
         // Find item lot at Market
-        let market_id = EntityId { slot: 0, generation: 0 };
+        let market_id = EntityId {
+            slot: 0,
+            generation: 0,
+        };
         let entities_at_market = world.entities_effectively_at(market_id);
 
         // Should have the agent + the item lot
         assert!(entities_at_market.len() >= 2);
 
         // Find the item lot
-        let item = entities_at_market.iter().find(|&&id| {
-            world.get_component_item_lot(id).is_some()
-        });
+        let item = entities_at_market
+            .iter()
+            .find(|&&id| world.get_component_item_lot(id).is_some());
         assert!(item.is_some(), "item lot should be at Market");
 
         let item_id = *item.unwrap();
@@ -571,7 +578,10 @@ mod tests {
     fn test_spawn_items_on_agent() {
         let def = ScenarioDef {
             seed: 1,
-            places: vec![PlaceDef { name: "Camp".into(), tags: vec![] }],
+            places: vec![PlaceDef {
+                name: "Camp".into(),
+                tags: vec![],
+            }],
             edges: vec![],
             agents: vec![AgentDef {
                 name: "Warrior".into(),
@@ -615,8 +625,14 @@ mod tests {
         let def = ScenarioDef {
             seed: 1,
             places: vec![
-                PlaceDef { name: "A".into(), tags: vec![] },
-                PlaceDef { name: "B".into(), tags: vec![] },
+                PlaceDef {
+                    name: "A".into(),
+                    tags: vec![],
+                },
+                PlaceDef {
+                    name: "B".into(),
+                    tags: vec![],
+                },
             ],
             edges: vec![EdgeDef {
                 from: "A".into(),
@@ -634,8 +650,14 @@ mod tests {
         let world = spawned.state.world();
         let topo = world.topology();
 
-        let a = EntityId { slot: 0, generation: 0 };
-        let b = EntityId { slot: 1, generation: 0 };
+        let a = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let b = EntityId {
+            slot: 1,
+            generation: 0,
+        };
 
         // A → B exists
         let outgoing_a = topo.outgoing_edges(a);
@@ -652,8 +674,14 @@ mod tests {
         let def = ScenarioDef {
             seed: 1,
             places: vec![
-                PlaceDef { name: "X".into(), tags: vec![] },
-                PlaceDef { name: "Y".into(), tags: vec![] },
+                PlaceDef {
+                    name: "X".into(),
+                    tags: vec![],
+                },
+                PlaceDef {
+                    name: "Y".into(),
+                    tags: vec![],
+                },
             ],
             edges: vec![EdgeDef {
                 from: "X".into(),
@@ -670,8 +698,14 @@ mod tests {
         let spawned = spawn_scenario(&def).unwrap();
         let topo = spawned.state.world().topology();
 
-        let x = EntityId { slot: 0, generation: 0 };
-        let y = EntityId { slot: 1, generation: 0 };
+        let x = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let y = EntityId {
+            slot: 1,
+            generation: 0,
+        };
 
         // X → Y exists
         let outgoing_x = topo.outgoing_edges(x);
@@ -702,7 +736,10 @@ mod tests {
     fn test_spawn_invalid_place_ref() {
         let def = ScenarioDef {
             seed: 1,
-            places: vec![PlaceDef { name: "Town".into(), tags: vec![] }],
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+            }],
             edges: vec![],
             agents: vec![AgentDef {
                 name: "Lost".into(),
@@ -739,8 +776,14 @@ mod tests {
         let def = ScenarioDef {
             seed: 1,
             places: vec![
-                PlaceDef { name: "Smithy".into(), tags: vec![] },
-                PlaceDef { name: "Orchard".into(), tags: vec![] },
+                PlaceDef {
+                    name: "Smithy".into(),
+                    tags: vec![],
+                },
+                PlaceDef {
+                    name: "Orchard".into(),
+                    tags: vec![],
+                },
             ],
             edges: vec![],
             agents: vec![],
@@ -760,25 +803,35 @@ mod tests {
         let spawned = spawn_scenario(&def).unwrap();
         let world = spawned.state.world();
 
-        let smithy = EntityId { slot: 0, generation: 0 };
-        let orchard = EntityId { slot: 1, generation: 0 };
+        let smithy = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let orchard = EntityId {
+            slot: 1,
+            generation: 0,
+        };
 
         // Find workstation at Smithy
         let at_smithy = world.entities_effectively_at(smithy);
-        let forge = at_smithy.iter().find(|&&id| {
-            world.get_component_workstation_marker(id).is_some()
-        });
+        let forge = at_smithy
+            .iter()
+            .find(|&&id| world.get_component_workstation_marker(id).is_some());
         assert!(forge.is_some(), "forge should be at Smithy");
-        let marker = world.get_component_workstation_marker(*forge.unwrap()).unwrap();
+        let marker = world
+            .get_component_workstation_marker(*forge.unwrap())
+            .unwrap();
         assert_eq!(marker.0, WorkstationTag::Forge);
 
         // Find resource source at Orchard
         let at_orchard = world.entities_effectively_at(orchard);
-        let source = at_orchard.iter().find(|&&id| {
-            world.get_component_resource_source(id).is_some()
-        });
+        let source = at_orchard
+            .iter()
+            .find(|&&id| world.get_component_resource_source(id).is_some());
         assert!(source.is_some(), "apple source should be at Orchard");
-        let rs = world.get_component_resource_source(*source.unwrap()).unwrap();
+        let rs = world
+            .get_component_resource_source(*source.unwrap())
+            .unwrap();
         assert_eq!(rs.commodity, CommodityKind::Apple);
         assert_eq!(rs.max_quantity, Quantity(20));
         assert_eq!(rs.available_quantity, Quantity(20));
@@ -804,7 +857,10 @@ mod tests {
     fn test_spawn_no_human_agent() {
         let def = ScenarioDef {
             seed: 1,
-            places: vec![PlaceDef { name: "Void".into(), tags: vec![] }],
+            places: vec![PlaceDef {
+                name: "Void".into(),
+                tags: vec![],
+            }],
             edges: vec![],
             agents: vec![AgentDef {
                 name: "Bot".into(),
@@ -841,7 +897,10 @@ mod tests {
 
         let def = ScenarioDef {
             seed: 1,
-            places: vec![PlaceDef { name: "Home".into(), tags: vec![] }],
+            places: vec![PlaceDef {
+                name: "Home".into(),
+                tags: vec![],
+            }],
             edges: vec![],
             agents: vec![AgentDef {
                 name: "Hungry".into(),

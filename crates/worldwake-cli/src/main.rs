@@ -16,7 +16,10 @@ fn default_scenario_path() -> PathBuf {
 }
 
 #[derive(Parser)]
-#[command(name = "worldwake", about = "Causality-first emergent micro-world simulation")]
+#[command(
+    name = "worldwake",
+    about = "Causality-first emergent micro-world simulation"
+)]
 struct Cli {
     /// Path to RON scenario file
     #[arg(default_value_os_t = default_scenario_path())]
@@ -45,7 +48,12 @@ fn main() {
     let mut sim = spawned.state;
     let mut driver = AgentTickDriver::new(PlanningBudget::default());
 
-    if let Err(e) = run_repl(&mut sim, &mut driver, &spawned.action_registries, &spawned.dispatch_table) {
+    if let Err(e) = run_repl(
+        &mut sim,
+        &mut driver,
+        &spawned.action_registries,
+        &spawned.dispatch_table,
+    ) {
         eprintln!("REPL error: {e}");
         process::exit(1);
     }

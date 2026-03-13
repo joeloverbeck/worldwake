@@ -305,6 +305,7 @@ mod tests {
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
+    use worldwake_core::ActionDefId;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, DeadAt,
         DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
@@ -313,7 +314,7 @@ mod tests {
         World, WorldTxn, WoundCause,
     };
     use worldwake_sim::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
+        ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
         ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
         DeterministicRng, DurationExpr, Interruptibility, SystemExecutionContext, SystemId,
     };

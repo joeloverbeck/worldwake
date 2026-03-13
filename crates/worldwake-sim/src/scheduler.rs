@@ -1,12 +1,12 @@
 use crate::{
-    abort_action, start_action, tick_action, ActionDefId, ActionDefRegistry, ActionError,
+    abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
     ActionInstanceId, Affordance, CommitOutcome, DeterministicRng, ExternalAbortReason, InputEvent,
     InputQueue, InterruptReason, ReplanNeeded, SystemManifest, TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{EntityId, EventLog, Tick, World};
+use worldwake_core::{ActionDefId, EntityId, EventLog, Tick, World};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommittedAction {
@@ -272,11 +272,11 @@ impl Scheduler {
 mod tests {
     use super::{CommittedAction, Scheduler};
     use crate::{
-        ActionDefId, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
-        ActionStatus, CommitOutcome, InputKind, SystemManifest,
+        ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
+        CommitOutcome, InputKind, SystemManifest,
     };
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{EntityId, ReservationId, Tick};
+    use worldwake_core::{ActionDefId, EntityId, ReservationId, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

@@ -33,11 +33,7 @@ pub(crate) fn compare_relation_aware_goal_switch(
         current_motive,
         challenger_class,
         challenger_motive,
-        switch_margin_for_relation(
-            relation,
-            default_switch_margin,
-            journey_switch_margin,
-        ),
+        switch_margin_for_relation(relation, default_switch_margin, journey_switch_margin),
     )
 }
 

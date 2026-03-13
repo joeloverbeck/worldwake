@@ -35,12 +35,8 @@ pub fn dispatch_command(
         CliCommand::Status => tick::handle_status(sim, registries),
         CliCommand::Look => inspect::handle_look(sim),
         CliCommand::Inspect { entity } => inspect::handle_inspect(sim, &entity),
-        CliCommand::Inventory { entity } => {
-            inspect::handle_inventory(sim, entity.as_deref())
-        }
-        CliCommand::Needs { entity } => {
-            inspect::handle_needs(sim, entity.as_deref())
-        }
+        CliCommand::Inventory { entity } => inspect::handle_inventory(sim, entity.as_deref()),
+        CliCommand::Needs { entity } => inspect::handle_needs(sim, entity.as_deref()),
         CliCommand::Relations { entity } => inspect::handle_relations(sim, &entity),
         CliCommand::Actions => actions::handle_actions(sim, registries, repl_state),
         CliCommand::Do { n } => actions::handle_do(n, sim, registries, repl_state),
@@ -55,9 +51,7 @@ pub fn dispatch_command(
         CliCommand::Agents => world_overview::handle_agents(sim, registries),
         CliCommand::Goods => world_overview::handle_goods(sim),
         CliCommand::Save { path } => persistence::handle_save(sim, &path),
-        CliCommand::Load { path } => {
-            persistence::handle_load(sim, driver, repl_state, &path)
-        }
+        CliCommand::Load { path } => persistence::handle_load(sim, driver, repl_state, &path),
         CliCommand::Quit => Ok(CommandOutcome::Quit),
     }
 }

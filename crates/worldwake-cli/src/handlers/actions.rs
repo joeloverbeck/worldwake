@@ -24,10 +24,7 @@ pub fn handle_actions(
         .controlled_entity()
         .ok_or_else(|| CommandError::new("no controlled agent"))?;
 
-    let runtime = OmniscientBeliefRuntime::new(
-        sim.scheduler().active_actions(),
-        &registries.defs,
-    );
+    let runtime = OmniscientBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
     let view = OmniscientBeliefView::with_runtime(sim.world(), runtime);
 
     let affordances = get_affordances(&view, entity, &registries.defs, &registries.handlers);

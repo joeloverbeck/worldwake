@@ -1,14 +1,15 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
-    get_affordances, ActionDefId, ActionDefRegistry, ActionError, ActionExecutionContext,
-    ActionHandlerRegistry, ActionInstanceId, ControlError, ControllerState, DeterministicRng,
-    ExternalAbortReason, InputKind, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
-    TickInputContext, TickInputError, TickInputProducer, TickOutcome,
+    get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
+    ActionInstanceId, ControlError, ControllerState, DeterministicRng, ExternalAbortReason,
+    InputKind, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
+    TickInputError, TickInputProducer, TickOutcome,
 };
 use std::collections::BTreeSet;
 use std::fmt;
 use worldwake_core::{
-    CauseRef, EntityId, EventLog, EventTag, PendingEvent, Tick, VisibilitySpec, WitnessData, World,
+    ActionDefId, CauseRef, EntityId, EventLog, EventTag, PendingEvent, Tick, VisibilitySpec,
+    WitnessData, World,
 };
 
 pub struct TickStepServices<'a> {
@@ -538,20 +539,21 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 mod tests {
     use super::{resolve_affordance, step_tick, TickStepError, TickStepResult, TickStepServices};
     use crate::{
-        get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError,
-        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionRequestMode, ActionState, ActionStatus,
-        CommitOutcome, ControllerState, DeterministicRng, DurationExpr, InputKind,
-        Interruptibility, Precondition, RecipeRegistry, ReservationReq, Scheduler,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
-        TickInputContext, TickInputError, TickInputProducer,
+        get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionProgress, ActionRequestMode, ActionState, ActionStatus, CommitOutcome,
+        ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility, Precondition,
+        RecipeRegistry, ReservationReq, Scheduler, SystemDispatchTable, SystemError,
+        SystemExecutionContext, SystemManifest, TargetSpec, TickInputContext, TickInputError,
+        TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, DeadAt, EntityId,
-        EntityKind, EventLog, EventTag, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, ControlSource, DeadAt,
+        EntityId, EntityKind, EventLog, EventTag, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]

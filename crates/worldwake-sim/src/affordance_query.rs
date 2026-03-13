@@ -2,7 +2,7 @@ use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
     BeliefView, Constraint, ConsumableEffect, Precondition, TargetSpec,
 };
-use worldwake_core::{EntityId, EntityKind};
+use worldwake_core::{ActionDefId, EntityId, EntityKind};
 
 #[must_use]
 pub fn get_affordances(
@@ -287,7 +287,7 @@ fn enumerate_bindings(
     view: &dyn BeliefView,
     current: &mut Vec<EntityId>,
     affordances: &mut Vec<Affordance>,
-    def_id: crate::ActionDefId,
+    def_id: ActionDefId,
 ) {
     if let Some((spec, remaining)) = specs.split_first() {
         for target in enumerate_targets(spec, actor, view) {
@@ -311,21 +311,20 @@ fn enumerate_bindings(
 mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
-        ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
-        ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState,
-        CombatActionPayload, Constraint, ConsumableEffect, DeterministicRng, DurationExpr,
-        Interruptibility, OmniscientBeliefView, Precondition, ReservationReq, TargetSpec,
-        TradeActionPayload,
+        ActionDef, ActionDefRegistry, ActionDomain, ActionError, ActionHandler, ActionHandlerId,
+        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
+        Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
+        OmniscientBeliefView, Precondition, ReservationReq, TargetSpec, TradeActionPayload,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CombatProfile, CombatWeaponRef,
-        CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, Wound,
+        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CombatProfile,
+        CombatWeaponRef, CommodityConsumableProfile, CommodityKind, ControlSource,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
+        ResourceSource, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn, Wound,
     };
 
     #[derive(Default)]

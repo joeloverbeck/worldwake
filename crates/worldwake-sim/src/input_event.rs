@@ -1,6 +1,6 @@
-use crate::{ActionDefId, ActionInstanceId, ActionPayload};
+use crate::{ActionInstanceId, ActionPayload};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{EntityId, Tick};
+use worldwake_core::{ActionDefId, EntityId, Tick};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ActionRequestMode {
@@ -37,10 +37,9 @@ pub struct InputEvent {
 #[cfg(test)]
 mod tests {
     use super::{ActionRequestMode, InputEvent, InputKind};
-    use crate::{ActionDefId, ActionInstanceId, ActionPayload, TradeActionPayload};
+    use crate::{ActionInstanceId, ActionPayload, TradeActionPayload};
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{CommodityKind, Quantity};
-    use worldwake_core::{EntityId, Tick};
+    use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, Tick};
 
     fn assert_traits<T: Clone + Eq + Ord + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

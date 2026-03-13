@@ -392,7 +392,10 @@ fn local_visible_hostiles(
 
     view.visible_hostiles_for(agent)
         .into_iter()
-        .filter(|target| view.entity_kind(*target).is_some_and(|kind| kind == worldwake_core::EntityKind::Agent))
+        .filter(|target| {
+            view.entity_kind(*target)
+                .is_some_and(|kind| kind == worldwake_core::EntityKind::Agent)
+        })
         .filter(|target| view.effective_place(*target) == Some(place))
         .collect()
 }

@@ -2,14 +2,14 @@ use crate::inventory::consume_one_unit;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile, Permille,
-    PlaceTag, Quantity, VisibilitySpec, WorldTxn,
+    ActionDefId, CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile,
+    Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
-    AbortReason, ActionDef, ActionDefId, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, CommitOutcome, Constraint, ConsumableEffect, DeterministicRng, DurationExpr,
-    Interruptibility, MetabolismDurationKind, Precondition, TargetSpec,
+    AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
+    CommitOutcome, Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
+    MetabolismDurationKind, Precondition, TargetSpec,
 };
 
 pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut ActionHandlerRegistry) {
@@ -392,10 +392,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, CauseRef, CommodityKind, Container,
-        ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventLog, HomeostaticNeeds,
-        LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, prototype_place_entity, ActionDefId, CauseRef, CommodityKind,
+        Container, ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventLog,
+        HomeostaticNeeds, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, Seed,
+        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -534,11 +534,8 @@ mod tests {
         let (defs, handlers) = setup_registries();
         assert_eq!(defs.len(), 5);
         assert_eq!(handlers.len(), 5);
-        assert_eq!(defs.get(worldwake_sim::ActionDefId(0)).unwrap().name, "eat");
-        assert_eq!(
-            defs.get(worldwake_sim::ActionDefId(4)).unwrap().name,
-            "wash"
-        );
+        assert_eq!(defs.get(ActionDefId(0)).unwrap().name, "eat");
+        assert_eq!(defs.get(ActionDefId(4)).unwrap().name, "wash");
     }
 
     #[test]
@@ -608,7 +605,7 @@ mod tests {
             get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let drink_index = affordances
             .iter()
-            .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(1))
+            .position(|affordance| affordance.def_id == ActionDefId(1))
             .unwrap();
         run_action_to_completion(actor, drink_index, &mut world, &mut log, &defs, &handlers);
 
@@ -700,7 +697,7 @@ mod tests {
             get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let sleep_index = affordances
             .iter()
-            .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(2))
+            .position(|affordance| affordance.def_id == ActionDefId(2))
             .unwrap();
         run_action_to_completion(actor, sleep_index, &mut world, &mut log, &defs, &handlers);
 
@@ -755,7 +752,7 @@ mod tests {
             get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let toilet_index = affordances
             .iter()
-            .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(3))
+            .position(|affordance| affordance.def_id == ActionDefId(3))
             .unwrap();
         run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
 
@@ -790,7 +787,7 @@ mod tests {
         assert!(
             square_affordances
                 .iter()
-                .all(|affordance| affordance.def_id != worldwake_sim::ActionDefId(3)),
+                .all(|affordance| affordance.def_id != ActionDefId(3)),
             "toilet should not be available away from a latrine; actor_place={village_square}"
         );
 
@@ -803,7 +800,7 @@ mod tests {
         assert!(
             latrine_affordances
                 .iter()
-                .any(|affordance| affordance.def_id == worldwake_sim::ActionDefId(3)),
+                .any(|affordance| affordance.def_id == ActionDefId(3)),
             "toilet should be available at the public latrine; actor_place={public_latrine}"
         );
     }
@@ -829,7 +826,7 @@ mod tests {
             get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         let wash_index = affordances
             .iter()
-            .position(|affordance| affordance.def_id == worldwake_sim::ActionDefId(4))
+            .position(|affordance| affordance.def_id == ActionDefId(4))
             .unwrap();
         run_action_to_completion(actor, wash_index, &mut world, &mut log, &defs, &handlers);
 
@@ -864,6 +861,6 @@ mod tests {
             get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
         assert!(affordances
             .iter()
-            .all(|affordance| affordance.def_id != worldwake_sim::ActionDefId(0)));
+            .all(|affordance| affordance.def_id != ActionDefId(0)));
     }
 }

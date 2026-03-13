@@ -207,10 +207,10 @@ impl std::error::Error for ReplayStateError {}
 #[cfg(test)]
 mod tests {
     use super::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
-    use crate::{ActionDefId, InputEvent, InputKind};
+    use crate::{InputEvent, InputKind};
     use serde::{de::DeserializeOwned, Serialize};
     use std::num::NonZeroU64;
-    use worldwake_core::{EntityId, Seed, StateHash, Tick};
+    use worldwake_core::{ActionDefId, EntityId, Seed, StateHash, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
     fn assert_copy_traits<T: Copy + Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {

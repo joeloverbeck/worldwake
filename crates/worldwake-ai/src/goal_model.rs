@@ -517,16 +517,16 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
-        BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
         HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
         Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDef, ActionDefId, ActionDomain, ActionDuration,
-        ActionHandlerId, ActionPayload, BeliefView, DurationExpr, Interruptibility,
-        TradeActionPayload, TransportActionPayload,
+        estimate_duration_from_beliefs, ActionDef, ActionDomain, ActionDuration, ActionHandlerId,
+        ActionPayload, BeliefView, DurationExpr, Interruptibility, TradeActionPayload,
+        TransportActionPayload,
     };
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}

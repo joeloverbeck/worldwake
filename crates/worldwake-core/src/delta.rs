@@ -3,11 +3,11 @@
 use crate::{
     component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory, CarryCapacity,
     CombatProfile, CombatStance, CommodityKind, Container, DeadAt, DemandMemory,
-    DeprivationExposure, DriveThresholds, EntityId, EntityKind, FactId, HomeostaticNeeds,
-    InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille,
-    ProductionJob, Quantity, ReservationRecord, ResourceSource, SubstitutePreferences,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UtilityProfile,
-    WorkstationMarker, WoundList,
+    DeprivationExposure, DriveThresholds, EntityId, EntityKind, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, FactId, HomeostaticNeeds, InTransitOnEdge,
+    ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob,
+    Quantity, ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -218,18 +218,18 @@ mod tests {
     };
     use crate::{
         test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_blocked_intent_memory, sample_demand_memory,
+            sample_facility_queue_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_travel_disposition_profile,
-            sample_utility_profile,
+            sample_travel_disposition_profile, sample_utility_profile,
         },
         AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
         ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
-        LoadUnits, LotOperation, MetabolismProfile, Name, Permille, ProductionJob, ProvenanceEntry,
-        Quantity, ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause,
-        WoundList,
+        EntityKind, EventId, ExclusiveFacilityPolicy, FacilityUseQueue, FactId, HomeostaticNeeds,
+        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
+        Permille, ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
+        ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -282,6 +282,9 @@ mod tests {
             )),
             ComponentValue::DeadAt(DeadAt(Tick(18))),
             ComponentValue::CombatStance(CombatStance::Defending),
+            ComponentValue::FacilityQueueDispositionProfile(
+                sample_facility_queue_disposition_profile(),
+            ),
             ComponentValue::UtilityProfile(sample_utility_profile()),
             ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
@@ -309,6 +312,10 @@ mod tests {
             ComponentValue::TradeDispositionProfile(sample_trade_disposition_profile()),
             ComponentValue::MerchandiseProfile(sample_merchandise_profile()),
             ComponentValue::SubstitutePreferences(sample_substitute_preferences()),
+            ComponentValue::ExclusiveFacilityPolicy(ExclusiveFacilityPolicy {
+                grant_hold_ticks: std::num::NonZeroU32::new(3).unwrap(),
+            }),
+            ComponentValue::FacilityUseQueue(FacilityUseQueue::default()),
             ComponentValue::WorkstationMarker(WorkstationMarker(WorkstationTag::Forge)),
             ComponentValue::ResourceSource(ResourceSource {
                 commodity: CommodityKind::Apple,
@@ -436,6 +443,7 @@ mod tests {
                 ComponentKind::CombatProfile,
                 ComponentKind::DeadAt,
                 ComponentKind::CombatStance,
+                ComponentKind::FacilityQueueDispositionProfile,
                 ComponentKind::UtilityProfile,
                 ComponentKind::BlockedIntentMemory,
                 ComponentKind::DriveThresholds,
@@ -449,6 +457,8 @@ mod tests {
                 ComponentKind::TradeDispositionProfile,
                 ComponentKind::MerchandiseProfile,
                 ComponentKind::SubstitutePreferences,
+                ComponentKind::ExclusiveFacilityPolicy,
+                ComponentKind::FacilityUseQueue,
                 ComponentKind::WorkstationMarker,
                 ComponentKind::ResourceSource,
                 ComponentKind::ProductionJob,

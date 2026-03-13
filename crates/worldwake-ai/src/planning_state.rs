@@ -1051,17 +1051,17 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
         HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
         Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
-        get_affordances, ActionDef, ActionDefId, ActionDefRegistry, ActionDomain, ActionDuration,
-        ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionPayload,
-        ActionProgress, ActionState, BeliefView, Constraint, DeterministicRng, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
+        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress,
+        ActionState, BeliefView, Constraint, DeterministicRng, DurationExpr, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
 
     #[derive(Default)]

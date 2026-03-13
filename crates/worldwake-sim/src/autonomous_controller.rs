@@ -119,8 +119,8 @@ mod tests {
         SystemManifest, TickInputContext, TickInputProducer,
     };
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, CauseRef, ControlSource, EntityId, EventLog, Seed,
+        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     struct RecordingController {
@@ -192,7 +192,7 @@ mod tests {
         let mut scheduler = Scheduler::new(SystemManifest::canonical());
         scheduler.retain_replan(crate::ReplanNeeded {
             agent: ai_agent,
-            failed_action_def: crate::ActionDefId(2),
+            failed_action_def: ActionDefId(2),
             failed_instance: crate::ActionInstanceId(3),
             reason: crate::AbortReason::external_abort(crate::ExternalAbortReason::Other),
             tick: Tick(0),

@@ -78,9 +78,7 @@ mod tests {
             VisibilitySpec::Hidden,
             WitnessData::default(),
         );
-        let agent_id = txn
-            .create_agent("TestAgent", ControlSource::Ai)
-            .unwrap();
+        let agent_id = txn.create_agent("TestAgent", ControlSource::Ai).unwrap();
         let _ = txn.commit(&mut event_log);
 
         let scheduler = Scheduler::new_with_tick(Tick(7), SystemManifest::canonical());
@@ -154,9 +152,16 @@ mod tests {
         let mut driver = AgentTickDriver::new(PlanningBudget::default());
         let mut repl_state = ReplState::new();
 
-        let result =
-            handle_load(&mut sim, &mut driver, &mut repl_state, "/tmp/nonexistent_worldwake.save");
-        assert!(result.is_ok(), "load should return Ok (error is printed, not propagated)");
+        let result = handle_load(
+            &mut sim,
+            &mut driver,
+            &mut repl_state,
+            "/tmp/nonexistent_worldwake.save",
+        );
+        assert!(
+            result.is_ok(),
+            "load should return Ok (error is printed, not propagated)"
+        );
         assert_eq!(
             sim.scheduler().current_tick(),
             original_tick,
@@ -177,7 +182,10 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         let result = handle_load(&mut sim, &mut driver, &mut repl_state, path_str);
-        assert!(result.is_ok(), "load should return Ok (error is printed, not propagated)");
+        assert!(
+            result.is_ok(),
+            "load should return Ok (error is printed, not propagated)"
+        );
         assert_eq!(
             sim.scheduler().current_tick(),
             original_tick,
@@ -200,8 +208,11 @@ mod tests {
 
         // Simulate stale affordances by adding a dummy entry
         repl_state.last_affordances.push(worldwake_sim::Affordance {
-            def_id: worldwake_sim::ActionDefId(0),
-            actor: worldwake_core::EntityId { slot: 1, generation: 1 },
+            def_id: worldwake_core::ActionDefId(0),
+            actor: worldwake_core::EntityId {
+                slot: 1,
+                generation: 1,
+            },
             bound_targets: vec![],
             payload_override: None,
             explanation: None,

@@ -7,15 +7,9 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    combat::CombatProfile,
-    control::ControlSource,
-    items::CommodityKind,
-    needs::HomeostaticNeeds,
-    numerics::Quantity,
-    production::WorkstationTag,
-    topology::PlaceTag,
-    trade::TradeDispositionProfile,
-    utility_profile::UtilityProfile,
+    combat::CombatProfile, control::ControlSource, items::CommodityKind, needs::HomeostaticNeeds,
+    numerics::Quantity, production::WorkstationTag, topology::PlaceTag,
+    trade::TradeDispositionProfile, utility_profile::UtilityProfile,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -239,7 +233,10 @@ mod tests {
         assert!(bob.utility_profile.is_some());
         assert!(bob.merchandise_profile.is_some());
         let merch = bob.merchandise_profile.as_ref().unwrap();
-        assert_eq!(merch.sale_kinds, vec![CommodityKind::Apple, CommodityKind::Bread]);
+        assert_eq!(
+            merch.sale_kinds,
+            vec![CommodityKind::Apple, CommodityKind::Bread]
+        );
         assert_eq!(merch.home_market, Some("Town".to_string()));
         assert!(bob.trade_disposition.is_some());
 
@@ -287,6 +284,9 @@ mod tests {
         )"#;
 
         let def: ScenarioDef = from_ron_str(ron_str);
-        assert!(def.edges[0].bidirectional, "bidirectional should default to true");
+        assert!(
+            def.edges[0].bidirectional,
+            "bidirectional should default to true"
+        );
     }
 }

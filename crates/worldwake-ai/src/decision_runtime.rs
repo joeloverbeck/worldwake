@@ -188,8 +188,8 @@ mod tests {
         CommodityPurpose, GoalKey, HypotheticalEntityId, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
+    use worldwake_core::ActionDefId;
     use worldwake_core::{CommodityKind, EntityId, Tick};
-    use worldwake_sim::ActionDefId;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -230,7 +230,10 @@ mod tests {
         assert_eq!(runtime.current_step_index, 0);
         assert_eq!(runtime.journey_committed_goal, None);
         assert_eq!(runtime.journey_committed_destination, None);
-        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
+        assert_eq!(
+            runtime.journey_commitment_state,
+            JourneyCommitmentState::Active
+        );
         assert_eq!(runtime.journey_established_at, None);
         assert_eq!(runtime.journey_last_progress_tick, None);
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
@@ -414,7 +417,10 @@ mod tests {
 
         assert_eq!(runtime.journey_committed_goal, None);
         assert_eq!(runtime.journey_committed_destination, None);
-        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
+        assert_eq!(
+            runtime.journey_commitment_state,
+            JourneyCommitmentState::Active
+        );
         assert_eq!(runtime.journey_established_at, None);
         assert_eq!(runtime.journey_last_progress_tick, None);
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
@@ -453,11 +459,11 @@ mod tests {
         let snapshot = runtime.journey_runtime_snapshot();
 
         assert_eq!(snapshot.committed_destination, Some(committed_destination));
-        assert_eq!(snapshot.active_plan_destination, Some(active_plan_destination));
         assert_eq!(
-            snapshot.commitment_state,
-            JourneyCommitmentState::Suspended
+            snapshot.active_plan_destination,
+            Some(active_plan_destination)
         );
+        assert_eq!(snapshot.commitment_state, JourneyCommitmentState::Suspended);
         assert_eq!(snapshot.established_at, Some(Tick(3)));
         assert_eq!(snapshot.last_progress_tick, Some(Tick(8)));
         assert_eq!(snapshot.remaining_travel_steps, 1);

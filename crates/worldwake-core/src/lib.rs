@@ -41,6 +41,7 @@ pub mod error;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
+pub mod facility_queue;
 pub mod goal;
 pub mod ids;
 pub mod items;
@@ -51,9 +52,9 @@ pub mod production;
 pub mod relations;
 pub mod test_utils;
 pub mod topology;
-pub mod travel_disposition;
 pub mod trade;
 pub mod traits;
+pub mod travel_disposition;
 pub mod utility_profile;
 pub mod verification;
 pub mod visibility;
@@ -87,8 +88,14 @@ pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventRecord, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
+pub use facility_queue::{
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueError, FacilityUseQueue,
+    GrantedFacilityUse, QueuedFacilityUse,
+};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind};
-pub use ids::{EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
+pub use ids::{
+    ActionDefId, EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId,
+};
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
     CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,
@@ -110,12 +117,12 @@ pub use topology::{
     build_prototype_world, prototype_place_entity, Place, PlaceTag, PrototypePlace, Route,
     Topology, TravelEdge,
 };
-pub use travel_disposition::TravelDispositionProfile;
 pub use trade::{
     DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
     SubstitutePreferences, TradeDispositionProfile,
 };
 pub use traits::{Component, RelationRecord};
+pub use travel_disposition::TravelDispositionProfile;
 pub use utility_profile::UtilityProfile;
 pub use verification::{verify_completeness, VerificationError};
 pub use visibility::VisibilitySpec;

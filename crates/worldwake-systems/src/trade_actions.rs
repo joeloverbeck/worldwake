@@ -1,14 +1,14 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, LotOperation, ProvenanceEntry,
-    Quantity, VisibilitySpec, WorldTxn, WoundList,
+    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, LotOperation,
+    ProvenanceEntry, Quantity, VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
-    evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefId,
-    ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
-    ActionInstance, ActionPayload, ActionProgress, ActionState, BeliefView, CommitOutcome,
-    DeterministicRng, DurationExpr, Interruptibility, OmniscientBeliefView, PayloadEntityRole,
-    Precondition, TargetSpec, TradeAcceptance, TradeActionPayload,
+    evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
+    ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
+    ActionPayload, ActionProgress, ActionState, BeliefView, CommitOutcome, DeterministicRng,
+    DurationExpr, Interruptibility, OmniscientBeliefView, PayloadEntityRole, Precondition,
+    TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
 pub fn register_trade_action(
@@ -615,6 +615,7 @@ mod tests {
     use crate::trade_actions::local_alternatives;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
+    use worldwake_core::ActionDefId;
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, CauseRef, CommodityKind,
         ControlSource, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
@@ -623,9 +624,9 @@ mod tests {
         WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionDefId, ActionDefRegistry,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
-        ActionPayload, ActionStatus, Affordance, DeterministicRng, TickOutcome, TradeActionPayload,
+        get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
+        ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload,
+        ActionStatus, Affordance, DeterministicRng, TickOutcome, TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {

@@ -121,8 +121,8 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
     use worldwake_core::{
-        CauseRef, ControlSource, EntityId, EventLog, Place, Seed, Tick, Topology,
-        VisibilitySpec, WitnessData, WorldTxn, hash_world,
+        hash_world, CauseRef, ControlSource, EntityId, EventLog, Place, Seed, Tick, Topology,
+        VisibilitySpec, WitnessData, WorldTxn,
     };
     use worldwake_sim::{
         ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -179,12 +179,7 @@ mod tests {
         let recipe_registry = RecipeRegistry::new();
         let seed = Seed([0u8; 32]);
         let state_hash = hash_world(&world).unwrap();
-        let replay = ReplayState::new(
-            state_hash,
-            seed,
-            Tick(5),
-            ReplayRecordingConfig::disabled(),
-        );
+        let replay = ReplayState::new(state_hash, seed, Tick(5), ReplayRecordingConfig::disabled());
         let rng = DeterministicRng::new(seed);
 
         SimulationState::new(
@@ -202,24 +197,39 @@ mod tests {
     fn test_prompt_with_agent() {
         let sim = build_sim_with_agent("Aster", "Market Square", true);
         let prompt = format_prompt(&sim);
-        assert!(prompt.contains("tick 5"), "prompt should contain tick: {prompt}");
-        assert!(prompt.contains("Aster"), "prompt should contain agent name: {prompt}");
+        assert!(
+            prompt.contains("tick 5"),
+            "prompt should contain tick: {prompt}"
+        );
+        assert!(
+            prompt.contains("Aster"),
+            "prompt should contain agent name: {prompt}"
+        );
         assert!(
             prompt.contains("Market Square"),
             "prompt should contain place name: {prompt}"
         );
-        assert!(prompt.ends_with("> "), "prompt should end with '> ': {prompt}");
+        assert!(
+            prompt.ends_with("> "),
+            "prompt should end with '> ': {prompt}"
+        );
     }
 
     #[test]
     fn test_prompt_observer_mode() {
         let sim = build_sim_with_agent("Aster", "Market Square", false);
         let prompt = format_prompt(&sim);
-        assert!(prompt.contains("tick 5"), "prompt should contain tick: {prompt}");
+        assert!(
+            prompt.contains("tick 5"),
+            "prompt should contain tick: {prompt}"
+        );
         assert!(
             prompt.contains("observer"),
             "prompt should contain 'observer': {prompt}"
         );
-        assert!(!prompt.contains("Aster"), "prompt should not contain agent name in observer mode: {prompt}");
+        assert!(
+            !prompt.contains("Aster"),
+            "prompt should not contain agent name in observer mode: {prompt}"
+        );
     }
 }

@@ -1,10 +1,9 @@
 use crate::{
-    ActionDef, ActionDefId, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
-    ActionState, ActionStatus, BeliefView, DeterministicRng, Interruptibility, Precondition,
-    TradeAcceptance,
+    ActionDef, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
+    ActionStatus, BeliefView, DeterministicRng, Interruptibility, Precondition, TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
-use worldwake_core::{CommodityKind, EntityId, Quantity, WorldTxn};
+use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, WorldTxn};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommitOutcome {
@@ -296,16 +295,16 @@ mod tests {
         PayloadEntityRole, SelfTargetActionKind,
     };
     use crate::{
-        ActionDef, ActionDefId, ActionDomain, ActionDuration, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DeterministicRng,
-        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionDef, ActionDomain, ActionDuration, ActionHandlerId, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionState, ActionStatus, Constraint, DeterministicRng, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventTag,
-        ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, ControlSource, EntityId,
+        EventTag, ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn sample_instance() -> ActionInstance {

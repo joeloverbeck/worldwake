@@ -1228,8 +1228,7 @@ mod tests {
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_travel_disposition_profile,
-            sample_utility_profile,
+            sample_travel_disposition_profile, sample_utility_profile,
         },
         BlockedIntentMemory, DemandMemory, MerchandiseProfile, SubstitutePreferences,
         TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,

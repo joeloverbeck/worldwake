@@ -6,10 +6,10 @@ use crate::{
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
-use worldwake_core::{EntityId, GoalKind};
+use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
-    get_affordances, ActionDefId, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
-    ActionPayload, Affordance, BeliefView,
+    get_affordances, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
+    Affordance, BeliefView,
 };
 
 #[derive(Clone)]
@@ -305,19 +305,19 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, test_utils::sample_trade_disposition_profile,
-        BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
-        DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
-        InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
-        Place, PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
+        build_prototype_world, prototype_place_entity,
+        test_utils::sample_trade_disposition_profile, ActionDefId, BodyCostPerTick, CarryCapacity,
+        CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
+        DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge,
+        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place,
+        PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
         TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDefId, ActionDefRegistry, ActionPayload, BeliefView,
-        DurationExpr, OmniscientBeliefView, RecipeDefinition, RecipeRegistry,
-        TransportActionPayload,
+        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, BeliefView, DurationExpr,
+        OmniscientBeliefView, RecipeDefinition, RecipeRegistry, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 

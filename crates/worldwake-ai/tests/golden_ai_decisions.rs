@@ -5,8 +5,8 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, CommodityKind, HomeostaticNeeds,
-    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed,
-    TravelDispositionProfile, UtilityProfile, WorkstationTag,
+    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, TravelDispositionProfile,
+    UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -491,9 +491,9 @@ fn golden_three_way_need_competition() {
     let water_tick = milestones
         .water_tick
         .expect("Agent should consume water during the same local scenario");
-    let fatigue_relief_tick = milestones.fatigue_relief_tick.expect(
-        "Agent should eventually reduce fatigue after hunger and thirst are addressed",
-    );
+    let fatigue_relief_tick = milestones
+        .fatigue_relief_tick
+        .expect("Agent should eventually reduce fatigue after hunger and thirst are addressed");
 
     assert!(
         fatigue_relief_tick > water_tick,
@@ -617,8 +617,10 @@ impl TripleNeedScenario {
     }
 
     fn assert_local_supply_conservation(&self) {
-        let current_bread_total = total_live_lot_quantity(&self.harness.world, CommodityKind::Bread);
-        let current_water_total = total_live_lot_quantity(&self.harness.world, CommodityKind::Water);
+        let current_bread_total =
+            total_live_lot_quantity(&self.harness.world, CommodityKind::Bread);
+        let current_water_total =
+            total_live_lot_quantity(&self.harness.world, CommodityKind::Water);
 
         assert!(
             current_bread_total <= self.initial_bread_total,
@@ -634,13 +636,19 @@ impl TripleNeedScenario {
 
     fn capture_consumption_ticks(&self, tick: u32, milestones: &mut TripleNeedMilestones) {
         if milestones.bread_tick.is_none()
-            && self.harness.agent_commodity_qty(self.agent, CommodityKind::Bread) < self.initial_bread
+            && self
+                .harness
+                .agent_commodity_qty(self.agent, CommodityKind::Bread)
+                < self.initial_bread
         {
             milestones.bread_tick = Some(tick);
         }
 
         if milestones.water_tick.is_none()
-            && self.harness.agent_commodity_qty(self.agent, CommodityKind::Water) < self.initial_water
+            && self
+                .harness
+                .agent_commodity_qty(self.agent, CommodityKind::Water)
+                < self.initial_water
         {
             milestones.water_tick = Some(tick);
         }
@@ -895,9 +903,8 @@ fn golden_goal_switching_during_multi_leg_travel() {
         left_bandit_camp,
         "Agent should begin the distant food journey from Bandit Camp"
     );
-    let drink_place = drink_place.expect(
-        "Agent should consume carried water after departing on the food journey",
-    );
+    let drink_place = drink_place
+        .expect("Agent should consume carried water after departing on the food journey");
     assert_ne!(
         drink_place, bandit_camp,
         "Water-driven goal switch should occur after departure, not at the origin"

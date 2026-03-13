@@ -1,6 +1,5 @@
 use crate::{
-    goal_switching::GoalSwitchKind,
-    journey_switch_policy::compare_relation_aware_goal_switch,
+    goal_switching::GoalSwitchKind, journey_switch_policy::compare_relation_aware_goal_switch,
     AgentDecisionRuntime, GoalKey, GoalPriorityClass, JourneyPlanRelation, PlannedPlan, RankedGoal,
 };
 use std::cmp::Ordering;
@@ -95,8 +94,8 @@ mod tests {
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
     };
     use std::collections::BTreeSet;
+    use worldwake_core::ActionDefId;
     use worldwake_core::{CommodityKind, EntityId, Permille};
-    use worldwake_sim::ActionDefId;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -220,15 +219,14 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected =
-            select_best_plan(
-                &candidates,
-                &plans,
-                &runtime,
-                default_switch_margin(),
-                default_switch_margin(),
-            )
-            .unwrap();
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            default_switch_margin(),
+        )
+        .unwrap();
 
         assert_eq!(selected.goal, current_goal);
     }

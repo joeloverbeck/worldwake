@@ -1,8 +1,7 @@
 use crate::{
     goal_switching::{compare_goal_switch, GoalSwitchKind},
     journey_switch_policy::compare_relation_aware_goal_switch,
-    AgentDecisionRuntime, GoalPriorityClass, GoalKey, JourneyPlanRelation, PlannedPlan,
-    RankedGoal,
+    AgentDecisionRuntime, GoalKey, GoalPriorityClass, JourneyPlanRelation, PlannedPlan, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{CommodityPurpose, GoalKind, Permille};
@@ -50,16 +49,14 @@ pub fn evaluate_interrupt(
     match current_action_interruptibility {
         Interruptibility::NonInterruptible => InterruptDecision::NoInterrupt,
         Interruptibility::InterruptibleWithPenalty => interrupt_with_penalty(challenger),
-        Interruptibility::FreelyInterruptible => {
-            interrupt_freely(
-                runtime,
-                challenger,
-                ranked_candidates,
-                planned_candidates,
-                default_switch_margin,
-                journey_switch_margin,
-            )
-        }
+        Interruptibility::FreelyInterruptible => interrupt_freely(
+            runtime,
+            challenger,
+            ranked_candidates,
+            planned_candidates,
+            default_switch_margin,
+            journey_switch_margin,
+        ),
     }
 }
 
@@ -280,7 +277,7 @@ mod tests {
         PlannedPlan, RankedGoal,
     };
     use std::collections::BTreeSet;
-    use worldwake_core::{CommodityKind, EntityId, GoalKind, Permille};
+    use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKind, Permille};
     use worldwake_sim::Interruptibility;
 
     fn entity(slot: u32) -> EntityId {
@@ -466,7 +463,7 @@ mod tests {
             current_plan: Some(PlannedPlan::new(
                 GoalKey::from(current_goal),
                 vec![crate::PlannedStep {
-                    def_id: worldwake_sim::ActionDefId(1),
+                    def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(1))],
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
@@ -637,7 +634,7 @@ mod tests {
             current_plan: Some(PlannedPlan::new(
                 current_goal_key,
                 vec![crate::PlannedStep {
-                    def_id: worldwake_sim::ActionDefId(1),
+                    def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(1))],
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
@@ -669,7 +666,7 @@ mod tests {
             Some(PlannedPlan::new(
                 challenger_goal,
                 vec![crate::PlannedStep {
-                    def_id: worldwake_sim::ActionDefId(2),
+                    def_id: ActionDefId(2),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(2))],
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
@@ -729,7 +726,7 @@ mod tests {
             current_plan: Some(PlannedPlan::new(
                 committed_goal,
                 vec![crate::PlannedStep {
-                    def_id: worldwake_sim::ActionDefId(1),
+                    def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(destination)],
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
@@ -775,7 +772,7 @@ mod tests {
                 Some(PlannedPlan::new(
                     abandon_goal,
                     vec![crate::PlannedStep {
-                        def_id: worldwake_sim::ActionDefId(2),
+                        def_id: ActionDefId(2),
                         targets: vec![crate::PlanningEntityRef::Authoritative(entity(99))],
                         payload_override: None,
                         op_kind: crate::PlannerOpKind::Travel,
@@ -791,7 +788,7 @@ mod tests {
                 Some(PlannedPlan::new(
                     detour_goal,
                     vec![crate::PlannedStep {
-                        def_id: worldwake_sim::ActionDefId(3),
+                        def_id: ActionDefId(3),
                         targets: vec![crate::PlanningEntityRef::Authoritative(entity(3))],
                         payload_override: None,
                         op_kind: crate::PlannerOpKind::Consume,
