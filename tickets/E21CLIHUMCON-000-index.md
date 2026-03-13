@@ -19,7 +19,7 @@ Spec: `specs/E21-cli-human-control.md`
 | ~~E21CLIHUMCON-009~~ | ~~Event commands (events, event, trace)~~ ✅ | 003, 004, 005 |
 | ~~E21CLIHUMCON-010~~ | ~~Control commands (switch, observe)~~ ✅ | 003, 004, 005 |
 | ~~E21CLIHUMCON-011~~ | ~~World overview commands (world, places, agents, goods)~~ ✅ | 003, 004, 005 |
-| E21CLIHUMCON-012 | Persistence commands (save, load) | 003, 004 |
+| ~~E21CLIHUMCON-012~~ | ~~Persistence commands (save, load)~~ ✅ | 003, 004 |
 | E21CLIHUMCON-013 | Default scenario and integration tests | 002, all handlers |
 
 ## Dependency Graph

@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E21CLIHUMCON-012: Persistence Commands (save, load)
 
 ## Summary
@@ -60,3 +62,15 @@ Implement `save <path>` and `load <path>` commands, delegating to existing `worl
 - Load failure never corrupts current state (atomic replacement)
 - Current tick is correct after load
 - `cargo clippy -p worldwake-cli` passes with no warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-13
+- **What changed**:
+  - Created `crates/worldwake-cli/src/handlers/persistence.rs` with `handle_save()` and `handle_load()`
+  - Wired `Save`/`Load` command variants in `handlers/mod.rs` (replaced stubs)
+  - Added `tempfile = "3"` dev-dependency to `Cargo.toml`
+- **Deviations from original plan**:
+  - `save()`/`load()` API takes `&Path` not `&str` — trivial `Path::new()` conversion
+  - `AgentTickDriver` has no `reset()` method — reconstructed with `PlanningBudget::default()` after load
+- **Verification results**: All 5 acceptance tests pass, `cargo clippy -p worldwake-cli` clean, full CLI test suite (97 tests) passes

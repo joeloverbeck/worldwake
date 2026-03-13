@@ -2,6 +2,7 @@ pub(crate) mod actions;
 mod control;
 mod events;
 mod inspect;
+mod persistence;
 pub(crate) mod tick;
 mod world_overview;
 
@@ -53,13 +54,9 @@ pub fn dispatch_command(
         CliCommand::Places => world_overview::handle_places(sim),
         CliCommand::Agents => world_overview::handle_agents(sim, registries),
         CliCommand::Goods => world_overview::handle_goods(sim),
-        CliCommand::Save { .. } => {
-            println!("save: not implemented");
-            Ok(CommandOutcome::Continue)
-        }
-        CliCommand::Load { .. } => {
-            println!("load: not implemented");
-            Ok(CommandOutcome::Continue)
+        CliCommand::Save { path } => persistence::handle_save(sim, &path),
+        CliCommand::Load { path } => {
+            persistence::handle_load(sim, driver, repl_state, &path)
         }
         CliCommand::Quit => Ok(CommandOutcome::Quit),
     }
