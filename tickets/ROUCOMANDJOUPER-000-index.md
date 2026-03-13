@@ -20,7 +20,7 @@ Adds explicit journey tracking to the AI runtime layer so agents can persist tow
 | 006 | `ROUCOMANDJOUPER-006-journey-clearing-conditions.md` | Journey clearing conditions and blocked-intent integration | HIGH | Medium | 001, 002, 004, 005, 008, 009 |
 | 007 | `ROUCOMANDJOUPER-007-debug-surface.md` | Observable debug surface for journey state | MEDIUM | Small | 002, 004, 005, 008, 009 |
 | 008 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-008-explicit-journey-commitment-anchor.md` | Explicit journey commitment anchor on AgentDecisionRuntime | HIGH | Medium | 002, 004, 005 |
-| 009 | `ROUCOMANDJOUPER-009-journey-preserving-detour-policy.md` | Journey-preserving detour and abandonment policy | HIGH | Large | 004, 005, 008 |
+| 009 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-009-journey-preserving-detour-policy.md` | Journey-preserving detour and abandonment policy | HIGH | Medium | 004, 005, 008 |
 
 ## Dependencies
 

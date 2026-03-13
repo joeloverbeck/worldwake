@@ -3,8 +3,8 @@ use crate::{
     build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
     handle_plan_failure, rank_candidates, resolve_planning_targets_with, revalidate_next_step,
     search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision,
-    PlanFailureContext, PlanTerminalKind, PlannedStep, PlannerOpSemantics, PlanningBudget,
-    RankedGoal,
+    JourneyCommitmentState, PlanFailureContext, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -186,10 +186,11 @@ fn process_agent(
         },
     );
     let active_action = active_action_for_agent(ctx, agent);
-    let switch_margin = {
+    let journey_switch_margin = {
         let view = OmniscientBeliefView::new(ctx.world);
         effective_goal_switch_margin(&view, agent, runtime, budget)
     };
+    let default_switch_margin = budget.switch_margin_permille;
 
     if let Some(active_action) = active_action {
         return handle_active_action_phase(
@@ -200,7 +201,8 @@ fn process_agent(
             agent,
             &ranked_candidates,
             &active_action,
-            switch_margin,
+            default_switch_margin,
+            journey_switch_margin,
             tick,
             action_defs,
             action_handlers,
@@ -212,7 +214,8 @@ fn process_agent(
         runtime,
         agent,
         &ranked_candidates,
-        switch_margin,
+        default_switch_margin,
+        journey_switch_margin,
         tick,
         budget,
         semantics_table,
@@ -360,7 +363,8 @@ fn handle_active_action_phase(
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     active_action: &worldwake_sim::ActionInstance,
-    switch_margin: Permille,
+    default_switch_margin: Permille,
+    journey_switch_margin: Permille,
     tick: Tick,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -374,12 +378,25 @@ fn handle_active_action_phase(
         .current_plan
         .as_ref()
         .is_some_and(|plan| runtime.current_step_index < plan.steps.len());
+    let planned_candidates = runtime.has_journey_commitment().then(|| {
+        build_candidate_plans(
+            ctx.world,
+            agent,
+            ranked_candidates,
+            ctx.budget,
+            ctx.semantics_table,
+            action_defs,
+            action_handlers,
+        )
+    });
     if let InterruptDecision::InterruptForReplan { trigger: _ } = evaluate_interrupt(
         runtime,
         interruptibility,
         ranked_candidates,
+        planned_candidates.as_deref(),
         plan_valid,
-        switch_margin,
+        default_switch_margin,
+        journey_switch_margin,
     ) {
         let replan = ctx
             .scheduler
@@ -429,12 +446,48 @@ fn effective_goal_switch_margin(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn build_candidate_plans(
+    world: &worldwake_core::World,
+    agent: EntityId,
+    ranked_candidates: &[RankedGoal],
+    budget: &PlanningBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
+    let view = OmniscientBeliefView::new(world);
+    ranked_candidates
+        .iter()
+        .take(usize::from(budget.max_candidates_to_plan))
+        .map(|ranked| {
+            let snapshot = build_planning_snapshot(
+                &view,
+                agent,
+                &ranked.grounded.evidence_entities,
+                &ranked.grounded.evidence_places,
+                budget.snapshot_travel_horizon,
+            );
+            let plan = search_plan(
+                &snapshot,
+                &ranked.grounded,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                budget,
+            );
+            (ranked.grounded.key, plan)
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn plan_and_validate_next_step(
     world: &worldwake_core::World,
     runtime: &mut AgentDecisionRuntime,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
-    switch_margin: Permille,
+    default_switch_margin: Permille,
+    journey_switch_margin: Permille,
     tick: Tick,
     budget: &PlanningBudget,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -444,36 +497,26 @@ fn plan_and_validate_next_step(
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = OmniscientBeliefView::new(world);
     if runtime.dirty {
-        let plans = ranked_candidates
-            .iter()
-            .take(usize::from(budget.max_candidates_to_plan))
-            .map(|ranked| {
-                let snapshot = build_planning_snapshot(
-                    &view,
-                    agent,
-                    &ranked.grounded.evidence_entities,
-                    &ranked.grounded.evidence_places,
-                    budget.snapshot_travel_horizon,
-                );
-                let plan = search_plan(
-                    &snapshot,
-                    &ranked.grounded,
-                    semantics_table,
-                    action_defs,
-                    action_handlers,
-                    budget,
-                );
-                (ranked.grounded.key, plan)
-            })
-            .collect::<Vec<_>>();
+        let plans = build_candidate_plans(
+            world,
+            agent,
+            ranked_candidates,
+            budget,
+            semantics_table,
+            action_defs,
+            action_handlers,
+        );
 
-        if let Some(selected_plan) =
-            select_best_plan(ranked_candidates, &plans, runtime, switch_margin)
-        {
-            let previous_goal = runtime.current_goal;
+        if let Some(selected_plan) = select_best_plan(
+            ranked_candidates,
+            &plans,
+            runtime,
+            default_switch_margin,
+            journey_switch_margin,
+        ) {
             runtime.materialization_bindings.clear();
             runtime.current_goal = Some(selected_plan.goal);
-            update_journey_fields_for_adopted_plan(runtime, &selected_plan, previous_goal, tick);
+            update_journey_fields_for_adopted_plan(runtime, &selected_plan, tick);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -581,6 +624,11 @@ fn advance_completed_step(
     completed_op_kind: crate::PlannerOpKind,
     tick: Tick,
 ) {
+    let completed_plan_relation = runtime
+        .current_plan
+        .as_ref()
+        .map(|plan| runtime.classify_journey_plan_relation(plan));
+
     if completed_op_kind == crate::PlannerOpKind::Travel {
         runtime.journey_last_progress_tick = Some(tick);
         runtime.consecutive_blocked_leg_ticks = 0;
@@ -607,7 +655,13 @@ fn advance_completed_step(
             runtime.materialization_bindings.clear();
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
-            runtime.clear_journey_commitment();
+            if completed_plan_relation
+                == Some(crate::JourneyPlanRelation::SuspendsCommitment)
+            {
+                runtime.journey_commitment_state = JourneyCommitmentState::Active;
+            } else {
+                runtime.clear_journey_commitment();
+            }
             runtime.current_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
@@ -665,11 +719,12 @@ fn handle_current_step_failure(
 fn update_journey_fields_for_adopted_plan(
     runtime: &mut AgentDecisionRuntime,
     selected_plan: &crate::PlannedPlan,
-    previous_goal: Option<crate::GoalKey>,
     tick: Tick,
 ) {
-    if !selected_plan.has_remaining_travel_steps_from(0) {
-        runtime.clear_journey_commitment();
+    let relation = runtime.classify_journey_plan_relation(selected_plan);
+
+    if relation == crate::JourneyPlanRelation::SuspendsCommitment {
+        runtime.journey_commitment_state = JourneyCommitmentState::Suspended;
         return;
     }
 
@@ -677,11 +732,11 @@ fn update_journey_fields_for_adopted_plan(
         runtime.clear_journey_commitment();
         return;
     };
-    let same_commitment = runtime.has_journey_commitment()
-        && previous_goal == Some(selected_plan.goal)
-        && runtime.journey_committed_destination() == Some(destination);
+
+    let same_commitment = relation == crate::JourneyPlanRelation::RefreshesCommitment;
     runtime.journey_committed_goal = Some(selected_plan.goal);
     runtime.journey_committed_destination = Some(destination);
+    runtime.journey_commitment_state = JourneyCommitmentState::Active;
     if runtime.journey_established_at.is_some() && same_commitment {
         return;
     }
@@ -910,11 +965,11 @@ mod tests {
         resolve_step_targets, update_journey_fields_for_adopted_plan,
         update_runtime_observation_snapshot, AgentTickDriver, ReadPhaseContext,
     };
-    use crate::PlanningBudget;
     use crate::{
-        CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind, PlanTerminalKind,
-        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind, JourneyCommitmentState,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
+    use crate::PlanningBudget;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
@@ -1307,7 +1362,7 @@ mod tests {
         );
         let mut runtime = crate::AgentDecisionRuntime::default();
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, None, Tick(9));
+        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
 
         assert_eq!(runtime.journey_committed_goal, Some(goal));
         assert_eq!(runtime.journey_committed_destination, Some(destination));
@@ -1317,7 +1372,7 @@ mod tests {
     }
 
     #[test]
-    fn non_travel_plan_adoption_clears_journey_commitment() {
+    fn non_travel_plan_adoption_suspends_journey_commitment() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let plan = PlannedPlan::new(goal, vec![barrier_step()], PlanTerminalKind::GoalSatisfied);
         let mut runtime = crate::AgentDecisionRuntime {
@@ -1329,13 +1384,17 @@ mod tests {
             ..crate::AgentDecisionRuntime::default()
         };
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, None, Tick(9));
+        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
 
-        assert_eq!(runtime.journey_committed_goal, None);
-        assert_eq!(runtime.journey_committed_destination, None);
-        assert_eq!(runtime.journey_established_at, None);
-        assert_eq!(runtime.journey_last_progress_tick, None);
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+        assert_eq!(runtime.journey_committed_goal, Some(goal));
+        assert_eq!(runtime.journey_committed_destination, Some(entity(12)));
+        assert_eq!(
+            runtime.journey_commitment_state,
+            JourneyCommitmentState::Suspended
+        );
+        assert_eq!(runtime.journey_established_at, Some(Tick(3)));
+        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(7)));
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 2);
     }
 
     #[test]
@@ -1357,10 +1416,11 @@ mod tests {
             ..crate::AgentDecisionRuntime::default()
         };
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Some(goal), Tick(9));
+        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
 
         assert_eq!(runtime.journey_committed_goal, Some(goal));
         assert_eq!(runtime.journey_committed_destination, Some(destination));
+        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
         assert_eq!(runtime.journey_established_at, Some(Tick(4)));
         assert_eq!(runtime.journey_last_progress_tick, Some(Tick(6)));
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 3);
@@ -1386,10 +1446,11 @@ mod tests {
             ..crate::AgentDecisionRuntime::default()
         };
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Some(goal), Tick(9));
+        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
 
         assert_eq!(runtime.journey_committed_goal, Some(goal));
         assert_eq!(runtime.journey_committed_destination, Some(new_destination));
+        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
         assert_eq!(runtime.journey_established_at, Some(Tick(9)));
         assert_eq!(runtime.journey_last_progress_tick, None);
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
@@ -1569,6 +1630,55 @@ mod tests {
             .materialization_bindings
             .hypothetical_to_authoritative
             .is_empty());
+    }
+
+    #[test]
+    fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
+        let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let detour_goal = GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Water,
+        });
+        let destination = entity(11);
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(detour_goal),
+            current_plan: Some(PlannedPlan::new(
+                detour_goal,
+                vec![PlannedStep {
+                    def_id: ActionDefId(9),
+                    targets: vec![PlanningEntityRef::Authoritative(entity(12))],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Consume,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                }],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            current_step_index: 0,
+            journey_committed_goal: Some(committed_goal),
+            journey_committed_destination: Some(destination),
+            journey_commitment_state: JourneyCommitmentState::Suspended,
+            journey_established_at: Some(Tick(1)),
+            journey_last_progress_tick: Some(Tick(3)),
+            step_in_flight: false,
+            dirty: false,
+            ..crate::AgentDecisionRuntime::default()
+        };
+
+        advance_completed_step(&mut runtime, PlannerOpKind::Consume, Tick(4));
+
+        assert_eq!(runtime.current_goal, None);
+        assert_eq!(runtime.current_plan, None);
+        assert_eq!(runtime.current_step_index, 0);
+        assert_eq!(runtime.journey_committed_goal, Some(committed_goal));
+        assert_eq!(runtime.journey_committed_destination, Some(destination));
+        assert_eq!(runtime.journey_commitment_state, JourneyCommitmentState::Active);
+        assert_eq!(runtime.journey_established_at, Some(Tick(1)));
+        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(3)));
+        assert!(runtime.dirty);
     }
 
     #[test]
@@ -1843,6 +1953,7 @@ mod tests {
             harness.actor,
             &ranked,
             budget.switch_margin_permille,
+            budget.switch_margin_permille,
             Tick(1),
             &budget,
             &semantics,
@@ -1925,6 +2036,7 @@ mod tests {
             runtime,
             harness.actor,
             &ranked_after_pickup,
+            budget.switch_margin_permille,
             budget.switch_margin_permille,
             Tick(2),
             &budget,

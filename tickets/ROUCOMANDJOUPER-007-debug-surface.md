@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — add runtime inspection plus controller-level journey policy inspection
-**Deps**: ROUCOMANDJOUPER-002, ROUCOMANDJOUPER-004, ROUCOMANDJOUPER-005
+**Deps**: ROUCOMANDJOUPER-002, ROUCOMANDJOUPER-004, ROUCOMANDJOUPER-005, ROUCOMANDJOUPER-008, ROUCOMANDJOUPER-009
 
 ## Problem
 
@@ -14,7 +14,7 @@ After ticket 004, the effective journey switch margin is controller-level policy
 
 ## Assumption Reassessment (2026-03-13)
 
-1. `AgentDecisionRuntime` has `journey_established_at`, `journey_last_progress_tick`, `consecutive_blocked_leg_ticks`, `has_active_journey()`, `remaining_travel_steps()`, and `clear_journey_fields()` after ticket 002 — assumed complete.
+1. `AgentDecisionRuntime` now has a durable commitment anchor plus `journey_commitment_state: Active | Suspended` after tickets 008 and 009 — confirmed.
 2. `PlannedPlan` has `goal`, `steps`, and plan-level travel helpers such as `terminal_travel_destination()` — confirmed.
 3. `AgentTickDriver` holds `runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>` — confirmed.
 4. After the revised ticket 004, effective switch margin is computed at the controller layer from runtime state, `TravelDispositionProfile`, and the default budget margin — required.
@@ -22,7 +22,7 @@ After ticket 004, the effective journey switch margin is controller-level policy
 
 ## Architecture Check
 
-1. Runtime-derived journey facts such as destination and remaining travel steps belong on `AgentDecisionRuntime` as thin read-only delegates to `PlannedPlan`.
+1. Runtime-derived journey facts such as commitment destination, remaining travel steps, and commitment status belong on `AgentDecisionRuntime` as thin read-only delegates over runtime state plus `PlannedPlan`.
 2. Controller-derived policy facts such as effective switch margin and margin source do not belong on `AgentDecisionRuntime`; they should be assembled by `AgentTickDriver` or another controller-facing inspection surface.
 3. Journey clearing reasons should be explicit and inspectable, but they should not become authoritative state.
 4. No backwards-compatibility aliasing or shims.
@@ -49,7 +49,8 @@ pub fn journey_destination(&self) -> Option<EntityId> {
 ```rust
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct JourneyRuntimeSnapshot {
-    pub destination: Option<EntityId>,
+    pub committed_destination: Option<EntityId>,
+    pub commitment_state: JourneyCommitmentState,
     pub established_at: Option<Tick>,
     pub last_progress_tick: Option<Tick>,
     pub remaining_travel_steps: usize,
@@ -153,7 +154,7 @@ This method should:
 2. `journey_destination()` returns the target of the last Travel step when journey is active.
 3. `journey_destination()` returns `None` when plan has no Travel steps.
 4. `journey_runtime_snapshot()` returns a `JourneyRuntimeSnapshot` reflecting all temporal fields and derived route state.
-5. `JourneyDebugSnapshot` reports the effective switch margin and whether it came from `BudgetDefault` or `JourneyProfile`.
+5. `JourneyDebugSnapshot` reports the effective switch margin, whether it came from `BudgetDefault` or `JourneyProfile`, and the runtime commitment state.
 6. `JourneyClearReason` has the required variants and derives `Debug`, `Eq`, and `PartialEq`.
 7. `clear_journey_fields_with_reason()` clears all fields regardless of reason.
 8. `AgentTickDriver::journey_snapshot()` delegates to runtime data and controller policy correctly.

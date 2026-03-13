@@ -789,7 +789,7 @@ fn golden_goal_switching_during_multi_leg_travel() {
 
     let thirst_escalates_after_first_leg = MetabolismProfile::new(
         pm(2),   // hunger_rate
-        pm(150), // thirst_rate
+        pm(220), // thirst_rate
         pm(2),
         pm(4),
         pm(1),
@@ -853,9 +853,11 @@ fn golden_goal_switching_during_multi_leg_travel() {
 
     let initial_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
     let initial_water = h.agent_commodity_qty(agent, CommodityKind::Water);
+    let initial_hunger = h.agent_hunger(agent);
     let mut left_bandit_camp = false;
-    let mut reached_orchard_before_drink = false;
     let mut drink_place = None;
+    let mut resumed_to_orchard_after_drink = false;
+    let mut hunger_relieved_after_drink = false;
     let mut visited_places = vec![bandit_camp];
 
     for _ in 0..150 {
@@ -871,11 +873,15 @@ fn golden_goal_switching_during_multi_leg_travel() {
             }
             if h.agent_commodity_qty(agent, CommodityKind::Water) < initial_water {
                 drink_place = Some(place);
-                break;
             }
-            if place == ORCHARD_FARM {
-                reached_orchard_before_drink = true;
+            if drink_place.is_some() && place == ORCHARD_FARM {
+                resumed_to_orchard_after_drink = true;
             }
+        }
+
+        if drink_place.is_some() && h.agent_hunger(agent) < initial_hunger {
+            hunger_relieved_after_drink = true;
+            break;
         }
 
         let current_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
@@ -889,21 +895,20 @@ fn golden_goal_switching_during_multi_leg_travel() {
         left_bandit_camp,
         "Agent should begin the distant food journey from Bandit Camp"
     );
-    assert!(
-        !reached_orchard_before_drink,
-        "Agent should change course before reaching Orchard Farm; visited={visited_places:?}, drink_place={drink_place:?}"
-    );
-
     let drink_place = drink_place.expect(
-        "Agent should consume carried water during the journey before reaching Orchard Farm",
+        "Agent should consume carried water after departing on the food journey",
     );
     assert_ne!(
         drink_place, bandit_camp,
         "Water-driven goal switch should occur after departure, not at the origin"
     );
-    assert_ne!(
-        drink_place, ORCHARD_FARM,
-        "Water-driven goal switch should happen at an intermediate place, not at the original destination"
+    assert!(
+        resumed_to_orchard_after_drink || drink_place == ORCHARD_FARM,
+        "Agent should either resume the original food journey after drinking or already be at the destination when the local thirst detour resolves; visited={visited_places:?}, drink_place={drink_place:?}"
+    );
+    assert!(
+        hunger_relieved_after_drink,
+        "Agent should complete the resumed food journey after the detour; visited={visited_places:?}, drink_place={drink_place:?}"
     );
 }
 

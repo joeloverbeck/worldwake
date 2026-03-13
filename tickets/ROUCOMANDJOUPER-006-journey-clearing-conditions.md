@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — journey clearing logic in `agent_tick.rs` and `failure_handling.rs`
-**Deps**: ROUCOMANDJOUPER-001, ROUCOMANDJOUPER-002, ROUCOMANDJOUPER-004, ROUCOMANDJOUPER-005
+**Deps**: ROUCOMANDJOUPER-001, ROUCOMANDJOUPER-002, ROUCOMANDJOUPER-004, ROUCOMANDJOUPER-005, ROUCOMANDJOUPER-008, ROUCOMANDJOUPER-009
 
 ## Problem
 
@@ -14,19 +14,19 @@ After the controller-policy cleanup in ticket 004, reprioritization can originat
 
 ## Assumption Reassessment (2026-03-13)
 
-1. `AgentDecisionRuntime` has `journey_established_at`, `journey_last_progress_tick`, `consecutive_blocked_leg_ticks`, `has_active_journey()`, and `clear_journey_fields()` after ticket 002 — assumed complete.
+1. `AgentDecisionRuntime` now has a durable commitment anchor (`journey_committed_goal`, `journey_committed_destination`) plus `journey_commitment_state: Active | Suspended` after tickets 008 and 009 — confirmed.
 2. `TravelDispositionProfile::blocked_leg_patience_ticks` is a `NonZeroU32` (ticket 001) — assumed complete.
 3. `BlockedIntentMemory::record()` takes a `BlockedIntent` and replaces existing entries for the same goal — confirmed.
 4. `BlockingFact` in `worldwake-core::blocked_intent` already has concrete route-failure-ish variants like `NoKnownPath`, `TargetGone`, and related blockers — confirmed.
 5. `handle_plan_failure()` in `failure_handling.rs` already clears `runtime.current_plan` and records blocked intents — confirmed.
 6. Death is tracked via `DeadAt` and checked via `view.is_dead()` — confirmed.
 7. Reprioritization can originate from both idle plan replacement (`select_best_plan()`) and active-action interruption (`evaluate_interrupt()`), but both paths are orchestrated in `agent_tick.rs` — confirmed.
-8. After ticket 004, controller-level switch-margin policy is computed outside low-level decision helpers and shared across both paths — this ticket should rely on that shared boundary rather than duplicating path-specific clearing logic.
+8. After ticket 009, non-travel detours can suspend commitment without clearing it, and detour completion can reactivate that commitment. This ticket must clear only on true abandonment or invalidation, not merely because a local detour plan ran — confirmed.
 
 ## Architecture Check
 
-1. Journey clearing belongs in existing control-flow points: commitment replacement, failure handling, patience exhaustion, terminal completion, and death cleanup. A separate cleanup pass would be less explicit and harder to reason about.
-2. Clearing semantics should not care whether reprioritization came from idle selection or active interruption. If the current commitment is replaced, journey lifecycle should clear through shared controller code rather than duplicated path-specific rules.
+1. Journey clearing belongs in existing control-flow points: true commitment replacement, failure handling, patience exhaustion, terminal invalidation, and death cleanup. A separate cleanup pass would be less explicit and harder to reason about.
+2. Clearing semantics should not care whether reprioritization came from idle selection or active interruption. If the durable commitment is replaced, journey lifecycle should clear through shared controller code rather than duplicated path-specific rules.
 3. Blocked-intent integration should continue using the existing `BlockedIntentMemory` infrastructure. No second cooldown table.
 4. The `BlockingFact` enum may need a new variant for repeated-leg blockage, but only if existing concrete variants are not precise enough.
 5. No backwards-compatibility aliasing or shims.
@@ -43,9 +43,9 @@ if new_plan.goal != runtime.current_goal.unwrap_or(new_plan.goal) {
 }
 ```
 
-This covers:
-- "A higher-priority challenger beats the current commitment by the agent's `route_replan_margin`"
-- "The plan is replaced for any reason (goal switch, replan)"
+This covers true abandonment, not temporary suspension:
+- a challenger replaces the durable committed goal/destination
+- a committed route is invalidated concretely
 
 This logic should be reached regardless of whether the challenger won during idle plan selection or after an interrupt-driven replan.
 
@@ -87,9 +87,13 @@ if view.is_dead(agent) {
 
 Only add incapacity/control-loss branches if the current controller runtime actually retains stale journey state across those transitions. Do not add speculative cleanup paths that current code cannot trigger or observe concretely.
 
-### 4. Clear journey fields when destination goal is satisfied
+### 4. Clear journey fields only when the committed journey itself is satisfied or invalidated
 
-When `current_plan` completes and the terminal outcome abandons the journey commitment:
+When the active plan completes, distinguish:
+- committed journey completion or invalidation -> clear commitment
+- suspended detour completion -> preserve commitment and reactivate it
+
+Only the first case should call:
 
 ```rust
 runtime.clear_journey_fields();
@@ -154,7 +158,7 @@ fn derive_next_leg_target(runtime: &AgentDecisionRuntime) -> Option<EntityId> {
 3. When `consecutive_blocked_leg_ticks >= blocked_leg_patience_ticks`, journey fields are cleared AND a `BlockedIntent` is recorded for the goal.
 4. When `consecutive_blocked_leg_ticks < blocked_leg_patience_ticks`, journey fields are NOT cleared.
 5. Death clears journey fields immediately.
-6. Plan completion (all steps done, goal satisfied) clears journey fields.
+6. Committed-journey completion clears journey fields, but suspended-detour completion does not.
 7. `handle_plan_failure()` clears journey fields along with the plan.
 8. After patience-exhaustion clearing, the goal is blocked in `BlockedIntentMemory` with a concrete blocking fact and appropriate TTL.
 9. Existing suite: `cargo test -p worldwake-ai`
@@ -163,7 +167,7 @@ fn derive_next_leg_target(runtime: &AgentDecisionRuntime) -> Option<EntityId> {
 ### Invariants
 
 1. Journey fields are always cleared on death — no zombie journeys.
-2. Journey fields are always cleared when the current commitment is abandoned or the plan is cleared — no orphan journey state without a plan.
+2. Journey fields are cleared when the durable commitment is abandoned or invalidated, not merely because the current plan is absent or was a local detour.
 3. Blocked-intent recording on patience exhaustion uses existing infrastructure — no second cooldown table.
 4. Reprioritization-triggered clearing does not diverge between idle and active-action paths.
 5. The clearing reason is deterministic and tied to concrete state, not heuristic.

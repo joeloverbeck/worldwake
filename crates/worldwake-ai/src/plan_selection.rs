@@ -1,6 +1,7 @@
 use crate::{
-    goal_switching::{compare_goal_switch, GoalSwitchKind},
-    AgentDecisionRuntime, GoalKey, GoalPriorityClass, PlannedPlan, RankedGoal,
+    goal_switching::GoalSwitchKind,
+    journey_switch_policy::compare_relation_aware_goal_switch,
+    AgentDecisionRuntime, GoalKey, GoalPriorityClass, JourneyPlanRelation, PlannedPlan, RankedGoal,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -10,7 +11,8 @@ pub fn select_best_plan(
     candidates: &[RankedGoal],
     plans: &[(GoalKey, Option<PlannedPlan>)],
     current: &AgentDecisionRuntime,
-    switch_margin: Permille,
+    default_switch_margin: Permille,
+    journey_switch_margin: Permille,
 ) -> Option<PlannedPlan> {
     let candidate_scores = candidates
         .iter()
@@ -31,7 +33,7 @@ pub fn select_best_plan(
         })
         .collect::<Vec<_>>();
     available.sort_by(compare_ranked_plans);
-    let (_, best_motive, best_plan) = available.first()?.clone();
+    let best_plan = available.first()?.2.clone();
 
     let Some(current_plan) = current.current_plan.clone() else {
         return Some(best_plan);
@@ -40,24 +42,29 @@ pub fn select_best_plan(
     else {
         return Some(best_plan);
     };
-    let Some((best_class, _, _)) = available.first().cloned() else {
-        return Some(current_plan);
-    };
 
-    if best_plan.goal == current_plan.goal {
-        return Some(best_plan);
-    }
-    if matches!(
-        compare_goal_switch(
-            current_class,
-            Some(current_motive),
-            best_class,
-            best_motive,
-            switch_margin,
-        ),
-        Some(GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin)
-    ) {
-        return Some(best_plan);
+    for (challenger_class, challenger_motive, challenger_plan) in available {
+        let relation = current.classify_journey_plan_relation(&challenger_plan);
+        if relation == JourneyPlanRelation::RefreshesCommitment
+            || challenger_plan.goal == current_plan.goal
+        {
+            return Some(challenger_plan);
+        }
+
+        if matches!(
+            compare_relation_aware_goal_switch(
+                current_class,
+                Some(current_motive),
+                challenger_class,
+                challenger_motive,
+                relation,
+                default_switch_margin,
+                journey_switch_margin,
+            ),
+            Some(GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin)
+        ) {
+            return Some(challenger_plan);
+        }
     }
 
     Some(current_plan)
@@ -130,6 +137,10 @@ mod tests {
         Permille::new(100).unwrap()
     }
 
+    fn route_switch_margin() -> Permille {
+        Permille::new(300).unwrap()
+    }
+
     #[test]
     fn selection_prefers_higher_priority_class_before_cost() {
         let sleep_goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
@@ -159,6 +170,7 @@ mod tests {
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
+            default_switch_margin(),
             default_switch_margin(),
         )
         .unwrap();
@@ -209,7 +221,14 @@ mod tests {
         };
 
         let selected =
-            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
+            select_best_plan(
+                &candidates,
+                &plans,
+                &runtime,
+                default_switch_margin(),
+                default_switch_margin(),
+            )
+            .unwrap();
 
         assert_eq!(selected.goal, current_goal);
     }
@@ -242,12 +261,14 @@ mod tests {
             &plans,
             &AgentDecisionRuntime::default(),
             default_switch_margin(),
+            default_switch_margin(),
         )
         .unwrap();
         let second = select_best_plan(
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
+            default_switch_margin(),
             default_switch_margin(),
         )
         .unwrap();
@@ -305,8 +326,14 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected =
-            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            default_switch_margin(),
+        )
+        .unwrap();
 
         assert_eq!(selected, refreshed_plan);
     }
@@ -337,8 +364,14 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected =
-            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            default_switch_margin(),
+        )
+        .unwrap();
 
         assert_eq!(selected.goal, eat_goal);
         assert_eq!(
@@ -371,8 +404,14 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected =
-            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            default_switch_margin(),
+        )
+        .unwrap();
 
         assert_eq!(
             selected, challenger,
@@ -401,8 +440,14 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let selected =
-            select_best_plan(&candidates, &plans, &runtime, default_switch_margin()).unwrap();
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            default_switch_margin(),
+        )
+        .unwrap();
 
         assert_eq!(selected.goal, eat_goal);
         assert!(
@@ -448,6 +493,8 @@ mod tests {
         let runtime = AgentDecisionRuntime {
             current_goal: Some(current_goal),
             current_plan: Some(current_plan),
+            journey_committed_goal: Some(current_goal),
+            journey_committed_destination: Some(entity(1)),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
@@ -457,13 +504,114 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            default_switch_margin(),
             Permille::new(400).unwrap(),
         )
         .unwrap();
-        let permissive =
-            select_best_plan(&candidates, &plans, &runtime, Permille::new(300).unwrap()).unwrap();
+        let permissive = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            Permille::new(300).unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(conservative.goal, current_goal);
         assert_eq!(permissive.goal, challenger_goal);
+    }
+
+    #[test]
+    fn suspended_detour_can_replace_current_plan_without_paying_route_margin() {
+        let committed_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let detour_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Water,
+        });
+        let destination = entity(44);
+        let current_plan = PlannedPlan::new(
+            committed_goal,
+            vec![PlannedStep {
+                targets: vec![PlanningEntityRef::Authoritative(destination)],
+                ..PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: Vec::new(),
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 3,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                }
+            }],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let detour_plan = PlannedPlan::new(
+            detour_goal,
+            vec![PlannedStep {
+                def_id: ActionDefId(2),
+                targets: vec![PlanningEntityRef::Authoritative(entity(2))],
+                payload_override: None,
+                op_kind: PlannerOpKind::Consume,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+            }],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let abandon_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let abandon_plan = plan(abandon_goal, 3, 1);
+        let candidates = vec![
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_150,
+            ),
+            ranked(
+                worldwake_core::GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Water,
+                },
+                GoalPriorityClass::High,
+                1_120,
+            ),
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_000,
+            ),
+        ];
+        let plans = vec![
+            (abandon_goal, Some(abandon_plan)),
+            (detour_goal, Some(detour_plan.clone())),
+            (committed_goal, Some(current_plan.clone())),
+        ];
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(committed_goal),
+            current_plan: Some(current_plan),
+            journey_committed_goal: Some(committed_goal),
+            journey_committed_destination: Some(destination),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            route_switch_margin(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.goal, detour_goal);
     }
 }

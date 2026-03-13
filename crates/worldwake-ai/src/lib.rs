@@ -12,6 +12,7 @@ pub mod failure_handling;
 pub mod goal_model;
 mod goal_switching;
 pub mod interrupts;
+mod journey_switch_policy;
 pub mod plan_revalidation;
 pub mod plan_selection;
 pub mod planner_ops;
@@ -24,7 +25,9 @@ pub mod search;
 pub use agent_tick::AgentTickDriver;
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
-pub use decision_runtime::{AgentDecisionRuntime, MaterializationBindings};
+pub use decision_runtime::{
+    AgentDecisionRuntime, JourneyCommitmentState, JourneyPlanRelation, MaterializationBindings,
+};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
