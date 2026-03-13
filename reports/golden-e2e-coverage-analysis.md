@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 2 tests (scenario 2c + replay)
   golden_production.rs        — 4 tests (scenarios 3, 4, 6b, 6c)
-  golden_combat.rs            — 4 tests (living combat + scenario 8 + replay)
+  golden_combat.rs            — 6 tests (living combat + death scenarios + replays)
   golden_determinism.rs       — 1 test  (scenario 6)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
 ```
@@ -24,7 +24,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 25 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
+The golden suite contains 27 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -242,6 +242,20 @@ The golden suite contains 25 tests across 6 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes for the death-and-loot scenario.
 **Cross-system chain**: Metabolism → deprivation exposure → wound infliction → wound accumulation → death → corpse creation → loot goal generation → loot action.
 
+### Scenario 8b: Death While Traveling
+**File**: `golden_combat.rs` | **Test**: `golden_death_while_traveling`
+**Companion replay test**: `golden_death_while_traveling_replays_deterministically`
+**Systems exercised**: Needs (metabolism, deprivation exposure), AI (distant acquire planning), Travel, Combat (fatal wound resolution), Conservation, deterministic replay
+**Setup**: Fragile traveler starts at Bandit Camp with critical hunger and 5 coins. Orchard Farm is the only food source. The route requires real multi-hop travel through Forest Path and beyond.
+**Emergent behavior proven**:
+- Traveler leaves Bandit Camp and enters real in-transit travel on the hunger-driven route.
+- The traveler dies from deprivation before reaching Orchard Farm.
+- In the deterministic scenario, death resolves at the first intermediate route place (`ForestPath`), proving the body remains at a concrete grounded location instead of vanishing or reaching the destination.
+- After death resolves, the agent has no active action and no lingering in-transit state.
+- Coin lot conservation holds every tick throughout the journey and death sequence.
+- Two runs with the same seed produce identical world and event-log hashes for the death-while-traveling scenario.
+**Cross-system chain**: Hunger pressure → distant acquire-goal emission → travel departure → continued metabolism on route → deprivation wound infliction → death before destination → concrete body placement on route.
+
 ---
 
 ## Part 2: Coverage Matrix
@@ -336,6 +350,7 @@ The golden suite contains 25 tests across 6 domain files. Every test uses the re
 | Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multiple competing needs (hunger + thirst + fatigue) | Yes |
 | Dirtiness pressure → wash → water consumption | Yes |
+| Death after departure on multi-hop travel | Yes |
 | Wound bleed → clotting → natural recovery | **No** |
 
 ---
@@ -364,11 +379,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 **Proves**: Agent comes under active attack pressure → `ReduceDanger` is emitted at high-or-above danger → planner selects a defensive mitigation (`defend`, reposition, or equivalent real path) → danger drops without manual action queueing.
 
 ### Tier 2: Medium Priority (score 3-5)
-
-#### P12. Death While Traveling
-**Score**: Emergence=4, Bug-catching=4, Effort=3 → **Composite: 5**
-**Rationale**: What happens when an agent dies from deprivation during a multi-tick travel action? The action should terminate, death should be processed, and the corpse should remain at the departure location (or mid-travel, depending on implementation).
-**Proves**: Fragile agent starts traveling → deprivation wound accumulates during travel → death during travel action → action terminates → corpse location is consistent.
 
 #### P13. Resource Exhaustion Race (Many Agents, Finite Resources)
 **Score**: Emergence=3, Bug-catching=4, Effort=3 → **Composite: 4**
@@ -403,7 +413,7 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 | ActionDomain coverage | 8/9 full | 8/9 full | 9/9 full |
 | Needs tested | 5/5 | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12+ | 9/12+ |
-| Cross-system chains | 15 | 16 | 16 |
+| Cross-system chains | 16 | 16 | 16 |
 
 ### Recommended Implementation Order (Tier 1)
 

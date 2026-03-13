@@ -6,7 +6,8 @@ use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, CombatProfile, CommodityKind,
     DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes, MetabolismProfile, Quantity,
-    Seed, StateHash, Tick, UtilityProfile, WoundList,
+    PrototypePlace, ResourceSource, Seed, StateHash, Tick, UtilityProfile, WorkstationTag,
+    WoundList,
 };
 
 // ---------------------------------------------------------------------------
@@ -162,6 +163,164 @@ fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
     assert!(
         looter_gained_coin,
         "Looter should gain coin within 100 ticks after the victim dies"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+fn build_death_while_traveling_scenario(
+    seed: Seed,
+) -> (GoldenHarness, worldwake_core::EntityId, u64, worldwake_core::EntityId) {
+    let mut h = GoldenHarness::new(seed);
+    let bandit_camp = worldwake_core::prototype_place_entity(PrototypePlace::BanditCamp);
+
+    let traveler = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Traveler",
+        bandit_camp,
+        HomeostaticNeeds::new(pm(850), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::new(
+            pm(25),
+            pm(3),
+            pm(2),
+            pm(4),
+            pm(1),
+            pm(20),
+            nz(5),
+            nz(240),
+            nz(120),
+            nz(40),
+            nz(8),
+            nz(12),
+        ),
+        UtilityProfile::default(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_combat_profile(
+        traveler,
+        CombatProfile::new(
+            pm(200),
+            pm(150),
+            pm(500),
+            pm(500),
+            pm(80),
+            pm(25),
+            pm(18),
+            pm(120),
+            pm(35),
+            nz(6),
+        ),
+    )
+    .unwrap();
+    txn.set_component_deprivation_exposure(
+        traveler,
+        DeprivationExposure {
+            hunger_critical_ticks: 0,
+            thirst_critical_ticks: 0,
+            fatigue_critical_ticks: 0,
+            bladder_critical_ticks: 0,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        bandit_camp,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+    (h, traveler, initial_coin_total, bandit_camp)
+}
+
+fn run_death_while_traveling_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, traveler, initial_coin_total, origin) = build_death_while_traveling_scenario(seed);
+    let forest_path = worldwake_core::prototype_place_entity(PrototypePlace::ForestPath);
+    let mut left_origin = false;
+    let mut saw_in_transit = false;
+    let mut saw_active_travel = false;
+    let mut reached_orchard = false;
+
+    for _ in 0..100 {
+        let was_in_transit = h.world.is_in_transit(traveler);
+
+        h.step_once();
+        if h.world.is_in_transit(traveler) {
+            saw_in_transit = true;
+        }
+        if h.agent_has_active_action(traveler) {
+            saw_active_travel = true;
+        }
+        if was_in_transit || h.world.effective_place(traveler) != Some(origin) {
+            left_origin = true;
+        }
+        if h.world.effective_place(traveler) == Some(ORCHARD_FARM) {
+            reached_orchard = true;
+        }
+
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
+        );
+
+        if h.agent_is_dead(traveler) {
+            assert!(
+                !h.agent_has_active_action(traveler),
+                "Dead traveler should not retain an active action after death resolution"
+            );
+            assert!(
+                !h.world.is_in_transit(traveler),
+                "Dead traveler should not remain in transit after death resolution"
+            );
+            assert_eq!(
+                h.world.effective_place(traveler),
+                Some(forest_path),
+                "Traveler should die at the intermediate route place reached before Orchard Farm"
+            );
+            break;
+        }
+    }
+
+    assert!(left_origin, "Traveler should leave the origin to pursue distant food");
+    assert!(
+        saw_in_transit,
+        "Traveler should enter real in-transit state before death"
+    );
+    assert!(
+        saw_active_travel,
+        "Traveler should have an active travel action before death"
+    );
+    assert!(
+        !reached_orchard,
+        "Traveler should die before reaching Orchard Farm"
+    );
+    assert!(
+        h.agent_is_dead(traveler),
+        "Traveler should die from deprivation during the travel scenario"
     );
 
     (
@@ -353,6 +512,22 @@ fn golden_death_cascade_and_opportunistic_loot_replays_deterministically() {
     assert_eq!(
         log_hash_1, log_hash_2,
         "Death-and-loot event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_death_while_traveling() {
+    let _ = run_death_while_traveling_scenario(Seed([12; 32]));
+}
+
+#[test]
+fn golden_death_while_traveling_replays_deterministically() {
+    let first = run_death_while_traveling_scenario(Seed([12; 32]));
+    let second = run_death_while_traveling_scenario(Seed([12; 32]));
+
+    assert_eq!(
+        first, second,
+        "death-while-traveling scenario should replay deterministically"
     );
 }
 
