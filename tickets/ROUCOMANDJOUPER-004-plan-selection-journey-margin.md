@@ -1,67 +1,89 @@
-# ROUCOMANDJOUPER-004: Plan Selection Integration with Journey Margin
+# ROUCOMANDJOUPER-004: Controller-Level Journey Switch Margin Policy
 
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — modify `select_best_plan()` to use per-agent journey margin
+**Engine Changes**: Yes — compute and apply an effective journey switch margin at the controller layer
 **Deps**: ROUCOMANDJOUPER-003
 
 ## Problem
 
-`select_best_plan()` always passes the global `budget.switch_margin_permille` to `compare_goal_switch()`. When an agent has an active journey (plan with remaining Travel steps and `journey_established_at` is `Some`), the agent's `TravelDispositionProfile::route_replan_margin` should be used instead, making committed travelers harder (or easier, per-agent) to divert.
+Journey commitment should influence all same-class reprioritization decisions, not only idle plan replacement.
+
+Today the controller has two separate decision paths that use goal-switch margin semantics:
+
+- `select_best_plan()` while the agent is idle and choosing the next plan
+- `evaluate_interrupt()` while the agent has an active action and is deciding whether to abandon it for a challenger
+
+If ticket 004 only overrides the margin in `select_best_plan()`, active-action interrupt decisions will still use the default global margin and journey commitment will be inconsistent.
 
 ## Assumption Reassessment (2026-03-13)
 
-1. `select_best_plan()` takes `(candidates, plans, current: &AgentDecisionRuntime, budget: &PlanningBudget)` — confirmed.
-2. After ticket 003, `compare_goal_switch()` accepts a `Permille` margin instead of `&PlanningBudget` — assumed complete.
-3. `AgentDecisionRuntime` has `has_active_journey()` after ticket 002 — assumed complete.
-4. `TravelDispositionProfile` has `route_replan_margin: Permille` after ticket 001 — assumed complete.
-5. `select_best_plan()` is called from `AgentTickDriver` where the belief view and agent's profile are accessible — confirmed by reading `agent_tick.rs`.
+1. After ticket 003, `compare_goal_switch()` accepts an explicit `Permille` margin instead of `&PlanningBudget` — completed.
+2. `select_best_plan()` is called from `AgentTickDriver`, and `evaluate_interrupt()` is also called from `AgentTickDriver` via `handle_active_action_phase()` — confirmed by reading `agent_tick.rs`.
+3. `select_best_plan()` and `evaluate_interrupt()` currently still receive enough information to apply only the default global margin, not a controller-computed effective margin — confirmed.
+4. `AgentDecisionRuntime` has `has_active_journey()` after ticket 002 — confirmed.
+5. `TravelDispositionProfile` has `route_replan_margin: Permille` after ticket 001 — confirmed.
+6. `BeliefView` currently exposes `metabolism_profile()`, `trade_disposition_profile()`, and `combat_profile()`, but not `travel_disposition_profile()` — confirmed.
 
 ## Architecture Check
 
-1. The cleanest approach: add an `Option<Permille>` parameter to `select_best_plan()` representing the journey margin override. When `Some`, use it instead of `budget.switch_margin_permille`. The caller (`AgentTickDriver`) determines whether the agent has an active journey and has a `TravelDispositionProfile`, and passes the override accordingly.
-2. Alternative: pass `TravelDispositionProfile` directly. Rejected — `select_best_plan` shouldn't know about travel-specific types; it just needs a margin value.
-3. Alternative: pass the entire `AgentDecisionRuntime` and do journey detection inside. Rejected — it already receives `current: &AgentDecisionRuntime` but adding profile lookup here would require belief view access, mixing concerns.
-4. No backwards-compatibility aliasing or shims.
+1. The cleanest approach is to compute one effective switch margin at the controller/orchestration layer and pass that explicit `Permille` into every goal-switching consumer for this tick.
+2. `select_best_plan()` and `evaluate_interrupt()` should both depend on explicit margin input, not on `PlanningBudget`, because they are making policy decisions, not choosing the policy source.
+3. The effective margin should be derived once from `(runtime.has_active_journey(), view.travel_disposition_profile(agent), budget.switch_margin_permille)` so idle replanning and active-action interruption stay consistent.
+4. Alternative: add an `Option<Permille>` override only to `select_best_plan()`. Rejected — this duplicates policy boundaries and leaves `evaluate_interrupt()` behind.
+5. Alternative: pass `TravelDispositionProfile` directly into decision helpers. Rejected — low-level helpers should consume only the scalar policy value they need.
+6. No backwards-compatibility aliasing or shims.
 
 ## What to Change
 
-### 1. Add `journey_margin_override` parameter to `select_best_plan()`
+### 1. Add a controller-level effective margin helper
+
+In `agent_tick.rs` or an adjacent controller-policy module, add:
+
+```rust
+fn effective_goal_switch_margin(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    runtime: &AgentDecisionRuntime,
+    budget: &PlanningBudget,
+) -> Permille
+```
+
+Behavior:
+- If `runtime.has_active_journey()` is `true` and the agent has a `TravelDispositionProfile`, return `profile.route_replan_margin`.
+- Otherwise return `budget.switch_margin_permille`.
+
+### 2. Change `select_best_plan()` to take explicit `Permille`
 
 ```rust
 pub fn select_best_plan(
     candidates: &[RankedGoal],
     plans: &[(GoalKey, Option<PlannedPlan>)],
     current: &AgentDecisionRuntime,
-    budget: &PlanningBudget,
-    journey_margin_override: Option<Permille>,
+    switch_margin: Permille,
 ) -> Option<PlannedPlan>
 ```
 
-In the body, when calling `compare_goal_switch()`, pass:
-```rust
-let margin = journey_margin_override.unwrap_or(budget.switch_margin_permille);
-```
+Remove the `PlanningBudget` parameter entirely. `select_best_plan()` only needs the effective margin.
 
-### 2. Update call site in `AgentTickDriver`
-
-In `agent_tick.rs` where `select_best_plan()` is called, determine the margin override:
+### 3. Change `evaluate_interrupt()` to take explicit `Permille`
 
 ```rust
-let journey_margin = if runtime.has_active_journey() {
-    view.travel_disposition_profile(agent)
-        .map(|profile| profile.route_replan_margin)
-} else {
-    None
-};
+pub fn evaluate_interrupt(
+    runtime: &AgentDecisionRuntime,
+    current_action_interruptibility: Interruptibility,
+    ranked_candidates: &[RankedGoal],
+    plan_valid: bool,
+    switch_margin: Permille,
+) -> InterruptDecision
 ```
 
-Pass `journey_margin` as the last argument to `select_best_plan()`.
+Remove the `PlanningBudget` parameter entirely. `evaluate_interrupt()` uses the budget today only as an indirect source for switch margin.
 
-### 3. Add `travel_disposition_profile()` to `BeliefView` trait (if not already present)
+### 4. Add `travel_disposition_profile()` to `BeliefView`
 
-Check whether `BeliefView` already has a `travel_disposition_profile()` accessor. If not, add one following the pattern of existing profile accessors (`combat_profile()`, `trade_disposition_profile()`, `metabolism_profile()`):
+Add a trait accessor following the existing profile pattern:
 
 ```rust
 fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile>;
@@ -69,20 +91,33 @@ fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositio
 
 Implement it in `OmniscientBeliefView` to read from `world.get_travel_disposition_profile(agent)`.
 
-### 4. Update existing `select_best_plan` tests
+### 5. Update `AgentTickDriver` call sites
 
-All existing tests pass `None` for the new parameter to preserve existing behavior.
+In both controller paths:
+
+- Compute `let switch_margin = effective_goal_switch_margin(&view, agent, runtime, budget);`
+- Pass `switch_margin` to `select_best_plan()`
+- Pass the same `switch_margin` to `evaluate_interrupt()`
+
+This preserves a single source of truth for journey commitment policy.
+
+### 6. Update existing tests
+
+- `plan_selection.rs` tests should pass explicit `Permille` values.
+- `interrupts.rs` tests should pass explicit `Permille` values.
+- Add regression tests proving the same journey margin affects both idle replacement and freely interruptible same-class interruption.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/plan_selection.rs` (modify — add parameter, use in margin selection)
-- `crates/worldwake-ai/src/agent_tick.rs` (modify — compute and pass journey margin override)
-- `crates/worldwake-sim/src/belief_view.rs` (modify — add trait method if missing)
-- `crates/worldwake-sim/src/omniscient_belief_view.rs` (modify — implement trait method if missing)
+- `crates/worldwake-ai/src/plan_selection.rs` (modify — accept explicit switch margin, remove `PlanningBudget` dependency)
+- `crates/worldwake-ai/src/interrupts.rs` (modify — accept explicit switch margin, remove `PlanningBudget` dependency)
+- `crates/worldwake-ai/src/agent_tick.rs` (modify — compute one effective switch margin and pass it to both decision paths)
+- `crates/worldwake-sim/src/belief_view.rs` (modify — add trait method)
+- `crates/worldwake-sim/src/omniscient_belief_view.rs` (modify — implement trait method)
 
 ## Out of Scope
 
-- `compare_goal_switch()` signature change (ticket 003 — assumed complete)
+- `compare_goal_switch()` signature change (ticket 003 — completed)
 - Journey temporal field lifecycle (when to set/clear `journey_established_at`) (tickets 005, 006)
 - `TravelDispositionProfile` definition (ticket 001)
 - Debug surface (ticket 007)
@@ -93,18 +128,19 @@ All existing tests pass `None` for the new parameter to preserve existing behavi
 
 ### Tests That Must Pass
 
-1. Existing test `selection_prefers_higher_priority_class_before_cost` — passes with `journey_margin_override: None`.
-2. Existing test `same_class_replacement_requires_switch_margin` — passes with `journey_margin_override: None`.
-3. New test: with `journey_margin_override: Some(Permille(300))`, a same-class challenger with +15% motive improvement does NOT switch (would switch with default 100 permille margin).
-4. New test: with `journey_margin_override: Some(Permille(300))`, a same-class challenger with +35% motive improvement DOES switch.
-5. New test: with `journey_margin_override: Some(Permille(0))`, any motive improvement triggers a switch.
-6. New test: higher priority class always wins regardless of `journey_margin_override` value.
-7. Existing suite: `cargo test -p worldwake-ai`
-8. Existing suite: `cargo clippy --workspace`
+1. Existing `plan_selection.rs` regression tests still pass with explicit default margin input.
+2. Existing `interrupts.rs` regression tests still pass with explicit default margin input.
+3. New test: when the effective margin is `Permille(300)`, a same-class challenger with +15% motive improvement does NOT replace the current plan.
+4. New test: when the effective margin is `Permille(300)`, a same-class challenger with +35% motive improvement DOES replace the current plan.
+5. New test: when the effective margin is `Permille(300)`, a freely interruptible same-class challenger with +15% improvement does NOT trigger interruption.
+6. New test: when the effective margin is `Permille(300)`, a freely interruptible same-class challenger with +35% improvement DOES trigger interruption.
+7. New test: higher priority class still wins regardless of effective margin.
+8. Existing suite: `cargo test -p worldwake-ai`
+9. Existing suite: `cargo clippy --workspace`
 
 ### Invariants
 
-1. When `journey_margin_override` is `None`, behavior is identical to pre-ticket behavior.
+1. Idle replanning and active-action interruption use the same effective switch margin policy.
 2. Higher priority class always overrides margin (unchanged).
 3. Same-goal replanning is unaffected by margin (same goal = always accept refresh).
 4. Deterministic tie-breaking is unaffected.
@@ -114,14 +150,16 @@ All existing tests pass `None` for the new parameter to preserve existing behavi
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/plan_selection.rs` — update all existing tests to pass `None` for journey margin
-2. `crates/worldwake-ai/src/plan_selection.rs` — new test: `journey_margin_override_raises_switching_threshold`
-3. `crates/worldwake-ai/src/plan_selection.rs` — new test: `journey_margin_override_exceeded_allows_switch`
-4. `crates/worldwake-ai/src/plan_selection.rs` — new test: `journey_margin_override_does_not_affect_priority_class_switch`
-5. `crates/worldwake-ai/src/plan_selection.rs` — new test: `zero_journey_margin_override_allows_any_improvement`
+1. `crates/worldwake-ai/src/plan_selection.rs` — update existing tests to pass explicit margin
+2. `crates/worldwake-ai/src/interrupts.rs` — update existing tests to pass explicit margin
+3. `crates/worldwake-ai/src/plan_selection.rs` — new test: `higher_effective_margin_raises_plan_switch_threshold`
+4. `crates/worldwake-ai/src/interrupts.rs` — new test: `higher_effective_margin_raises_interrupt_switch_threshold`
+5. `crates/worldwake-ai/src/agent_tick.rs` or dedicated controller test module — new test: active journey uses `route_replan_margin` consistently across both decision paths
 
 ### Commands
 
 1. `cargo test -p worldwake-ai plan_selection`
-2. `cargo test -p worldwake-ai`
-3. `cargo clippy --workspace`
+2. `cargo test -p worldwake-ai interrupts`
+3. `cargo test -p worldwake-ai agent_tick`
+4. `cargo test -p worldwake-ai`
+5. `cargo clippy --workspace`

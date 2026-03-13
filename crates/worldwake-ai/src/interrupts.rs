@@ -95,7 +95,7 @@ fn interrupt_freely(
         current_motive,
         challenger.priority_class,
         challenger.motive_score,
-        budget,
+        budget.switch_margin_permille,
     ) else {
         return InterruptDecision::NoInterrupt;
     };

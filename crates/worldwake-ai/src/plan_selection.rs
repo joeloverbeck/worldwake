@@ -52,7 +52,7 @@ pub fn select_best_plan(
             Some(current_motive),
             best_class,
             best_motive,
-            budget
+            budget.switch_margin_permille,
         ),
         Some(GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin)
     ) {

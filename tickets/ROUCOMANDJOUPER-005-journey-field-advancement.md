@@ -85,7 +85,7 @@ plan.remaining_travel_steps_from(from_index)
 ## Out of Scope
 
 - `TravelDispositionProfile` component (ticket 001)
-- Goal switching margin override (tickets 003, 004)
+- Goal switching margin policy (tickets 003, 004)
 - Journey clearing conditions (ticket 006 — this ticket only handles the "set" and "advance" side)
 - When to clear journey fields on goal switch, death, etc. (ticket 006)
 - Debug surface (ticket 007)

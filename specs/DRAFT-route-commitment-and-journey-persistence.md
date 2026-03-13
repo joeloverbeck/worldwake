@@ -69,7 +69,7 @@ impl Component for TravelDispositionProfile {}
 ```
 
 Meaning:
-- `route_replan_margin`: how much better a challenger goal must be before the agent abandons an active journey. During an active journey, this value **replaces** `budget.switch_margin_permille` in `compare_goal_switch()` — it is a per-agent override of the global switching margin for multi-hop travel contexts.
+- `route_replan_margin`: how much better a challenger goal must be before the agent abandons an active journey. During an active journey, this value feeds the controller's effective goal-switch margin policy, replacing the default `budget.switch_margin_permille` for reprioritization decisions. It is a per-agent override of the global switching margin for multi-hop travel contexts.
 - `blocked_leg_patience_ticks`: how long the agent tolerates repeated failure on the same next leg before dropping commitment
 
 Both values are per-agent and seeded at creation to preserve agent diversity.
@@ -91,13 +91,14 @@ These fields track the temporal dimension of an active journey. The journey itse
 
 `AgentDecisionRuntime` is transient runtime state — it is **not** serialized through save/load or replay paths. The journey temporal fields are equally transient. On load, the agent re-derives its journey through deterministic replanning from world state, producing the same outcome.
 
-### 3. Plan Selection Override During Active Journeys
-Extend plan selection so that when an agent has an active journey (current plan contains remaining Travel steps and `journey_established_at` is `Some`):
+### 3. Controller-Level Reprioritization Policy During Active Journeys
+Extend the AI controller so that when an agent has an active journey (current plan contains remaining Travel steps and `journey_established_at` is `Some`), the controller computes one effective goal-switch margin for reprioritization decisions:
 
-- The agent's `TravelDispositionProfile::route_replan_margin` replaces `budget.switch_margin_permille` in `compare_goal_switch()`. This is the per-agent override mechanism — agents with higher `route_replan_margin` are harder to divert mid-journey.
+- The agent's `TravelDispositionProfile::route_replan_margin` replaces the default `budget.switch_margin_permille` while the journey is active.
+- That same effective margin applies to both idle plan replacement and active-action interruption decisions.
 - A challenger goal that would abandon the current destination must beat the committed option by at least this margin.
 
-The comparison uses existing goal-switching machinery (priority class, motive value) with only the margin threshold overridden.
+The comparison still uses existing goal-switching machinery (priority class, motive value). The design change is only where the margin policy is chosen: at controller/orchestration level, not inside a low-level comparison helper.
 
 ### 4. Journey Field Advancement on Arrival
 When a travelling agent completes a leg and arrives at an intermediate place:
@@ -124,12 +125,12 @@ Interrupt logic remains the gatekeeper for abandoning an in-progress action. Thi
 
 Behavior split:
 - Interrupt rules decide whether the current active action can be abandoned now.
-- Journey tracking decides whether the agent prefers resuming the same destination/route after the interruption window closes.
+- Journey tracking plus controller-level switch-margin policy decide whether the agent prefers resuming the same destination/route after the interruption window closes.
 
 Example:
 - Thirst becomes critical during a long food journey.
 - Agent may interrupt at an intermediate place to drink.
-- After resolving thirst, the agent may resume the same destination if goal ranking still favors the original goal (the journey temporal fields persist across the interruption since the plan is not replaced).
+- After resolving thirst, the agent may resume the same destination if goal ranking still favors the original goal under the same effective journey switch margin (the journey temporal fields persist across the interruption since the plan is not replaced).
 
 ### 7. Integration With Blocked-Intent Memory
 Do not create a second independent "cooldown table" for journeys.
@@ -168,9 +169,10 @@ Expose enough runtime/debug information for tests and CLI inspection:
 - Remaining route length (count of remaining Travel steps in plan).
 - `journey_established_at` and `journey_last_progress_tick` values.
 - `consecutive_blocked_leg_ticks` value.
+- The effective goal-switch margin currently in force, and whether it came from the budget default or `TravelDispositionProfile`.
 - Clearing reason when journey ends.
 
-This is controller/runtime inspection, not authoritative world component exposure.
+This is controller/runtime inspection, not authoritative world component exposure. Runtime-derived facts can live on `AgentDecisionRuntime`; controller-derived policy facts should be assembled at the controller layer rather than stored as authoritative or route-owned state.
 
 **Note on GoalKey destination coverage**: Some goal kinds encode a destination directly (e.g., `MoveCargo`, `BuryCorpse`). Others require destination derivation from the plan's terminal Travel step target (e.g., `AcquireCommodity`, `Sleep`, `ProduceCommodity`). The debug surface should handle both cases.
 
@@ -191,12 +193,12 @@ No new authoritative component for route progress or route commitment is allowed
 - Add journey temporal fields to `AgentDecisionRuntime`.
 - Set `journey_established_at` when selecting a travel-led plan.
 - Advance/clear journey fields on arrival, blockage, interruption aftermath, and goal satisfaction.
-- Override `switch_margin_permille` with `route_replan_margin` during active journeys in `compare_goal_switch()`.
+- Compute one effective switch margin at controller level and pass it to both idle plan selection and active-action interruption logic during active journeys.
 - Integrate journey clearing with blocked-intent memory.
 
 ### `worldwake-sim`
 - No serialization changes needed — `AgentDecisionRuntime` is transient and not serialized.
-- Expose runtime/debug accessors needed for inspection.
+- Expose belief-view accessors needed for controller policy and debug inspection.
 
 ### `worldwake-systems`
 - No new system-to-system coupling.
@@ -237,7 +239,7 @@ Potential failure mode:
 ### Concrete Dampeners
 - `route_replan_margin`: commitment is not absolute; challengers can still win if they exceed the margin
 - `blocked_leg_patience_ticks`: repeated failure dissolves commitment after a concrete tick count
-- existing interrupt logic: urgent self-care and danger can still preempt
+- existing interrupt logic: urgent self-care and danger can still preempt, but it should evaluate the same effective journey switch margin policy as idle replanning
 - concrete intermediate arrivals: every hop creates a real reevaluation point
 - death / incapacitation / control loss: commitment is immediately cleared
 
@@ -257,6 +259,7 @@ Derived transient read-model:
 - destination (terminal Travel step target)
 - remaining route (plan's Travel steps)
 - whether a candidate plan matches the current journey destination
+- effective switch margin for the current controller decision
 - whether a challenger exceeds the replan margin
 - whether the remaining route is still valid under current beliefs
 
@@ -276,8 +279,9 @@ Route extraction inherits the canonical shortest-path tie-break already defined 
 ## Tests
 - [ ] Selecting a multi-hop travel-led plan sets `journey_established_at` on `AgentDecisionRuntime`.
 - [ ] Arriving at an intermediate place updates `journey_last_progress_tick` and resets `consecutive_blocked_leg_ticks` instead of discarding journey state immediately.
-- [ ] A same-destination continuation beats an equivalent-cost diversion because `route_replan_margin` raises the switching threshold.
-- [ ] A sufficiently stronger challenger beats the journey when it exceeds `route_replan_margin`.
+- [ ] A same-destination continuation beats an equivalent-cost diversion because the effective journey switch margin raises the switching threshold.
+- [ ] A sufficiently stronger challenger beats the journey when it exceeds the effective journey switch margin.
+- [ ] Freely interruptible same-class reprioritization uses the same effective journey switch margin as idle plan replacement.
 - [ ] Repeated blocked next-leg failures increment `consecutive_blocked_leg_ticks` and clear journey fields after reaching `blocked_leg_patience_ticks`.
 - [ ] Critical self-care interruption can temporarily break action flow without clearing journey fields if the plan is not replaced.
 - [ ] Death or incapacitation clears journey fields immediately.
@@ -287,6 +291,7 @@ Route extraction inherits the canonical shortest-path tie-break already defined 
 ## Acceptance Criteria
 - Agents can persist toward a destination across intermediate arrivals without losing per-leg authoritative travel.
 - Route persistence is profile-driven per agent via `TravelDispositionProfile`.
+- Reprioritization margin policy is chosen once at controller level and applied consistently to both idle replanning and active-action interruption.
 - Interruption and rerouting remain possible through concrete state changes.
 - No continuous multi-edge travel action or edge-fraction world state is added.
 - Route ordering remains deterministic.
