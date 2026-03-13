@@ -169,8 +169,7 @@ pub struct QueueForFacilityUsePayload {
 mod tests {
     use super::{
         ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-        LootActionPayload, QueueForFacilityUsePayload, TradeActionPayload,
-        TransportActionPayload,
+        LootActionPayload, QueueForFacilityUsePayload, TradeActionPayload, TransportActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
@@ -327,7 +326,10 @@ mod tests {
         assert_eq!(queue.as_trade(), None);
         assert_eq!(queue.as_combat(), None);
         assert_eq!(queue.as_loot(), None);
-        assert_eq!(queue.as_queue_for_facility_use(), Some(&sample_queue_payload()));
+        assert_eq!(
+            queue.as_queue_for_facility_use(),
+            Some(&sample_queue_payload())
+        );
 
         assert_eq!(none.as_harvest(), None);
         assert_eq!(none.as_transport(), None);

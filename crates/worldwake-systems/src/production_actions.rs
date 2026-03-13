@@ -340,11 +340,9 @@ fn ensure_matching_facility_grant(
                 "facility {facility} is exclusive but lacks FacilityUseQueue grant state"
             )))
         }
-        (None, Some(_)) => {
-            return Err(ActionError::PreconditionFailed(format!(
-                "facility {facility} has FacilityUseQueue grant state without ExclusiveFacilityPolicy"
-            )))
-        }
+        (None, Some(_)) => return Err(ActionError::PreconditionFailed(format!(
+            "facility {facility} has FacilityUseQueue grant state without ExclusiveFacilityPolicy"
+        ))),
     };
     match queue.granted.as_ref() {
         Some(granted) if granted.actor == actor && granted.intended_action == action_def => Ok(()),
@@ -365,7 +363,9 @@ fn consume_matching_facility_grant(
     action_def: ActionDefId,
 ) -> Result<(), ActionError> {
     ensure_matching_facility_grant(txn, actor, facility, action_def)?;
-    if txn.get_component_exclusive_facility_policy(facility).is_none()
+    if txn
+        .get_component_exclusive_facility_policy(facility)
+        .is_none()
         && txn.get_component_facility_use_queue(facility).is_none()
     {
         return Ok(());
@@ -637,10 +637,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, Container, ControlSource,
-        DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog,
-        ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
-        LoadUnits, MetabolismProfile, Permille, Quantity, ResourceSource, Seed, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog, ExclusiveFacilityPolicy,
+        FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile,
+        Permille, Quantity, ResourceSource, Seed, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -914,14 +914,16 @@ mod tests {
             granted_at: Tick(granted_at),
             expires_at: Tick(granted_at + 3),
         });
-        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        txn.set_component_facility_use_queue(facility, queue)
+            .unwrap();
         commit_txn(txn);
     }
 
     fn provision_facility_queue(world: &mut World, facility: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick);
         let queue = ensure_facility_queue_components(&mut txn, facility);
-        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        txn.set_component_facility_use_queue(facility, queue)
+            .unwrap();
         commit_txn(txn);
     }
 
@@ -929,7 +931,10 @@ mod tests {
         txn: &mut WorldTxn<'_>,
         facility: EntityId,
     ) -> FacilityUseQueue {
-        if txn.get_component_exclusive_facility_policy(facility).is_none() {
+        if txn
+            .get_component_exclusive_facility_policy(facility)
+            .is_none()
+        {
             txn.set_component_exclusive_facility_policy(
                 facility,
                 ExclusiveFacilityPolicy {
@@ -1296,13 +1301,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(
-            world
-                .get_component_facility_use_queue(workstation)
-                .unwrap()
-                .granted
-                .is_none()
-        );
+        assert!(world
+            .get_component_facility_use_queue(workstation)
+            .unwrap()
+            .granted
+            .is_none());
 
         abort_action(
             instance_id,
@@ -1470,8 +1473,7 @@ mod tests {
         let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
         let (recipes, recipe_id) = harvest_recipe_registry(body_cost);
         let (defs, handlers, ids) = setup_registries(&recipes);
-        let (mut world, actor, workstation, _) =
-            setup_world(false, WorkstationTag::OrchardRow, 5);
+        let (mut world, actor, workstation, _) = setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
         grant_facility_use(&mut world, workstation, actor, ids[0], 9);
         let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
@@ -1896,13 +1898,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(
-            world
-                .get_component_facility_use_queue(workstation)
-                .unwrap()
-                .granted
-                .is_none()
-        );
+        assert!(world
+            .get_component_facility_use_queue(workstation)
+            .unwrap()
+            .granted
+            .is_none());
 
         abort_action(
             instance_id,

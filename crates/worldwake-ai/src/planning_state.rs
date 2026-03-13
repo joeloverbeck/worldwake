@@ -2,10 +2,10 @@ use crate::planning_snapshot::PlanningSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    load_per_unit, CombatProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
-    EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MetabolismProfile, Permille,
-    PlaceTag, Quantity, RecipeId, ResourceSource, TickRange, TradeDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    load_per_unit, ActionDefId, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+    MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId, ResourceSource, TickRange,
+    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, BeliefView, DurationExpr,
@@ -26,6 +26,11 @@ pub struct HypotheticalEntityMeta {
     pub item_lot_commodity: Option<CommodityKind>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct HypotheticalQueueJoin {
+    intended_action: ActionDefId,
+}
+
 #[derive(Clone)]
 pub struct PlanningState<'snapshot> {
     snapshot: &'snapshot PlanningSnapshot,
@@ -38,6 +43,8 @@ pub struct PlanningState<'snapshot> {
     removed_entities: BTreeSet<PlanningEntityRef>,
     needs_overrides: BTreeMap<EntityId, HomeostaticNeeds>,
     pain_overrides: BTreeMap<EntityId, Permille>,
+    facility_queue_membership_overrides: BTreeMap<EntityId, Option<HypotheticalQueueJoin>>,
+    facility_grant_overrides: BTreeMap<EntityId, Option<GrantedFacilityUse>>,
     hypothetical_registry: BTreeMap<HypotheticalEntityId, HypotheticalEntityMeta>,
     next_hypothetical_id: u32,
 }
@@ -56,6 +63,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             removed_entities: BTreeSet::new(),
             needs_overrides: BTreeMap::new(),
             pain_overrides: BTreeMap::new(),
+            facility_queue_membership_overrides: BTreeMap::new(),
+            facility_grant_overrides: BTreeMap::new(),
             hypothetical_registry: BTreeMap::new(),
             next_hypothetical_id: 0,
         }
@@ -436,6 +445,80 @@ impl<'snapshot> PlanningState<'snapshot> {
         })
     }
 
+    #[must_use]
+    pub fn has_actor_facility_grant(&self, facility: EntityId, action_def: ActionDefId) -> bool {
+        self.actor_facility_grant(facility).is_some_and(|grant| {
+            grant.actor == self.snapshot.actor() && grant.intended_action == action_def
+        })
+    }
+
+    #[must_use]
+    pub fn is_actor_queued_at_facility(&self, facility: EntityId) -> bool {
+        match self.facility_queue_membership_overrides.get(&facility) {
+            Some(Some(_)) => true,
+            Some(None) => false,
+            None => self.actor_facility_queue_position(facility).is_some(),
+        }
+    }
+
+    #[must_use]
+    pub fn simulate_queue_join(mut self, facility: EntityId, action_def: ActionDefId) -> Self {
+        self.facility_queue_membership_overrides.insert(
+            facility,
+            Some(HypotheticalQueueJoin {
+                intended_action: action_def,
+            }),
+        );
+        self.facility_grant_overrides.insert(facility, None);
+        self
+    }
+
+    #[must_use]
+    pub fn simulate_grant_received(mut self, facility: EntityId, action_def: ActionDefId) -> Self {
+        self.facility_queue_membership_overrides
+            .insert(facility, None);
+        self.facility_grant_overrides.insert(
+            facility,
+            Some(GrantedFacilityUse {
+                actor: self.snapshot.actor(),
+                intended_action: action_def,
+                granted_at: worldwake_core::Tick(0),
+                expires_at: worldwake_core::Tick(0),
+            }),
+        );
+        self
+    }
+
+    #[must_use]
+    pub fn simulate_grant_consumed(mut self, facility: EntityId) -> Self {
+        self.facility_grant_overrides.insert(facility, None);
+        self
+    }
+
+    fn actor_facility_queue_position(&self, facility: EntityId) -> Option<u32> {
+        match self.facility_queue_membership_overrides.get(&facility) {
+            Some(Some(_) | None) => None,
+            None => self
+                .snapshot
+                .entities
+                .get(&facility)
+                .and_then(|snapshot| snapshot.facility_queue.as_ref())
+                .and_then(|queue| queue.actor_queue_position),
+        }
+    }
+
+    fn actor_facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+        match self.facility_grant_overrides.get(&facility) {
+            Some(grant) => grant.as_ref(),
+            None => self
+                .snapshot
+                .entities
+                .get(&facility)
+                .and_then(|snapshot| snapshot.facility_queue.as_ref())
+                .and_then(|queue| queue.active_grant.as_ref()),
+        }
+    }
+
     fn resolve_effective_place(
         &self,
         entity: EntityId,
@@ -744,12 +827,12 @@ impl BeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.workstation_tag)
     }
 
-    fn facility_queue_position(&self, _facility: EntityId, _actor: EntityId) -> Option<u32> {
-        None
+    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        (actor == self.snapshot.actor()).then(|| self.actor_facility_queue_position(facility))?
     }
 
-    fn facility_grant(&self, _facility: EntityId) -> Option<&worldwake_core::GrantedFacilityUse> {
-        None
+    fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::GrantedFacilityUse> {
+        self.actor_facility_grant(facility)
     }
 
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
@@ -1061,9 +1144,9 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -1097,6 +1180,8 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
+        facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
+        facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
     }
 
     impl BeliefView for StubBeliefView {
@@ -1205,6 +1290,16 @@ mod tests {
 
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
+        }
+
+        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+            self.facility_queue_positions
+                .get(&(facility, actor))
+                .copied()
+        }
+
+        fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+            self.facility_grants.get(&facility)
         }
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
@@ -1560,14 +1655,116 @@ mod tests {
     }
 
     #[test]
-    fn planning_state_queue_queries_remain_none_until_snapshot_support_lands() {
+    fn planning_state_queue_and_grant_queries_read_snapshot_data() {
         let (view, actor, _town, field, _bread) = test_view();
+        let other = entity(99);
+        let mut view = view;
+        view.facility_queue_positions.insert((field, actor), 2);
+        view.facility_grants.insert(
+            field,
+            GrantedFacilityUse {
+                actor: other,
+                intended_action: ActionDefId(7),
+                granted_at: Tick(3),
+                expires_at: Tick(6),
+            },
+        );
         let snapshot =
             build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot);
 
+        assert_eq!(state.facility_queue_position(field, actor), Some(2));
+        assert_eq!(
+            state.facility_grant(field),
+            Some(&GrantedFacilityUse {
+                actor: other,
+                intended_action: ActionDefId(7),
+                granted_at: Tick(3),
+                expires_at: Tick(6),
+            })
+        );
+    }
+
+    #[test]
+    fn planning_state_queue_queries_remain_conservative_for_other_actors() {
+        let (view, actor, _town, field, _bread) = test_view();
+        let other = entity(99);
+        let mut view = view;
+        view.facility_queue_positions.insert((field, actor), 1);
+        view.facility_queue_positions.insert((field, other), 0);
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(state.facility_queue_position(field, actor), Some(1));
+        assert_eq!(state.facility_queue_position(field, other), None);
+    }
+
+    #[test]
+    fn simulated_queue_join_marks_actor_as_queued_without_fabricating_position() {
+        let (view, actor, _town, field, _bread) = test_view();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot).simulate_queue_join(field, ActionDefId(44));
+
+        assert!(state.is_actor_queued_at_facility(field));
         assert_eq!(state.facility_queue_position(field, actor), None);
+        assert!(!state.has_actor_facility_grant(field, ActionDefId(44)));
+    }
+
+    #[test]
+    fn simulated_grant_received_sets_matching_grant_and_clears_queue_membership() {
+        let (view, actor, _town, field, _bread) = test_view();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot)
+            .simulate_queue_join(field, ActionDefId(44))
+            .simulate_grant_received(field, ActionDefId(44));
+
+        assert!(!state.is_actor_queued_at_facility(field));
+        assert!(state.has_actor_facility_grant(field, ActionDefId(44)));
+        assert_eq!(
+            state.facility_grant(field),
+            Some(&GrantedFacilityUse {
+                actor,
+                intended_action: ActionDefId(44),
+                granted_at: Tick(0),
+                expires_at: Tick(0),
+            })
+        );
+    }
+
+    #[test]
+    fn simulated_grant_consumed_clears_grant_without_mutating_snapshot() {
+        let (view, actor, _town, field, _bread) = test_view();
+        let mut view = view;
+        view.facility_grants.insert(
+            field,
+            GrantedFacilityUse {
+                actor,
+                intended_action: ActionDefId(44),
+                granted_at: Tick(3),
+                expires_at: Tick(6),
+            },
+        );
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot).simulate_grant_consumed(field);
+
         assert_eq!(state.facility_grant(field), None);
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&field)
+                .and_then(|entity| entity.facility_queue.as_ref())
+                .and_then(|queue| queue.active_grant.as_ref()),
+            Some(&GrantedFacilityUse {
+                actor,
+                intended_action: ActionDefId(44),
+                granted_at: Tick(3),
+                expires_at: Tick(6),
+            })
+        );
     }
 
     #[test]

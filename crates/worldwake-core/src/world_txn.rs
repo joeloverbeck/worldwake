@@ -735,7 +735,11 @@ impl<'w> WorldTxn<'w> {
         self.replace_simple_component(
             entity,
             component,
-            |world, entity| world.get_component_exclusive_facility_policy(entity).cloned(),
+            |world, entity| {
+                world
+                    .get_component_exclusive_facility_policy(entity)
+                    .cloned()
+            },
             super::world::World::remove_component_exclusive_facility_policy,
             |world, entity, component: crate::ExclusiveFacilityPolicy| {
                 world.insert_component_exclusive_facility_policy(entity, component)

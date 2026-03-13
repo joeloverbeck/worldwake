@@ -29,7 +29,14 @@ pub fn facility_queue_system(ctx: SystemExecutionContext<'_>) -> Result<(), Syst
         prune_invalid_waiters(world, event_log, facility, tick)?;
         expire_stale_grant(world, event_log, facility, tick)?;
         prune_structurally_invalid_heads(world, event_log, action_defs, facility, tick)?;
-        promote_ready_head(world, event_log, active_actions, action_defs, facility, tick)?;
+        promote_ready_head(
+            world,
+            event_log,
+            active_actions,
+            action_defs,
+            facility,
+            tick,
+        )?;
     }
 
     Ok(())
@@ -104,7 +111,13 @@ fn prune_structurally_invalid_heads(
         let queued_actor = queued.actor;
         let intended_action = queued.intended_action;
 
-        if !head_is_structurally_invalid(world, action_defs, facility, queued_actor, intended_action) {
+        if !head_is_structurally_invalid(
+            world,
+            action_defs,
+            facility,
+            queued_actor,
+            intended_action,
+        ) {
             return Ok(());
         }
 
@@ -130,20 +143,31 @@ fn promote_ready_head(
     facility: EntityId,
     tick: Tick,
 ) -> Result<(), SystemError> {
-    let Some(policy) = world.get_component_exclusive_facility_policy(facility).cloned() else {
+    let Some(policy) = world
+        .get_component_exclusive_facility_policy(facility)
+        .cloned()
+    else {
         return Ok(());
     };
     let Some(mut queue) = world.get_component_facility_use_queue(facility).cloned() else {
         return Ok(());
     };
-    if queue.granted.is_some() || active_exclusive_action_on_facility(active_actions, action_defs, facility) {
+    if queue.granted.is_some()
+        || active_exclusive_action_on_facility(active_actions, action_defs, facility)
+    {
         return Ok(());
     }
     let Some(queued) = queue.waiting.values().next() else {
         return Ok(());
     };
-    if !head_is_ready_to_start(world, active_actions, action_defs, facility, queued.actor, queued.intended_action)
-    {
+    if !head_is_ready_to_start(
+        world,
+        active_actions,
+        action_defs,
+        facility,
+        queued.actor,
+        queued.intended_action,
+    ) {
         return Ok(());
     }
 
@@ -328,7 +352,12 @@ mod tests {
 
     fn setup_registries(
         recipes: &RecipeRegistry,
-    ) -> (ActionDefRegistry, ActionHandlerRegistry, ActionDefId, ActionDefId) {
+    ) -> (
+        ActionDefRegistry,
+        ActionHandlerRegistry,
+        ActionDefId,
+        ActionDefId,
+    ) {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let harvest_id = register_harvest_actions(&mut defs, &mut handlers, recipes)[0];
@@ -373,7 +402,11 @@ mod tests {
         (world, place, facility)
     }
 
-    fn add_actor(world: &mut World, place: EntityId, recipe_id: worldwake_core::RecipeId) -> EntityId {
+    fn add_actor(
+        world: &mut World,
+        place: EntityId,
+        recipe_id: worldwake_core::RecipeId,
+    ) -> EntityId {
         let mut txn = new_txn(world, 1);
         let actor = txn.create_agent("Queue Actor", ControlSource::Ai).unwrap();
         txn.set_ground_location(actor, place).unwrap();
@@ -383,11 +416,20 @@ mod tests {
         actor
     }
 
-    fn enqueue(world: &mut World, facility: EntityId, actor: EntityId, intended_action: ActionDefId) {
+    fn enqueue(
+        world: &mut World,
+        facility: EntityId,
+        actor: EntityId,
+        intended_action: ActionDefId,
+    ) {
         let mut txn = new_txn(world, 2);
-        let mut queue = txn.get_component_facility_use_queue(facility).cloned().unwrap();
+        let mut queue = txn
+            .get_component_facility_use_queue(facility)
+            .cloned()
+            .unwrap();
         queue.enqueue(actor, intended_action, Tick(2)).unwrap();
-        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        txn.set_component_facility_use_queue(facility, queue)
+            .unwrap();
         commit_txn(txn);
     }
 
@@ -447,13 +489,11 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(
-            world
-                .get_component_facility_use_queue(facility)
-                .unwrap()
-                .waiting
-                .is_empty()
-        );
+        assert!(world
+            .get_component_facility_use_queue(facility)
+            .unwrap()
+            .waiting
+            .is_empty());
     }
 
     #[test]
@@ -476,13 +516,11 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(
-            world
-                .get_component_facility_use_queue(facility)
-                .unwrap()
-                .waiting
-                .is_empty()
-        );
+        assert!(world
+            .get_component_facility_use_queue(facility)
+            .unwrap()
+            .waiting
+            .is_empty());
     }
 
     #[test]
@@ -499,13 +537,11 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(
-            world
-                .get_component_facility_use_queue(facility)
-                .unwrap()
-                .waiting
-                .is_empty()
-        );
+        assert!(world
+            .get_component_facility_use_queue(facility)
+            .unwrap()
+            .waiting
+            .is_empty());
     }
 
     #[test]
@@ -517,9 +553,13 @@ mod tests {
         enqueue(&mut world, facility, actor, harvest_id);
         {
             let mut txn = new_txn(&mut world, 3);
-            let mut queue = txn.get_component_facility_use_queue(facility).cloned().unwrap();
+            let mut queue = txn
+                .get_component_facility_use_queue(facility)
+                .cloned()
+                .unwrap();
             queue.promote_head(Tick(3), nz(2));
-            txn.set_component_facility_use_queue(facility, queue).unwrap();
+            txn.set_component_facility_use_queue(facility, queue)
+                .unwrap();
             commit_txn(txn);
         }
         let mut log = EventLog::new();
@@ -551,13 +591,11 @@ mod tests {
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
 
-        assert!(
-            world
-                .get_component_facility_use_queue(facility)
-                .unwrap()
-                .waiting
-                .is_empty()
-        );
+        assert!(world
+            .get_component_facility_use_queue(facility)
+            .unwrap()
+            .waiting
+            .is_empty());
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
     }
 
@@ -572,13 +610,11 @@ mod tests {
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
 
-        assert!(
-            world
-                .get_component_facility_use_queue(facility)
-                .unwrap()
-                .waiting
-                .is_empty()
-        );
+        assert!(world
+            .get_component_facility_use_queue(facility)
+            .unwrap()
+            .waiting
+            .is_empty());
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
     }
 
@@ -663,13 +699,11 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &active, 3);
 
-        assert!(
-            world
-                .get_component_facility_use_queue(facility)
-                .unwrap()
-                .granted
-                .is_none()
-        );
+        assert!(world
+            .get_component_facility_use_queue(facility)
+            .unwrap()
+            .granted
+            .is_none());
     }
 
     #[test]
@@ -682,7 +716,10 @@ mod tests {
         let mut log = EventLog::new();
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
-        let first_queue = world.get_component_facility_use_queue(facility).unwrap().clone();
+        let first_queue = world
+            .get_component_facility_use_queue(facility)
+            .unwrap()
+            .clone();
         let first_event_count = log.len();
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
@@ -693,5 +730,4 @@ mod tests {
         );
         assert_eq!(log.len(), first_event_count);
     }
-
 }

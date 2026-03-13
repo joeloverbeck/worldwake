@@ -441,9 +441,9 @@ mod tests {
         CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DriveThresholds, EntityKind, EventLog, FacilityUseQueue,
         GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TravelDispositionProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-        World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TravelDispositionProfile,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -978,7 +978,8 @@ mod tests {
             queue.enqueue(head, ActionDefId(10), Tick(1)).unwrap();
             queue.enqueue(second, ActionDefId(11), Tick(2)).unwrap();
             queue.enqueue(third, ActionDefId(12), Tick(3)).unwrap();
-            txn.set_component_facility_use_queue(facility, queue).unwrap();
+            txn.set_component_facility_use_queue(facility, queue)
+                .unwrap();
             commit_txn(txn);
             (facility, head, third, absent)
         };
@@ -1002,7 +1003,8 @@ mod tests {
             let actor = txn.create_agent("Granted", ControlSource::Ai).unwrap();
             txn.set_ground_location(facility_with_grant, place).unwrap();
             txn.set_ground_location(idle_facility, place).unwrap();
-            txn.set_ground_location(missing_queue_facility, place).unwrap();
+            txn.set_ground_location(missing_queue_facility, place)
+                .unwrap();
             txn.set_ground_location(actor, place).unwrap();
             let granted_queue = FacilityUseQueue {
                 granted: Some(GrantedFacilityUse {
@@ -1018,7 +1020,12 @@ mod tests {
             txn.set_component_facility_use_queue(idle_facility, FacilityUseQueue::default())
                 .unwrap();
             commit_txn(txn);
-            (facility_with_grant, idle_facility, missing_queue_facility, actor)
+            (
+                facility_with_grant,
+                idle_facility,
+                missing_queue_facility,
+                actor,
+            )
         };
 
         let view = OmniscientBeliefView::new(&world);

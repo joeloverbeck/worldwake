@@ -63,8 +63,20 @@ mod tests {
             .collect::<Vec<_>>();
 
         for required in [
-            "eat", "drink", "sleep", "toilet", "wash", "queue_for_facility_use", "trade",
-            "travel", "pick_up", "put_down", "attack", "defend", "loot", "heal",
+            "eat",
+            "drink",
+            "sleep",
+            "toilet",
+            "wash",
+            "queue_for_facility_use",
+            "trade",
+            "travel",
+            "pick_up",
+            "put_down",
+            "attack",
+            "defend",
+            "loot",
+            "heal",
         ] {
             assert!(
                 action_names.contains(&required),

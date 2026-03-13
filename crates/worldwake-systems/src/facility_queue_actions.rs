@@ -6,9 +6,9 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    QueueForFacilityUsePayload, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-    Precondition, TargetSpec,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, Constraint,
+    DeterministicRng, DurationExpr, Interruptibility, Precondition, QueueForFacilityUsePayload,
+    TargetSpec,
 };
 
 pub fn register_queue_for_facility_use_action(
@@ -16,9 +16,14 @@ pub fn register_queue_for_facility_use_action(
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
     let handler = handlers.register(
-        ActionHandler::new(start_queue_for_facility_use, tick_queue_for_facility_use, commit_queue_for_facility_use, abort_queue_for_facility_use)
-            .with_payload_override_validator(validate_queue_payload_override)
-            .with_authoritative_payload_validator(validate_queue_payload_authoritatively),
+        ActionHandler::new(
+            start_queue_for_facility_use,
+            tick_queue_for_facility_use,
+            commit_queue_for_facility_use,
+            abort_queue_for_facility_use,
+        )
+        .with_payload_override_validator(validate_queue_payload_override)
+        .with_authoritative_payload_validator(validate_queue_payload_authoritatively),
     );
     let id = ActionDefId(defs.len() as u32);
     defs.register(queue_for_facility_use_action_def(id, handler))
@@ -98,12 +103,13 @@ fn validate_queue_payload_authoritatively(
         .get_component_workstation_marker(facility)
         .copied()
         .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!(
-                "facility {facility} lacks workstation marker"
-            ))
+            ActionError::PreconditionFailed(format!("facility {facility} lacks workstation marker"))
         })?;
 
-    if world.get_component_exclusive_facility_policy(facility).is_none() {
+    if world
+        .get_component_exclusive_facility_policy(facility)
+        .is_none()
+    {
         return Err(ActionError::PreconditionFailed(format!(
             "facility {facility} lacks ExclusiveFacilityPolicy"
         )));
@@ -112,9 +118,7 @@ fn validate_queue_payload_authoritatively(
     let queue = world
         .get_component_facility_use_queue(facility)
         .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!(
-                "facility {facility} lacks FacilityUseQueue"
-            ))
+            ActionError::PreconditionFailed(format!("facility {facility} lacks FacilityUseQueue"))
         })?;
     if queue.has_actor(actor) {
         return Err(ActionError::PreconditionFailed(format!(
@@ -122,14 +126,12 @@ fn validate_queue_payload_authoritatively(
         )));
     }
 
-    let intended_def = registry
-        .get(payload.intended_action)
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!(
-                "intended action {:?} is not registered",
-                payload.intended_action
-            ))
-        })?;
+    let intended_def = registry.get(payload.intended_action).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!(
+            "intended action {:?} is not registered",
+            payload.intended_action
+        ))
+    })?;
     let intended_tag = exclusive_facility_workstation_tag(intended_def).ok_or_else(|| {
         ActionError::PreconditionFailed(format!(
             "intended action {:?} is not an exclusive facility operation",
@@ -202,12 +204,11 @@ fn commit_queue_for_facility_use(
         .get_component_facility_use_queue(facility)
         .cloned()
         .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!(
-                "facility {facility} lacks FacilityUseQueue"
-            ))
+            ActionError::PreconditionFailed(format!("facility {facility} lacks FacilityUseQueue"))
         })?;
 
-    queue.enqueue(instance.actor, payload.intended_action, txn.tick())
+    queue
+        .enqueue(instance.actor, payload.intended_action, txn.tick())
         .map_err(|err| ActionError::PreconditionFailed(format!("{err:?}")))?;
     txn.set_component_facility_use_queue(facility, queue)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -385,7 +386,10 @@ mod tests {
         assert_eq!(def.name, "queue_for_facility_use");
         assert_eq!(def.domain, worldwake_sim::ActionDomain::Production);
         assert_eq!(def.duration, DurationExpr::Fixed(NonZeroU32::MIN));
-        assert_eq!(def.interruptibility, worldwake_sim::Interruptibility::FreelyInterruptible);
+        assert_eq!(
+            def.interruptibility,
+            worldwake_sim::Interruptibility::FreelyInterruptible
+        );
         assert_eq!(def.visibility, VisibilitySpec::SamePlace);
         assert!(def.causal_event_tags.contains(&EventTag::WorldMutation));
         assert_eq!(
@@ -501,9 +505,13 @@ mod tests {
         let (mut world, actor, facility) = setup_world(true);
         {
             let mut txn = new_txn(&mut world, 2);
-            let mut queue = txn.get_component_facility_use_queue(facility).cloned().unwrap();
+            let mut queue = txn
+                .get_component_facility_use_queue(facility)
+                .cloned()
+                .unwrap();
             queue.enqueue(actor, harvest_id, Tick(2)).unwrap();
-            txn.set_component_facility_use_queue(facility, queue).unwrap();
+            txn.set_component_facility_use_queue(facility, queue)
+                .unwrap();
             commit_txn(txn);
         }
         let affordance = queue_affordance(queue_id, actor, facility, harvest_id);
@@ -542,10 +550,14 @@ mod tests {
         let (mut world, actor, facility) = setup_world(true);
         {
             let mut txn = new_txn(&mut world, 2);
-            let mut queue = txn.get_component_facility_use_queue(facility).cloned().unwrap();
+            let mut queue = txn
+                .get_component_facility_use_queue(facility)
+                .cloned()
+                .unwrap();
             queue.enqueue(actor, harvest_id, Tick(2)).unwrap();
             queue.promote_head(Tick(3), nz(3));
-            txn.set_component_facility_use_queue(facility, queue).unwrap();
+            txn.set_component_facility_use_queue(facility, queue)
+                .unwrap();
             commit_txn(txn);
         }
         let affordance = queue_affordance(queue_id, actor, facility, harvest_id);

@@ -50,13 +50,11 @@ pub use action_def_registry::ActionDefRegistry;
 pub use action_domain::ActionDomain;
 pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
-pub use action_validation::validate_action_def_authoritatively;
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
-    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn,
-    AuthoritativePayloadValidatorFn, CommitOutcome, ExternalAbortReason, InterruptReason,
-    Materialization, MaterializationTag, PayloadEntityRole, PayloadOverrideValidatorFn,
-    SelfTargetActionKind,
+    ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, AuthoritativePayloadValidatorFn,
+    CommitOutcome, ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
+    PayloadEntityRole, PayloadOverrideValidatorFn, SelfTargetActionKind,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};
@@ -71,6 +69,7 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
+pub use action_validation::validate_action_def_authoritatively;
 pub use affordance::Affordance;
 pub use affordance_query::{
     evaluate_constraint, evaluate_precondition, get_affordances, requested_affordance_matches,

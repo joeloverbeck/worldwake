@@ -1265,7 +1265,10 @@ mod tests {
             PlannerOpKind::Trade
         );
         assert_eq!(
-            semantics_by_name.get("queue_for_facility_use").unwrap().op_kind,
+            semantics_by_name
+                .get("queue_for_facility_use")
+                .unwrap()
+                .op_kind,
             PlannerOpKind::QueueForFacilityUse
         );
         assert_eq!(
