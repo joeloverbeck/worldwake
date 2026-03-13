@@ -218,12 +218,17 @@ fn search_candidates(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
 ) -> Vec<SearchCandidate> {
-    let mut candidates = get_affordances(&node.state, node.state.snapshot().actor(), registry, handlers)
-        .into_iter()
-        .flat_map(|affordance| {
-            search_candidates_from_affordance(goal, &node.state, registry, &affordance)
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = get_affordances(
+        &node.state,
+        node.state.snapshot().actor(),
+        registry,
+        handlers,
+    )
+    .into_iter()
+    .flat_map(|affordance| {
+        search_candidates_from_affordance(goal, &node.state, registry, &affordance)
+    })
+    .collect::<Vec<_>>();
     candidates.extend(
         planner_only_candidates(&node.state, semantics_table)
             .into_iter()
@@ -330,12 +335,9 @@ fn queue_intended_actions_for(
                 }
                 def.payload.as_craft().and_then(|payload| {
                     (payload.required_workstation_tag == workstation_tag
-                        && payload
-                            .outputs
-                            .iter()
-                            .any(|(output, quantity)| {
-                                *output == commodity && *quantity > worldwake_core::Quantity(0)
-                            }))
+                        && payload.outputs.iter().any(|(output, quantity)| {
+                            *output == commodity && *quantity > worldwake_core::Quantity(0)
+                        }))
                     .then_some(def.id)
                 })
             })
@@ -391,8 +393,8 @@ fn terminal_kind(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_successor, search_candidate_from_planner, search_candidates, search_plan,
-        FrontierEntry, SearchCandidate, SearchNode,
+        build_successor, root_node, search_candidate_from_planner, search_candidates,
+        search_candidates_from_affordance, search_plan, FrontierEntry, SearchCandidate, SearchNode,
     };
     use crate::planner_ops::planner_only_candidates;
     use crate::{
@@ -407,17 +409,17 @@ mod tests {
         test_utils::sample_trade_disposition_profile, ActionDefId, BodyCostPerTick, CarryCapacity,
         CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
         DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
-        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
-        FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place, PrototypePlace,
-        Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile,
-        TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, Place, PrototypePlace, Quantity, RecipeId,
+        ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
+        TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, BeliefView, DurationExpr,
-        OmniscientBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
-        TransportActionPayload,
+        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, BeliefView,
+        DurationExpr, OmniscientBeliefView, QueueForFacilityUsePayload, RecipeDefinition,
+        RecipeRegistry, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -695,6 +697,18 @@ mod tests {
             name: "Harvest Apples".to_string(),
             inputs: vec![],
             outputs: vec![(CommodityKind::Apple, Quantity(2))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::OrchardRow),
+            required_tool_kinds: vec![],
+            body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        }
+    }
+
+    fn harvest_apple_recipe_variant(name: &str, output_quantity: u32) -> RecipeDefinition {
+        RecipeDefinition {
+            name: name.to_string(),
+            inputs: vec![],
+            outputs: vec![(CommodityKind::Apple, Quantity(output_quantity))],
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::OrchardRow),
             required_tool_kinds: vec![],
@@ -2051,8 +2065,7 @@ mod tests {
             total_estimated_ticks: 0,
         };
 
-        let initial_candidates =
-            search_candidates(&goal, &node, &semantics, &registry, &handlers);
+        let initial_candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers);
         let pick_up = initial_candidates
             .iter()
             .find(|candidate| {
@@ -2442,6 +2455,29 @@ mod tests {
         }
     }
 
+    fn enqueue_actor_for_exclusive_fixture(fixture: &mut ExclusiveOrchardFixture, queued_at: Tick) {
+        let mut txn = WorldTxn::new(
+            &mut fixture.world,
+            queued_at,
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let mut queue = txn
+            .get_component_facility_use_queue(fixture.orchard_row)
+            .cloned()
+            .expect("exclusive fixture should include queue state");
+        queue
+            .enqueue(fixture.actor, fixture.harvest_action, queued_at)
+            .expect("fixture actor should be queueable");
+        txn.set_component_facility_use_queue(fixture.orchard_row, queue)
+            .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+    }
+
     #[test]
     fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
         let fixture = build_exclusive_orchard_fixture(false);
@@ -2523,7 +2559,10 @@ mod tests {
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Harvest);
         assert_eq!(
-            plan.steps[0].payload_override.as_ref().and_then(ActionPayload::as_harvest),
+            plan.steps[0]
+                .payload_override
+                .as_ref()
+                .and_then(ActionPayload::as_harvest),
             Some(&worldwake_sim::HarvestActionPayload {
                 recipe_id: RecipeId(0),
                 required_workstation_tag: WorkstationTag::OrchardRow,
@@ -2533,5 +2572,163 @@ mod tests {
             })
         );
         assert_ne!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+    }
+
+    #[test]
+    fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued() {
+        let mut fixture = build_exclusive_orchard_fixture(false);
+        enqueue_actor_for_exclusive_fixture(&mut fixture, Tick(2));
+
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([fixture.orchard_row]),
+            evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        };
+        let view = OmniscientBeliefView::new(&fixture.world);
+        let snapshot = build_planning_snapshot(
+            &view,
+            fixture.actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+        );
+        let queue_def = fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_facility_use")
+            .map(|def| def.id)
+            .expect("queue action should be registered");
+
+        let candidates = search_candidates(
+            &goal,
+            &root_node(&snapshot),
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+        );
+
+        assert!(!candidates.iter().any(|candidate| {
+            candidate.def_id == queue_def
+                && candidate.authoritative_targets == vec![fixture.orchard_row]
+        }));
+    }
+
+    #[test]
+    fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
+        let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(harvest_apple_recipe_variant("Harvest Apples Alpha", 2));
+        recipes.register(harvest_apple_recipe_variant("Harvest Apples Beta", 1));
+        let (registry, _handlers) = build_registry_with_recipes(&recipes);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, orchard_row) = {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            let actor = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+            let orchard_row = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, orchard_farm).unwrap();
+            txn.set_ground_location(orchard_row, orchard_farm).unwrap();
+            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+                .unwrap();
+            txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0), RecipeId(1)]))
+                .unwrap();
+            txn.set_component_workstation_marker(
+                orchard_row,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                orchard_row,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(10),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_exclusive_facility_policy(
+                orchard_row,
+                ExclusiveFacilityPolicy {
+                    grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+                .unwrap();
+            let mut event_log = EventLog::new();
+            let _ = txn.commit(&mut event_log);
+            (actor, orchard_row)
+        };
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([orchard_row]),
+            evidence_places: BTreeSet::from([orchard_farm]),
+        };
+        let view = OmniscientBeliefView::new(&world);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+        );
+        let state = PlanningState::new(&snapshot);
+        let affordance = Affordance {
+            actor,
+            def_id: registry
+                .iter()
+                .find(|def| def.name == "queue_for_facility_use")
+                .map(|def| def.id)
+                .expect("queue action should be registered"),
+            bound_targets: vec![orchard_row],
+            payload_override: None,
+            explanation: None,
+        };
+
+        let queue_candidates =
+            search_candidates_from_affordance(&goal, &state, &registry, &affordance);
+
+        assert_eq!(queue_candidates.len(), 2);
+        let intended_actions = queue_candidates
+            .iter()
+            .filter_map(|candidate| {
+                candidate
+                    .payload_override
+                    .as_ref()
+                    .and_then(ActionPayload::as_queue_for_facility_use)
+                    .map(|payload| payload.intended_action)
+            })
+            .collect::<BTreeSet<_>>();
+        let expected_actions = registry
+            .iter()
+            .filter(|def| {
+                matches!(def.payload.as_harvest(), Some(payload)
+                    if payload.output_commodity == CommodityKind::Apple
+                        && payload.required_workstation_tag == WorkstationTag::OrchardRow)
+            })
+            .map(|def| def.id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(intended_actions, expected_actions);
     }
 }

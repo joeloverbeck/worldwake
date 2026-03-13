@@ -339,11 +339,7 @@ fn apply_consume_matching_target_transition<'snapshot>(
     }
 
     Some(apply_goal_model_fallback_transition(
-        goal,
-        semantics,
-        state,
-        targets,
-        None,
+        goal, semantics, state, targets, None,
     ))
 }
 

@@ -340,9 +340,11 @@ fn ensure_matching_facility_grant(
                 "facility {facility} is exclusive but lacks FacilityUseQueue grant state"
             )))
         }
-        (None, Some(_)) => return Err(ActionError::PreconditionFailed(format!(
+        (None, Some(_)) => {
+            return Err(ActionError::PreconditionFailed(format!(
             "facility {facility} has FacilityUseQueue grant state without ExclusiveFacilityPolicy"
-        ))),
+        )))
+        }
     };
     match queue.granted.as_ref() {
         Some(granted) if granted.actor == actor && granted.intended_action == action_def => Ok(()),

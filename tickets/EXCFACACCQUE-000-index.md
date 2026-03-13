@@ -15,7 +15,7 @@
 | EXCFACACCQUE-005 | Belief view extensions (queue position, grant query) | sim | 001 |
 | EXCFACACCQUE-006 | Planning snapshot + planning state queue/grant support | ai, sim | 001, 005 |
 | EXCFACACCQUE-007 | `QueueForFacilityUse` planner op + semantics | ai | 001, 006 |
-| EXCFACACCQUE-008 | Candidate generation updates for queue routing | ai | 001, 007 |
+| EXCFACACCQUE-008 | Search-layer queue routing verification for exclusive facilities | ai | 001, 007 |
 | EXCFACACCQUE-009 | Ranking + decision runtime grant detection + replan | ai | 001, 008 |
 | EXCFACACCQUE-010 | Failure handling — queue invalidation as explicit blocker | ai | 001, 009 |
 | EXCFACACCQUE-011 | Integration tests — multi-agent queue contention | all | 001–010 |

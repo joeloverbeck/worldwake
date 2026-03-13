@@ -46,7 +46,7 @@ While waiting for a grant, agents should be free to pursue other interruptible g
 ## Out of Scope
 
 - Planner ops (EXCFACACCQUE-007 — assumed complete)
-- Candidate generation (EXCFACACCQUE-008 — assumed complete)
+- Search-layer queue routing verification (EXCFACACCQUE-008 — assumed complete)
 - Failure handling (EXCFACACCQUE-010)
 - `facility_queue_system` (EXCFACACCQUE-003)
 - Queue types or belief views (EXCFACACCQUE-001, 005)

@@ -43,7 +43,7 @@ When a grant expires because the agent did not use it (detected via `QueueGrantE
 - `facility_queue_system` event emission (EXCFACACCQUE-003 — assumed complete)
 - Queue types (EXCFACACCQUE-001)
 - Belief views (EXCFACACCQUE-005)
-- Candidate generation or ranking (EXCFACACCQUE-008, 009)
+- Search-layer queue routing verification or ranking (EXCFACACCQUE-008, 009)
 - `BlockedIntentMemory` data structure changes (existing structure should suffice)
 
 ## Acceptance Criteria

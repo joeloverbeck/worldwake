@@ -743,7 +743,9 @@ mod tests {
 
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Trade));
-        assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::QueueForFacilityUse));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&PlannerOpKind::QueueForFacilityUse));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Harvest));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Craft));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::MoveCargo));

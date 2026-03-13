@@ -257,9 +257,9 @@ fn snapshot_facility_queue(
     let active_grant = view.facility_grant(entity).cloned();
     (has_policy || actor_queue_position.is_some() || active_grant.is_some()).then_some(
         SnapshotFacilityQueue {
-        actor_queue_position,
-        active_grant,
-    },
+            actor_queue_position,
+            active_grant,
+        },
     )
 }
 
