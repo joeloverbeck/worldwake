@@ -29,6 +29,7 @@ E14 ──→ E16 (succession needs beliefs/loyalty)
 E14 ──→ S01 (ownership claims need belief-mediated disputes)
 E14 ──→ S02 (goal policy unification needs belief-based ranking)
 E14 ──→ S03 (planner target identity needs belief view)
+E14 ──→ S07 (care intent must be belief-mediated and patient-anchored)
 E15, S01, S03 ──→ E17 (crime needs discovery + ownership claims + planner binding)
 E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
@@ -81,6 +82,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S01**: Production Output Ownership Claims
 - **S02**: Goal Decision Policy Unification
 - **S03**: Planner Target Identity & Affordance Binding
+- **S07**: Care Intent & Treatment Targeting
 
 **Step 11** (needs E15, S01, S03):
 - **E17**: Crime, Theft & Justice
@@ -142,6 +144,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |
 | `S02-goal-decision-policy-unification.md` | 3 | 10 | E14 |
 | `S03-planner-target-identity-and-affordance-binding.md` | 3 | 10 | E14 |
+| `S07-care-intent-and-treatment-targeting.md` | 3 | 10 | E14 |
 | `E17-crime-theft-justice.md` | 3 | 11 | E15, S01, S03 |
 | `E18-bandit-dynamics.md` | 4 | 12 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 12 | E16, S02 |

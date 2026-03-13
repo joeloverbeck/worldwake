@@ -138,6 +138,7 @@ fn emit_combat_candidates(
 ) {
     emit_engage_hostile_goals(candidates, ctx);
     emit_reduce_danger_goal(candidates, ctx);
+    emit_treatment_candidates(candidates, ctx);
     emit_heal_goals(candidates, ctx);
     emit_loot_goals(candidates, ctx);
     emit_bury_goals(candidates, ctx);
@@ -373,7 +374,7 @@ fn emit_heal_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         return;
     }
 
-    for target in local_wounded_targets(ctx.view, ctx.agent, ctx.place) {
+    for target in local_heal_targets(ctx.view, ctx.agent, ctx.place) {
         let mut evidence = Evidence::with_entity(target);
         if let Some(place) = ctx.place {
             evidence.places.insert(place);
@@ -381,6 +382,53 @@ fn emit_heal_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         emit_candidate(
             candidates,
             GoalKind::Heal { target },
+            evidence,
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
+}
+
+fn emit_treatment_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
+    let heal_targets = local_heal_targets(ctx.view, ctx.agent, ctx.place);
+    if heal_targets.is_empty() {
+        return;
+    }
+
+    for commodity in CommodityKind::ALL
+        .into_iter()
+        .filter(|commodity| commodity.spec().treatment_profile.is_some())
+    {
+        if ctx.view.commodity_quantity(ctx.agent, commodity) > Quantity(0)
+            || local_controlled_commodity_exists(ctx.view, ctx.agent, ctx.place, commodity)
+        {
+            continue;
+        }
+
+        let Some(mut evidence) = acquisition_path_evidence(
+            ctx.view,
+            ctx.agent,
+            ctx.place,
+            commodity,
+            ctx.recipes,
+            ctx.travel_horizon,
+        ) else {
+            continue;
+        };
+
+        evidence.entities.extend(heal_targets.iter().copied());
+        if let Some(place) = ctx.place {
+            evidence.places.insert(place);
+        }
+        emit_candidate(
+            candidates,
+            GoalKind::AcquireCommodity {
+                commodity,
+                purpose: CommodityPurpose::Treatment,
+            },
             evidence,
             ctx.blocked,
             ctx.current_tick,
@@ -431,7 +479,7 @@ fn emit_produce_goals(
         let serves_treatment = recipe.outputs.iter().any(|(commodity, _)| {
             commodity.spec().treatment_profile.is_some()
                 && ctx.view.commodity_quantity(ctx.agent, *commodity) == Quantity(0)
-                && !local_wounded_targets(ctx.view, ctx.agent, ctx.place).is_empty()
+                && !local_heal_targets(ctx.view, ctx.agent, ctx.place).is_empty()
         });
         let serves_restock = recipe
             .outputs
@@ -886,6 +934,17 @@ fn local_wounded_targets(
         }
     }
     targets.into_iter().collect()
+}
+
+fn local_heal_targets(
+    view: &dyn BeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+) -> Vec<EntityId> {
+    local_wounded_targets(view, agent, place)
+        .into_iter()
+        .filter(|target| *target != agent)
+        .collect()
 }
 
 fn local_controlled_commodity_exists(
@@ -1988,6 +2047,144 @@ mod tests {
             &candidates,
             GoalKind::Heal { target: patient }
         ));
+    }
+
+    #[test]
+    fn self_wounds_do_not_emit_treatment_acquire_goal_without_a_healable_other() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.entities_at.insert(place, vec![agent, seller]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.wounds.insert(agent, vec![wound(100)]);
+        view.sellers
+            .insert((place, CommodityKind::Medicine), vec![seller]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Medicine,
+                purpose: CommodityPurpose::Treatment,
+            }
+        ));
+    }
+
+    #[test]
+    fn local_wounded_other_can_emit_treatment_acquire_goal() {
+        let agent = entity(1);
+        let patient = entity(2);
+        let seller = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, patient, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(patient, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(patient, place);
+        view.effective_places.insert(seller, place);
+        view.entities_at.insert(place, vec![agent, patient, seller]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.wounds.insert(patient, vec![wound(100)]);
+        view.sellers
+            .insert((place, CommodityKind::Medicine), vec![seller]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Medicine,
+                purpose: CommodityPurpose::Treatment,
+            }
+        ));
+    }
+
+    #[test]
+    fn treatment_acquire_goal_is_suppressed_when_medicine_is_already_controlled() {
+        let agent = entity(1);
+        let place = entity(10);
+        let medicine = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, medicine]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(medicine, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(medicine, place);
+        view.entities_at.insert(place, vec![agent, medicine]);
+        view.direct_possessions.insert(agent, vec![medicine]);
+        view.direct_possessors.insert(medicine, agent);
+        view.lot_commodities.insert(medicine, CommodityKind::Medicine);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Medicine), Quantity(1));
+        view.commodity_quantities
+            .insert((medicine, CommodityKind::Medicine), Quantity(1));
+        view.controllable.insert((agent, medicine));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.wounds.insert(agent, vec![wound(100)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Medicine,
+                purpose: CommodityPurpose::Treatment,
+            }
+        ));
+    }
+
+    #[test]
+    fn self_wounds_do_not_emit_heal_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.entities_at.insert(place, vec![agent]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Medicine), Quantity(1));
+        view.wounds.insert(agent, vec![wound(100)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(&candidates, GoalKind::Heal { target: agent }));
     }
 
     #[test]
