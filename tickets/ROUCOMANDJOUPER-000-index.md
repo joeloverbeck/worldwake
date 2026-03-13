@@ -17,7 +17,7 @@ Adds explicit journey tracking to the AI runtime layer so agents can persist tow
 | 003 | `ROUCOMANDJOUPER-003-journey-aware-goal-switching.md` | Journey-aware goal switching margin override | HIGH | Small | 001, 002 |
 | 004 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-004-plan-selection-journey-margin.md` | Controller-level journey switch margin policy | HIGH | Medium | 003 |
 | 005 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-005-journey-field-advancement.md` | Journey field advancement on arrival and blockage tracking | HIGH | Medium | 002, 004 |
-| 006 | `ROUCOMANDJOUPER-006-journey-clearing-conditions.md` | Journey clearing conditions and blocked-intent integration | HIGH | Medium | 001, 002, 004, 005, 008, 009 |
+| 006 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-006-blocked-leg-patience-exhaustion.md` | Blocked-leg patience exhaustion and journey commitment clearing | HIGH | Medium | 001, 002, 004, 005, 008, 009 |
 | 007 | `ROUCOMANDJOUPER-007-debug-surface.md` | Observable debug surface for journey state | MEDIUM | Small | 002, 004, 005, 008, 009 |
 | 008 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-008-explicit-journey-commitment-anchor.md` | Explicit journey commitment anchor on AgentDecisionRuntime | HIGH | Medium | 002, 004, 005 |
 | 009 | `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-009-journey-preserving-detour-policy.md` | Journey-preserving detour and abandonment policy | HIGH | Medium | 004, 005, 008 |
@@ -27,12 +27,12 @@ Adds explicit journey tracking to the AI runtime layer so agents can persist tow
 ```
 ROUCOMANDJOUPER-001 (TravelDispositionProfile)
   └── ROUCOMANDJOUPER-003 (Goal switching margin override)
-  └── ROUCOMANDJOUPER-006 (Clearing conditions use blocked_leg_patience_ticks)
+  └── ROUCOMANDJOUPER-006 (Blocked-leg patience exhaustion uses blocked_leg_patience_ticks)
 
 ROUCOMANDJOUPER-002 (Journey temporal fields)
   └── ROUCOMANDJOUPER-003 (Needs journey_established_at for "active journey" check)
   └── ROUCOMANDJOUPER-005 (Needs fields to advance/reset)
-  └── ROUCOMANDJOUPER-006 (Needs fields to clear)
+  └── ROUCOMANDJOUPER-006 (Needs fields to clear on patience exhaustion)
   └── ROUCOMANDJOUPER-007 (Needs fields to expose)
 
 ROUCOMANDJOUPER-003 (Goal switching)
@@ -41,22 +41,22 @@ ROUCOMANDJOUPER-003 (Goal switching)
 ROUCOMANDJOUPER-004 (Controller margin policy)
   └── ROUCOMANDJOUPER-008 (Needs a durable runtime commitment anchor to outlive individual plans)
   └── ROUCOMANDJOUPER-009 (Relation-based detour vs abandonment policy builds on the controller margin seam)
-  └── ROUCOMANDJOUPER-006 (Clearing/reprioritization logic assumes shared margin policy boundary)
+  └── ROUCOMANDJOUPER-006 (Patience-exhaustion clearing assumes shared margin policy boundary)
   └── ROUCOMANDJOUPER-007 (Debug surface should expose controller-level effective margin/source)
 
 ROUCOMANDJOUPER-005 (Field advancement)
   └── ROUCOMANDJOUPER-008 (Blocked-step replanning now preserves commitment longer than a single plan instance)
   └── ROUCOMANDJOUPER-009 (Detour policy builds on recoverable journey advancement/blockage tracking)
-  └── ROUCOMANDJOUPER-006 (Blockage counter feeds into clearing)
+  └── ROUCOMANDJOUPER-006 (Blockage counter feeds into patience exhaustion)
   └── ROUCOMANDJOUPER-007 (Debug surface reads advancement state)
 
 ROUCOMANDJOUPER-008 (Explicit commitment anchor)
   └── ROUCOMANDJOUPER-009 (Detour policy needs durable committed goal/destination state)
-  └── ROUCOMANDJOUPER-006 (Clearing semantics must act on commitment, not just the current plan)
+  └── ROUCOMANDJOUPER-006 (Exhaustion clearing must act on commitment, not just the current plan)
   └── ROUCOMANDJOUPER-007 (Debug surface must expose commitment state and destination)
 
 ROUCOMANDJOUPER-009 (Detour/abandonment policy)
-  └── ROUCOMANDJOUPER-006 (Clearing should distinguish suspension from abandonment)
+  └── ROUCOMANDJOUPER-006 (Exhaustion clearing should distinguish suspension from abandonment)
   └── ROUCOMANDJOUPER-007 (Debug should expose commitment relation and suspend/active state)
 ```
 
@@ -69,7 +69,7 @@ ROUCOMANDJOUPER-009 (Detour/abandonment policy)
 5. ROUCOMANDJOUPER-005 (Field advancement) — depends on 002
 6. ROUCOMANDJOUPER-008 (Explicit commitment anchor) — separates durable commitment from the current plan
 7. ROUCOMANDJOUPER-009 (Detour/abandonment policy) — applies relation-based controller behavior on top of the commitment anchor
-8. ROUCOMANDJOUPER-006 (Clearing conditions) — should land after the anchor/policy split so clearing semantics operate on true abandonment
+8. ROUCOMANDJOUPER-006 (Blocked-leg patience exhaustion) — should land after the anchor/policy split so exhaustion clearing operates on true abandonment
 9. ROUCOMANDJOUPER-007 (Debug surface) — should expose the final commitment model, not the interim plan-derived one
 
 Steps 1 and 2 can be done in parallel. Ticket 004 should land before the later controller/runtime lifecycle tickets. Tickets 008 and 009 should land before 006 and 007 so commitment state, detour policy, clearing, and debug all describe the same architecture.

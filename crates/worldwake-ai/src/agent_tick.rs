@@ -1,15 +1,16 @@
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::{
-    build_planning_snapshot, build_semantics_table, clear_resolved_blockers, evaluate_interrupt,
-    handle_plan_failure, rank_candidates, resolve_planning_targets_with, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision,
-    JourneyCommitmentState, PlanFailureContext, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, PlanningBudget, RankedGoal,
+    authoritative_target, build_planning_snapshot, build_semantics_table,
+    clear_resolved_blockers, evaluate_interrupt, handle_plan_failure, rank_candidates,
+    resolve_planning_targets_with, revalidate_next_step, search_plan, select_best_plan,
+    AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision, JourneyCommitmentState,
+    PlanFailureContext, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
+    PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BlockedIntentMemory, CauseRef, CommodityKind, ControlSource, EntityId, Permille, Quantity,
-    Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorldTxn,
+    BlockedIntent, BlockedIntentMemory, CauseRef, CommodityKind, ControlSource, EntityId,
+    Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionDefId, ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
@@ -260,14 +261,32 @@ fn enqueue_valid_step_or_handle_failure(
     valid: bool,
 ) -> Result<(), TickInputError> {
     if !valid {
-        if handle_recoverable_travel_step_blockage(runtime, step) {
+        let view = OmniscientBeliefView::new(ctx.world);
+        if handle_recoverable_travel_step_blockage(
+            &view,
+            runtime,
+            blocked_memory,
+            agent,
+            step,
+            tick,
+            ctx.budget,
+        ) {
             return Ok(());
         }
         return handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None);
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
-        if handle_recoverable_travel_step_blockage(runtime, step) {
+        let view = OmniscientBeliefView::new(ctx.world);
+        if handle_recoverable_travel_step_blockage(
+            &view,
+            runtime,
+            blocked_memory,
+            agent,
+            step,
+            tick,
+            ctx.budget,
+        ) {
             return finalize_agent_tick(
                 ctx.world,
                 ctx.event_log,
@@ -747,8 +766,13 @@ fn update_journey_fields_for_adopted_plan(
 }
 
 fn handle_recoverable_travel_step_blockage(
+    view: &dyn BeliefView,
     runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut BlockedIntentMemory,
+    agent: EntityId,
     step: &PlannedStep,
+    tick: Tick,
+    budget: &PlanningBudget,
 ) -> bool {
     if step.op_kind != crate::PlannerOpKind::Travel || !runtime.has_active_journey_travel() {
         return false;
@@ -758,11 +782,41 @@ fn handle_recoverable_travel_step_blockage(
         .consecutive_blocked_leg_ticks
         .checked_add(1)
         .expect("consecutive blocked leg ticks overflowed");
+
+    let patience_exhausted = view
+        .travel_disposition_profile(agent)
+        .is_some_and(|profile| {
+            runtime.consecutive_blocked_leg_ticks >= profile.blocked_leg_patience_ticks.get()
+        });
+
+    if patience_exhausted {
+        let goal_key = runtime.current_goal.unwrap_or_else(|| {
+            runtime
+                .current_plan
+                .as_ref()
+                .map(|plan| plan.goal)
+                .expect("active journey travel must retain a current goal")
+        });
+        blocked_memory.record(BlockedIntent {
+            goal_key,
+            blocking_fact: worldwake_core::BlockingFact::NoKnownPath,
+            related_entity: None,
+            related_place: blocked_leg_target(step),
+            observed_tick: tick,
+            expires_tick: tick + u64::from(budget.structural_block_ticks),
+        });
+        runtime.clear_journey_commitment();
+    }
+
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.materialization_bindings.clear();
     runtime.dirty = true;
     true
+}
+
+fn blocked_leg_target(step: &PlannedStep) -> Option<EntityId> {
+    step.targets.first().copied().and_then(authoritative_target)
 }
 
 fn resolve_step_targets(
@@ -1490,6 +1544,24 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
         let step = plan.steps[0].clone();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_travel_disposition_profile(
+                actor,
+                TravelDispositionProfile {
+                    route_replan_margin: Permille::new(300).unwrap(),
+                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = OmniscientBeliefView::new(&world);
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(plan.clone()),
@@ -1501,8 +1573,17 @@ mod tests {
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
         };
+        let mut blocked_memory = BlockedIntentMemory::default();
 
-        assert!(handle_recoverable_travel_step_blockage(&mut runtime, &step));
+        assert!(handle_recoverable_travel_step_blockage(
+            &view,
+            &mut runtime,
+            &mut blocked_memory,
+            actor,
+            &step,
+            Tick(9),
+            &PlanningBudget::default(),
+        ));
         assert_eq!(runtime.consecutive_blocked_leg_ticks, 2);
         assert!(runtime.dirty);
         assert_eq!(runtime.current_goal, Some(goal));
@@ -1510,10 +1591,84 @@ mod tests {
         assert_eq!(runtime.journey_committed_destination, Some(entity(11)));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
+        assert!(blocked_memory.intents.is_empty());
         assert!(runtime
             .materialization_bindings
             .hypothetical_to_authoritative
             .is_empty());
+    }
+
+    #[test]
+    fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let destination = entity(11);
+        let plan = PlannedPlan::new(
+            goal,
+            vec![travel_step(1, destination), barrier_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let step = plan.steps[0].clone();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_travel_disposition_profile(
+                actor,
+                TravelDispositionProfile {
+                    route_replan_margin: Permille::new(300).unwrap(),
+                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(2).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = OmniscientBeliefView::new(&world);
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(plan),
+            current_step_index: 0,
+            journey_committed_goal: Some(goal),
+            journey_committed_destination: Some(destination),
+            journey_established_at: Some(Tick(2)),
+            journey_last_progress_tick: Some(Tick(4)),
+            consecutive_blocked_leg_ticks: 1,
+            dirty: false,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let mut blocked_memory = BlockedIntentMemory::default();
+        let budget = PlanningBudget::default();
+
+        assert!(handle_recoverable_travel_step_blockage(
+            &view,
+            &mut runtime,
+            &mut blocked_memory,
+            actor,
+            &step,
+            Tick(9),
+            &budget,
+        ));
+        assert_eq!(runtime.current_goal, Some(goal));
+        assert_eq!(runtime.current_plan, None);
+        assert_eq!(runtime.current_step_index, 0);
+        assert!(runtime.dirty);
+        assert_eq!(runtime.journey_committed_goal, None);
+        assert_eq!(runtime.journey_committed_destination, None);
+        assert_eq!(runtime.journey_established_at, None);
+        assert_eq!(runtime.journey_last_progress_tick, None);
+        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+        assert_eq!(blocked_memory.intents.len(), 1);
+        assert_eq!(blocked_memory.intents[0].goal_key, goal);
+        assert_eq!(blocked_memory.intents[0].blocking_fact, BlockingFact::NoKnownPath);
+        assert_eq!(blocked_memory.intents[0].related_entity, None);
+        assert_eq!(blocked_memory.intents[0].related_place, Some(destination));
+        assert_eq!(blocked_memory.intents[0].observed_tick, Tick(9));
+        assert_eq!(
+            blocked_memory.intents[0].expires_tick,
+            Tick(9 + u64::from(budget.structural_block_ticks))
+        );
     }
 
     #[test]

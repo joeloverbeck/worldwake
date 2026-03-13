@@ -133,7 +133,7 @@ This ticket should update those assumptions, not preserve their older broader-cl
 - `crates/worldwake-ai/src/interrupts.rs` (modify or narrow — active-action interruption must inspect concrete challenger plans when commitment exists)
 - `crates/worldwake-ai/src/plan_selection.rs` (modify — replacement must use relation-aware policy instead of one blanket margin)
 - `crates/worldwake-ai/src/decision_runtime.rs` (modify — add `JourneyCommitmentState` and helpers)
-- `tickets/ROUCOMANDJOUPER-006-journey-clearing-conditions.md` (modify — correct assumptions/scope after the architectural change lands)
+- `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-006-blocked-leg-patience-exhaustion.md` (modify — correct assumptions/scope after the architectural change lands)
 - `tickets/ROUCOMANDJOUPER-007-debug-surface.md` (modify — correct assumptions/scope after the architectural change lands)
 
 ## Out of Scope
@@ -173,7 +173,7 @@ This ticket should update those assumptions, not preserve their older broader-cl
 3. `crates/worldwake-ai/src/plan_selection.rs` — add relation-aware replacement coverage so same-destination refresh, temporary detour, and different-destination abandonment do not share one blanket threshold.
 4. `crates/worldwake-ai/src/interrupts.rs` — update interrupt regressions so commitment-preserving detours and commitment abandonment are covered separately when concrete challenger plans are available.
 5. `crates/worldwake-ai/tests/golden_ai_decisions.rs` — strengthen the multi-leg thirst-interruption scenario so it asserts suspend-then-resume behavior rather than merely "the agent drank somewhere."
-6. `tickets/ROUCOMANDJOUPER-006-journey-clearing-conditions.md` and `tickets/ROUCOMANDJOUPER-007-debug-surface.md` — update ticket assumptions and acceptance criteria to match the new architecture.
+6. `archive/tickets/route-commitment-and-journey-persistence/ROUCOMANDJOUPER-006-blocked-leg-patience-exhaustion.md` and `tickets/ROUCOMANDJOUPER-007-debug-surface.md` — update ticket assumptions and acceptance criteria to match the new architecture.
 
 ### Commands
 
