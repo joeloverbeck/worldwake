@@ -1,13 +1,14 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory, CarryCapacity,
-    CombatProfile, CombatStance, CommodityKind, Container, DeadAt, DemandMemory,
-    DeprivationExposure, DriveThresholds, EntityId, EntityKind, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge,
-    ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob,
-    Quantity, ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    component_schema::with_component_schema_entries, AgentBeliefStore, AgentData,
+    BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
+    DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
+    InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
+    PerceptionProfile, Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
+    SubstitutePreferences, TradeDispositionProfile, TravelDispositionProfile, UniqueItem,
+    UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -203,6 +204,7 @@ mod tests {
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
+        AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
@@ -273,6 +275,28 @@ mod tests {
             ),
             ComponentValue::UtilityProfile(sample_utility_profile()),
             ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
+            ComponentValue::AgentBeliefStore(AgentBeliefStore {
+                known_entities: BTreeMap::from([(
+                    entity(18),
+                    BelievedEntityState {
+                        last_known_place: Some(entity(19)),
+                        last_known_inventory: BTreeMap::from([
+                            (CommodityKind::Apple, Quantity(2)),
+                            (CommodityKind::Water, Quantity(1)),
+                        ]),
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(14),
+                        source: PerceptionSource::DirectObservation,
+                    },
+                )]),
+                social_observations: Vec::new(),
+            }),
+            ComponentValue::PerceptionProfile(PerceptionProfile {
+                memory_capacity: 16,
+                memory_retention_ticks: 64,
+                observation_fidelity: Permille::new(920).unwrap(),
+            }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
                 Permille::new(100).unwrap(),
@@ -424,6 +448,8 @@ mod tests {
                 ComponentKind::FacilityQueueDispositionProfile,
                 ComponentKind::UtilityProfile,
                 ComponentKind::BlockedIntentMemory,
+                ComponentKind::AgentBeliefStore,
+                ComponentKind::PerceptionProfile,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,

@@ -1,6 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
+    belief::{AgentBeliefStore, PerceptionProfile},
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
     component_schema::with_component_schema_entries,
@@ -111,6 +112,7 @@ with_component_schema_entries!(
 mod tests {
     use super::ComponentTables;
     use crate::{
+        belief::{AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource},
         components::{AgentData, Name},
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
@@ -147,6 +149,8 @@ mod tests {
         assert_eq!(tables.iter_facility_queue_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_utility_profiles().count(), 0);
         assert_eq!(tables.iter_blocked_intent_memories().count(), 0);
+        assert_eq!(tables.iter_agent_belief_stores().count(), 0);
+        assert_eq!(tables.iter_perception_profiles().count(), 0);
         assert_eq!(tables.iter_drive_thresholds().count(), 0);
         assert_eq!(tables.iter_homeostatic_needs().count(), 0);
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
@@ -753,6 +757,31 @@ mod tests {
         tables.insert_dead_at(entity(19), DeadAt(Tick(14)));
         tables.insert_utility_profile(entity(20), sample_utility_profile());
         tables.insert_blocked_intent_memory(entity(21), sample_blocked_intent_memory());
+        tables.insert_agent_belief_store(
+            entity(22),
+            AgentBeliefStore {
+                known_entities: BTreeMap::from([(
+                    entity(23),
+                    BelievedEntityState {
+                        last_known_place: Some(entity(2)),
+                        last_known_inventory: BTreeMap::from([(CommodityKind::Apple, Quantity(2))]),
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(7),
+                        source: PerceptionSource::DirectObservation,
+                    },
+                )]),
+                social_observations: Vec::new(),
+            },
+        );
+        tables.insert_perception_profile(
+            entity(24),
+            PerceptionProfile {
+                memory_capacity: 8,
+                memory_retention_ticks: 20,
+                observation_fidelity: Permille::new(900).unwrap(),
+            },
+        );
         tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
         tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());

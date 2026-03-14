@@ -1,7 +1,7 @@
 use crate::{
     component_schema::with_component_schema_entries, ArchiveMutationSnapshot, CommodityKind,
-    Container, ControlSource, EntityId, EntityKind, EventId, Permille, Quantity,
-    ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
+    Container, ControlSource, EntityId, EntityKind, EventId, Permille, Quantity, ReservationId,
+    Tick, TickRange, UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
@@ -1215,7 +1215,8 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_travel_disposition_profile, sample_utility_profile,
         },
-        BlockedIntentMemory, DemandMemory, MerchandiseProfile, SubstitutePreferences,
+        AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, DemandMemory,
+        MerchandiseProfile, PerceptionProfile, PerceptionSource, SubstitutePreferences,
         TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
@@ -1280,6 +1281,33 @@ mod tests {
             max_quantity: Quantity(9),
             regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(6).unwrap()),
             last_regeneration_tick: Some(Tick(3)),
+        }
+    }
+
+    fn sample_agent_belief_store() -> AgentBeliefStore {
+        let mut known_entities = BTreeMap::new();
+        known_entities.insert(
+            entity(21),
+            BelievedEntityState {
+                last_known_place: Some(entity(5)),
+                last_known_inventory: BTreeMap::from([(CommodityKind::Apple, Quantity(2))]),
+                alive: true,
+                wounds: Vec::new(),
+                observed_tick: Tick(7),
+                source: PerceptionSource::DirectObservation,
+            },
+        );
+        AgentBeliefStore {
+            known_entities,
+            social_observations: Vec::new(),
+        }
+    }
+
+    fn sample_perception_profile() -> PerceptionProfile {
+        PerceptionProfile {
+            memory_capacity: 9,
+            memory_retention_ticks: 24,
+            observation_fidelity: Permille::new(910).unwrap(),
         }
     }
 
@@ -2299,6 +2327,86 @@ mod tests {
     }
 
     #[test]
+    fn set_component_agent_belief_store_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = sample_agent_belief_store();
+        let mut after = before.clone();
+        after.known_entities.insert(
+            entity(22),
+            BelievedEntityState {
+                last_known_place: Some(entity(2)),
+                last_known_inventory: BTreeMap::new(),
+                alive: false,
+                wounds: Vec::new(),
+                observed_tick: Tick(12),
+                source: PerceptionSource::Inference,
+            },
+        );
+        world
+            .insert_component_agent_belief_store(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_agent_belief_store(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::AgentBeliefStore,
+                before: Some(ComponentValue::AgentBeliefStore(before)),
+                after: ComponentValue::AgentBeliefStore(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_agent_belief_store(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_perception_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = sample_perception_profile();
+        let mut after = before;
+        after.memory_capacity += 3;
+        after.observation_fidelity = Permille::new(990).unwrap();
+        world
+            .insert_component_perception_profile(agent, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_perception_profile(agent, after).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::PerceptionProfile,
+                before: Some(ComponentValue::PerceptionProfile(before)),
+                after: ComponentValue::PerceptionProfile(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_perception_profile(agent), Some(&after));
+    }
+
+    #[test]
     fn set_component_blocked_intent_memory_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -2590,6 +2698,68 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_utility_profile(agent), None);
+    }
+
+    #[test]
+    fn clear_component_agent_belief_store_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = sample_agent_belief_store();
+        world
+            .insert_component_agent_belief_store(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_agent_belief_store(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::AgentBeliefStore,
+                before: ComponentValue::AgentBeliefStore(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_agent_belief_store(agent), None);
+    }
+
+    #[test]
+    fn clear_component_perception_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = sample_perception_profile();
+        world
+            .insert_component_perception_profile(agent, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_perception_profile(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::PerceptionProfile,
+                before: ComponentValue::PerceptionProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_perception_profile(agent), None);
     }
 
     #[test]

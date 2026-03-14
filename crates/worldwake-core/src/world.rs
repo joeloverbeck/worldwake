@@ -1,12 +1,13 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory, CarryCapacity,
-    CombatProfile, CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt,
-    DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind,
-    EntityMeta, EventId, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-    LotOperation, MerchandiseProfile, MetabolismProfile, Name, PlaceTag, ProductionJob,
+    component_schema::with_component_schema_entries, AgentBeliefStore, AgentData,
+    BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
+    ComponentTables, ComponentValue, Container, DeadAt, DemandMemory, DeprivationExposure,
+    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue,
+    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+    MerchandiseProfile, MetabolismProfile, Name, PerceptionProfile, PlaceTag, ProductionJob,
     ProvenanceEntry, Quantity, RelationTables, ResourceSource, SubstitutePreferences, Tick,
     Topology, TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, WorkstationMarker, WorldError, WoundList,
@@ -571,11 +572,12 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_travel_disposition_profile, sample_utility_profile,
         },
-        AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource,
-        DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
-        LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, Permille, Place,
-        PlaceTag, ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
+        AgentBeliefStore, AgentData, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
+        CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, HomeostaticNeeds,
+        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+        MetabolismProfile, Name, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
+        ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
         ResourceSource, SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile,
         TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
         Wound, WoundCause, WoundList,
@@ -639,6 +641,33 @@ mod tests {
 
     fn sample_drive_thresholds() -> DriveThresholds {
         DriveThresholds::default()
+    }
+
+    fn sample_agent_belief_store() -> AgentBeliefStore {
+        let mut known_entities = BTreeMap::new();
+        known_entities.insert(
+            entity(88),
+            BelievedEntityState {
+                last_known_place: Some(entity(5)),
+                last_known_inventory: BTreeMap::from([(CommodityKind::Apple, Quantity(3))]),
+                alive: true,
+                wounds: Vec::new(),
+                observed_tick: Tick(9),
+                source: PerceptionSource::DirectObservation,
+            },
+        );
+        AgentBeliefStore {
+            known_entities,
+            social_observations: Vec::new(),
+        }
+    }
+
+    fn sample_perception_profile() -> PerceptionProfile {
+        PerceptionProfile {
+            memory_capacity: 12,
+            memory_retention_ticks: 48,
+            observation_fidelity: Permille::new(875).unwrap(),
+        }
     }
 
     fn sample_combat_profile() -> CombatProfile {
@@ -3753,6 +3782,50 @@ mod tests {
     }
 
     #[test]
+    fn agent_belief_store_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let store = sample_agent_belief_store();
+
+        world
+            .insert_component_agent_belief_store(id, store.clone())
+            .unwrap();
+        assert_eq!(world.get_component_agent_belief_store(id), Some(&store));
+        assert!(world.has_component_agent_belief_store(id));
+        assert_eq!(
+            world.query_agent_belief_store().collect::<Vec<_>>(),
+            vec![(id, &store)]
+        );
+        assert_eq!(world.count_with_agent_belief_store(), 1);
+
+        let removed = world.remove_component_agent_belief_store(id).unwrap();
+        assert_eq!(removed, Some(store));
+        assert_eq!(world.get_component_agent_belief_store(id), None);
+    }
+
+    #[test]
+    fn perception_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_perception_profile();
+
+        world
+            .insert_component_perception_profile(id, profile)
+            .unwrap();
+        assert_eq!(world.get_component_perception_profile(id), Some(&profile));
+        assert!(world.has_component_perception_profile(id));
+        assert_eq!(
+            world.query_perception_profile().collect::<Vec<_>>(),
+            vec![(id, &profile)]
+        );
+        assert_eq!(world.count_with_perception_profile(), 1);
+
+        let removed = world.remove_component_perception_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_perception_profile(id), None);
+    }
+
+    #[test]
     fn utility_profile_component_roundtrip_on_agent() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
@@ -3806,6 +3879,32 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_agent_belief_store_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_agent_belief_store(id, sample_agent_belief_store())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.get_component_agent_belief_store(id), None);
+    }
+
+    #[test]
+    fn insert_perception_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_perception_profile(id, sample_perception_profile())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.get_component_perception_profile(id), None);
     }
 
     #[test]
@@ -4805,6 +4904,10 @@ mod tests {
         assert_eq!(world.query_agent_data().count(), 0);
         assert_eq!(world.entities_with_wound_list().count(), 0);
         assert_eq!(world.query_wound_list().count(), 0);
+        assert_eq!(world.entities_with_agent_belief_store().count(), 0);
+        assert_eq!(world.query_agent_belief_store().count(), 0);
+        assert_eq!(world.entities_with_perception_profile().count(), 0);
+        assert_eq!(world.query_perception_profile().count(), 0);
         assert_eq!(world.entities_with_blocked_intent_memory().count(), 0);
         assert_eq!(world.query_blocked_intent_memory().count(), 0);
         assert_eq!(world.entities_with_drive_thresholds().count(), 0);
@@ -4855,6 +4958,30 @@ mod tests {
             .insert_component_wound_list(archived_named_agent, sample_wound_list())
             .unwrap();
         world
+            .insert_component_agent_belief_store(
+                live_named_agent,
+                sample_agent_belief_store(),
+            )
+            .unwrap();
+        world
+            .insert_component_agent_belief_store(
+                archived_named_agent,
+                sample_agent_belief_store(),
+            )
+            .unwrap();
+        world
+            .insert_component_perception_profile(
+                live_named_agent,
+                sample_perception_profile(),
+            )
+            .unwrap();
+        world
+            .insert_component_perception_profile(
+                archived_named_agent,
+                sample_perception_profile(),
+            )
+            .unwrap();
+        world
             .insert_component_drive_thresholds(live_named_agent, sample_drive_thresholds())
             .unwrap();
         world
@@ -4887,6 +5014,8 @@ mod tests {
         assert_eq!(world.count_with_name(), 2);
         assert_eq!(world.count_with_agent_data(), 1);
         assert_eq!(world.count_with_wound_list(), 1);
+        assert_eq!(world.count_with_agent_belief_store(), 1);
+        assert_eq!(world.count_with_perception_profile(), 1);
         assert_eq!(world.count_with_drive_thresholds(), 1);
         assert_eq!(world.count_with_utility_profile(), 1);
         assert_eq!(world.count_with_blocked_intent_memory(), 1);
@@ -4987,6 +5116,8 @@ mod tests {
             assert_eq!(world.get_component_name(place_id), None);
             assert_eq!(world.get_component_agent_data(place_id), None);
             assert_eq!(world.get_component_wound_list(place_id), None);
+            assert_eq!(world.get_component_agent_belief_store(place_id), None);
+            assert_eq!(world.get_component_perception_profile(place_id), None);
             assert_eq!(world.get_component_utility_profile(place_id), None);
             assert_eq!(world.get_component_blocked_intent_memory(place_id), None);
             assert_eq!(world.get_component_drive_thresholds(place_id), None);
