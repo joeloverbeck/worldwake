@@ -1303,7 +1303,7 @@ mod tests {
                     subject_a,
                     BelievedEntityState {
                         last_known_place: Some(entity(30)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -1316,7 +1316,7 @@ mod tests {
                     subject_b,
                     BelievedEntityState {
                         last_known_place: Some(entity(31)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -1332,7 +1332,7 @@ mod tests {
                     subject_c,
                     BelievedEntityState {
                         last_known_place: Some(entity(32)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -1360,6 +1360,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn tell_affordances_filter_relay_depth_and_limit_subjects_by_recency() {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
@@ -1394,7 +1395,7 @@ mod tests {
                     subject_a,
                     BelievedEntityState {
                         last_known_place: Some(entity(30)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -1407,7 +1408,7 @@ mod tests {
                     subject_b,
                     BelievedEntityState {
                         last_known_place: Some(entity(31)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -1423,7 +1424,7 @@ mod tests {
                     subject_c,
                     BelievedEntityState {
                         last_known_place: Some(entity(32)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -1436,7 +1437,7 @@ mod tests {
                     subject_d,
                     BelievedEntityState {
                         last_known_place: Some(entity(33)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -1449,7 +1450,7 @@ mod tests {
                     subject_e,
                     BelievedEntityState {
                         last_known_place: Some(entity(34)),
-                        last_known_inventory: Default::default(),
+                        last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,

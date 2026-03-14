@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     build_believed_entity_state, AgentBeliefStore, CauseRef, ComponentDelta, EntityDelta, EntityId,
-    EntityKind, EventRecord, EventTag, EvidenceRef, PerceptionSource, SocialObservation,
-    SocialObservationKind, StateDelta, VisibilitySpec, WitnessData, World, WorldTxn,
+    EntityKind, EventLog, EventRecord, EventTag, EvidenceRef, MismatchKind, PendingEvent,
+    PerceptionSource, SocialObservation, SocialObservationKind, StateDelta, VisibilitySpec,
+    WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -19,7 +20,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     let event_ids = event_log.events_at_tick(tick).to_vec();
     let mut updated_stores = BTreeMap::<EntityId, AgentBeliefStore>::new();
 
-    observe_passive_local_entities(world, tick, rng, &mut updated_stores);
+    observe_passive_local_entities(world, event_log, tick, rng, &mut updated_stores);
 
     for event_id in event_ids {
         let Some(record) = event_log.get(event_id).cloned() else {
@@ -87,6 +88,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
 
 fn observe_passive_local_entities(
     world: &World,
+    event_log: &mut EventLog,
     tick: worldwake_core::Tick,
     rng: &mut worldwake_sim::DeterministicRng,
     updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
@@ -123,6 +125,11 @@ fn observe_passive_local_entities(
                 tick,
                 PerceptionSource::DirectObservation,
             ) {
+                if let Some(prior) = store.get_entity(&entity) {
+                    for mismatch in detect_passive_mismatches(prior, &snapshot) {
+                        emit_discovery_event(event_log, tick, agent, place, entity, mismatch);
+                    }
+                }
                 store.update_entity(entity, snapshot);
                 observed_any = true;
             }
@@ -134,6 +141,76 @@ fn observe_passive_local_entities(
             updated_stores.remove(&agent);
         }
     }
+}
+
+fn detect_passive_mismatches(
+    prior: &worldwake_core::BelievedEntityState,
+    observed: &worldwake_core::BelievedEntityState,
+) -> Vec<MismatchKind> {
+    let mut mismatches = Vec::new();
+
+    if prior.alive != observed.alive {
+        mismatches.push(MismatchKind::AliveStatusChanged);
+    }
+
+    let commodities = prior
+        .last_known_inventory
+        .keys()
+        .chain(observed.last_known_inventory.keys())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    for commodity in commodities {
+        let believed = prior
+            .last_known_inventory
+            .get(&commodity)
+            .copied()
+            .unwrap_or(worldwake_core::Quantity(0));
+        let seen = observed
+            .last_known_inventory
+            .get(&commodity)
+            .copied()
+            .unwrap_or(worldwake_core::Quantity(0));
+        if believed != seen {
+            mismatches.push(MismatchKind::InventoryDiscrepancy {
+                commodity,
+                believed,
+                observed: seen,
+            });
+        }
+    }
+
+    mismatches
+}
+
+fn emit_discovery_event(
+    event_log: &mut EventLog,
+    tick: worldwake_core::Tick,
+    observer: EntityId,
+    place: EntityId,
+    subject: EntityId,
+    mismatch: MismatchKind,
+) {
+    let _ = event_log.emit(
+        PendingEvent::new(
+            tick,
+            CauseRef::SystemTick(tick),
+            Some(observer),
+            vec![subject],
+            Some(place),
+            Vec::new(),
+            VisibilitySpec::ParticipantsOnly,
+            WitnessData {
+                direct_witnesses: BTreeSet::from([observer]),
+                potential_witnesses: BTreeSet::from([observer]),
+            },
+            BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+        )
+        .with_evidence(vec![EvidenceRef::Mismatch {
+            observer,
+            subject,
+            kind: mismatch,
+        }]),
+    );
 }
 
 fn resolve_witnesses(world: &World, record: &EventRecord) -> Vec<EntityId> {
@@ -330,9 +407,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         build_prototype_world, AgentBeliefStore, BelievedEntityState, CauseRef, CommodityKind,
-        ControlSource, EventLog, EventTag, PendingEvent, PerceptionProfile, PerceptionSource,
-        Permille, Quantity, Seed, SocialObservationKind, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        ControlSource, DeadAt, EventLog, EventTag, EvidenceRef, MismatchKind, PendingEvent,
+        PerceptionProfile, PerceptionSource, Permille, Quantity, Seed, SocialObservationKind,
+        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -354,6 +431,14 @@ mod tests {
             memory_retention_ticks: 32,
             observation_fidelity: Permille::new(fidelity).unwrap(),
         }
+    }
+
+    fn discovery_records(event_log: &EventLog) -> Vec<&worldwake_core::EventRecord> {
+        event_log
+            .events_by_tag(EventTag::Discovery)
+            .iter()
+            .filter_map(|event_id| event_log.get(*event_id))
+            .collect()
     }
 
     #[test]
@@ -843,5 +928,233 @@ mod tests {
             beliefs.known_entities.is_empty(),
             "zero observation fidelity should block passive same-place observation"
         );
+    }
+
+    #[test]
+    fn passive_observation_emits_discovery_for_alive_status_mismatch() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(
+                target,
+                BelievedEntityState {
+                    last_known_place: Some(place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(2),
+                    source: PerceptionSource::DirectObservation,
+                },
+            );
+            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_dead_at(target, DeadAt(Tick(3))).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, target)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let discoveries = discovery_records(&event_log);
+        assert_eq!(discoveries.len(), 1);
+        let discovery = discoveries[0];
+        assert_eq!(discovery.actor_id, Some(observer));
+        assert_eq!(discovery.place_id, Some(place));
+        assert_eq!(discovery.visibility, VisibilitySpec::ParticipantsOnly);
+        assert!(discovery.tags.contains(&EventTag::Discovery));
+        assert!(discovery.tags.contains(&EventTag::WorldMutation));
+        assert_eq!(
+            discovery.evidence,
+            vec![EvidenceRef::Mismatch {
+                observer,
+                subject: target,
+                kind: MismatchKind::AliveStatusChanged,
+            }]
+        );
+    }
+
+    #[test]
+    fn passive_observation_emits_discovery_for_inventory_mismatch() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            let mut inventory = BTreeMap::new();
+            inventory.insert(CommodityKind::Bread, Quantity(5));
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(
+                target,
+                BelievedEntityState {
+                    last_known_place: Some(place),
+                    last_known_inventory: inventory,
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(2),
+                    source: PerceptionSource::DirectObservation,
+                },
+            );
+            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, target).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, target)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([14; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let discoveries = discovery_records(&event_log);
+        assert_eq!(discoveries.len(), 1);
+        assert_eq!(
+            discoveries[0].evidence,
+            vec![EvidenceRef::Mismatch {
+                observer,
+                subject: target,
+                kind: MismatchKind::InventoryDiscrepancy {
+                    commodity: CommodityKind::Bread,
+                    believed: Quantity(5),
+                    observed: Quantity(2),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn passive_observation_without_prior_belief_emits_no_discovery() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([15; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        assert!(discovery_records(&event_log).is_empty());
+    }
+
+    #[test]
+    fn passive_observation_with_matching_prior_belief_emits_no_discovery() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            let mut inventory = BTreeMap::new();
+            inventory.insert(CommodityKind::Bread, Quantity(2));
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(
+                target,
+                BelievedEntityState {
+                    last_known_place: Some(place),
+                    last_known_inventory: inventory,
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(2),
+                    source: PerceptionSource::DirectObservation,
+                },
+            );
+            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, target).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([16; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        assert!(discovery_records(&event_log).is_empty());
     }
 }
