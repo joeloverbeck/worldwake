@@ -1663,6 +1663,37 @@ mod tests {
         commit_txn(txn);
     }
 
+    fn sync_selected_beliefs(
+        world: &mut World,
+        observer: EntityId,
+        entities: &[EntityId],
+        observed_tick: Tick,
+        source: PerceptionSource,
+    ) {
+        let mut store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .expect("observer must have AgentBeliefStore");
+        store.known_entities.clear();
+        for entity in entities {
+            if let Some(state) = build_believed_entity_state(world, *entity, observed_tick, source) {
+                store.update_entity(*entity, state);
+            }
+        }
+        let mut txn = WorldTxn::new(
+            world,
+            observed_tick,
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.set_component_agent_belief_store(observer, store)
+            .expect("observer belief store should remain writable");
+        commit_txn(txn);
+    }
+
     fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId) {
         let origin = entity(11);
         let destination = entity(12);
@@ -1739,6 +1770,93 @@ mod tests {
         )
     }
 
+    fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, EntityId) {
+        let origin = entity(21);
+        let destination = entity(22);
+        let mut world = World::new(cargo_topology(origin, destination)).unwrap();
+        let (actor, seller, local_witness) = {
+            let mut txn = new_txn(&mut world, 0);
+            let actor = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let seller = txn.create_agent("RemoteSeller", ControlSource::Ai).unwrap();
+            let local_witness = txn.create_agent("Witness", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(actor, origin).unwrap();
+            txn.set_ground_location(local_witness, origin).unwrap();
+            txn.set_ground_location(seller, destination).unwrap();
+            txn.set_ground_location(bread, destination).unwrap();
+            txn.set_possessor(bread, seller).unwrap();
+            txn.set_component_homeostatic_needs(
+                actor,
+                HomeostaticNeeds::new(
+                    Permille::new(800).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_perception_profile(
+                actor,
+                PerceptionProfile {
+                    memory_capacity: 12,
+                    memory_retention_ticks: 4,
+                    observation_fidelity: Permille::new(1000).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                seller,
+                MerchandiseProfile {
+                    sale_kinds: [CommodityKind::Bread].into_iter().collect(),
+                    home_market: Some(destination),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, seller, local_witness)
+        };
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_needs_actions(&mut defs, &mut handlers);
+
+        sync_selected_beliefs(
+            &mut world,
+            actor,
+            &[seller],
+            Tick(0),
+            PerceptionSource::Inference,
+        );
+
+        (
+            Harness {
+                world,
+                event_log: EventLog::new(),
+                scheduler: Scheduler::new(SystemManifest::canonical()),
+                controller: ControllerState::with_entity(actor),
+                rng: DeterministicRng::new(Seed([7; 32])),
+                recipes: RecipeRegistry::new(),
+                defs,
+                handlers,
+                driver: AgentTickDriver::new(PlanningBudget::default()),
+                actor,
+            },
+            seller,
+            local_witness,
+            origin,
+            destination,
+        )
+    }
+
     fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
         let utility = harness
             .world
@@ -1791,6 +1909,20 @@ mod tests {
             WitnessData::default(),
             BTreeSet::new(),
         ));
+        let active_actions = std::collections::BTreeMap::new();
+        perception_system(SystemExecutionContext {
+            world: &mut harness.world,
+            event_log: &mut harness.event_log,
+            rng: &mut harness.rng,
+            active_actions: &active_actions,
+            action_defs: &harness.defs,
+            tick,
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+    }
+
+    fn run_perception_tick(harness: &mut Harness, tick: Tick) {
         let active_actions = std::collections::BTreeMap::new();
         perception_system(SystemExecutionContext {
             world: &mut harness.world,
@@ -3884,6 +4016,99 @@ mod tests {
                 GoalKind::BuryCorpse { corpse, .. } if corpse == seller
             )
         }));
+    }
+
+    #[test]
+    fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
+        let (mut harness, seller, _local_witness, _origin, destination) =
+            stale_remote_acquisition_harness();
+
+        let before = ranked_goals_at(&mut harness, Tick(1));
+        assert!(has_goal(
+            &before,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert_eq!(
+            harness
+                .world
+                .get_component_agent_belief_store(harness.actor)
+                .unwrap()
+                .get_entity(&seller)
+                .and_then(|belief| belief.last_known_place),
+            Some(destination)
+        );
+
+        let after_retention_without_refresh = ranked_goals_at(&mut harness, Tick(10));
+        assert!(has_goal(
+            &after_retention_without_refresh,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert!(
+            harness
+                .world
+                .get_component_agent_belief_store(harness.actor)
+                .unwrap()
+                .get_entity(&seller)
+                .is_some(),
+            "belief retention is enforced during perception refresh, not by ranked_goals_at alone"
+        );
+    }
+
+    #[test]
+    fn perception_refresh_evicts_expired_remote_acquisition_belief_and_removes_goal() {
+        let (mut harness, seller, local_witness, origin, destination) =
+            stale_remote_acquisition_harness();
+
+        let before = ranked_goals_at(&mut harness, Tick(1));
+        assert!(has_goal(
+            &before,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert_eq!(
+            harness
+                .world
+                .get_component_agent_belief_store(harness.actor)
+                .unwrap()
+                .get_entity(&seller)
+                .and_then(|belief| belief.last_known_place),
+            Some(destination)
+        );
+
+        run_perception_tick(&mut harness, Tick(10));
+
+        let store = harness
+            .world
+            .get_component_agent_belief_store(harness.actor)
+            .unwrap();
+        assert!(
+            store.get_entity(&seller).is_none(),
+            "expired remote seller belief should be evicted on a later perception refresh"
+        );
+        let local_belief = store
+            .get_entity(&local_witness)
+            .expect("same-place witness should be observed during refresh");
+        assert_eq!(local_belief.last_known_place, Some(origin));
+
+        let after = ranked_goals_at(&mut harness, Tick(10));
+        assert!(
+            !has_goal(
+                &after,
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                }
+            ),
+            "once retention enforcement prunes the stale remote seller, the acquire goal must disappear"
+        );
     }
 
     #[test]

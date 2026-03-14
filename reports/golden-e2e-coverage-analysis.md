@@ -18,7 +18,6 @@ crates/worldwake-ai/tests/
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
-  golden_perception.rs        — (planned) scenario 11 only
 ```
 
 ---
@@ -514,7 +513,7 @@ The golden suite contains 48 tests across 6 domain files. Every test uses the re
 | Wound bleed → clotting → natural recovery | Yes |
 | Loot/bury suppression under self-care pressure → relief → suppression lift | Yes |
 | Stale belief → travel to depleted source → passive re-observation → replan | Backlog |
-| Memory retention decay → belief eviction → changed candidate generation → local discovery | Backlog |
+| Memory retention decay → belief eviction → changed candidate generation | Focused runtime coverage |
 | Pain pressure → treatment acquisition → pick-up → heal | Yes |
 
 ---
@@ -528,33 +527,13 @@ Each scenario is rated on three axes:
 
 Sorted by composite score (emergence + bug-catching - effort) descending.
 
-**Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`, perception/belief → `golden_perception.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
+**Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
 
 ### Tier 1: High Priority (score 5+)
 
 `Scenario 10: Belief Isolation` was removed from the golden backlog on 2026-03-14. Reassessment showed the report item was stale: the underlying E14 invariant is already covered more cleanly by focused runtime tests in `crates/worldwake-ai/src/agent_tick.rs` (`same_place_perception_seeds_seller_belief_for_runtime_candidates`, `unseen_seller_relocation_preserves_stale_acquisition_belief`, and `unseen_death_does_not_create_corpse_reaction_without_reobservation`). Adding a new `golden_perception.rs` scenario for the same contract would duplicate an existing planner-boundary proof rather than improve architecture or coverage durability.
 
-#### Scenario 11: Memory Retention Decay — Forgotten Resource Forces Local Discovery
-- **Target file**: `golden_perception.rs` (new file)
-- **Emergence complexity**: 4 — Memory retention → Belief eviction → Changed candidate generation → Local discovery → Different plan
-- **Bug-catching value**: 4 — proves `enforce_capacity()` drives real behavioral divergence; no existing test covers this
-- **Implementation effort**: 3 — needs custom `PerceptionProfile` with short `memory_retention_ticks`, careful timing
-- **Score**: 5
-- **Systems exercised**: Perception (enforce_capacity), Belief store, Needs, AI (candidate generation, planning)
-- **Setup**: Agent (Dana) at VillageSquare with short `memory_retention_ticks` (e.g., 20). Seeded with belief about apples at distant OrchardFarm (3+ hops away). Dana has high thirst (pm(800)) and fast thirst metabolism — will drink first. Water source at VillageSquare. After retention window (20 ticks), apple belief is evicted by `enforce_capacity()`. A local food source at VillageSquare (or adjacent place) exists for Dana to discover via passive observation.
-- **Emergent behavior to prove**:
-  1. Dana drinks water at VillageSquare (thirst dominant)
-  2. During drinking/recovery, 20+ ticks pass
-  3. `enforce_capacity()` evicts stale OrchardFarm apple belief (observed_tick too old)
-  4. Dana gets hungry — cannot plan to go to OrchardFarm (forgotten)
-  5. Dana discovers local food via passive observation at current location
-  6. Dana eats local food
-- **Key assertions**:
-  - Dana's belief store no longer contains OrchardFarm apple source after retention window
-  - Dana does NOT travel to OrchardFarm (would have if belief remained)
-  - Dana satisfies hunger from local source discovered via passive observation
-  - Conservation holds; deterministic replay
-- **Cross-system chain**: Memory retention → Belief eviction → Changed candidate generation → Local passive discovery → Different plan
+`Scenario 11: Memory Retention Decay` was removed from the golden backlog on 2026-03-14. Reassessment showed the original golden setup was stale in two ways: same-place local food would be perceived immediately under the current passive observation rules, and retention enforcement is applied during perception refresh rather than by a standalone forgetting sweep. The durable proof belongs at the runtime boundary instead. Focused tests in `crates/worldwake-ai/src/agent_tick.rs` now cover both halves of the real contract: `expired_remote_acquisition_belief_remains_until_perception_refresh` documents the current opportunistic-retention architecture, and `perception_refresh_evicts_expired_remote_acquisition_belief_and_removes_goal` proves that a later perception refresh prunes the stale remote belief and removes the acquisition candidate.
 
 ### Tier 2: Medium Priority (score 3-4)
 
@@ -596,18 +575,18 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 48 | 48 + 2 scenarios (+ replays) |
+| Proven tests | 48 | 48 + 1 scenario (+ replay) |
 | GoalKind coverage | 16/17 (94.1%) | 16/17 (94.1%) |
 | ActionDomain coverage | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 32 | 34 |
+| Cross-system chains | 32 | 33 |
 
 ### Pending Backlog Summary
 
-1 scenario remains in the golden backlog as of 2026-03-14, targeting E14 (Perception & Belief):
-- **Scenario 11** (score 5): Memory retention decay — forgotten resource forces local discovery (`golden_perception.rs`)
+1 scenario remains in the golden backlog as of 2026-03-14:
+- **Stale belief → travel to depleted source → passive re-observation → replan**
 
 ### Recommended Implementation Order
 
-Scenario 11 (Memory decay, score 5, effort 3).
+1. Stale belief → travel to depleted source → passive re-observation → replan.
