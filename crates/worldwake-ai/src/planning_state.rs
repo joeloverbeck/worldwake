@@ -439,6 +439,18 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn with_commodity_quantity(
+        mut self,
+        entity: EntityId,
+        commodity: CommodityKind,
+        quantity: Quantity,
+    ) -> Self {
+        self.commodity_quantity_overrides
+            .insert((PlanningEntityRef::Authoritative(entity), commodity), quantity);
+        self
+    }
+
+    #[must_use]
     pub fn with_pain(mut self, entity: EntityId, pain: Permille) -> Self {
         self.pain_overrides.insert(entity, pain);
         self
@@ -687,9 +699,7 @@ impl BeliefView for PlanningState<'_> {
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
-        self.is_alive(entity)
-            .then_some(())
-            .and(self.entity_kind_ref(PlanningEntityRef::Authoritative(entity)))
+        self.entity_kind_ref(PlanningEntityRef::Authoritative(entity))
     }
 
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -1009,6 +1019,32 @@ impl BeliefView for PlanningState<'_> {
             .map(|snapshot| {
                 snapshot
                     .visible_hostiles
+                    .iter()
+                    .copied()
+                    .filter(|entity| {
+                        !self
+                            .removed_entities
+                            .contains(&PlanningEntityRef::Authoritative(*entity))
+                    })
+                    .filter(|entity| {
+                        self.effective_place(*entity) == agent_place
+                            || agent_transit.is_some()
+                                && self.in_transit_state(*entity) == agent_transit
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        let agent_place = self.effective_place(agent);
+        let agent_transit = self.in_transit_state(agent);
+        self.snapshot
+            .entities
+            .get(&agent)
+            .map(|snapshot| {
+                snapshot
+                    .hostile_targets
                     .iter()
                     .copied()
                     .filter(|entity| {
@@ -1663,6 +1699,24 @@ mod tests {
             Quantity(1)
         );
         assert_eq!(state.demand_memory(actor), view.demand_memory(actor));
+    }
+
+    #[test]
+    fn dead_entities_retain_kind_for_planning_queries() {
+        let (mut view, actor, town, _field, _bread) = test_view();
+        let corpse = entity(30);
+        view.alive.insert(corpse, false);
+        view.kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(corpse, town);
+        view.entities_at.entry(town).or_default().push(corpse);
+
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([corpse]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(state.entity_kind(corpse), Some(EntityKind::Agent));
+        assert!(state.is_dead(corpse));
+        assert_eq!(state.effective_place(corpse), Some(town));
     }
 
     #[test]

@@ -170,7 +170,7 @@ pub fn evaluate_precondition(
             .is_some_and(|target| view.can_control(actor, *target)),
         Precondition::TargetExists(index) => targets
             .get(usize::from(index))
-            .is_some_and(|target| view.is_alive(*target)),
+            .is_some_and(|target| view.entity_kind(*target).is_some()),
         Precondition::TargetAlive(index) => targets
             .get(usize::from(index))
             .is_some_and(|target| !view.is_dead(*target)),
@@ -318,7 +318,7 @@ mod tests {
         ActionDef, ActionDefRegistry, ActionDomain, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
         Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
-        OmniscientBeliefView, Precondition, ReservationReq, TargetSpec, TradeActionPayload,
+        PerAgentBeliefView, Precondition, ReservationReq, TargetSpec, TradeActionPayload,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -365,9 +365,7 @@ mod tests {
         }
 
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
-            self.is_alive(entity)
-                .then(|| self.kinds.get(&entity).copied())
-                .flatten()
+            self.kinds.get(&entity).copied()
         }
 
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -879,6 +877,30 @@ mod tests {
     }
 
     #[test]
+    fn evaluate_precondition_target_exists_accepts_dead_known_target() {
+        let actor = entity(1);
+        let target = entity(4);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, false);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+
+        assert!(evaluate_precondition(
+            Precondition::TargetExists(0),
+            actor,
+            &[target],
+            &view,
+        ));
+        assert!(evaluate_precondition(
+            Precondition::TargetDead(0),
+            actor,
+            &[target],
+            &view,
+        ));
+    }
+
+    #[test]
     fn get_affordances_filters_by_control_and_consumable_effect() {
         let actor = entity(1);
         let place = entity(10);
@@ -1328,7 +1350,7 @@ mod tests {
     }
 
     #[test]
-    fn omniscient_belief_view_affordances_match_for_human_and_ai_control() {
+    fn per_agent_belief_view_affordances_match_for_human_and_ai_control() {
         let mut human_world = World::new(build_prototype_world()).unwrap();
         let human = {
             let mut txn = new_txn(&mut human_world, 1);
@@ -1361,13 +1383,13 @@ mod tests {
         let handlers = handler_registry(registry.len());
 
         let human_affordances = get_affordances(
-            &OmniscientBeliefView::new(&human_world),
+            &PerAgentBeliefView::from_world(human, &human_world),
             human,
             &registry,
             &handlers,
         );
         let ai_affordances = get_affordances(
-            &OmniscientBeliefView::new(&ai_world),
+            &PerAgentBeliefView::from_world(ai, &ai_world),
             ai,
             &registry,
             &handlers,
@@ -1388,7 +1410,7 @@ mod tests {
     }
 
     #[test]
-    fn omniscient_belief_view_none_control_only_changes_actor_has_control_actions() {
+    fn per_agent_belief_view_none_control_only_changes_actor_has_control_actions() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
@@ -1413,7 +1435,7 @@ mod tests {
         let handlers = handler_registry(registry.len());
 
         let affordances = get_affordances(
-            &OmniscientBeliefView::new(&world),
+            &PerAgentBeliefView::from_world(actor, &world),
             actor,
             &registry,
             &handlers,

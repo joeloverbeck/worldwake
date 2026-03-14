@@ -16,7 +16,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, BeliefView,
-    CommitOutcome, CommittedAction, InputKind, OmniscientBeliefRuntime, OmniscientBeliefView,
+    CommitOutcome, CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
     RecipeRegistry, ReplanNeeded, Scheduler, SchedulerActionRuntime, TickInputError,
 };
 
@@ -76,7 +76,7 @@ impl AgentTickDriver {
         agent: EntityId,
     ) -> Option<JourneyDebugSnapshot> {
         let runtime = self.runtime_by_agent.get(&agent)?;
-        let view = OmniscientBeliefView::new(world);
+        let view = PerAgentBeliefView::from_world(agent, world);
         let (effective_switch_margin, switch_margin_source) =
             goal_switch_margin_details(&view, agent, runtime, &self.budget);
         Some(JourneyDebugSnapshot {
@@ -88,13 +88,15 @@ impl AgentTickDriver {
 }
 
 fn runtime_belief_view<'a>(
+    agent: EntityId,
     world: &'a worldwake_core::World,
     scheduler: &'a Scheduler,
     action_defs: &'a worldwake_sim::ActionDefRegistry,
-) -> OmniscientBeliefView<'a> {
-    OmniscientBeliefView::with_runtime(
+) -> PerAgentBeliefView<'a> {
+    PerAgentBeliefView::with_runtime_from_world(
+        agent,
         world,
-        OmniscientBeliefRuntime::new(scheduler.active_actions(), action_defs),
+        PerAgentBeliefRuntime::new(scheduler.active_actions(), action_defs),
     )
 }
 
@@ -193,7 +195,7 @@ fn process_agent(
     let active_action = active_action_for_agent(ctx, agent);
 
     {
-        let view = runtime_belief_view(ctx.world, ctx.scheduler, action_defs);
+        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
         if view.is_dead(agent) || !view.is_alive(agent) {
             runtime.clear_journey_commitment_with_reason(JourneyClearReason::Death);
             runtime.current_goal = None;
@@ -237,7 +239,7 @@ fn process_agent(
     );
     let active_action = active_action_for_agent(ctx, agent);
     let journey_switch_margin = {
-        let view = runtime_belief_view(ctx.world, ctx.scheduler, action_defs);
+        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
         effective_goal_switch_margin(&view, agent, runtime, budget)
     };
     let default_switch_margin = budget.switch_margin_permille;
@@ -314,7 +316,7 @@ fn enqueue_valid_step_or_handle_failure(
     valid: bool,
 ) -> Result<(), TickInputError> {
     if !valid {
-        let view = runtime_belief_view(ctx.world, ctx.scheduler, ctx.action_defs);
+        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
         if handle_recoverable_travel_step_blockage(
             &view,
             runtime,
@@ -330,7 +332,7 @@ fn enqueue_valid_step_or_handle_failure(
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
-        let view = runtime_belief_view(ctx.world, ctx.scheduler, ctx.action_defs);
+        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
         if handle_recoverable_travel_step_blockage(
             &view,
             runtime,
@@ -398,7 +400,7 @@ fn abandon_expired_facility_queues(
     tick: Tick,
 ) -> Result<bool, TickInputError> {
     let limit = {
-        let view = OmniscientBeliefView::new(world);
+        let view = PerAgentBeliefView::from_world(agent, world);
         let Some(limit) = view.facility_queue_patience_ticks(agent) else {
             return Ok(false);
         };
@@ -416,7 +418,7 @@ fn abandon_expired_facility_queues_with_limit(
     limit: std::num::NonZeroU32,
 ) -> Result<bool, TickInputError> {
     let expired_facilities = {
-        let view = OmniscientBeliefView::new(world);
+        let view = PerAgentBeliefView::from_world(agent, world);
         let Some(place) = view.effective_place(agent) else {
             return Ok(false);
         };
@@ -474,7 +476,7 @@ fn refresh_runtime_for_read_phase(
     phase: ReadPhaseContext<'_>,
 ) -> Vec<RankedGoal> {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
-    let view = runtime_belief_view(world, scheduler, action_defs);
+    let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let before = blocked_memory.clone();
     let queue_transition_changed =
         handle_facility_queue_transitions(&view, runtime, blocked_memory, agent, phase.tick, phase);
@@ -684,7 +686,7 @@ fn build_candidate_plans(
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
 ) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
-    let view = runtime_belief_view(world, scheduler, action_defs);
+    let view = runtime_belief_view(agent, world, scheduler, action_defs);
     ranked_candidates
         .iter()
         .take(usize::from(budget.max_candidates_to_plan))
@@ -728,7 +730,7 @@ fn plan_and_validate_next_step(
     action_handlers: &ActionHandlerRegistry,
 ) -> (Option<PlannedStep>, Option<bool>) {
     // A second read view covers plan selection and step validation after the active-action fork.
-    let view = runtime_belief_view(world, scheduler, action_defs);
+    let view = runtime_belief_view(agent, world, scheduler, action_defs);
     if runtime.dirty {
         let plans = build_candidate_plans(
             world,
@@ -810,7 +812,7 @@ fn finalize_agent_tick(
     )?;
     {
         // Snapshot the post-mutation world state before ending the tick.
-        let view = runtime_belief_view(world, scheduler, action_defs);
+        let view = runtime_belief_view(agent, world, scheduler, action_defs);
         update_runtime_observation_snapshot(&view, agent, runtime);
     }
     Ok(())
@@ -970,7 +972,7 @@ fn handle_current_step_failure(
     let event_log = &mut *ctx.event_log;
     let budget = ctx.budget;
     let tick = ctx.tick;
-    let view = OmniscientBeliefView::new(world);
+    let view = PerAgentBeliefView::from_world(agent, world);
     let goal_key = runtime.current_goal.unwrap_or_else(|| {
         runtime
             .current_plan
@@ -1347,19 +1349,20 @@ mod tests {
     use std::num::NonZeroU32;
     use std::path::PathBuf;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact,
-        BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId,
-        EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
-        Place, Quantity, RecipeId, ResourceSource, Seed, Tick, Topology, TravelDispositionProfile,
-        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world, ActionDefId, BlockedIntent,
+        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
+        CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
+        DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
+        ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
+        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionSource,
+        Permille, Place, Quantity, RecipeId, ResourceSource, Seed, Tick, Topology,
+        TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
         AutonomousControllerRuntime, BeliefView, CommitOutcome, CommittedAction, ControllerState,
-        DeterministicRng, DurationExpr, Materialization, MaterializationTag, OmniscientBeliefView,
+        DeterministicRng, DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView,
         RecipeDefinition, RecipeRegistry, Scheduler, SystemDispatchTable, SystemManifest,
         TickStepServices,
     };
@@ -1416,6 +1419,8 @@ mod tests {
             let mut handlers = ActionHandlerRegistry::new();
             register_needs_actions(&mut defs, &mut handlers);
 
+            sync_all_beliefs(&mut world, actor, Tick(1));
+
             Self {
                 world,
                 event_log: EventLog::new(),
@@ -1463,9 +1468,7 @@ mod tests {
         }
     }
 
-    fn cargo_harness(possessed: bool) -> (Harness, EntityId, EntityId, EntityId) {
-        let origin = entity(1);
-        let destination = entity(2);
+    fn cargo_topology(origin: EntityId, destination: EntityId) -> Topology {
         let mut topology = Topology::new();
         topology
             .add_place(
@@ -1493,57 +1496,72 @@ mod tests {
         topology
             .add_edge(TravelEdge::new(TravelEdgeId(2), destination, origin, 2, None).unwrap())
             .unwrap();
-        let mut world = World::new(topology).unwrap();
-        let actor = {
-            let mut txn = new_txn(&mut world, 1);
-            let actor = txn.create_agent("Mira", ControlSource::Ai).unwrap();
-            let water = txn
-                .create_item_lot(CommodityKind::Bread, Quantity(3))
-                .unwrap();
-            txn.set_ground_location(actor, origin).unwrap();
-            txn.set_ground_location(water, origin).unwrap();
-            if possessed {
-                txn.set_possessor(water, actor).unwrap();
-            } else {
-                txn.set_owner(water, actor).unwrap();
-            }
-            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
-                .unwrap();
-            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
-                .unwrap();
-            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
-                .unwrap();
-            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
-                .unwrap();
-            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(3)))
-                .unwrap();
-            txn.set_component_merchandise_profile(
-                actor,
-                MerchandiseProfile {
-                    sale_kinds: [CommodityKind::Bread].into_iter().collect(),
-                    home_market: Some(destination),
-                },
-            )
+        topology
+    }
+
+    fn seed_cargo_harness_actor(
+        world: &mut World,
+        origin: EntityId,
+        destination: EntityId,
+        possessed: bool,
+    ) -> (EntityId, EntityId) {
+        let mut txn = new_txn(world, 1);
+        let actor = txn.create_agent("Mira", ControlSource::Ai).unwrap();
+        let water = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(3))
             .unwrap();
-            txn.set_component_demand_memory(
-                actor,
-                DemandMemory {
-                    observations: vec![DemandObservation {
-                        commodity: CommodityKind::Bread,
-                        quantity: Quantity(2),
-                        place: destination,
-                        tick: Tick(1),
-                        counterparty: None,
-                        reason: DemandObservationReason::WantedToBuyButNoSeller,
-                    }],
-                },
-            )
+        txn.set_ground_location(actor, origin).unwrap();
+        txn.set_ground_location(water, origin).unwrap();
+        if possessed {
+            txn.set_possessor(water, actor).unwrap();
+        } else {
+            txn.set_owner(water, actor).unwrap();
+        }
+        txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
             .unwrap();
-            commit_txn(txn);
-            (actor, water)
-        };
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(3)))
+            .unwrap();
+        txn.set_component_merchandise_profile(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: [CommodityKind::Bread].into_iter().collect(),
+                home_market: Some(destination),
+            },
+        )
+        .unwrap();
+        txn.set_component_demand_memory(
+            actor,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(2),
+                    place: destination,
+                    tick: Tick(1),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButNoSeller,
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        (actor, water)
+    }
+
+    fn cargo_harness(possessed: bool) -> (Harness, EntityId, EntityId, EntityId) {
+        let origin = entity(1);
+        let destination = entity(2);
+        let mut world = World::new(cargo_topology(origin, destination)).unwrap();
+        let actor = seed_cargo_harness_actor(&mut world, origin, destination, possessed);
         let recipes = RecipeRegistry::new();
         let registries = build_full_action_registries(&recipes).unwrap();
+
+        sync_all_beliefs(&mut world, actor.0, Tick(1));
 
         (
             Harness {
@@ -1595,6 +1613,42 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
+    }
+
+    fn sync_all_beliefs(world: &mut World, observer: EntityId, observed_tick: Tick) {
+        let snapshots = world
+            .entities()
+            .filter(|entity| *entity != observer)
+            .filter_map(|entity| {
+                build_believed_entity_state(
+                    world,
+                    entity,
+                    observed_tick,
+                    PerceptionSource::DirectObservation,
+                )
+                .map(|state| (entity, state))
+            })
+            .collect::<Vec<_>>();
+        let mut store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .expect("observer must have AgentBeliefStore");
+        store.known_entities.clear();
+        for (entity, state) in snapshots {
+            store.update_entity(entity, state);
+        }
+        let mut txn = WorldTxn::new(
+            world,
+            observed_tick,
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.set_component_agent_belief_store(observer, store)
+            .expect("observer belief store should remain writable");
+        commit_txn(txn);
     }
 
     fn entity(slot: u32) -> EntityId {
@@ -1685,6 +1739,8 @@ mod tests {
             (actor, orchard_row)
         };
 
+        sync_all_beliefs(&mut world, actor, Tick(1));
+
         ExclusiveQueueHarness {
             world,
             recipes,
@@ -1726,9 +1782,10 @@ mod tests {
         txn.set_component_facility_use_queue(facility, queue)
             .unwrap();
         commit_txn(txn);
+        sync_all_beliefs(world, actor, Tick(queued_at.max(1)));
     }
 
-    fn clear_local_queue_state(world: &mut World, facility: EntityId, tick: u64) {
+    fn clear_local_queue_state(world: &mut World, actor: EntityId, facility: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick.max(1));
         let mut queue = txn
             .get_component_facility_use_queue(facility)
@@ -1739,6 +1796,7 @@ mod tests {
         txn.set_component_facility_use_queue(facility, queue)
             .unwrap();
         commit_txn(txn);
+        sync_all_beliefs(world, actor, Tick(tick.max(1)));
     }
 
     fn add_local_queued_facility(world: &mut World, actor: EntityId, queued_at: u64) -> EntityId {
@@ -2068,7 +2126,7 @@ mod tests {
             actor
         };
         let budget = PlanningBudget::default();
-        let view = OmniscientBeliefView::new(&world);
+        let view = PerAgentBeliefView::from_world(actor, &world);
         let active_journey = crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
                 GoalKey::from(GoalKind::Sleep),
@@ -2119,7 +2177,7 @@ mod tests {
         let mut harness = Harness::new(ControlSource::Ai);
         let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
         let mut runtime = active_runtime(GoalKind::Sleep);
-        let view = OmniscientBeliefView::new(&harness.world);
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
 
         set_local_queue_state(
@@ -2210,7 +2268,7 @@ mod tests {
                 intended_action: ActionDefId(77),
             },
         );
-        let initial_view = OmniscientBeliefView::new(&harness.world);
+        let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
         assert!(abandon_expired_facility_queues_with_limit(
@@ -2288,7 +2346,7 @@ mod tests {
         commit_txn(txn);
 
         let mut runtime = active_runtime(GoalKind::Sleep);
-        let initial_view = OmniscientBeliefView::new(&harness.world);
+        let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
         set_local_queue_state(
@@ -2370,10 +2428,10 @@ mod tests {
                 intended_action: ActionDefId(77),
             },
         );
-        let initial_view = OmniscientBeliefView::new(&harness.world);
+        let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
-        clear_local_queue_state(&mut harness.world, facility, 2);
+        clear_local_queue_state(&mut harness.world, harness.actor, facility, 2);
 
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
@@ -2429,10 +2487,10 @@ mod tests {
                 intended_action: ActionDefId(77),
             },
         );
-        let initial_view = OmniscientBeliefView::new(&harness.world);
+        let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
-        clear_local_queue_state(&mut harness.world, facility, 2);
+        clear_local_queue_state(&mut harness.world, harness.actor, facility, 2);
 
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
@@ -2728,7 +2786,7 @@ mod tests {
             commit_txn(txn);
             actor
         };
-        let view = OmniscientBeliefView::new(&world);
+        let view = PerAgentBeliefView::from_world(actor, &world);
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(plan.clone()),
@@ -2792,7 +2850,7 @@ mod tests {
             commit_txn(txn);
             actor
         };
-        let view = OmniscientBeliefView::new(&world);
+        let view = PerAgentBeliefView::from_world(actor, &world);
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(plan),
@@ -3242,7 +3300,7 @@ mod tests {
             ..PlanningBudget::default()
         };
         let semantics = crate::build_semantics_table(&harness.defs);
-        let view = OmniscientBeliefView::new(&harness.world);
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         let grounded = crate::generate_candidates(
             &view,
             harness.actor,
@@ -3379,6 +3437,7 @@ mod tests {
                 .quantity,
             Quantity(2)
         );
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
 
         runtime.step_in_flight = true;
         apply_step_materialization_bindings(
@@ -3450,7 +3509,7 @@ mod tests {
             .runtime_by_agent
             .entry(harness.actor)
             .or_insert_with(|| active_runtime(GoalKind::Sleep));
-        let view = OmniscientBeliefView::new(&harness.world);
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&view, harness.actor, runtime);
 
         {
@@ -3502,7 +3561,7 @@ mod tests {
                     commodity: CommodityKind::Bread,
                 })
             });
-        let view = OmniscientBeliefView::new(&harness.world);
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&view, harness.actor, runtime);
 
         {
@@ -3546,7 +3605,7 @@ mod tests {
             .cloned()
             .unwrap_or_default();
         let mut runtime = crate::AgentDecisionRuntime::default();
-        let view = OmniscientBeliefView::new(&harness.world);
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
         let mut blocked = BlockedIntentMemory::default();
 

@@ -275,7 +275,7 @@ fn motive_score(
                 market_signal_for_place(context.view, context.agent, commodity, destination);
             score_product(context.utility.enterprise_weight, signal)
         }
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 0,
+        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
     }
 }
 
@@ -911,6 +911,7 @@ mod tests {
             &RecipeRegistry::new(),
         );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(ranked[0].motive_score, 1);
     }
 
     #[test]

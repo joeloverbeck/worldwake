@@ -10,13 +10,14 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
-    build_prototype_world, hash_serializable, prototype_place_entity, BlockedIntentMemory,
-    BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
-    ControlSource, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
-    KnownRecipes, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId,
-    ResourceSource, Seed, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, WoundList,
+    build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
+    AgentBeliefStore, BlockedIntentMemory, BodyCostPerTick, CarryCapacity, CauseRef,
+    CombatProfile, CombatStance, CommodityKind, ControlSource, DeprivationExposure,
+    DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds, KnownRecipes,
+    LoadUnits, MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId,
+    ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+    World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -59,6 +60,51 @@ pub fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
 
 pub fn commit_txn(txn: WorldTxn<'_>, event_log: &mut EventLog) {
     let _ = txn.commit(event_log);
+}
+
+pub fn refresh_test_beliefs(world: &mut World, event_log: &mut EventLog, observed_tick: Tick) {
+    let updates = world
+        .query_agent_data()
+        .map(|(agent, _)| {
+            let mut store = world
+                .get_component_agent_belief_store(agent)
+                .cloned()
+                .unwrap_or_else(AgentBeliefStore::new);
+            for entity in world.entities() {
+                if entity == agent {
+                    continue;
+                }
+                if let Some(snapshot) = build_believed_entity_state(
+                    world,
+                    entity,
+                    observed_tick,
+                    PerceptionSource::DirectObservation,
+                ) {
+                    store.update_entity(entity, snapshot);
+                }
+            }
+            (agent, store)
+        })
+        .collect::<Vec<_>>();
+
+    if updates.is_empty() {
+        return;
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        observed_tick,
+        CauseRef::Bootstrap,
+        None,
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    for (agent, store) in updates {
+        txn.set_component_agent_belief_store(agent, store)
+            .expect("golden harness should keep belief stores writable");
+    }
+    commit_txn(txn, event_log);
 }
 
 pub fn build_harvest_apple_recipe() -> RecipeDefinition {
@@ -188,6 +234,7 @@ pub fn seed_agent_with_recipes(
     txn.set_component_known_recipes(agent, known_recipes)
         .unwrap();
     commit_txn(txn, event_log);
+    refresh_test_beliefs(world, event_log, Tick(0));
     agent
 }
 
@@ -205,6 +252,7 @@ pub fn give_commodity(
     txn.set_ground_location(lot, place).unwrap();
     txn.set_possessor(lot, agent).unwrap();
     commit_txn(txn, event_log);
+    refresh_test_beliefs(world, event_log, Tick(0));
     lot
 }
 
@@ -223,6 +271,7 @@ pub fn set_queue_patience(
     )
     .unwrap();
     commit_txn(txn, event_log);
+    refresh_test_beliefs(world, event_log, Tick(0));
 }
 
 /// Place a workstation+resource-source entity at a location.
@@ -243,6 +292,7 @@ pub fn place_workstation_with_source(
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
     commit_txn(txn, event_log);
+    refresh_test_beliefs(world, event_log, Tick(0));
     ws
 }
 
@@ -265,6 +315,7 @@ pub fn place_exclusive_workstation_with_source(
     txn.set_component_facility_use_queue(ws, FacilityUseQueue::default())
         .unwrap();
     commit_txn(txn, event_log);
+    refresh_test_beliefs(world, event_log, Tick(0));
     ws
 }
 
@@ -280,6 +331,7 @@ pub fn place_workstation(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     commit_txn(txn, event_log);
+    refresh_test_beliefs(world, event_log, Tick(0));
     ws
 }
 
@@ -292,6 +344,7 @@ pub fn add_hostility(
     let mut txn = new_txn(world, 0);
     txn.add_hostility(subject, target).unwrap();
     commit_txn(txn, event_log);
+    refresh_test_beliefs(world, event_log, Tick(0));
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +387,7 @@ impl GoldenHarness {
 
     pub fn step_once(&mut self) -> TickStepResult {
         let mut controllers = AutonomousControllerRuntime::new(vec![&mut self.driver]);
-        step_tick(
+        let result = step_tick(
             &mut self.world,
             &mut self.event_log,
             &mut self.scheduler,
@@ -348,7 +401,13 @@ impl GoldenHarness {
                 input_producer: Some(&mut controllers),
             },
         )
-        .unwrap()
+        .unwrap();
+        refresh_test_beliefs(
+            &mut self.world,
+            &mut self.event_log,
+            self.scheduler.current_tick(),
+        );
+        result
     }
 
     pub fn snapshot_state(&self) -> SimulationState {

@@ -202,13 +202,14 @@ mod tests {
     use super::register_travel_actions;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        CauseRef, Container, ControlSource, EventLog, InTransitOnEdge, LoadUnits, Place, Quantity,
-        Seed, Topology, TravelEdge, WitnessData, World,
+        build_believed_entity_state, AgentBeliefStore, CauseRef, Container, ControlSource,
+        EventLog, InTransitOnEdge, LoadUnits, PerceptionSource, Place, Quantity, Seed, Topology,
+        TravelEdge, WitnessData, World,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
         ActionExecutionContext, ActionInstance, ActionInstanceId, DeterministicRng,
-        OmniscientBeliefView, TickOutcome,
+        PerAgentBeliefView, TickOutcome,
     };
 
     use super::*;
@@ -267,6 +268,38 @@ mod tests {
         DeterministicRng::new(Seed([0x71; 32]))
     }
 
+    fn test_belief_store(world: &World, actor: EntityId) -> AgentBeliefStore {
+        let mut store = world
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .unwrap_or_default();
+        for entity in world.entities() {
+            if entity == actor {
+                continue;
+            }
+            if let Some(state) = build_believed_entity_state(
+                world,
+                entity,
+                Tick(u64::MAX),
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(entity, state);
+            }
+        }
+        store
+    }
+
+    fn affordances_for(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Vec<worldwake_sim::Affordance> {
+        let beliefs = test_belief_store(world, actor);
+        let view = PerAgentBeliefView::new(actor, world, &beliefs);
+        get_affordances(&view, actor, defs, handlers)
+    }
+
     fn setup_world() -> (World, EntityId, EntityId, EntityId, EntityId, EntityId) {
         let mut world = World::new(travel_topology()).unwrap();
         let (actor, bag, bread) = {
@@ -311,7 +344,7 @@ mod tests {
         actor: EntityId,
         destination: EntityId,
     ) -> ActionInstanceId {
-        let affordance = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers)
+        let affordance = affordances_for(world, actor, defs, handlers)
             .into_iter()
             .find(|affordance| affordance.bound_targets == vec![destination])
             .unwrap();
@@ -360,8 +393,7 @@ mod tests {
     fn travel_affordances_only_offer_adjacent_places() {
         let (world, actor, _, _, _, destination) = setup_world();
         let (defs, handlers, _) = setup_registries();
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![destination]);

@@ -291,7 +291,7 @@ fn resolve_affordance(
     targets: &[EntityId],
     payload_override: Option<crate::ActionPayload>,
 ) -> Result<crate::Affordance, TickStepError> {
-    let view = crate::OmniscientBeliefView::new(world);
+    let view = crate::PerAgentBeliefView::from_world(actor, world);
     let Some(def) = action_defs.get(def_id) else {
         return Err(TickStepError::RequestedAffordanceUnavailable {
             actor,
@@ -1129,7 +1129,7 @@ mod tests {
         let (world, _event_log, _scheduler, controller, _rng, _recipes, defs, handlers) =
             build_state();
         let actor = controlled_actor(&controller);
-        let view = crate::OmniscientBeliefView::new(&world);
+        let view = crate::PerAgentBeliefView::from_world(actor, &world);
         let def = defs.get(ActionDefId(0)).unwrap();
         let affordance = get_affordances(&view, actor, &defs, &handlers)
             .into_iter()

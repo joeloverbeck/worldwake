@@ -1,7 +1,7 @@
 //! Action command handlers: actions, do, cancel.
 
 use worldwake_sim::{
-    get_affordances, ActionRequestMode, InputKind, OmniscientBeliefRuntime, OmniscientBeliefView,
+    get_affordances, ActionRequestMode, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
     SimulationState,
 };
 use worldwake_systems::ActionRegistries;
@@ -24,8 +24,8 @@ pub fn handle_actions(
         .controlled_entity()
         .ok_or_else(|| CommandError::new("no controlled agent"))?;
 
-    let runtime = OmniscientBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
-    let view = OmniscientBeliefView::with_runtime(sim.world(), runtime);
+    let runtime = PerAgentBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
+    let view = PerAgentBeliefView::with_runtime_from_world(entity, sim.world(), runtime);
 
     let affordances = get_affordances(&view, entity, &registries.defs, &registries.handlers);
 

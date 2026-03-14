@@ -638,16 +638,17 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, Container, ControlSource,
-        DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog, ExclusiveFacilityPolicy,
-        FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile,
+        build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyCostPerTick,
+        CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
+        EntityId, EventId, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
         Permille, Quantity, ResourceSource, Seed, Tick, VisibilitySpec, WitnessData,
         WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, DeterministicRng, OmniscientBeliefView, RecipeRegistry,
+        ActionInstanceId, ActionPayload, DeterministicRng, PerAgentBeliefView, RecipeRegistry,
         SystemExecutionContext, SystemId, TickOutcome, TradeActionPayload,
     };
 
@@ -787,13 +788,45 @@ mod tests {
         (defs, handlers, ids)
     }
 
+    fn test_belief_store(world: &World, actor: EntityId) -> AgentBeliefStore {
+        let mut store = world
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .unwrap_or_default();
+        for entity in world.entities() {
+            if entity == actor {
+                continue;
+            }
+            if let Some(state) = build_believed_entity_state(
+                world,
+                entity,
+                Tick(u64::MAX),
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(entity, state);
+            }
+        }
+        store
+    }
+
+    fn affordances_for(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Vec<worldwake_sim::Affordance> {
+        let beliefs = test_belief_store(world, actor);
+        let view = PerAgentBeliefView::new(actor, world, &beliefs);
+        get_affordances(&view, actor, defs, handlers)
+    }
+
     fn single_harvest_affordance(
         world: &World,
         actor: EntityId,
         defs: &ActionDefRegistry,
         handlers: &ActionHandlerRegistry,
     ) -> worldwake_sim::Affordance {
-        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers);
+        let affordances = affordances_for(world, actor, defs, handlers);
         assert_eq!(affordances.len(), 1);
         affordances.into_iter().next().unwrap()
     }
@@ -804,7 +837,7 @@ mod tests {
         defs: &ActionDefRegistry,
         handlers: &ActionHandlerRegistry,
     ) -> worldwake_sim::Affordance {
-        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers);
+        let affordances = affordances_for(world, actor, defs, handlers);
         assert_eq!(affordances.len(), 1);
         affordances.into_iter().next().unwrap()
     }
@@ -1157,35 +1190,18 @@ mod tests {
 
         let (mut world_missing_recipe, actor_missing_recipe, _, _) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_missing_recipe),
-            actor_missing_recipe,
-            &defs,
-            &handlers,
-        )
-        .is_empty());
+        assert!(affordances_for(&world_missing_recipe, actor_missing_recipe, &defs, &handlers)
+            .is_empty());
 
         let (mut world_wrong_tag, actor_wrong_tag, _, _) =
             setup_world(false, WorkstationTag::Mill, 5);
         grant_recipe(&mut world_wrong_tag, actor_wrong_tag, recipe_id);
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_wrong_tag),
-            actor_wrong_tag,
-            &defs,
-            &handlers,
-        )
-        .is_empty());
+        assert!(affordances_for(&world_wrong_tag, actor_wrong_tag, &defs, &handlers).is_empty());
 
         let (mut world_empty, actor_empty, _, _) =
             setup_world(false, WorkstationTag::OrchardRow, 1);
         grant_recipe(&mut world_empty, actor_empty, recipe_id);
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_empty),
-            actor_empty,
-            &defs,
-            &handlers,
-        )
-        .is_empty());
+        assert!(affordances_for(&world_empty, actor_empty, &defs, &handlers).is_empty());
 
         let _ = &mut world_missing_recipe;
     }
@@ -1201,9 +1217,7 @@ mod tests {
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
 
-        assert!(
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers).is_empty()
-        );
+        assert!(affordances_for(&world, actor, &defs, &handlers).is_empty());
 
         let mut txn = new_txn(&mut world, 3);
         let tool = txn
@@ -1217,8 +1231,7 @@ mod tests {
         txn.set_possessor(tool, actor).unwrap();
         commit_txn(txn);
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert_eq!(affordances.len(), 1);
     }
 
@@ -1776,13 +1789,8 @@ mod tests {
             CommodityKind::Grain,
             2,
         );
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_missing_recipe),
-            actor_missing_recipe,
-            &defs,
-            &handlers,
-        )
-        .is_empty());
+        assert!(affordances_for(&world_missing_recipe, actor_missing_recipe, &defs, &handlers)
+            .is_empty());
 
         let (mut world_missing_tool, actor_missing_tool, _, place_missing_tool) =
             craft_fixture(false);
@@ -1794,13 +1802,8 @@ mod tests {
             CommodityKind::Grain,
             2,
         );
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_missing_tool),
-            actor_missing_tool,
-            &defs,
-            &handlers,
-        )
-        .is_empty());
+        assert!(affordances_for(&world_missing_tool, actor_missing_tool, &defs, &handlers)
+            .is_empty());
 
         let (mut world_ready, actor_ready, workstation_ready, place_ready) = craft_fixture(false);
         grant_recipe(&mut world_ready, actor_ready, recipe_id);
@@ -1813,13 +1816,7 @@ mod tests {
         );
         add_tool(&mut world_ready, actor_ready, place_ready);
         assert_eq!(
-            get_affordances(
-                &OmniscientBeliefView::new(&world_ready),
-                actor_ready,
-                &defs,
-                &handlers,
-            )
-            .len(),
+            affordances_for(&world_ready, actor_ready, &defs, &handlers).len(),
             1
         );
 
@@ -1835,13 +1832,7 @@ mod tests {
         )
         .unwrap();
         commit_txn(txn);
-        assert!(get_affordances(
-            &OmniscientBeliefView::new(&world_ready),
-            actor_ready,
-            &defs,
-            &handlers,
-        )
-        .is_empty());
+        assert!(affordances_for(&world_ready, actor_ready, &defs, &handlers).is_empty());
     }
 
     #[test]

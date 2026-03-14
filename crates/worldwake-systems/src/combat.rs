@@ -1341,17 +1341,18 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance,
-        CombatWeaponRef, CommodityKind, Container, ControlSource, DeadAt, DeprivationKind,
-        DriveThresholds, EntityKind, EventLog, EventTag, EvidenceRef, HomeostaticNeeds, LoadUnits,
-        Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyPart,
+        CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef, CommodityKind,
+        Container, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EntityKind, EventLog,
+        EventTag, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille, Quantity,
+        Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
         ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
-        DurationExpr, Interruptibility, OmniscientBeliefView, SystemExecutionContext, SystemId,
+        DurationExpr, Interruptibility, PerAgentBeliefView, SystemExecutionContext, SystemId,
         TickOutcome,
     };
 
@@ -1382,6 +1383,38 @@ mod tests {
 
     fn test_rng(seed: u8) -> DeterministicRng {
         DeterministicRng::new(Seed([seed; 32]))
+    }
+
+    fn test_belief_store(world: &World, actor: worldwake_core::EntityId) -> AgentBeliefStore {
+        let mut store = world
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .unwrap_or_default();
+        for entity in world.entities() {
+            if entity == actor {
+                continue;
+            }
+            if let Some(state) = build_believed_entity_state(
+                world,
+                entity,
+                Tick(u64::MAX),
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(entity, state);
+            }
+        }
+        store
+    }
+
+    fn affordances_for(
+        world: &World,
+        actor: worldwake_core::EntityId,
+        defs: &worldwake_sim::ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Vec<Affordance> {
+        let beliefs = test_belief_store(world, actor);
+        let view = PerAgentBeliefView::new(actor, world, &beliefs);
+        get_affordances(&view, actor, defs, handlers)
     }
 
     fn defend_profile() -> CombatProfile {
@@ -1704,8 +1737,7 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
+        let affordances = affordances_for(&world, healer, &defs, &handlers);
         let heal_targets = affordances
             .into_iter()
             .filter(|affordance| affordance.def_id == heal_id)
@@ -1737,8 +1769,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
+        let affordance = affordances_for(&world, healer, &defs, &handlers)
                 .into_iter()
                 .find(|affordance| {
                     affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
@@ -1844,8 +1875,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers)
+        let affordance = affordances_for(&world, healer, &defs, &handlers)
                 .into_iter()
                 .find(|affordance| {
                     affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
@@ -1919,8 +1949,7 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
+        let affordances = affordances_for(&world, healer, &defs, &handlers);
         assert!(!affordances
             .iter()
             .any(|affordance| affordance.def_id == heal_id));
@@ -1931,8 +1960,7 @@ mod tests {
             txn.set_component_dead_at(patient, DeadAt(Tick(5))).unwrap();
             commit_txn(txn);
         }
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), healer, &defs, &handlers);
+        let affordances = affordances_for(&world, healer, &defs, &handlers);
         assert!(!affordances
             .iter()
             .any(|affordance| affordance.def_id == heal_id));
@@ -1954,13 +1982,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
-                .into_iter()
-                .find(|affordance| {
-                    affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
-                })
-                .unwrap();
+        let affordance = Affordance {
+            def_id: loot_id,
+            actor: looter,
+            bound_targets: vec![corpse],
+            payload_override: None,
+            explanation: None,
+        };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2038,13 +2066,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
-                .into_iter()
-                .find(|affordance| {
-                    affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
-                })
-                .unwrap();
+        let affordance = Affordance {
+            def_id: loot_id,
+            actor: looter,
+            bound_targets: vec![corpse],
+            payload_override: None,
+            explanation: None,
+        };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2132,13 +2160,13 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers)
-                .into_iter()
-                .find(|affordance| {
-                    affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
-                })
-                .unwrap();
+        let affordance = Affordance {
+            def_id: loot_id,
+            actor: looter,
+            bound_targets: vec![corpse],
+            payload_override: None,
+            explanation: None,
+        };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2209,14 +2237,13 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let bury_id = register_bury_action(&mut defs, &mut handlers);
         let loot_id = register_loot_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), buriar, &defs, &handlers)
-                .into_iter()
-                .find(|affordance| {
-                    affordance.def_id == bury_id
-                        && affordance.bound_targets == vec![corpse, grave_plot]
-                })
-                .unwrap();
+        let affordance = Affordance {
+            def_id: bury_id,
+            actor: buriar,
+            bound_targets: vec![corpse, grave_plot],
+            payload_override: None,
+            explanation: None,
+        };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2268,11 +2295,33 @@ mod tests {
             .into_iter()
             .any(|entity| entity == corpse));
 
-        let post_bury_affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), buriar, &defs, &handlers);
-        assert!(!post_bury_affordances.iter().any(|affordance| {
-            affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
-        }));
+        let buried_loot_err = start_action(
+            &Affordance {
+                def_id: loot_id,
+                actor: buriar,
+                bound_targets: vec![corpse],
+                payload_override: None,
+                explanation: None,
+            },
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(8),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            buried_loot_err,
+            ActionError::PreconditionFailed("TargetNotInContainer(0)".to_string())
+        );
     }
 
     #[allow(clippy::too_many_lines)]
@@ -2307,8 +2356,7 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let loot_id = register_loot_action(&mut defs, &mut handlers);
 
-        let alive_affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), looter, &defs, &handlers);
+        let alive_affordances = affordances_for(&world, looter, &defs, &handlers);
         assert!(!alive_affordances.iter().any(|affordance| {
             affordance.def_id == loot_id && affordance.bound_targets == vec![alive_target]
         }));
@@ -2457,12 +2505,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let attack_id = register_attack_action(&mut defs, &mut handlers);
-        let affordance = get_affordances(
-            &OmniscientBeliefView::new(&world),
-            attacker,
-            &defs,
-            &handlers,
-        )
+        let affordance = affordances_for(&world, attacker, &defs, &handlers)
         .into_iter()
         .find(|affordance| {
             affordance.def_id == attack_id && affordance.bound_targets == vec![target]
@@ -2553,7 +2596,8 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
-        let view = OmniscientBeliefView::new(&world);
+        let beliefs = test_belief_store(&world, actor);
+        let view = PerAgentBeliefView::new(actor, &world, &beliefs);
         let affordance = get_affordances(&view, actor, &defs, &handlers)
             .into_iter()
             .find(|affordance| affordance.def_id == defend_id)
@@ -2933,14 +2977,9 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
 
-        let dead_affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), dead, &defs, &handlers);
-        let incapacitated_affordances = get_affordances(
-            &OmniscientBeliefView::new(&world),
-            incapacitated,
-            &defs,
-            &handlers,
-        );
+        let dead_affordances = affordances_for(&world, dead, &defs, &handlers);
+        let incapacitated_affordances =
+            affordances_for(&world, incapacitated, &defs, &handlers);
 
         assert!(!dead_affordances
             .iter()
@@ -3384,8 +3423,7 @@ mod tests {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), guard, &defs, &handlers)
+        let affordance = affordances_for(&world, guard, &defs, &handlers)
                 .into_iter()
                 .find(|affordance| affordance.def_id == defend_id)
                 .unwrap();

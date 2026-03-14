@@ -1,6 +1,6 @@
 use crate::{
     derive_danger_pressure, enterprise::restock_gap_at_destination, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics, PlanningState,
+    PlannerOpSemantics, PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -361,12 +361,33 @@ impl GoalKindPlannerExt for GoalKind {
                 needs.dirtiness = below_medium(thresholds.dirtiness.medium());
             }),
             PlannerOpKind::Heal => match self {
-                GoalKind::Heal { target } => {
-                    let Some(thresholds) = state.drive_thresholds(*target) else {
-                        return state;
-                    };
-                    state.with_pain(*target, below_medium(thresholds.pain.medium()))
+                GoalKind::Heal { target } => state.with_pain(*target, Permille::new_unchecked(0)),
+                _ => state,
+            },
+            PlannerOpKind::Loot => match self {
+                GoalKind::LootCorpse { corpse } => {
+                    let actor = state.snapshot().actor();
+                    CommodityKind::ALL.iter().copied().fold(state, |next, commodity| {
+                        let quantity = next.commodity_quantity(*corpse, commodity);
+                        if quantity == Quantity(0) {
+                            return next;
+                        }
+                        let actor_quantity = next.commodity_quantity(actor, commodity);
+                        next.with_commodity_quantity(*corpse, commodity, Quantity(0))
+                            .with_commodity_quantity(
+                                actor,
+                                commodity,
+                                Quantity(actor_quantity.0.saturating_add(quantity.0)),
+                            )
+                    })
                 }
+                _ => state,
+            },
+            PlannerOpKind::Bury => match self {
+                GoalKind::BuryCorpse { corpse, burial_site } => state.set_container_ref(
+                    PlanningEntityRef::Authoritative(*corpse),
+                    PlanningEntityRef::Authoritative(*burial_site),
+                ),
                 _ => state,
             },
             PlannerOpKind::QueueForFacilityUse => {
@@ -467,18 +488,21 @@ impl GoalKindPlannerExt for GoalKind {
                 derive_danger_pressure(state, actor) < thresholds.danger.high()
             }),
             GoalKind::Heal { target } => state
-                .drive_thresholds(*target)
-                .zip(state.pain_summary(*target))
-                .is_some_and(|(thresholds, pain)| pain < thresholds.pain.medium()),
+                .pain_summary(*target)
+                .is_some_and(|pain| pain == Permille::new_unchecked(0)),
             GoalKind::MoveCargo {
                 commodity,
                 destination,
             } => restock_gap_at_destination(state, actor, *destination, *commodity).is_none(),
+            GoalKind::LootCorpse { corpse } => CommodityKind::ALL
+                .iter()
+                .copied()
+                .all(|commodity| state.commodity_quantity(*corpse, commodity) == Quantity(0)),
+            GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
             GoalKind::ProduceCommodity { .. }
             | GoalKind::RestockCommodity { .. }
-            | GoalKind::LootCorpse { .. }
             | GoalKind::SellCommodity { .. }
-            | GoalKind::BuryCorpse { .. } => false,
+            => false,
         }
     }
 }
@@ -1411,6 +1435,58 @@ mod tests {
             advanced.homeostatic_needs(actor).unwrap().hunger
                 < DriveThresholds::default().hunger.low()
         );
+    }
+
+    #[test]
+    fn loot_goal_step_transfers_believed_corpse_inventory_and_satisfies_goal() {
+        let (mut view, actor, _seller) = base_view();
+        let corpse = entity(30);
+        let town = entity(10);
+        view.kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(corpse, town);
+        view.entities_at.entry(town).or_default().push(corpse);
+        view.commodity_quantities
+            .insert((corpse, CommodityKind::Coin), Quantity(5));
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::LootCorpse { corpse };
+
+        assert!(!goal.is_satisfied(&base_state));
+
+        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Loot, &[corpse], None);
+
+        assert_eq!(advanced.commodity_quantity(corpse, CommodityKind::Coin), Quantity(0));
+        assert_eq!(advanced.commodity_quantity(actor, CommodityKind::Coin), Quantity(8));
+        assert!(goal.is_satisfied(&advanced));
+    }
+
+    #[test]
+    fn bury_goal_step_marks_corpse_contained_and_satisfies_goal() {
+        let (mut view, actor, _seller) = base_view();
+        let corpse = entity(30);
+        let grave_plot = entity(31);
+        let town = entity(10);
+        view.kinds.insert(corpse, EntityKind::Agent);
+        view.kinds.insert(grave_plot, EntityKind::Facility);
+        view.effective_places.insert(corpse, town);
+        view.effective_places.insert(grave_plot, town);
+        view.entities_at.entry(town).or_default().extend([corpse, grave_plot]);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::BuryCorpse {
+            corpse,
+            burial_site: grave_plot,
+        };
+
+        assert!(!goal.is_satisfied(&base_state));
+
+        let advanced =
+            goal.apply_planner_step(base_state, PlannerOpKind::Bury, &[corpse, grave_plot], None);
+
+        assert_eq!(advanced.direct_container(corpse), Some(grave_plot));
+        assert!(goal.is_satisfied(&advanced));
     }
 
     #[test]

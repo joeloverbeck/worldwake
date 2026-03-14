@@ -374,14 +374,15 @@ mod tests {
     use super::register_transport_actions;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, CarryCapacity, CauseRef, CommodityKind, Container, ControlSource,
-        EventLog, LoadUnits, Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
+        build_believed_entity_state, build_prototype_world, AgentBeliefStore, CarryCapacity,
+        CauseRef, CommodityKind, Container, ControlSource, EventLog, LoadUnits,
+        PerceptionSource, Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
         ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        DeterministicRng, OmniscientBeliefView, TickOutcome,
+        DeterministicRng, PerAgentBeliefView, TickOutcome,
     };
 
     use super::*;
@@ -437,6 +438,38 @@ mod tests {
         DeterministicRng::new(Seed([0x73; 32]))
     }
 
+    fn test_belief_store(world: &World, actor: EntityId) -> AgentBeliefStore {
+        let mut store = world
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .unwrap_or_default();
+        for entity in world.entities() {
+            if entity == actor {
+                continue;
+            }
+            if let Some(state) = build_believed_entity_state(
+                world,
+                entity,
+                Tick(u64::MAX),
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(entity, state);
+            }
+        }
+        store
+    }
+
+    fn affordances_for(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Vec<worldwake_sim::Affordance> {
+        let beliefs = test_belief_store(world, actor);
+        let view = PerAgentBeliefView::new(actor, world, &beliefs);
+        get_affordances(&view, actor, defs, handlers)
+    }
+
     fn setup_world() -> (World, EntityId, EntityId, EntityId, EntityId) {
         let mut world = World::new(transport_topology()).unwrap();
         let place = entity(1);
@@ -480,7 +513,7 @@ mod tests {
         actor: EntityId,
         target: EntityId,
     ) -> ActionInstanceId {
-        let affordance = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers)
+        let affordance = affordances_for(world, actor, defs, handlers)
             .into_iter()
             .find(|affordance| affordance.bound_targets == vec![target])
             .unwrap();
@@ -901,11 +934,10 @@ mod tests {
         };
         let (defs, handlers, _, put_down_id) = setup_registries();
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
-                .into_iter()
-                .filter(|affordance| affordance.def_id == put_down_id)
-                .collect::<Vec<_>>();
+        let affordances = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| affordance.def_id == put_down_id)
+            .collect::<Vec<_>>();
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![carried_lot]);
@@ -990,12 +1022,7 @@ mod tests {
         let mut travel_handlers = ActionHandlerRegistry::new();
         let travel_id =
             crate::travel_actions::register_travel_actions(&mut travel_defs, &mut travel_handlers);
-        let travel_affordance = get_affordances(
-            &OmniscientBeliefView::new(&world),
-            actor,
-            &travel_defs,
-            &travel_handlers,
-        )
+        let travel_affordance = affordances_for(&world, actor, &travel_defs, &travel_handlers)
         .into_iter()
         .find(|affordance| {
             affordance.def_id == travel_id && affordance.bound_targets == vec![destination]
@@ -1081,11 +1108,10 @@ mod tests {
         };
         let (defs, handlers, pick_up_id, _) = setup_registries();
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)
-                .into_iter()
-                .filter(|affordance| affordance.def_id == pick_up_id)
-                .collect::<Vec<_>>();
+        let affordances = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| affordance.def_id == pick_up_id)
+            .collect::<Vec<_>>();
 
         assert!(affordances
             .iter()

@@ -392,15 +392,16 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, ActionDefId, CauseRef, CommodityKind,
-        Container, ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventLog,
-        HomeostaticNeeds, LoadUnits, MetabolismProfile, Permille, PrototypePlace, Quantity, Seed,
-        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
+        AgentBeliefStore, CauseRef, CommodityKind, Container, ControlSource,
+        DeprivationExposure, DriveThresholds, EntityId, EventLog, HomeostaticNeeds, LoadUnits,
+        MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, DeterministicRng, OmniscientBeliefView, TickOutcome,
+        ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -471,6 +472,38 @@ mod tests {
         (defs, handlers)
     }
 
+    fn test_belief_store(world: &World, actor: EntityId) -> AgentBeliefStore {
+        let mut store = world
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .unwrap_or_default();
+        for entity in world.entities() {
+            if entity == actor {
+                continue;
+            }
+            if let Some(state) = build_believed_entity_state(
+                world,
+                entity,
+                Tick(u64::MAX),
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(entity, state);
+            }
+        }
+        store
+    }
+
+    fn affordances_for(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Vec<worldwake_sim::Affordance> {
+        let beliefs = test_belief_store(world, actor);
+        let view = PerAgentBeliefView::new(actor, world, &beliefs);
+        get_affordances(&view, actor, defs, handlers)
+    }
+
     fn run_action_to_completion(
         actor: EntityId,
         affordance_index: usize,
@@ -482,7 +515,7 @@ mod tests {
         let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
         let mut next_id = ActionInstanceId(0);
         let mut rng = test_rng();
-        let affordances = get_affordances(&OmniscientBeliefView::new(world), actor, defs, handlers);
+        let affordances = affordances_for(world, actor, defs, handlers);
         let affordance = affordances[affordance_index].clone();
         let instance_id = start_action(
             &affordance,
@@ -601,8 +634,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
         let drink_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == ActionDefId(1))
@@ -642,8 +674,7 @@ mod tests {
         let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
         let mut next_id = ActionInstanceId(0);
         let mut rng = test_rng();
-        let affordance =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers)[0].clone();
+        let affordance = affordances_for(&world, actor, &defs, &handlers)[0].clone();
         let instance_id = start_action(
             &affordance,
             &defs,
@@ -693,8 +724,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
         let sleep_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == ActionDefId(2))
@@ -748,8 +778,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
         let toilet_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == ActionDefId(3))
@@ -782,8 +811,7 @@ mod tests {
         let public_latrine = prototype_place_entity(PrototypePlace::PublicLatrine);
         let (defs, handlers) = setup_registries();
 
-        let square_affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let square_affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
             square_affordances
                 .iter()
@@ -795,8 +823,7 @@ mod tests {
         txn.set_ground_location(actor, public_latrine).unwrap();
         commit_txn(txn);
 
-        let latrine_affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let latrine_affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
             latrine_affordances
                 .iter()
@@ -822,8 +849,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
         let wash_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == ActionDefId(4))
@@ -857,8 +883,7 @@ mod tests {
         }
         let (defs, handlers) = setup_registries();
 
-        let affordances =
-            get_affordances(&OmniscientBeliefView::new(&world), actor, &defs, &handlers);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(affordances
             .iter()
             .all(|affordance| affordance.def_id != ActionDefId(0)));

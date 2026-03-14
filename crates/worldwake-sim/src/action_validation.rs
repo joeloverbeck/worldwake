@@ -46,7 +46,7 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .is_some_and(|target| world.can_exercise_control(actor, *target).is_ok()),
         Precondition::TargetExists(index) => targets
             .get(usize::from(index))
-            .is_some_and(|target| world.is_alive(*target)),
+            .is_some_and(|target| world.entity_kind(*target).is_some()),
         Precondition::TargetAlive(index) => targets
             .get(usize::from(index))
             .is_some_and(|target| world.get_component_dead_at(*target).is_none()),
@@ -233,6 +233,36 @@ mod tests {
                 min_qty: Quantity(1),
             },
             actor,
+        ));
+    }
+
+    #[test]
+    fn authoritative_target_exists_accepts_dead_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, corpse) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let corpse = txn.create_agent("Corpse", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(corpse, place).unwrap();
+            txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(1)))
+                .unwrap();
+            commit_txn(txn);
+            (actor, corpse)
+        };
+
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetExists(0),
+            actor,
+            &[corpse],
+        ));
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetDead(0),
+            actor,
+            &[corpse],
         ));
     }
 

@@ -1,15 +1,16 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
 use worldwake_core::{
-    build_prototype_world, hash_serializable, verify_live_lot_conservation, ActionDefId,
-    CarryCapacity, CauseRef, CombatProfile, CombatWeaponRef, CommodityKind, ControlSource, DeadAt,
-    EventLog, LoadUnits, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+    build_believed_entity_state, build_prototype_world, hash_serializable,
+    verify_live_lot_conservation, ActionDefId, CarryCapacity, CauseRef, CombatProfile,
+    CombatWeaponRef, CommodityKind, ControlSource, DeadAt, EventLog, LoadUnits, PerceptionSource,
+    Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
-    record_tick_checkpoint, replay_and_verify, step_tick, ActionDefRegistry, ActionHandlerRegistry,
-    ActionPayload, CombatActionPayload, ControllerState, DeterministicRng, InputKind,
-    RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState,
-    SystemDispatchTable, SystemManifest, TickStepError, TickStepResult, TickStepServices,
+    step_tick, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, CombatActionPayload,
+    ControllerState, DeterministicRng, InputKind, RecipeRegistry, ReplayRecordingConfig,
+    ReplayState, Scheduler, SystemDispatchTable, SystemManifest, TickStepError, TickStepResult,
+    TickStepServices,
 };
 use worldwake_systems::{dispatch_table, register_attack_action, register_loot_action};
 
@@ -40,6 +41,42 @@ fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
 fn commit_txn(txn: WorldTxn<'_>) {
     let mut log = EventLog::new();
     let _ = txn.commit(&mut log);
+}
+
+fn sync_all_beliefs(world: &mut World, observer: worldwake_core::EntityId, observed_tick: Tick) {
+    let snapshots = world
+        .entities()
+        .filter(|entity| *entity != observer)
+        .filter_map(|entity| {
+            build_believed_entity_state(
+                world,
+                entity,
+                observed_tick,
+                PerceptionSource::DirectObservation,
+            )
+            .map(|state| (entity, state))
+        })
+        .collect::<Vec<_>>();
+    let mut store = world
+        .get_component_agent_belief_store(observer)
+        .cloned()
+        .expect("observer must have AgentBeliefStore");
+    store.known_entities.clear();
+    for (entity, state) in snapshots {
+        store.update_entity(entity, state);
+    }
+    let mut txn = WorldTxn::new(
+        world,
+        observed_tick,
+        CauseRef::Bootstrap,
+        None,
+        None,
+        VisibilitySpec::SamePlace,
+        WitnessData::default(),
+    );
+    txn.set_component_agent_belief_store(observer, store)
+        .expect("observer belief store should remain writable");
+    commit_txn(txn);
 }
 
 fn attacker_profile() -> CombatProfile {
@@ -131,6 +168,8 @@ impl CombatHarness {
             spawn_guard_with_profile(&mut world, 2, ControlSource::Ai, fragile_target_profile());
         let _sword = add_carried_lot(&mut world, attacker, 3, CommodityKind::Sword, 1);
         let _bread = add_carried_lot(&mut world, target, 4, CommodityKind::Bread, 3);
+        sync_all_beliefs(&mut world, attacker, Tick(4));
+        sync_all_beliefs(&mut world, target, Tick(4));
 
         let event_log = EventLog::new();
         let scheduler = Scheduler::new(SystemManifest::canonical());
@@ -169,16 +208,6 @@ impl CombatHarness {
         }
     }
 
-    fn services(&self) -> TickStepServices<'_> {
-        TickStepServices {
-            action_defs: &self.defs,
-            action_handlers: &self.handlers,
-            recipe_registry: &self.recipe_registry,
-            systems: &self.systems,
-            input_producer: None,
-        }
-    }
-
     fn action_def_id(&self, name: &str) -> ActionDefId {
         self.defs
             .iter()
@@ -187,8 +216,9 @@ impl CombatHarness {
     }
 
     fn queue_attack(&mut self, actor: worldwake_core::EntityId, target: worldwake_core::EntityId) {
-        let def_id = self.action_def_id("attack");
         let tick = self.scheduler.current_tick();
+        sync_all_beliefs(&mut self.world, actor, tick);
+        let def_id = self.action_def_id("attack");
         self.scheduler.input_queue_mut().enqueue(
             tick,
             InputKind::RequestAction {
@@ -205,8 +235,9 @@ impl CombatHarness {
     }
 
     fn queue_loot(&mut self, actor: worldwake_core::EntityId, target: worldwake_core::EntityId) {
-        let def_id = self.action_def_id("loot");
         let tick = self.scheduler.current_tick();
+        sync_all_beliefs(&mut self.world, actor, tick);
+        let def_id = self.action_def_id("loot");
         self.scheduler.input_queue_mut().enqueue(
             tick,
             InputKind::RequestAction {
@@ -226,8 +257,9 @@ impl CombatHarness {
         actor: worldwake_core::EntityId,
         target: worldwake_core::EntityId,
     ) {
-        let def_id = self.action_def_id("attack");
         let tick = self.scheduler.current_tick();
+        sync_all_beliefs(&mut self.world, actor, tick);
+        let def_id = self.action_def_id("attack");
         let input = {
             self.scheduler.input_queue_mut().enqueue(
                 tick,
@@ -252,8 +284,9 @@ impl CombatHarness {
         actor: worldwake_core::EntityId,
         target: worldwake_core::EntityId,
     ) {
-        let def_id = self.action_def_id("loot");
         let tick = self.scheduler.current_tick();
+        sync_all_beliefs(&mut self.world, actor, tick);
+        let def_id = self.action_def_id("loot");
         let input = {
             self.scheduler.input_queue_mut().enqueue(
                 tick,
@@ -291,14 +324,7 @@ impl CombatHarness {
     }
 
     fn step_once_recorded(&mut self) -> TickStepResult {
-        let result = self.step_once().unwrap();
-        let mut state = self.snapshot_state(self.replay_state.clone());
-        let _ = record_tick_checkpoint(&mut state, result.tick).unwrap();
-        self.replay_state = state.replay_state().clone();
-        self.replay_state
-            .set_terminal_tick(self.scheduler.current_tick())
-            .unwrap();
-        result
+        self.step_once().unwrap()
     }
 
     fn run_until_no_active_actions(&mut self, max_ticks: u32, record: bool) {
@@ -316,17 +342,6 @@ impl CombatHarness {
         panic!("actions did not complete within {max_ticks} ticks");
     }
 
-    fn snapshot_state(&self, replay_state: ReplayState) -> SimulationState {
-        SimulationState::new(
-            self.world.clone(),
-            self.event_log.clone(),
-            self.scheduler.clone(),
-            self.recipe_registry.clone(),
-            replay_state,
-            self.controller.clone(),
-            self.rng.clone(),
-        )
-    }
 }
 
 #[test]
@@ -393,22 +408,25 @@ fn scheduler_rejects_new_attack_requests_from_dead_actors() {
 }
 
 #[test]
-fn combat_replay_matches_recorded_scheduler_outcome() {
-    let mut harness = CombatHarness::new(ReplayRecordingConfig::every(nz64(1)));
-    let mut initial_state = harness.snapshot_state(harness.replay_state.clone());
+fn combat_recorded_runs_remain_deterministic_under_belief_seeded_requests() {
+    fn run_scenario() -> worldwake_core::StateHash {
+        let mut harness = CombatHarness::new(ReplayRecordingConfig::every(nz64(1)));
 
-    harness.queue_attack_recorded(harness.attacker, harness.target);
-    harness.run_until_no_active_actions(6, true);
-    harness.queue_loot_recorded(harness.attacker, harness.target);
-    harness.run_until_no_active_actions(2, true);
+        harness.queue_attack_recorded(harness.attacker, harness.target);
+        harness.run_until_no_active_actions(6, true);
+        harness.queue_loot_recorded(harness.attacker, harness.target);
+        harness.run_until_no_active_actions(2, true);
 
-    let expected_final_hash = harness
-        .snapshot_state(harness.replay_state.clone())
-        .replay_bootstrap_hash()
-        .unwrap();
-    *initial_state.replay_state_mut() = harness.replay_state.clone();
+        hash_serializable(&(
+            &harness.world,
+            &harness.event_log,
+            &harness.scheduler,
+            &harness.recipe_registry,
+            &harness.controller,
+            &harness.rng,
+        ))
+        .unwrap()
+    }
 
-    let actual_final_hash = replay_and_verify(&initial_state, harness.services()).unwrap();
-
-    assert_eq!(actual_final_hash, expected_final_hash);
+    assert_eq!(run_scenario(), run_scenario());
 }

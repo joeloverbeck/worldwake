@@ -7,7 +7,7 @@ use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
     ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
     ActionPayload, ActionProgress, ActionState, BeliefView, CommitOutcome, DeterministicRng,
-    DurationExpr, Interruptibility, OmniscientBeliefView, PayloadEntityRole, Precondition,
+    DurationExpr, Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition,
     TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
@@ -225,10 +225,8 @@ fn ensure_bundle_accepted(
     payload: &TradeActionPayload,
     place: EntityId,
 ) -> Result<(), ActionError> {
-    let belief = OmniscientBeliefView::new(txn);
     let actor_acceptance = evaluate_for_participant(
         txn,
-        &belief,
         actor,
         counterparty,
         place,
@@ -246,7 +244,6 @@ fn ensure_bundle_accepted(
 
     let counterparty_acceptance = evaluate_for_participant(
         txn,
-        &belief,
         counterparty,
         actor,
         place,
@@ -340,17 +337,17 @@ fn demand_memory_for(
 
 fn evaluate_for_participant(
     txn: &WorldTxn<'_>,
-    belief: &OmniscientBeliefView<'_>,
     actor: EntityId,
     excluded_counterparty: EntityId,
     place: EntityId,
     offered: [(CommodityKind, Quantity); 1],
     received: [(CommodityKind, Quantity); 1],
 ) -> TradeAcceptance {
+    let belief = PerAgentBeliefView::from_world(actor, txn);
     let alternatives = local_alternatives(txn, actor, excluded_counterparty, place);
     evaluate_trade_bundle(
         actor,
-        belief,
+        &belief,
         txn.get_component_homeostatic_needs(actor),
         txn.get_component_wound_list(actor),
         txn.controlled_commodity_quantity(actor, CommodityKind::Coin),
@@ -374,7 +371,6 @@ pub fn select_substitute_trade_candidate(
     let preferences = txn.get_component_substitute_preferences(buyer)?;
     let desired_category = desired_commodity.spec().trade_category;
     let substitutes = preferences.preferences.get(&desired_category)?;
-    let belief = OmniscientBeliefView::new(txn);
 
     let mut sellers = txn.entities_effectively_at(place);
     sellers.sort();
@@ -395,7 +391,6 @@ pub fn select_substitute_trade_candidate(
 
             let acceptance = evaluate_for_participant(
                 txn,
-                &belief,
                 buyer,
                 seller,
                 place,
@@ -617,16 +612,18 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        build_prototype_world, verify_live_lot_conservation, CauseRef, CommodityKind,
-        ControlSource, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
-        EventLog, EventTag, HomeostaticNeeds, LotOperation, MerchandiseProfile, Permille, Quantity,
+        build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
+        AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DemandMemory,
+        DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag,
+        HomeostaticNeeds, LotOperation, MerchandiseProfile, PerceptionSource, Permille, Quantity,
         Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
         WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
         ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload,
-        ActionStatus, Affordance, DeterministicRng, TickOutcome, TradeActionPayload,
+        ActionStatus, Affordance, DeterministicRng, PerAgentBeliefView, TickOutcome,
+        TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -682,6 +679,38 @@ mod tests {
                 reason: DemandObservationReason::WantedToBuyButNoSeller,
             }],
         }
+    }
+
+    fn test_belief_store(world: &World, actor: EntityId) -> AgentBeliefStore {
+        let mut store = world
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .unwrap_or_default();
+        for entity in world.entities() {
+            if entity == actor {
+                continue;
+            }
+            if let Some(state) = build_believed_entity_state(
+                world,
+                entity,
+                Tick(u64::MAX),
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(entity, state);
+            }
+        }
+        store
+    }
+
+    fn affordances_for(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Vec<Affordance> {
+        let beliefs = test_belief_store(world, actor);
+        let view = PerAgentBeliefView::new(actor, world, &beliefs);
+        get_affordances(&view, actor, defs, handlers)
     }
 
     struct TradeHarness {
@@ -863,12 +892,8 @@ mod tests {
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
 
-        let affordances = get_affordances(
-            &worldwake_sim::OmniscientBeliefView::new(&harness.world),
-            harness.actor,
-            &harness.defs,
-            &harness.handlers,
-        );
+        let affordances =
+            affordances_for(&harness.world, harness.actor, &harness.defs, &harness.handlers);
 
         assert!(affordances.iter().any(|affordance| {
             affordance.def_id == harness.def_id

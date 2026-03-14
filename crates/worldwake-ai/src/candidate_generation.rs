@@ -620,7 +620,7 @@ fn emit_loot_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
     };
 
     for corpse in ctx.view.corpse_entities_at(place) {
-        if ctx.view.direct_possessions(corpse).is_empty() {
+        if !corpse_has_known_loot(ctx.view, corpse) {
             continue;
         }
         let mut evidence = Evidence::with_entity(corpse);
@@ -633,6 +633,17 @@ fn emit_loot_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
             ctx.current_tick,
         );
     }
+}
+
+fn corpse_has_known_loot(view: &dyn BeliefView, corpse: EntityId) -> bool {
+    if !view.direct_possessions(corpse).is_empty() {
+        return true;
+    }
+
+    CommodityKind::ALL
+        .iter()
+        .copied()
+        .any(|commodity| view.commodity_quantity(corpse, commodity) > Quantity(0))
 }
 
 fn emit_bury_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
@@ -2441,6 +2452,32 @@ mod tests {
         view.effective_places.insert(corpse, place);
         view.corpses_at.insert(place, vec![corpse]);
         view.direct_possessions.insert(corpse, vec![bread]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(&candidates, GoalKind::LootCorpse { corpse }));
+    }
+
+    #[test]
+    fn local_corpse_with_believed_inventory_emits_loot_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let corpse = entity(2);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(corpse, place);
+        view.corpses_at.insert(place, vec![corpse]);
+        view.commodity_quantities
+            .insert((corpse, CommodityKind::Coin), Quantity(5));
 
         let candidates = generate_candidates(
             &view,

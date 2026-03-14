@@ -69,6 +69,26 @@ impl<'w> PerAgentBeliefView<'w> {
         }
     }
 
+    #[must_use]
+    pub fn from_world(agent: EntityId, world: &'w World) -> Self {
+        let belief_store = world
+            .get_component_agent_belief_store(agent)
+            .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
+        Self::new(agent, world, belief_store)
+    }
+
+    #[must_use]
+    pub fn with_runtime_from_world(
+        agent: EntityId,
+        world: &'w World,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
+        let belief_store = world
+            .get_component_agent_belief_store(agent)
+            .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
+        Self::with_runtime(agent, world, belief_store, runtime)
+    }
+
     fn believed_entity(&self, entity: EntityId) -> Option<&BelievedEntityState> {
         (entity != self.agent)
             .then(|| self.belief_store.get_entity(&entity))
@@ -457,7 +477,6 @@ impl BeliefView for PerAgentBeliefView<'_> {
         }
 
         let mut hostiles = self
-            .world
             .hostile_targets_of(agent)
             .into_iter()
             .chain(self.world.hostile_towards(agent))
@@ -467,6 +486,20 @@ impl BeliefView for PerAgentBeliefView<'_> {
             .collect::<BTreeSet<_>>();
         hostiles.extend(self.current_attackers_of(agent));
         hostiles.into_iter().collect()
+    }
+
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .hostile_targets_of(agent)
+            .into_iter()
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .filter(|entity| self.believed_entity(*entity).is_some())
+            .collect()
     }
 
     fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {

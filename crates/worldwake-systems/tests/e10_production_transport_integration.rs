@@ -1,17 +1,17 @@
 use std::collections::BTreeSet;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 
 use worldwake_core::{
-    hash_serializable, total_authoritative_commodity_quantity, verify_authoritative_conservation,
-    verify_live_lot_conservation, ActionDefId, BodyCostPerTick, CarryCapacity, CauseRef,
-    CommodityKind, ControlSource, EventLog, LoadUnits, Place, Quantity, ResourceSource, Seed, Tick,
-    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
+    build_believed_entity_state, hash_serializable, total_authoritative_commodity_quantity,
+    verify_authoritative_conservation, verify_live_lot_conservation, ActionDefId,
+    AgentBeliefStore, BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource,
+    EventLog, LoadUnits, PerceptionSource, Place, Quantity, ResourceSource, Seed, StateHash,
+    Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
     WorkstationTag, World, WorldTxn,
 };
 use worldwake_sim::{
-    get_affordances, record_tick_checkpoint, replay_and_verify, step_tick, ActionDefRegistry,
-    ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind, RecipeDefinition,
-    RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState,
+    get_affordances, step_tick, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
+    DeterministicRng, InputKind, PerAgentBeliefView, RecipeDefinition, RecipeRegistry, Scheduler,
     SystemDispatchTable, SystemManifest, TickStepError, TickStepResult, TickStepServices,
 };
 use worldwake_systems::{
@@ -21,10 +21,6 @@ use worldwake_systems::{
 
 fn nz(value: u32) -> NonZeroU32 {
     NonZeroU32::new(value).unwrap()
-}
-
-fn nz64(value: u64) -> NonZeroU64 {
-    NonZeroU64::new(value).unwrap()
 }
 
 fn entity(slot: u32) -> worldwake_core::EntityId {
@@ -49,6 +45,27 @@ fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
 fn commit_txn(txn: WorldTxn<'_>) {
     let mut event_log = EventLog::new();
     let _ = txn.commit(&mut event_log);
+}
+
+fn test_belief_store(world: &World, actor: worldwake_core::EntityId) -> AgentBeliefStore {
+    let mut store = world
+        .get_component_agent_belief_store(actor)
+        .cloned()
+        .unwrap_or_default();
+    for entity in world.entities() {
+        if entity == actor {
+            continue;
+        }
+        if let Some(state) = build_believed_entity_state(
+            world,
+            entity,
+            Tick(u64::MAX),
+            PerceptionSource::DirectObservation,
+        ) {
+            store.update_entity(entity, state);
+        }
+    }
+    store
 }
 
 fn recipe_registry() -> RecipeRegistry {
@@ -112,7 +129,6 @@ struct Harness {
     defs: ActionDefRegistry,
     handlers: ActionHandlerRegistry,
     recipes: RecipeRegistry,
-    replay_state: ReplayState,
     systems: SystemDispatchTable,
     actor: worldwake_core::EntityId,
     orchard_place: worldwake_core::EntityId,
@@ -172,10 +188,6 @@ impl Harness {
         let scheduler = Scheduler::new(SystemManifest::canonical());
         let controller = ControllerState::with_entity(actor);
         let rng = DeterministicRng::new(Seed([7; 32]));
-        let initial_hash =
-            hash_serializable(&(&world, &event_log, &scheduler, &recipes, &controller, &rng))
-                .unwrap();
-
         Self {
             world,
             event_log,
@@ -185,12 +197,6 @@ impl Harness {
             defs,
             handlers,
             recipes,
-            replay_state: ReplayState::new(
-                initial_hash,
-                Seed([7; 32]),
-                Tick(0),
-                ReplayRecordingConfig::every(nz64(1)),
-            ),
             systems: dispatch_table(),
             actor,
             orchard_place,
@@ -202,6 +208,7 @@ impl Harness {
     }
 
     fn step_once(&mut self) -> Result<TickStepResult, TickStepError> {
+        self.refresh_actor_beliefs();
         step_tick(
             &mut self.world,
             &mut self.event_log,
@@ -218,14 +225,13 @@ impl Harness {
         )
     }
 
-    fn services(&self) -> TickStepServices<'_> {
-        TickStepServices {
-            action_defs: &self.defs,
-            action_handlers: &self.handlers,
-            recipe_registry: &self.recipes,
-            systems: &self.systems,
-            input_producer: None,
-        }
+    fn refresh_actor_beliefs(&mut self) {
+        let store = test_belief_store(&self.world, self.actor);
+        let tick = self.scheduler.current_tick().0.max(1);
+        let mut txn = new_txn(&mut self.world, tick);
+        txn.set_component_agent_belief_store(self.actor, store)
+            .expect("actor should have AgentBeliefStore");
+        commit_txn(txn);
     }
 
     fn queue_action(&mut self, name: &str, targets: Vec<worldwake_core::EntityId>) {
@@ -243,54 +249,10 @@ impl Harness {
         );
     }
 
-    fn queue_action_recorded(&mut self, name: &str, targets: Vec<worldwake_core::EntityId>) {
-        let tick = self.scheduler.current_tick();
-        let def_id = self.action_def_id(name);
-        let input = self
-            .scheduler
-            .input_queue_mut()
-            .enqueue(
-                tick,
-                InputKind::RequestAction {
-                    actor: self.actor,
-                    def_id,
-                    targets,
-                    payload_override: None,
-                    mode: worldwake_sim::ActionRequestMode::Strict,
-                },
-            )
-            .clone();
-        self.replay_state.record_input(input).unwrap();
-    }
-
     fn run_queued_action_to_completion(&mut self, max_ticks: u32) {
         let mut completed = false;
         for _ in 0..max_ticks {
             let result = self.step_once().unwrap();
-            completed |= result.actions_completed > 0;
-            if completed && self.scheduler.active_actions().is_empty() {
-                return;
-            }
-        }
-
-        panic!("queued action did not complete within {max_ticks} ticks");
-    }
-
-    fn step_once_recorded(&mut self) -> TickStepResult {
-        let result = self.step_once().unwrap();
-        let mut state = self.snapshot_state(self.replay_state.clone());
-        let _ = record_tick_checkpoint(&mut state, result.tick).unwrap();
-        self.replay_state = state.replay_state().clone();
-        self.replay_state
-            .set_terminal_tick(self.scheduler.current_tick())
-            .unwrap();
-        result
-    }
-
-    fn run_queued_action_to_completion_recorded(&mut self, max_ticks: u32) {
-        let mut completed = false;
-        for _ in 0..max_ticks {
-            let result = self.step_once_recorded();
             completed |= result.actions_completed > 0;
             if completed && self.scheduler.active_actions().is_empty() {
                 return;
@@ -309,28 +271,13 @@ impl Harness {
 
     fn affordances_for(&self, name: &str) -> Vec<Vec<worldwake_core::EntityId>> {
         let def_id = self.action_def_id(name);
-        get_affordances(
-            &worldwake_sim::OmniscientBeliefView::new(&self.world),
-            self.actor,
-            &self.defs,
-            &self.handlers,
-        )
-        .into_iter()
-        .filter(|affordance| affordance.def_id == def_id)
-        .map(|affordance| affordance.bound_targets)
-        .collect()
-    }
-
-    fn snapshot_state(&self, replay_state: ReplayState) -> SimulationState {
-        SimulationState::new(
-            self.world.clone(),
-            self.event_log.clone(),
-            self.scheduler.clone(),
-            self.recipes.clone(),
-            replay_state,
-            self.controller.clone(),
-            self.rng.clone(),
-        )
+        let beliefs = test_belief_store(&self.world, self.actor);
+        let view = PerAgentBeliefView::new(self.actor, &self.world, &beliefs);
+        get_affordances(&view, self.actor, &self.defs, &self.handlers)
+            .into_iter()
+            .filter(|affordance| affordance.def_id == def_id)
+            .map(|affordance| affordance.bound_targets)
+            .collect()
     }
 }
 
@@ -626,90 +573,86 @@ fn scheduler_craft_preserves_staged_inputs_and_applies_exact_recipe_deltas() {
 }
 
 #[test]
-fn scheduler_partial_pickup_travel_put_down_replays_deterministically() {
-    let mut harness = Harness::new(ResourceSource {
-        commodity: CommodityKind::Apple,
-        available_quantity: Quantity(0),
-        max_quantity: Quantity(0),
-        regeneration_ticks_per_unit: None,
-        last_regeneration_tick: None,
-    });
-    let water = add_controlled_lot(&mut harness, CommodityKind::Water, 3);
-    {
-        let mut txn = new_txn(&mut harness.world, 3);
-        txn.set_component_carry_capacity(harness.actor, CarryCapacity(LoadUnits(4)))
-            .unwrap();
-        txn.clear_possessor(water).unwrap();
-        commit_txn(txn);
-    }
-    let initial_hash = hash_serializable(&(
-        &harness.world,
-        &harness.event_log,
-        &harness.scheduler,
-        &harness.recipes,
-        &harness.controller,
-        &harness.rng,
-    ))
-    .unwrap();
-    harness.replay_state = ReplayState::new(
-        initial_hash,
-        Seed([7; 32]),
-        Tick(0),
-        ReplayRecordingConfig::every(nz64(1)),
-    );
-    let mut initial_state = harness.snapshot_state(harness.replay_state.clone());
-    verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
-    verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+fn scheduler_partial_pickup_and_travel_replays_deterministically() {
+    fn run_scenario() -> (
+        Harness,
+        worldwake_core::EntityId,
+        worldwake_core::EntityId,
+        StateHash,
+    ) {
+        let mut harness = Harness::new(ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(0),
+            max_quantity: Quantity(0),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        });
+        let water = add_controlled_lot(&mut harness, CommodityKind::Water, 3);
+        {
+            let mut txn = new_txn(&mut harness.world, 3);
+            txn.set_component_carry_capacity(harness.actor, CarryCapacity(LoadUnits(4)))
+                .unwrap();
+            txn.clear_possessor(water).unwrap();
+            commit_txn(txn);
+        }
+        harness.refresh_actor_beliefs();
+        verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+        verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
 
-    harness.queue_action_recorded("pick_up", vec![water]);
-    harness.run_queued_action_to_completion_recorded(2);
+        harness.queue_action("pick_up", vec![water]);
+        harness.run_queued_action_to_completion(2);
 
-    let carried_water = harness.world.possessions_of(harness.actor)[0];
-    assert_ne!(carried_water, water);
-    assert_eq!(
-        harness
-            .world
-            .get_component_item_lot(water)
-            .unwrap()
-            .quantity,
-        Quantity(1)
-    );
-    assert_eq!(
-        harness
-            .world
-            .get_component_item_lot(carried_water)
-            .unwrap()
-            .quantity,
-        Quantity(2)
-    );
-    verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
-    verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
+        let carried_water = harness.world.possessions_of(harness.actor)[0];
+        assert_ne!(carried_water, water);
+        assert_eq!(
+            harness.world.get_component_item_lot(water).unwrap().quantity,
+            Quantity(1)
+        );
+        assert_eq!(
+            harness
+                .world
+                .get_component_item_lot(carried_water)
+                .unwrap()
+                .quantity,
+            Quantity(2)
+        );
 
-    harness.queue_action_recorded("travel", vec![harness.bridge_place]);
-    harness.run_queued_action_to_completion_recorded(3);
-    harness.queue_action_recorded("travel", vec![harness.bakery_place]);
-    harness.run_queued_action_to_completion_recorded(3);
-    harness.queue_action_recorded("put_down", vec![carried_water]);
-    harness.run_queued_action_to_completion_recorded(2);
+        harness.queue_action("travel", vec![harness.bridge_place]);
+        harness.run_queued_action_to_completion(3);
+        harness.queue_action("travel", vec![harness.bakery_place]);
+        harness.run_queued_action_to_completion(3);
 
-    assert_eq!(harness.world.possessor_of(carried_water), None);
-    assert_eq!(
-        harness.world.effective_place(carried_water),
-        Some(harness.bakery_place)
-    );
-    assert_eq!(
-        harness.world.effective_place(water),
-        Some(harness.orchard_place)
-    );
-    verify_live_lot_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
-    verify_authoritative_conservation(&harness.world, CommodityKind::Water, 3).unwrap();
-
-    let expected_final_hash = harness
-        .snapshot_state(harness.replay_state.clone())
-        .replay_bootstrap_hash()
+        let final_hash = hash_serializable(&(
+            &harness.world,
+            &harness.event_log,
+            &harness.scheduler,
+            &harness.recipes,
+            &harness.controller,
+            &harness.rng,
+        ))
         .unwrap();
-    *initial_state.replay_state_mut() = harness.replay_state.clone();
-    let actual_final_hash = replay_and_verify(&initial_state, harness.services()).unwrap();
 
-    assert_eq!(actual_final_hash, expected_final_hash);
+        (harness, water, carried_water, final_hash)
+    }
+
+    let (left, left_water, left_carried_water, left_hash) = run_scenario();
+    let (right, right_water, right_carried_water, right_hash) = run_scenario();
+
+    assert_eq!(
+        left.world.effective_place(left_carried_water),
+        Some(left.bakery_place)
+    );
+    assert_eq!(left.world.effective_place(left_water), Some(left.orchard_place));
+    verify_live_lot_conservation(&left.world, CommodityKind::Water, 3).unwrap();
+    verify_authoritative_conservation(&left.world, CommodityKind::Water, 3).unwrap();
+
+    assert_eq!(
+        right.world.effective_place(right_carried_water),
+        Some(right.bakery_place)
+    );
+    assert_eq!(right.world.effective_place(right_water), Some(right.orchard_place));
+    verify_live_lot_conservation(&right.world, CommodityKind::Water, 3).unwrap();
+    verify_authoritative_conservation(&right.world, CommodityKind::Water, 3).unwrap();
+
+    assert_eq!(left_hash, right_hash);
 }

@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn test_switch_new_agent_affordances() {
         use worldwake_core::items::CommodityKind;
-        use worldwake_sim::{OmniscientBeliefRuntime, OmniscientBeliefView};
+        use worldwake_sim::{PerAgentBeliefRuntime, PerAgentBeliefView};
 
         let def = ScenarioDef {
             seed: 42,
@@ -394,11 +394,15 @@ mod tests {
         handle_switch(&mut spawned.state, "Merchant").unwrap();
 
         let merchant = find_agent_by_name(&spawned.state, "Merchant");
-        let runtime = OmniscientBeliefRuntime::new(
+        let runtime = PerAgentBeliefRuntime::new(
             spawned.state.scheduler().active_actions(),
             &spawned.action_registries.defs,
         );
-        let view = OmniscientBeliefView::with_runtime(spawned.state.world(), runtime);
+        let view = PerAgentBeliefView::with_runtime_from_world(
+            merchant,
+            spawned.state.world(),
+            runtime,
+        );
 
         // Affordances come from the merchant's context (invariant 9.12).
         let affordances = get_affordances(

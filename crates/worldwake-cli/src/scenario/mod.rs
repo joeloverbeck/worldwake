@@ -10,9 +10,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    hash_world, CauseRef, ControlSource, EntityId, EntityKind, EventLog, MerchandiseProfile, Place,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn,
+    hash_world, CauseRef, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
+    EntityKind, EventLog, MerchandiseProfile, MetabolismProfile, Place, ResourceSource, Seed,
+    Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
+    World, WorldTxn,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -270,6 +271,9 @@ fn spawn_agent(
 
     let needs = agent_def.needs.unwrap_or_default();
     txn.set_component_homeostatic_needs(agent_id, needs)?;
+    txn.set_component_deprivation_exposure(agent_id, DeprivationExposure::default())?;
+    txn.set_component_drive_thresholds(agent_id, DriveThresholds::default())?;
+    txn.set_component_metabolism_profile(agent_id, MetabolismProfile::default())?;
 
     if let Some(ref combat) = agent_def.combat_profile {
         txn.set_component_combat_profile(agent_id, *combat)?;

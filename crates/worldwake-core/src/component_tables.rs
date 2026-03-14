@@ -137,6 +137,117 @@ mod tests {
         }
     }
 
+    fn sample_roundtrip_wound_list() -> WoundList {
+        WoundList {
+            wounds: vec![Wound {
+                id: crate::WoundId(3),
+                body_part: BodyPart::LeftArm,
+                cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                severity: Permille::new(300).unwrap(),
+                inflicted_at: Tick(4),
+                bleed_rate_per_tick: Permille::new(0).unwrap(),
+            }],
+        }
+    }
+
+    fn sample_roundtrip_combat_profile() -> CombatProfile {
+        CombatProfile::new(
+            Permille::new(1000).unwrap(),
+            Permille::new(750).unwrap(),
+            Permille::new(650).unwrap(),
+            Permille::new(600).unwrap(),
+            Permille::new(50).unwrap(),
+            Permille::new(20).unwrap(),
+            Permille::new(15).unwrap(),
+            Permille::new(140).unwrap(),
+            Permille::new(30).unwrap(),
+            NonZeroU32::new(7).unwrap(),
+        )
+    }
+
+    fn sample_roundtrip_belief_store() -> AgentBeliefStore {
+        AgentBeliefStore {
+            known_entities: BTreeMap::from([(
+                entity(23),
+                BelievedEntityState {
+                    last_known_place: Some(entity(2)),
+                    last_known_inventory: BTreeMap::from([(CommodityKind::Apple, Quantity(2))]),
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(7),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )]),
+            social_observations: Vec::new(),
+        }
+    }
+
+    fn seed_roundtrip_components(tables: &mut ComponentTables) {
+        let name_id = entity(2);
+        let agent_id = entity(8);
+
+        tables.insert_name(name_id, Name("Vale".to_string()));
+        tables.insert_agent_data(
+            agent_id,
+            AgentData {
+                control_source: ControlSource::None,
+            },
+        );
+        tables.insert_wound_list(entity(9), sample_roundtrip_wound_list());
+        tables.insert_combat_profile(entity(18), sample_roundtrip_combat_profile());
+        tables.insert_dead_at(entity(19), DeadAt(Tick(14)));
+        tables.insert_utility_profile(entity(20), sample_utility_profile());
+        tables.insert_blocked_intent_memory(entity(21), sample_blocked_intent_memory());
+        tables.insert_agent_belief_store(entity(22), sample_roundtrip_belief_store());
+        tables.insert_perception_profile(
+            entity(24),
+            PerceptionProfile {
+                memory_capacity: 8,
+                memory_retention_ticks: 20,
+                observation_fidelity: Permille::new(900).unwrap(),
+            },
+        );
+        tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
+        tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
+        tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
+        tables.insert_item_lot(
+            entity(11),
+            ItemLot {
+                commodity: crate::CommodityKind::Water,
+                quantity: Quantity(6),
+                provenance: vec![ProvenanceEntry {
+                    tick: Tick(3),
+                    event_id: None,
+                    operation: LotOperation::Created,
+                    related_lot: None,
+                    amount: Quantity(6),
+                }],
+            },
+        );
+        tables.insert_unique_item(
+            entity(12),
+            UniqueItem {
+                kind: UniqueItemKind::SimpleTool,
+                name: Some("Hammer".to_string()),
+                metadata: BTreeMap::from([("origin".to_string(), "workshop".to_string())]),
+            },
+        );
+        tables.insert_container(
+            entity(15),
+            Container {
+                capacity: LoadUnits(12),
+                allowed_commodities: Some(BTreeSet::from([
+                    CommodityKind::Bread,
+                    CommodityKind::Water,
+                ])),
+                allows_unique_items: true,
+                allows_nested_containers: false,
+            },
+        );
+        tables.insert_metabolism_profile(entity(16), MetabolismProfile::default());
+        tables.insert_substitute_preferences(entity(17), sample_substitute_preferences());
+    }
+
     #[test]
     fn default_tables_are_empty() {
         let tables = ComponentTables::default();
@@ -716,111 +827,7 @@ mod tests {
     #[test]
     fn component_tables_bincode_roundtrip() {
         let mut tables = ComponentTables::default();
-        let name_id = entity(2);
-        let agent_id = entity(8);
-
-        tables.insert_name(name_id, Name("Vale".to_string()));
-        tables.insert_agent_data(
-            agent_id,
-            AgentData {
-                control_source: ControlSource::None,
-            },
-        );
-        tables.insert_wound_list(
-            entity(9),
-            WoundList {
-                wounds: vec![Wound {
-                    id: crate::WoundId(3),
-                    body_part: BodyPart::LeftArm,
-                    cause: WoundCause::Deprivation(DeprivationKind::Starvation),
-                    severity: Permille::new(300).unwrap(),
-                    inflicted_at: Tick(4),
-                    bleed_rate_per_tick: Permille::new(0).unwrap(),
-                }],
-            },
-        );
-        tables.insert_combat_profile(
-            entity(18),
-            CombatProfile::new(
-                Permille::new(1000).unwrap(),
-                Permille::new(750).unwrap(),
-                Permille::new(650).unwrap(),
-                Permille::new(600).unwrap(),
-                Permille::new(50).unwrap(),
-                Permille::new(20).unwrap(),
-                Permille::new(15).unwrap(),
-                Permille::new(140).unwrap(),
-                Permille::new(30).unwrap(),
-                NonZeroU32::new(7).unwrap(),
-            ),
-        );
-        tables.insert_dead_at(entity(19), DeadAt(Tick(14)));
-        tables.insert_utility_profile(entity(20), sample_utility_profile());
-        tables.insert_blocked_intent_memory(entity(21), sample_blocked_intent_memory());
-        tables.insert_agent_belief_store(
-            entity(22),
-            AgentBeliefStore {
-                known_entities: BTreeMap::from([(
-                    entity(23),
-                    BelievedEntityState {
-                        last_known_place: Some(entity(2)),
-                        last_known_inventory: BTreeMap::from([(CommodityKind::Apple, Quantity(2))]),
-                        alive: true,
-                        wounds: Vec::new(),
-                        observed_tick: Tick(7),
-                        source: PerceptionSource::DirectObservation,
-                    },
-                )]),
-                social_observations: Vec::new(),
-            },
-        );
-        tables.insert_perception_profile(
-            entity(24),
-            PerceptionProfile {
-                memory_capacity: 8,
-                memory_retention_ticks: 20,
-                observation_fidelity: Permille::new(900).unwrap(),
-            },
-        );
-        tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
-        tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
-        tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
-        tables.insert_item_lot(
-            entity(11),
-            ItemLot {
-                commodity: crate::CommodityKind::Water,
-                quantity: Quantity(6),
-                provenance: vec![ProvenanceEntry {
-                    tick: Tick(3),
-                    event_id: None,
-                    operation: LotOperation::Created,
-                    related_lot: None,
-                    amount: Quantity(6),
-                }],
-            },
-        );
-        tables.insert_unique_item(
-            entity(12),
-            UniqueItem {
-                kind: UniqueItemKind::SimpleTool,
-                name: Some("Hammer".to_string()),
-                metadata: BTreeMap::from([("origin".to_string(), "workshop".to_string())]),
-            },
-        );
-        tables.insert_container(
-            entity(15),
-            Container {
-                capacity: LoadUnits(12),
-                allowed_commodities: Some(BTreeSet::from([
-                    CommodityKind::Bread,
-                    CommodityKind::Water,
-                ])),
-                allows_unique_items: true,
-                allows_nested_containers: false,
-            },
-        );
-        tables.insert_metabolism_profile(entity(16), MetabolismProfile::default());
-        tables.insert_substitute_preferences(entity(17), sample_substitute_preferences());
+        seed_roundtrip_components(&mut tables);
 
         let bytes = bincode::serialize(&tables).unwrap();
         let roundtrip: ComponentTables = bincode::deserialize(&bytes).unwrap();

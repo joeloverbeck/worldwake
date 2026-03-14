@@ -440,20 +440,21 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity,
+        build_believed_entity_state, build_prototype_world, prototype_place_entity,
         test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent,
         BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile,
         CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
-        Place, PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        PerceptionSource, Permille, Place, PrototypePlace, Quantity, RecipeId, ResourceSource,
+        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, BeliefView,
-        DurationExpr, OmniscientBeliefView, QueueForFacilityUsePayload, RecipeDefinition,
+        DurationExpr, PerAgentBeliefView, QueueForFacilityUsePayload, RecipeDefinition,
         RecipeRegistry, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
@@ -714,6 +715,43 @@ mod tests {
         Permille::new(value).unwrap()
     }
 
+    fn sync_all_beliefs(world: &mut World, observer: EntityId, observed_tick: Tick) {
+        let snapshots = world
+            .entities()
+            .filter(|entity| *entity != observer)
+            .filter_map(|entity| {
+                build_believed_entity_state(
+                    world,
+                    entity,
+                    observed_tick,
+                    PerceptionSource::DirectObservation,
+                )
+                .map(|state| (entity, state))
+            })
+            .collect::<Vec<_>>();
+        let mut store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .expect("observer must have AgentBeliefStore");
+        store.known_entities.clear();
+        for (entity, state) in snapshots {
+            store.update_entity(entity, state);
+        }
+        let mut txn = WorldTxn::new(
+            world,
+            observed_tick,
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.set_component_agent_belief_store(observer, store)
+            .expect("observer belief store should remain writable");
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+    }
+
     fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
         let recipes = RecipeRegistry::new();
         let registries = build_full_action_registries(&recipes).unwrap();
@@ -893,6 +931,7 @@ mod tests {
             &BTreeSet::from([place]),
             1,
         )));
+
         let (registry, handlers) = build_registry();
         (
             SearchNode {
@@ -2142,8 +2181,9 @@ mod tests {
             let mut event_log = EventLog::new();
             let _ = txn.commit(&mut event_log);
         }
+        sync_all_beliefs(&mut world, actor, Tick(1));
 
-        let view = OmniscientBeliefView::new(&world);
+        let view = PerAgentBeliefView::from_world(actor, &world);
         let goal = GroundedGoal {
             key: GoalKey::from(GoalKind::MoveCargo {
                 commodity: CommodityKind::Bread,
@@ -2415,6 +2455,8 @@ mod tests {
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(harvest_apple_recipe());
+        sync_all_beliefs(&mut world, actor, Tick(1));
+
         let (registry, handlers) = build_registry_with_recipes(&recipes);
         let semantics = build_semantics_table(&registry);
         let goal = GroundedGoal {
@@ -2424,7 +2466,7 @@ mod tests {
             evidence_entities: BTreeSet::from([orchard_row]),
             evidence_places: BTreeSet::from([village_square, orchard_farm]),
         };
-        let view = OmniscientBeliefView::new(&world);
+        let view = PerAgentBeliefView::from_world(actor, &world);
         let snapshot = build_planning_snapshot(
             &view,
             actor,
@@ -2542,6 +2584,8 @@ mod tests {
             (actor, orchard_row)
         };
 
+        sync_all_beliefs(&mut world, actor, Tick(2));
+
         ExclusiveOrchardFixture {
             world,
             actor,
@@ -2575,6 +2619,7 @@ mod tests {
             .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
+        sync_all_beliefs(&mut fixture.world, fixture.actor, queued_at);
     }
 
     #[test]
@@ -2588,7 +2633,7 @@ mod tests {
             evidence_entities: BTreeSet::from([fixture.orchard_row]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let view = OmniscientBeliefView::new(&fixture.world);
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot(
             &view,
             fixture.actor,
@@ -2635,7 +2680,7 @@ mod tests {
             evidence_entities: BTreeSet::from([fixture.orchard_row]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let view = OmniscientBeliefView::new(&fixture.world);
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot(
             &view,
             fixture.actor,
@@ -2685,7 +2730,7 @@ mod tests {
             evidence_entities: BTreeSet::from([fixture.orchard_row]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let view = OmniscientBeliefView::new(&fixture.world);
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot(
             &view,
             fixture.actor,
@@ -2735,7 +2780,7 @@ mod tests {
                 expires_tick: Tick(20),
             }],
         };
-        let view = OmniscientBeliefView::new(&fixture.world);
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
             fixture.actor,
@@ -2811,6 +2856,7 @@ mod tests {
             let _ = txn.commit(&mut event_log);
             orchard_row
         };
+        sync_all_beliefs(&mut fixture.world, fixture.actor, Tick(2));
         let goal = GroundedGoal {
             key: GoalKey::from(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Apple,
@@ -2829,7 +2875,7 @@ mod tests {
                 expires_tick: Tick(20),
             }],
         };
-        let view = OmniscientBeliefView::new(&fixture.world);
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
             fixture.actor,
@@ -2933,7 +2979,7 @@ mod tests {
             evidence_entities: BTreeSet::from([orchard_row]),
             evidence_places: BTreeSet::from([orchard_farm]),
         };
-        let view = OmniscientBeliefView::new(&world);
+        let view = PerAgentBeliefView::from_world(actor, &world);
         let snapshot = build_planning_snapshot(
             &view,
             actor,

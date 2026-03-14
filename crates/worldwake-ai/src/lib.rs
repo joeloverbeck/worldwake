@@ -61,7 +61,7 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_sim::{
         ActionDefRegistry, ActionPayload, Affordance, BeliefView, InputEvent, InputKind,
-        OmniscientBeliefView, ReplanNeeded,
+        PerAgentBeliefView, ReplanNeeded,
     };
 
     fn assert_type_is_available<T>() -> &'static str {
@@ -99,9 +99,9 @@ mod tests {
             "worldwake_sim::replan_needed::ReplanNeeded"
         );
         assert!(
-            assert_type_is_available::<OmniscientBeliefView<'static>>()
-                .starts_with("worldwake_sim::omniscient_belief_view::OmniscientBeliefView<"),
-            "OmniscientBeliefView should be available from worldwake-sim"
+            assert_type_is_available::<PerAgentBeliefView<'static>>()
+                .starts_with("worldwake_sim::per_agent_belief_view::PerAgentBeliefView<"),
+            "PerAgentBeliefView should be available from worldwake-sim"
         );
 
         let _: Option<&dyn BeliefView> = None;

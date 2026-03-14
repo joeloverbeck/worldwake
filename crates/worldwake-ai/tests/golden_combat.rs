@@ -12,7 +12,7 @@ use worldwake_core::{
     MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, WoundList,
 };
-use worldwake_sim::{OmniscientBeliefRuntime, OmniscientBeliefView};
+use worldwake_sim::{PerAgentBeliefRuntime, PerAgentBeliefView};
 
 // ---------------------------------------------------------------------------
 // Combat-specific helpers (only used by tests in this file)
@@ -86,6 +86,7 @@ fn seed_fragile_deprivation_victim(h: &mut GoldenHarness) -> worldwake_core::Ent
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
+    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
 
     give_commodity(
         &mut h.world,
@@ -170,6 +171,7 @@ fn build_loot_suppressed_under_self_care_scenario(
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
         commit_txn(txn, &mut h.event_log);
+        refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
     }
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
@@ -212,6 +214,7 @@ fn seed_bleeding_recovery_patient(h: &mut GoldenHarness) -> worldwake_core::Enti
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
+    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
 
     patient
 }
@@ -460,6 +463,7 @@ fn golden_bury_corpse() {
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
         commit_txn(txn, &mut h.event_log);
+        refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
     }
 
     for _ in 0..50 {
@@ -554,6 +558,7 @@ fn build_death_while_traveling_scenario(
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
+    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
 
     give_commodity(
         &mut h.world,
@@ -724,6 +729,7 @@ fn build_living_combat_scenario(
     txn.set_component_combat_profile(defender, living_combat_defender_profile())
         .unwrap();
     commit_txn(txn, &mut h.event_log);
+    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
 
     give_commodity(
         &mut h.world,
@@ -840,9 +846,10 @@ fn golden_reduce_danger_defensive_mitigation() {
     for _ in 0..40 {
         h.step_once();
 
-        let view = OmniscientBeliefView::with_runtime(
+        let view = PerAgentBeliefView::with_runtime_from_world(
+            defender,
             &h.world,
-            OmniscientBeliefRuntime::new(h.scheduler.active_actions(), &h.defs),
+            PerAgentBeliefRuntime::new(h.scheduler.active_actions(), &h.defs),
         );
         let defender_danger = derive_danger_pressure(&view, defender);
         saw_defender_high_danger |= defender_danger >= danger_high_threshold;
