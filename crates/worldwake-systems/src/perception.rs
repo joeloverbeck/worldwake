@@ -305,6 +305,9 @@ fn social_observations_for_event(
 }
 
 fn social_kind(record: &EventRecord) -> Option<SocialObservationKind> {
+    if record.tags.contains(&EventTag::Social) {
+        return Some(SocialObservationKind::WitnessedTelling);
+    }
     if record.tags.contains(&EventTag::Trade) {
         return Some(SocialObservationKind::WitnessedCooperation);
     }
@@ -322,7 +325,8 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, AgentBeliefStore, BelievedEntityState, CauseRef, CommodityKind,
         ControlSource, EventLog, EventTag, PendingEvent, PerceptionProfile, PerceptionSource,
-        Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        Permille, Quantity, Seed, SocialObservationKind, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -464,11 +468,75 @@ mod tests {
             .expect("observer should have a belief store");
         assert!(
             beliefs.social_observations.iter().any(|observation| {
-                observation.subjects == (actor, counterparty)
+                observation.kind == SocialObservationKind::WitnessedCooperation
+                    && observation.place == place
+                    && observation.subjects == (actor, counterparty)
                     && observation.source == PerceptionSource::DirectObservation
                     && observation.observed_tick == Tick(4)
             }),
             "trade witness should record cooperation evidence"
+        );
+    }
+
+    #[test]
+    fn social_event_records_witnessed_telling() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, speaker, listener) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let speaker = txn.create_agent("Speaker", ControlSource::Ai).unwrap();
+            let listener = txn.create_agent("Listener", ControlSource::Ai).unwrap();
+            for entity in [observer, speaker, listener] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, speaker, listener)
+        };
+        let mut event_log = EventLog::new();
+        let _ = event_log.emit(PendingEvent::new(
+            Tick(4),
+            CauseRef::Bootstrap,
+            Some(speaker),
+            vec![listener],
+            Some(place),
+            Vec::new(),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+            BTreeSet::from([EventTag::Social]),
+        ));
+        let mut rng = DeterministicRng::new(Seed([5; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(4),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        assert!(
+            beliefs.social_observations.iter().any(|observation| {
+                observation.kind == SocialObservationKind::WitnessedTelling
+                    && observation.place == place
+                    && observation.subjects == (speaker, listener)
+                    && observation.source == PerceptionSource::DirectObservation
+                    && observation.observed_tick == Tick(4)
+            }),
+            "social witness should record witnessed telling"
         );
     }
 

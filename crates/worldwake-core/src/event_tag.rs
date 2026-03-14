@@ -15,6 +15,8 @@ pub enum EventTag {
     ActionInterrupted,
     Travel,
     Trade,
+    Social,
+    Discovery,
     Crime,
     Combat,
     QueueGrantExpired,
@@ -35,7 +37,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 18] = [
+    const ALL_EVENT_TAGS: [EventTag; 20] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -46,6 +48,8 @@ mod tests {
         EventTag::ActionInterrupted,
         EventTag::Travel,
         EventTag::Trade,
+        EventTag::Social,
+        EventTag::Discovery,
         EventTag::Crime,
         EventTag::Combat,
         EventTag::QueueGrantExpired,
@@ -63,7 +67,7 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 18);
+        assert_eq!(ALL_EVENT_TAGS.len(), 20);
     }
 
     #[test]

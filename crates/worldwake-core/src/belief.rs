@@ -153,6 +153,7 @@ pub enum SocialObservationKind {
     WitnessedCooperation,
     WitnessedConflict,
     WitnessedObligation,
+    WitnessedTelling,
     CoPresence,
 }
 
@@ -387,13 +388,14 @@ mod tests {
 
     #[test]
     fn social_observation_kind_roundtrips_and_compares() {
-        let kind = SocialObservationKind::WitnessedObligation;
+        let kind = SocialObservationKind::WitnessedTelling;
 
         let bytes = bincode::serialize(&kind).unwrap();
         let roundtrip: SocialObservationKind = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, kind);
         assert_ne!(kind, SocialObservationKind::WitnessedConflict);
+        assert_ne!(kind, SocialObservationKind::WitnessedCooperation);
     }
 
     #[test]
