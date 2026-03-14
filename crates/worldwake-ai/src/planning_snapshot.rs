@@ -113,7 +113,7 @@ pub struct PlanningSnapshot {
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
-    pub(crate) actor_tell_profile: TellProfile,
+    pub(crate) actor_tell_profile: Option<TellProfile>,
 }
 
 impl PlanningSnapshot {
@@ -170,7 +170,7 @@ impl PlanningSnapshot {
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
-            actor_tell_profile: view.tell_profile(actor).unwrap_or_default(),
+            actor_tell_profile: view.tell_profile(actor),
         }
     }
 
@@ -467,9 +467,9 @@ mod tests {
     use worldwake_core::{
         ActionDefId, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-        Wound,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
+        RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
@@ -485,6 +485,7 @@ mod tests {
         exclusive_facilities: BTreeSet<EntityId>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
+        tell_profiles: BTreeMap<EntityId, TellProfile>,
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -655,6 +656,10 @@ mod tests {
             None
         }
 
+        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            self.tell_profiles.get(&agent).copied()
+        }
+
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
             Vec::new()
         }
@@ -778,6 +783,44 @@ mod tests {
         assert!(snapshot.places.contains_key(&place_b));
         assert!(snapshot.places.contains_key(&remote_place));
         assert!(!snapshot.places.contains_key(&place_c));
+    }
+
+    #[test]
+    fn build_snapshot_preserves_missing_actor_tell_profile() {
+        let actor = entity(1);
+        let place = entity(10);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor]);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
+
+        assert_eq!(snapshot.actor_tell_profile, None);
+    }
+
+    #[test]
+    fn build_snapshot_preserves_present_actor_tell_profile() {
+        let actor = entity(1);
+        let place = entity(10);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor]);
+        view.tell_profiles.insert(
+            actor,
+            TellProfile {
+                max_tell_candidates: 4,
+                max_relay_chain_len: 2,
+                acceptance_fidelity: Permille::new(650).unwrap(),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
+
+        assert_eq!(snapshot.actor_tell_profile, view.tell_profiles.get(&actor).copied());
     }
 
     #[test]

@@ -218,7 +218,9 @@ fn enumerate_tell_payloads(
         return Vec::new();
     }
 
-    let profile = view.tell_profile(actor).unwrap_or_default();
+    let Some(profile) = view.tell_profile(actor) else {
+        return Vec::new();
+    };
     let mut subjects = view
         .known_entity_beliefs(actor)
         .into_iter()
@@ -1623,5 +1625,43 @@ mod tests {
             affordances,
             vec![(listener, subject_b), (listener, subject_c), (listener, subject_e)]
         );
+    }
+
+    #[test]
+    fn tell_affordances_require_speaker_tell_profile() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_tell_action(&mut defs, &mut handlers);
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(10);
+        let place = entity(20);
+        let mut view = StubTellBeliefView::default();
+
+        for entity in [speaker, listener] {
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+            view.alive.insert(entity, true);
+        }
+        view.beliefs.insert(
+            speaker,
+            vec![(
+                subject,
+                BelievedEntityState {
+                    last_known_place: Some(entity(30)),
+                    last_known_inventory: std::collections::BTreeMap::default(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(3),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+
+        let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
+
+        assert!(affordances.is_empty());
     }
 }

@@ -1011,7 +1011,9 @@ impl RuntimeBeliefView for PlanningState<'_> {
     }
 
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
-        (agent == self.snapshot.actor()).then_some(self.snapshot.actor_tell_profile)
+        (agent == self.snapshot.actor())
+            .then_some(self.snapshot.actor_tell_profile)
+            .flatten()
     }
 
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
@@ -1996,6 +1998,15 @@ mod tests {
             RuntimeBeliefView::tell_profile(&state, actor),
             view.tell_profiles.get(&actor).copied()
         );
+    }
+
+    #[test]
+    fn planning_state_preserves_missing_actor_tell_profile_from_snapshot() {
+        let (view, actor, _town, _field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(RuntimeBeliefView::tell_profile(&state, actor), None);
     }
 
     #[test]

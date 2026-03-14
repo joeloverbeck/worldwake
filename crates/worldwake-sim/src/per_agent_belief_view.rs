@@ -476,12 +476,9 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
-        (agent == self.agent).then(|| {
-            self.world
-                .get_component_tell_profile(agent)
-                .copied()
-                .unwrap_or_default()
-        })
+        (agent == self.agent)
+            .then(|| self.world.get_component_tell_profile(agent).copied())
+            .flatten()
     }
 
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
@@ -918,13 +915,14 @@ mod tests {
     }
 
     #[test]
-    fn tell_profile_returns_actor_default_when_component_missing() {
+    fn tell_profile_returns_none_when_component_missing() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let agent = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             txn.set_ground_location(agent, place).unwrap();
+            txn.clear_component_tell_profile(agent).unwrap();
             commit_txn(txn);
             agent
         };
@@ -932,10 +930,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(
-            RuntimeBeliefView::tell_profile(&view, agent),
-            Some(worldwake_core::TellProfile::default())
-        );
+        assert_eq!(RuntimeBeliefView::tell_profile(&view, agent), None);
     }
 
     #[test]

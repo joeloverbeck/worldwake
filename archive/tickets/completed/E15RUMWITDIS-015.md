@@ -1,6 +1,6 @@
 # E15RUMWITDIS-015: Remove Fabricated TellProfile Defaults From Runtime Belief Reads
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` belief-view behavior, Tell affordance enumeration, and planner snapshot/state shape
@@ -26,6 +26,7 @@ This violates the intended invariant that live-agent Tell behavior is driven by 
 3. `PlanningSnapshot` in `crates/worldwake-ai/src/planning_snapshot.rs` currently stores `actor_tell_profile: TellProfile` and populates it from `view.tell_profile(actor).unwrap_or_default()`, so the fabricated profile is persisted into planning state rather than remaining a local affordance-query quirk.
 4. Tell affordance enumeration in `crates/worldwake-systems/src/tell_actions.rs` still uses `view.tell_profile(actor).unwrap_or_default()`, so a structurally broken live agent can still enumerate Tell affordances through the planner/runtime path.
 5. No active ticket in `tickets/` owns this runtime/planner invariant cleanup. `E15RUMWITDIS-013` is event-local perception snapshots, and `E15RUMWITDIS-014` is explicit belief-confidence policy data.
+6. Existing tests already cover the current fabricated-default behavior in `crates/worldwake-sim/src/per_agent_belief_view.rs` (`tell_profile_returns_actor_default_when_component_missing`) and the positive Tell affordance path in `crates/worldwake-systems/src/tell_actions.rs` (`tell_affordances_*`), but `crates/worldwake-ai/src/planning_snapshot.rs` does not yet have a direct regression test for `actor_tell_profile`.
 
 ## Architecture Check
 
@@ -90,6 +91,8 @@ Add focused tests proving:
 4. Tell affordance enumeration returns no Tell affordances when the actor lacks `TellProfile`
 5. valid agents with an attached `TellProfile` still enumerate the same Tell affordances as before
 
+Use the existing affordance tests in `tell_actions.rs` as the baseline for the positive-path assertion; extend that module with a missing-profile regression rather than duplicating broad affordance coverage elsewhere.
+
 ## Files to Touch
 
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify)
@@ -127,10 +130,10 @@ Add focused tests proving:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-sim/src/per_agent_belief_view.rs` — change the current missing-profile test to assert `None`, and keep coverage for the present-profile path
-2. `crates/worldwake-ai/src/planning_snapshot.rs` — add a test proving snapshot build preserves missing Tell-profile data as `None`
-3. `crates/worldwake-ai/src/planning_state.rs` — add or adjust a test proving `RuntimeBeliefView::tell_profile(&state, actor)` mirrors the snapshot’s optional value
-4. `crates/worldwake-systems/src/tell_actions.rs` — add a Tell affordance test proving missing speaker `TellProfile` yields zero affordances rather than default-profile affordances
+1. `crates/worldwake-sim/src/per_agent_belief_view.rs` — modify `tell_profile_returns_actor_default_when_component_missing` to assert `None`, and keep coverage for the present-profile path
+2. `crates/worldwake-ai/src/planning_snapshot.rs` — add the first direct snapshot regression for missing Tell-profile data so `actor_tell_profile` absence is exercised at snapshot-build time
+3. `crates/worldwake-ai/src/planning_state.rs` — adjust `planning_state_preserves_actor_belief_memory_and_tell_profile_from_snapshot` and/or add a companion test so `RuntimeBeliefView::tell_profile(&state, actor)` mirrors the snapshot’s optional value for both present and missing-profile cases
+4. `crates/worldwake-systems/src/tell_actions.rs` — keep the existing positive affordance tests and add a focused regression proving missing speaker `TellProfile` yields zero affordances rather than default-profile affordances
 
 ### Commands
 
@@ -139,3 +142,23 @@ Add focused tests proving:
 3. `cargo test -p worldwake-systems tell_actions`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `cargo test --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-14
+- What actually changed:
+  - Removed `TellProfile::default()` substitution from `PerAgentBeliefView::tell_profile()`
+  - Changed `PlanningSnapshot.actor_tell_profile` to `Option<TellProfile>` and preserved absence directly from the runtime belief view
+  - Updated `PlanningState::tell_profile()` to mirror the optional snapshot value without fabricating a profile
+  - Changed Tell affordance enumeration to return no Tell affordances when the speaker lacks a `TellProfile`
+  - Added direct snapshot/state regressions and a missing-profile Tell affordance regression
+- Deviations from original plan:
+  - The ticket reassessment found that `planning_snapshot.rs` had no direct Tell-profile regression test yet, so that test was added from scratch rather than updated
+  - `tell_actions.rs` already had strong positive affordance coverage, so the work extended that coverage with a missing-profile regression instead of adding a separate broad “valid agents still enumerate” suite
+- Verification results:
+  - `cargo test -p worldwake-sim per_agent_belief_view`
+  - `cargo test -p worldwake-ai planning_snapshot`
+  - `cargo test -p worldwake-ai planning_state`
+  - `cargo test -p worldwake-systems tell_actions`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
