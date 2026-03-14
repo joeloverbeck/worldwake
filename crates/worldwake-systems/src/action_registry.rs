@@ -1,8 +1,8 @@
 use crate::{
     register_attack_action, register_bury_action, register_craft_actions, register_defend_action,
     register_harvest_actions, register_heal_action, register_loot_action, register_needs_actions,
-    register_queue_for_facility_use_action, register_trade_action, register_transport_actions,
-    register_travel_actions,
+    register_queue_for_facility_use_action, register_tell_action, register_trade_action,
+    register_transport_actions, register_travel_actions,
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
@@ -25,6 +25,7 @@ pub fn register_all_actions(
     let _ = register_harvest_actions(defs, handlers, recipes);
     let _ = register_craft_actions(defs, handlers, recipes);
     let _ = register_trade_action(defs, handlers);
+    let _ = register_tell_action(defs, handlers);
     let _ = register_travel_actions(defs, handlers);
     let _ = register_transport_actions(defs, handlers);
     let _ = register_attack_action(defs, handlers);
@@ -50,7 +51,7 @@ mod tests {
     use worldwake_sim::RecipeRegistry;
 
     #[test]
-    fn build_full_action_registries_returns_complete_phase_two_catalog() {
+    fn build_full_action_registries_returns_complete_action_catalog() {
         let recipes = RecipeRegistry::new();
         let registries = build_full_action_registries(&recipes).unwrap();
 
@@ -71,6 +72,7 @@ mod tests {
             "wash",
             "queue_for_facility_use",
             "trade",
+            "tell",
             "travel",
             "pick_up",
             "put_down",

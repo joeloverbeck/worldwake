@@ -61,7 +61,8 @@ pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
     ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-    LootActionPayload, QueueForFacilityUsePayload, TradeActionPayload, TransportActionPayload,
+    LootActionPayload, QueueForFacilityUsePayload, TellActionPayload, TradeActionPayload,
+    TransportActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,

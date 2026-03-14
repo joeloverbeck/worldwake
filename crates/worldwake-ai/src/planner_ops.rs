@@ -1225,15 +1225,17 @@ mod tests {
     }
 
     #[test]
-    fn build_semantics_table_classifies_all_registered_phase_two_defs() {
+    fn build_semantics_table_classifies_registered_planner_action_defs() {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
         let semantics_by_name = defs
             .iter()
-            .map(|def| (def.name.as_str(), table.get(&def.id).unwrap()))
+            .filter_map(|def| table.get(&def.id).map(|semantics| (def.name.as_str(), semantics)))
             .collect::<std::collections::BTreeMap<_, _>>();
 
-        assert_eq!(table.len(), defs.len());
+        assert_eq!(table.len() + 1, defs.len());
+        assert!(defs.iter().any(|def| def.name == "tell"));
+        assert!(!semantics_by_name.contains_key("tell"));
         assert_eq!(
             semantics_by_name.get("eat").unwrap().op_kind,
             PlannerOpKind::Consume
@@ -1329,7 +1331,10 @@ mod tests {
         let table = build_semantics_table(&defs);
 
         for def in defs.iter() {
-            let semantics = table.get(&def.id).unwrap();
+            let Some(semantics) = table.get(&def.id) else {
+                assert_eq!(def.name, "tell");
+                continue;
+            };
             let should_be_barrier = def.name == "trade"
                 || def.name == "bury"
                 || def.name == "loot"

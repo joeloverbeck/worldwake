@@ -8,6 +8,7 @@ use worldwake_core::{
 pub enum ActionPayload {
     #[default]
     None,
+    Tell(TellActionPayload),
     Transport(TransportActionPayload),
     Harvest(HarvestActionPayload),
     Craft(CraftActionPayload),
@@ -23,6 +24,7 @@ impl ActionPayload {
         match self {
             Self::Harvest(payload) => Some(payload),
             Self::None
+            | Self::Tell(_)
             | Self::Transport(_)
             | Self::Craft(_)
             | Self::Trade(_)
@@ -37,6 +39,7 @@ impl ActionPayload {
         match self {
             Self::Transport(payload) => Some(payload),
             Self::None
+            | Self::Tell(_)
             | Self::Harvest(_)
             | Self::Craft(_)
             | Self::Trade(_)
@@ -51,6 +54,7 @@ impl ActionPayload {
         match self {
             Self::Craft(payload) => Some(payload),
             Self::None
+            | Self::Tell(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Trade(_)
@@ -65,6 +69,7 @@ impl ActionPayload {
         match self {
             Self::Trade(payload) => Some(payload),
             Self::None
+            | Self::Tell(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -79,6 +84,7 @@ impl ActionPayload {
         match self {
             Self::Combat(payload) => Some(payload),
             Self::None
+            | Self::Tell(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -93,6 +99,7 @@ impl ActionPayload {
         match self {
             Self::Loot(payload) => Some(payload),
             Self::None
+            | Self::Tell(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -107,6 +114,7 @@ impl ActionPayload {
         match self {
             Self::QueueForFacilityUse(payload) => Some(payload),
             Self::None
+            | Self::Tell(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -115,6 +123,27 @@ impl ActionPayload {
             | Self::Loot(_) => None,
         }
     }
+
+    #[must_use]
+    pub const fn as_tell(&self) -> Option<&TellActionPayload> {
+        match self {
+            Self::Tell(payload) => Some(payload),
+            Self::None
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct TellActionPayload {
+    pub listener: EntityId,
+    pub subject_entity: EntityId,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -169,7 +198,8 @@ pub struct QueueForFacilityUsePayload {
 mod tests {
     use super::{
         ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-        LootActionPayload, QueueForFacilityUsePayload, TradeActionPayload, TransportActionPayload,
+        LootActionPayload, QueueForFacilityUsePayload, TellActionPayload, TradeActionPayload,
+        TransportActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
@@ -186,6 +216,19 @@ mod tests {
             output_commodity: CommodityKind::Apple,
             output_quantity: Quantity(2),
             required_tool_kinds: vec![UniqueItemKind::SimpleTool],
+        }
+    }
+
+    fn sample_tell_payload() -> TellActionPayload {
+        TellActionPayload {
+            listener: EntityId {
+                slot: 5,
+                generation: 0,
+            },
+            subject_entity: EntityId {
+                slot: 8,
+                generation: 2,
+            },
         }
     }
 
@@ -240,6 +283,7 @@ mod tests {
     #[test]
     fn action_payload_satisfies_required_traits() {
         assert_traits::<ActionPayload>();
+        assert_traits::<TellActionPayload>();
         assert_traits::<TransportActionPayload>();
         assert_traits::<HarvestActionPayload>();
         assert_traits::<CraftActionPayload>();
@@ -257,6 +301,7 @@ mod tests {
     #[test]
     fn typed_accessors_return_only_matching_payload_variant() {
         let harvest = ActionPayload::Harvest(sample_payload());
+        let tell = ActionPayload::Tell(sample_tell_payload());
         let transport = ActionPayload::Transport(TransportActionPayload {
             quantity: Quantity(3),
         });
@@ -266,6 +311,15 @@ mod tests {
         let loot = ActionPayload::Loot(sample_loot_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
         let none = ActionPayload::None;
+
+        assert_eq!(tell.as_tell(), Some(&sample_tell_payload()));
+        assert_eq!(tell.as_harvest(), None);
+        assert_eq!(tell.as_transport(), None);
+        assert_eq!(tell.as_craft(), None);
+        assert_eq!(tell.as_trade(), None);
+        assert_eq!(tell.as_combat(), None);
+        assert_eq!(tell.as_loot(), None);
+        assert_eq!(tell.as_queue_for_facility_use(), None);
 
         assert_eq!(
             transport.as_transport(),
@@ -332,6 +386,7 @@ mod tests {
         );
 
         assert_eq!(none.as_harvest(), None);
+        assert_eq!(none.as_tell(), None);
         assert_eq!(none.as_transport(), None);
         assert_eq!(none.as_craft(), None);
         assert_eq!(none.as_trade(), None);
@@ -343,6 +398,16 @@ mod tests {
     #[test]
     fn action_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::Harvest(sample_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn tell_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::Tell(sample_tell_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
