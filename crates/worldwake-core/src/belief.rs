@@ -177,6 +177,26 @@ impl Default for PerceptionProfile {
     }
 }
 
+/// Per-agent parameters controlling what information an agent relays and accepts.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TellProfile {
+    pub max_tell_candidates: u8,
+    pub max_relay_chain_len: u8,
+    pub acceptance_fidelity: Permille,
+}
+
+impl Component for TellProfile {}
+
+impl Default for TellProfile {
+    fn default() -> Self {
+        Self {
+            max_tell_candidates: 3,
+            max_relay_chain_len: 3,
+            acceptance_fidelity: Permille::new(800).unwrap(),
+        }
+    }
+}
+
 fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ticks: u64) -> bool {
     current_tick.0.saturating_sub(observed_tick.0) <= retention_ticks
 }
@@ -185,7 +205,7 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 mod tests {
     use super::{
         build_believed_entity_state, AgentBeliefStore, BelievedEntityState, PerceptionProfile,
-        PerceptionSource, SocialObservation, SocialObservationKind,
+        PerceptionSource, SocialObservation, SocialObservationKind, TellProfile,
     };
     use crate::{
         build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
@@ -409,11 +429,39 @@ mod tests {
     }
 
     #[test]
+    fn tell_profile_defaults_match_e15_spec() {
+        assert_eq!(
+            TellProfile::default(),
+            TellProfile {
+                max_tell_candidates: 3,
+                max_relay_chain_len: 3,
+                acceptance_fidelity: Permille::new(800).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn tell_profile_roundtrips_through_bincode() {
+        let profile = TellProfile {
+            max_tell_candidates: 5,
+            max_relay_chain_len: 2,
+            acceptance_fidelity: Permille::new(650).unwrap(),
+        };
+
+        let bytes = bincode::serialize(&profile).unwrap();
+        let roundtrip: TellProfile = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
     fn belief_types_satisfy_component_and_serde_bounds() {
         assert_component_bounds::<AgentBeliefStore>();
         assert_component_bounds::<PerceptionProfile>();
+        assert_component_bounds::<TellProfile>();
         assert_serde_bounds::<BelievedEntityState>();
         assert_serde_bounds::<SocialObservation>();
+        assert_serde_bounds::<TellProfile>();
     }
 
     #[test]

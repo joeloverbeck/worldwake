@@ -280,6 +280,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                tell_profiles,
+                TellProfile,
+                insert_tell_profile,
+                get_tell_profile,
+                get_tell_profile_mut,
+                remove_tell_profile,
+                has_tell_profile,
+                iter_tell_profiles,
+                insert_component_tell_profile,
+                get_component_tell_profile,
+                get_component_tell_profile_mut,
+                remove_component_tell_profile,
+                has_component_tell_profile,
+                entities_with_tell_profile,
+                query_tell_profile,
+                count_with_tell_profile,
+                "TellProfile",
+                |kind| kind == EntityKind::Agent,
+                TellProfile,
+                crate::TellProfile,
+                set_component_tell_profile,
+                clear_component_tell_profile,
+                txn_simple_set
+            }
+            {
                 drive_thresholds,
                 DriveThresholds,
                 insert_drive_thresholds,

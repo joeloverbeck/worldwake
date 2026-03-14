@@ -1155,6 +1155,7 @@ mod tests {
         },
         AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, DemandMemory,
         MerchandiseProfile, PerceptionProfile, PerceptionSource, SubstitutePreferences,
+        TellProfile,
         TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
@@ -1399,6 +1400,12 @@ mod tests {
                     component_kind: ComponentKind::PerceptionProfile,
                     before: None,
                     after: ComponentValue::PerceptionProfile(PerceptionProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::TellProfile,
+                    before: None,
+                    after: ComponentValue::TellProfile(TellProfile::default()),
                 }),
                 StateDelta::Relation(RelationDelta::Added {
                     relation_kind: RelationKind::InTransit,
@@ -2377,6 +2384,40 @@ mod tests {
     }
 
     #[test]
+    fn set_component_tell_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = world.get_component_tell_profile(agent).copied().unwrap();
+        let after = TellProfile {
+            max_tell_candidates: before.max_tell_candidates + 2,
+            max_relay_chain_len: before.max_relay_chain_len + 1,
+            acceptance_fidelity: Permille::new(910).unwrap(),
+        };
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_tell_profile(agent, after).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::TellProfile,
+                before: Some(ComponentValue::TellProfile(before)),
+                after: ComponentValue::TellProfile(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_tell_profile(agent), Some(&after));
+    }
+
+    #[test]
     fn set_component_blocked_intent_memory_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -2730,6 +2771,34 @@ mod tests {
 
         assert_eq!(record.state_deltas.len(), 1);
         assert_eq!(world.get_component_perception_profile(agent), None);
+    }
+
+    #[test]
+    fn clear_component_tell_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = world.get_component_tell_profile(agent).copied().unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_tell_profile(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::TellProfile,
+                before: ComponentValue::TellProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(world.get_component_tell_profile(agent), None);
     }
 
     #[test]

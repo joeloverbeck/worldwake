@@ -1,7 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
-    belief::{AgentBeliefStore, PerceptionProfile},
+    belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
     component_schema::with_component_schema_entries,
@@ -112,7 +112,10 @@ with_component_schema_entries!(
 mod tests {
     use super::ComponentTables;
     use crate::{
-        belief::{AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource},
+        belief::{
+            AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource,
+            TellProfile,
+        },
         components::{AgentData, Name},
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
@@ -184,6 +187,14 @@ mod tests {
         }
     }
 
+    fn sample_roundtrip_tell_profile() -> TellProfile {
+        TellProfile {
+            max_tell_candidates: 4,
+            max_relay_chain_len: 2,
+            acceptance_fidelity: Permille::new(725).unwrap(),
+        }
+    }
+
     fn seed_roundtrip_components(tables: &mut ComponentTables) {
         let name_id = entity(2);
         let agent_id = entity(8);
@@ -209,6 +220,7 @@ mod tests {
                 observation_fidelity: Permille::new(900).unwrap(),
             },
         );
+        tables.insert_tell_profile(entity(25), sample_roundtrip_tell_profile());
         tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
         tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
@@ -264,6 +276,7 @@ mod tests {
         assert_eq!(tables.iter_blocked_intent_memories().count(), 0);
         assert_eq!(tables.iter_agent_belief_stores().count(), 0);
         assert_eq!(tables.iter_perception_profiles().count(), 0);
+        assert_eq!(tables.iter_tell_profiles().count(), 0);
         assert_eq!(tables.iter_drive_thresholds().count(), 0);
         assert_eq!(tables.iter_homeostatic_needs().count(), 0);
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
@@ -471,6 +484,20 @@ mod tests {
         assert!(tables.has_known_recipes(id));
         assert_eq!(tables.remove_known_recipes(id), Some(recipes));
         assert_eq!(tables.get_known_recipes(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_tell_profile() {
+        let mut tables = ComponentTables::default();
+        let entity = entity(26);
+        let profile = sample_roundtrip_tell_profile();
+
+        assert_eq!(tables.insert_tell_profile(entity, profile), None);
+        assert_eq!(tables.get_tell_profile(entity), Some(&profile));
+        assert!(tables.has_tell_profile(entity));
+        assert_eq!(tables.iter_tell_profiles().collect::<Vec<_>>(), vec![(entity, &profile)]);
+        assert_eq!(tables.remove_tell_profile(entity), Some(profile));
+        assert_eq!(tables.get_tell_profile(entity), None);
     }
 
     #[test]

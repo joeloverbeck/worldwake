@@ -7,6 +7,7 @@ use crate::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
     InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
     PerceptionProfile, Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
+    TellProfile,
     SubstitutePreferences, TradeDispositionProfile, TravelDispositionProfile, UniqueItem,
     UtilityProfile, WorkstationMarker, WoundList,
 };
@@ -216,7 +217,7 @@ mod tests {
         FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
         LotOperation, MetabolismProfile, Name, PerceptionProfile, PerceptionSource, Permille,
         ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
         WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
@@ -298,6 +299,11 @@ mod tests {
                 memory_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(920).unwrap(),
+            }),
+            ComponentValue::TellProfile(TellProfile {
+                max_tell_candidates: 4,
+                max_relay_chain_len: 2,
+                acceptance_fidelity: Permille::new(720).unwrap(),
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
@@ -452,6 +458,7 @@ mod tests {
                 ComponentKind::BlockedIntentMemory,
                 ComponentKind::AgentBeliefStore,
                 ComponentKind::PerceptionProfile,
+                ComponentKind::TellProfile,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,

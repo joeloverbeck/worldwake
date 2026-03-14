@@ -8,9 +8,9 @@ use crate::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
     InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
     MetabolismProfile, Name, PerceptionProfile, PlaceTag, ProductionJob, ProvenanceEntry, Quantity,
-    RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker,
-    WorldError, WoundList,
+    RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick, Topology,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -151,6 +151,7 @@ impl World {
             world.insert_component_agent_data(entity, AgentData { control_source })?;
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
+            world.insert_component_tell_profile(entity, TellProfile::default())?;
             Ok(())
         })
     }
@@ -580,8 +581,8 @@ mod tests {
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
         MetabolismProfile, Name, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
         ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
+        SubstitutePreferences, TellProfile, Tick, TickRange, Topology, TradeDispositionProfile,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
         WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -671,6 +672,14 @@ mod tests {
             memory_capacity: 12,
             memory_retention_ticks: 48,
             observation_fidelity: Permille::new(875).unwrap(),
+        }
+    }
+
+    fn sample_tell_profile() -> TellProfile {
+        TellProfile {
+            max_tell_candidates: 5,
+            max_relay_chain_len: 2,
+            acceptance_fidelity: Permille::new(700).unwrap(),
         }
     }
 
@@ -1014,7 +1023,7 @@ mod tests {
     }
 
     #[test]
-    fn create_agent_attaches_belief_store_and_perception_profile() {
+    fn create_agent_attaches_belief_store_perception_profile_and_tell_profile() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world
             .create_agent("Watcher", ControlSource::Ai, Tick(3))
@@ -1027,6 +1036,10 @@ mod tests {
         assert!(
             world.get_component_perception_profile(id).is_some(),
             "new agents should start with a perception profile"
+        );
+        assert_eq!(
+            world.get_component_tell_profile(id),
+            Some(&TellProfile::default())
         );
     }
 
@@ -1395,6 +1408,15 @@ mod tests {
                 },
             )
             .unwrap();
+        manual_world
+            .insert_component_agent_belief_store(manual_id, AgentBeliefStore::new())
+            .unwrap();
+        manual_world
+            .insert_component_perception_profile(manual_id, PerceptionProfile::default())
+            .unwrap();
+        manual_world
+            .insert_component_tell_profile(manual_id, TellProfile::default())
+            .unwrap();
 
         assert_eq!(factory_id, manual_id);
         assert_eq!(
@@ -1408,6 +1430,18 @@ mod tests {
         assert_eq!(
             factory_world.get_component_agent_data(factory_id),
             manual_world.get_component_agent_data(manual_id)
+        );
+        assert_eq!(
+            factory_world.get_component_agent_belief_store(factory_id),
+            manual_world.get_component_agent_belief_store(manual_id)
+        );
+        assert_eq!(
+            factory_world.get_component_perception_profile(factory_id),
+            manual_world.get_component_perception_profile(manual_id)
+        );
+        assert_eq!(
+            factory_world.get_component_tell_profile(factory_id),
+            manual_world.get_component_tell_profile(manual_id)
         );
     }
 
@@ -3844,6 +3878,39 @@ mod tests {
         let removed = world.remove_component_perception_profile(id).unwrap();
         assert_eq!(removed, Some(profile));
         assert_eq!(world.get_component_perception_profile(id), None);
+    }
+
+    #[test]
+    fn tell_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_tell_profile();
+
+        world.insert_component_tell_profile(id, profile).unwrap();
+        assert_eq!(world.get_component_tell_profile(id), Some(&profile));
+        assert!(world.has_component_tell_profile(id));
+        assert_eq!(world.query_tell_profile().collect::<Vec<_>>(), vec![(id, &profile)]);
+        assert_eq!(world.count_with_tell_profile(), 1);
+
+        let removed = world.remove_component_tell_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_tell_profile(id), None);
+    }
+
+    #[test]
+    fn tell_profile_rejected_for_non_agent_entity_kinds() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_entity(EntityKind::Office, Tick(1));
+        let item_lot = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(1))
+            .unwrap();
+        let profile = sample_tell_profile();
+
+        let office_error = world.insert_component_tell_profile(office, profile).unwrap_err();
+        assert!(matches!(office_error, WorldError::InvalidOperation(_)));
+
+        let item_error = world.insert_component_tell_profile(item_lot, profile).unwrap_err();
+        assert!(matches!(item_error, WorldError::InvalidOperation(_)));
     }
 
     #[test]
