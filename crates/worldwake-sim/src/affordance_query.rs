@@ -327,17 +327,18 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CombatProfile,
-        CombatWeaponRef, CommodityConsumableProfile, CommodityKind, ControlSource,
+        build_prototype_world, ActionDefId, BelievedEntityState, BodyCostPerTick, CauseRef,
+        CombatProfile, CombatWeaponRef, CommodityConsumableProfile, CommodityKind, ControlSource,
         DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
         InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
-        ResourceSource, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn, Wound,
+        ResourceSource, TellProfile, Tick, TradeDispositionProfile, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
 
     #[derive(Default)]
     struct StubBeliefView {
         alive: BTreeMap<EntityId, bool>,
+        beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         kinds: BTreeMap<EntityId, EntityKind>,
         places: BTreeMap<EntityId, EntityId>,
         in_transit: BTreeMap<EntityId, bool>,
@@ -360,6 +361,7 @@ mod tests {
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         demand_memories: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        tell_profiles: BTreeMap<EntityId, TellProfile>,
         wound_lists: BTreeMap<EntityId, Vec<Wound>>,
     }
 
@@ -382,6 +384,10 @@ mod tests {
 
         fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
             self.colocated.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
         fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
@@ -545,6 +551,10 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::TravelDispositionProfile> {
             None
+        }
+
+        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            self.tell_profiles.get(&agent).copied()
         }
 
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {

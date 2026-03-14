@@ -2,10 +2,11 @@ use crate::planning_snapshot::PlanningSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    load_per_unit, ActionDefId, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-    MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId, ResourceSource, TickRange,
-    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    load_per_unit, ActionDefId, BelievedEntityState, CombatProfile, CommodityKind,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MetabolismProfile, Permille, PlaceTag,
+    Quantity, RecipeId, ResourceSource, TellProfile, TickRange, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -730,6 +731,18 @@ impl RuntimeBeliefView for PlanningState<'_> {
         entities
     }
 
+    fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .actor_known_entity_beliefs
+            .iter()
+            .map(|(entity, belief)| (*entity, belief.clone()))
+            .collect()
+    }
+
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
         let mut entities = self
             .snapshot
@@ -997,6 +1010,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
         None
     }
 
+    fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+        (agent == self.snapshot.actor()).then_some(self.snapshot.actor_tell_profile)
+    }
+
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         self.snapshot
             .entities
@@ -1193,11 +1210,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
+        DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
+        RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -1212,6 +1230,7 @@ mod tests {
         kinds: BTreeMap<EntityId, EntityKind>,
         effective_places: BTreeMap<EntityId, EntityId>,
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
+        beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
         direct_containers: BTreeMap<EntityId, EntityId>,
@@ -1226,6 +1245,7 @@ mod tests {
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        tell_profiles: BTreeMap<EntityId, TellProfile>,
         reservations: BTreeMap<EntityId, Vec<TickRange>>,
         durations: BTreeMap<(EntityId, ActionDefId), ActionDuration>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
@@ -1254,6 +1274,10 @@ mod tests {
 
         fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
             self.entities_at.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
         fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
@@ -1424,6 +1448,10 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::TravelDispositionProfile> {
             None
+        }
+
+        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            self.tell_profiles.get(&agent).copied()
         }
 
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
@@ -1926,6 +1954,47 @@ mod tests {
                 .unwrap()
                 .hunger
                 < thresholds.hunger.low()
+        );
+    }
+
+    #[test]
+    fn planning_state_preserves_actor_belief_memory_and_tell_profile_from_snapshot() {
+        let (mut view, actor, town, _field, bread) = test_view();
+        view.beliefs.insert(
+            actor,
+            vec![(
+                bread,
+                BelievedEntityState {
+                    last_known_place: Some(town),
+                    last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(4),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.tell_profiles.insert(
+            actor,
+            TellProfile {
+                max_tell_candidates: 4,
+                max_relay_chain_len: 2,
+                acceptance_fidelity: pm(650),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            RuntimeBeliefView::known_entity_beliefs(&state, actor),
+            view.beliefs.get(&actor).cloned().unwrap()
+        );
+        assert_eq!(
+            RuntimeBeliefView::tell_profile(&state, actor),
+            view.tell_profiles.get(&actor).copied()
         );
     }
 

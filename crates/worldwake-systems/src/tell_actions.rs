@@ -17,6 +17,7 @@ pub fn register_tell_action(
 ) -> ActionDefId {
     let handler = handlers.register(
         ActionHandler::new(start_tell, tick_tell, commit_tell, abort_tell)
+            .with_affordance_payloads(enumerate_tell_payloads)
             .with_payload_override_validator(validate_tell_payload_override)
             .with_authoritative_payload_validator(validate_tell_payload_authoritatively),
     );
@@ -168,6 +169,46 @@ fn validate_tell_payload_override(
     payload.as_tell().is_some()
 }
 
+fn enumerate_tell_payloads(
+    _def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    view: &dyn worldwake_sim::RuntimeBeliefView,
+) -> Vec<ActionPayload> {
+    let Some(listener) = targets.first().copied() else {
+        return Vec::new();
+    };
+    if listener == actor {
+        return Vec::new();
+    }
+
+    let profile = view.tell_profile(actor).unwrap_or_default();
+    let mut subjects = view
+        .known_entity_beliefs(actor)
+        .into_iter()
+        .filter_map(|(subject, belief)| {
+            (belief_chain_len(belief.source) <= profile.max_relay_chain_len)
+                .then_some((belief.observed_tick, subject))
+        })
+        .collect::<Vec<_>>();
+    subjects.sort_unstable_by(|(left_tick, left_subject), (right_tick, right_subject)| {
+        right_tick
+            .cmp(left_tick)
+            .then_with(|| left_subject.cmp(right_subject))
+    });
+    subjects.truncate(usize::from(profile.max_tell_candidates));
+
+    subjects
+        .into_iter()
+        .map(|(_, subject)| {
+            ActionPayload::Tell(TellActionPayload {
+                listener,
+                subject_entity: subject,
+            })
+        })
+        .collect()
+}
+
 fn validate_tell_payload_authoritatively(
     def: &ActionDef,
     _registry: &ActionDefRegistry,
@@ -298,14 +339,18 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
-        BodyCostPerTick, CauseRef, ControlSource, EntityId, EntityKind, EventLog, EventTag,
-        Permille, PerceptionProfile, PerceptionSource, Seed, TellProfile, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        BelievedEntityState, BodyCostPerTick, CauseRef, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId,
+        EntityKind, EventLog, EventTag, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, PerceptionProfile, PerceptionSource,
+        Quantity, RecipeId, ResourceSource, Seed, TellProfile, Tick, TickRange,
+        TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
-        ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance, ActionPayload,
-        ActionState, ActionStatus, DeterministicRng, DurationExpr, Interruptibility, Precondition,
-        TargetSpec, TellActionPayload,
+        get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
+        ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr,
+        Interruptibility, Precondition, RuntimeBeliefView, TargetSpec, TellActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -463,6 +508,269 @@ mod tests {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
         assert_eq!(log.len(), 1);
+    }
+
+    #[derive(Default)]
+    struct StubTellBeliefView {
+        alive: std::collections::BTreeMap<EntityId, bool>,
+        kinds: std::collections::BTreeMap<EntityId, EntityKind>,
+        places: std::collections::BTreeMap<EntityId, EntityId>,
+        beliefs: std::collections::BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        tell_profiles: std::collections::BTreeMap<EntityId, TellProfile>,
+    }
+
+    impl RuntimeBeliefView for StubTellBeliefView {
+        fn is_alive(&self, entity: EntityId) -> bool {
+            self.alive.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.kinds.get(&entity).copied()
+        }
+
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.places.get(&entity).copied()
+        }
+
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            let mut entities = self
+                .places
+                .iter()
+                .filter_map(|(entity, entity_place)| (*entity_place == place).then_some(*entity))
+                .collect::<Vec<_>>();
+            entities.sort();
+            entities
+        }
+
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+            Quantity(0)
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn travel_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<TravelDispositionProfile> {
+            None
+        }
+
+        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            self.tell_profiles.get(&agent).copied()
+        }
+
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<worldwake_sim::ActionDuration> {
+            None
+        }
+    }
+
+    fn collect_tell_affordances_from_view(
+        view: &dyn RuntimeBeliefView,
+        speaker: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Vec<(EntityId, EntityId)> {
+        get_affordances(view, speaker, defs, handlers)
+            .into_iter()
+            .filter_map(|affordance| {
+                affordance
+                    .payload_override
+                    .and_then(|payload| payload.as_tell().cloned())
+                    .map(|payload| (payload.listener, payload.subject_entity))
+            })
+            .collect()
     }
 
     #[test]
@@ -955,5 +1263,209 @@ mod tests {
         assert!(record.tags.contains(&EventTag::ActionCommitted));
         assert!(record.tags.contains(&EventTag::Social));
         assert!(record.tags.contains(&EventTag::WorldMutation));
+    }
+
+    #[test]
+    fn tell_affordances_expand_live_colocated_listeners_across_relayable_subjects() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_tell_action(&mut defs, &mut handlers);
+        let speaker = entity(1);
+        let listener_a = entity(2);
+        let listener_b = entity(3);
+        let dead_listener = entity(4);
+        let subject_a = entity(10);
+        let subject_b = entity(11);
+        let subject_c = entity(12);
+        let place = entity(20);
+        let mut view = StubTellBeliefView::default();
+
+        for entity in [speaker, listener_a, listener_b, dead_listener] {
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+        }
+        view.alive.insert(speaker, true);
+        view.alive.insert(listener_a, true);
+        view.alive.insert(listener_b, true);
+        view.alive.insert(dead_listener, false);
+        view.tell_profiles.insert(
+            speaker,
+            TellProfile {
+                max_tell_candidates: 3,
+                max_relay_chain_len: 3,
+                acceptance_fidelity: Permille::new(800).unwrap(),
+            },
+        );
+        view.beliefs.insert(
+            speaker,
+            vec![
+                (
+                    subject_a,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(30)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(2),
+                        source: PerceptionSource::DirectObservation,
+                    },
+                ),
+                (
+                    subject_b,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(31)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(4),
+                        source: PerceptionSource::Report {
+                            from: entity(77),
+                            chain_len: 2,
+                        },
+                    },
+                ),
+                (
+                    subject_c,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(32)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(6),
+                        source: PerceptionSource::Inference,
+                    },
+                ),
+            ],
+        );
+
+        let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
+
+        assert_eq!(
+            affordances,
+            vec![
+                (listener_a, subject_a),
+                (listener_a, subject_b),
+                (listener_a, subject_c),
+                (listener_b, subject_a),
+                (listener_b, subject_b),
+                (listener_b, subject_c),
+            ]
+        );
+    }
+
+    #[test]
+    fn tell_affordances_filter_relay_depth_and_limit_subjects_by_recency() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_tell_action(&mut defs, &mut handlers);
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject_a = entity(10);
+        let subject_b = entity(11);
+        let subject_c = entity(12);
+        let subject_d = entity(13);
+        let subject_e = entity(14);
+        let place = entity(20);
+        let mut view = StubTellBeliefView::default();
+
+        for entity in [speaker, listener] {
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+            view.alive.insert(entity, true);
+        }
+        view.tell_profiles.insert(
+            speaker,
+            TellProfile {
+                max_tell_candidates: 3,
+                max_relay_chain_len: 2,
+                acceptance_fidelity: Permille::new(800).unwrap(),
+            },
+        );
+        view.beliefs.insert(
+            speaker,
+            vec![
+                (
+                    subject_a,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(30)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(3),
+                        source: PerceptionSource::DirectObservation,
+                    },
+                ),
+                (
+                    subject_b,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(31)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(9),
+                        source: PerceptionSource::Report {
+                            from: entity(80),
+                            chain_len: 2,
+                        },
+                    },
+                ),
+                (
+                    subject_c,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(32)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(9),
+                        source: PerceptionSource::Inference,
+                    },
+                ),
+                (
+                    subject_d,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(33)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(7),
+                        source: PerceptionSource::Rumor { chain_len: 3 },
+                    },
+                ),
+                (
+                    subject_e,
+                    BelievedEntityState {
+                        last_known_place: Some(entity(34)),
+                        last_known_inventory: Default::default(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(5),
+                        source: PerceptionSource::Rumor { chain_len: 1 },
+                    },
+                ),
+            ],
+        );
+
+        let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
+
+        assert_eq!(
+            affordances,
+            vec![(listener, subject_b), (listener, subject_c), (listener, subject_e)]
+        );
     }
 }

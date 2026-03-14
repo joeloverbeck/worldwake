@@ -1,11 +1,12 @@
 use crate::{ActionDuration, ActionPayload, DurationExpr};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-    InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity,
-    RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    BelievedEntityState, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
+    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
+    TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag,
+    Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -82,6 +83,10 @@ pub trait RuntimeBeliefView {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        let _ = agent;
+        Vec::new()
+    }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
@@ -144,6 +149,10 @@ pub trait RuntimeBeliefView {
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile>;
+    fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+        let _ = agent;
+        None
+    }
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {

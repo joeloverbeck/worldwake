@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile,
-    CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag,
-    Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-    WorkstationTag, Wound,
+    ActionDefId, BelievedEntityState, BlockedIntentMemory, BlockingFact, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
+    EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
+    TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -112,6 +112,8 @@ pub struct PlanningSnapshot {
     pub(crate) entities: BTreeMap<EntityId, SnapshotEntity>,
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
+    pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
+    pub(crate) actor_tell_profile: TellProfile,
 }
 
 impl PlanningSnapshot {
@@ -167,6 +169,8 @@ impl PlanningSnapshot {
             entities,
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
+            actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
+            actor_tell_profile: view.tell_profile(actor).unwrap_or_default(),
         }
     }
 

@@ -269,11 +269,12 @@ mod tests {
     use crate::RuntimeBeliefView;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandMemory,
-        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundList,
+        BelievedEntityState, BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        DemandMemory, DemandObservation, DemandObservationReason, DriveThresholds, EntityId,
+        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause,
+        WoundList,
     };
 
     #[derive(Default)]
@@ -299,6 +300,13 @@ mod tests {
         }
 
         fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn known_entity_beliefs(
+            &self,
+            _agent: EntityId,
+        ) -> Vec<(EntityId, BelievedEntityState)> {
             Vec::new()
         }
 
@@ -430,6 +438,10 @@ mod tests {
             &self,
             _agent: EntityId,
         ) -> Option<worldwake_core::TravelDispositionProfile> {
+            None
+        }
+
+        fn tell_profile(&self, _agent: EntityId) -> Option<TellProfile> {
             None
         }
 

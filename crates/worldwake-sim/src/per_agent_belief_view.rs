@@ -8,9 +8,9 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BelievedEntityState, CarryCapacity,
     CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
-    Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
-    WorkstationTag, World, Wound,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId,
+    ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -181,6 +181,18 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         entities.sort();
         entities.dedup();
         entities
+    }
+
+    fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.belief_store
+            .known_entities
+            .iter()
+            .map(|(entity, state)| (*entity, state.clone()))
+            .collect()
     }
 
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
@@ -461,6 +473,15 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                     .cloned()
             })
             .flatten()
+    }
+
+    fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+        (agent == self.agent).then(|| {
+            self.world
+                .get_component_tell_profile(agent)
+                .copied()
+                .unwrap_or_default()
+        })
     }
 
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
@@ -866,6 +887,55 @@ mod tests {
 
         assert_eq!(world.effective_place(other), Some(place_b));
         assert_eq!(RuntimeBeliefView::effective_place(&view, other), Some(place_a));
+    }
+
+    #[test]
+    fn known_entity_beliefs_expose_only_actor_subjective_memory() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(other, entity_belief(place, true, 2, 4));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::known_entity_beliefs(&view, agent),
+            vec![(other, entity_belief(place, true, 2, 4))]
+        );
+        assert!(
+            RuntimeBeliefView::known_entity_beliefs(&view, other).is_empty(),
+            "belief enumeration should not expose another agent's store through this view"
+        );
+    }
+
+    #[test]
+    fn tell_profile_returns_actor_default_when_component_missing() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::tell_profile(&view, agent),
+            Some(worldwake_core::TellProfile::default())
+        );
     }
 
     #[test]
