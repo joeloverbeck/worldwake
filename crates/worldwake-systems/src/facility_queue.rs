@@ -572,7 +572,7 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::QueueGrantExpired)[0])
             .unwrap();
-        assert_eq!(record.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
     }
 
     #[test]

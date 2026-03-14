@@ -436,7 +436,7 @@ mod tests {
         let start_record = log
             .get(log.events_by_tag(EventTag::ActionStarted)[0])
             .unwrap();
-        assert!(start_record.tags.contains(&EventTag::Travel));
+        assert!(start_record.payload.tags.contains(&EventTag::Travel));
 
         for tick in [6, 7] {
             let outcome = tick_action(
@@ -488,7 +488,7 @@ mod tests {
         let commit_record = log
             .get(log.events_by_tag(EventTag::ActionCommitted)[0])
             .unwrap();
-        assert!(commit_record.tags.contains(&EventTag::Travel));
+        assert!(commit_record.payload.tags.contains(&EventTag::Travel));
     }
 
     #[test]
@@ -632,6 +632,6 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::ActionAborted)[0])
             .unwrap();
-        assert!(record.tags.contains(&EventTag::Travel));
+        assert!(record.payload.tags.contains(&EventTag::Travel));
     }
 }

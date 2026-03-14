@@ -460,8 +460,8 @@ mod tests {
         let record = log
             .get(*log.events_by_tag(EventTag::ActionCommitted).last().unwrap())
             .unwrap();
-        assert_eq!(record.visibility, VisibilitySpec::SamePlace);
-        assert!(record.tags.contains(&EventTag::WorldMutation));
+        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
+        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
     }
 
     #[test]

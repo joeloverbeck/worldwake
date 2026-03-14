@@ -476,8 +476,8 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::ActionInterrupted)[0])
             .unwrap();
-        assert!(record.tags.contains(&EventTag::ActionInterrupted));
-        assert_eq!(record.target_ids, vec![target]);
+        assert!(record.payload.tags.contains(&EventTag::ActionInterrupted));
+        assert_eq!(record.payload.target_ids, vec![target]);
         let state = hook_state().lock().unwrap().clone();
         assert_eq!(state.abort_calls, 1);
         assert_eq!(state.abort_reasons, vec![replan.reason.clone()]);
@@ -561,7 +561,7 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::ActionAborted)[0])
             .unwrap();
-        assert!(record.tags.contains(&EventTag::ActionAborted));
+        assert!(record.payload.tags.contains(&EventTag::ActionAborted));
         let state = hook_state().lock().unwrap().clone();
         assert_eq!(state.abort_calls, 1);
         assert_eq!(state.abort_reasons, vec![replan.reason.clone()]);

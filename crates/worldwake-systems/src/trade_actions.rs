@@ -960,9 +960,9 @@ mod tests {
         let trade_events = harness.log.events_by_tag(EventTag::Trade);
         assert_eq!(trade_events.len(), 1);
         let record = harness.log.get(trade_events[0]).unwrap();
-        assert!(record.tags.contains(&EventTag::ActionCommitted));
-        assert!(record.tags.contains(&EventTag::Transfer));
-        assert!(record.tags.contains(&EventTag::Trade));
+        assert!(record.payload.tags.contains(&EventTag::ActionCommitted));
+        assert!(record.payload.tags.contains(&EventTag::Transfer));
+        assert!(record.payload.tags.contains(&EventTag::Trade));
 
         let traded_entry = harness
             .world

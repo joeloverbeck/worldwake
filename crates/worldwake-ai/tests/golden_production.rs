@@ -831,6 +831,7 @@ fn record_new_promotions(
             .get(*event_id)
             .expect("queue promotion event should exist");
         let promoted_actor = record
+            .payload
             .target_ids
             .iter()
             .copied()

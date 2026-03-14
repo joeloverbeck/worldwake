@@ -605,8 +605,8 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::ActionCommitted)[0])
             .unwrap();
-        assert!(record.tags.contains(&EventTag::Inventory));
-        assert!(record.tags.contains(&EventTag::Transfer));
+        assert!(record.payload.tags.contains(&EventTag::Inventory));
+        assert!(record.payload.tags.contains(&EventTag::Transfer));
     }
 
     #[test]

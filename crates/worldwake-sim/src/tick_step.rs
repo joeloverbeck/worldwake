@@ -891,8 +891,8 @@ mod tests {
         assert_eq!(scheduler.current_tick(), Tick(1));
         assert_eq!(event_log.len(), 1);
         let tick_event = event_log.get(worldwake_core::EventId(0)).unwrap();
-        assert_eq!(tick_event.cause, CauseRef::SystemTick(Tick(0)));
-        assert!(tick_event.tags.contains(&EventTag::System));
+        assert_eq!(tick_event.payload.cause, CauseRef::SystemTick(Tick(0)));
+        assert!(tick_event.payload.tags.contains(&EventTag::System));
     }
 
     #[test]

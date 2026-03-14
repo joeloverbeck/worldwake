@@ -24,17 +24,7 @@ pub enum EvidenceRef {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PendingEvent {
-    pub tick: Tick,
-    pub cause: CauseRef,
-    pub actor_id: Option<EntityId>,
-    pub target_ids: Vec<EntityId>,
-    pub evidence: Vec<EvidenceRef>,
-    pub place_id: Option<EntityId>,
-    pub state_deltas: Vec<StateDelta>,
-    pub observed_entities: BTreeMap<EntityId, ObservedEntitySnapshot>,
-    pub visibility: VisibilitySpec,
-    pub witness_data: WitnessData,
-    pub tags: BTreeSet<EventTag>,
+    pub payload: EventPayload,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -55,17 +45,7 @@ pub struct EventPayload {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
     pub event_id: EventId,
-    pub tick: Tick,
-    pub cause: CauseRef,
-    pub actor_id: Option<EntityId>,
-    pub target_ids: Vec<EntityId>,
-    pub evidence: Vec<EvidenceRef>,
-    pub place_id: Option<EntityId>,
-    pub state_deltas: Vec<StateDelta>,
-    pub observed_entities: BTreeMap<EntityId, ObservedEntitySnapshot>,
-    pub visibility: VisibilitySpec,
-    pub witness_data: WitnessData,
-    pub tags: BTreeSet<EventTag>,
+    pub payload: EventPayload,
 }
 
 impl PendingEvent {
@@ -76,36 +56,14 @@ impl PendingEvent {
         payload.evidence.sort();
         payload.evidence.dedup();
 
-        Self {
-            tick: payload.tick,
-            cause: payload.cause,
-            actor_id: payload.actor_id,
-            target_ids: payload.target_ids,
-            evidence: payload.evidence,
-            place_id: payload.place_id,
-            state_deltas: payload.state_deltas,
-            observed_entities: payload.observed_entities,
-            visibility: payload.visibility,
-            witness_data: payload.witness_data,
-            tags: payload.tags,
-        }
+        Self { payload }
     }
 
     #[must_use]
     pub fn into_record(self, event_id: EventId) -> EventRecord {
         EventRecord {
             event_id,
-            tick: self.tick,
-            cause: self.cause,
-            actor_id: self.actor_id,
-            target_ids: self.target_ids,
-            evidence: self.evidence,
-            place_id: self.place_id,
-            state_deltas: self.state_deltas,
-            observed_entities: self.observed_entities,
-            visibility: self.visibility,
-            witness_data: self.witness_data,
-            tags: self.tags,
+            payload: self.payload,
         }
     }
 }
@@ -197,16 +155,19 @@ mod tests {
             tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
         });
 
-        assert_eq!(pending.tick, Tick(9));
-        assert_eq!(pending.cause, CauseRef::Event(EventId(1)));
-        assert_eq!(pending.actor_id, Some(entity(2)));
-        assert_eq!(pending.target_ids, vec![entity(3), entity(4), entity(5)]);
-        assert!(pending.evidence.is_empty());
-        assert_eq!(pending.place_id, Some(entity(6)));
-        assert_eq!(pending.state_deltas.len(), 2);
-        assert!(pending.observed_entities.is_empty());
+        assert_eq!(pending.payload.tick, Tick(9));
+        assert_eq!(pending.payload.cause, CauseRef::Event(EventId(1)));
+        assert_eq!(pending.payload.actor_id, Some(entity(2)));
         assert_eq!(
-            pending.tags.iter().copied().collect::<Vec<_>>(),
+            pending.payload.target_ids,
+            vec![entity(3), entity(4), entity(5)]
+        );
+        assert!(pending.payload.evidence.is_empty());
+        assert_eq!(pending.payload.place_id, Some(entity(6)));
+        assert_eq!(pending.payload.state_deltas.len(), 2);
+        assert!(pending.payload.observed_entities.is_empty());
+        assert_eq!(
+            pending.payload.tags.iter().copied().collect::<Vec<_>>(),
             vec![EventTag::WorldMutation, EventTag::System]
         );
     }
@@ -243,16 +204,16 @@ mod tests {
         .into_record(EventId(4));
 
         assert_eq!(record.event_id, EventId(4));
-        assert_eq!(record.tick, Tick(9));
-        assert_eq!(record.cause, CauseRef::Event(EventId(1)));
-        assert_eq!(record.actor_id, Some(entity(2)));
-        assert_eq!(record.target_ids, vec![entity(3), entity(4), entity(5)]);
-        assert!(record.evidence.is_empty());
-        assert_eq!(record.place_id, Some(entity(6)));
-        assert_eq!(record.state_deltas.len(), 2);
-        assert!(record.observed_entities.is_empty());
+        assert_eq!(record.payload.tick, Tick(9));
+        assert_eq!(record.payload.cause, CauseRef::Event(EventId(1)));
+        assert_eq!(record.payload.actor_id, Some(entity(2)));
+        assert_eq!(record.payload.target_ids, vec![entity(3), entity(4), entity(5)]);
+        assert!(record.payload.evidence.is_empty());
+        assert_eq!(record.payload.place_id, Some(entity(6)));
+        assert_eq!(record.payload.state_deltas.len(), 2);
+        assert!(record.payload.observed_entities.is_empty());
         assert_eq!(
-            record.tags.iter().copied().collect::<Vec<_>>(),
+            record.payload.tags.iter().copied().collect::<Vec<_>>(),
             vec![EventTag::WorldMutation, EventTag::System]
         );
     }
@@ -274,11 +235,11 @@ mod tests {
         })
         .into_record(EventId(0));
 
-        assert!(record.target_ids.is_empty());
-        assert!(record.evidence.is_empty());
-        assert!(record.state_deltas.is_empty());
-        assert!(record.observed_entities.is_empty());
-        assert!(record.tags.is_empty());
+        assert!(record.payload.target_ids.is_empty());
+        assert!(record.payload.evidence.is_empty());
+        assert!(record.payload.state_deltas.is_empty());
+        assert!(record.payload.observed_entities.is_empty());
+        assert!(record.payload.tags.is_empty());
     }
 
     #[test]
@@ -334,9 +295,9 @@ mod tests {
         let roundtrip: PendingEvent = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, pending);
-        assert_eq!(roundtrip.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(roundtrip.payload.target_ids, vec![entity(2), entity(3), entity(4)]);
         assert_eq!(
-            roundtrip.evidence,
+            roundtrip.payload.evidence,
             vec![
                 EvidenceRef::Wound {
                     entity: entity(1),
@@ -349,15 +310,15 @@ mod tests {
             ]
         );
         assert!(matches!(
-            roundtrip.state_deltas[0],
+            roundtrip.payload.state_deltas[0],
             StateDelta::Component(ComponentDelta::Set { .. })
         ));
         assert!(matches!(
-            roundtrip.state_deltas[1],
+            roundtrip.payload.state_deltas[1],
             StateDelta::Relation(RelationDelta::Added { .. })
         ));
         assert!(matches!(
-            roundtrip.state_deltas[2],
+            roundtrip.payload.state_deltas[2],
             StateDelta::Reservation(ReservationDelta::Created { .. })
         ));
     }
@@ -407,7 +368,7 @@ mod tests {
         });
 
         assert_eq!(
-            pending.evidence,
+            pending.payload.evidence,
             vec![
                 EvidenceRef::Wound {
                     entity: entity(9),
@@ -476,7 +437,7 @@ mod tests {
         });
 
         assert_eq!(
-            pending.evidence,
+            pending.payload.evidence,
             vec![
                 EvidenceRef::Wound {
                     entity: entity(9),
@@ -542,9 +503,9 @@ mod tests {
             },
         );
 
-        assert_eq!(record.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(record.payload.target_ids, vec![entity(2), entity(3), entity(4)]);
         assert_eq!(
-            record.evidence,
+            record.payload.evidence,
             vec![
                 EvidenceRef::Wound {
                     entity: entity(9),
@@ -595,6 +556,7 @@ mod tests {
         assert_eq!(roundtrip, pending);
         assert_eq!(
             roundtrip
+                .payload
                 .observed_entities
                 .get(&entity(2))
                 .unwrap()
@@ -646,18 +608,18 @@ mod tests {
         let roundtrip: EventRecord = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, record);
-        assert_eq!(roundtrip.target_ids, vec![entity(2), entity(3), entity(4)]);
-        assert_eq!(roundtrip.evidence, record.evidence);
+        assert_eq!(roundtrip.payload.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(roundtrip.payload.evidence, record.payload.evidence);
         assert!(matches!(
-            roundtrip.state_deltas[0],
+            roundtrip.payload.state_deltas[0],
             StateDelta::Component(ComponentDelta::Set { .. })
         ));
         assert!(matches!(
-            roundtrip.state_deltas[1],
+            roundtrip.payload.state_deltas[1],
             StateDelta::Relation(RelationDelta::Added { .. })
         ));
         assert!(matches!(
-            roundtrip.state_deltas[2],
+            roundtrip.payload.state_deltas[2],
             StateDelta::Reservation(ReservationDelta::Created { .. })
         ));
     }
@@ -693,7 +655,7 @@ mod tests {
 
         assert_eq!(roundtrip, record);
         assert_eq!(
-            roundtrip.evidence,
+            roundtrip.payload.evidence,
             vec![EvidenceRef::Mismatch {
                 observer: entity(3),
                 subject: entity(8),

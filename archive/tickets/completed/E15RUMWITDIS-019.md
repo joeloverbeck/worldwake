@@ -1,6 +1,6 @@
 # E15RUMWITDIS-019: Embed Shared EventPayload In PendingEvent And EventRecord
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core` event record types, event-log consumers across workspace, and event-focused tests
@@ -20,8 +20,10 @@ That duplication is no longer a call-site API smell, but it is still a type-leve
 
 1. `crates/worldwake-core/src/event_record.rs` now defines `EventPayload`, `PendingEvent`, and `EventRecord`, but `PendingEvent` and `EventRecord` still duplicate all payload fields instead of owning a shared payload value.
 2. `PendingEvent::from_payload(...)` and `EventRecord::from_payload(...)` already make `EventPayload` the canonical assembly surface. The remaining gap is storage shape and read API, not construction semantics.
-3. Event consumers across the workspace still read duplicated fields directly (`record.tick`, `record.tags`, `record.evidence`, etc.). A real cleanup cannot stop at core type definitions; it must migrate those reads to the new shared ownership surface.
-4. The codebase does not need `Deref`, mirrored proxy fields, or compatibility aliases to bridge this change. Those would preserve the old parallel ownership model in a softer form. If the payload becomes canonical storage, consumers should read it explicitly.
+3. Event consumers across core, sim, systems, and CLI still read duplicated fields directly (`record.tick`, `record.tags`, `record.evidence`, etc.). The cleanup must migrate those call sites to the new shared ownership surface. Current evidence does not show an AI-crate dependency on `EventRecord` field reads for this ticket.
+4. `verification.rs` is affected because it iterates event-record deltas and cause refs directly, but it is a consumer adaptation task, not a separate event-model redesign.
+5. The codebase does not need `Deref`, mirrored proxy fields, or compatibility aliases to bridge this change. Those would preserve the old parallel ownership model in a softer form. If the payload becomes canonical storage, consumers should read it explicitly.
+6. The originally proposed command `cargo test -p worldwake-systems e15_information_integration` is not a valid way to verify the integration test file; it filters test names and matches zero tests. The correct targeted command is `cargo test -p worldwake-systems --test e15_information_integration`.
 
 ## Architecture Check
 
@@ -60,8 +62,8 @@ This ticket is an internal ownership refactor, not an event-schema redesign.
 
 Requirements:
 
-1. serialized payload meaning must remain unchanged
-2. `EventLog`, replay, save/load, verification, CLI inspection, and perception must continue to observe the same event semantics after the refactor
+1. event meaning must remain unchanged for `EventLog`, replay, save/load, verification, CLI inspection, and perception
+2. exact Rust/bincode field layout compatibility is not a goal here; if serialized bytes change because the ownership shape becomes cleaner, update the affected tests and let the new layout become canonical
 3. `event_id` must remain the only field that lives outside the shared payload on `EventRecord`
 
 ## Files to Touch
@@ -70,10 +72,10 @@ Requirements:
 - `crates/worldwake-core/src/event_log.rs` (modify)
 - `crates/worldwake-core/src/verification.rs` (modify)
 - `crates/worldwake-core/src/world_txn.rs` (modify if helper usage changes)
-- `crates/worldwake-sim/src/` event consumers/tests that read event fields directly (modify)
-- `crates/worldwake-systems/src/` event consumers/tests that read event fields directly (modify)
-- `crates/worldwake-ai/src/` or tests that read event fields directly (modify if impacted)
+- `crates/worldwake-sim/src/` event consumers/tests that read event fields directly (modify as needed)
+- `crates/worldwake-systems/src/` event consumers/tests that read event fields directly (modify as needed)
 - `crates/worldwake-cli/src/handlers/events.rs` (modify)
+- `crates/worldwake-ai/` is currently expected to be unaffected unless a direct event-record field read is discovered during implementation
 
 ## Out of Scope
 
@@ -93,7 +95,7 @@ Requirements:
 5. Existing suite: `cargo test -p worldwake-core event_log`
 6. Existing suite: `cargo test -p worldwake-core verification`
 7. Existing suite: `cargo test -p worldwake-systems perception`
-8. Existing suite: `cargo test -p worldwake-systems e15_information_integration`
+8. Existing suite: `cargo test -p worldwake-systems --test e15_information_integration`
 9. `cargo clippy --workspace --all-targets -- -D warnings`
 10. `cargo test --workspace`
 
@@ -120,6 +122,19 @@ Requirements:
 2. `cargo test -p worldwake-core event_log`
 3. `cargo test -p worldwake-core verification`
 4. `cargo test -p worldwake-systems perception`
-5. `cargo test -p worldwake-systems e15_information_integration`
+5. `cargo test -p worldwake-systems --test e15_information_integration`
 6. `cargo clippy --workspace --all-targets -- -D warnings`
 7. `cargo test --workspace`
+
+## Outcome
+
+Actually changed:
+
+1. `PendingEvent` now stores `payload: EventPayload` and `EventRecord` now stores `{ event_id, payload }`, making `EventPayload` the single authoritative event schema.
+2. Event-log, verification, world-txn, CLI, sim, systems, and one AI golden test were migrated to explicit `record.payload.*` and `pending.payload.*` reads with no alias fields, `Deref`, or compatibility shims.
+3. Existing focused tests were updated to assert the embedded-payload contract, and the full workspace now passes `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`.
+
+Changed from original plan:
+
+1. The ticket originally assumed AI would likely be unaffected; workspace verification showed one AI golden test also read event targets directly, so it was updated as part of the same migration.
+2. The ticket originally described serialization stability too loosely. The implementation kept event semantics stable while allowing the Rust/bincode field layout to change to match the cleaner ownership model.

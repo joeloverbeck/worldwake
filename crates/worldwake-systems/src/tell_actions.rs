@@ -1424,12 +1424,12 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.actor_id, Some(speaker));
-        assert_eq!(record.target_ids, vec![listener]);
-        assert_eq!(record.visibility, VisibilitySpec::SamePlace);
-        assert!(record.tags.contains(&EventTag::ActionCommitted));
-        assert!(record.tags.contains(&EventTag::Social));
-        assert!(record.tags.contains(&EventTag::WorldMutation));
+        assert_eq!(record.payload.actor_id, Some(speaker));
+        assert_eq!(record.payload.target_ids, vec![listener]);
+        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
+        assert!(record.payload.tags.contains(&EventTag::ActionCommitted));
+        assert!(record.payload.tags.contains(&EventTag::Social));
+        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
     }
 
     #[test]

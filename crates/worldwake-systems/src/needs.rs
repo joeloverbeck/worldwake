@@ -513,8 +513,8 @@ mod tests {
             ))
         );
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
-        assert!(record.tags.contains(&EventTag::System));
-        assert!(record.tags.contains(&EventTag::WorldMutation));
+        assert!(record.payload.tags.contains(&EventTag::System));
+        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
     }
 
     #[test]
@@ -790,8 +790,8 @@ mod tests {
             0
         );
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
-        assert!(record.tags.contains(&EventTag::System));
-        assert!(record.tags.contains(&EventTag::WorldMutation));
+        assert!(record.payload.tags.contains(&EventTag::System));
+        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
     }
 
     #[test]

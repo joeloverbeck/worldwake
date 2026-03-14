@@ -1179,8 +1179,8 @@ mod tests {
         assert_eq!(apple_lots.len(), 1);
         assert_eq!(apple_lots[0].1.quantity, Quantity(2));
         let record = event_log.get(EventId(event_log.len() as u64 - 1)).unwrap();
-        assert!(record.tags.contains(&EventTag::ActionCommitted));
-        assert!(record.tags.contains(&EventTag::WorldMutation));
+        assert!(record.payload.tags.contains(&EventTag::ActionCommitted));
+        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
     }
 
     #[test]
@@ -1773,8 +1773,8 @@ mod tests {
         assert_eq!(bread_lots.len(), 1);
         assert_eq!(bread_lots[0].1.quantity, Quantity(1));
         let record = event_log.get(EventId(event_log.len() as u64 - 1)).unwrap();
-        assert!(record.tags.contains(&EventTag::ActionCommitted));
-        assert!(record.tags.contains(&EventTag::WorldMutation));
+        assert!(record.payload.tags.contains(&EventTag::ActionCommitted));
+        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
     }
 
     #[test]

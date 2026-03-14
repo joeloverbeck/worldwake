@@ -33,11 +33,11 @@ impl EventLog {
     pub fn emit(&mut self, pending: PendingEvent) -> EventId {
         let event_id = self.next_id;
         let record = pending.into_record(event_id);
-        let cause = record.cause;
-        let tick = record.tick;
-        let actor_id = record.actor_id;
-        let place_id = record.place_id;
-        let tags: Vec<_> = record.tags.iter().copied().collect();
+        let cause = record.payload.cause;
+        let tick = record.payload.tick;
+        let actor_id = record.payload.actor_id;
+        let place_id = record.payload.place_id;
+        let tags: Vec<_> = record.payload.tags.iter().copied().collect();
 
         if let CauseRef::Event(cause_id) = cause {
             assert!(
@@ -107,7 +107,7 @@ impl EventLog {
         let mut current_id = event_id;
 
         while let Some(record) = self.get(current_id) {
-            match record.cause {
+            match record.payload.cause {
                 CauseRef::Event(cause_id) => {
                     debug_assert!(
                         cause_id < current_id,
@@ -158,17 +158,20 @@ impl EventLog {
 
         for record in &log.events {
             let event_id = record.event_id;
-            log.by_tick.entry(record.tick).or_default().push(event_id);
-            if let Some(actor_id) = record.actor_id {
+            log.by_tick
+                .entry(record.payload.tick)
+                .or_default()
+                .push(event_id);
+            if let Some(actor_id) = record.payload.actor_id {
                 log.by_actor.entry(actor_id).or_default().push(event_id);
             }
-            if let Some(place_id) = record.place_id {
+            if let Some(place_id) = record.payload.place_id {
                 log.by_place.entry(place_id).or_default().push(event_id);
             }
-            for tag in &record.tags {
+            for tag in &record.payload.tags {
                 log.by_tag.entry(*tag).or_default().push(event_id);
             }
-            if let CauseRef::Event(cause_id) = record.cause {
+            if let CauseRef::Event(cause_id) = record.payload.cause {
                 log.by_cause.entry(cause_id).or_default().push(event_id);
             }
         }
@@ -300,15 +303,15 @@ mod tests {
 
         assert_eq!(event_id, EventId(0));
         assert_eq!(stored.event_id, EventId(0));
-        assert_eq!(stored.tick, pending.tick);
-        assert_eq!(stored.cause, pending.cause);
-        assert_eq!(stored.actor_id, pending.actor_id);
-        assert_eq!(stored.target_ids, pending.target_ids);
-        assert_eq!(stored.place_id, pending.place_id);
-        assert_eq!(stored.state_deltas, pending.state_deltas);
-        assert_eq!(stored.visibility, pending.visibility);
-        assert_eq!(stored.witness_data, pending.witness_data);
-        assert_eq!(stored.tags, pending.tags);
+        assert_eq!(stored.payload.tick, pending.payload.tick);
+        assert_eq!(stored.payload.cause, pending.payload.cause);
+        assert_eq!(stored.payload.actor_id, pending.payload.actor_id);
+        assert_eq!(stored.payload.target_ids, pending.payload.target_ids);
+        assert_eq!(stored.payload.place_id, pending.payload.place_id);
+        assert_eq!(stored.payload.state_deltas, pending.payload.state_deltas);
+        assert_eq!(stored.payload.visibility, pending.payload.visibility);
+        assert_eq!(stored.payload.witness_data, pending.payload.witness_data);
+        assert_eq!(stored.payload.tags, pending.payload.tags);
     }
 
     #[test]

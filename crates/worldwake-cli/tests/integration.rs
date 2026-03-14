@@ -297,7 +297,7 @@ fn test_event_trace_backward() {
     for i in (0..log_len).rev() {
         let eid = worldwake_core::ids::EventId(u64::try_from(i).unwrap());
         if let Some(record) = ctx.sim.event_log().get(eid) {
-            if matches!(record.cause, worldwake_core::cause::CauseRef::Event(_)) {
+            if matches!(record.payload.cause, worldwake_core::cause::CauseRef::Event(_)) {
                 // Trace backward — verify chain terminates at a root event.
                 let chain = ctx.sim.event_log().trace_event_cause(eid);
 
@@ -305,7 +305,7 @@ fn test_event_trace_backward() {
                 let root_id = *chain.first().unwrap();
                 let root = ctx.sim.event_log().get(root_id).unwrap();
                 assert!(
-                    !matches!(root.cause, worldwake_core::cause::CauseRef::Event(_)),
+                    !matches!(root.payload.cause, worldwake_core::cause::CauseRef::Event(_)),
                     "trace should terminate at a root event (Bootstrap, SystemTick, or ExternalInput)"
                 );
 

@@ -403,9 +403,9 @@ mod tests {
         );
         assert_eq!(event_log.len(), 1);
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
-        assert!(record.tags.contains(&EventTag::System));
-        assert!(record.tags.contains(&EventTag::WorldMutation));
-        assert_eq!(record.target_ids, vec![agent]);
+        assert!(record.payload.tags.contains(&EventTag::System));
+        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
+        assert_eq!(record.payload.target_ids, vec![agent]);
     }
 
     #[test]

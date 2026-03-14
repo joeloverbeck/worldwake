@@ -2017,7 +2017,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas, expected_deltas);
+        assert_eq!(record.payload.state_deltas, expected_deltas);
         assert_eq!(world.loyalty_to(subject, target), Some(new_strength));
     }
 
@@ -2056,11 +2056,17 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(
-            record.observed_entities.keys().copied().collect::<Vec<_>>(),
+            record
+                .payload
+                .observed_entities
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
             vec![actor, target, bread]
         );
         assert_eq!(
             record
+                .payload
                 .observed_entities
                 .get(&target)
                 .unwrap()
@@ -2069,6 +2075,7 @@ mod tests {
         );
         assert_eq!(
             record
+                .payload
                 .observed_entities
                 .get(&bread)
                 .unwrap()
@@ -2118,7 +2125,7 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(
-            record.evidence,
+            record.payload.evidence,
             vec![
                 EvidenceRef::Wound {
                     entity: subject,
@@ -2174,11 +2181,17 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(
-            record.observed_entities.keys().copied().collect::<Vec<_>>(),
+            record
+                .payload
+                .observed_entities
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
             vec![actor, subject]
         );
         assert_eq!(
             record
+                .payload
                 .observed_entities
                 .get(&subject)
                 .unwrap()
@@ -2228,7 +2241,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_homeostatic_needs(agent), Some(&after));
     }
 
@@ -2272,7 +2285,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(
             world.get_component_deprivation_exposure(agent),
             Some(&after)
@@ -2313,7 +2326,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_resource_source(facility), Some(&after));
     }
 
@@ -2346,7 +2359,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_carry_capacity(agent), Some(&after));
     }
 
@@ -2380,7 +2393,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_known_recipes(agent), Some(&after));
     }
 
@@ -2417,7 +2430,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_demand_memory(agent), Some(&after));
     }
 
@@ -2455,7 +2468,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(
             world.get_component_trade_disposition_profile(agent),
             Some(&after)
@@ -2496,7 +2509,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(
             world.get_component_travel_disposition_profile(agent),
             Some(&after)
@@ -2534,7 +2547,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_merchandise_profile(agent), Some(&after));
     }
 
@@ -2569,7 +2582,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_utility_profile(agent), Some(&after));
     }
 
@@ -2616,7 +2629,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_agent_belief_store(agent), Some(&after));
     }
 
@@ -2651,7 +2664,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_perception_profile(agent), Some(&after));
     }
 
@@ -2685,7 +2698,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_tell_profile(agent), Some(&after));
     }
 
@@ -2720,7 +2733,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(
             world.get_component_blocked_intent_memory(agent),
             Some(&after)
@@ -2760,7 +2773,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(
             world.get_component_substitute_preferences(agent),
             Some(&after)
@@ -2795,7 +2808,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(
             world.get_component_workstation_marker(facility),
             Some(&after)
@@ -2844,7 +2857,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_in_transit_on_edge(agent), Some(&after));
     }
 
@@ -2886,7 +2899,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_production_job(facility), Some(&after));
     }
 
@@ -2917,7 +2930,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_carry_capacity(agent), None);
     }
 
@@ -2948,7 +2961,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_known_recipes(agent), None);
     }
 
@@ -2979,7 +2992,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_utility_profile(agent), None);
     }
 
@@ -3010,7 +3023,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_agent_belief_store(agent), None);
     }
 
@@ -3041,7 +3054,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_perception_profile(agent), None);
     }
 
@@ -3069,7 +3082,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_tell_profile(agent), None);
     }
 
@@ -3100,7 +3113,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_blocked_intent_memory(agent), None);
     }
 
@@ -3129,7 +3142,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_workstation_marker(facility), None);
     }
 
@@ -3166,7 +3179,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_in_transit_on_edge(agent), None);
     }
 
@@ -3200,7 +3213,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas.len(), 1);
+        assert_eq!(record.payload.state_deltas.len(), 1);
         assert_eq!(world.get_component_production_job(facility), None);
     }
 
@@ -3220,7 +3233,7 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert!(record.state_deltas.is_empty());
+        assert!(record.payload.state_deltas.is_empty());
         assert_eq!(world.get_component_in_transit_on_edge(agent), None);
     }
 
@@ -3263,15 +3276,15 @@ mod tests {
 
         assert_eq!(event_id, crate::EventId(0));
         assert_eq!(record.event_id, event_id);
-        assert_eq!(record.tick, Tick(9));
-        assert_eq!(record.cause, CauseRef::Bootstrap);
-        assert_eq!(record.actor_id, Some(entity(11)));
-        assert_eq!(record.place_id, Some(entity(5)));
-        assert_eq!(record.target_ids, vec![entity(4), agent, entity(9)]);
-        assert_eq!(record.state_deltas, expected_deltas);
-        assert_eq!(record.visibility, VisibilitySpec::SamePlace);
-        assert_eq!(record.witness_data, expected_witness);
-        assert_eq!(record.tags, expected_tags);
+        assert_eq!(record.payload.tick, Tick(9));
+        assert_eq!(record.payload.cause, CauseRef::Bootstrap);
+        assert_eq!(record.payload.actor_id, Some(entity(11)));
+        assert_eq!(record.payload.place_id, Some(entity(5)));
+        assert_eq!(record.payload.target_ids, vec![entity(4), agent, entity(9)]);
+        assert_eq!(record.payload.state_deltas, expected_deltas);
+        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(record.payload.witness_data, expected_witness);
+        assert_eq!(record.payload.tags, expected_tags);
         assert_eq!(log.events_at_tick(Tick(9)), &[event_id]);
         assert_eq!(log.events_by_actor(entity(11)), &[event_id]);
         assert_eq!(log.events_by_place(entity(5)), &[event_id]);
@@ -3289,9 +3302,9 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(event_id, crate::EventId(0));
-        assert!(record.state_deltas.is_empty());
-        assert!(record.tags.is_empty());
-        assert!(record.target_ids.is_empty());
+        assert!(record.payload.state_deltas.is_empty());
+        assert!(record.payload.tags.is_empty());
+        assert!(record.payload.target_ids.is_empty());
     }
 
     #[test]
@@ -3336,9 +3349,9 @@ mod tests {
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
 
-        assert_eq!(record.state_deltas, expected_deltas);
+        assert_eq!(record.payload.state_deltas, expected_deltas);
         assert!(matches!(
-            record.state_deltas.first(),
+            record.payload.state_deltas.first(),
             Some(StateDelta::Entity(EntityDelta::Archived { entity, .. })) if *entity == fixture.archived
         ));
     }
