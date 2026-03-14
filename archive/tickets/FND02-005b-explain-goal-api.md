@@ -1,6 +1,6 @@
 # FND02-005b: Add explain_goal() Debuggability API to AI Crate
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — new module in worldwake-ai
@@ -122,3 +122,18 @@ Add `pub mod goal_explanation;` to the module declarations.
 2. `cargo test -p worldwake-ai` — full AI crate suite
 3. `cargo clippy --workspace` — lint check
 4. `cargo test --workspace` — full workspace suite
+
+## Outcome
+
+- Completion date: 2026-03-14
+- What actually changed:
+  - Added `crates/worldwake-ai/src/goal_explanation.rs` with `GoalExplanation` and `explain_goal()`.
+  - Reused `generate_candidates()` and `rank_candidates()` to build a pure derived explanation with evidence entities, evidence places, and competing ranked goals.
+  - Added focused unit coverage for emitted-goal explanation, non-emittable goals, competing goals, determinism, and value bounds.
+  - Exported the module from `crates/worldwake-ai/src/lib.rs`.
+- Deviations from original plan:
+  - `explain_goal()` takes `&UtilityProfile` in addition to the ticket's original draft signature because `rank_candidates()` requires the caller's utility profile and the implementation correctly reuses that path instead of duplicating ranking inputs.
+- Verification results:
+  - `cargo test -p worldwake-ai` passed.
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed.
+  - `cargo test --workspace` passed.

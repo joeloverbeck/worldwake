@@ -9,6 +9,7 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 mod enterprise;
 pub mod failure_handling;
+pub mod goal_explanation;
 pub mod goal_model;
 mod goal_switching;
 pub mod interrupts;
