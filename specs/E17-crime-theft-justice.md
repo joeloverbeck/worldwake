@@ -10,10 +10,14 @@ Phase 3: Information & Politics (final epic before Phase 3 gate)
 `worldwake-systems`
 
 ## Dependencies
-- E15 (rumor and discovery system for crime detection)
+- E15 (social information transmission — provides Discovery events for crime awareness, Tell action for witness testimony sharing)
+- S01 (production output ownership claims — ownership-aware audit accuracy)
+- S03 (planner target identity & affordance binding)
 
 ## Dependency Note
-This epic assumes ownership-aware produced goods already exist. Unauthorized taking of owned-but-unpossessed goods must not remain a lawful `pick_up` path, or theft will be bypassed. See [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md).
+E15 delivers belief-mismatch Discovery events (InventoryDiscrepancy, EntityMissing, AliveStatusChanged) that serve as the crime awareness trigger in this epic. E17 owns the inventory audit action (active, deliberate audit by a merchant or guard) and the crime-specific interpretation of Discovery events — E15 provides only the passive mismatch detection foundation.
+
+This epic assumes ownership-aware produced goods already exist (S01). Unauthorized taking of owned-but-unpossessed goods must not remain a lawful `pick_up` path, or theft will be bypassed. See [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md).
 
 ## Deliverables
 
