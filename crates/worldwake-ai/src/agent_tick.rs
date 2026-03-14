@@ -1352,21 +1352,24 @@ mod tests {
         build_believed_entity_state, build_prototype_world, ActionDefId, BlockedIntent,
         BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
         CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
-        DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
+        DeadAt, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
         ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
-        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionSource,
-        Permille, Place, Quantity, RecipeId, ResourceSource, Seed, Tick, Topology,
-        TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
+        PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId,
+        ResourceSource, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
+        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
         AutonomousControllerRuntime, BeliefView, CommitOutcome, CommittedAction, ControllerState,
         DeterministicRng, DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView,
-        RecipeDefinition, RecipeRegistry, Scheduler, SystemDispatchTable, SystemManifest,
-        TickStepServices,
+        RecipeDefinition, RecipeRegistry, Scheduler, SystemDispatchTable, SystemExecutionContext,
+        SystemId, SystemManifest, TickStepServices,
     };
-    use worldwake_systems::{build_full_action_registries, register_needs_actions};
+    use worldwake_systems::{
+        build_full_action_registries, perception_system, register_needs_actions,
+    };
 
     struct Harness {
         world: World,
@@ -1648,6 +1651,159 @@ mod tests {
         );
         txn.set_component_agent_belief_store(observer, store)
             .expect("observer belief store should remain writable");
+        commit_txn(txn);
+    }
+
+    fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId) {
+        let origin = entity(11);
+        let destination = entity(12);
+        let mut world = World::new(cargo_topology(origin, destination)).unwrap();
+        let (actor, seller) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let seller = txn.create_agent("Seller", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(actor, origin).unwrap();
+            txn.set_ground_location(seller, origin).unwrap();
+            txn.set_ground_location(bread, origin).unwrap();
+            txn.set_possessor(bread, seller).unwrap();
+            txn.set_component_homeostatic_needs(
+                actor,
+                HomeostaticNeeds::new(
+                    Permille::new(800).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_perception_profile(
+                actor,
+                PerceptionProfile {
+                    memory_capacity: 12,
+                    memory_retention_ticks: 64,
+                    observation_fidelity: Permille::new(1000).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                seller,
+                MerchandiseProfile {
+                    sale_kinds: [CommodityKind::Bread].into_iter().collect(),
+                    home_market: Some(origin),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, seller)
+        };
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_needs_actions(&mut defs, &mut handlers);
+
+        (
+            Harness {
+                world,
+                event_log: EventLog::new(),
+                scheduler: Scheduler::new(SystemManifest::canonical()),
+                controller: ControllerState::with_entity(actor),
+                rng: DeterministicRng::new(Seed([5; 32])),
+                recipes: RecipeRegistry::new(),
+                defs,
+                handlers,
+                driver: AgentTickDriver::new(PlanningBudget::default()),
+                actor,
+            },
+            seller,
+            origin,
+            destination,
+        )
+    }
+
+    fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
+        let utility = harness
+            .world
+            .get_component_utility_profile(harness.actor)
+            .cloned()
+            .unwrap_or_default();
+        let runtime = harness
+            .driver
+            .runtime_by_agent
+            .entry(harness.actor)
+            .or_default();
+        let mut blocked = BlockedIntentMemory::default();
+        refresh_runtime_for_read_phase(
+            &harness.world,
+            &harness.scheduler,
+            &harness.defs,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick,
+                travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+                structural_block_ticks: PlanningBudget::default().structural_block_ticks,
+            },
+        )
+    }
+
+    fn has_goal(ranked: &[RankedGoal], goal: GoalKind) -> bool {
+        let key = GoalKey::from(goal);
+        ranked.iter().any(|candidate| candidate.grounded.key == key)
+    }
+
+    fn run_same_place_observation(
+        harness: &mut Harness,
+        tick: Tick,
+        place: EntityId,
+        observed_actor: EntityId,
+    ) {
+        let _ = harness.event_log.emit(PendingEvent::new(
+            tick,
+            CauseRef::Bootstrap,
+            Some(observed_actor),
+            vec![observed_actor],
+            Some(place),
+            Vec::new(),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+            BTreeSet::new(),
+        ));
+        let active_actions = std::collections::BTreeMap::new();
+        perception_system(SystemExecutionContext {
+            world: &mut harness.world,
+            event_log: &mut harness.event_log,
+            rng: &mut harness.rng,
+            active_actions: &active_actions,
+            action_defs: &harness.defs,
+            tick,
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+    }
+
+    fn relocate_entity(world: &mut World, entity: EntityId, destination: EntityId, tick: Tick) {
+        let mut txn = new_txn(world, tick.0);
+        txn.set_ground_location(entity, destination).unwrap();
+        commit_txn(txn);
+    }
+
+    fn kill_entity(world: &mut World, entity: EntityId, tick: Tick) {
+        let mut txn = new_txn(world, tick.0);
+        txn.set_component_dead_at(entity, DeadAt(tick)).unwrap();
         commit_txn(txn);
     }
 
@@ -3627,6 +3783,98 @@ mod tests {
         );
 
         assert!(runtime.dirty);
+    }
+
+    #[test]
+    fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
+        let (mut harness, seller, origin, _destination) = hungry_acquisition_harness();
+
+        let before = ranked_goals_at(&mut harness, Tick(1));
+        assert!(!has_goal(
+            &before,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert!(harness
+            .world
+            .get_component_agent_belief_store(harness.actor)
+            .unwrap()
+            .get_entity(&seller)
+            .is_none());
+
+        run_same_place_observation(&mut harness, Tick(2), origin, seller);
+
+        let belief = harness
+            .world
+            .get_component_agent_belief_store(harness.actor)
+            .unwrap()
+            .get_entity(&seller)
+            .cloned()
+            .expect("perception should seed a direct observation for the seller");
+        assert_eq!(belief.last_known_place, Some(origin));
+        assert!(belief.alive);
+        assert_eq!(belief.source, PerceptionSource::DirectObservation);
+
+        let after = ranked_goals_at(&mut harness, Tick(2));
+        assert!(has_goal(
+            &after,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+    }
+
+    #[test]
+    fn unseen_seller_relocation_preserves_stale_acquisition_belief() {
+        let (mut harness, seller, origin, destination) = hungry_acquisition_harness();
+        run_same_place_observation(&mut harness, Tick(2), origin, seller);
+
+        relocate_entity(&mut harness.world, seller, destination, Tick(3));
+
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+        assert_eq!(harness.world.effective_place(seller), Some(destination));
+        assert_eq!(view.effective_place(seller), Some(origin));
+
+        let ranked = ranked_goals_at(&mut harness, Tick(3));
+        assert!(has_goal(
+            &ranked,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+    }
+
+    #[test]
+    fn unseen_death_does_not_create_corpse_reaction_without_reobservation() {
+        let (mut harness, seller, origin, destination) = hungry_acquisition_harness();
+        run_same_place_observation(&mut harness, Tick(2), origin, seller);
+
+        relocate_entity(&mut harness.world, seller, destination, Tick(3));
+        kill_entity(&mut harness.world, seller, Tick(3));
+
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+        assert!(harness.world.get_component_dead_at(seller).is_some());
+        assert!(!view.is_dead(seller));
+        assert!(view.is_alive(seller));
+        assert!(view.corpse_entities_at(origin).is_empty());
+
+        let ranked = ranked_goals_at(&mut harness, Tick(3));
+        assert!(!ranked.iter().any(|candidate| {
+            matches!(
+                candidate.grounded.key.kind,
+                GoalKind::LootCorpse { corpse } if corpse == seller
+            )
+        }));
+        assert!(!ranked.iter().any(|candidate| {
+            matches!(
+                candidate.grounded.key.kind,
+                GoalKind::BuryCorpse { corpse, .. } if corpse == seller
+            )
+        }));
     }
 
     #[test]
