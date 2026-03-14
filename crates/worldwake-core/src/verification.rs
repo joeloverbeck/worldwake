@@ -449,10 +449,11 @@ mod tests {
     use super::{verify_completeness, verify_event_covers_world_state, VerificationError};
     use crate::{
         BodyPart, CauseRef, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
-        EventId, EventLog, EventRecord, EventTag, LoadUnits, Quantity, Tick, TickRange, Topology,
+        EventId, EventLog, EventPayload, EventRecord, EventTag, LoadUnits, Quantity, Tick,
+        TickRange, Topology,
         VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause, WoundList,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -466,17 +467,21 @@ mod tests {
     }
 
     fn record(event_id: EventId, cause: CauseRef) -> EventRecord {
-        EventRecord::new(
+        EventRecord::from_payload(
             event_id,
-            Tick(event_id.0 + 1),
-            cause,
-            Some(entity(1)),
-            vec![entity(2)],
-            Some(entity(3)),
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            empty_tags(),
+            EventPayload {
+                tick: Tick(event_id.0 + 1),
+                cause,
+                actor_id: Some(entity(1)),
+                target_ids: vec![entity(2)],
+                evidence: Vec::new(),
+                place_id: Some(entity(3)),
+                state_deltas: Vec::new(),
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::SamePlace,
+                witness_data: WitnessData::default(),
+                tags: empty_tags(),
+            },
         )
     }
 

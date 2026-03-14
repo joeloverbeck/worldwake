@@ -210,10 +210,11 @@ fn trace_backward_display_chain_capped(log: &EventLog, start: EventId) -> Vec<Ev
 mod tests {
     use super::*;
     use crate::scenario::{spawn_scenario, types::*};
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        cause::CauseRef, control::ControlSource, event_record::PendingEvent, event_tag::EventTag,
-        ids::EventId, topology::PlaceTag, visibility::VisibilitySpec, witness::WitnessData,
+        cause::CauseRef, control::ControlSource, event_record::PendingEvent,
+        event_record::EventPayload, event_tag::EventTag, ids::EventId, topology::PlaceTag,
+        visibility::VisibilitySpec, witness::WitnessData,
     };
 
     fn minimal_scenario() -> ScenarioDef {
@@ -241,32 +242,36 @@ mod tests {
     }
 
     fn emit_bootstrap(sim: &mut SimulationState) -> EventId {
-        let pending = PendingEvent::new(
-            sim.scheduler().current_tick(),
-            CauseRef::Bootstrap,
-            None,
-            vec![],
-            None,
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::System]),
-        );
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: sim.scheduler().current_tick(),
+            cause: CauseRef::Bootstrap,
+            actor_id: None,
+            target_ids: vec![],
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::System]),
+        });
         sim.event_log_mut().emit(pending)
     }
 
     fn emit_caused(sim: &mut SimulationState, cause: EventId) -> EventId {
-        let pending = PendingEvent::new(
-            sim.scheduler().current_tick(),
-            CauseRef::Event(cause),
-            None,
-            vec![],
-            None,
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::ActionStarted]),
-        );
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: sim.scheduler().current_tick(),
+            cause: CauseRef::Event(cause),
+            actor_id: None,
+            target_ids: vec![],
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::ActionStarted]),
+        });
         sim.event_log_mut().emit(pending)
     }
 

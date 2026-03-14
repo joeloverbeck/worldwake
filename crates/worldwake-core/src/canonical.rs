@@ -107,17 +107,19 @@ mod tests {
 
     fn populated_event_log() -> EventLog {
         let mut log = EventLog::new();
-        let _ = log.emit(crate::PendingEvent::new(
-            crate::Tick(0),
-            CauseRef::Bootstrap,
-            None,
-            Vec::new(),
-            None,
-            Vec::new(),
-            VisibilitySpec::Hidden,
-            WitnessData::default(),
-            std::collections::BTreeSet::from([EventTag::System]),
-        ));
+        let _ = log.emit(crate::PendingEvent::from_payload(crate::EventPayload {
+            tick: crate::Tick(0),
+            cause: CauseRef::Bootstrap,
+            actor_id: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: std::collections::BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: std::collections::BTreeSet::from([EventTag::System]),
+        }));
         log
     }
 
@@ -215,17 +217,19 @@ mod tests {
     fn hash_event_log_changes_when_event_is_appended() {
         let original = populated_event_log();
         let mut changed = original.clone();
-        let _ = changed.emit(crate::PendingEvent::new(
-            crate::Tick(1),
-            CauseRef::SystemTick(crate::Tick(1)),
-            None,
-            Vec::new(),
-            None,
-            Vec::new(),
-            VisibilitySpec::Hidden,
-            WitnessData::default(),
-            std::collections::BTreeSet::from([EventTag::System]),
-        ));
+        let _ = changed.emit(crate::PendingEvent::from_payload(crate::EventPayload {
+            tick: crate::Tick(1),
+            cause: CauseRef::SystemTick(crate::Tick(1)),
+            actor_id: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: std::collections::BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: std::collections::BTreeSet::from([EventTag::System]),
+        }));
 
         assert_ne!(
             hash_event_log(&original).unwrap(),

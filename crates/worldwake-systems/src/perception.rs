@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     build_believed_entity_state, AgentBeliefStore, CauseRef, EntityId, EntityKind, EventLog,
-    EventRecord, EventTag, EvidenceRef, MismatchKind, PendingEvent, PerceptionSource,
+    EventPayload, EventRecord, EventTag, EvidenceRef, MismatchKind, PendingEvent, PerceptionSource,
     SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
@@ -281,26 +281,26 @@ fn emit_discovery_event(
     subject: EntityId,
     mismatch: MismatchKind,
 ) {
-    let _ = event_log.emit(PendingEvent::new_complete(
-        context.tick,
-        CauseRef::SystemTick(context.tick),
-        Some(context.observer),
-        vec![subject],
-        vec![EvidenceRef::Mismatch {
+    let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+        tick: context.tick,
+        cause: CauseRef::SystemTick(context.tick),
+        actor_id: Some(context.observer),
+        target_ids: vec![subject],
+        evidence: vec![EvidenceRef::Mismatch {
             observer: context.observer,
             subject,
             kind: mismatch,
         }],
-        context.place,
-        Vec::new(),
-        BTreeMap::new(),
-        VisibilitySpec::ParticipantsOnly,
-        WitnessData {
+        place_id: context.place,
+        state_deltas: Vec::new(),
+        observed_entities: BTreeMap::new(),
+        visibility: VisibilitySpec::ParticipantsOnly,
+        witness_data: WitnessData {
             direct_witnesses: BTreeSet::from([context.observer]),
             potential_witnesses: BTreeSet::from([context.observer]),
         },
-        BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
-    ));
+        tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+    }));
 }
 
 fn resolve_witnesses(world: &World, record: &EventRecord) -> Vec<EntityId> {
@@ -424,7 +424,7 @@ mod tests {
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
-        DeadAt, EventLog, EventTag, EvidenceRef, MismatchKind, ObservedEntitySnapshot,
+        DeadAt, EventLog, EventPayload, EventTag, EvidenceRef, MismatchKind, ObservedEntitySnapshot,
         PendingEvent, PerceptionProfile, PerceptionSource, Permille, Quantity, Seed,
         SocialObservationKind, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
@@ -513,19 +513,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(3),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(place),
-            Vec::new(),
-            observed_from_world(&world, &[target]),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[target]),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -578,17 +578,19 @@ mod tests {
             (observer, actor, counterparty)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
-            Tick(4),
-            CauseRef::Bootstrap,
-            Some(actor),
-            vec![counterparty],
-            Some(place),
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::Trade]),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(4),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(actor),
+            target_ids: vec![counterparty],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Trade]),
+        }));
         let mut rng = DeterministicRng::new(Seed([3; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -640,17 +642,19 @@ mod tests {
             (observer, speaker, listener)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
-            Tick(4),
-            CauseRef::Bootstrap,
-            Some(speaker),
-            vec![listener],
-            Some(place),
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::Social]),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(4),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(speaker),
+            target_ids: vec![listener],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Social]),
+        }));
         let mut rng = DeterministicRng::new(Seed([5; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -708,22 +712,22 @@ mod tests {
             (direct_witness, bystander, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(5),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(place),
-            Vec::new(),
-            observed_from_world(&world, &[target]),
-            VisibilitySpec::ParticipantsOnly,
-            WitnessData {
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(5),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[target]),
+            visibility: VisibilitySpec::ParticipantsOnly,
+            witness_data: WitnessData {
                 direct_witnesses: BTreeSet::from([direct_witness]),
                 potential_witnesses: BTreeSet::from([bystander, direct_witness]),
             },
-            BTreeSet::new(),
-        ));
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([9; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -774,19 +778,19 @@ mod tests {
             (origin_target, adjacent_witness, remote_witness)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(6),
-            CauseRef::Bootstrap,
-            Some(origin_target),
-            vec![origin_target],
-            Vec::new(),
-            Some(origin),
-            Vec::new(),
-            observed_from_world(&world, &[origin_target]),
-            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(6),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(origin_target),
+            target_ids: vec![origin_target],
+            evidence: Vec::new(),
+            place_id: Some(origin),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[origin_target]),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([4; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -857,19 +861,19 @@ mod tests {
             (observer, older_target, newer_target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(7),
-            CauseRef::Bootstrap,
-            Some(newer_target),
-            vec![newer_target],
-            Vec::new(),
-            Some(place),
-            Vec::new(),
-            observed_from_world(&world, &[newer_target]),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(7),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(newer_target),
+            target_ids: vec![newer_target],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[newer_target]),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1402,19 +1406,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(3),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(origin),
-            Vec::new(),
-            observed_from_world(&world, &[target]),
-            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(origin),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[target]),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([20; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1485,19 +1489,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(3),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(origin),
-            Vec::new(),
-            observed_from_world(&world, &[target]),
-            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(origin),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[target]),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([21; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1570,19 +1574,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(3),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(origin),
-            Vec::new(),
-            observed_from_world(&world, &[target]),
-            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(origin),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[target]),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([22; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1657,32 +1661,32 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(3),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(origin),
-            Vec::new(),
-            BTreeMap::from([(target, observed_snapshot(Some(origin), 4))]),
-            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(3),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(origin),
-            Vec::new(),
-            BTreeMap::from([(target, observed_snapshot(Some(remote), 2))]),
-            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(origin),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::from([(target, observed_snapshot(Some(origin), 4))]),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(origin),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::from([(target, observed_snapshot(Some(remote), 2))]),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([24; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1785,19 +1789,19 @@ mod tests {
             })
             .unwrap()
             .0;
-        let _ = event_log.emit(PendingEvent::new_complete(
-            Tick(3),
-            CauseRef::Bootstrap,
-            Some(target),
-            vec![target],
-            Vec::new(),
-            Some(origin),
-            Vec::new(),
-            observed_from_world(&world, &[target]),
-            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(target),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(origin),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[target]),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let mut rng = DeterministicRng::new(Seed([23; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();

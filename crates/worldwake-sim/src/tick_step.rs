@@ -5,11 +5,11 @@ use crate::{
     InputKind, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
     TickInputError, TickInputProducer, TickOutcome,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use worldwake_core::{
-    ActionDefId, CauseRef, EntityId, EventLog, EventTag, PendingEvent, Tick, VisibilitySpec,
-    WitnessData, World,
+    ActionDefId, CauseRef, EntityId, EventLog, EventPayload, EventTag, PendingEvent, Tick,
+    VisibilitySpec, WitnessData, World,
 };
 
 pub struct TickStepServices<'a> {
@@ -522,17 +522,19 @@ fn produce_tick_inputs(
 }
 
 fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
-    let _ = event_log.emit(PendingEvent::new(
+    let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
         tick,
-        CauseRef::SystemTick(tick),
-        None,
-        Vec::new(),
-        None,
-        Vec::new(),
-        VisibilitySpec::Hidden,
-        WitnessData::default(),
-        BTreeSet::from([EventTag::System]),
-    ));
+        cause: CauseRef::SystemTick(tick),
+        actor_id: None,
+        target_ids: Vec::new(),
+        evidence: Vec::new(),
+        place_id: None,
+        state_deltas: Vec::new(),
+        observed_entities: BTreeMap::new(),
+        visibility: VisibilitySpec::Hidden,
+        witness_data: WitnessData::default(),
+        tags: BTreeSet::from([EventTag::System]),
+    }));
 }
 
 #[cfg(test)]

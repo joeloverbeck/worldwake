@@ -118,9 +118,9 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, PendingEvent, Quantity, ReservationId, Seed, StateHash,
-        Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
-        WorldTxn,
+        ControlSource, EntityId, EventLog, EventPayload, PendingEvent, Quantity, ReservationId,
+        Seed, StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn,
     };
 
     fn state_hash(byte: u8) -> StateHash {
@@ -191,17 +191,19 @@ mod tests {
         let target = spawn_agent(&mut world, &mut event_log, Tick(1), "save-target");
         let (reserved_item, reservation) =
             spawn_item_with_reservation(&mut world, &mut event_log, actor);
-        let _ = event_log.emit(PendingEvent::new(
-            Tick(3),
-            CauseRef::SystemTick(Tick(3)),
-            None,
-            Vec::new(),
-            None,
-            Vec::new(),
-            VisibilitySpec::Hidden,
-            WitnessData::default(),
-            std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
-        ));
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(3),
+            cause: CauseRef::SystemTick(Tick(3)),
+            actor_id: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: std::collections::BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
+        }));
 
         let mut scheduler = Scheduler::new_with_tick(Tick(3), SystemManifest::canonical());
         let _ = scheduler.input_queue_mut().enqueue(

@@ -188,10 +188,12 @@ impl Default for EventLog {
 #[cfg(test)]
 mod tests {
     use super::EventLog;
-    use crate::{CauseRef, EventRecord, EventTag, PendingEvent, VisibilitySpec, WitnessData};
+    use crate::{
+        CauseRef, EventPayload, EventRecord, EventTag, PendingEvent, VisibilitySpec, WitnessData,
+    };
     use crate::{EntityId, EventId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 
     fn entity(slot: u32) -> EntityId {
@@ -206,17 +208,19 @@ mod tests {
     }
 
     fn pending_with_cause(tick: Tick, cause: CauseRef) -> PendingEvent {
-        PendingEvent::new(
+        PendingEvent::from_payload(EventPayload {
             tick,
             cause,
-            Some(entity(1)),
-            vec![entity(3), entity(2)],
-            Some(entity(4)),
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::WorldMutation]),
-        )
+            actor_id: Some(entity(1)),
+            target_ids: vec![entity(3), entity(2)],
+            evidence: Vec::new(),
+            place_id: Some(entity(4)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::WorldMutation]),
+        })
     }
 
     fn pending_with_metadata(
@@ -226,17 +230,19 @@ mod tests {
         place_id: Option<EntityId>,
         tags: BTreeSet<EventTag>,
     ) -> PendingEvent {
-        PendingEvent::new(
+        PendingEvent::from_payload(EventPayload {
             tick,
             cause,
             actor_id,
-            vec![entity(3), entity(2)],
+            target_ids: vec![entity(3), entity(2)],
+            evidence: Vec::new(),
             place_id,
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
             tags,
-        )
+        })
     }
 
     fn assert_traits<T: Clone + Debug + Eq + Serialize + DeserializeOwned>() {}
@@ -308,17 +314,21 @@ mod tests {
     #[test]
     fn get_returns_emitted_record_and_none_for_out_of_bounds_ids() {
         let mut log = EventLog::new();
-        let expected = EventRecord::new(
+        let expected = EventRecord::from_payload(
             EventId(0),
-            Tick(8),
-            CauseRef::Bootstrap,
-            Some(entity(1)),
-            vec![entity(3), entity(2)],
-            Some(entity(4)),
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::WorldMutation]),
+            EventPayload {
+                tick: Tick(8),
+                cause: CauseRef::Bootstrap,
+                actor_id: Some(entity(1)),
+                target_ids: vec![entity(3), entity(2)],
+                evidence: Vec::new(),
+                place_id: Some(entity(4)),
+                state_deltas: Vec::new(),
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::SamePlace,
+                witness_data: WitnessData::default(),
+                tags: BTreeSet::from([EventTag::WorldMutation]),
+            },
         );
         log.emit(pending(Tick(8)));
 

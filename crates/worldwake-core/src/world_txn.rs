@@ -5,7 +5,7 @@ use crate::{
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
-    EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta, RelationKind,
+    EventPayload, EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta, RelationKind,
     RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -145,19 +145,19 @@ impl<'w> WorldTxn<'w> {
     pub fn into_pending_event(self) -> PendingEvent {
         let observed_entities = self.capture_observed_entities();
         *self.world = self.staged_world;
-        PendingEvent::new_complete(
-            self.tick,
-            self.cause,
-            self.actor_id,
-            self.target_ids,
-            self.evidence,
-            self.place_id,
-            self.deltas,
+        PendingEvent::from_payload(EventPayload {
+            tick: self.tick,
+            cause: self.cause,
+            actor_id: self.actor_id,
+            target_ids: self.target_ids,
+            evidence: self.evidence,
+            place_id: self.place_id,
+            state_deltas: self.deltas,
             observed_entities,
-            self.visibility,
-            self.witness_data,
-            self.tags,
-        )
+            visibility: self.visibility,
+            witness_data: self.witness_data,
+            tags: self.tags,
+        })
     }
 
     pub fn commit(self, event_log: &mut EventLog) -> EventId {

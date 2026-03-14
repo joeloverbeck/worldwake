@@ -38,6 +38,21 @@ pub struct PendingEvent {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EventPayload {
+    pub tick: Tick,
+    pub cause: CauseRef,
+    pub actor_id: Option<EntityId>,
+    pub target_ids: Vec<EntityId>,
+    pub evidence: Vec<EvidenceRef>,
+    pub place_id: Option<EntityId>,
+    pub state_deltas: Vec<StateDelta>,
+    pub observed_entities: BTreeMap<EntityId, ObservedEntitySnapshot>,
+    pub visibility: VisibilitySpec,
+    pub witness_data: WitnessData,
+    pub tags: BTreeSet<EventTag>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
     pub event_id: EventId,
     pub tick: Tick,
@@ -55,65 +70,24 @@ pub struct EventRecord {
 
 impl PendingEvent {
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        tick: Tick,
-        cause: CauseRef,
-        actor_id: Option<EntityId>,
-        target_ids: Vec<EntityId>,
-        place_id: Option<EntityId>,
-        state_deltas: Vec<StateDelta>,
-        visibility: VisibilitySpec,
-        witness_data: WitnessData,
-        tags: BTreeSet<EventTag>,
-    ) -> Self {
-        Self::new_complete(
-            tick,
-            cause,
-            actor_id,
-            target_ids,
-            Vec::new(),
-            place_id,
-            state_deltas,
-            BTreeMap::new(),
-            visibility,
-            witness_data,
-            tags,
-        )
-    }
-
-    #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_complete(
-        tick: Tick,
-        cause: CauseRef,
-        actor_id: Option<EntityId>,
-        mut target_ids: Vec<EntityId>,
-        mut evidence: Vec<EvidenceRef>,
-        place_id: Option<EntityId>,
-        state_deltas: Vec<StateDelta>,
-        observed_entities: BTreeMap<EntityId, ObservedEntitySnapshot>,
-        visibility: VisibilitySpec,
-        witness_data: WitnessData,
-        tags: BTreeSet<EventTag>,
-    ) -> Self {
-        target_ids.sort();
-        target_ids.dedup();
-        evidence.sort();
-        evidence.dedup();
+    pub fn from_payload(mut payload: EventPayload) -> Self {
+        payload.target_ids.sort();
+        payload.target_ids.dedup();
+        payload.evidence.sort();
+        payload.evidence.dedup();
 
         Self {
-            tick,
-            cause,
-            actor_id,
-            target_ids,
-            evidence,
-            place_id,
-            state_deltas,
-            observed_entities,
-            visibility,
-            witness_data,
-            tags,
+            tick: payload.tick,
+            cause: payload.cause,
+            actor_id: payload.actor_id,
+            target_ids: payload.target_ids,
+            evidence: payload.evidence,
+            place_id: payload.place_id,
+            state_deltas: payload.state_deltas,
+            observed_entities: payload.observed_entities,
+            visibility: payload.visibility,
+            witness_data: payload.witness_data,
+            tags: payload.tags,
         }
     }
 
@@ -138,37 +112,14 @@ impl PendingEvent {
 
 impl EventRecord {
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        event_id: EventId,
-        tick: Tick,
-        cause: CauseRef,
-        actor_id: Option<EntityId>,
-        target_ids: Vec<EntityId>,
-        place_id: Option<EntityId>,
-        state_deltas: Vec<StateDelta>,
-        visibility: VisibilitySpec,
-        witness_data: WitnessData,
-        tags: BTreeSet<EventTag>,
-    ) -> Self {
-        PendingEvent::new(
-            tick,
-            cause,
-            actor_id,
-            target_ids,
-            place_id,
-            state_deltas,
-            visibility,
-            witness_data,
-            tags,
-        )
-        .into_record(event_id)
+    pub fn from_payload(event_id: EventId, payload: EventPayload) -> Self {
+        PendingEvent::from_payload(payload).into_record(event_id)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EventRecord, EvidenceRef, PendingEvent};
+    use super::{EventPayload, EventRecord, EvidenceRef, PendingEvent};
     use crate::MismatchKind;
     use crate::{
         CauseRef, ComponentDelta, ComponentKind, ComponentValue, EventTag, QuantityDelta,
@@ -207,19 +158,25 @@ mod tests {
     }
 
     #[test]
+    fn event_payload_satisfies_required_traits() {
+        assert_traits::<EventPayload>();
+    }
+
+    #[test]
     fn pending_event_satisfies_required_traits() {
         assert_traits::<PendingEvent>();
     }
 
     #[test]
     fn pending_event_constructs_with_all_required_fields() {
-        let pending = PendingEvent::new(
-            Tick(9),
-            CauseRef::Event(EventId(1)),
-            Some(entity(2)),
-            vec![entity(5), entity(3), entity(5), entity(4)],
-            Some(entity(6)),
-            vec![
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(9),
+            cause: CauseRef::Event(EventId(1)),
+            actor_id: Some(entity(2)),
+            target_ids: vec![entity(5), entity(3), entity(5), entity(4)],
+            evidence: Vec::new(),
+            place_id: Some(entity(6)),
+            state_deltas: vec![
                 StateDelta::Entity(crate::EntityDelta::Created {
                     entity: entity(7),
                     kind: EntityKind::Agent,
@@ -231,13 +188,14 @@ mod tests {
                     after: Quantity(2),
                 }),
             ],
-            VisibilitySpec::SamePlace,
-            WitnessData {
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData {
                 direct_witnesses: BTreeSet::from([entity(2)]),
                 potential_witnesses: BTreeSet::from([entity(2), entity(10)]),
             },
-            BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
-        );
+            tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
+        });
 
         assert_eq!(pending.tick, Tick(9));
         assert_eq!(pending.cause, CauseRef::Event(EventId(1)));
@@ -255,13 +213,14 @@ mod tests {
 
     #[test]
     fn event_record_constructs_with_all_required_fields() {
-        let record = PendingEvent::new(
-            Tick(9),
-            CauseRef::Event(EventId(1)),
-            Some(entity(2)),
-            vec![entity(5), entity(3), entity(5), entity(4)],
-            Some(entity(6)),
-            vec![
+        let record = PendingEvent::from_payload(EventPayload {
+            tick: Tick(9),
+            cause: CauseRef::Event(EventId(1)),
+            actor_id: Some(entity(2)),
+            target_ids: vec![entity(5), entity(3), entity(5), entity(4)],
+            evidence: Vec::new(),
+            place_id: Some(entity(6)),
+            state_deltas: vec![
                 StateDelta::Entity(crate::EntityDelta::Created {
                     entity: entity(7),
                     kind: EntityKind::Agent,
@@ -273,13 +232,14 @@ mod tests {
                     after: Quantity(2),
                 }),
             ],
-            VisibilitySpec::SamePlace,
-            WitnessData {
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData {
                 direct_witnesses: BTreeSet::from([entity(2)]),
                 potential_witnesses: BTreeSet::from([entity(2), entity(10)]),
             },
-            BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
-        )
+            tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
+        })
         .into_record(EventId(4));
 
         assert_eq!(record.event_id, EventId(4));
@@ -299,17 +259,19 @@ mod tests {
 
     #[test]
     fn event_record_allows_empty_deltas_and_targets() {
-        let record = PendingEvent::new(
-            Tick(0),
-            CauseRef::Bootstrap,
-            None,
-            Vec::new(),
-            None,
-            Vec::new(),
-            VisibilitySpec::Hidden,
-            WitnessData::default(),
-            BTreeSet::new(),
-        )
+        let record = PendingEvent::from_payload(EventPayload {
+            tick: Tick(0),
+            cause: CauseRef::Bootstrap,
+            actor_id: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        })
         .into_record(EventId(0));
 
         assert!(record.target_ids.is_empty());
@@ -321,12 +283,12 @@ mod tests {
 
     #[test]
     fn pending_event_roundtrips_through_bincode_with_ordered_deltas() {
-        let pending = PendingEvent::new_complete(
-            Tick(18),
-            CauseRef::SystemTick(Tick(18)),
-            Some(entity(1)),
-            vec![entity(4), entity(2), entity(4), entity(3)],
-            vec![
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(18),
+            cause: CauseRef::SystemTick(Tick(18)),
+            actor_id: Some(entity(1)),
+            target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
+            evidence: vec![
                 EvidenceRef::Wound {
                     entity: entity(1),
                     wound_id: WoundId(2),
@@ -340,8 +302,8 @@ mod tests {
                     wound_id: WoundId(2),
                 },
             ],
-            Some(entity(6)),
-            vec![
+            place_id: Some(entity(6)),
+            state_deltas: vec![
                 StateDelta::Component(ComponentDelta::Set {
                     entity: entity(1),
                     component_kind: ComponentKind::Name,
@@ -359,14 +321,14 @@ mod tests {
                     reservation: reservation_record(),
                 }),
             ],
-            BTreeMap::new(),
-            VisibilitySpec::AdjacentPlaces { max_hops: 2 },
-            WitnessData {
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 2 },
+            witness_data: WitnessData {
                 direct_witnesses: BTreeSet::from([entity(1), entity(2)]),
                 potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
             },
-            BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
-        );
+            tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
+        });
 
         let bytes = bincode::serialize(&pending).unwrap();
         let roundtrip: PendingEvent = bincode::deserialize(&bytes).unwrap();
@@ -402,12 +364,12 @@ mod tests {
 
     #[test]
     fn pending_event_orders_and_deduplicates_mismatch_evidence() {
-        let pending = PendingEvent::new_complete(
-            Tick(21),
-            CauseRef::Bootstrap,
-            Some(entity(1)),
-            vec![entity(2)],
-            vec![
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(21),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(entity(1)),
+            target_ids: vec![entity(2)],
+            evidence: vec![
                 EvidenceRef::Mismatch {
                     observer: entity(3),
                     subject: entity(4),
@@ -436,13 +398,13 @@ mod tests {
                     kind: MismatchKind::AliveStatusChanged,
                 },
             ],
-            Some(entity(7)),
-            Vec::new(),
-            BTreeMap::new(),
-            VisibilitySpec::ParticipantsOnly,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::Discovery]),
-        );
+            place_id: Some(entity(7)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::ParticipantsOnly,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Discovery]),
+        });
 
         assert_eq!(
             pending.evidence,
@@ -470,13 +432,13 @@ mod tests {
     }
 
     #[test]
-    fn pending_event_new_complete_orders_and_deduplicates_refs() {
-        let pending = PendingEvent::new_complete(
-            Tick(21),
-            CauseRef::Bootstrap,
-            Some(entity(1)),
-            vec![entity(2)],
-            vec![
+    fn pending_event_from_payload_orders_and_deduplicates_refs() {
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(21),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(entity(1)),
+            target_ids: vec![entity(2)],
+            evidence: vec![
                 EvidenceRef::Mismatch {
                     observer: entity(3),
                     subject: entity(4),
@@ -505,13 +467,13 @@ mod tests {
                     kind: MismatchKind::AliveStatusChanged,
                 },
             ],
-            Some(entity(7)),
-            Vec::new(),
-            BTreeMap::new(),
-            VisibilitySpec::ParticipantsOnly,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::Discovery]),
-        );
+            place_id: Some(entity(7)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::ParticipantsOnly,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Discovery]),
+        });
 
         assert_eq!(
             pending.evidence,
@@ -524,6 +486,69 @@ mod tests {
                     observer: entity(3),
                     subject: entity(4),
                     kind: MismatchKind::AliveStatusChanged,
+                },
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::InventoryDiscrepancy {
+                        commodity: CommodityKind::Bread,
+                        believed: Quantity(5),
+                        observed: Quantity(2),
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn event_record_from_payload_orders_and_deduplicates_refs() {
+        let record = EventRecord::from_payload(
+            EventId(18),
+            EventPayload {
+                tick: Tick(21),
+                cause: CauseRef::Bootstrap,
+                actor_id: Some(entity(1)),
+                target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
+                evidence: vec![
+                    EvidenceRef::Mismatch {
+                        observer: entity(3),
+                        subject: entity(4),
+                        kind: MismatchKind::InventoryDiscrepancy {
+                            commodity: CommodityKind::Bread,
+                            believed: Quantity(5),
+                            observed: Quantity(2),
+                        },
+                    },
+                    EvidenceRef::Wound {
+                        entity: entity(9),
+                        wound_id: WoundId(2),
+                    },
+                    EvidenceRef::Mismatch {
+                        observer: entity(3),
+                        subject: entity(4),
+                        kind: MismatchKind::InventoryDiscrepancy {
+                            commodity: CommodityKind::Bread,
+                            believed: Quantity(5),
+                            observed: Quantity(2),
+                        },
+                    },
+                ],
+                place_id: Some(entity(7)),
+                state_deltas: Vec::new(),
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::ParticipantsOnly,
+                witness_data: WitnessData::default(),
+                tags: BTreeSet::from([EventTag::Discovery]),
+            },
+        );
+
+        assert_eq!(record.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(
+            record.evidence,
+            vec![
+                EvidenceRef::Wound {
+                    entity: entity(9),
+                    wound_id: WoundId(2),
                 },
                 EvidenceRef::Mismatch {
                     observer: entity(3),
@@ -540,15 +565,15 @@ mod tests {
 
     #[test]
     fn pending_event_roundtrips_with_observed_entities() {
-        let pending = PendingEvent::new_complete(
-            Tick(7),
-            CauseRef::Bootstrap,
-            Some(entity(1)),
-            vec![entity(2)],
-            Vec::new(),
-            Some(entity(3)),
-            Vec::new(),
-            BTreeMap::from([(
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(7),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(entity(1)),
+            target_ids: vec![entity(2)],
+            evidence: Vec::new(),
+            place_id: Some(entity(3)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::from([(
                 entity(2),
                 ObservedEntitySnapshot {
                     last_known_place: Some(entity(3)),
@@ -559,10 +584,10 @@ mod tests {
                     wounds: Vec::new(),
                 },
             )]),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::from([EventTag::WorldMutation]),
-        );
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::WorldMutation]),
+        });
 
         let bytes = bincode::serialize(&pending).unwrap();
         let roundtrip: PendingEvent = bincode::deserialize(&bytes).unwrap();
@@ -580,17 +605,17 @@ mod tests {
 
     #[test]
     fn event_record_roundtrips_through_bincode_with_ordered_deltas() {
-        let record = PendingEvent::new_complete(
-            Tick(18),
-            CauseRef::SystemTick(Tick(18)),
-            Some(entity(1)),
-            vec![entity(4), entity(2), entity(4), entity(3)],
-            vec![EvidenceRef::Wound {
+        let record = EventRecord::from_payload(EventId(12), EventPayload {
+            tick: Tick(18),
+            cause: CauseRef::SystemTick(Tick(18)),
+            actor_id: Some(entity(1)),
+            target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
+            evidence: vec![EvidenceRef::Wound {
                 entity: entity(1),
                 wound_id: WoundId(4),
             }],
-            Some(entity(6)),
-            vec![
+            place_id: Some(entity(6)),
+            state_deltas: vec![
                 StateDelta::Component(ComponentDelta::Set {
                     entity: entity(1),
                     component_kind: ComponentKind::Name,
@@ -608,15 +633,14 @@ mod tests {
                     reservation: reservation_record(),
                 }),
             ],
-            BTreeMap::new(),
-            VisibilitySpec::AdjacentPlaces { max_hops: 2 },
-            WitnessData {
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 2 },
+            witness_data: WitnessData {
                 direct_witnesses: BTreeSet::from([entity(1), entity(2)]),
                 potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
             },
-            BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
-        )
-        .into_record(EventId(12));
+            tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
+        });
 
         let bytes = bincode::serialize(&record).unwrap();
         let roundtrip: EventRecord = bincode::deserialize(&bytes).unwrap();
@@ -640,12 +664,12 @@ mod tests {
 
     #[test]
     fn event_record_roundtrips_with_mismatch_evidence() {
-        let record = PendingEvent::new_complete(
-            Tick(22),
-            CauseRef::SystemTick(Tick(22)),
-            Some(entity(3)),
-            vec![entity(8)],
-            vec![EvidenceRef::Mismatch {
+        let record = EventRecord::from_payload(EventId(14), EventPayload {
+            tick: Tick(22),
+            cause: CauseRef::SystemTick(Tick(22)),
+            actor_id: Some(entity(3)),
+            target_ids: vec![entity(8)],
+            evidence: vec![EvidenceRef::Mismatch {
                 observer: entity(3),
                 subject: entity(8),
                 kind: MismatchKind::PlaceChanged {
@@ -653,17 +677,16 @@ mod tests {
                     observed_place: entity(7),
                 },
             }],
-            Some(entity(7)),
-            Vec::new(),
-            BTreeMap::new(),
-            VisibilitySpec::ParticipantsOnly,
-            WitnessData {
+            place_id: Some(entity(7)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::ParticipantsOnly,
+            witness_data: WitnessData {
                 direct_witnesses: BTreeSet::from([entity(3)]),
                 potential_witnesses: BTreeSet::from([entity(3)]),
             },
-            BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
-        )
-        .into_record(EventId(14));
+            tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+        });
 
         let bytes = bincode::serialize(&record).unwrap();
         let roundtrip: EventRecord = bincode::deserialize(&bytes).unwrap();

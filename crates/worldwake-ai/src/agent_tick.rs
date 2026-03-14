@@ -1354,7 +1354,7 @@ mod tests {
         JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlanningEntityRef, QueuedFacilityIntent, RankedGoal,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::num::NonZeroU32;
     use std::path::PathBuf;
@@ -1363,8 +1363,8 @@ mod tests {
         BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
         CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-        EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
-        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
+        EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
+        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
         PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId, ResourceSource,
         Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
         VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
@@ -1901,17 +1901,19 @@ mod tests {
         place: EntityId,
         observed_actor: EntityId,
     ) {
-        let _ = harness.event_log.emit(PendingEvent::new(
+        let _ = harness.event_log.emit(PendingEvent::from_payload(EventPayload {
             tick,
-            CauseRef::Bootstrap,
-            Some(observed_actor),
-            vec![observed_actor],
-            Some(place),
-            Vec::new(),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-            BTreeSet::new(),
-        ));
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(observed_actor),
+            target_ids: vec![observed_actor],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        }));
         let active_actions = std::collections::BTreeMap::new();
         perception_system(SystemExecutionContext {
             world: &mut harness.world,

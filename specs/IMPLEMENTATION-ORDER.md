@@ -32,6 +32,7 @@ All completed specs are archived under `archive/specs/`.
 ```text
 Phase 1-2 + FND-01 + FND-02 + E21 + E14: COMPLETED
 
+E15 ──→ E15b (social AI goals need Tell mechanics + belief system)
 E15 ──→ E17 (crime needs discovery + ownership claims + planner binding)
 E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
@@ -55,7 +56,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - Established the belief/evidence inputs later social systems use for loyalty/support modeling
   - Satisfied FND-01 Section B deferred information pipeline requirements
 
-**Step 10** (parallel after completed E14):
+**Step 10** (parallel after completed E14/E15):
+- **E15b**: Social AI Goals — GoalKind::ShareBelief, PlannerOpKind::Tell, social candidate generation, golden E2E tests for E15 features
 - **E16**: Offices, Succession & Factions
 - **S01**: Production Output Ownership Claims
 - **S02**: Goal Decision Policy Unification
@@ -115,6 +117,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
+| `E15b-social-ai-goals.md` | 3 | 10 | E15 |
 | `E16-offices-succession-factions.md` | 3 | 10 | E14 |
 | `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |
 | `S02-goal-decision-policy-unification.md` | 3 | 10 | E14 |
@@ -148,6 +151,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, S01–S03 | Information propagates, offices transfer | PENDING |
+| 3: Information & Politics | E14–E17, E15b, S01–S03 | Information propagates, offices transfer | PENDING |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

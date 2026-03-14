@@ -1,12 +1,12 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use worldwake_core::{
     build_believed_entity_state, ActionDefId, AgentBeliefStore, BeliefConfidencePolicy,
-    BelievedEntityState, CauseRef, ControlSource, EntityId, EventLog, EventTag, PendingEvent,
-    PerceptionProfile, PerceptionSource, Permille, Place, Seed, SocialObservationKind, StateHash,
-    TellProfile, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World,
-    WorldTxn,
+    BelievedEntityState, CauseRef, ControlSource, EntityId, EventLog, EventPayload, EventTag,
+    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Seed,
+    SocialObservationKind, StateHash, TellProfile, Tick, Topology, TravelEdge, TravelEdgeId,
+    VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
     get_affordances, record_tick_checkpoint, replay_and_verify, step_tick, ActionPayload,
@@ -589,17 +589,19 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
         remote
     };
 
-    let _ = event_log.emit(PendingEvent::new(
-        Tick(0),
-        CauseRef::Bootstrap,
-        None,
-        Vec::new(),
-        Some(origin),
-        Vec::new(),
-        VisibilitySpec::SamePlace,
-        WitnessData::default(),
-        BTreeSet::from([EventTag::WorldMutation]),
-    ));
+    let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+        tick: Tick(0),
+        cause: CauseRef::Bootstrap,
+        actor_id: None,
+        target_ids: Vec::new(),
+        evidence: Vec::new(),
+        place_id: Some(origin),
+        state_deltas: Vec::new(),
+        observed_entities: BTreeMap::new(),
+        visibility: VisibilitySpec::SamePlace,
+        witness_data: WitnessData::default(),
+        tags: BTreeSet::from([EventTag::WorldMutation]),
+    }));
 
     let recipes = RecipeRegistry::new();
     let registries = build_full_action_registries(&recipes).unwrap();
