@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod allocator;
+pub mod belief;
 pub mod blocked_intent;
 pub mod canonical;
 pub mod cause;
@@ -64,6 +65,10 @@ pub mod world_txn;
 pub mod wounds;
 
 pub use allocator::EntityAllocator;
+pub use belief::{
+    AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource,
+    SocialObservation, SocialObservationKind,
+};
 pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
 pub use canonical::{
     canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world, CanonicalError,
