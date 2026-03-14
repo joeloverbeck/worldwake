@@ -9,8 +9,8 @@ use crate::{
     InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
     MetabolismProfile, Name, PerceptionProfile, PlaceTag, ProductionJob, ProvenanceEntry, Quantity,
     RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick, Topology,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, WorkstationMarker, WorldError, WoundList,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
+    WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -578,13 +578,12 @@ mod tests {
         AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart,
         CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
         DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, PerceptionProfile,
-        PerceptionSource, Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile,
-        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
-        WoundList,
+        EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+        MerchandiseProfile, MetabolismProfile, Name, PerceptionProfile, PerceptionSource, Permille,
+        Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
+        ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile, Tick, TickRange,
+        Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3891,7 +3890,10 @@ mod tests {
         world.insert_component_tell_profile(id, profile).unwrap();
         assert_eq!(world.get_component_tell_profile(id), Some(&profile));
         assert!(world.has_component_tell_profile(id));
-        assert_eq!(world.query_tell_profile().collect::<Vec<_>>(), vec![(id, &profile)]);
+        assert_eq!(
+            world.query_tell_profile().collect::<Vec<_>>(),
+            vec![(id, &profile)]
+        );
         assert_eq!(world.count_with_tell_profile(), 1);
 
         let removed = world.remove_component_tell_profile(id).unwrap();
@@ -3908,10 +3910,14 @@ mod tests {
             .unwrap();
         let profile = sample_tell_profile();
 
-        let office_error = world.insert_component_tell_profile(office, profile).unwrap_err();
+        let office_error = world
+            .insert_component_tell_profile(office, profile)
+            .unwrap_err();
         assert!(matches!(office_error, WorldError::InvalidOperation(_)));
 
-        let item_error = world.insert_component_tell_profile(item_lot, profile).unwrap_err();
+        let item_error = world
+            .insert_component_tell_profile(item_lot, profile)
+            .unwrap_err();
         assert!(matches!(item_error, WorldError::InvalidOperation(_)));
     }
 

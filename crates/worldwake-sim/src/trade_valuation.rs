@@ -303,10 +303,7 @@ mod tests {
             Vec::new()
         }
 
-        fn known_entity_beliefs(
-            &self,
-            _agent: EntityId,
-        ) -> Vec<(EntityId, BelievedEntityState)> {
+        fn known_entity_beliefs(&self, _agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             Vec::new()
         }
 

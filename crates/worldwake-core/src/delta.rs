@@ -7,9 +7,8 @@ use crate::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
     InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
     PerceptionProfile, Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
-    TellProfile,
-    SubstitutePreferences, TradeDispositionProfile, TravelDispositionProfile, UniqueItem,
-    UtilityProfile, WorkstationMarker, WoundList,
+    SubstitutePreferences, TellProfile, TradeDispositionProfile, TravelDispositionProfile,
+    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -215,11 +214,10 @@ mod tests {
         CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container, ControlSource,
         DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge,
-        ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
-        PerceptionProfile, PerceptionSource, Permille, ProductionJob, ProvenanceEntry, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, TellProfile, Tick, TickRange,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
-        WoundCause, WoundList,
+        ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name, PerceptionProfile,
+        PerceptionSource, Permille, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
+        ReservationRecord, ResourceSource, TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};

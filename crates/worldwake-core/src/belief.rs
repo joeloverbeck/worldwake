@@ -702,8 +702,7 @@ mod tests {
         );
         let rumor_shallow =
             belief_confidence(&PerceptionSource::Rumor { chain_len: 1 }, 0, &policy);
-        let rumor_deep =
-            belief_confidence(&PerceptionSource::Rumor { chain_len: 3 }, 0, &policy);
+        let rumor_deep = belief_confidence(&PerceptionSource::Rumor { chain_len: 3 }, 0, &policy);
 
         assert!(report_deep < report_shallow);
         assert!(rumor_deep < rumor_shallow);

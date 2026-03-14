@@ -4,15 +4,15 @@ use std::num::NonZeroU64;
 use worldwake_core::{
     build_believed_entity_state, ActionDefId, AgentBeliefStore, BeliefConfidencePolicy,
     BelievedEntityState, CauseRef, ControlSource, EntityId, EventLog, EventTag, PendingEvent,
-    PerceptionProfile, PerceptionSource, Permille, Place, Seed, SocialObservationKind,
-    StateHash, TellProfile, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-    WitnessData, World, WorldTxn,
+    PerceptionProfile, PerceptionSource, Permille, Place, Seed, SocialObservationKind, StateHash,
+    TellProfile, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World,
+    WorldTxn,
 };
 use worldwake_sim::{
     get_affordances, record_tick_checkpoint, replay_and_verify, step_tick, ActionPayload,
     ActionRequestMode, DeterministicRng, InputKind, PerAgentBeliefView, RecipeRegistry,
     ReplayRecordingConfig, ReplayState, Scheduler, SimulationState, SystemManifest,
-    TickStepResult, TickStepServices, TellActionPayload,
+    TellActionPayload, TickStepResult, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -68,10 +68,14 @@ fn integration_topology(travel_ticks: u32) -> Topology {
             .unwrap();
     }
     topology
-        .add_edge(TravelEdge::new(TravelEdgeId(10), entity(1), entity(2), travel_ticks, None).unwrap())
+        .add_edge(
+            TravelEdge::new(TravelEdgeId(10), entity(1), entity(2), travel_ticks, None).unwrap(),
+        )
         .unwrap();
     topology
-        .add_edge(TravelEdge::new(TravelEdgeId(11), entity(2), entity(1), travel_ticks, None).unwrap())
+        .add_edge(
+            TravelEdge::new(TravelEdgeId(11), entity(2), entity(1), travel_ticks, None).unwrap(),
+        )
         .unwrap();
     topology
 }
@@ -138,7 +142,10 @@ impl TellHarness {
                     .unwrap();
             }
 
-            for agent in [Some(speaker), Some(listener), bystander].into_iter().flatten() {
+            for agent in [Some(speaker), Some(listener), bystander]
+                .into_iter()
+                .flatten()
+            {
                 txn.set_component_agent_belief_store(agent, AgentBeliefStore::new())
                     .unwrap();
                 txn.set_component_perception_profile(agent, perception_profile())
@@ -164,7 +171,8 @@ impl TellHarness {
             let mut txn = new_txn(&mut world, 1);
             let mut store = AgentBeliefStore::new();
             store.update_entity(subject, belief);
-            txn.set_component_agent_belief_store(speaker, store).unwrap();
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
             commit_txn(txn, &mut event_log);
         }
 
@@ -319,7 +327,8 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
         let mut store = AgentBeliefStore::new();
         store.update_entity(subject, stale_belief);
         store.update_entity(listener, listener_known);
-        txn.set_component_agent_belief_store(speaker, store).unwrap();
+        txn.set_component_agent_belief_store(speaker, store)
+            .unwrap();
         commit_txn(txn, &mut event_log);
     }
 
@@ -490,7 +499,10 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
     }
 
     assert!(!state.event_log().events_by_tag(EventTag::Social).is_empty());
-    assert!(!state.event_log().events_by_tag(EventTag::Discovery).is_empty());
+    assert!(!state
+        .event_log()
+        .events_by_tag(EventTag::Discovery)
+        .is_empty());
 
     let final_hash = state.replay_bootstrap_hash().unwrap();
     *initial_state.replay_state_mut() = state.replay_state().clone();
@@ -542,7 +554,10 @@ fn tell_propagation_requires_travel_and_tell_completion() {
             break;
         }
     }
-    assert!(listener_updated, "listener should receive the belief after tell completes");
+    assert!(
+        listener_updated,
+        "listener should receive the belief after tell completes"
+    );
 
     let transferred = harness.listener_belief().unwrap();
     assert_eq!(transferred.last_known_place, Some(harness.origin));
@@ -638,11 +653,14 @@ fn bystander_observes_witnessed_telling_without_receiving_subject_belief() {
 
     let bystander_store = harness.bystander_store().unwrap();
     assert!(bystander_store.get_entity(&harness.subject).is_none());
-    assert!(bystander_store.social_observations.iter().any(|observation| {
-        observation.kind == SocialObservationKind::WitnessedTelling
-            && observation.subjects == (harness.speaker, harness.listener)
-            && observation.place == harness.destination
-    }));
+    assert!(bystander_store
+        .social_observations
+        .iter()
+        .any(|observation| {
+            observation.kind == SocialObservationKind::WitnessedTelling
+                && observation.subjects == (harness.speaker, harness.listener)
+                && observation.place == harness.destination
+        }));
 }
 
 #[test]

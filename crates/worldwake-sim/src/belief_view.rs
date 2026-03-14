@@ -4,9 +4,8 @@ use worldwake_core::{
     BelievedEntityState, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
-    TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag,
-    Wound,
+    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.

@@ -496,7 +496,10 @@ mod tests {
         assert_eq!(tables.insert_tell_profile(entity, profile), None);
         assert_eq!(tables.get_tell_profile(entity), Some(&profile));
         assert!(tables.has_tell_profile(entity));
-        assert_eq!(tables.iter_tell_profiles().collect::<Vec<_>>(), vec![(entity, &profile)]);
+        assert_eq!(
+            tables.iter_tell_profiles().collect::<Vec<_>>(),
+            vec![(entity, &profile)]
+        );
         assert_eq!(tables.remove_tell_profile(entity), Some(profile));
         assert_eq!(tables.get_tell_profile(entity), None);
     }

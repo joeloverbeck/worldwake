@@ -1,8 +1,7 @@
 use crate::{
-    build_observed_entity_snapshot,
-    component_schema::with_component_schema_entries, ArchiveMutationSnapshot, CommodityKind,
-    Container, ControlSource, EntityId, EntityKind, EventId, Permille, Quantity, ReservationId,
-    Tick, TickRange, UniqueItemKind, World, WorldError,
+    build_observed_entity_snapshot, component_schema::with_component_schema_entries,
+    ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
+    EventId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
@@ -146,7 +145,7 @@ impl<'w> WorldTxn<'w> {
     pub fn into_pending_event(self) -> PendingEvent {
         let observed_entities = self.capture_observed_entities();
         *self.world = self.staged_world;
-        PendingEvent::new_with_evidence(
+        PendingEvent::new_complete(
             self.tick,
             self.cause,
             self.actor_id,
@@ -154,11 +153,11 @@ impl<'w> WorldTxn<'w> {
             self.evidence,
             self.place_id,
             self.deltas,
+            observed_entities,
             self.visibility,
             self.witness_data,
             self.tags,
         )
-        .with_observed_entities(observed_entities)
     }
 
     pub fn commit(self, event_log: &mut EventLog) -> EventId {
@@ -1263,8 +1262,7 @@ mod tests {
         },
         AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, DemandMemory,
         MerchandiseProfile, PerceptionProfile, PerceptionSource, SubstitutePreferences,
-        TellProfile,
-        TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
+        TellProfile, TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -2058,11 +2056,7 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(
-            record
-                .observed_entities
-                .keys()
-                .copied()
-                .collect::<Vec<_>>(),
+            record.observed_entities.keys().copied().collect::<Vec<_>>(),
             vec![actor, target, bread]
         );
         assert_eq!(
@@ -2074,7 +2068,11 @@ mod tests {
             BTreeMap::from([(CommodityKind::Bread, Quantity(2))])
         );
         assert_eq!(
-            record.observed_entities.get(&bread).unwrap().last_known_place,
+            record
+                .observed_entities
+                .get(&bread)
+                .unwrap()
+                .last_known_place,
             Some(place)
         );
     }
@@ -2176,11 +2174,7 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(
-            record
-                .observed_entities
-                .keys()
-                .copied()
-                .collect::<Vec<_>>(),
+            record.observed_entities.keys().copied().collect::<Vec<_>>(),
             vec![actor, subject]
         );
         assert_eq!(

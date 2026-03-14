@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     load_per_unit, ActionDefId, BelievedEntityState, CombatProfile, CommodityKind,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MetabolismProfile, Permille, PlaceTag,
-    Quantity, RecipeId, ResourceSource, TellProfile, TickRange, TradeDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
+    InTransitOnEdge, LoadUnits, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
+    ResourceSource, TellProfile, TickRange, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -2003,7 +2003,8 @@ mod tests {
     #[test]
     fn planning_state_preserves_missing_actor_tell_profile_from_snapshot() {
         let (view, actor, _town, _field, bread) = test_view();
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(RuntimeBeliefView::tell_profile(&state, actor), None);

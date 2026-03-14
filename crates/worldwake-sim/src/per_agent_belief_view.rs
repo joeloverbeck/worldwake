@@ -8,9 +8,9 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BelievedEntityState, CarryCapacity,
     CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId,
-    ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
+    TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
+    UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -792,7 +792,10 @@ mod tests {
             RuntimeBeliefView::homeostatic_needs(&view, agent),
             world.get_component_homeostatic_needs(agent).copied()
         );
-        assert_eq!(RuntimeBeliefView::effective_place(&view, agent), Some(place));
+        assert_eq!(
+            RuntimeBeliefView::effective_place(&view, agent),
+            Some(place)
+        );
         assert_eq!(
             RuntimeBeliefView::commodity_quantity(&view, agent, CommodityKind::Bread),
             world.controlled_commodity_quantity(agent, CommodityKind::Bread)
@@ -807,7 +810,10 @@ mod tests {
             RuntimeBeliefView::commodity_quantity(&view, other, CommodityKind::Bread),
             Quantity(7)
         );
-        assert_eq!(RuntimeBeliefView::wounds(&view, other), vec![sample_wound()]);
+        assert_eq!(
+            RuntimeBeliefView::wounds(&view, other),
+            vec![sample_wound()]
+        );
     }
 
     #[test]
@@ -846,7 +852,10 @@ mod tests {
         beliefs.update_entity(believed_merchant, entity_belief(place, true, 3, 5));
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::effective_place(&view, hidden_merchant), None);
+        assert_eq!(
+            RuntimeBeliefView::effective_place(&view, hidden_merchant),
+            None
+        );
         assert!(!RuntimeBeliefView::is_alive(&view, hidden_merchant));
         assert_eq!(
             RuntimeBeliefView::commodity_quantity(&view, hidden_merchant, CommodityKind::Bread),
@@ -883,7 +892,10 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(world.effective_place(other), Some(place_b));
-        assert_eq!(RuntimeBeliefView::effective_place(&view, other), Some(place_a));
+        assert_eq!(
+            RuntimeBeliefView::effective_place(&view, other),
+            Some(place_a)
+        );
     }
 
     #[test]
@@ -980,8 +992,12 @@ mod tests {
             "public route knowledge should include place identity"
         );
         assert!(
-            RuntimeBeliefView::matching_workstations_at(&view, remote_place, WorkstationTag::OrchardRow)
-                .is_empty(),
+            RuntimeBeliefView::matching_workstations_at(
+                &view,
+                remote_place,
+                WorkstationTag::OrchardRow
+            )
+            .is_empty(),
             "remote workstation discovery must not come from authoritative scans"
         );
         assert!(
@@ -1022,7 +1038,11 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::matching_workstations_at(&view, remote_place, WorkstationTag::OrchardRow),
+            RuntimeBeliefView::matching_workstations_at(
+                &view,
+                remote_place,
+                WorkstationTag::OrchardRow
+            ),
             vec![workstation]
         );
         assert_eq!(

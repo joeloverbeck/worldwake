@@ -1360,15 +1360,14 @@ mod tests {
     use std::path::PathBuf;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
-        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity,
-        CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
+        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
+        CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-        EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId,
-        ResourceSource, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
-        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn,
+        EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
+        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
+        PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId, ResourceSource,
+        Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -1677,7 +1676,8 @@ mod tests {
             .expect("observer must have AgentBeliefStore");
         store.known_entities.clear();
         for entity in entities {
-            if let Some(state) = build_believed_entity_state(world, *entity, observed_tick, source) {
+            if let Some(state) = build_believed_entity_state(world, *entity, observed_tick, source)
+            {
                 store.update_entity(*entity, state);
             }
         }

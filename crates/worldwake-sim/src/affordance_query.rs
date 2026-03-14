@@ -331,8 +331,8 @@ mod tests {
         CombatProfile, CombatWeaponRef, CommodityConsumableProfile, CommodityKind, ControlSource,
         DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
         InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
-        ResourceSource, TellProfile, Tick, TradeDispositionProfile, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        ResourceSource, TellProfile, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
 
     #[derive(Default)]

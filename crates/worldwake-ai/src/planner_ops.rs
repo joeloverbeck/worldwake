@@ -1230,7 +1230,11 @@ mod tests {
         let table = build_semantics_table(&defs);
         let semantics_by_name = defs
             .iter()
-            .filter_map(|def| table.get(&def.id).map(|semantics| (def.name.as_str(), semantics)))
+            .filter_map(|def| {
+                table
+                    .get(&def.id)
+                    .map(|semantics| (def.name.as_str(), semantics))
+            })
             .collect::<std::collections::BTreeMap<_, _>>();
 
         assert_eq!(table.len() + 1, defs.len());

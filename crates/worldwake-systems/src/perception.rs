@@ -50,8 +50,8 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
             });
 
             for (entity, observed) in &record.observed_entities {
-                let snapshot =
-                    observed.to_believed_entity_state(record.tick, PerceptionSource::DirectObservation);
+                let snapshot = observed
+                    .to_believed_entity_state(record.tick, PerceptionSource::DirectObservation);
                 record_observed_snapshot(
                     event_log,
                     DiscoveryContext {
@@ -281,27 +281,26 @@ fn emit_discovery_event(
     subject: EntityId,
     mismatch: MismatchKind,
 ) {
-    let _ = event_log.emit(
-        PendingEvent::new(
-            context.tick,
-            CauseRef::SystemTick(context.tick),
-            Some(context.observer),
-            vec![subject],
-            context.place,
-            Vec::new(),
-            VisibilitySpec::ParticipantsOnly,
-            WitnessData {
-                direct_witnesses: BTreeSet::from([context.observer]),
-                potential_witnesses: BTreeSet::from([context.observer]),
-            },
-            BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
-        )
-        .with_evidence(vec![EvidenceRef::Mismatch {
+    let _ = event_log.emit(PendingEvent::new_complete(
+        context.tick,
+        CauseRef::SystemTick(context.tick),
+        Some(context.observer),
+        vec![subject],
+        vec![EvidenceRef::Mismatch {
             observer: context.observer,
             subject,
             kind: mismatch,
-        }]),
-    );
+        }],
+        context.place,
+        Vec::new(),
+        BTreeMap::new(),
+        VisibilitySpec::ParticipantsOnly,
+        WitnessData {
+            direct_witnesses: BTreeSet::from([context.observer]),
+            potential_witnesses: BTreeSet::from([context.observer]),
+        },
+        BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+    ));
 }
 
 fn resolve_witnesses(world: &World, record: &EventRecord) -> Vec<EntityId> {
@@ -514,18 +513,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(3),
             CauseRef::Bootstrap,
             Some(target),
             vec![target],
+            Vec::new(),
             Some(place),
             Vec::new(),
+            observed_from_world(&world, &[target]),
             VisibilitySpec::SamePlace,
             WitnessData::default(),
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -708,21 +708,22 @@ mod tests {
             (direct_witness, bystander, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(5),
             CauseRef::Bootstrap,
             Some(target),
             vec![target],
+            Vec::new(),
             Some(place),
             Vec::new(),
+            observed_from_world(&world, &[target]),
             VisibilitySpec::ParticipantsOnly,
             WitnessData {
                 direct_witnesses: BTreeSet::from([direct_witness]),
                 potential_witnesses: BTreeSet::from([bystander, direct_witness]),
             },
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([9; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -773,18 +774,19 @@ mod tests {
             (origin_target, adjacent_witness, remote_witness)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(6),
             CauseRef::Bootstrap,
             Some(origin_target),
             vec![origin_target],
+            Vec::new(),
             Some(origin),
             Vec::new(),
+            observed_from_world(&world, &[origin_target]),
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[origin_target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([4; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -855,18 +857,19 @@ mod tests {
             (observer, older_target, newer_target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(7),
             CauseRef::Bootstrap,
             Some(newer_target),
             vec![newer_target],
+            Vec::new(),
             Some(place),
             Vec::new(),
+            observed_from_world(&world, &[newer_target]),
             VisibilitySpec::SamePlace,
             WitnessData::default(),
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[newer_target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1008,7 +1011,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             txn.set_component_dead_at(target, DeadAt(Tick(3))).unwrap();
@@ -1076,7 +1080,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let bread = txn
@@ -1182,7 +1187,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let bread = txn
@@ -1242,7 +1248,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let mut log = EventLog::new();
@@ -1333,8 +1340,10 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
-            txn.set_component_perception_profile(observer, profile(0)).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(0))
+                .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
@@ -1383,7 +1392,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             txn.set_component_dead_at(target, DeadAt(Tick(3))).unwrap();
@@ -1392,18 +1402,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(3),
             CauseRef::Bootstrap,
             Some(target),
             vec![target],
+            Vec::new(),
             Some(origin),
             Vec::new(),
+            observed_from_world(&world, &[target]),
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([20; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1460,7 +1471,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let bread = txn
@@ -1473,18 +1485,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(3),
             CauseRef::Bootstrap,
             Some(target),
             vec![target],
+            Vec::new(),
             Some(origin),
             Vec::new(),
+            observed_from_world(&world, &[target]),
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([21; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1548,7 +1561,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let mut log = EventLog::new();
@@ -1556,18 +1570,19 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(PendingEvent::new(
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(3),
             CauseRef::Bootstrap,
             Some(target),
             vec![target],
+            Vec::new(),
             Some(origin),
             Vec::new(),
+            observed_from_world(&world, &[target]),
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([22; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1633,7 +1648,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let mut log = EventLog::new();
@@ -1641,40 +1657,32 @@ mod tests {
             (observer, target)
         };
         let mut event_log = EventLog::new();
-        let _ = event_log.emit(
-            PendingEvent::new(
-                Tick(3),
-                CauseRef::Bootstrap,
-                Some(target),
-                vec![target],
-                Some(origin),
-                Vec::new(),
-                VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-                WitnessData::default(),
-                BTreeSet::new(),
-            )
-            .with_observed_entities(BTreeMap::from([(
-                target,
-                observed_snapshot(Some(origin), 4),
-            )])),
-        );
-        let _ = event_log.emit(
-            PendingEvent::new(
-                Tick(3),
-                CauseRef::Bootstrap,
-                Some(target),
-                vec![target],
-                Some(origin),
-                Vec::new(),
-                VisibilitySpec::AdjacentPlaces { max_hops: 1 },
-                WitnessData::default(),
-                BTreeSet::new(),
-            )
-            .with_observed_entities(BTreeMap::from([(
-                target,
-                observed_snapshot(Some(remote), 2),
-            )])),
-        );
+        let _ = event_log.emit(PendingEvent::new_complete(
+            Tick(3),
+            CauseRef::Bootstrap,
+            Some(target),
+            vec![target],
+            Vec::new(),
+            Some(origin),
+            Vec::new(),
+            BTreeMap::from([(target, observed_snapshot(Some(origin), 4))]),
+            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            WitnessData::default(),
+            BTreeSet::new(),
+        ));
+        let _ = event_log.emit(PendingEvent::new_complete(
+            Tick(3),
+            CauseRef::Bootstrap,
+            Some(target),
+            vec![target],
+            Vec::new(),
+            Some(origin),
+            Vec::new(),
+            BTreeMap::from([(target, observed_snapshot(Some(remote), 2))]),
+            VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+            WitnessData::default(),
+            BTreeSet::new(),
+        ));
         let mut rng = DeterministicRng::new(Seed([24; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1694,11 +1702,11 @@ mod tests {
             .iter()
             .flat_map(|record| record.evidence.iter())
             .filter_map(|evidence| match evidence {
-                EvidenceRef::Mismatch { observer: seen_by, subject, kind }
-                    if *seen_by == observer && *subject == target =>
-                {
-                    Some(*kind)
-                }
+                EvidenceRef::Mismatch {
+                    observer: seen_by,
+                    subject,
+                    kind,
+                } if *seen_by == observer && *subject == target => Some(*kind),
                 EvidenceRef::Wound { .. } | EvidenceRef::Mismatch { .. } => None,
             })
             .collect::<Vec<_>>();
@@ -1761,29 +1769,35 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
         let mut event_log = EventLog::new();
-        let target = world.query_agent_data().find(|(entity, _)| {
-            world.effective_place(*entity) == Some(origin)
-                && world.get_component_dead_at(*entity).is_none()
-        }).unwrap().0;
-        let _ = event_log.emit(PendingEvent::new(
+        let target = world
+            .query_agent_data()
+            .find(|(entity, _)| {
+                world.effective_place(*entity) == Some(origin)
+                    && world.get_component_dead_at(*entity).is_none()
+            })
+            .unwrap()
+            .0;
+        let _ = event_log.emit(PendingEvent::new_complete(
             Tick(3),
             CauseRef::Bootstrap,
             Some(target),
             vec![target],
+            Vec::new(),
             Some(origin),
             Vec::new(),
+            observed_from_world(&world, &[target]),
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        )
-        .with_observed_entities(observed_from_world(&world, &[target])));
+        ));
         let mut rng = DeterministicRng::new(Seed([23; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();

@@ -820,7 +820,10 @@ mod tests {
 
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
 
-        assert_eq!(snapshot.actor_tell_profile, view.tell_profiles.get(&actor).copied());
+        assert_eq!(
+            snapshot.actor_tell_profile,
+            view.tell_profiles.get(&actor).copied()
+        );
     }
 
     #[test]

@@ -70,10 +70,7 @@ fn tell_payload<'a>(
     payload: &'a ActionPayload,
 ) -> Result<&'a TellActionPayload, ActionError> {
     payload.as_tell().ok_or_else(|| {
-        ActionError::PreconditionFailed(format!(
-            "action def {} requires Tell payload",
-            def.id
-        ))
+        ActionError::PreconditionFailed(format!("action def {} requires Tell payload", def.id))
     })
 }
 
@@ -145,7 +142,10 @@ fn validate_tell_context(
     Ok(listener)
 }
 
-fn required_tell_profile_in_world(world: &World, entity: EntityId) -> Result<TellProfile, ActionError> {
+fn required_tell_profile_in_world(
+    world: &World,
+    entity: EntityId,
+) -> Result<TellProfile, ActionError> {
     world
         .get_component_tell_profile(entity)
         .copied()
@@ -156,14 +156,15 @@ fn required_tell_profile_in_world(world: &World, entity: EntityId) -> Result<Tel
         })
 }
 
-fn required_tell_profile(world: &WorldTxn<'_>, entity: EntityId) -> Result<TellProfile, ActionError> {
+fn required_tell_profile(
+    world: &WorldTxn<'_>,
+    entity: EntityId,
+) -> Result<TellProfile, ActionError> {
     world
         .get_component_tell_profile(entity)
         .copied()
         .ok_or_else(|| {
-            ActionError::InternalError(format!(
-                "live agent {entity} lacks required TellProfile"
-            ))
+            ActionError::InternalError(format!("live agent {entity} lacks required TellProfile"))
         })
 }
 
@@ -270,9 +271,11 @@ fn validate_tell_payload_authoritatively(
         )));
     }
 
-    let beliefs = world.get_component_agent_belief_store(actor).ok_or_else(|| {
-        ActionError::PreconditionFailed(format!("actor {actor} lacks AgentBeliefStore"))
-    })?;
+    let beliefs = world
+        .get_component_agent_belief_store(actor)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("actor {actor} lacks AgentBeliefStore"))
+        })?;
     let belief = beliefs.get_entity(&payload.subject_entity).ok_or_else(|| {
         ActionError::PreconditionFailed(format!(
             "actor {actor} lacks belief about subject {}",
@@ -371,15 +374,15 @@ mod tests {
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, CauseRef, CombatProfile,
         CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
         DriveThresholds, EntityId, EntityKind, EventLog, EventTag, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
-        PerceptionProfile, PerceptionSource, Quantity, RecipeId, ResourceSource, Seed,
-        TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
+        PerceptionSource, Permille, Quantity, RecipeId, ResourceSource, Seed, TellProfile, Tick,
+        TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
-        ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr,
-        Interruptibility, Precondition, RuntimeBeliefView, TargetSpec, TellActionPayload,
+        ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr, Interruptibility,
+        Precondition, RuntimeBeliefView, TargetSpec, TellActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -460,7 +463,8 @@ mod tests {
 
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.set_component_agent_belief_store(speaker, store).unwrap();
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
@@ -485,7 +489,9 @@ mod tests {
         let tell_id = register_tell_action(&mut defs, &mut handlers);
         let (world, place, speaker, listener, subject) =
             world_with_speaker_listener_and_subject(source);
-        (defs, handlers, tell_id, world, place, speaker, listener, subject)
+        (
+            defs, handlers, tell_id, world, place, speaker, listener, subject,
+        )
     }
 
     fn tell_instance(
@@ -717,10 +723,7 @@ mod tests {
             None
         }
 
-        fn travel_disposition_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<TravelDispositionProfile> {
+        fn travel_disposition_profile(&self, _agent: EntityId) -> Option<TravelDispositionProfile> {
             None
         }
 
@@ -834,7 +837,10 @@ mod tests {
                 kind: EntityKind::Agent,
             }]
         );
-        assert_eq!(tell.duration, DurationExpr::Fixed(NonZeroU32::new(2).unwrap()));
+        assert_eq!(
+            tell.duration,
+            DurationExpr::Fixed(NonZeroU32::new(2).unwrap())
+        );
         assert_eq!(tell.body_cost_per_tick, BodyCostPerTick::zero());
         assert_eq!(tell.interruptibility, Interruptibility::FreelyInterruptible);
         assert_eq!(tell.visibility, VisibilitySpec::SamePlace);
@@ -845,7 +851,9 @@ mod tests {
         assert!(handlers.get(tell.handler).is_some());
         assert_eq!(tell.payload, ActionPayload::None);
         assert!(tell.preconditions.contains(&Precondition::TargetAlive(0)));
-        assert!(tell.commit_conditions.contains(&Precondition::TargetAlive(0)));
+        assert!(tell
+            .commit_conditions
+            .contains(&Precondition::TargetAlive(0)));
     }
 
     #[test]
@@ -1182,8 +1190,8 @@ mod tests {
         }
         let instance = tell_instance(tell_id, speaker, listener, subject);
 
-        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
-            .unwrap_err();
+        let err =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap_err();
 
         assert!(matches!(err, ActionError::InternalError(_)));
         assert!(format!("{err:?}").contains("AgentBeliefStore"));
@@ -1203,8 +1211,8 @@ mod tests {
         }
         let instance = tell_instance(tell_id, speaker, listener, subject);
 
-        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
-            .unwrap_err();
+        let err =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap_err();
 
         assert!(matches!(err, ActionError::InternalError(_)));
         assert!(format!("{err:?}").contains("AgentBeliefStore"));
@@ -1222,8 +1230,8 @@ mod tests {
         }
         let instance = tell_instance(tell_id, speaker, listener, subject);
 
-        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
-            .unwrap_err();
+        let err =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap_err();
 
         assert!(matches!(err, ActionError::InternalError(_)));
         assert!(format!("{err:?}").contains("TellProfile"));
@@ -1241,8 +1249,8 @@ mod tests {
         }
         let instance = tell_instance(tell_id, speaker, listener, subject);
 
-        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
-            .unwrap_err();
+        let err =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap_err();
 
         assert!(matches!(err, ActionError::InternalError(_)));
         assert!(format!("{err:?}").contains("PerceptionProfile"));
@@ -1293,7 +1301,8 @@ mod tests {
             store.update_entity(subject, newer.clone());
 
             let mut txn = new_txn(&mut world, 7);
-            txn.set_component_agent_belief_store(listener, store).unwrap();
+            txn.set_component_agent_belief_store(listener, store)
+                .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
@@ -1337,7 +1346,8 @@ mod tests {
             store.update_entity(older_subject, older_belief);
 
             let mut txn = new_txn(&mut world, 6);
-            txn.set_component_agent_belief_store(listener, store).unwrap();
+            txn.set_component_agent_belief_store(listener, store)
+                .unwrap();
             txn.set_component_perception_profile(
                 listener,
                 PerceptionProfile {
@@ -1623,7 +1633,11 @@ mod tests {
 
         assert_eq!(
             affordances,
-            vec![(listener, subject_b), (listener, subject_c), (listener, subject_e)]
+            vec![
+                (listener, subject_b),
+                (listener, subject_c),
+                (listener, subject_e)
+            ]
         );
     }
 
