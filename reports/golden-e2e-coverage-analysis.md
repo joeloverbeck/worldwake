@@ -18,7 +18,7 @@ crates/worldwake-ai/tests/
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
-  golden_perception.rs        — (planned) scenarios 10, 11
+  golden_perception.rs        — (planned) scenario 11 only
 ```
 
 ---
@@ -532,26 +532,7 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
 
 ### Tier 1: High Priority (score 5+)
 
-#### Scenario 10: Belief Isolation — Unseen Theft Forces Replan
-- **Target file**: `golden_perception.rs` (new file)
-- **Emergence complexity**: 5 — Perception(absent) → Stale belief → Travel → Passive observation → Belief update → Replan
-- **Bug-catching value**: 5 — core E14 behavioral contract; no existing test proves belief isolation
-- **Implementation effort**: 3 — standard harness, needs selective belief seeding
-- **Score**: 7
-- **Systems exercised**: Perception, Belief store, Travel, AI (candidate generation, planning, replanning)
-- **Setup**: Agent A (Alice) at VillageSquare, critically hungry (pm(900)), fast metabolism. Agent B (Bob) at OrchardFarm, critically hungry (pm(950)), fast metabolism. OrchardFarm has apple resource source with small quantity (3 apples). Alice seeded with belief about apples at OrchardFarm. Bob seeded with belief about apples at OrchardFarm.
-- **Emergent behavior to prove**:
-  1. Bob is already at OrchardFarm — harvests and eats the apples (SamePlace visibility; Alice cannot witness from VillageSquare)
-  2. Alice plans `AcquireCommodity(SelfConsume)` → travel to OrchardFarm based on stale belief
-  3. Alice arrives at OrchardFarm; passive observation fires (`observe_passive_local_entities`)
-  4. Alice's belief store updates: no apples remain at OrchardFarm
-  5. Alice replans (blocked intent or different goal)
-- **Key assertions**:
-  - Alice's `AgentBeliefStore` for the apple source updates only AFTER arrival (not before)
-  - Alice does NOT react to Bob eating before she arrives (belief isolation proven)
-  - Alice replans after arrival when reality contradicts stale belief
-  - Conservation holds throughout; deterministic replay
-- **Cross-system chain**: Perception(absent) → Stale belief → Travel → Passive observation → Belief update → Replan
+`Scenario 10: Belief Isolation` was removed from the golden backlog on 2026-03-14. Reassessment showed the report item was stale: the underlying E14 invariant is already covered more cleanly by focused runtime tests in `crates/worldwake-ai/src/agent_tick.rs` (`same_place_perception_seeds_seller_belief_for_runtime_candidates`, `unseen_seller_relocation_preserves_stale_acquisition_belief`, and `unseen_death_does_not_create_corpse_reaction_without_reobservation`). Adding a new `golden_perception.rs` scenario for the same contract would duplicate an existing planner-boundary proof rather than improve architecture or coverage durability.
 
 #### Scenario 11: Memory Retention Decay — Forgotten Resource Forces Local Discovery
 - **Target file**: `golden_perception.rs` (new file)
@@ -624,10 +605,9 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 ### Pending Backlog Summary
 
-2 new scenarios remain in the golden backlog as of 2026-03-14, both targeting E14 (Perception & Belief):
-- **Scenario 10** (score 7): Belief isolation — unseen theft forces replan (`golden_perception.rs`)
+1 scenario remains in the golden backlog as of 2026-03-14, targeting E14 (Perception & Belief):
 - **Scenario 11** (score 5): Memory retention decay — forgotten resource forces local discovery (`golden_perception.rs`)
 
 ### Recommended Implementation Order
 
-Scenario 10 (Belief isolation, score 7, effort 3) → Scenario 11 (Memory decay, score 5, effort 3).
+Scenario 11 (Memory decay, score 5, effort 3).

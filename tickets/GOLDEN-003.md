@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — test-only ticket; all perception/belief system code exists (E14)
-**Deps**: GOLDEN-002 (shares `golden_perception.rs` file; should be implemented after Scenario 10)
+**Deps**: None
 
 ## Problem
 
@@ -18,12 +18,12 @@ This is the last remaining perception/belief golden scenario (score 5). It valid
 2. `PerceptionProfile` has `memory_retention_ticks: u64` field (`belief.rs:163`). Default is 48 ticks.
 3. `within_retention_window()` in `belief.rs:179` checks `current_tick - observed_tick <= retention_ticks`.
 4. The prototype topology has `VILLAGE_SQUARE` and `ORCHARD_FARM` connected by multi-hop route (3+ hops via `EAST_FIELD_TRAIL`).
-5. `golden_perception.rs` will be created by GOLDEN-002. This ticket adds a second scenario to that file.
+5. `golden_perception.rs` does not exist yet. If this scenario still merits a golden test after implementation, this ticket can create that file directly.
 6. The harness provides water at `VILLAGE_SQUARE` (or can be seeded). A local food source can be placed as a ground commodity lot or a resource source at `VILLAGE_SQUARE`.
 
 ## Architecture Check
 
-1. Test-only change. No new engine code. Adds to `golden_perception.rs` created by GOLDEN-002.
+1. Test-only change. No new engine code. This ticket may create `golden_perception.rs` if that remains the cleanest place for the scenario after implementation.
 2. Uses a custom `PerceptionProfile` with short `memory_retention_ticks` (e.g., 15-20 ticks) to make retention decay observable within the test window.
 3. No backwards-compatibility shims. The scenario is additive.
 
@@ -71,8 +71,8 @@ Emergent behavior to prove (within 100-tick window):
 
 ## Files to Touch
 
-- `crates/worldwake-ai/tests/golden_perception.rs` (modify — add ~80-100 lines: scenario runner + 2 test functions)
-- `crates/worldwake-ai/tests/golden_harness/mod.rs` (modify — possibly add belief-seeding helper if not already added by GOLDEN-002, ~10-15 lines)
+- `crates/worldwake-ai/tests/golden_perception.rs` (new or modify — add scenario runner + 2 test functions if this scenario remains worth a dedicated golden file)
+- `crates/worldwake-ai/tests/golden_harness/mod.rs` (modify only if a real helper gap exists)
 - `reports/golden-e2e-coverage-analysis.md` (modify — move scenario, update stats, possibly mark backlog complete)
 
 ## Out of Scope
