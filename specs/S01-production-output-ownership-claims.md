@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: PENDING
 
 # Production Output Ownership Claims
 
@@ -13,7 +13,7 @@ The correct architectural direction is:
 - make lawful `pick_up` respect claim/control
 - reserve unauthorized transfer for explicit theft-style actions later
 
-This draft establishes ownership semantics, not final merchant stock custody semantics. If the project later wants merchants, carriers, and institutions to deliver into explicit stock rooms or display stalls instead of treating destination-local carried stock as sufficient, that follow-on architecture is specified in [DRAFT-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-stock-storage-and-stalls.md).
+This spec establishes ownership semantics, not final merchant stock custody semantics. If the project later wants merchants, carriers, and institutions to deliver into explicit stock rooms or display stalls instead of treating destination-local carried stock as sufficient, that follow-on architecture is specified in [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md).
 
 ## Why This Exists
 Current production commit behavior creates output lots and places them at the workstation location, but assigns no owner. This has three architectural costs:
@@ -29,7 +29,7 @@ Foundational alignment:
 - FND-23: offices/factions need ownable assets if institutions are to act through world state
 
 ## Phase
-Foundational follow-on to Phase 2 systems. Do not schedule ahead of current phase gates without explicit reprioritization, but this should be implemented before E17 theft/justice is considered complete.
+Phase 3: Information & Politics, Step 10 (parallel after E14)
 
 ## Crates
 - `worldwake-core`
@@ -38,11 +38,7 @@ Foundational follow-on to Phase 2 systems. Do not schedule ahead of current phas
 - `worldwake-ai`
 
 ## Dependencies
-- Archived E05 ownership/relations semantics
-- Archived E10 production/transport
-- Archived E13 decision architecture
-- Active E16 offices/factions for institutional ownership use-cases
-- Active E17 theft/justice for unlawful transfer once ownership-aware outputs exist
+- E14
 
 ## Design Goals
 1. Preserve concrete world materialization of outputs.
@@ -278,4 +274,4 @@ Derived transient state:
 - [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/specs/E16-offices-succession-factions.md)
 - [E05-relations-ownership.md](/home/joeloverbeck/projects/worldwake/archive/specs/E05-relations-ownership.md)
 - [E10-production-transport.md](/home/joeloverbeck/projects/worldwake/archive/specs/E10-production-transport.md)
-- [DRAFT-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-stock-storage-and-stalls.md)
+- [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)

@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: PENDING
 
 # Merchant Stock Storage and Stall Custody
 
@@ -6,8 +6,8 @@
 Design explicit merchant stock storage and market stall custody for Worldwake so merchant sale inventory is no longer modeled as "goods the merchant happens to be carrying at the market." This spec introduces concrete stock containers, stall containers, and lawful transfer paths between them so ownership, custody, sale visibility, theft, audit, and institutional stock control remain distinct.
 
 This spec extends:
-- [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md)
-- [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
+- [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md)
+- [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
 
 It is intentionally forward-looking and must not be scheduled ahead of the active phase gates in [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md) without explicit reprioritization.
 
@@ -40,7 +40,7 @@ This aligns directly with the foundations:
 - Principle 23: social/economic artifacts should be world state, not controller abstractions
 
 ## Phase
-Future economy/logistics deepening, after current active epics.
+Phase 4+: Economy Deepening, Step 14
 
 ## Crates
 - `worldwake-core`
@@ -49,16 +49,8 @@ Future economy/logistics deepening, after current active epics.
 - `worldwake-ai`
 
 ## Dependencies
-- Archived E04 items/containers
-- Archived E05 ownership relations
-- Archived E10 production/transport
-- Archived E11 trade/economy
-- Archived E13 decision architecture
-- Active E15 rumor/witness/discovery
-- Active E16 offices/succession/factions
-- Active E17 crime/theft/justice
-- [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md)
-- [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
+- S04
+- S01
 
 ## Design Goals
 1. Separate ownership from custody and from sale visibility.
@@ -369,8 +361,8 @@ Derived transient read-model:
 ## References
 - [FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)
 - [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md)
-- [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md)
-- [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
+- [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md)
+- [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
 - [E15-rumor-witness-discovery.md](/home/joeloverbeck/projects/worldwake/specs/E15-rumor-witness-discovery.md)
 - [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/specs/E16-offices-succession-factions.md)
 - [E17-crime-theft-justice.md](/home/joeloverbeck/projects/worldwake/specs/E17-crime-theft-justice.md)

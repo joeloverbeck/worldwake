@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: PENDING
 
 # Planner Target Identity and Affordance Binding
 
@@ -44,7 +44,7 @@ The clean architecture is:
 - blocker handling and debugging can report exactly which concrete target failed
 
 ## Phase
-Future planning-infrastructure cleanup, after current active epics unless explicitly reprioritized.
+Phase 3: Information & Politics, Step 10 (parallel after E14)
 
 ## Crates
 - `worldwake-ai`
@@ -53,15 +53,7 @@ Future planning-infrastructure cleanup, after current active epics unless explic
 - `worldwake-core`
 
 ## Dependencies
-- Archived E07 action framework
-- Archived E10 production/transport
-- Archived E11 trade/economy
-- Archived E13 grounded agent decision architecture
-- Active E14 perception/beliefs
-- Active E17 crime/theft/justice
-- [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
-- [DRAFT-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-stock-storage-and-stalls.md)
-- [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md)
+- E14
 
 ## Design Goals
 1. Preserve the current canonical goal identity model while making exact target matching explicit.
@@ -333,8 +325,8 @@ No derived binding result may become authoritative truth.
 
 ## Recommended Sequencing
 When this spec is scheduled, it should be implemented before or alongside:
-- listed-lot trade from [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
-- facility stock/display targeting from [DRAFT-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-stock-storage-and-stalls.md)
+- listed-lot trade from [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
+- facility stock/display targeting from [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)
 - exact evidence targeting in E17 crime/theft/justice follow-on work
 
 Otherwise those efforts will likely reintroduce one-off exact-target hacks.

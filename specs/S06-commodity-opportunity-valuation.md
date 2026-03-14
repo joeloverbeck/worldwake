@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: PENDING
 
 # Commodity Opportunity Valuation
 
@@ -43,13 +43,13 @@ The correct fix is not a special-case "firewood matters if hungry." The correct 
 ## Spec Ownership Scan
 Active `specs/E14-*` through `specs/E22-*` do not define indirect commodity valuation.
 
-Closest related draft:
-- `specs/DRAFT-merchant-selling-market-presence.md`
+Closest related spec:
+- `specs/S04-merchant-selling-market-presence.md`
 
-That draft fixes seller visibility and concrete listed-lot trade, but it explicitly keeps the valuation helper bilateral and bundle-based without specifying how indirect commodity utility should be represented. It is adjacent, not sufficient.
+That spec fixes seller visibility and concrete listed-lot trade, but it explicitly keeps the valuation helper bilateral and bundle-based without specifying how indirect commodity utility should be represented. It is adjacent, not sufficient.
 
 ## Phase
-Future economy deepening, post-E22 scheduling only.
+Phase 4+: Economy Deepening, Step 14
 
 ## Crates
 - `worldwake-core`
@@ -58,9 +58,7 @@ Future economy deepening, post-E22 scheduling only.
 - `worldwake-ai`
 
 ## Dependencies
-- archived E11 trade/economy
-- archived E13 decision architecture
-- `specs/DRAFT-merchant-selling-market-presence.md`
+- S04
 
 E14 is not strictly required for the first implementation pass because the model only uses the actor's current beliefs and locally queryable believed opportunities. The design must remain compatible with richer future belief propagation.
 
@@ -372,6 +370,6 @@ Derived transient read-model:
 ## References
 - [E11-trade-economy.md](/home/joeloverbeck/projects/worldwake/archive/specs/E11-trade-economy.md)
 - [E13-decision-architecture.md](/home/joeloverbeck/projects/worldwake/archive/specs/E13-decision-architecture.md)
-- [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
+- [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
 - [FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)
 - [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md)

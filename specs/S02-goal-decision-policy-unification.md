@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: PENDING
 
 # Goal Decision Policy Unification
 
@@ -50,21 +50,17 @@ Reviewed and not sufficient:
 - [E20-companion-behaviors.md](/home/joeloverbeck/projects/worldwake/specs/E20-companion-behaviors.md)
   - describes behavior-level priority overrides during travel
   - does not define a general AI policy model for suppression vs interruption
-- [DRAFT-commodity-opportunity-valuation.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-commodity-opportunity-valuation.md)
+- [S06-commodity-opportunity-valuation.md](/home/joeloverbeck/projects/worldwake/specs/S06-commodity-opportunity-valuation.md)
   - centralizes commodity value, not goal admissibility or interrupt posture
-- [DRAFT-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-merchant-selling-market-presence.md)
+- [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
   - discusses ranking effects but does not unify decision policy across ranking and interrupts
-- [DRAFT-planner-target-identity-and-affordance-binding.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-planner-target-identity-and-affordance-binding.md)
+- [S03-planner-target-identity-and-affordance-binding.md](/home/joeloverbeck/projects/worldwake/specs/S03-planner-target-identity-and-affordance-binding.md)
   - centralizes exact target matching, not timing/suppression/preemption rules
 
 This draft is therefore the correct ownership point.
 
 ## Phase
-Post-E13 hardening. Do not schedule ahead of current phase gates without explicit reprioritization, but this should land before any further goal-family-specific reactive behavior work broadens the existing split.
-
-Recommended ordering:
-- after current phase commitments allow E13 hardening work
-- before expanding special-case priority overrides in E18, E19, or E20
+Phase 3: Information & Politics, Step 10 (parallel after E14)
 
 ## Crates
 - `worldwake-ai`
@@ -72,9 +68,7 @@ Recommended ordering:
 - `worldwake-core`
 
 ## Dependencies
-- archived E13 decision architecture
-- archived E13 ranking and interrupt tickets
-- active [E20-companion-behaviors.md](/home/joeloverbeck/projects/worldwake/specs/E20-companion-behaviors.md) as a downstream consumer
+- E14
 
 ## Design Goals
 1. Keep one authoritative AI-layer policy surface for goal-family decision behavior.
@@ -329,9 +323,9 @@ Derived transient state:
 
 ## Relationship to Existing and Future Specs
 - supersedes the Phase 2 narrow corpse-opportunism carve-out documented by archived E13 interrupt work
-- complements [DRAFT-commodity-opportunity-valuation.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-commodity-opportunity-valuation.md), which centralizes value calculation but not decision posture
+- complements [S06-commodity-opportunity-valuation.md](/home/joeloverbeck/projects/worldwake/specs/S06-commodity-opportunity-valuation.md), which centralizes value calculation but not decision posture
 - should be completed before broadening behavior-specific overrides in [E20-companion-behaviors.md](/home/joeloverbeck/projects/worldwake/specs/E20-companion-behaviors.md)
-- leaves planner target identity to [DRAFT-planner-target-identity-and-affordance-binding.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-planner-target-identity-and-affordance-binding.md)
+- leaves planner target identity to [S03-planner-target-identity-and-affordance-binding.md](/home/joeloverbeck/projects/worldwake/specs/S03-planner-target-identity-and-affordance-binding.md)
 
 ## Open Questions
 1. Should `BuryCorpse` remain non-interrupt-eligible even when `LootCorpse` stays opportunistic, or should both corpse interactions eventually share one opportunistic family policy?
