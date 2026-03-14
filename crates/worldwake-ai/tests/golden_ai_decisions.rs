@@ -2,6 +2,8 @@
 
 mod golden_harness;
 
+use std::collections::BTreeSet;
+
 use golden_harness::*;
 use worldwake_ai::JourneyCommitmentState;
 use worldwake_core::{
@@ -1031,9 +1033,82 @@ fn golden_goal_switching_during_multi_leg_travel() {
 
 #[test]
 fn golden_multi_hop_travel_plan() {
-    let mut h = GoldenHarness::new(Seed([79; 32]));
     let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+    let (mut h, agent) = setup_multi_hop_travel_scenario(bandit_camp);
+    let initial_hunger = h.agent_hunger(agent);
+    let mut observation = MultiHopTravelObservation::new();
+    observation.visited_places.push(bandit_camp);
 
+    for _ in 0..150 {
+        h.step_once();
+        if observe_multi_hop_travel_step(&h, agent, initial_hunger, &mut observation) {
+            break;
+        }
+    }
+
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::LeftBanditCamp),
+        "Agent should leave Bandit Camp to pursue distant food"
+    );
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::SawInTransit),
+        "Multi-hop travel should place the agent in transit before arrival"
+    );
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::ReachedOrchardFarm),
+        "Agent should eventually reach Orchard Farm from Bandit Camp; visited={:?}, final_place={:?}, blocked={:?}, active_actions={}",
+        observation.visited_places,
+        h.world.effective_place(agent),
+        h.world.get_component_blocked_intent_memory(agent),
+        h.scheduler.active_actions().len()
+    );
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::SawAppleLotAtOrchard),
+        "Agent should harvest apples at Orchard Farm rather than satisfying hunger locally"
+    );
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::HungerDecreasedAfterArrival),
+        "Agent should reduce hunger after completing the distant acquisition chain"
+    );
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum MultiHopTravelMilestone {
+    LeftBanditCamp,
+    SawInTransit,
+    ReachedOrchardFarm,
+    SawAppleLotAtOrchard,
+    HungerDecreasedAfterArrival,
+}
+
+struct MultiHopTravelObservation {
+    milestones: BTreeSet<MultiHopTravelMilestone>,
+    visited_places: Vec<worldwake_core::EntityId>,
+}
+
+impl MultiHopTravelObservation {
+    fn new() -> Self {
+        Self {
+            milestones: BTreeSet::new(),
+            visited_places: Vec::new(),
+        }
+    }
+}
+
+fn setup_multi_hop_travel_scenario(
+    bandit_camp: worldwake_core::EntityId,
+) -> (GoldenHarness, worldwake_core::EntityId) {
+    let mut h = GoldenHarness::new(Seed([79; 32]));
     let agent = seed_agent(
         &mut h.world,
         &mut h.event_log,
@@ -1043,21 +1118,19 @@ fn golden_multi_hop_travel_plan() {
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
-    {
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_perception_profile(
-            agent,
-            PerceptionProfile {
-                memory_capacity: 64,
-                memory_retention_ticks: 64,
-                observation_fidelity: pm(875),
-            },
-        )
-        .unwrap();
-        commit_txn(txn, &mut h.event_log);
-    }
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_perception_profile(
+        agent,
+        PerceptionProfile {
+            memory_capacity: 64,
+            memory_retention_ticks: 64,
+            observation_fidelity: pm(875),
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
 
-    let _orchard_source = place_workstation_with_source(
+    place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
         ORCHARD_FARM,
@@ -1077,77 +1150,67 @@ fn golden_multi_hop_travel_plan() {
         worldwake_core::Tick(0),
         worldwake_core::PerceptionSource::Inference,
     );
+    (h, agent)
+}
 
-    let initial_hunger = h.agent_hunger(agent);
-    let mut left_bandit_camp = false;
-    let mut saw_in_transit = false;
-    let mut reached_orchard_farm = false;
-    let mut saw_apple_lot_at_orchard = false;
-    let mut hunger_decreased_after_arrival = false;
-    let mut visited_places = vec![bandit_camp];
-
-    for _ in 0..150 {
-        h.step_once();
-
-        if h.world.is_in_transit(agent) {
-            saw_in_transit = true;
-            left_bandit_camp = true;
-        }
-
-        let current_place = h.world.effective_place(agent);
-        if let Some(place) = current_place {
-            if !visited_places.contains(&place) {
-                visited_places.push(place);
-            }
-        }
-        if current_place != Some(bandit_camp) {
-            left_bandit_camp = true;
-        }
-
-        if current_place == Some(ORCHARD_FARM) {
-            reached_orchard_farm = true;
-        }
-
-        let apple_lot_at_orchard = h
-            .world
-            .entities_effectively_at(ORCHARD_FARM)
-            .into_iter()
-            .any(|entity| {
-                h.world
-                    .get_component_item_lot(entity)
-                    .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
-            });
-        if apple_lot_at_orchard {
-            saw_apple_lot_at_orchard = true;
-        }
-
-        if reached_orchard_farm && h.agent_hunger(agent) < initial_hunger {
-            hunger_decreased_after_arrival = true;
-            break;
-        }
+fn observe_multi_hop_travel_step(
+    h: &GoldenHarness,
+    agent: worldwake_core::EntityId,
+    initial_hunger: worldwake_core::Permille,
+    observation: &mut MultiHopTravelObservation,
+) -> bool {
+    if h.world.is_in_transit(agent) {
+        observation
+            .milestones
+            .insert(MultiHopTravelMilestone::SawInTransit);
+        observation
+            .milestones
+            .insert(MultiHopTravelMilestone::LeftBanditCamp);
     }
 
-    assert!(
-        left_bandit_camp,
-        "Agent should leave Bandit Camp to pursue distant food"
-    );
-    assert!(
-        saw_in_transit,
-        "Multi-hop travel should place the agent in transit before arrival"
-    );
-    assert!(
-        reached_orchard_farm,
-        "Agent should eventually reach Orchard Farm from Bandit Camp; visited={visited_places:?}, final_place={:?}, blocked={:?}, active_actions={}",
-        h.world.effective_place(agent),
-        h.world.get_component_blocked_intent_memory(agent),
-        h.scheduler.active_actions().len()
-    );
-    assert!(
-        saw_apple_lot_at_orchard,
-        "Agent should harvest apples at Orchard Farm rather than satisfying hunger locally"
-    );
-    assert!(
-        hunger_decreased_after_arrival,
-        "Agent should reduce hunger after completing the distant acquisition chain"
-    );
+    let current_place = h.world.effective_place(agent);
+    if let Some(place) = current_place {
+        if !observation.visited_places.contains(&place) {
+            observation.visited_places.push(place);
+        }
+    }
+    if current_place != Some(prototype_place_entity(PrototypePlace::BanditCamp)) {
+        observation
+            .milestones
+            .insert(MultiHopTravelMilestone::LeftBanditCamp);
+    }
+    if current_place == Some(ORCHARD_FARM) {
+        observation
+            .milestones
+            .insert(MultiHopTravelMilestone::ReachedOrchardFarm);
+    }
+    if orchard_has_apple_lot(h) {
+        observation
+            .milestones
+            .insert(MultiHopTravelMilestone::SawAppleLotAtOrchard);
+    }
+    if observation
+        .milestones
+        .contains(&MultiHopTravelMilestone::ReachedOrchardFarm)
+        && h.agent_hunger(agent) < initial_hunger
+    {
+        observation
+            .milestones
+            .insert(MultiHopTravelMilestone::HungerDecreasedAfterArrival);
+    }
+
+    observation
+        .milestones
+        .contains(&MultiHopTravelMilestone::HungerDecreasedAfterArrival)
+}
+
+fn orchard_has_apple_lot(h: &GoldenHarness) -> bool {
+    h.world
+        .entities_effectively_at(ORCHARD_FARM)
+        .into_iter()
+        .any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
+        })
 }

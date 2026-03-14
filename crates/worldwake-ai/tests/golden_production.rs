@@ -217,6 +217,46 @@ fn run_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
 }
 
 fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, agent) = setup_capacity_constrained_ground_lot_pickup(seed);
+    let initial_hunger = h.agent_hunger(agent);
+    let mut outcome = CapacityConstrainedPickupOutcome::default();
+
+    for _ in 0..80 {
+        h.step_once();
+        if observe_capacity_constrained_pickup_step(&h, agent, initial_hunger, &mut outcome) {
+            break;
+        }
+    }
+
+    assert!(
+        outcome.saw_apple_materialize,
+        "Harvesting should materialize a two-apple ground lot before pickup"
+    );
+    assert!(
+        outcome.saw_split_pickup,
+        "Carry-capacity pressure should force a split pickup with both possessed and ground apple lots"
+    );
+    assert!(
+        outcome.hunger_decreased,
+        "Agent should consume an apple after the constrained split pickup"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[derive(Default)]
+struct CapacityConstrainedPickupOutcome {
+    saw_apple_materialize: bool,
+    saw_split_pickup: bool,
+    hunger_decreased: bool,
+}
+
+fn setup_capacity_constrained_ground_lot_pickup(
+    seed: Seed,
+) -> (GoldenHarness, EntityId) {
     let mut h = GoldenHarness::new(seed);
     let agent = seed_agent(
         &mut h.world,
@@ -256,81 +296,65 @@ fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash
 
     verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
     verify_authoritative_conservation(&h.world, CommodityKind::Apple, 10).unwrap();
+    (h, agent)
+}
 
-    let initial_hunger = h.agent_hunger(agent);
-    let mut saw_apple_materialize = false;
-    let mut saw_split_pickup = false;
-    let mut hunger_decreased = false;
+fn observe_capacity_constrained_pickup_step(
+    h: &GoldenHarness,
+    agent: EntityId,
+    initial_hunger: worldwake_core::Permille,
+    outcome: &mut CapacityConstrainedPickupOutcome,
+) -> bool {
+    let live_apples = total_live_lot_quantity(&h.world, CommodityKind::Apple);
+    let authoritative_apples =
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
 
-    for _ in 0..80 {
-        h.step_once();
-
-        let live_apples = total_live_lot_quantity(&h.world, CommodityKind::Apple);
-        let authoritative_apples =
-            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
-
-        if live_apples == 2 {
-            saw_apple_materialize = true;
-            verify_live_lot_conservation(&h.world, CommodityKind::Apple, 2).unwrap();
-            verify_authoritative_conservation(&h.world, CommodityKind::Apple, 10).unwrap();
-        }
-
-        if saw_apple_materialize {
-            let apple_lots_at_farm = h
-                .world
-                .entities_effectively_at(ORCHARD_FARM)
-                .into_iter()
-                .filter(|entity| {
-                    h.world
-                        .get_component_item_lot(*entity)
-                        .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
-                })
-                .collect::<Vec<_>>();
-
-            let has_possessed_apples = apple_lots_at_farm
-                .iter()
-                .any(|entity| h.world.possessor_of(*entity) == Some(agent));
-            let has_ground_apples = apple_lots_at_farm
-                .iter()
-                .any(|entity| h.world.possessor_of(*entity).is_none());
-            if has_possessed_apples && has_ground_apples {
-                saw_split_pickup = true;
-            }
-        }
-
-        if saw_split_pickup && h.agent_hunger(agent) < initial_hunger {
-            hunger_decreased = true;
-            assert_eq!(
-                live_apples, 1,
-                "One apple should remain after a split pickup followed by one consumption"
-            );
-            assert_eq!(
-                authoritative_apples, 9,
-                "Authoritative apple total should reflect one consumed apple after harvest"
-            );
-            verify_live_lot_conservation(&h.world, CommodityKind::Apple, 1).unwrap();
-            verify_authoritative_conservation(&h.world, CommodityKind::Apple, 9).unwrap();
-            break;
-        }
+    if live_apples == 2 {
+        outcome.saw_apple_materialize = true;
+        verify_live_lot_conservation(&h.world, CommodityKind::Apple, 2).unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, 10).unwrap();
     }
 
-    assert!(
-        saw_apple_materialize,
-        "Harvesting should materialize a two-apple ground lot before pickup"
-    );
-    assert!(
-        saw_split_pickup,
-        "Carry-capacity pressure should force a split pickup with both possessed and ground apple lots"
-    );
-    assert!(
-        hunger_decreased,
-        "Agent should consume an apple after the constrained split pickup"
-    );
+    if outcome.saw_apple_materialize && orchard_has_possessed_and_ground_apples(h, agent) {
+        outcome.saw_split_pickup = true;
+    }
 
-    (
-        hash_world(&h.world).unwrap(),
-        hash_event_log(&h.event_log).unwrap(),
-    )
+    if outcome.saw_split_pickup && h.agent_hunger(agent) < initial_hunger {
+        outcome.hunger_decreased = true;
+        assert_eq!(
+            live_apples, 1,
+            "One apple should remain after a split pickup followed by one consumption"
+        );
+        assert_eq!(
+            authoritative_apples, 9,
+            "Authoritative apple total should reflect one consumed apple after harvest"
+        );
+        verify_live_lot_conservation(&h.world, CommodityKind::Apple, 1).unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, 9).unwrap();
+    }
+
+    outcome.hunger_decreased
+}
+
+fn orchard_has_possessed_and_ground_apples(h: &GoldenHarness, agent: EntityId) -> bool {
+    let apple_lots_at_farm = h
+        .world
+        .entities_effectively_at(ORCHARD_FARM)
+        .into_iter()
+        .filter(|entity| {
+            h.world
+                .get_component_item_lot(*entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
+        })
+        .collect::<Vec<_>>();
+
+    let has_possessed_apples = apple_lots_at_farm
+        .iter()
+        .any(|entity| h.world.possessor_of(*entity) == Some(agent));
+    let has_ground_apples = apple_lots_at_farm
+        .iter()
+        .any(|entity| h.world.possessor_of(*entity).is_none());
+    has_possessed_apples && has_ground_apples
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
