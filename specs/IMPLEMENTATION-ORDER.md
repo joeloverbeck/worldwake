@@ -11,6 +11,9 @@ Established systems and ai crates: homeostatic needs and deprivation wounds, res
 ### FND-01: Phase 1 Foundations Alignment — COMPLETED
 Removed route scores, banned zero-tick actions, replaced load match-arms with physical profiles, renamed KnowledgeView→BeliefView, constrained loyalty mutations.
 
+### FND-02: Phase 2 Foundations Alignment — COMPLETED
+Aligned the E14/E15 specs with determinism and Section H requirements, preserved `SellCommodity` deferral until S04, wired treatment-oriented acquisition candidates, documented Phase 2 dampening, and added goal/event debuggability APIs.
+
 ### E21: CLI & Human Control — COMPLETED
 Pulled forward from Phase 4 post-Phase 2 as the primary manual testing interface.
 
@@ -21,9 +24,8 @@ All completed specs are archived under `archive/specs/`.
 ## Dependency Graph
 
 ```text
-Phase 1-2 + FND-01 + E21: COMPLETED
+Phase 1-2 + FND-01 + FND-02 + E21: COMPLETED
 
-FND-02 gate tickets ──→ E14
 E14 ──→ E15 (rumors build on perception)
 E14 ──→ E16 (succession needs beliefs/loyalty)
 E14 ──→ S01 (ownership claims need belief-mediated disputes)
@@ -44,35 +46,11 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 
 ## Active Execution Steps
 
-### FND-02 Gate (specs/FND-02-foundations-alignment-phase2.md)
-
-**Step 8.5a** (parallel, spec/analysis work):
-- **FND02-001**: Fix E14 spec — `f32`→`Permille`, `HashMap`→`BTreeMap`, add Section H analysis, define the E14/E16 loyalty evidence boundary, require full `OmniscientBeliefView` replacement
-- **FND02-004**: Dampening audit across Phase 2 systems — document all amplifying loops and their physical dampeners
-
-**Step 8.5b** (parallel, code work):
-- **FND02-002**: Preserve `SellCommodity` deferral until S04 — keep seller-side selling out of FND-02 and cover the invariant with regression tests
-- **FND02-003**: Wire `AcquireCommodity(Treatment)` emission in `candidate_generation.rs` — wounds → medicine-seeking
-- **FND02-005**: Debuggability APIs — `explain_goal()` in ai crate, `trace_event_cause()` in sim crate
-
-**FND02-006** (already done as part of FND-02 creation): DRAFT specs promoted to S01–S06.
-
-#### FND-02 Gate Criteria
-- [ ] E14 spec determinism-safe (no `f32`, no `HashMap` in authoritative state)
-- [ ] Phase 2 / FND-02 candidate coverage complete for currently supported, satisfiable goal variants; `SellCommodity` remains explicitly deferred to S04
-- [ ] Dampening audit documented (`docs/dampening-audit-phase2.md`)
-- [ ] Debuggability APIs (`explain_goal`, `trace_event_cause`) exist and tested
-- [ ] 6 DRAFTs promoted to S01–S06 ✅
-- [ ] `cargo test --workspace` passes
-
----
-
 ### Phase 3: Information & Politics
 
-**Step 9** (needs FND-02 gate):
+**Step 9** (after completed FND-02 gate):
 - **E14**: Perception & Belief System
   - Replaces `OmniscientBeliefView` entirely
-  - Implements FND02-001 belief-side requirements
   - Establishes the belief/evidence inputs later social systems use for loyalty/support modeling
   - Satisfies FND-01 Section B deferred information pipeline requirements
 
@@ -137,8 +115,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `FND-02-foundations-alignment-phase2.md` | FND-02 Gate | 8.5a/8.5b | Phase 2 complete |
-| `E14-perception-beliefs.md` | 3 | 9 | FND-02 gate |
+| `E14-perception-beliefs.md` | 3 | 9 | FND-02 complete |
 | `E15-rumor-witness-discovery.md` | 3 | 10 | E14 |
 | `E16-offices-succession-factions.md` | 3 | 10 | E14 |
 | `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |
@@ -172,7 +149,7 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | FND-01 | FND01-001–005 | Phase 1 foundations alignment | ✅ COMPLETED |
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
-| FND-02 | FND02-001–006 | Phase 2 foundations alignment | ACTIVE |
+| FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, S01–S03 | Information propagates, offices transfer | PENDING |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

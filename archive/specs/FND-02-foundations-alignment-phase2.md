@@ -1,6 +1,6 @@
 # FND-02: Phase 2 Foundations Alignment
 
-**Status**: ACTIVE
+**Status**: ✅ COMPLETED
 **Priority**: BLOCKER — must complete before Phase 3 implementation begins
 **Scope**: Strengthen Phase 2 code and specs to align with `docs/FOUNDATIONS.md`
 **Source**: Golden e2e test reports, Phase 2 alignment analysis
@@ -344,3 +344,20 @@ Before proceeding to Phase 3 (E14 implementation):
 | FND02-004 | audit document | All Phase 2 loops documented with physical dampeners |
 | FND02-005 | unit tests | explain_goal returns structured explanation; trace_event_cause returns causal ancestry |
 | FND02-006 | file listing | No DRAFT-*.md files; S01-S06 exist and appear in IMPLEMENTATION-ORDER.md |
+
+## Outcome
+
+- Completion date: 2026-03-14
+- What actually changed:
+  - `specs/E14-perception-beliefs.md` was updated to use `BTreeMap` and `Permille`, add the Section H foundations analysis, define the E14/E16 social-evidence boundary, and require full `OmniscientBeliefView` replacement.
+  - `specs/E15-rumor-witness-discovery.md` now uses `Permille` confidence language consistent with E14.
+  - `crates/worldwake-ai/src/candidate_generation.rs` preserves `SellCommodity` deferral until S04, adds treatment-oriented `AcquireCommodity` emission, and carries regression coverage for both behaviors.
+  - `docs/dampening-audit-phase2.md` documents the implemented Phase 2 amplifying loops and their concrete dampeners.
+  - `crates/worldwake-ai/src/goal_explanation.rs` adds `GoalExplanation` and `explain_goal()` coverage.
+  - `trace_event_cause()` exists on `worldwake_core::EventLog`, with CLI/tests updated to use the ancestry-oriented API.
+- Deviations from original plan:
+  - The causal-trace API landed on the existing core event-log type instead of a new `worldwake-sim` module because the authoritative event log already lives in `worldwake-core`.
+  - `explain_goal()` takes `&UtilityProfile` and returns motive values as `u32`, matching the current ranking pipeline instead of the earlier draft signature.
+- Verification results:
+  - FND-02 completion artifacts are present in-tree: updated E14/E15 specs, `docs/dampening-audit-phase2.md`, `crates/worldwake-ai/src/goal_explanation.rs`, `EventLog::trace_event_cause()`, and treatment/deferred-sell candidate coverage in `candidate_generation.rs`.
+  - Implementation order updated alongside archival so the roadmap no longer treats FND-02 as an active gate spec.
