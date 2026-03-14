@@ -138,6 +138,35 @@ pub enum PerceptionSource {
     Inference,
 }
 
+const DIRECT_OBSERVATION_CONFIDENCE_BASE: u16 = 950;
+const REPORT_CONFIDENCE_BASE: u16 = 780;
+const RUMOR_CONFIDENCE_BASE: u16 = 560;
+const INFERENCE_CONFIDENCE_BASE: u16 = 420;
+const REPORT_CHAIN_PENALTY: u16 = 90;
+const RUMOR_CHAIN_PENALTY: u16 = 110;
+const STALENESS_CONFIDENCE_PENALTY: u16 = 12;
+
+/// Derives confidence from provenance and age without storing abstract authority state.
+#[must_use]
+pub fn belief_confidence(source: &PerceptionSource, staleness_ticks: u64) -> Permille {
+    let base = match *source {
+        PerceptionSource::DirectObservation => DIRECT_OBSERVATION_CONFIDENCE_BASE,
+        PerceptionSource::Report { chain_len, .. } => REPORT_CONFIDENCE_BASE.saturating_sub(
+            REPORT_CHAIN_PENALTY.saturating_mul(u16::from(chain_len.saturating_sub(1))),
+        ),
+        PerceptionSource::Rumor { chain_len } => RUMOR_CONFIDENCE_BASE.saturating_sub(
+            RUMOR_CHAIN_PENALTY.saturating_mul(u16::from(chain_len.saturating_sub(1))),
+        ),
+        PerceptionSource::Inference => INFERENCE_CONFIDENCE_BASE,
+    };
+    let staleness_penalty = u16::try_from(staleness_ticks)
+        .unwrap_or(u16::MAX)
+        .saturating_mul(STALENESS_CONFIDENCE_PENALTY);
+
+    Permille::new(base.saturating_sub(staleness_penalty))
+        .expect("belief confidence derivation always yields a valid permille")
+}
+
 /// A witnessed social fact retained in belief memory.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SocialObservation {
@@ -220,8 +249,9 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 #[cfg(test)]
 mod tests {
     use super::{
-        build_believed_entity_state, AgentBeliefStore, BelievedEntityState, PerceptionProfile,
-        MismatchKind, PerceptionSource, SocialObservation, SocialObservationKind, TellProfile,
+        belief_confidence, build_believed_entity_state, AgentBeliefStore, BelievedEntityState,
+        MismatchKind, PerceptionProfile, PerceptionSource, SocialObservation,
+        SocialObservationKind, TellProfile,
     };
     use crate::{
         build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
@@ -520,6 +550,81 @@ mod tests {
         let roundtrip: TellProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn belief_confidence_orders_sources_by_provenance() {
+        let direct = belief_confidence(&PerceptionSource::DirectObservation, 0);
+        let report = belief_confidence(
+            &PerceptionSource::Report {
+                from: entity(7),
+                chain_len: 1,
+            },
+            0,
+        );
+        let rumor = belief_confidence(&PerceptionSource::Rumor { chain_len: 1 }, 0);
+        let inference = belief_confidence(&PerceptionSource::Inference, 0);
+
+        assert!(direct > report);
+        assert!(report > rumor);
+        assert!(rumor > inference);
+        assert_eq!(direct, Permille::new(950).unwrap());
+    }
+
+    #[test]
+    fn belief_confidence_penalizes_deeper_report_and_rumor_chains() {
+        let report_shallow = belief_confidence(
+            &PerceptionSource::Report {
+                from: entity(1),
+                chain_len: 1,
+            },
+            0,
+        );
+        let report_deep = belief_confidence(
+            &PerceptionSource::Report {
+                from: entity(1),
+                chain_len: 3,
+            },
+            0,
+        );
+        let rumor_shallow = belief_confidence(&PerceptionSource::Rumor { chain_len: 1 }, 0);
+        let rumor_deep = belief_confidence(&PerceptionSource::Rumor { chain_len: 3 }, 0);
+
+        assert!(report_deep < report_shallow);
+        assert!(rumor_deep < rumor_shallow);
+    }
+
+    #[test]
+    fn belief_confidence_monotonically_decays_with_staleness() {
+        let fresh = belief_confidence(&PerceptionSource::DirectObservation, 0);
+        let slightly_stale = belief_confidence(&PerceptionSource::DirectObservation, 5);
+        let stale = belief_confidence(&PerceptionSource::DirectObservation, 10);
+
+        assert!(slightly_stale < fresh);
+        assert!(stale < slightly_stale);
+    }
+
+    #[test]
+    fn belief_confidence_saturates_at_zero_for_large_staleness() {
+        let stale_report = belief_confidence(
+            &PerceptionSource::Report {
+                from: entity(4),
+                chain_len: 5,
+            },
+            u64::MAX,
+        );
+
+        assert_eq!(stale_report, Permille::new(0).unwrap());
+    }
+
+    #[test]
+    fn belief_confidence_is_deterministic_for_identical_inputs() {
+        let source = PerceptionSource::Report {
+            from: entity(9),
+            chain_len: 2,
+        };
+
+        assert_eq!(belief_confidence(&source, 7), belief_confidence(&source, 7));
     }
 
     #[test]
