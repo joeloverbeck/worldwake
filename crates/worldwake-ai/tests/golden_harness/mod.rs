@@ -61,33 +61,25 @@ pub fn commit_txn(txn: WorldTxn<'_>, event_log: &mut EventLog) {
     let _ = txn.commit(event_log);
 }
 
-pub fn refresh_test_beliefs(world: &mut World, event_log: &mut EventLog, observed_tick: Tick) {
-    let updates = world
-        .query_agent_data()
-        .map(|(agent, _)| {
-            let mut store = world
-                .get_component_agent_belief_store(agent)
-                .cloned()
-                .unwrap_or_else(AgentBeliefStore::new);
-            for entity in world.entities() {
-                if entity == agent {
-                    continue;
-                }
-                if let Some(snapshot) = build_believed_entity_state(
-                    world,
-                    entity,
-                    observed_tick,
-                    PerceptionSource::DirectObservation,
-                ) {
-                    store.update_entity(entity, snapshot);
-                }
-            }
-            (agent, store)
-        })
-        .collect::<Vec<_>>();
-
-    if updates.is_empty() {
-        return;
+pub fn seed_actor_beliefs(
+    world: &mut World,
+    event_log: &mut EventLog,
+    actor: EntityId,
+    entities: &[EntityId],
+    observed_tick: Tick,
+    source: PerceptionSource,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(actor)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    for entity in entities {
+        if *entity == actor {
+            continue;
+        }
+        if let Some(snapshot) = build_believed_entity_state(world, *entity, observed_tick, source) {
+            store.update_entity(*entity, snapshot);
+        }
     }
 
     let mut txn = WorldTxn::new(
@@ -99,11 +91,43 @@ pub fn refresh_test_beliefs(world: &mut World, event_log: &mut EventLog, observe
         VisibilitySpec::Hidden,
         WitnessData::default(),
     );
-    for (agent, store) in updates {
-        txn.set_component_agent_belief_store(agent, store)
-            .expect("golden harness should keep belief stores writable");
-    }
+    txn.set_component_agent_belief_store(actor, store)
+        .expect("golden harness should keep belief stores writable");
     commit_txn(txn, event_log);
+}
+
+pub fn seed_actor_local_beliefs(
+    world: &mut World,
+    event_log: &mut EventLog,
+    actor: EntityId,
+    observed_tick: Tick,
+    source: PerceptionSource,
+) {
+    let entities = world
+        .effective_place(actor)
+        .map(|place| {
+            world
+                .entities_effectively_at(place)
+                .into_iter()
+                .filter(|entity| *entity != actor)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    seed_actor_beliefs(world, event_log, actor, &entities, observed_tick, source);
+}
+
+pub fn seed_actor_world_beliefs(
+    world: &mut World,
+    event_log: &mut EventLog,
+    actor: EntityId,
+    observed_tick: Tick,
+    source: PerceptionSource,
+) {
+    let entities = world
+        .entities()
+        .filter(|entity| *entity != actor)
+        .collect::<Vec<_>>();
+    seed_actor_beliefs(world, event_log, actor, &entities, observed_tick, source);
 }
 
 pub fn build_harvest_apple_recipe() -> RecipeDefinition {
@@ -233,7 +257,6 @@ pub fn seed_agent_with_recipes(
     txn.set_component_known_recipes(agent, known_recipes)
         .unwrap();
     commit_txn(txn, event_log);
-    refresh_test_beliefs(world, event_log, Tick(0));
     agent
 }
 
@@ -251,7 +274,6 @@ pub fn give_commodity(
     txn.set_ground_location(lot, place).unwrap();
     txn.set_possessor(lot, agent).unwrap();
     commit_txn(txn, event_log);
-    refresh_test_beliefs(world, event_log, Tick(0));
     lot
 }
 
@@ -270,7 +292,6 @@ pub fn set_queue_patience(
     )
     .unwrap();
     commit_txn(txn, event_log);
-    refresh_test_beliefs(world, event_log, Tick(0));
 }
 
 /// Place a workstation+resource-source entity at a location.
@@ -291,7 +312,6 @@ pub fn place_workstation_with_source(
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
     commit_txn(txn, event_log);
-    refresh_test_beliefs(world, event_log, Tick(0));
     ws
 }
 
@@ -314,7 +334,6 @@ pub fn place_exclusive_workstation_with_source(
     txn.set_component_facility_use_queue(ws, FacilityUseQueue::default())
         .unwrap();
     commit_txn(txn, event_log);
-    refresh_test_beliefs(world, event_log, Tick(0));
     ws
 }
 
@@ -330,7 +349,6 @@ pub fn place_workstation(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     commit_txn(txn, event_log);
-    refresh_test_beliefs(world, event_log, Tick(0));
     ws
 }
 
@@ -343,7 +361,6 @@ pub fn add_hostility(
     let mut txn = new_txn(world, 0);
     txn.add_hostility(subject, target).unwrap();
     commit_txn(txn, event_log);
-    refresh_test_beliefs(world, event_log, Tick(0));
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +403,7 @@ impl GoldenHarness {
 
     pub fn step_once(&mut self) -> TickStepResult {
         let mut controllers = AutonomousControllerRuntime::new(vec![&mut self.driver]);
-        let result = step_tick(
+        step_tick(
             &mut self.world,
             &mut self.event_log,
             &mut self.scheduler,
@@ -400,13 +417,7 @@ impl GoldenHarness {
                 input_producer: Some(&mut controllers),
             },
         )
-        .unwrap();
-        refresh_test_beliefs(
-            &mut self.world,
-            &mut self.event_log,
-            self.scheduler.current_tick(),
-        );
-        result
+        .unwrap()
     }
 
     pub fn snapshot_state(&self) -> SimulationState {
@@ -517,5 +528,89 @@ impl GoldenHarness {
 
     pub fn agent_commodity_qty(&self, agent: EntityId, kind: CommodityKind) -> Quantity {
         self.world.controlled_commodity_quantity(agent, kind)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use worldwake_sim::{BeliefView, PerAgentBeliefView};
+
+    #[test]
+    fn setup_does_not_seed_remote_beliefs_by_default() {
+        let mut h = GoldenHarness::new(Seed([41; 32]));
+        let observer = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Observer",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let remote = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Remote",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let view = PerAgentBeliefView::from_world(observer, &h.world);
+        assert_eq!(
+            view.effective_place(remote),
+            None,
+            "default setup should not leak remote entity knowledge"
+        );
+    }
+
+    #[test]
+    fn explicit_local_belief_seeding_is_bounded_to_colocated_entities() {
+        let mut h = GoldenHarness::new(Seed([42; 32]));
+        let observer = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Observer",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let local = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Local",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let remote = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Remote",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            observer,
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+
+        let view = PerAgentBeliefView::from_world(observer, &h.world);
+        assert_eq!(view.effective_place(local), Some(VILLAGE_SQUARE));
+        assert_eq!(
+            view.effective_place(remote),
+            None,
+            "bounded local seeding must not leak remote knowledge"
+        );
     }
 }

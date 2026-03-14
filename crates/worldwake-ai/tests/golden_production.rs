@@ -10,8 +10,8 @@ use worldwake_core::{
     verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact, BodyPart,
     CarryCapacity, CombatProfile, CommodityKind, DeprivationExposure, DeprivationKind, EntityId,
     EventTag, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile,
-    Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile, WorkstationTag, Wound,
-    WoundCause, WoundId, WoundList,
+    PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
+    WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 
 // ---------------------------------------------------------------------------
@@ -246,6 +246,13 @@ fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash
             last_regeneration_tick: None,
         },
     );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
 
     verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
     verify_authoritative_conservation(&h.world, CommodityKind::Apple, 10).unwrap();
@@ -412,6 +419,26 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+    );
+    {
+        let mut txn = new_txn(&mut harness.world, 0);
+        txn.set_component_perception_profile(
+            crafter,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 64,
+                observation_fidelity: pm(875),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut harness.event_log);
+    }
+    seed_actor_world_beliefs(
+        &mut harness.world,
+        &mut harness.event_log,
+        crafter,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
     );
 
     MaterializedOutputTheftScenario {
@@ -936,6 +963,20 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        fragile,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        healthy,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
 
     let mut saw_fragile_join_queue = false;
     let mut saw_healthy_join_behind_fragile = false;
@@ -1089,6 +1130,15 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
 
     {
         let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(
+            patient,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 64,
+                observation_fidelity: pm(875),
+            },
+        )
+        .unwrap();
         let mut queue = txn
             .get_component_facility_use_queue(facility_a)
             .cloned()
@@ -1103,6 +1153,13 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        patient,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
 
     let initial_hunger = h.agent_hunger(patient);
     let mut joined_facility_a = false;
@@ -1244,6 +1301,19 @@ fn run_grant_expiry_before_intended_action_scenario(
             ..UtilityProfile::default()
         },
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(
+            agent,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 64,
+                observation_fidelity: pm(875),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
     give_commodity(
         &mut h.world,
         &mut h.event_log,
@@ -1266,6 +1336,13 @@ fn run_grant_expiry_before_intended_action_scenario(
             last_regeneration_tick: None,
         },
         nz(1),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
     );
 
     let initial_hunger = h.agent_hunger(agent);

@@ -86,7 +86,13 @@ fn seed_fragile_deprivation_victim(h: &mut GoldenHarness) -> worldwake_core::Ent
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
-    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
 
     give_commodity(
         &mut h.world,
@@ -171,7 +177,13 @@ fn build_loot_suppressed_under_self_care_scenario(
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
         commit_txn(txn, &mut h.event_log);
-        refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            scavenger,
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
     }
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
@@ -214,7 +226,13 @@ fn seed_bleeding_recovery_patient(h: &mut GoldenHarness) -> worldwake_core::Enti
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
-    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        patient,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
 
     patient
 }
@@ -435,7 +453,7 @@ fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
 #[test]
 fn golden_bury_corpse() {
     let mut h = GoldenHarness::new(Seed([14; 32]));
-    let _burier = seed_agent(
+    let burier = seed_agent(
         &mut h.world,
         &mut h.event_log,
         "Burier",
@@ -463,7 +481,13 @@ fn golden_bury_corpse() {
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
         commit_txn(txn, &mut h.event_log);
-        refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            burier,
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
     }
 
     for _ in 0..50 {
@@ -558,7 +582,13 @@ fn build_death_while_traveling_scenario(
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
-    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
 
     give_commodity(
         &mut h.world,
@@ -569,7 +599,7 @@ fn build_death_while_traveling_scenario(
         Quantity(5),
     );
 
-    place_workstation_with_source(
+    let _orchard_source = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
         ORCHARD_FARM,
@@ -581,6 +611,13 @@ fn build_death_while_traveling_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+    );
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
     );
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
@@ -729,7 +766,20 @@ fn build_living_combat_scenario(
     txn.set_component_combat_profile(defender, living_combat_defender_profile())
         .unwrap();
     commit_txn(txn, &mut h.event_log);
-    refresh_test_beliefs(&mut h.world, &mut h.event_log, Tick(0));
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        attacker,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        defender,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
 
     give_commodity(
         &mut h.world,

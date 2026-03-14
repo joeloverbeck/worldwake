@@ -8,7 +8,7 @@ use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     total_live_lot_quantity, CommodityKind, DemandMemory, DemandObservation,
     DemandObservationReason, EventTag, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
+    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
     TradeDispositionProfile, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::RecipeRegistry;
@@ -222,6 +222,15 @@ fn run_merchant_restock_return_stock_scenario(
     );
 
     let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_perception_profile(
+        merchant,
+        PerceptionProfile {
+            memory_capacity: 64,
+            memory_retention_ticks: 240,
+            observation_fidelity: pm(875),
+        },
+    )
+    .unwrap();
     txn.set_component_merchandise_profile(
         merchant,
         MerchandiseProfile {
@@ -238,6 +247,13 @@ fn run_merchant_restock_return_stock_scenario(
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
 
     let initial_merchant_apples = h.agent_commodity_qty(merchant, CommodityKind::Apple);
     let initial_authoritative_apples =

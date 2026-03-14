@@ -6,8 +6,8 @@ use golden_harness::*;
 use worldwake_ai::JourneyCommitmentState;
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, CommodityKind, HomeostaticNeeds,
-    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, TravelDispositionProfile,
-    UtilityProfile, WorkstationTag,
+    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed,
+    TravelDispositionProfile, UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -705,6 +705,14 @@ fn golden_bladder_relief_with_travel() {
             ..UtilityProfile::default()
         },
     );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        &[PUBLIC_LATRINE],
+        worldwake_core::Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
 
     let initial_bladder = h.agent_bladder(agent);
     let mut reached_latrine = false;
@@ -834,6 +842,15 @@ fn golden_goal_switching_during_multi_leg_travel() {
             },
         )
         .unwrap();
+        txn.set_component_perception_profile(
+            agent,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 64,
+                observation_fidelity: pm(875),
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -846,7 +863,7 @@ fn golden_goal_switching_during_multi_leg_travel() {
         Quantity(1),
     );
 
-    place_workstation_with_source(
+    let _orchard_source = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
         ORCHARD_FARM,
@@ -858,6 +875,13 @@ fn golden_goal_switching_during_multi_leg_travel() {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+    );
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        worldwake_core::Tick(0),
+        worldwake_core::PerceptionSource::Inference,
     );
 
     let initial_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
@@ -1019,8 +1043,21 @@ fn golden_multi_hop_travel_plan() {
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(
+            agent,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 64,
+                observation_fidelity: pm(875),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
 
-    place_workstation_with_source(
+    let _orchard_source = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
         ORCHARD_FARM,
@@ -1032,6 +1069,13 @@ fn golden_multi_hop_travel_plan() {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+    );
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        worldwake_core::Tick(0),
+        worldwake_core::PerceptionSource::Inference,
     );
 
     let initial_hunger = h.agent_hunger(agent);
