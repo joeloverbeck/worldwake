@@ -166,7 +166,7 @@ pub fn handle_trace(sim: &SimulationState, id: u64) -> CommandResult {
         )));
     }
 
-    let chain = trace_cause_chain_capped(log, event_id);
+    let chain = trace_backward_display_chain_capped(log, event_id);
     let capped = chain.len() >= MAX_TRACE_HOPS;
 
     println!("Causal trace from [E{id}]:");
@@ -188,23 +188,19 @@ pub fn handle_trace(sim: &SimulationState, id: u64) -> CommandResult {
 /// Maximum hops for causal trace to guard against unreasonably long chains.
 const MAX_TRACE_HOPS: usize = 100;
 
-/// Walk the cause chain backward, capped at `MAX_TRACE_HOPS`.
-///
-/// Similar to `EventLog::trace_cause_chain` but with a hop limit.
-fn trace_cause_chain_capped(log: &EventLog, start: EventId) -> Vec<EventId> {
-    let mut chain = Vec::new();
-    let mut current = start;
+/// Build the backward display trace `[self, parent, ...]`, capped at `MAX_TRACE_HOPS`.
+fn trace_backward_display_chain_capped(log: &EventLog, start: EventId) -> Vec<EventId> {
+    let mut chain = vec![start];
+    let ancestors = log.trace_event_cause(start);
+    let keep = MAX_TRACE_HOPS.saturating_sub(1);
 
-    for _ in 0..MAX_TRACE_HOPS {
-        let Some(record) = log.get(current) else {
-            break;
-        };
-        chain.push(current);
+    if keep == 0 {
+        return chain;
+    }
 
-        match record.cause {
-            CauseRef::Event(cause_id) => current = cause_id,
-            CauseRef::Bootstrap | CauseRef::SystemTick(_) | CauseRef::ExternalInput(_) => break,
-        }
+    let start_index = ancestors.len().saturating_sub(keep);
+    for &ancestor in ancestors[start_index..].iter().rev() {
+        chain.push(ancestor);
     }
 
     chain
@@ -360,8 +356,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify the chain is correct via EventLog API.
-        let chain = sim.event_log().trace_cause_chain(grandchild);
-        assert_eq!(chain, vec![grandchild, child, root]);
+        let chain = sim.event_log().trace_event_cause(grandchild);
+        assert_eq!(chain, vec![root, child]);
     }
 
     #[test]
@@ -375,8 +371,8 @@ mod tests {
         let result = handle_trace(&sim, root.0);
         assert!(result.is_ok());
 
-        let chain = sim.event_log().trace_cause_chain(root);
-        assert_eq!(chain, vec![root]);
+        let chain = sim.event_log().trace_event_cause(root);
+        assert_eq!(chain, Vec::<EventId>::new());
     }
 
     #[test]

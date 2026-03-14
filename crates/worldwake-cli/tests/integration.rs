@@ -297,11 +297,10 @@ fn test_event_trace_backward() {
         if let Some(record) = ctx.sim.event_log().get(eid) {
             if matches!(record.cause, worldwake_core::cause::CauseRef::Event(_)) {
                 // Trace backward — verify chain terminates at a root event.
-                let chain = ctx.sim.event_log().trace_cause_chain(eid);
-                assert!(!chain.is_empty());
+                let chain = ctx.sim.event_log().trace_event_cause(eid);
 
-                // Last element in chain should be a root (non-Event cause).
-                let root_id = *chain.last().unwrap();
+                // First ancestor in the chain should be a root (non-Event cause).
+                let root_id = *chain.first().unwrap();
                 let root = ctx.sim.event_log().get(root_id).unwrap();
                 assert!(
                     !matches!(root.cause, worldwake_core::cause::CauseRef::Event(_)),

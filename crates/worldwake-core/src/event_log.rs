@@ -102,19 +102,18 @@ impl EventLog {
     }
 
     #[must_use]
-    pub fn trace_cause_chain(&self, event_id: EventId) -> Vec<EventId> {
-        let mut chain = Vec::new();
+    pub fn trace_event_cause(&self, event_id: EventId) -> Vec<EventId> {
+        let mut ancestors = Vec::new();
         let mut current_id = event_id;
 
         while let Some(record) = self.get(current_id) {
-            chain.push(current_id);
-
             match record.cause {
                 CauseRef::Event(cause_id) => {
                     debug_assert!(
                         cause_id < current_id,
                         "validated event log contains non-backward cause {current_id:?} -> {cause_id:?}"
                     );
+                    ancestors.push(cause_id);
                     current_id = cause_id;
                 }
                 CauseRef::Bootstrap | CauseRef::SystemTick(_) | CauseRef::ExternalInput(_) => {
@@ -123,14 +122,14 @@ impl EventLog {
             }
         }
 
-        chain
+        ancestors.reverse();
+        ancestors
     }
 
     #[must_use]
     pub fn causal_depth(&self, event_id: EventId) -> u32 {
-        self.trace_cause_chain(event_id)
+        self.trace_event_cause(event_id)
             .len()
-            .saturating_sub(1)
             .try_into()
             .expect("causal chain length exceeds u32")
     }
@@ -493,31 +492,31 @@ mod tests {
     }
 
     #[test]
-    fn trace_cause_chain_returns_only_the_root_event_for_explicit_root_causes() {
+    fn trace_event_cause_returns_empty_for_explicit_root_causes() {
         let mut log = EventLog::new();
 
         let bootstrap = log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
         let tick = log.emit(pending_with_cause(Tick(2), CauseRef::SystemTick(Tick(2))));
         let input = log.emit(pending_with_cause(Tick(3), CauseRef::ExternalInput(9)));
 
-        assert_eq!(log.trace_cause_chain(bootstrap), vec![bootstrap]);
-        assert_eq!(log.trace_cause_chain(tick), vec![tick]);
-        assert_eq!(log.trace_cause_chain(input), vec![input]);
+        assert_eq!(log.trace_event_cause(bootstrap), Vec::<EventId>::new());
+        assert_eq!(log.trace_event_cause(tick), Vec::<EventId>::new());
+        assert_eq!(log.trace_event_cause(input), Vec::<EventId>::new());
         assert_eq!(log.causal_depth(bootstrap), 0);
         assert_eq!(log.causal_depth(tick), 0);
         assert_eq!(log.causal_depth(input), 0);
     }
 
     #[test]
-    fn trace_cause_chain_and_causal_depth_follow_a_linear_event_chain() {
+    fn trace_event_cause_and_causal_depth_follow_a_linear_event_chain() {
         let mut log = EventLog::new();
 
         let root = log.emit(pending_with_cause(Tick(1), CauseRef::Bootstrap));
         let middle = log.emit(pending_with_cause(Tick(2), CauseRef::Event(root)));
         let leaf = log.emit(pending_with_cause(Tick(3), CauseRef::Event(middle)));
 
-        assert_eq!(log.trace_cause_chain(leaf), vec![leaf, middle, root]);
-        assert_eq!(log.trace_cause_chain(middle), vec![middle, root]);
+        assert_eq!(log.trace_event_cause(leaf), vec![root, middle]);
+        assert_eq!(log.trace_event_cause(middle), vec![root]);
         assert_eq!(log.causal_depth(leaf), 2);
         assert_eq!(log.causal_depth(middle), 1);
     }
@@ -549,8 +548,8 @@ mod tests {
 
         assert_eq!(roundtrip, log);
         assert_eq!(roundtrip.get_effects(root), &[child, sibling]);
-        assert_eq!(roundtrip.trace_cause_chain(child), vec![child, root]);
-        assert_eq!(roundtrip.trace_cause_chain(sibling), vec![sibling, root]);
+        assert_eq!(roundtrip.trace_event_cause(child), vec![root]);
+        assert_eq!(roundtrip.trace_event_cause(sibling), vec![root]);
     }
 
     #[test]
