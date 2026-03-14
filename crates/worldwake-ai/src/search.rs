@@ -234,9 +234,8 @@ fn search_candidates(
             .into_iter()
             .map(search_candidate_from_planner),
     );
-    candidates.retain(|candidate| {
-        !candidate_uses_blocked_facility_use(candidate, &node.state, registry)
-    });
+    candidates
+        .retain(|candidate| !candidate_uses_blocked_facility_use(candidate, &node.state, registry));
     candidates
 }
 
@@ -434,24 +433,23 @@ mod tests {
     use crate::planner_ops::planner_only_candidates;
     use crate::{
         build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
-        build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal,
-        PlanTerminalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget,
-        PlanningEntityRef, PlanningSnapshot, PlanningState,
+        build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanTerminalKind,
+        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
+        PlanningSnapshot, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, prototype_place_entity,
         test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent,
-        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId,
-        EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Place, PrototypePlace, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound,
+        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
+        EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
+        InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
+        Place, PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, BeliefView,

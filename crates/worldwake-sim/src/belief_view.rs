@@ -4,8 +4,8 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
     DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
     InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity,
-    RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 
 pub trait BeliefView {

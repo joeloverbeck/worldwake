@@ -5,12 +5,12 @@ use crate::{
     BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
     ComponentTables, ComponentValue, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
-    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue,
-    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-    MerchandiseProfile, MetabolismProfile, Name, PerceptionProfile, PlaceTag, ProductionJob,
-    ProvenanceEntry, Quantity, RelationTables, ResourceSource, SubstitutePreferences, Tick,
-    Topology, TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, WorkstationMarker, WorldError, WoundList,
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
+    InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+    MetabolismProfile, Name, PerceptionProfile, PlaceTag, ProductionJob, ProvenanceEntry, Quantity,
+    RelationTables, ResourceSource, SubstitutePreferences, Tick, Topology, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker,
+    WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -579,10 +579,10 @@ mod tests {
         DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
         MetabolismProfile, Name, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
-        ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
-        ResourceSource, SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
-        Wound, WoundCause, WoundList,
+        ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
+        SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
+        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -4977,28 +4977,16 @@ mod tests {
             .insert_component_wound_list(archived_named_agent, sample_wound_list())
             .unwrap();
         world
-            .insert_component_agent_belief_store(
-                live_named_agent,
-                sample_agent_belief_store(),
-            )
+            .insert_component_agent_belief_store(live_named_agent, sample_agent_belief_store())
             .unwrap();
         world
-            .insert_component_agent_belief_store(
-                archived_named_agent,
-                sample_agent_belief_store(),
-            )
+            .insert_component_agent_belief_store(archived_named_agent, sample_agent_belief_store())
             .unwrap();
         world
-            .insert_component_perception_profile(
-                live_named_agent,
-                sample_perception_profile(),
-            )
+            .insert_component_perception_profile(live_named_agent, sample_perception_profile())
             .unwrap();
         world
-            .insert_component_perception_profile(
-                archived_named_agent,
-                sample_perception_profile(),
-            )
+            .insert_component_perception_profile(archived_named_agent, sample_perception_profile())
             .unwrap();
         world
             .insert_component_drive_thresholds(live_named_agent, sample_drive_thresholds())

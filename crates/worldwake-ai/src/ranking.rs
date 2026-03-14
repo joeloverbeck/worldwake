@@ -355,16 +355,14 @@ fn recipe_output_motive_score(
     context: &RankingContext<'_>,
     recipes: &RecipeRegistry,
 ) -> u32 {
-    recipes
-        .get(recipe_id)
-        .map_or(0, |recipe| {
-            recipe
-                .outputs
-                .iter()
-                .map(|(commodity, _)| commodity_goal_motive_score(*commodity, context))
-                .max()
-                .unwrap_or(0)
-        })
+    recipes.get(recipe_id).map_or(0, |recipe| {
+        recipe
+            .outputs
+            .iter()
+            .map(|(commodity, _)| commodity_goal_motive_score(*commodity, context))
+            .max()
+            .unwrap_or(0)
+    })
 }
 
 fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
@@ -480,9 +478,9 @@ mod tests {
         BodyCostPerTick, BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind,
         CommodityPurpose, DemandObservation, DemandObservationReason, DeprivationKind,
         DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,

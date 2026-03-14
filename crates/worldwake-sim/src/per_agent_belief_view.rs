@@ -8,9 +8,9 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BelievedEntityState, CarryCapacity,
     CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId,
-    ResourceSource, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItemKind, WorkstationTag, World, Wound,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
+    Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
+    WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -118,7 +118,8 @@ impl BeliefView for PerAgentBeliefView<'_> {
             return self.world.is_alive(entity);
         }
 
-        self.believed_entity(entity).is_some_and(|state| state.alive)
+        self.believed_entity(entity)
+            .is_some_and(|state| state.alive)
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
@@ -149,7 +150,9 @@ impl BeliefView for PerAgentBeliefView<'_> {
             .belief_store
             .known_entities
             .iter()
-            .filter_map(|(entity, state)| (state.last_known_place == Some(place)).then_some(*entity))
+            .filter_map(|(entity, state)| {
+                (state.last_known_place == Some(place)).then_some(*entity)
+            })
             .collect::<Vec<_>>();
         if self.world.effective_place(self.agent) == Some(place) {
             entities.push(self.agent);
@@ -234,9 +237,14 @@ impl BeliefView for PerAgentBeliefView<'_> {
     }
 
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        let accessible = self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
         accessible
-            .then(|| self.world.get_component_item_lot(entity).map(|lot| lot.commodity))
+            .then(|| {
+                self.world
+                    .get_component_item_lot(entity)
+                    .map(|lot| lot.commodity)
+            })
             .flatten()
     }
 
@@ -246,13 +254,19 @@ impl BeliefView for PerAgentBeliefView<'_> {
     }
 
     fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible = self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible.then(|| self.world.direct_container(entity)).flatten()
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.direct_container(entity))
+            .flatten()
     }
 
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible = self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible.then(|| self.world.possessor_of(entity)).flatten()
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.possessor_of(entity))
+            .flatten()
     }
 
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
@@ -283,7 +297,8 @@ impl BeliefView for PerAgentBeliefView<'_> {
         self.world
             .get_component_facility_use_queue(facility)
             .and_then(|queue| {
-                queue.waiting
+                queue
+                    .waiting
                     .values()
                     .find(|queued| queued.actor == actor)
                     .map(|queued| queued.queued_at)
@@ -398,13 +413,21 @@ impl BeliefView for PerAgentBeliefView<'_> {
 
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
         (agent == self.agent)
-            .then(|| self.world.get_component_trade_disposition_profile(agent).cloned())
+            .then(|| {
+                self.world
+                    .get_component_trade_disposition_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 
     fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile> {
         (agent == self.agent)
-            .then(|| self.world.get_component_travel_disposition_profile(agent).cloned())
+            .then(|| {
+                self.world
+                    .get_component_travel_disposition_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 
@@ -585,10 +608,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, AgentBeliefStore, BelievedEntityState,
-        BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource, EventLog,
-        MerchandiseProfile, Permille, Quantity, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn, Wound, WoundCause, WoundId,
+        build_prototype_world, ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick,
+        BodyPart, CauseRef, CommodityKind, ControlSource, EventLog, MerchandiseProfile, Permille,
+        Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause, WoundId,
     };
 
     fn assert_belief_view<T: BeliefView>() {}
@@ -605,7 +627,11 @@ mod tests {
             last_known_place: Some(place),
             last_known_inventory: inventory,
             alive,
-            wounds: if alive { Vec::new() } else { vec![sample_wound()] },
+            wounds: if alive {
+                Vec::new()
+            } else {
+                vec![sample_wound()]
+            },
             observed_tick: Tick(observed_tick),
             source: worldwake_core::PerceptionSource::DirectObservation,
         }
@@ -709,7 +735,10 @@ mod tests {
         assert_eq!(view.effective_place(other), Some(believed_place));
         assert!(!view.is_alive(other));
         assert!(view.is_dead(other));
-        assert_eq!(view.commodity_quantity(other, CommodityKind::Bread), Quantity(7));
+        assert_eq!(
+            view.commodity_quantity(other, CommodityKind::Bread),
+            Quantity(7)
+        );
         assert_eq!(view.wounds(other), vec![sample_wound()]);
     }
 

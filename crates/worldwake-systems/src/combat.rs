@@ -1334,9 +1334,8 @@ fn abort_heal(
 mod tests {
     use super::{
         combat_system, effective_guard_skill, register_attack_action, register_bury_action,
-        register_defend_action, register_heal_action, register_loot_action,
-        resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
-        AttackResolutionTarget,
+        register_defend_action, register_heal_action, register_loot_action, resolve_attack_wound,
+        AttackResolutionActor, AttackResolutionContext, AttackResolutionTarget,
     };
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1344,10 +1343,9 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance,
         CombatWeaponRef, CommodityKind, Container, ControlSource, DeadAt, DeprivationKind,
-        DriveThresholds, EntityKind, EventLog, EventTag, EvidenceRef, HomeostaticNeeds,
-        LoadUnits, Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-        WoundList,
+        DriveThresholds, EntityKind, EventLog, EventTag, EvidenceRef, HomeostaticNeeds, LoadUnits,
+        Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
@@ -1517,8 +1515,11 @@ mod tests {
         let mut txn = new_txn(world, tick);
         let facility = txn.create_entity(EntityKind::Facility);
         txn.set_ground_location(facility, place).unwrap();
-        txn.set_component_workstation_marker(facility, WorkstationMarker(WorkstationTag::GravePlot))
-            .unwrap();
+        txn.set_component_workstation_marker(
+            facility,
+            WorkstationMarker(WorkstationTag::GravePlot),
+        )
+        .unwrap();
         commit_txn(txn);
         facility
     }
@@ -1641,7 +1642,10 @@ mod tests {
                 tag: WorkstationTag::GravePlot,
             }
         ));
-        assert_eq!(bury.causal_event_tags, BTreeSet::from([EventTag::WorldMutation]));
+        assert_eq!(
+            bury.causal_event_tags,
+            BTreeSet::from([EventTag::WorldMutation])
+        );
     }
 
     #[test]

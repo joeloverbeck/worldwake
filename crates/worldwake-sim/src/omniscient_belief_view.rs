@@ -212,7 +212,8 @@ impl BeliefView for OmniscientBeliefView<'_> {
         self.world
             .get_component_facility_use_queue(facility)
             .and_then(|queue| {
-                queue.waiting
+                queue
+                    .waiting
                     .values()
                     .find(|queued| queued.actor == actor)
                     .map(|queued| queued.queued_at)
@@ -425,7 +426,9 @@ impl BeliefView for OmniscientBeliefView<'_> {
 
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
         self.local_agent_entities_at(place)
-            .filter(|entity| self.is_dead(*entity) && self.world.direct_container(*entity).is_none())
+            .filter(|entity| {
+                self.is_dead(*entity) && self.world.direct_container(*entity).is_none()
+            })
             .collect()
     }
 

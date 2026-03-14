@@ -11,8 +11,8 @@ use crate::{
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CauseRef, CommodityKind,
-    ControlSource, EntityId, Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec,
-    WitnessData, WorldTxn,
+    ControlSource, EntityId, Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
+    WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, BeliefView,
@@ -869,9 +869,10 @@ fn reconcile_committed_facility_queue_intents(
 
     match step.op_kind {
         crate::PlannerOpKind::QueueForFacilityUse => {
-            let Some(goal_key) = runtime.current_goal.or_else(|| {
-                runtime.current_plan.as_ref().map(|plan| plan.goal)
-            }) else {
+            let Some(goal_key) = runtime
+                .current_goal
+                .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+            else {
                 return;
             };
             let Some(payload) = step
@@ -1259,9 +1260,9 @@ fn facility_access_signature(
         .filter(|entity| view.has_exclusive_facility_policy(*entity))
         .filter_map(|facility| {
             let queued = view.facility_queue_position(facility, agent).is_some();
-            let matching_grant = view.facility_grant(facility).and_then(|grant| {
-                (grant.actor == agent).then_some(grant.intended_action)
-            });
+            let matching_grant = view
+                .facility_grant(facility)
+                .and_then(|grant| (grant.actor == agent).then_some(grant.intended_action));
             (queued || matching_grant.is_some()).then_some((facility, queued, matching_grant))
         })
         .collect()
@@ -1348,13 +1349,12 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact,
         BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
-        EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
-        GrantedFacilityUse, HomeostaticNeeds,
-        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Place,
-        Quantity, RecipeId, ResourceSource, Seed, Tick, Topology, TravelDispositionProfile,
-        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId,
+        EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
+        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
+        Place, Quantity, RecipeId, ResourceSource, Seed, Tick, Topology, TravelDispositionProfile,
+        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -1632,7 +1632,8 @@ mod tests {
     }
 
     fn build_exclusive_queue_harness() -> ExclusiveQueueHarness {
-        let orchard_farm = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
+        let orchard_farm =
+            worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
         let mut recipes = RecipeRegistry::new();
         recipes.register(harvest_apple_recipe());
         let registries = build_full_action_registries(&recipes).unwrap();
@@ -1718,9 +1719,12 @@ mod tests {
                 expires_at: Tick(queued_at + 3),
             });
         } else {
-            queue.enqueue(actor, ActionDefId(77), Tick(queued_at)).unwrap();
+            queue
+                .enqueue(actor, ActionDefId(77), Tick(queued_at))
+                .unwrap();
         }
-        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        txn.set_component_facility_use_queue(facility, queue)
+            .unwrap();
         commit_txn(txn);
     }
 
@@ -1732,15 +1736,12 @@ mod tests {
             .unwrap_or_default();
         queue.waiting.clear();
         queue.granted = None;
-        txn.set_component_facility_use_queue(facility, queue).unwrap();
+        txn.set_component_facility_use_queue(facility, queue)
+            .unwrap();
         commit_txn(txn);
     }
 
-    fn add_local_queued_facility(
-        world: &mut World,
-        actor: EntityId,
-        queued_at: u64,
-    ) -> EntityId {
+    fn add_local_queued_facility(world: &mut World, actor: EntityId, queued_at: u64) -> EntityId {
         let place = world.effective_place(actor).unwrap();
         let facility = {
             let mut txn = new_txn(world, queued_at.max(1));
@@ -1869,7 +1870,11 @@ mod tests {
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
             false
         }
-        fn unique_item_count(&self, _holder: EntityId, _kind: worldwake_core::UniqueItemKind) -> u32 {
+        fn unique_item_count(
+            &self,
+            _holder: EntityId,
+            _kind: worldwake_core::UniqueItemKind,
+        ) -> u32 {
             0
         }
         fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
@@ -1945,7 +1950,11 @@ mod tests {
         fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
         }
-        fn reservation_conflicts(&self, _entity: EntityId, _range: worldwake_core::TickRange) -> bool {
+        fn reservation_conflicts(
+            &self,
+            _entity: EntityId,
+            _range: worldwake_core::TickRange,
+        ) -> bool {
             false
         }
         fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
@@ -2271,7 +2280,9 @@ mod tests {
             .get_component_facility_use_queue(harness.orchard_row)
             .cloned()
             .expect("exclusive orchard should have queue state");
-        queue.enqueue(harness.actor, harvest_action, Tick(1)).unwrap();
+        queue
+            .enqueue(harness.actor, harvest_action, Tick(1))
+            .unwrap();
         txn.set_component_facility_use_queue(harness.orchard_row, queue)
             .unwrap();
         commit_txn(txn);
@@ -2334,7 +2345,8 @@ mod tests {
         assert_eq!(runtime.current_goal, Some(goal.grounded.key));
         assert_eq!(next_step_valid, Some(true));
         assert_eq!(
-            next_step.expect("grant arrival should yield an executable exclusive step")
+            next_step
+                .expect("grant arrival should yield an executable exclusive step")
                 .op_kind,
             PlannerOpKind::Harvest
         );
@@ -2398,7 +2410,13 @@ mod tests {
         let goal = GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         });
-        set_local_queue_state(&mut harness.world, harness.actor, facility, 1, Some(ActionDefId(77)));
+        set_local_queue_state(
+            &mut harness.world,
+            harness.actor,
+            facility,
+            1,
+            Some(ActionDefId(77)),
+        );
 
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
@@ -2451,7 +2469,10 @@ mod tests {
             .world
             .get_component_facility_use_queue(facility)
             .expect("queued facility should still exist");
-        assert!(queue.waiting.values().any(|queued| queued.actor == harness.actor));
+        assert!(queue
+            .waiting
+            .values()
+            .any(|queued| queued.actor == harness.actor));
     }
 
     #[test]

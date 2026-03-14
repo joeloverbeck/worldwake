@@ -382,7 +382,10 @@ fn run_wound_bleed_clotting_natural_recovery_scenario(seed: Seed) -> (StateHash,
         previous_bleed_rate = wound.bleed_rate_per_tick;
     }
 
-    assert!(saw_bleed_phase, "wound severity should rise during the bleed phase");
+    assert!(
+        saw_bleed_phase,
+        "wound severity should rise during the bleed phase"
+    );
     assert!(
         saw_clotting,
         "bleed rate should fall under natural clot resistance"
@@ -395,7 +398,10 @@ fn run_wound_bleed_clotting_natural_recovery_scenario(seed: Seed) -> (StateHash,
         saw_recovery_phase,
         "wound severity should fall after clotting completes"
     );
-    assert!(wound_pruned, "recovered wound should be pruned from WoundList");
+    assert!(
+        wound_pruned,
+        "recovered wound should be pruned from WoundList"
+    );
 
     (
         hash_world(&h.world).unwrap(),
@@ -469,10 +475,19 @@ fn golden_bury_corpse() {
         .expect("corpse should be buried into a grave container");
     assert_eq!(h.world.effective_place(grave), Some(VILLAGE_SQUARE));
     assert_eq!(h.world.effective_place(corpse), Some(VILLAGE_SQUARE));
-    assert_eq!(h.world.get_component_dead_at(corpse), Some(&DeadAt(Tick(0))));
-    assert!(h.world.is_alive(corpse), "burial should not delete the corpse entity");
     assert_eq!(
-        h.world.get_component_workstation_marker(grave_plot).unwrap().0,
+        h.world.get_component_dead_at(corpse),
+        Some(&DeadAt(Tick(0)))
+    );
+    assert!(
+        h.world.is_alive(corpse),
+        "burial should not delete the corpse entity"
+    );
+    assert_eq!(
+        h.world
+            .get_component_workstation_marker(grave_plot)
+            .unwrap()
+            .0,
         WorkstationTag::GravePlot
     );
 }
@@ -802,7 +817,8 @@ fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
 
 #[test]
 fn golden_reduce_danger_defensive_mitigation() {
-    let (mut h, attacker, defender, initial_coin_total) = build_living_combat_scenario(Seed([23; 32]));
+    let (mut h, attacker, defender, initial_coin_total) =
+        build_living_combat_scenario(Seed([23; 32]));
     let danger_high_threshold = h
         .world
         .get_component_drive_thresholds(defender)

@@ -344,7 +344,6 @@ impl ActualWorldState {
                 });
             }
         }
-
     }
 
     fn collect_reservations(

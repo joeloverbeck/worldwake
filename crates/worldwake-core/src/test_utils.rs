@@ -4,8 +4,7 @@
 //! deterministic testing.
 
 use crate::{
-    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind,
-    CommodityPurpose,
+    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, CommodityPurpose,
     DemandMemory, DemandObservation, DemandObservationReason, EntityId,
     FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
     Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,

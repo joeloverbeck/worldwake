@@ -131,12 +131,8 @@ fn run_healer_acquires_ground_medicine_for_patient(seed: Seed) -> (StateHash, St
         UtilityProfile::default(),
     );
     let patient = seed_wounded_patient(&mut h);
-    let _medicine = place_ground_commodity(
-        &mut h,
-        VILLAGE_SQUARE,
-        CommodityKind::Medicine,
-        Quantity(1),
-    );
+    let _medicine =
+        place_ground_commodity(&mut h, VILLAGE_SQUARE, CommodityKind::Medicine, Quantity(1));
 
     let initial_medicine = h.agent_commodity_qty(healer, CommodityKind::Medicine);
     let initial_wound_load = h.agent_wound_load(patient);

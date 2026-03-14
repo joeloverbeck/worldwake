@@ -7,11 +7,11 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact,
-    BodyPart, CarryCapacity, CombatProfile, CommodityKind, DeprivationExposure,
-    DeprivationKind, EntityId, EventTag, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes,
-    LoadUnits, MetabolismProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact, BodyPart,
+    CarryCapacity, CombatProfile, CommodityKind, DeprivationExposure, DeprivationKind, EntityId,
+    EventTag, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile,
+    Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile, WorkstationTag, Wound,
+    WoundCause, WoundId, WoundList,
 };
 
 // ---------------------------------------------------------------------------
@@ -135,7 +135,9 @@ fn run_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
     );
 
     let mut txn = new_txn(&mut h.world, 0);
-    let firewood = txn.create_item_lot(CommodityKind::Firewood, Quantity(1)).unwrap();
+    let firewood = txn
+        .create_item_lot(CommodityKind::Firewood, Quantity(1))
+        .unwrap();
     txn.set_ground_location(firewood, VILLAGE_SQUARE).unwrap();
     commit_txn(txn, &mut h.event_log);
 
@@ -173,8 +175,12 @@ fn run_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
             authoritative_bread <= 1,
             "Bread authority should never exceed the single crafted output"
         );
-        verify_authoritative_conservation(&h.world, CommodityKind::Firewood, authoritative_firewood)
-            .unwrap();
+        verify_authoritative_conservation(
+            &h.world,
+            CommodityKind::Firewood,
+            authoritative_firewood,
+        )
+        .unwrap();
         verify_authoritative_conservation(&h.world, CommodityKind::Bread, authoritative_bread)
             .unwrap();
 
@@ -442,9 +448,7 @@ fn record_materialized_output_theft_milestones(
         && scenario.harness.agent_hunger(scenario.thief) < scenario.initial_thief_hunger
         && orchard_quantity == scenario.initial_orchard_quantity
     {
-        milestones.insert(
-            MaterializedOutputTheftMilestone::ThiefAteCraftedBreadBeforeOrchardUse,
-        );
+        milestones.insert(MaterializedOutputTheftMilestone::ThiefAteCraftedBreadBeforeOrchardUse);
     }
 
     if scenario
@@ -823,7 +827,12 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
             .expect("exclusive workstation should retain queue state");
         max_waiting_len = max_waiting_len.max(queue.waiting.len());
         saw_granted_state |= queue.granted.is_some();
-        record_new_promotions(&h, workstation, &mut previous_promotions, &mut promoted_actors);
+        record_new_promotions(
+            &h,
+            workstation,
+            &mut previous_promotions,
+            &mut promoted_actors,
+        );
 
         let authoritative_apples =
             total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
@@ -923,7 +932,8 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
             granted_at: Tick(0),
             expires_at: Tick(12),
         });
-        txn.set_component_facility_use_queue(workstation, queue).unwrap();
+        txn.set_component_facility_use_queue(workstation, queue)
+            .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -983,7 +993,11 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
         verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
             .unwrap();
 
-        if fragile_died && fragile_pruned_after_death && healthy_became_head_after_prune && healthy_promoted {
+        if fragile_died
+            && fragile_pruned_after_death
+            && healthy_became_head_after_prune
+            && healthy_promoted
+        {
             break;
         }
     }
@@ -1085,7 +1099,8 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
             granted_at: Tick(0),
             expires_at: Tick(12),
         });
-        txn.set_component_facility_use_queue(facility_a, queue).unwrap();
+        txn.set_component_facility_use_queue(facility_a, queue)
+            .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -1128,7 +1143,8 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
             .get_component_blocked_intent_memory(patient)
             .is_some_and(|memory| {
                 memory.intents.iter().any(|intent| {
-                    intent.blocking_fact == worldwake_core::BlockingFact::ExclusiveFacilityUnavailable
+                    intent.blocking_fact
+                        == worldwake_core::BlockingFact::ExclusiveFacilityUnavailable
                         && intent.related_entity == Some(facility_a)
                         && intent.related_action == Some(harvest_action)
                 })
@@ -1275,7 +1291,10 @@ fn run_grant_expiry_before_intended_action_scenario(
             .get_component_resource_source(workstation)
             .expect("exclusive workstation should retain resource source")
             .available_quantity;
-        let promotion_count = h.event_log.events_by_tag(EventTag::QueueGrantPromoted).len();
+        let promotion_count = h
+            .event_log
+            .events_by_tag(EventTag::QueueGrantPromoted)
+            .len();
         let expiry_count = h.event_log.events_by_tag(EventTag::QueueGrantExpired).len();
 
         if queue

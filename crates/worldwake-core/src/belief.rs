@@ -1,8 +1,6 @@
 //! Authoritative belief and perception state for E14.
 
-use crate::{
-    CommodityKind, Component, EntityId, Permille, Quantity, Tick, Wound,
-};
+use crate::{CommodityKind, Component, EntityId, Permille, Quantity, Tick, World, Wound};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -39,7 +37,11 @@ impl AgentBeliefStore {
 
     pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
         self.known_entities.retain(|_, state| {
-            within_retention_window(state.observed_tick, current_tick, profile.memory_retention_ticks)
+            within_retention_window(
+                state.observed_tick,
+                current_tick,
+                profile.memory_retention_ticks,
+            )
         });
         self.social_observations.retain(|observation| {
             within_retention_window(
@@ -86,6 +88,36 @@ pub struct BelievedEntityState {
     pub wounds: Vec<Wound>,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
+}
+
+#[must_use]
+pub fn build_believed_entity_state(
+    world: &World,
+    entity: EntityId,
+    observed_tick: Tick,
+    source: PerceptionSource,
+) -> Option<BelievedEntityState> {
+    world.entity_kind(entity)?;
+
+    let mut inventory = BTreeMap::new();
+    for commodity in CommodityKind::ALL {
+        let quantity = world.controlled_commodity_quantity(entity, commodity);
+        if quantity > Quantity(0) {
+            inventory.insert(commodity, quantity);
+        }
+    }
+
+    Some(BelievedEntityState {
+        last_known_place: world.effective_place(entity),
+        last_known_inventory: inventory,
+        alive: world.get_component_dead_at(entity).is_none(),
+        wounds: world
+            .get_component_wound_list(entity)
+            .map(|wounds| wounds.wounds.clone())
+            .unwrap_or_default(),
+        observed_tick,
+        source,
+    })
 }
 
 /// How the agent acquired a belief snapshot.
@@ -142,12 +174,12 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource,
-        SocialObservation, SocialObservationKind,
+        build_believed_entity_state, AgentBeliefStore, BelievedEntityState, PerceptionProfile,
+        PerceptionSource, SocialObservation, SocialObservationKind,
     };
     use crate::{
-        traits::Component, BodyPart, CommodityKind, EntityId, Permille, Quantity, Tick, Wound,
-        WoundCause, WoundId,
+        build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
+        EntityId, Permille, Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -301,7 +333,10 @@ mod tests {
 
         assert!(!store.known_entities.contains_key(&entity(1)));
         assert!(store.known_entities.contains_key(&entity(2)));
-        assert_eq!(store.social_observations, vec![sample_social_observation(9)]);
+        assert_eq!(
+            store.social_observations,
+            vec![sample_social_observation(9)]
+        );
     }
 
     #[test]
@@ -366,5 +401,103 @@ mod tests {
         assert_component_bounds::<PerceptionProfile>();
         assert_serde_bounds::<BelievedEntityState>();
         assert_serde_bounds::<SocialObservation>();
+    }
+
+    #[test]
+    fn build_believed_entity_state_projects_authoritative_snapshot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let holder = world
+            .create_agent("Holder", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+        let water = world
+            .create_item_lot(CommodityKind::Water, Quantity(3), Tick(1))
+            .unwrap();
+        let wound = sample_wound(4, 2);
+
+        world.set_ground_location(holder, place).unwrap();
+        world.set_ground_location(bread, place).unwrap();
+        world.set_ground_location(water, place).unwrap();
+        world.set_possessor(bread, holder).unwrap();
+        world.set_possessor(water, holder).unwrap();
+        world
+            .insert_component_wound_list(
+                holder,
+                WoundList {
+                    wounds: vec![wound.clone()],
+                },
+            )
+            .unwrap();
+
+        let snapshot = build_believed_entity_state(
+            &world,
+            holder,
+            Tick(9),
+            PerceptionSource::Report {
+                from: entity(8),
+                chain_len: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.last_known_place, Some(place));
+        assert_eq!(
+            snapshot.last_known_inventory,
+            BTreeMap::from([
+                (CommodityKind::Bread, Quantity(2)),
+                (CommodityKind::Water, Quantity(3)),
+            ])
+        );
+        assert!(snapshot.alive);
+        assert_eq!(snapshot.wounds, vec![wound]);
+        assert_eq!(snapshot.observed_tick, Tick(9));
+        assert_eq!(
+            snapshot.source,
+            PerceptionSource::Report {
+                from: entity(8),
+                chain_len: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn build_believed_entity_state_handles_dead_or_missing_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let dead = world
+            .create_agent("Dead", ControlSource::Ai, Tick(1))
+            .unwrap();
+
+        world.set_ground_location(dead, place).unwrap();
+        world
+            .insert_component_dead_at(dead, DeadAt(Tick(5)))
+            .unwrap();
+
+        let dead_snapshot = build_believed_entity_state(
+            &world,
+            dead,
+            Tick(7),
+            PerceptionSource::Rumor { chain_len: 1 },
+        )
+        .unwrap();
+        assert!(!dead_snapshot.alive);
+        assert_eq!(dead_snapshot.last_known_place, Some(place));
+        assert_eq!(
+            dead_snapshot.source,
+            PerceptionSource::Rumor { chain_len: 1 }
+        );
+
+        assert_eq!(
+            build_believed_entity_state(
+                &world,
+                entity(999),
+                Tick(7),
+                PerceptionSource::DirectObservation,
+            ),
+            None
+        );
     }
 }

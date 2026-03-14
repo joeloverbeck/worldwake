@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgentBeliefStore, BelievedEntityState, CauseRef, CommodityKind, ComponentDelta, EntityDelta,
-    EntityId, EntityKind, EventRecord, EventTag, EvidenceRef, PerceptionSource,
-    SocialObservation, SocialObservationKind, StateDelta, VisibilitySpec, WitnessData, World,
-    WorldTxn,
+    build_believed_entity_state, AgentBeliefStore, CauseRef, ComponentDelta, EntityDelta, EntityId,
+    EntityKind, EventRecord, EventTag, EvidenceRef, PerceptionSource, SocialObservation,
+    SocialObservationKind, StateDelta, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -36,13 +35,19 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
             }
 
             let store = updated_stores.entry(witness).or_insert_with(|| {
-                world.get_component_agent_belief_store(witness)
+                world
+                    .get_component_agent_belief_store(witness)
                     .cloned()
                     .unwrap_or_default()
             });
 
             for entity in &observed_entities {
-                if let Some(snapshot) = snapshot_entity(world, *entity, tick) {
+                if let Some(snapshot) = build_believed_entity_state(
+                    world,
+                    *entity,
+                    tick,
+                    PerceptionSource::DirectObservation,
+                ) {
                     store.update_entity(*entity, snapshot);
                 }
             }
@@ -68,7 +73,8 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         VisibilitySpec::Hidden,
         WitnessData::default(),
     );
-    txn.add_tag(EventTag::System).add_tag(EventTag::WorldMutation);
+    txn.add_tag(EventTag::System)
+        .add_tag(EventTag::WorldMutation);
     for (agent, store) in updated_stores {
         txn.set_component_agent_belief_store(agent, store)
             .map_err(|error| SystemError::new(error.to_string()))?;
@@ -208,30 +214,6 @@ fn relation_entities(relation_delta: &worldwake_core::RelationDelta) -> BTreeSet
     }
 }
 
-fn snapshot_entity(world: &World, entity: EntityId, tick: worldwake_core::Tick) -> Option<BelievedEntityState> {
-    world.entity_kind(entity)?;
-
-    let mut inventory = BTreeMap::new();
-    for commodity in CommodityKind::ALL {
-        let quantity = world.controlled_commodity_quantity(entity, commodity);
-        if quantity > worldwake_core::Quantity(0) {
-            inventory.insert(commodity, quantity);
-        }
-    }
-
-    Some(BelievedEntityState {
-        last_known_place: world.effective_place(entity),
-        last_known_inventory: inventory,
-        alive: world.get_component_dead_at(entity).is_none(),
-        wounds: world
-            .get_component_wound_list(entity)
-            .map(|wounds| wounds.wounds.clone())
-            .unwrap_or_default(),
-        observed_tick: tick,
-        source: PerceptionSource::DirectObservation,
-    })
-}
-
 fn social_observations_for_event(
     world: &World,
     record: &EventRecord,
@@ -240,7 +222,10 @@ fn social_observations_for_event(
     let Some(place) = record.place_id else {
         return Vec::new();
     };
-    let Some(actor) = record.actor_id.filter(|actor| world.entity_kind(*actor) == Some(EntityKind::Agent)) else {
+    let Some(actor) = record
+        .actor_id
+        .filter(|actor| world.entity_kind(*actor) == Some(EntityKind::Agent))
+    else {
         return Vec::new();
     };
     let targets = record
@@ -286,9 +271,7 @@ mod tests {
         ControlSource, EventLog, EventTag, PendingEvent, PerceptionProfile, PerceptionSource,
         Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
-    use worldwake_sim::{
-        ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId,
-    };
+    use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
@@ -324,7 +307,9 @@ mod tests {
                 .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
-            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             txn.set_ground_location(bread, place).unwrap();
             txn.set_possessor(bread, target).unwrap();
             let mut log = EventLog::new();
@@ -486,18 +471,16 @@ mod tests {
         })
         .unwrap();
 
-        assert!(
-            world.get_component_agent_belief_store(direct_witness)
-                .unwrap()
-                .get_entity(&target)
-                .is_some()
-        );
-        assert!(
-            world.get_component_agent_belief_store(bystander)
-                .unwrap()
-                .get_entity(&target)
-                .is_none()
-        );
+        assert!(world
+            .get_component_agent_belief_store(direct_witness)
+            .unwrap()
+            .get_entity(&target)
+            .is_some());
+        assert!(world
+            .get_component_agent_belief_store(bystander)
+            .unwrap()
+            .get_entity(&target)
+            .is_none());
     }
 
     #[test]
@@ -549,18 +532,16 @@ mod tests {
         })
         .unwrap();
 
-        assert!(
-            world.get_component_agent_belief_store(adjacent_witness)
-                .unwrap()
-                .get_entity(&origin_target)
-                .is_some()
-        );
-        assert!(
-            world.get_component_agent_belief_store(remote_witness)
-                .unwrap()
-                .get_entity(&origin_target)
-                .is_none()
-        );
+        assert!(world
+            .get_component_agent_belief_store(adjacent_witness)
+            .unwrap()
+            .get_entity(&origin_target)
+            .is_some());
+        assert!(world
+            .get_component_agent_belief_store(remote_witness)
+            .unwrap()
+            .get_entity(&origin_target)
+            .is_none());
     }
 
     #[test]
@@ -587,7 +568,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(observer, store).unwrap();
+            txn.set_component_agent_belief_store(observer, store)
+                .unwrap();
             txn.set_component_perception_profile(
                 observer,
                 PerceptionProfile {

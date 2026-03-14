@@ -1,6 +1,6 @@
 # E15RUMWITDIS-001: Extract Shared Belief Snapshot Projection Builder
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — shared belief snapshot projection in `worldwake-core`, integration updates in `worldwake-systems`
@@ -22,10 +22,10 @@ Those paths should not each re-encode how authoritative state becomes a `Believe
 ## Assumption Reassessment (2026-03-14)
 
 1. No active ticket in `tickets/` currently owns extraction of the `World -> BelievedEntityState` projection logic. `E14PERBEL-006` owns AI migration, `E14PERBEL-007` owns integration tests, and `E14PERBEL-009` owns the planner/executor trait boundary, not snapshot projection ownership.
-2. `specs/E15-rumor-witness-discovery.md` already requires non-perception belief writes (`Report`, `Rumor`, record consultation refresh), which will need to produce or update `AgentBeliefStore` entries using the same state-snapshot model as E14.
+2. `specs/E15-rumor-witness-discovery.md` already requires non-perception belief writes for `Report` / `Rumor`, and `specs/E14-perception-beliefs.md` separately describes later record-consultation refreshes against the same state-snapshot belief model. The current active specs therefore imply reuse of one snapshot contract, even though E15 itself does not yet spell out a shared builder API.
 3. `specs/E14-perception-beliefs.md` defines `BelievedEntityState` as the shared state-snapshot belief model and explicitly says later paths should add or refresh those entries. The spec does not currently assign ownership of the projection builder itself.
-4. The current projection logic in `crates/worldwake-systems/src/perception.rs` is correct in behavior but located in the wrong long-term ownership layer.
-5. The authoritative data needed for the projection already lives in `worldwake-core`: `World`, `BelievedEntityState`, `CommodityKind`, wound state, placement, and death state. That makes `worldwake-core` the natural ownership point.
+4. The current projection logic in `crates/worldwake-systems/src/perception.rs` is a single local helper (`snapshot_entity`) that is correct in behavior but located in the wrong long-term ownership layer.
+5. The authoritative data needed for the projection already lives in `worldwake-core`: `World`, `BelievedEntityState`, `CommodityKind`, wound state, placement, and death state. That makes `worldwake-core` the natural ownership point. The cleanest home is the belief model layer in core, not a second systems-facing copy and not a broader `World`-API expansion unless the code proves that is necessary.
 6. This is not the same issue as the mixed `BeliefView` boundary tracked by `E14PERBEL-009`. The trait-boundary cleanup and the shared snapshot builder are adjacent, but independent.
 
 ## Architecture Check
@@ -40,6 +40,8 @@ Those paths should not each re-encode how authoritative state becomes a `Believe
 ### 1. Move canonical snapshot projection into `worldwake-core`
 
 Introduce a shared authoritative helper owned by `worldwake-core` for constructing `BelievedEntityState` from current world state.
+
+Preferred shape: a belief-layer helper in `crates/worldwake-core/src/belief.rs` (or a sibling core belief module) that takes `&World`, `EntityId`, `Tick`, and `PerceptionSource`. Avoid turning this into a larger `World` API expansion unless implementation shows a concrete need.
 
 Acceptable shapes include:
 
@@ -61,6 +63,7 @@ Requirements:
 - wounds come from the authoritative wound component
 - inventory snapshot logic is canonical and deterministic
 - the helper returns `None` for entities that do not currently exist / are not projectable
+- the helper accepts the caller-provided `PerceptionSource` so perception, reports, and rumors can reuse the same snapshot semantics without post-build patching
 
 ### 2. Remove systems-local projection ownership
 
@@ -75,7 +78,7 @@ The shared builder should support all current E14/E15 source kinds without cloni
 - `DirectObservation`
 - `Report { from, chain_len }`
 - `Rumor { chain_len }`
-- future record-consultation refreshes using the same snapshot model
+- future record-consultation refreshes using the same snapshot model if/when that path is implemented under E14/E15 follow-up work
 
 That does not mean E15 must be implemented in this ticket. It means the projection API must be shaped so E15 can reuse it directly.
 
@@ -88,11 +91,11 @@ The likely review points are:
 - `specs/E14-perception-beliefs.md`
 - `specs/E15-rumor-witness-discovery.md`
 
-Only make the minimal doc changes needed to keep ownership clear.
+Only make the minimal doc changes needed to keep ownership clear. If the active specs already remain accurate after the code move, do not edit them just to restate the implementation.
 
 ## Files to Touch
 
-- `crates/worldwake-core/src/` (new or modify — shared belief snapshot projection module/API)
+- `crates/worldwake-core/src/belief.rs` and/or a closely related core belief module (modify or add — shared belief snapshot projection API)
 - `crates/worldwake-core/src/lib.rs` (modify — export the shared builder if needed)
 - `crates/worldwake-systems/src/perception.rs` (modify — consume shared builder, delete local duplication)
 - `specs/E14-perception-beliefs.md` (modify if ownership wording needs correction)
@@ -130,11 +133,11 @@ Only make the minimal doc changes needed to keep ownership clear.
 
 ### New/Modified Tests
 
-1. `crates/worldwake-core/src/<belief projection module>.rs` — unit tests for authoritative projection of place, inventory, life/death, wounds, and deterministic source/tick stamping.
+1. `crates/worldwake-core/src/belief.rs` or the final core belief projection module — unit tests for authoritative projection of place, inventory, life/death, wounds, and deterministic source/tick stamping.
    Rationale: the snapshot builder becomes a shared contract and needs direct coverage at its ownership point.
-2. `crates/worldwake-systems/src/perception.rs` — update existing perception tests to rely on the shared builder through behavior, not on a systems-local constructor.
+2. `crates/worldwake-systems/src/perception.rs` — keep or update perception tests to verify direct observation still stamps the expected snapshot through behavior after the systems-local constructor is removed.
    Rationale: ensures the perception path stays correct after ownership moves.
-3. If docs are updated: no doc-specific tests, but cross-reference review must confirm E14/E15 now point future work at the shared builder.
+3. If docs are updated: no doc-specific tests, but cross-reference review must confirm E14/E15 still point future work at the shared snapshot model without implying duplicate projection logic.
    Rationale: prevents E15 from reintroducing duplicate projection logic by specification drift.
 
 ### Commands
@@ -143,3 +146,21 @@ Only make the minimal doc changes needed to keep ownership clear.
 2. `cargo test -p worldwake-systems`
 3. `cargo clippy --workspace`
 4. `cargo test --workspace`
+
+## Outcome
+
+- Completed: 2026-03-14
+- What actually changed:
+  - added `build_believed_entity_state(...)` to `crates/worldwake-core/src/belief.rs` as the single canonical authoritative `World -> BelievedEntityState` projection path
+  - re-exported the helper from `crates/worldwake-core/src/lib.rs`
+  - removed the systems-local `snapshot_entity` helper from `crates/worldwake-systems/src/perception.rs` and migrated perception to the shared core builder
+  - added focused core regression coverage for authoritative snapshot projection, including inventory, wound capture, dead-vs-alive state, source stamping, tick stamping, and missing-entity handling
+- Deviation from original plan:
+  - no active specs needed edits; the current E14/E15 spec text already remained accurate once projection ownership moved into core
+  - the implementation kept the builder in the core belief layer instead of expanding `World` with another public projection method, which is the cleaner long-term boundary for this contract
+  - dead entities continue to retain their authoritative `effective_place`; the shared snapshot builder preserves that concrete location while marking `alive = false`
+- Verification:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-systems`
+  - `cargo clippy --workspace`
+  - `cargo test --workspace`

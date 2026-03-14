@@ -1133,7 +1133,6 @@ impl<'w> WorldTxn<'w> {
                 }));
         }
     }
-
 }
 
 impl Deref for WorldTxn<'_> {
@@ -2346,7 +2345,10 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = world.get_component_perception_profile(agent).copied().unwrap();
+        let before = world
+            .get_component_perception_profile(agent)
+            .copied()
+            .unwrap();
         let mut after = before;
         after.memory_capacity += 3;
         after.observation_fidelity = Permille::new(990).unwrap();
@@ -2703,7 +2705,10 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = world.get_component_perception_profile(agent).copied().unwrap();
+        let before = world
+            .get_component_perception_profile(agent)
+            .copied()
+            .unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.clear_component_perception_profile(agent).unwrap();

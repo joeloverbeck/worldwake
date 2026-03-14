@@ -24,7 +24,9 @@ pub fn explain_goal(
 ) -> Option<GoalExplanation> {
     let candidates = generate_candidates(view, agent, blocked, recipes, current_tick);
     let ranked = rank_candidates(&candidates, view, agent, utility, recipes);
-    let target = ranked.iter().find(|candidate| candidate.grounded.key.kind == *goal)?;
+    let target = ranked
+        .iter()
+        .find(|candidate| candidate.grounded.key.kind == *goal)?;
 
     Some(GoalExplanation {
         goal: *goal,
@@ -52,12 +54,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BlockedIntentMemory, CommodityConsumableProfile, CommodityKind,
-        CommodityPurpose, DemandObservation, DriveThresholds, EntityId, EntityKind,
-        GoalKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
-        UniqueItemKind, UtilityProfile, WorkstationTag, Wound,
+        BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind, GrantedFacilityUse,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, PlaceTag, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, UtilityProfile,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDuration, ActionPayload, BeliefView, DurationExpr,
@@ -150,7 +152,8 @@ mod tests {
             self.entities_at(place)
                 .into_iter()
                 .filter(|entity| {
-                    self.item_lot_commodity(*entity) == Some(commodity) && self.can_control(agent, *entity)
+                    self.item_lot_commodity(*entity) == Some(commodity)
+                        && self.can_control(agent, *entity)
                 })
                 .collect()
         }
@@ -159,7 +162,10 @@ mod tests {
             self.lot_commodities.get(&entity).copied()
         }
 
-        fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
+        fn item_lot_consumable_profile(
+            &self,
+            entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
             self.consumable_profiles.get(&entity).copied()
         }
 
@@ -208,7 +214,8 @@ mod tests {
         }
 
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            self.controlled_entities.contains(&entity) || self.controllable.contains(&(actor, entity))
+            self.controlled_entities.contains(&entity)
+                || self.controllable.contains(&(actor, entity))
         }
 
         fn has_control(&self, entity: EntityId) -> bool {
@@ -287,11 +294,19 @@ mod tests {
             Vec::new()
         }
 
-        fn matching_workstations_at(&self, _place: EntityId, _tag: WorkstationTag) -> Vec<EntityId> {
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 
-        fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -381,7 +396,13 @@ mod tests {
             .insert((bread, CommodityKind::Bread), Quantity(1));
         view.homeostatic_needs.insert(
             agent,
-            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), thresholds.fatigue.medium(), pm(0), pm(0)),
+            HomeostaticNeeds::new(
+                thresholds.hunger.high(),
+                pm(0),
+                thresholds.fatigue.medium(),
+                pm(0),
+                pm(0),
+            ),
         );
         view.drive_thresholds.insert(agent, thresholds);
 

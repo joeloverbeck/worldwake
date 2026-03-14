@@ -66,8 +66,8 @@ pub mod wounds;
 
 pub use allocator::EntityAllocator;
 pub use belief::{
-    AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource,
-    SocialObservation, SocialObservationKind,
+    build_believed_entity_state, AgentBeliefStore, BelievedEntityState, PerceptionProfile,
+    PerceptionSource, SocialObservation, SocialObservationKind,
 };
 pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
 pub use canonical::{
@@ -98,9 +98,7 @@ pub use facility_queue::{
     GrantedFacilityUse, QueuedFacilityUse,
 };
 pub use goal::{CommodityPurpose, GoalKey, GoalKind};
-pub use ids::{
-    ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId,
-};
+pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
     CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,

@@ -1,8 +1,7 @@
 use crate::{GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, Quantity, Tick, UniqueItemKind,
-    Wound,
+    ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, Quantity, Tick, UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]

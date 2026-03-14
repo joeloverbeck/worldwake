@@ -148,9 +148,13 @@ fn emit_engage_hostile_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     ctx: &GenerationContext<'_>,
 ) {
-    if ctx.view.drive_thresholds(ctx.agent).is_some_and(|thresholds| {
-        derive_danger_pressure(ctx.view, ctx.agent) >= thresholds.danger.high()
-    }) {
+    if ctx
+        .view
+        .drive_thresholds(ctx.agent)
+        .is_some_and(|thresholds| {
+            derive_danger_pressure(ctx.view, ctx.agent) >= thresholds.danger.high()
+        })
+    {
         return;
     }
 
@@ -2136,7 +2140,8 @@ mod tests {
         view.entities_at.insert(place, vec![agent, medicine]);
         view.direct_possessions.insert(agent, vec![medicine]);
         view.direct_possessors.insert(medicine, agent);
-        view.lot_commodities.insert(medicine, CommodityKind::Medicine);
+        view.lot_commodities
+            .insert(medicine, CommodityKind::Medicine);
         view.commodity_quantities
             .insert((agent, CommodityKind::Medicine), Quantity(1));
         view.commodity_quantities
@@ -2184,7 +2189,10 @@ mod tests {
             Tick(5),
         );
 
-        assert!(!contains_goal(&candidates, GoalKind::Heal { target: agent }));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::Heal { target: agent }
+        ));
     }
 
     #[test]
@@ -2462,12 +2470,9 @@ mod tests {
             Tick(5),
         );
 
-        assert!(!candidates.iter().any(|candidate| {
-            matches!(
-                candidate.key.kind,
-                GoalKind::SellCommodity { .. }
-            )
-        }));
+        assert!(!candidates
+            .iter()
+            .any(|candidate| { matches!(candidate.key.kind, GoalKind::SellCommodity { .. }) }));
     }
 
     #[test]

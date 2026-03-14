@@ -10,13 +10,11 @@ pub struct BlockedIntentMemory {
 
 impl BlockedIntentMemory {
     pub fn is_blocked(&self, key: &GoalKey, current_tick: Tick) -> bool {
-        self.intents
-            .iter()
-            .any(|intent| {
-                intent.goal_key == *key
-                    && intent.expires_tick > current_tick
-                    && intent.blocks_goal_generation()
-            })
+        self.intents.iter().any(|intent| {
+            intent.goal_key == *key
+                && intent.expires_tick > current_tick
+                && intent.blocks_goal_generation()
+        })
     }
 
     pub fn record(&mut self, intent: BlockedIntent) {
@@ -51,7 +49,10 @@ pub struct BlockedIntent {
 impl BlockedIntent {
     #[must_use]
     pub const fn blocks_goal_generation(&self) -> bool {
-        !matches!(self.blocking_fact, BlockingFact::ExclusiveFacilityUnavailable)
+        !matches!(
+            self.blocking_fact,
+            BlockingFact::ExclusiveFacilityUnavailable
+        )
     }
 }
 
