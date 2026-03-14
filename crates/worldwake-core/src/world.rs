@@ -575,15 +575,16 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_travel_disposition_profile, sample_utility_profile,
         },
-        AgentBeliefStore, AgentData, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
-        CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, HomeostaticNeeds,
-        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-        MetabolismProfile, Name, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
-        ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        SubstitutePreferences, TellProfile, Tick, TickRange, Topology, TradeDispositionProfile,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList,
+        AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart,
+        CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
+        DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, PerceptionProfile,
+        PerceptionSource, Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity,
+        ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile,
+        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
+        WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -672,6 +673,7 @@ mod tests {
             memory_capacity: 12,
             memory_retention_ticks: 48,
             observation_fidelity: Permille::new(875).unwrap(),
+            confidence_policy: BeliefConfidencePolicy::default(),
         }
     }
 

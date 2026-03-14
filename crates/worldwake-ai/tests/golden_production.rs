@@ -450,6 +450,7 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
                 memory_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
+                confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
             },
         )
         .unwrap();
@@ -1158,6 +1159,7 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
                 memory_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
+                confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
             },
         )
         .unwrap();
@@ -1331,6 +1333,7 @@ fn run_grant_expiry_before_intended_action_scenario(
                 memory_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
+                confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
             },
         )
         .unwrap();

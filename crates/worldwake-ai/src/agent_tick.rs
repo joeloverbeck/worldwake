@@ -1359,15 +1359,16 @@ mod tests {
     use std::num::NonZeroU32;
     use std::path::PathBuf;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, ActionDefId, BlockedIntent,
-        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind,
-        ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-        DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-        ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
-        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
-        PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId, ResourceSource,
-        Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
+        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity,
+        CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
+        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
+        EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
+        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId,
+        ResourceSource, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
+        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -1732,6 +1733,7 @@ mod tests {
                     memory_capacity: 12,
                     memory_retention_ticks: 64,
                     observation_fidelity: Permille::new(1000).unwrap(),
+                    confidence_policy: BeliefConfidencePolicy::default(),
                 },
             )
             .unwrap();
@@ -1810,6 +1812,7 @@ mod tests {
                     memory_capacity: 12,
                     memory_retention_ticks: 4,
                     observation_fidelity: Permille::new(1000).unwrap(),
+                    confidence_policy: BeliefConfidencePolicy::default(),
                 },
             )
             .unwrap();

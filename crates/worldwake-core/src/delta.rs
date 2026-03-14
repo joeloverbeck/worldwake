@@ -211,14 +211,15 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_travel_disposition_profile, sample_utility_profile,
         },
-        AgentBeliefStore, AgentData, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
-        CombatStance, CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, EventId, ExclusiveFacilityPolicy,
-        FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MetabolismProfile, Name, PerceptionProfile, PerceptionSource, Permille,
-        ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, Wound, WoundCause, WoundList,
+        AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart,
+        CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container, ControlSource,
+        DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        EventId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge,
+        ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
+        PerceptionProfile, PerceptionSource, Permille, ProductionJob, ProvenanceEntry, Quantity,
+        ReservationId, ReservationRecord, ResourceSource, TellProfile, Tick, TickRange,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -299,6 +300,7 @@ mod tests {
                 memory_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(920).unwrap(),
+                confidence_policy: BeliefConfidencePolicy::default(),
             }),
             ComponentValue::TellProfile(TellProfile {
                 max_tell_candidates: 4,

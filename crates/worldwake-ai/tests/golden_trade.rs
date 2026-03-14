@@ -6,10 +6,10 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, EventTag, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
-    TradeDispositionProfile, UtilityProfile, WorkstationTag,
+    total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind, DemandMemory,
+    DemandObservation, DemandObservationReason, EventTag, HomeostaticNeeds, KnownRecipes,
+    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
+    ResourceSource, Seed, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::RecipeRegistry;
 
@@ -228,6 +228,7 @@ fn run_merchant_restock_return_stock_scenario(
             memory_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
+            confidence_policy: BeliefConfidencePolicy::default(),
         },
     )
     .unwrap();
@@ -353,6 +354,7 @@ fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
             memory_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
+            confidence_policy: BeliefConfidencePolicy::default(),
         },
     )
     .unwrap();

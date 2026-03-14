@@ -2,11 +2,11 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU64;
 
 use worldwake_core::{
-    build_believed_entity_state, ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef,
-    ControlSource, EntityId, EventLog, EventTag, PendingEvent, PerceptionProfile,
-    PerceptionSource, Permille, Place, Seed, SocialObservationKind, StateHash, TellProfile, Tick,
-    Topology,
-    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
+    build_believed_entity_state, ActionDefId, AgentBeliefStore, BeliefConfidencePolicy,
+    BelievedEntityState, CauseRef, ControlSource, EntityId, EventLog, EventTag, PendingEvent,
+    PerceptionProfile, PerceptionSource, Permille, Place, Seed, SocialObservationKind,
+    StateHash, TellProfile, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+    WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
     get_affordances, record_tick_checkpoint, replay_and_verify, step_tick, ActionPayload,
@@ -32,6 +32,7 @@ fn perception_profile() -> PerceptionProfile {
         memory_capacity: 8,
         memory_retention_ticks: 64,
         observation_fidelity: Permille::new(1000).unwrap(),
+        confidence_policy: BeliefConfidencePolicy::default(),
     }
 }
 
@@ -40,6 +41,7 @@ fn blind_perception_profile() -> PerceptionProfile {
         memory_capacity: 8,
         memory_retention_ticks: 64,
         observation_fidelity: Permille::new(0).unwrap(),
+        confidence_policy: BeliefConfidencePolicy::default(),
     }
 }
 

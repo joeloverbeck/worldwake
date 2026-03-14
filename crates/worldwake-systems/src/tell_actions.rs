@@ -366,13 +366,13 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
-        BelievedEntityState, BodyCostPerTick, CauseRef, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, ControlSource, DemandObservation, DriveThresholds, EntityId,
-        EntityKind, EventLog, EventTag, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, PerceptionProfile, PerceptionSource,
-        Quantity, RecipeId, ResourceSource, Seed, TellProfile, Tick, TickRange,
-        TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, CauseRef, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, EventLog, EventTag, HomeostaticNeeds,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
+        PerceptionProfile, PerceptionSource, Quantity, RecipeId, ResourceSource, Seed,
+        TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
@@ -1342,6 +1342,7 @@ mod tests {
                     memory_capacity: 1,
                     memory_retention_ticks: 100,
                     observation_fidelity: Permille::new(1000).unwrap(),
+                    confidence_policy: BeliefConfidencePolicy::default(),
                 },
             )
             .unwrap();

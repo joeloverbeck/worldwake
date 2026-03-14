@@ -113,8 +113,8 @@ mod tests {
     use super::ComponentTables;
     use crate::{
         belief::{
-            AgentBeliefStore, BelievedEntityState, PerceptionProfile, PerceptionSource,
-            TellProfile,
+            AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, PerceptionProfile,
+            PerceptionSource, TellProfile,
         },
         components::{AgentData, Name},
         test_utils::{
@@ -218,6 +218,7 @@ mod tests {
                 memory_capacity: 8,
                 memory_retention_ticks: 20,
                 observation_fidelity: Permille::new(900).unwrap(),
+                confidence_policy: BeliefConfidencePolicy::default(),
             },
         );
         tables.insert_tell_profile(entity(25), sample_roundtrip_tell_profile());

@@ -7,9 +7,9 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_ai::JourneyCommitmentState;
 use worldwake_core::{
-    prototype_place_entity, total_live_lot_quantity, CommodityKind, HomeostaticNeeds,
-    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed,
-    TravelDispositionProfile, UtilityProfile, WorkstationTag,
+    prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
+    HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
+    ResourceSource, Seed, TravelDispositionProfile, UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -850,6 +850,7 @@ fn golden_goal_switching_during_multi_leg_travel() {
                 memory_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
+                confidence_policy: BeliefConfidencePolicy::default(),
             },
         )
         .unwrap();
@@ -1125,6 +1126,7 @@ fn setup_multi_hop_travel_scenario(
             memory_capacity: 64,
             memory_retention_ticks: 64,
             observation_fidelity: pm(875),
+            confidence_policy: BeliefConfidencePolicy::default(),
         },
     )
     .unwrap();

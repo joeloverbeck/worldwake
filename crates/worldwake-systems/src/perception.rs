@@ -424,10 +424,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
-        BelievedEntityState, CauseRef, CommodityKind, ControlSource, DeadAt, EventLog, EventTag,
-        EvidenceRef, MismatchKind, ObservedEntitySnapshot, PendingEvent, PerceptionProfile,
-        PerceptionSource, Permille, Quantity, Seed, SocialObservationKind, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
+        DeadAt, EventLog, EventTag, EvidenceRef, MismatchKind, ObservedEntitySnapshot,
+        PendingEvent, PerceptionProfile, PerceptionSource, Permille, Quantity, Seed,
+        SocialObservationKind, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -448,6 +448,7 @@ mod tests {
             memory_capacity: 8,
             memory_retention_ticks: 32,
             observation_fidelity: Permille::new(fidelity).unwrap(),
+            confidence_policy: BeliefConfidencePolicy::default(),
         }
     }
 
@@ -845,6 +846,7 @@ mod tests {
                     memory_capacity: 1,
                     memory_retention_ticks: 32,
                     observation_fidelity: Permille::new(1000).unwrap(),
+                    confidence_policy: BeliefConfidencePolicy::default(),
                 },
             )
             .unwrap();
