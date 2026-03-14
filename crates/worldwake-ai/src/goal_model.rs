@@ -367,24 +367,30 @@ impl GoalKindPlannerExt for GoalKind {
             PlannerOpKind::Loot => match self {
                 GoalKind::LootCorpse { corpse } => {
                     let actor = state.snapshot().actor();
-                    CommodityKind::ALL.iter().copied().fold(state, |next, commodity| {
-                        let quantity = next.commodity_quantity(*corpse, commodity);
-                        if quantity == Quantity(0) {
-                            return next;
-                        }
-                        let actor_quantity = next.commodity_quantity(actor, commodity);
-                        next.with_commodity_quantity(*corpse, commodity, Quantity(0))
-                            .with_commodity_quantity(
-                                actor,
-                                commodity,
-                                Quantity(actor_quantity.0.saturating_add(quantity.0)),
-                            )
-                    })
+                    CommodityKind::ALL
+                        .iter()
+                        .copied()
+                        .fold(state, |next, commodity| {
+                            let quantity = next.commodity_quantity(*corpse, commodity);
+                            if quantity == Quantity(0) {
+                                return next;
+                            }
+                            let actor_quantity = next.commodity_quantity(actor, commodity);
+                            next.with_commodity_quantity(*corpse, commodity, Quantity(0))
+                                .with_commodity_quantity(
+                                    actor,
+                                    commodity,
+                                    Quantity(actor_quantity.0.saturating_add(quantity.0)),
+                                )
+                        })
                 }
                 _ => state,
             },
             PlannerOpKind::Bury => match self {
-                GoalKind::BuryCorpse { corpse, burial_site } => state.set_container_ref(
+                GoalKind::BuryCorpse {
+                    corpse,
+                    burial_site,
+                } => state.set_container_ref(
                     PlanningEntityRef::Authoritative(*corpse),
                     PlanningEntityRef::Authoritative(*burial_site),
                 ),
@@ -501,8 +507,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
             GoalKind::ProduceCommodity { .. }
             | GoalKind::RestockCommodity { .. }
-            | GoalKind::SellCommodity { .. }
-            => false,
+            | GoalKind::SellCommodity { .. } => false,
         }
     }
 }
@@ -1456,8 +1461,14 @@ mod tests {
 
         let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Loot, &[corpse], None);
 
-        assert_eq!(advanced.commodity_quantity(corpse, CommodityKind::Coin), Quantity(0));
-        assert_eq!(advanced.commodity_quantity(actor, CommodityKind::Coin), Quantity(8));
+        assert_eq!(
+            advanced.commodity_quantity(corpse, CommodityKind::Coin),
+            Quantity(0)
+        );
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Coin),
+            Quantity(8)
+        );
         assert!(goal.is_satisfied(&advanced));
     }
 
@@ -1471,7 +1482,10 @@ mod tests {
         view.kinds.insert(grave_plot, EntityKind::Facility);
         view.effective_places.insert(corpse, town);
         view.effective_places.insert(grave_plot, town);
-        view.entities_at.entry(town).or_default().extend([corpse, grave_plot]);
+        view.entities_at
+            .entry(town)
+            .or_default()
+            .extend([corpse, grave_plot]);
 
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
         let base_state = PlanningState::new(&snapshot);

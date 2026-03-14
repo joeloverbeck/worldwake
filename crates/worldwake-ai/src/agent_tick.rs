@@ -1350,15 +1350,14 @@ mod tests {
     use std::path::PathBuf;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, BlockedIntent,
-        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
-        CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
-        DeadAt, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
+        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind,
+        ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+        DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
         ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
         KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
-        PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId,
-        ResourceSource, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
-        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn,
+        PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId, ResourceSource,
+        Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -4034,6 +4033,39 @@ mod tests {
             assert!(
                 !production_source.contains("WorldTxn"),
                 "{relative} should not mutate authoritative state directly"
+            );
+        }
+    }
+
+    #[test]
+    fn goal_read_modules_use_goal_belief_view_boundary() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|path| path.parent())
+            .expect("workspace layout should place crate under crates/")
+            .to_path_buf();
+        let modules = [
+            "crates/worldwake-ai/src/candidate_generation.rs",
+            "crates/worldwake-ai/src/enterprise.rs",
+            "crates/worldwake-ai/src/goal_explanation.rs",
+            "crates/worldwake-ai/src/pressure.rs",
+            "crates/worldwake-ai/src/ranking.rs",
+        ];
+
+        for relative in modules {
+            let source = fs::read_to_string(repo_root.join(relative))
+                .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
+            let production_source = source
+                .split("\n#[cfg(test)]")
+                .next()
+                .expect("split always returns at least one segment");
+            assert!(
+                production_source.contains("GoalBeliefView"),
+                "{relative} should compile against GoalBeliefView"
+            );
+            assert!(
+                !production_source.contains("&dyn BeliefView"),
+                "{relative} should not depend on the broad BeliefView boundary"
             );
         }
     }

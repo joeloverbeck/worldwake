@@ -393,10 +393,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
-        AgentBeliefStore, CauseRef, CommodityKind, Container, ControlSource,
-        DeprivationExposure, DriveThresholds, EntityId, EventLog, HomeostaticNeeds, LoadUnits,
-        MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        AgentBeliefStore, CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure,
+        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, LoadUnits, MetabolismProfile,
+        PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,

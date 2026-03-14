@@ -1,8 +1,8 @@
 use crate::GoalPriorityClass;
 use worldwake_core::{EntityId, Permille, ThresholdBand};
-use worldwake_sim::BeliefView;
+use worldwake_sim::GoalBeliefView;
 
-pub fn derive_pain_pressure(view: &dyn BeliefView, agent: EntityId) -> Permille {
+pub fn derive_pain_pressure(view: &dyn GoalBeliefView, agent: EntityId) -> Permille {
     view.wounds(agent)
         .into_iter()
         .fold(Permille::new_unchecked(0), |pressure, wound| {
@@ -10,7 +10,7 @@ pub fn derive_pain_pressure(view: &dyn BeliefView, agent: EntityId) -> Permille 
         })
 }
 
-pub fn derive_danger_pressure(view: &dyn BeliefView, agent: EntityId) -> Permille {
+pub fn derive_danger_pressure(view: &dyn GoalBeliefView, agent: EntityId) -> Permille {
     let Some(thresholds) = view.drive_thresholds(agent) else {
         return Permille::new_unchecked(0);
     };

@@ -211,7 +211,8 @@ fn test_no_player_branching() {
     let vara = find_agent(&ctx.sim, "Merchant Vara");
     let runtime_vara =
         PerAgentBeliefRuntime::new(ctx.sim.scheduler().active_actions(), &ctx.registries.defs);
-    let view_vara = PerAgentBeliefView::with_runtime_from_world(vara, ctx.sim.world(), runtime_vara);
+    let view_vara =
+        PerAgentBeliefView::with_runtime_from_world(vara, ctx.sim.world(), runtime_vara);
     let affordances_vara = get_affordances(
         &view_vara,
         vara,
@@ -228,7 +229,8 @@ fn test_no_player_branching() {
     let lina = find_agent(&ctx.sim, "Forager Lina");
     let runtime_lina =
         PerAgentBeliefRuntime::new(ctx.sim.scheduler().active_actions(), &ctx.registries.defs);
-    let view_lina = PerAgentBeliefView::with_runtime_from_world(lina, ctx.sim.world(), runtime_lina);
+    let view_lina =
+        PerAgentBeliefView::with_runtime_from_world(lina, ctx.sim.world(), runtime_lina);
     let affordances_lina = get_affordances(
         &view_lina,
         lina,

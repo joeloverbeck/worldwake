@@ -3,11 +3,10 @@ use std::num::NonZeroU32;
 
 use worldwake_core::{
     build_believed_entity_state, hash_serializable, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, ActionDefId,
-    AgentBeliefStore, BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource,
-    EventLog, LoadUnits, PerceptionSource, Place, Quantity, ResourceSource, Seed, StateHash,
-    Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn,
+    verify_authoritative_conservation, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
+    BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource, EventLog, LoadUnits,
+    PerceptionSource, Place, Quantity, ResourceSource, Seed, StateHash, Tick, Topology, TravelEdge,
+    TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
 };
 use worldwake_sim::{
     get_affordances, step_tick, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
@@ -605,7 +604,11 @@ fn scheduler_partial_pickup_and_travel_replays_deterministically() {
         let carried_water = harness.world.possessions_of(harness.actor)[0];
         assert_ne!(carried_water, water);
         assert_eq!(
-            harness.world.get_component_item_lot(water).unwrap().quantity,
+            harness
+                .world
+                .get_component_item_lot(water)
+                .unwrap()
+                .quantity,
             Quantity(1)
         );
         assert_eq!(
@@ -642,7 +645,10 @@ fn scheduler_partial_pickup_and_travel_replays_deterministically() {
         left.world.effective_place(left_carried_water),
         Some(left.bakery_place)
     );
-    assert_eq!(left.world.effective_place(left_water), Some(left.orchard_place));
+    assert_eq!(
+        left.world.effective_place(left_water),
+        Some(left.orchard_place)
+    );
     verify_live_lot_conservation(&left.world, CommodityKind::Water, 3).unwrap();
     verify_authoritative_conservation(&left.world, CommodityKind::Water, 3).unwrap();
 
@@ -650,7 +656,10 @@ fn scheduler_partial_pickup_and_travel_replays_deterministically() {
         right.world.effective_place(right_carried_water),
         Some(right.bakery_place)
     );
-    assert_eq!(right.world.effective_place(right_water), Some(right.orchard_place));
+    assert_eq!(
+        right.world.effective_place(right_water),
+        Some(right.orchard_place)
+    );
     verify_live_lot_conservation(&right.world, CommodityKind::Water, 3).unwrap();
     verify_authoritative_conservation(&right.world, CommodityKind::Water, 3).unwrap();
 

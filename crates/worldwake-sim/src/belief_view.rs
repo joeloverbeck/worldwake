@@ -8,6 +8,68 @@ use worldwake_core::{
     UniqueItemKind, WorkstationTag, Wound,
 };
 
+/// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
+///
+/// Classification:
+/// - subjective reads: observed non-self state such as `effective_place`, `commodity_quantity`,
+///   `corpse_entities_at`, `agents_selling_at`
+/// - self-authoritative reads: self needs, wounds, recipes, inventory, load, profiles
+/// - public structure reads: topology, place tags, workstation and source discovery
+///
+/// Deliberately excluded from this trait:
+/// - queue and reservation helpers
+/// - duration estimation
+/// - broader affordance/runtime helpers used by snapshot/search code
+pub trait GoalBeliefView {
+    fn is_alive(&self, entity: EntityId) -> bool;
+    fn is_dead(&self, entity: EntityId) -> bool;
+    fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
+    fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
+    fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
+    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity;
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId>;
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
+    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
+    fn has_production_job(&self, entity: EntityId) -> bool;
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
+    fn is_incapacitated(&self, entity: EntityId) -> bool;
+    fn has_wounds(&self, entity: EntityId) -> bool;
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
+    fn wounds(&self, agent: EntityId) -> Vec<Wound>;
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId>;
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId>;
+    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+}
+
 pub trait BeliefView {
     fn is_alive(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
@@ -99,6 +161,166 @@ pub trait BeliefView {
         targets: &[EntityId],
         payload: &ActionPayload,
     ) -> Option<ActionDuration>;
+}
+
+impl<T: BeliefView + ?Sized> GoalBeliefView for T {
+    fn is_alive(&self, entity: EntityId) -> bool {
+        BeliefView::is_alive(self, entity)
+    }
+
+    fn is_dead(&self, entity: EntityId) -> bool {
+        BeliefView::is_dead(self, entity)
+    }
+
+    fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+        BeliefView::entity_kind(self, entity)
+    }
+
+    fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+        BeliefView::effective_place(self, entity)
+    }
+
+    fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        BeliefView::entities_at(self, place)
+    }
+
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+        BeliefView::direct_possessions(self, holder)
+    }
+
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        BeliefView::adjacent_places_with_travel_ticks(self, place)
+    }
+
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+        BeliefView::knows_recipe(self, actor, recipe)
+    }
+
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
+        BeliefView::known_recipes(self, agent)
+    }
+
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+        BeliefView::unique_item_count(self, holder, kind)
+    }
+
+    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+        BeliefView::commodity_quantity(self, holder, kind)
+    }
+
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity {
+        BeliefView::controlled_commodity_quantity_at_place(self, agent, place, commodity)
+    }
+
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        BeliefView::local_controlled_lots_for(self, agent, place, commodity)
+    }
+
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+        BeliefView::item_lot_commodity(self, entity)
+    }
+
+    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
+        BeliefView::item_lot_consumable_profile(self, entity)
+    }
+
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        BeliefView::direct_container(self, entity)
+    }
+
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+        BeliefView::direct_possessor(self, entity)
+    }
+
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+        BeliefView::workstation_tag(self, entity)
+    }
+
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+        BeliefView::resource_source(self, entity)
+    }
+
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        BeliefView::resource_sources_at(self, place, commodity)
+    }
+
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+        BeliefView::matching_workstations_at(self, place, tag)
+    }
+
+    fn has_production_job(&self, entity: EntityId) -> bool {
+        BeliefView::has_production_job(self, entity)
+    }
+
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        BeliefView::can_control(self, actor, entity)
+    }
+
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+        BeliefView::carry_capacity(self, entity)
+    }
+
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+        BeliefView::load_of_entity(self, entity)
+    }
+
+    fn is_incapacitated(&self, entity: EntityId) -> bool {
+        BeliefView::is_incapacitated(self, entity)
+    }
+
+    fn has_wounds(&self, entity: EntityId) -> bool {
+        BeliefView::has_wounds(self, entity)
+    }
+
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        BeliefView::homeostatic_needs(self, agent)
+    }
+
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+        BeliefView::drive_thresholds(self, agent)
+    }
+
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+        BeliefView::merchandise_profile(self, agent)
+    }
+
+    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+        BeliefView::wounds(self, agent)
+    }
+
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        BeliefView::hostile_targets_of(self, agent)
+    }
+
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+        BeliefView::visible_hostiles_for(self, agent)
+    }
+
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+        BeliefView::current_attackers_of(self, agent)
+    }
+
+    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        BeliefView::agents_selling_at(self, place, commodity)
+    }
+
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+        BeliefView::demand_memory(self, agent)
+    }
+
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        BeliefView::corpse_entities_at(self, place)
+    }
 }
 
 #[must_use]

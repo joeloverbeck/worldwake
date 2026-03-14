@@ -1,6 +1,6 @@
 use crate::{generate_candidates, rank_candidates, GoalPriorityClass};
 use worldwake_core::{BlockedIntentMemory, EntityId, GoalKind, Tick, UtilityProfile};
-use worldwake_sim::{BeliefView, RecipeRegistry};
+use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GoalExplanation {
@@ -14,7 +14,7 @@ pub struct GoalExplanation {
 
 #[must_use]
 pub fn explain_goal(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     goal: &GoalKind,
     blocked: &BlockedIntentMemory,

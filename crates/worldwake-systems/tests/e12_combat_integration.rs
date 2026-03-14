@@ -341,7 +341,6 @@ impl CombatHarness {
 
         panic!("actions did not complete within {max_ticks} ticks");
     }
-
 }
 
 #[test]

@@ -8,12 +8,12 @@ use worldwake_core::{
     CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKind, HomeostaticNeeds,
     Permille, UtilityProfile,
 };
-use worldwake_sim::{BeliefView, RecipeRegistry};
+use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
 #[must_use]
 pub fn rank_candidates(
     candidates: &[GroundedGoal],
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     utility: &UtilityProfile,
     recipes: &RecipeRegistry,
@@ -34,7 +34,7 @@ pub fn rank_candidates(
 }
 
 struct RankingContext<'a> {
-    view: &'a dyn BeliefView,
+    view: &'a dyn GoalBeliefView,
     agent: EntityId,
     utility: &'a UtilityProfile,
     needs: Option<HomeostaticNeeds>,
@@ -43,7 +43,7 @@ struct RankingContext<'a> {
 }
 
 impl<'a> RankingContext<'a> {
-    fn new(view: &'a dyn BeliefView, agent: EntityId, utility: &'a UtilityProfile) -> Self {
+    fn new(view: &'a dyn GoalBeliefView, agent: EntityId, utility: &'a UtilityProfile) -> Self {
         Self {
             view,
             agent,

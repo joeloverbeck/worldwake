@@ -398,11 +398,8 @@ mod tests {
             spawned.state.scheduler().active_actions(),
             &spawned.action_registries.defs,
         );
-        let view = PerAgentBeliefView::with_runtime_from_world(
-            merchant,
-            spawned.state.world(),
-            runtime,
-        );
+        let view =
+            PerAgentBeliefView::with_runtime_from_world(merchant, spawned.state.world(), runtime);
 
         // Affordances come from the merchant's context (invariant 9.12).
         let affordances = get_affordances(

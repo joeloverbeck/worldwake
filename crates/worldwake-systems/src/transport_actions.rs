@@ -375,9 +375,9 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, CarryCapacity,
-        CauseRef, CommodityKind, Container, ControlSource, EventLog, LoadUnits,
-        PerceptionSource, Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        CauseRef, CommodityKind, Container, ControlSource, EventLog, LoadUnits, PerceptionSource,
+        Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
@@ -1023,11 +1023,11 @@ mod tests {
         let travel_id =
             crate::travel_actions::register_travel_actions(&mut travel_defs, &mut travel_handlers);
         let travel_affordance = affordances_for(&world, actor, &travel_defs, &travel_handlers)
-        .into_iter()
-        .find(|affordance| {
-            affordance.def_id == travel_id && affordance.bound_targets == vec![destination]
-        })
-        .unwrap();
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == travel_id && affordance.bound_targets == vec![destination]
+            })
+            .unwrap();
         let mut next_instance_id = ActionInstanceId(2);
         let travel_instance = start_action(
             &travel_affordance,

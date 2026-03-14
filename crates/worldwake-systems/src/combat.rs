@@ -1770,11 +1770,11 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
         let affordance = affordances_for(&world, healer, &defs, &handlers)
-                .into_iter()
-                .find(|affordance| {
-                    affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
-                })
-                .unwrap();
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
+            })
+            .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -1876,11 +1876,11 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let heal_id = register_heal_action(&mut defs, &mut handlers);
         let affordance = affordances_for(&world, healer, &defs, &handlers)
-                .into_iter()
-                .find(|affordance| {
-                    affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
-                })
-                .unwrap();
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
+            })
+            .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2506,11 +2506,11 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let attack_id = register_attack_action(&mut defs, &mut handlers);
         let affordance = affordances_for(&world, attacker, &defs, &handlers)
-        .into_iter()
-        .find(|affordance| {
-            affordance.def_id == attack_id && affordance.bound_targets == vec![target]
-        })
-        .unwrap();
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == attack_id && affordance.bound_targets == vec![target]
+            })
+            .unwrap();
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);
@@ -2978,8 +2978,7 @@ mod tests {
         let defend_id = register_defend_action(&mut defs, &mut handlers);
 
         let dead_affordances = affordances_for(&world, dead, &defs, &handlers);
-        let incapacitated_affordances =
-            affordances_for(&world, incapacitated, &defs, &handlers);
+        let incapacitated_affordances = affordances_for(&world, incapacitated, &defs, &handlers);
 
         assert!(!dead_affordances
             .iter()
@@ -3424,9 +3423,9 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
         let affordance = affordances_for(&world, guard, &defs, &handlers)
-                .into_iter()
-                .find(|affordance| affordance.def_id == defend_id)
-                .unwrap();
+            .into_iter()
+            .find(|affordance| affordance.def_id == defend_id)
+            .unwrap();
         let mut active_actions = BTreeMap::new();
         let mut log = EventLog::new();
         let mut next_id = ActionInstanceId(0);

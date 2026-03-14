@@ -11,13 +11,12 @@ use std::num::NonZeroU32;
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
-    AgentBeliefStore, BlockedIntentMemory, BodyCostPerTick, CarryCapacity, CauseRef,
-    CombatProfile, CombatStance, CommodityKind, ControlSource, DeprivationExposure,
-    DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds, KnownRecipes,
-    LoadUnits, MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId,
-    ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-    World, WorldTxn, WoundList,
+    AgentBeliefStore, BlockedIntentMemory, BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile,
+    CombatStance, CommodityKind, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
+    EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
+    FacilityUseQueue, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile,
+    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed, Tick,
+    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,

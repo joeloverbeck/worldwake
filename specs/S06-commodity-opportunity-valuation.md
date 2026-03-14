@@ -101,14 +101,14 @@ Meaning:
 
 These are reasoning bounds, not global rules of the world.
 
-### 2. Extend `BeliefView`
+### 2. Extend the AI-facing valuation read surface
 Add:
 
 ```rust
 fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile>;
 ```
 
-This keeps both AI and simulation-time valuation on the same belief-facing read surface.
+This should land on the narrow AI-facing goal/value read surface, not blindly on the broad mixed affordance/search trait. If the post-E14 boundary uses a dedicated goal-forming trait, extend that surface instead of defaulting to the full `BeliefView`.
 
 ### 3. Shared `commodity_opportunity` Module in `worldwake-sim`
 Add a new shared module that derives concrete commodity value channels from beliefs plus recipes.

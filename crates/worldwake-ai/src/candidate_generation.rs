@@ -8,7 +8,7 @@ use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
     GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
 };
-use worldwake_sim::{BeliefView, RecipeDefinition, RecipeRegistry};
+use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
 
 #[derive(Default)]
 struct Evidence {
@@ -42,7 +42,7 @@ impl Evidence {
 }
 
 struct GenerationContext<'a> {
-    view: &'a dyn BeliefView,
+    view: &'a dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     travel_horizon: u8,
@@ -54,7 +54,7 @@ struct GenerationContext<'a> {
 
 #[must_use]
 pub fn generate_candidates(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     blocked: &BlockedIntentMemory,
     recipes: &RecipeRegistry,
@@ -65,7 +65,7 @@ pub fn generate_candidates(
 
 #[must_use]
 pub fn generate_candidates_with_travel_horizon(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     blocked: &BlockedIntentMemory,
     recipes: &RecipeRegistry,
@@ -441,7 +441,7 @@ fn emit_treatment_candidates(
 }
 
 fn local_hostility_targets(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
 ) -> Vec<EntityId> {
@@ -590,7 +590,7 @@ fn emit_move_cargo_goals(
 }
 
 fn deliverable_quantity(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     current_place: EntityId,
     destination: EntityId,
@@ -635,7 +635,7 @@ fn emit_loot_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
     }
 }
 
-fn corpse_has_known_loot(view: &dyn BeliefView, corpse: EntityId) -> bool {
+fn corpse_has_known_loot(view: &dyn GoalBeliefView, corpse: EntityId) -> bool {
     if !view.direct_possessions(corpse).is_empty() {
         return true;
     }
@@ -708,7 +708,7 @@ fn emit_candidate(
 }
 
 fn acquisition_path_evidence(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     commodity: CommodityKind,
@@ -766,7 +766,7 @@ fn acquisition_path_evidence(
 }
 
 fn reachable_places_within_horizon(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     origin: EntityId,
     travel_horizon: u8,
 ) -> Vec<EntityId> {
@@ -790,7 +790,7 @@ fn reachable_places_within_horizon(
 }
 
 fn local_unpossessed_commodity_evidence(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     place: EntityId,
     commodity: CommodityKind,
 ) -> Option<Evidence> {
@@ -808,7 +808,7 @@ fn local_unpossessed_commodity_evidence(
 }
 
 fn recipe_path_evidence(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     recipe: &RecipeDefinition,
@@ -891,7 +891,7 @@ fn emit_missing_recipe_input_goals(
 }
 
 fn available_recipe_workstation_evidence(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     recipe: &RecipeDefinition,
@@ -933,7 +933,7 @@ fn aggregate_recipe_quantities(
 }
 
 fn local_wounded_targets(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
 ) -> Vec<EntityId> {
@@ -952,7 +952,7 @@ fn local_wounded_targets(
 }
 
 fn local_heal_targets(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
 ) -> Vec<EntityId> {
@@ -963,7 +963,7 @@ fn local_heal_targets(
 }
 
 fn local_controlled_commodity_exists(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     commodity: CommodityKind,
@@ -972,7 +972,7 @@ fn local_controlled_commodity_exists(
 }
 
 fn local_controlled_commodity_evidence(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     commodity: CommodityKind,
@@ -992,7 +992,7 @@ fn local_controlled_commodity_evidence(
 }
 
 fn any_local_need_relief(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     matches_need: fn(CommodityKind) -> bool,
@@ -1007,7 +1007,7 @@ fn any_local_need_relief(
 }
 
 fn corpse_contains_commodity(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     corpse: EntityId,
     commodity: CommodityKind,
 ) -> bool {

@@ -4,8 +4,8 @@ use worldwake_core::{
     build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
     CauseRef, CommodityKind, ComponentKind, Container, ControlSource, DeprivationExposure,
     DeprivationKind, DriveThresholds, EventLog, HomeostaticNeeds, LoadUnits, MetabolismProfile,
-    PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
-    WitnessData, World, WorldTxn, WoundCause,
+    PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, WitnessData,
+    World, WorldTxn, WoundCause,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng,

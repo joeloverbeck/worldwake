@@ -640,10 +640,10 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyCostPerTick,
         CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
-        EntityId, EventId, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
-        GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
-        Permille, Quantity, ResourceSource, Seed, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        EntityId, EventId, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
+        HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource, Permille, Quantity,
+        ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+        World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -1190,8 +1190,13 @@ mod tests {
 
         let (mut world_missing_recipe, actor_missing_recipe, _, _) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
-        assert!(affordances_for(&world_missing_recipe, actor_missing_recipe, &defs, &handlers)
-            .is_empty());
+        assert!(affordances_for(
+            &world_missing_recipe,
+            actor_missing_recipe,
+            &defs,
+            &handlers
+        )
+        .is_empty());
 
         let (mut world_wrong_tag, actor_wrong_tag, _, _) =
             setup_world(false, WorkstationTag::Mill, 5);
@@ -1789,8 +1794,13 @@ mod tests {
             CommodityKind::Grain,
             2,
         );
-        assert!(affordances_for(&world_missing_recipe, actor_missing_recipe, &defs, &handlers)
-            .is_empty());
+        assert!(affordances_for(
+            &world_missing_recipe,
+            actor_missing_recipe,
+            &defs,
+            &handlers
+        )
+        .is_empty());
 
         let (mut world_missing_tool, actor_missing_tool, _, place_missing_tool) =
             craft_fixture(false);
@@ -1802,8 +1812,9 @@ mod tests {
             CommodityKind::Grain,
             2,
         );
-        assert!(affordances_for(&world_missing_tool, actor_missing_tool, &defs, &handlers)
-            .is_empty());
+        assert!(
+            affordances_for(&world_missing_tool, actor_missing_tool, &defs, &handlers).is_empty()
+        );
 
         let (mut world_ready, actor_ready, workstation_ready, place_ready) = craft_fixture(false);
         grant_recipe(&mut world_ready, actor_ready, recipe_id);

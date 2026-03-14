@@ -60,8 +60,8 @@ mod tests {
     use std::any::type_name;
     use worldwake_core::ActionDefId;
     use worldwake_sim::{
-        ActionDefRegistry, ActionPayload, Affordance, BeliefView, InputEvent, InputKind,
-        PerAgentBeliefView, ReplanNeeded,
+        ActionDefRegistry, ActionPayload, Affordance, BeliefView, GoalBeliefView, InputEvent,
+        InputKind, PerAgentBeliefView, ReplanNeeded,
     };
 
     fn assert_type_is_available<T>() -> &'static str {
@@ -105,6 +105,7 @@ mod tests {
         );
 
         let _: Option<&dyn BeliefView> = None;
+        let _: Option<&dyn GoalBeliefView> = None;
         let _ = assert_type_is_available::<PlanningSnapshot>();
         let _ = assert_type_is_available::<PlanningState<'static>>();
     }

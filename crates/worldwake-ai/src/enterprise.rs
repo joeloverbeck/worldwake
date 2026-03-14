@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use worldwake_core::{CommodityKind, EntityId, Permille, Quantity};
-use worldwake_sim::BeliefView;
+use worldwake_sim::GoalBeliefView;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct EnterpriseSignals {
@@ -14,7 +14,7 @@ impl EnterpriseSignals {
 }
 
 pub(crate) fn analyze_candidate_enterprise(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     fallback_place: Option<EntityId>,
 ) -> EnterpriseSignals {
@@ -36,7 +36,7 @@ pub(crate) fn analyze_candidate_enterprise(
 }
 
 pub(crate) fn opportunity_signal(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     fallback_place: Option<EntityId>,
     commodity: CommodityKind,
@@ -52,7 +52,7 @@ pub(crate) fn opportunity_signal(
 }
 
 pub(crate) fn market_signal_for_place(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     commodity: CommodityKind,
     place: EntityId,
@@ -70,7 +70,7 @@ pub(crate) fn market_signal_for_place(
 }
 
 fn relevant_demand_quantity(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     market: EntityId,
     commodity: CommodityKind,
@@ -84,7 +84,7 @@ fn relevant_demand_quantity(
 }
 
 fn restock_gap_for_market(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     market: EntityId,
     commodity: CommodityKind,
@@ -103,7 +103,7 @@ fn restock_gap_for_market(
 }
 
 pub(crate) fn restock_gap_at_destination(
-    view: &dyn BeliefView,
+    view: &dyn GoalBeliefView,
     agent: EntityId,
     destination: EntityId,
     commodity: CommodityKind,

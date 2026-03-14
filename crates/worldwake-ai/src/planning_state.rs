@@ -445,8 +445,10 @@ impl<'snapshot> PlanningState<'snapshot> {
         commodity: CommodityKind,
         quantity: Quantity,
     ) -> Self {
-        self.commodity_quantity_overrides
-            .insert((PlanningEntityRef::Authoritative(entity), commodity), quantity);
+        self.commodity_quantity_overrides.insert(
+            (PlanningEntityRef::Authoritative(entity), commodity),
+            quantity,
+        );
         self
     }
 

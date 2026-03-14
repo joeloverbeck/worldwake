@@ -613,11 +613,10 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
-        AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag,
-        HomeostaticNeeds, LotOperation, MerchandiseProfile, PerceptionSource, Permille, Quantity,
-        Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+        DemandObservationReason, EntityId, EventLog, EventTag, HomeostaticNeeds, LotOperation,
+        MerchandiseProfile, PerceptionSource, Permille, Quantity, Seed, SubstitutePreferences,
+        Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
@@ -892,8 +891,12 @@ mod tests {
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
 
-        let affordances =
-            affordances_for(&harness.world, harness.actor, &harness.defs, &harness.handlers);
+        let affordances = affordances_for(
+            &harness.world,
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
 
         assert!(affordances.iter().any(|affordance| {
             affordance.def_id == harness.def_id

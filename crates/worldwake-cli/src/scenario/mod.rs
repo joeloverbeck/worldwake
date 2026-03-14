@@ -11,9 +11,9 @@ use std::path::Path;
 use types::ScenarioDef;
 use worldwake_core::{
     hash_world, CauseRef, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
-    EntityKind, EventLog, MerchandiseProfile, MetabolismProfile, Place, ResourceSource, Seed,
-    Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
-    World, WorldTxn,
+    EntityKind, EventLog, MerchandiseProfile, MetabolismProfile, Place, ResourceSource, Seed, Tick,
+    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
+    WorldTxn,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,

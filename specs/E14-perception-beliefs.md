@@ -200,7 +200,7 @@ All interactions are state-mediated — no direct system calls:
 - **E10 Production**: Resource regeneration creates events. Perception makes co-located agents aware of resource changes.
 - **E11 Trade**: Trade actions create events. `DemandMemory` remains a separate domain-specific component (different concern from general perception). Perception updates location/inventory beliefs used in trade planning.
 - **E12 Combat**: Combat events are perceived by co-located agents. `PerAgentBeliefView.visible_hostiles_for()` returns only hostiles the agent has perceived.
-- **E13 Decision Architecture**: AI crate consumes `&dyn BeliefView`. After E14, receives `PerAgentBeliefView` instead of `OmniscientBeliefView`. No `BeliefView` trait changes required.
+- **E13 Decision Architecture**: E14 established `PerAgentBeliefView` as the interim actor-specific implementation of the broad `BeliefView` surface. Follow-up boundary cleanup may split narrower AI goal-forming reads from broader affordance/search helpers; future AI read-model work must not assume the current broad trait is the final long-term interface.
 
 ## Invariants Enforced
 - 9.11: World/belief separation — agents react only to perceived, inferred, remembered, or told facts
