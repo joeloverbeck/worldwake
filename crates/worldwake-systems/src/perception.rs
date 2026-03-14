@@ -210,6 +210,12 @@ fn observed_entities(record: &EventRecord) -> BTreeSet<EntityId> {
             EvidenceRef::Wound { entity, .. } => {
                 entities.insert(*entity);
             }
+            EvidenceRef::Mismatch {
+                observer, subject, ..
+            } => {
+                entities.insert(*observer);
+                entities.insert(*subject);
+            }
         }
     }
     for delta in &record.state_deltas {

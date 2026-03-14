@@ -23,7 +23,8 @@ When the perception system updates a belief and detects material mismatch betwee
 1. Mismatch comparison happens BEFORE `update_entity()` overwrites the prior belief. We read the old belief, compare with new snapshot, emit Discovery if different, then update.
 2. Discovery events are emitted into the event_log directly (not via the belief-update WorldTxn) — they are separate observable events with their own metadata.
 3. Only material differences trigger Discovery — not every field change. Material = alive status, inventory quantities, place, entity presence.
-4. No backwards-compatibility shims.
+4. This ticket may introduce a private helper for mismatch comparison and discovery-event construction if that keeps `E15RUMWITDIS-009` from duplicating logic. If the helper is not extracted here, `-009` must extract it instead of copying the code.
+5. No backwards-compatibility shims.
 
 ## What to Change
 
@@ -51,6 +52,13 @@ If the agent has no prior belief about the entity (first observation), do NOT em
 ### 3. Pass event_log into `observe_passive_local_entities()`
 
 Currently the function signature only takes `world`, `tick`, `rng`, `updated_stores`. Add `event_log: &mut EventLog` parameter so it can emit Discovery events.
+
+### 4. Keep mismatch logic shareable
+
+Do not hard-wire mismatch comparison or Discovery event construction into a passive-only code path in a way that `E15RUMWITDIS-009` would have to duplicate. Either:
+
+- extract a private helper in this ticket, or
+- keep the passive implementation small enough that `-009` can extract the helper as part of its work without behavioral churn.
 
 ## Files to Touch
 
@@ -86,6 +94,7 @@ Currently the function signature only takes `world`, `tick`, `rng`, `updated_sto
 2. Mismatch detection does not alter the belief update itself — beliefs still update normally
 3. First observations never trigger Discovery (no prior belief = no expectation to violate)
 4. Principle 15 (violated expectation): Discovery is emitted ONLY when prior belief exists AND differs materially
+5. This ticket must not force duplicated mismatch/emission logic across passive and event-based perception paths
 
 ## Test Plan
 

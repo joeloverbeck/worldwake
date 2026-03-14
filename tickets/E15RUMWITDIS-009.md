@@ -19,12 +19,12 @@ Two mismatch detection paths remain after E15RUMWITDIS-008:
 1. `observe_passive_local_entities()` iterates `world.entities_effectively_at(place)` for each observer — this gives the "actually present" set.
 2. `AgentBeliefStore.known_entities` keys filtered by `last_known_place == observer's place` gives the "believed to be here" set.
 3. The event-based perception path (the main loop in `perception_system()`) calls `build_believed_entity_state()` and `store.update_entity()` — same pattern as passive observation, needs same mismatch comparison.
-4. E15RUMWITDIS-008 will have already added the mismatch comparison infrastructure and Discovery event emission pattern.
+4. E15RUMWITDIS-008 may or may not have extracted reusable mismatch helpers. If it did not, this ticket must extract them before extending behavior.
 
 ## Architecture Check
 
 1. EntityMissing is a post-observation check: after all entities at the place are observed, scan beliefs for entities believed-at-this-place that were NOT in the observed set.
-2. Event-based mismatch reuses the exact same comparison logic from E15RUMWITDIS-008 — extract into a shared helper.
+2. Event-based mismatch reuses the exact same comparison and Discovery event-construction logic as passive observation. Shared helper extraction is required here if `E15RUMWITDIS-008` did not already do it.
 3. EntityMissing uses the observation_fidelity check: if fidelity filtered out the entity (random check failed), do NOT report EntityMissing for it. The agent "didn't notice" rather than "noticed absence."
 4. No backwards-compatibility shims.
 
@@ -32,15 +32,22 @@ Two mismatch detection paths remain after E15RUMWITDIS-008:
 
 ### 1. Extract mismatch comparison helper
 
-Refactor the mismatch comparison logic from E15RUMWITDIS-008 into a reusable helper function in `perception.rs`:
+Extract the mismatch comparison logic and Discovery event construction into reusable private helpers in `perception.rs` before adding the remaining behaviors. This is required to avoid passive/event-based drift.
 
 ```rust
 fn detect_mismatches(
     prior: &BelievedEntityState,
     new: &BelievedEntityState,
+) -> Vec<MismatchKind> { ... }
+
+fn emit_discovery_events(
+    event_log: &mut EventLog,
+    tick: Tick,
     observer: EntityId,
+    place: EntityId,
     subject: EntityId,
-) -> Vec<EvidenceRef> { ... }
+    mismatches: Vec<MismatchKind>,
+) { ... }
 ```
 
 ### 2. Add EntityMissing detection
@@ -87,7 +94,7 @@ In the event-based perception loop (main `perception_system()` function), before
 
 1. EntityMissing requires a prior belief with `last_known_place == observer's place`
 2. EntityMissing is not triggered for entities the agent never believed were at this place
-3. Mismatch comparison logic is shared between passive and event-based paths (no duplication)
+3. Mismatch comparison and Discovery event construction are shared between passive and event-based paths (no duplication)
 4. Discovery events are always VisibilitySpec::ParticipantsOnly
 
 ## Test Plan

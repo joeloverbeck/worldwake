@@ -67,7 +67,7 @@ pub mod wounds;
 pub use allocator::EntityAllocator;
 pub use belief::{
     build_believed_entity_state, AgentBeliefStore, BelievedEntityState, PerceptionProfile,
-    PerceptionSource, SocialObservation, SocialObservationKind, TellProfile,
+    MismatchKind, PerceptionSource, SocialObservation, SocialObservationKind, TellProfile,
 };
 pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
 pub use canonical::{

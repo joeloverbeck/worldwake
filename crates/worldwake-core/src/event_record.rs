@@ -1,7 +1,7 @@
 //! Immutable append-only event payloads.
 
 use crate::WoundId;
-use crate::{CauseRef, EventTag, StateDelta, VisibilitySpec, WitnessData};
+use crate::{CauseRef, EventTag, MismatchKind, StateDelta, VisibilitySpec, WitnessData};
 use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -9,6 +9,11 @@ use std::collections::BTreeSet;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum EvidenceRef {
     Wound { entity: EntityId, wound_id: WoundId },
+    Mismatch {
+        observer: EntityId,
+        subject: EntityId,
+        kind: MismatchKind,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -139,6 +144,7 @@ mod tests {
         CommodityKind, EntityId, EntityKind, EventId, Name, Quantity, ReservationId,
         ReservationRecord, Tick, TickRange, WoundId,
     };
+    use crate::MismatchKind;
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::fmt::Debug;
@@ -357,6 +363,74 @@ mod tests {
     }
 
     #[test]
+    fn pending_event_orders_and_deduplicates_mismatch_evidence() {
+        let pending = PendingEvent::new(
+            Tick(21),
+            CauseRef::Bootstrap,
+            Some(entity(1)),
+            vec![entity(2)],
+            Some(entity(7)),
+            Vec::new(),
+            VisibilitySpec::ParticipantsOnly,
+            WitnessData::default(),
+            BTreeSet::from([EventTag::Discovery]),
+        )
+        .with_evidence(vec![
+            EvidenceRef::Mismatch {
+                observer: entity(3),
+                subject: entity(4),
+                kind: MismatchKind::InventoryDiscrepancy {
+                    commodity: CommodityKind::Bread,
+                    believed: Quantity(5),
+                    observed: Quantity(2),
+                },
+            },
+            EvidenceRef::Wound {
+                entity: entity(9),
+                wound_id: WoundId(2),
+            },
+            EvidenceRef::Mismatch {
+                observer: entity(3),
+                subject: entity(4),
+                kind: MismatchKind::InventoryDiscrepancy {
+                    commodity: CommodityKind::Bread,
+                    believed: Quantity(5),
+                    observed: Quantity(2),
+                },
+            },
+            EvidenceRef::Mismatch {
+                observer: entity(3),
+                subject: entity(4),
+                kind: MismatchKind::AliveStatusChanged,
+            },
+        ]);
+
+        assert_eq!(
+            pending.evidence,
+            vec![
+                EvidenceRef::Wound {
+                    entity: entity(9),
+                    wound_id: WoundId(2),
+                },
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::AliveStatusChanged,
+                },
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::InventoryDiscrepancy {
+                        commodity: CommodityKind::Bread,
+                        believed: Quantity(5),
+                        observed: Quantity(2),
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn event_record_roundtrips_through_bincode_with_ordered_deltas() {
         let record = PendingEvent::new(
             Tick(18),
@@ -413,5 +487,48 @@ mod tests {
             roundtrip.state_deltas[2],
             StateDelta::Reservation(ReservationDelta::Created { .. })
         ));
+    }
+
+    #[test]
+    fn event_record_roundtrips_with_mismatch_evidence() {
+        let record = PendingEvent::new(
+            Tick(22),
+            CauseRef::SystemTick(Tick(22)),
+            Some(entity(3)),
+            vec![entity(8)],
+            Some(entity(7)),
+            Vec::new(),
+            VisibilitySpec::ParticipantsOnly,
+            WitnessData {
+                direct_witnesses: BTreeSet::from([entity(3)]),
+                potential_witnesses: BTreeSet::from([entity(3)]),
+            },
+            BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+        )
+        .with_evidence(vec![EvidenceRef::Mismatch {
+            observer: entity(3),
+            subject: entity(8),
+            kind: MismatchKind::PlaceChanged {
+                believed_place: entity(5),
+                observed_place: entity(7),
+            },
+        }])
+        .into_record(EventId(14));
+
+        let bytes = bincode::serialize(&record).unwrap();
+        let roundtrip: EventRecord = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, record);
+        assert_eq!(
+            roundtrip.evidence,
+            vec![EvidenceRef::Mismatch {
+                observer: entity(3),
+                subject: entity(8),
+                kind: MismatchKind::PlaceChanged {
+                    believed_place: entity(5),
+                    observed_place: entity(7),
+                },
+            }]
+        );
     }
 }

@@ -157,6 +157,22 @@ pub enum SocialObservationKind {
     CoPresence,
 }
 
+/// Concrete differences between a prior belief and a new observation.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum MismatchKind {
+    EntityMissing,
+    AliveStatusChanged,
+    InventoryDiscrepancy {
+        commodity: CommodityKind,
+        believed: Quantity,
+        observed: Quantity,
+    },
+    PlaceChanged {
+        believed_place: EntityId,
+        observed_place: EntityId,
+    },
+}
+
 /// Per-agent parameters controlling belief retention and observation quality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PerceptionProfile {
@@ -205,7 +221,7 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 mod tests {
     use super::{
         build_believed_entity_state, AgentBeliefStore, BelievedEntityState, PerceptionProfile,
-        PerceptionSource, SocialObservation, SocialObservationKind, TellProfile,
+        MismatchKind, PerceptionSource, SocialObservation, SocialObservationKind, TellProfile,
     };
     use crate::{
         build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
@@ -271,6 +287,8 @@ mod tests {
     fn assert_component_bounds<T: Component>() {}
 
     fn assert_serde_bounds<T: Eq + Clone + Serialize + DeserializeOwned>() {}
+
+    fn assert_ordered_traits<T: Copy + Eq + Ord + std::hash::Hash>() {}
 
     #[test]
     fn new_creates_empty_store() {
@@ -419,6 +437,56 @@ mod tests {
     }
 
     #[test]
+    fn mismatch_kind_variants_construct_and_sort_stably() {
+        let mut variants = [
+            MismatchKind::PlaceChanged {
+                believed_place: entity(4),
+                observed_place: entity(5),
+            },
+            MismatchKind::EntityMissing,
+            MismatchKind::InventoryDiscrepancy {
+                commodity: CommodityKind::Bread,
+                believed: Quantity(5),
+                observed: Quantity(2),
+            },
+            MismatchKind::AliveStatusChanged,
+        ];
+
+        variants.sort_unstable();
+
+        assert_eq!(
+            variants,
+            [
+                MismatchKind::EntityMissing,
+                MismatchKind::AliveStatusChanged,
+                MismatchKind::InventoryDiscrepancy {
+                    commodity: CommodityKind::Bread,
+                    believed: Quantity(5),
+                    observed: Quantity(2),
+                },
+                MismatchKind::PlaceChanged {
+                    believed_place: entity(4),
+                    observed_place: entity(5),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn mismatch_kind_roundtrips_through_bincode() {
+        let mismatch = MismatchKind::InventoryDiscrepancy {
+            commodity: CommodityKind::Water,
+            believed: Quantity(7),
+            observed: Quantity(3),
+        };
+
+        let bytes = bincode::serialize(&mismatch).unwrap();
+        let roundtrip: MismatchKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, mismatch);
+    }
+
+    #[test]
     fn perception_profile_roundtrips_through_bincode() {
         let profile = profile(12, 34);
 
@@ -459,7 +527,9 @@ mod tests {
         assert_component_bounds::<AgentBeliefStore>();
         assert_component_bounds::<PerceptionProfile>();
         assert_component_bounds::<TellProfile>();
+        assert_ordered_traits::<MismatchKind>();
         assert_serde_bounds::<BelievedEntityState>();
+        assert_serde_bounds::<MismatchKind>();
         assert_serde_bounds::<SocialObservation>();
         assert_serde_bounds::<TellProfile>();
     }
