@@ -91,11 +91,6 @@ crate::worldwake_prefixed_id_type!(
     pub struct ReservationId(u64, "r");
 );
 
-crate::worldwake_prefixed_id_type!(
-    /// Unique identifier for an opaque fact handle in the relation layer.
-    pub struct FactId(u64, "f");
-);
-
 /// Half-open tick interval `[start, end)` used for reservation windows.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize)]
 pub struct TickRange {
@@ -262,7 +257,6 @@ mod tests {
         assert_bounds::<EventId>();
         assert_bounds::<ActionDefId>();
         assert_bounds::<ReservationId>();
-        assert_bounds::<FactId>();
         assert_bounds::<TickRange>();
         assert_bounds::<TravelEdgeId>();
         assert_bounds::<Seed>();
@@ -314,16 +308,6 @@ mod tests {
 
         let bytes = bincode::serialize(&val).unwrap();
         let back: ReservationId = bincode::deserialize(&bytes).unwrap();
-        assert_eq!(val, back);
-    }
-
-    #[test]
-    fn fact_id_display_and_bincode_roundtrip() {
-        let val = FactId(28);
-        assert_eq!(val.to_string(), "f28");
-
-        let bytes = bincode::serialize(&val).unwrap();
-        let back: FactId = bincode::deserialize(&bytes).unwrap();
         assert_eq!(val, back);
     }
 

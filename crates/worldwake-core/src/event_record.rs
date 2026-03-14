@@ -136,7 +136,7 @@ mod tests {
         WitnessData,
     };
     use crate::{
-        CommodityKind, EntityId, EntityKind, EventId, FactId, Name, Quantity, ReservationId,
+        CommodityKind, EntityId, EntityKind, EventId, Name, Quantity, ReservationId,
         ReservationRecord, Tick, TickRange, WoundId,
     };
     use serde::{de::DeserializeOwned, Serialize};
@@ -292,10 +292,10 @@ mod tests {
                     after: ComponentValue::Name(Name("New".to_string())),
                 }),
                 StateDelta::Relation(RelationDelta::Added {
-                    relation_kind: RelationKind::KnowsFact,
-                    relation: RelationValue::KnowsFact {
-                        agent: entity(1),
-                        fact: FactId(22),
+                    relation_kind: RelationKind::HostileTo,
+                    relation: RelationValue::HostileTo {
+                        subject: entity(1),
+                        target: entity(22),
                     },
                 }),
                 StateDelta::Reservation(ReservationDelta::Created {
@@ -372,10 +372,10 @@ mod tests {
                     after: ComponentValue::Name(Name("New".to_string())),
                 }),
                 StateDelta::Relation(RelationDelta::Added {
-                    relation_kind: RelationKind::KnowsFact,
-                    relation: RelationValue::KnowsFact {
-                        agent: entity(1),
-                        fact: FactId(22),
+                    relation_kind: RelationKind::HostileTo,
+                    relation: RelationValue::HostileTo {
+                        subject: entity(1),
+                        target: entity(22),
                     },
                 }),
                 StateDelta::Reservation(ReservationDelta::Created {

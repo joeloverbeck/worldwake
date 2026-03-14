@@ -345,20 +345,6 @@ impl ActualWorldState {
             }
         }
 
-        if kind == EntityKind::Agent {
-            for fact in world.known_facts(entity) {
-                relations.insert(RelationValue::KnowsFact {
-                    agent: entity,
-                    fact,
-                });
-            }
-            for fact in world.believed_facts(entity) {
-                relations.insert(RelationValue::BelievesFact {
-                    agent: entity,
-                    fact,
-                });
-            }
-        }
     }
 
     fn collect_reservations(
@@ -396,9 +382,6 @@ fn relation_is_live(
         RelationValue::OfficeHolder { office, holder } => {
             live_entities.get(office) == Some(&EntityKind::Office)
                 && live_entities.contains_key(holder)
-        }
-        RelationValue::KnowsFact { agent, .. } | RelationValue::BelievesFact { agent, .. } => {
-            live_entities.get(agent) == Some(&EntityKind::Agent)
         }
     }
 }

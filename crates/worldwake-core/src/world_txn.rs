@@ -1,6 +1,6 @@
 use crate::{
     component_schema::with_component_schema_entries, ArchiveMutationSnapshot, CommodityKind,
-    Container, ControlSource, EntityId, EntityKind, EventId, FactId, Permille, Quantity,
+    Container, ControlSource, EntityId, EntityKind, EventId, Permille, Quantity,
     ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
 };
 use crate::{
@@ -604,62 +604,6 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
-    pub fn add_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
-        let before = self.staged_world.known_facts(agent).contains(&fact);
-        self.staged_world.add_known_fact(agent, fact)?;
-        let after = self.staged_world.known_facts(agent).contains(&fact);
-        self.push_presence_relation_delta(
-            before,
-            after,
-            RelationKind::KnowsFact,
-            RelationValue::KnowsFact { agent, fact },
-        );
-        Ok(())
-    }
-
-    pub fn remove_known_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
-        let before = self.staged_world.known_facts(agent).contains(&fact);
-        self.staged_world.remove_known_fact(agent, fact)?;
-        let after = self.staged_world.known_facts(agent).contains(&fact);
-        self.push_presence_relation_delta(
-            before,
-            after,
-            RelationKind::KnowsFact,
-            RelationValue::KnowsFact { agent, fact },
-        );
-        Ok(())
-    }
-
-    pub fn add_believed_fact(&mut self, agent: EntityId, fact: FactId) -> Result<(), WorldError> {
-        let before = self.staged_world.believed_facts(agent).contains(&fact);
-        self.staged_world.add_believed_fact(agent, fact)?;
-        let after = self.staged_world.believed_facts(agent).contains(&fact);
-        self.push_presence_relation_delta(
-            before,
-            after,
-            RelationKind::BelievesFact,
-            RelationValue::BelievesFact { agent, fact },
-        );
-        Ok(())
-    }
-
-    pub fn remove_believed_fact(
-        &mut self,
-        agent: EntityId,
-        fact: FactId,
-    ) -> Result<(), WorldError> {
-        let before = self.staged_world.believed_facts(agent).contains(&fact);
-        self.staged_world.remove_believed_fact(agent, fact)?;
-        let after = self.staged_world.believed_facts(agent).contains(&fact);
-        self.push_presence_relation_delta(
-            before,
-            after,
-            RelationKind::BelievesFact,
-            RelationValue::BelievesFact { agent, fact },
-        );
-        Ok(())
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn replace_simple_component<T, Get, Remove, Insert, Wrap>(
         &mut self,
@@ -1036,8 +980,6 @@ impl<'w> WorldTxn<'w> {
         self.push_archive_removed_offices_held(snapshot.entity, &snapshot.offices_held);
         self.push_archive_removed_hostility_targets(snapshot.entity, &snapshot.hostile_to);
         self.push_archive_removed_hostility_subjects(snapshot.entity, &snapshot.hostility_from);
-        self.push_archive_removed_fact_knowledge(snapshot.entity, &snapshot.known_facts);
-        self.push_archive_removed_fact_beliefs(snapshot.entity, &snapshot.believed_facts);
         for reservation in snapshot.released_reservations {
             self.deltas
                 .push(StateDelta::Reservation(ReservationDelta::Released {
@@ -1254,25 +1196,6 @@ impl<'w> WorldTxn<'w> {
         }
     }
 
-    fn push_archive_removed_fact_knowledge(&mut self, agent: EntityId, facts: &[FactId]) {
-        for fact in facts {
-            self.deltas
-                .push(StateDelta::Relation(RelationDelta::Removed {
-                    relation_kind: RelationKind::KnowsFact,
-                    relation: RelationValue::KnowsFact { agent, fact: *fact },
-                }));
-        }
-    }
-
-    fn push_archive_removed_fact_beliefs(&mut self, agent: EntityId, facts: &[FactId]) {
-        for fact in facts {
-            self.deltas
-                .push(StateDelta::Relation(RelationDelta::Removed {
-                    relation_kind: RelationKind::BelievesFact,
-                    relation: RelationValue::BelievesFact { agent, fact: *fact },
-                }));
-        }
-    }
 }
 
 impl Deref for WorldTxn<'_> {
@@ -1302,7 +1225,7 @@ mod tests {
         WitnessData,
     };
     use crate::{
-        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind, FactId,
+        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
         HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity, ReservationId,
         ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
         WorldError,
@@ -1368,8 +1291,6 @@ mod tests {
         loyal_target: EntityId,
         hostile_target: EntityId,
         reserved_target: EntityId,
-        fact_known: FactId,
-        fact_believed: FactId,
         loyal_strength: Permille,
         first_reservation: ReservationId,
         first_range: TickRange,
@@ -1408,8 +1329,6 @@ mod tests {
         let reserved_target = world
             .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(8))
             .unwrap();
-        let fact_known = FactId(11);
-        let fact_believed = FactId(12);
         let loyal_strength = Permille::new(650).unwrap();
         let first_range = TickRange::new(Tick(10), Tick(12)).unwrap();
         let second_range = TickRange::new(Tick(12), Tick(14)).unwrap();
@@ -1421,8 +1340,6 @@ mod tests {
             .set_loyalty(archived, loyal_target, loyal_strength)
             .unwrap();
         world.add_hostility(archived, hostile_target).unwrap();
-        world.add_known_fact(archived, fact_known).unwrap();
-        world.add_believed_fact(archived, fact_believed).unwrap();
         let first_reservation = world.try_reserve(archived, holder, first_range).unwrap();
         let second_reservation = world
             .try_reserve(reserved_target, archived, second_range)
@@ -1436,8 +1353,6 @@ mod tests {
             loyal_target,
             hostile_target,
             reserved_target,
-            fact_known,
-            fact_believed,
             loyal_strength,
             first_reservation,
             first_range,
@@ -1701,20 +1616,6 @@ mod tests {
                         target: fx.hostile_target,
                     },
                 }),
-                StateDelta::Relation(RelationDelta::Removed {
-                    relation_kind: RelationKind::KnowsFact,
-                    relation: RelationValue::KnowsFact {
-                        agent: fx.archived,
-                        fact: fx.fact_known,
-                    },
-                }),
-                StateDelta::Relation(RelationDelta::Removed {
-                    relation_kind: RelationKind::BelievesFact,
-                    relation: RelationValue::BelievesFact {
-                        agent: fx.archived,
-                        fact: fx.fact_believed,
-                    },
-                }),
                 StateDelta::Reservation(ReservationDelta::Released {
                     reservation: ReservationRecord {
                         id: fx.first_reservation,
@@ -1875,7 +1776,6 @@ mod tests {
         let owner = world.create_faction("River Pact", Tick(2)).unwrap();
         let faction = world.create_faction("Granary Guild", Tick(3)).unwrap();
         let target = world.create_office("Chair", Tick(4)).unwrap();
-        let fact = FactId(9);
         let strength = Permille::new(700).unwrap();
 
         let mut txn = new_txn(&mut world);
@@ -1884,8 +1784,6 @@ mod tests {
         txn.set_loyalty(member, target, strength).unwrap();
         txn.assign_office(target, member).unwrap();
         txn.add_hostility(member, owner).unwrap();
-        txn.add_known_fact(member, fact).unwrap();
-        txn.add_believed_fact(member, fact).unwrap();
 
         assert!(txn.deltas().iter().any(|delta| matches!(
             delta,
@@ -1925,20 +1823,6 @@ mod tests {
                 relation_kind: RelationKind::HostileTo,
                 relation: RelationValue::HostileTo { subject, target: actual_target },
             }) if *subject == member && *actual_target == owner
-        )));
-        assert!(txn.deltas().iter().any(|delta| matches!(
-            delta,
-            StateDelta::Relation(RelationDelta::Added {
-                relation_kind: RelationKind::KnowsFact,
-                relation: RelationValue::KnowsFact { agent, fact: actual_fact },
-            }) if *agent == member && *actual_fact == fact
-        )));
-        assert!(txn.deltas().iter().any(|delta| matches!(
-            delta,
-            StateDelta::Relation(RelationDelta::Added {
-                relation_kind: RelationKind::BelievesFact,
-                relation: RelationValue::BelievesFact { agent, fact: actual_fact },
-            }) if *agent == member && *actual_fact == fact
         )));
     }
 

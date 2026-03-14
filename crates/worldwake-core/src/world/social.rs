@@ -1,5 +1,5 @@
 use super::World;
-use crate::{EntityId, EntityKind, FactId, Permille, WorldError};
+use crate::{EntityId, EntityKind, Permille, WorldError};
 
 impl World {
     pub(crate) fn add_member(
@@ -290,86 +290,6 @@ impl World {
             .unwrap_or_default()
     }
 
-    pub(crate) fn add_known_fact(
-        &mut self,
-        agent: EntityId,
-        fact: FactId,
-    ) -> Result<(), WorldError> {
-        self.ensure_live_kind(agent, EntityKind::Agent, "knowledge subject")?;
-        self.relations
-            .knows_fact
-            .entry(agent)
-            .or_default()
-            .insert(fact);
-        Ok(())
-    }
-
-    pub(crate) fn remove_known_fact(
-        &mut self,
-        agent: EntityId,
-        fact: FactId,
-    ) -> Result<(), WorldError> {
-        self.ensure_live_kind(agent, EntityKind::Agent, "knowledge subject")?;
-        Self::clear_fact_relation(&mut self.relations.knows_fact, agent, fact);
-        Ok(())
-    }
-
-    #[must_use]
-    pub fn known_facts(&self, agent: EntityId) -> Vec<FactId> {
-        if self
-            .ensure_live_kind(agent, EntityKind::Agent, "knowledge subject")
-            .is_err()
-        {
-            return Vec::new();
-        }
-
-        self.relations
-            .knows_fact
-            .get(&agent)
-            .map(|facts| facts.iter().copied().collect())
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn add_believed_fact(
-        &mut self,
-        agent: EntityId,
-        fact: FactId,
-    ) -> Result<(), WorldError> {
-        self.ensure_live_kind(agent, EntityKind::Agent, "belief subject")?;
-        self.relations
-            .believes_fact
-            .entry(agent)
-            .or_default()
-            .insert(fact);
-        Ok(())
-    }
-
-    pub(crate) fn remove_believed_fact(
-        &mut self,
-        agent: EntityId,
-        fact: FactId,
-    ) -> Result<(), WorldError> {
-        self.ensure_live_kind(agent, EntityKind::Agent, "belief subject")?;
-        Self::clear_fact_relation(&mut self.relations.believes_fact, agent, fact);
-        Ok(())
-    }
-
-    #[must_use]
-    pub fn believed_facts(&self, agent: EntityId) -> Vec<FactId> {
-        if self
-            .ensure_live_kind(agent, EntityKind::Agent, "belief subject")
-            .is_err()
-        {
-            return Vec::new();
-        }
-
-        self.relations
-            .believes_fact
-            .get(&agent)
-            .map(|facts| facts.iter().copied().collect())
-            .unwrap_or_default()
-    }
-
     fn ensure_live_kind(
         &self,
         entity: EntityId,
@@ -385,18 +305,5 @@ impl World {
             "{context} must be a {:?}, but {entity} is a {:?}",
             expected, meta.kind
         )))
-    }
-
-    fn clear_fact_relation(
-        relations: &mut std::collections::BTreeMap<EntityId, std::collections::BTreeSet<FactId>>,
-        agent: EntityId,
-        fact: FactId,
-    ) {
-        if let Some(facts) = relations.get_mut(&agent) {
-            facts.remove(&fact);
-            if facts.is_empty() {
-                relations.remove(&agent);
-            }
-        }
     }
 }

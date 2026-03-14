@@ -573,7 +573,7 @@ mod tests {
         },
         AgentData, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource,
         DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EventId, FactId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
+        EntityKind, EventId, HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes,
         LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, Permille, Place,
         PlaceTag, ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
         ResourceSource, SubstitutePreferences, Tick, TickRange, Topology, TradeDispositionProfile,
@@ -718,8 +718,6 @@ mod tests {
         enemy: EntityId,
         place: EntityId,
         reservation_id: ReservationId,
-        known_fact: FactId,
-        believed_fact: FactId,
     }
 
     fn populate_relation_rows_for_purge_test(world: &mut World, fx: &PurgeRelationFixture) {
@@ -772,14 +770,6 @@ mod tests {
             .relations
             .hostility_from
             .insert(fx.enemy, [fx.item].into_iter().collect());
-        world
-            .relations
-            .knows_fact
-            .insert(fx.item, [fx.known_fact].into_iter().collect());
-        world
-            .relations
-            .believes_fact
-            .insert(fx.item, [fx.believed_fact].into_iter().collect());
         world.relations.reservations.insert(
             fx.reservation_id,
             ReservationRecord {
@@ -1540,8 +1530,6 @@ mod tests {
         let enemy = world.create_entity(EntityKind::Agent, Tick(1));
         let place = entity(22);
         let reservation_id = ReservationId(3);
-        let known_fact = FactId(41);
-        let believed_fact = FactId(42);
         let fixture = PurgeRelationFixture {
             item,
             container,
@@ -1554,8 +1542,6 @@ mod tests {
             enemy,
             place,
             reservation_id,
-            known_fact,
-            believed_fact,
         };
 
         populate_relation_rows_for_purge_test(&mut world, &fixture);
@@ -1571,8 +1557,6 @@ mod tests {
         assert_eq!(world.relations.member_of.get(&item), None);
         assert_eq!(world.relations.loyal_to.get(&item), None);
         assert_eq!(world.relations.hostile_to.get(&item), None);
-        assert_eq!(world.relations.knows_fact.get(&item), None);
-        assert_eq!(world.relations.believes_fact.get(&item), None);
         assert_eq!(world.relations.reservations.get(&reservation_id), None);
         assert_eq!(world.relations.reservations_by_entity.get(&item), None);
         assert_eq!(world.relations.entities_at.get(&place), None);
@@ -2314,8 +2298,6 @@ mod tests {
         let enemy = world.create_entity(EntityKind::Agent, Tick(1));
         let place = entity(22);
         let reservation_id = ReservationId(3);
-        let known_fact = FactId(41);
-        let believed_fact = FactId(42);
         let fixture = PurgeRelationFixture {
             item,
             container,
@@ -2328,8 +2310,6 @@ mod tests {
             enemy,
             place,
             reservation_id,
-            known_fact,
-            believed_fact,
         };
 
         populate_relation_rows_for_purge_test(&mut world, &fixture);
@@ -2347,8 +2327,6 @@ mod tests {
         assert_eq!(world.relations.office_holder.get(&office), None);
         assert_eq!(world.relations.offices_held.get(&item), None);
         assert_eq!(world.relations.hostile_to.get(&item), None);
-        assert_eq!(world.relations.knows_fact.get(&item), None);
-        assert_eq!(world.relations.believes_fact.get(&item), None);
         assert_eq!(world.relations.reservations.get(&reservation_id), None);
         assert_eq!(world.relations.reservations_by_entity.get(&item), None);
         assert_eq!(world.relations.entities_at.get(&place), None);
@@ -3393,34 +3371,6 @@ mod tests {
     }
 
     #[test]
-    fn fact_queries_are_agent_scoped_and_idempotent() {
-        let mut world = World::new(Topology::new()).unwrap();
-        let agent = world
-            .create_agent("Aster", ControlSource::Ai, Tick(1))
-            .unwrap();
-        let known_a = FactId(7);
-        let known_b = FactId(9);
-        let believed = FactId(11);
-
-        world.add_known_fact(agent, known_b).unwrap();
-        world.add_known_fact(agent, known_a).unwrap();
-        world.add_known_fact(agent, known_a).unwrap();
-        world.add_believed_fact(agent, believed).unwrap();
-        world.add_believed_fact(agent, believed).unwrap();
-
-        assert_eq!(world.known_facts(agent), vec![known_a, known_b]);
-        assert_eq!(world.believed_facts(agent), vec![believed]);
-
-        world.remove_known_fact(agent, known_a).unwrap();
-        world.remove_known_fact(agent, known_a).unwrap();
-        world.remove_believed_fact(agent, believed).unwrap();
-        world.remove_believed_fact(agent, believed).unwrap();
-
-        assert_eq!(world.known_facts(agent), vec![known_b]);
-        assert_eq!(world.believed_facts(agent), Vec::<FactId>::new());
-    }
-
-    #[test]
     fn social_query_helpers_hide_archived_entities_even_if_rows_are_stale() {
         let mut world = World::new(Topology::new()).unwrap();
         let member = world
@@ -3435,7 +3385,6 @@ mod tests {
         let knower = world
             .create_agent("Cato", ControlSource::Ai, Tick(6))
             .unwrap();
-        let fact = FactId(21);
 
         world.add_member(member, faction).unwrap();
         world
@@ -3443,7 +3392,6 @@ mod tests {
             .unwrap();
         world.assign_office(office, member).unwrap();
         world.add_hostility(member, hostile_target).unwrap();
-        world.add_known_fact(knower, fact).unwrap();
 
         world.vacate_office(office).unwrap();
         world.archive_entity(member, Tick(7)).unwrap();
@@ -3482,10 +3430,6 @@ mod tests {
             .relations
             .hostility_from
             .insert(hostile_target, BTreeSet::from([member]));
-        world
-            .relations
-            .knows_fact
-            .insert(knower, BTreeSet::from([fact]));
 
         assert_eq!(world.factions_of(member), Vec::<EntityId>::new());
         assert_eq!(world.members_of(faction), Vec::<EntityId>::new());
@@ -3504,7 +3448,6 @@ mod tests {
             world.hostile_towards(hostile_target),
             Vec::<EntityId>::new()
         );
-        assert_eq!(world.known_facts(knower), Vec::<FactId>::new());
     }
 
     #[test]
@@ -3533,20 +3476,12 @@ mod tests {
             Err(WorldError::InvalidOperation(_))
         ));
         assert!(matches!(
-            world.add_known_fact(faction, FactId(1)),
-            Err(WorldError::InvalidOperation(_))
-        ));
-        assert!(matches!(
             world.set_loyalty(agent, archived_agent, Permille::new(500).unwrap()),
             Err(WorldError::ArchivedEntity(id)) if id == archived_agent
         ));
         assert!(matches!(
             world.add_hostility(missing, faction),
             Err(WorldError::EntityNotFound(id)) if id == missing
-        ));
-        assert!(matches!(
-            world.remove_believed_fact(archived_agent, FactId(2)),
-            Err(WorldError::ArchivedEntity(id)) if id == archived_agent
         ));
         assert!(matches!(
             world.vacate_office(missing),

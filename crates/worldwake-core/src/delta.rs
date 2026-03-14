@@ -4,7 +4,7 @@ use crate::{
     component_schema::with_component_schema_entries, AgentData, BlockedIntentMemory, CarryCapacity,
     CombatProfile, CombatStance, CommodityKind, Container, DeadAt, DemandMemory,
     DeprivationExposure, DriveThresholds, EntityId, EntityKind, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, FactId, HomeostaticNeeds, InTransitOnEdge,
+    FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge,
     ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name, Permille, ProductionJob,
     Quantity, ReservationRecord, ResourceSource, SubstitutePreferences, TradeDispositionProfile,
     TravelDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
@@ -65,12 +65,10 @@ pub enum RelationKind {
     LoyalTo,
     OfficeHolder,
     HostileTo,
-    KnowsFact,
-    BelievesFact,
 }
 
 impl RelationKind {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 9] = [
         Self::LocatedIn,
         Self::InTransit,
         Self::ContainedBy,
@@ -80,8 +78,6 @@ impl RelationKind {
         Self::LoyalTo,
         Self::OfficeHolder,
         Self::HostileTo,
-        Self::KnowsFact,
-        Self::BelievesFact,
     ];
 }
 
@@ -123,14 +119,6 @@ pub enum RelationValue {
         subject: EntityId,
         target: EntityId,
     },
-    KnowsFact {
-        agent: EntityId,
-        fact: FactId,
-    },
-    BelievesFact {
-        agent: EntityId,
-        fact: FactId,
-    },
 }
 
 impl RelationValue {
@@ -146,8 +134,6 @@ impl RelationValue {
             Self::LoyalTo { .. } => RelationKind::LoyalTo,
             Self::OfficeHolder { .. } => RelationKind::OfficeHolder,
             Self::HostileTo { .. } => RelationKind::HostileTo,
-            Self::KnowsFact { .. } => RelationKind::KnowsFact,
-            Self::BelievesFact { .. } => RelationKind::BelievesFact,
         }
     }
 }
@@ -225,7 +211,7 @@ mod tests {
         },
         AgentData, BodyPart, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
         ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EventId, ExclusiveFacilityPolicy, FacilityUseQueue, FactId, HomeostaticNeeds,
+        EntityKind, EventId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
         Permille, ProductionJob, ProvenanceEntry, Quantity, ReservationId, ReservationRecord,
         ResourceSource, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
@@ -401,14 +387,6 @@ mod tests {
                 subject: entity(16),
                 target: entity(17),
             },
-            RelationValue::KnowsFact {
-                agent: entity(18),
-                fact: FactId(19),
-            },
-            RelationValue::BelievesFact {
-                agent: entity(20),
-                fact: FactId(21),
-            },
         ]
     }
 
@@ -494,8 +472,6 @@ mod tests {
                 RelationKind::LoyalTo,
                 RelationKind::OfficeHolder,
                 RelationKind::HostileTo,
-                RelationKind::KnowsFact,
-                RelationKind::BelievesFact,
             ]
         );
     }
@@ -584,10 +560,10 @@ mod tests {
             relation: relation.clone(),
         };
         let removed = RelationDelta::Removed {
-            relation_kind: RelationKind::KnowsFact,
-            relation: RelationValue::KnowsFact {
-                agent: entity(8),
-                fact: FactId(9),
+            relation_kind: RelationKind::HostileTo,
+            relation: RelationValue::HostileTo {
+                subject: entity(8),
+                target: entity(9),
             },
         };
 
@@ -601,9 +577,9 @@ mod tests {
         assert!(matches!(
             removed,
             RelationDelta::Removed {
-                relation_kind: RelationKind::KnowsFact,
-                relation: RelationValue::KnowsFact { agent, fact }
-            } if agent == entity(8) && fact == FactId(9)
+                relation_kind: RelationKind::HostileTo,
+                relation: RelationValue::HostileTo { subject, target }
+            } if subject == entity(8) && target == entity(9)
         ));
         assert_eq!(relation.kind(), RelationKind::LoyalTo);
     }
@@ -767,10 +743,10 @@ mod tests {
                 before: component_samples().pop().unwrap(),
             }),
             StateDelta::Relation(RelationDelta::Removed {
-                relation_kind: RelationKind::KnowsFact,
-                relation: RelationValue::KnowsFact {
-                    agent: entity(8),
-                    fact: FactId(11),
+                relation_kind: RelationKind::HostileTo,
+                relation: RelationValue::HostileTo {
+                    subject: entity(8),
+                    target: entity(11),
                 },
             }),
             StateDelta::Quantity(QuantityDelta::Changed {

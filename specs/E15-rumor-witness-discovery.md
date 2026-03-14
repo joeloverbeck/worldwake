@@ -25,9 +25,9 @@ Inventory-audit discovery is only as good as the ownership model underneath it. 
 
 ### Rumor Creation
 - Witness shares information via social interaction:
-  - **Tell** action: agent at same place as another agent → share a known fact
-  - Precondition: both agents at same place, speaker knows the fact
-  - Effect: listener gains `BelievesFact` with `source = Rumor` and lower `Permille` confidence than direct observation
+  - **Tell** action: agent at same place as another agent → share a believed claim about an entity or event
+  - Precondition: both agents at same place, speaker has a belief or memory entry to report
+  - Effect: listener gains or updates the corresponding `AgentBeliefStore` entry with `source = Rumor { chain_len }` or `Report { from, chain_len }`, preserving E14's state-snapshot belief model instead of reviving fact handles
   - Duration: 1-3 ticks
 
 ### Rumor Propagation

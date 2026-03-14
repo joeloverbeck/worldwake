@@ -94,7 +94,7 @@ pub use facility_queue::{
 };
 pub use goal::{CommodityPurpose, GoalKey, GoalKind};
 pub use ids::{
-    ActionDefId, EntityId, EventId, FactId, ReservationId, Seed, Tick, TickRange, TravelEdgeId,
+    ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId,
 };
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,

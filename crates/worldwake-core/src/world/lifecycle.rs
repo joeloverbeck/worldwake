@@ -1,7 +1,7 @@
 use super::World;
 use crate::{
-    ArchiveDependency, ArchiveDependencyKind, EntityId, EntityKind, FactId, Permille,
-    ReservationRecord, WorldError,
+    ArchiveDependency, ArchiveDependencyKind, EntityId, EntityKind, Permille, ReservationRecord,
+    WorldError,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -157,8 +157,6 @@ pub struct ArchiveMutationSnapshot {
     pub offices_held: Vec<EntityId>,
     pub hostile_to: Vec<EntityId>,
     pub hostility_from: Vec<EntityId>,
-    pub known_facts: Vec<FactId>,
-    pub believed_facts: Vec<FactId>,
     pub released_reservations: Vec<ReservationRecord>,
 }
 
@@ -188,8 +186,6 @@ impl World {
             offices_held: Self::snapshot_entities(&self.relations.offices_held, entity),
             hostile_to: Self::snapshot_entities(&self.relations.hostile_to, entity),
             hostility_from: Self::snapshot_entities(&self.relations.hostility_from, entity),
-            known_facts: Self::snapshot_facts(&self.relations.knows_fact, entity),
-            believed_facts: Self::snapshot_facts(&self.relations.believes_fact, entity),
             released_reservations: self.snapshot_archive_reservations(entity),
         })
     }
@@ -507,16 +503,6 @@ impl World {
             .unwrap_or_default()
     }
 
-    fn snapshot_facts(
-        relations: &BTreeMap<EntityId, BTreeSet<FactId>>,
-        entity: EntityId,
-    ) -> Vec<FactId> {
-        relations
-            .get(&entity)
-            .map(|facts| facts.iter().copied().collect())
-            .unwrap_or_default()
-    }
-
     fn snapshot_archive_reservations(&self, entity: EntityId) -> Vec<ReservationRecord> {
         let mut released_reservations = self.reservations_for(entity);
         released_reservations.extend(
@@ -535,8 +521,8 @@ impl World {
 #[cfg(test)]
 mod tests {
     use crate::{
-        CommodityKind, Container, ControlSource, EntityId, FactId, LoadUnits, Permille, Place,
-        PlaceTag, Quantity, Tick, TickRange, Topology, World,
+        CommodityKind, Container, ControlSource, EntityId, LoadUnits, Permille, Place, PlaceTag,
+        Quantity, Tick, TickRange, Topology, World,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -598,8 +584,6 @@ mod tests {
             .unwrap();
         world.add_hostility(archived, hostile_target).unwrap();
         world.add_hostility(hostile_subject, archived).unwrap();
-        world.add_known_fact(archived, FactId(11)).unwrap();
-        world.add_believed_fact(archived, FactId(12)).unwrap();
         world
             .try_reserve(
                 archived,
@@ -627,8 +611,6 @@ mod tests {
         );
         assert_eq!(snapshot.hostile_to, vec![hostile_target]);
         assert_eq!(snapshot.hostility_from, vec![hostile_subject]);
-        assert_eq!(snapshot.known_facts, vec![FactId(11)]);
-        assert_eq!(snapshot.believed_facts, vec![FactId(12)]);
         assert!(snapshot.in_transit);
         assert_eq!(snapshot.released_reservations.len(), 2);
     }

@@ -1,6 +1,6 @@
 //! Explicit typed storage for authoritative relation state.
 
-use crate::{EntityId, FactId, Permille, RelationRecord, ReservationId, TickRange};
+use crate::{EntityId, Permille, RelationRecord, ReservationId, TickRange};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -67,8 +67,6 @@ pub struct RelationTables {
     pub(crate) offices_held: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) hostile_to: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) hostility_from: BTreeMap<EntityId, BTreeSet<EntityId>>,
-    pub(crate) knows_fact: BTreeMap<EntityId, BTreeSet<FactId>>,
-    pub(crate) believes_fact: BTreeMap<EntityId, BTreeSet<FactId>>,
     pub(crate) reservations: BTreeMap<ReservationId, ReservationRecord>,
     pub(crate) reservations_by_entity: BTreeMap<EntityId, BTreeSet<ReservationId>>,
     pub(crate) next_reservation_id: u64,
@@ -137,8 +135,6 @@ impl RelationTables {
         );
         Self::remove_entity_relations(&mut self.office_holder, &mut self.offices_held, entity);
         Self::remove_many_to_many_relations(&mut self.hostile_to, &mut self.hostility_from, entity);
-        Self::remove_fact_relations(&mut self.knows_fact, entity);
-        Self::remove_fact_relations(&mut self.believes_fact, entity);
         self.remove_entity_reservations(entity);
     }
 
@@ -232,13 +228,6 @@ impl RelationTables {
         }
     }
 
-    fn remove_fact_relations(
-        relations: &mut BTreeMap<EntityId, BTreeSet<FactId>>,
-        entity: EntityId,
-    ) {
-        relations.remove(&entity);
-    }
-
     fn remove_reverse_link(
         reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
         target: EntityId,
@@ -308,7 +297,7 @@ impl RelationTables {
 #[cfg(test)]
 mod tests {
     use super::{RelationTables, ReservationRecord};
-    use crate::{EntityId, FactId, Permille, RelationRecord, ReservationId, Tick, TickRange};
+    use crate::{EntityId, Permille, RelationRecord, ReservationId, Tick, TickRange};
     use serde::de::DeserializeOwned;
     use serde::Serialize;
     use std::collections::{BTreeMap, BTreeSet};
@@ -345,8 +334,6 @@ mod tests {
         assert!(tables.offices_held.is_empty());
         assert!(tables.hostile_to.is_empty());
         assert!(tables.hostility_from.is_empty());
-        assert!(tables.knows_fact.is_empty());
-        assert!(tables.believes_fact.is_empty());
         assert!(tables.reservations.is_empty());
         assert!(tables.reservations_by_entity.is_empty());
         assert_eq!(tables.next_reservation_id, 0);
@@ -371,8 +358,6 @@ mod tests {
         let office = entity(17);
         let enemy = entity(18);
         let reservation_id = ReservationId(7);
-        let known_fact = FactId(21);
-        let believed_fact = FactId(22);
         let reservation = ReservationRecord {
             id: reservation_id,
             entity: item,
@@ -422,12 +407,6 @@ mod tests {
         tables
             .hostility_from
             .insert(enemy, [item].into_iter().collect());
-        tables
-            .knows_fact
-            .insert(item, [known_fact].into_iter().collect());
-        tables
-            .believes_fact
-            .insert(item, [believed_fact].into_iter().collect());
         tables.reservations.insert(reservation_id, reservation);
         tables
             .reservations_by_entity
@@ -453,8 +432,6 @@ mod tests {
         let office = entity(17);
         let enemy = entity(18);
         let reservation_id = ReservationId(7);
-        let known_fact = FactId(21);
-        let believed_fact = FactId(22);
 
         let mut tables = RelationTables::default();
         tables.located_in.insert(item, place);
@@ -498,12 +475,6 @@ mod tests {
         tables
             .hostility_from
             .insert(enemy, [item].into_iter().collect());
-        tables
-            .knows_fact
-            .insert(item, [known_fact].into_iter().collect());
-        tables
-            .believes_fact
-            .insert(item, [believed_fact].into_iter().collect());
         tables.reservations.insert(
             reservation_id,
             ReservationRecord {
@@ -536,8 +507,6 @@ mod tests {
         assert!(tables.offices_held.is_empty());
         assert!(tables.hostile_to.is_empty());
         assert!(tables.hostility_from.is_empty());
-        assert!(tables.knows_fact.is_empty());
-        assert!(tables.believes_fact.is_empty());
         assert!(tables.reservations.is_empty());
         assert!(tables.reservations_by_entity.is_empty());
     }
