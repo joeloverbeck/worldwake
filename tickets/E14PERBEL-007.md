@@ -16,6 +16,7 @@ The Phase 3 gate requires T10 (belief isolation) and several other integration t
 2. The spec lists 11 test requirements in the "Tests" section — confirmed.
 3. Integration tests need a full `SimulationState` with agents, places, events, perception system, and AI planning — this requires all prior E14 tickets to be complete.
 4. Deterministic RNG ensures test reproducibility — `ChaCha8Rng` with fixed seed.
+5. `archive/tickets/completed/E14PERBEL-004.md` established that the current `PerAgentBeliefView` is an honest interim boundary adapter, not the final clean split between subjective planning knowledge and authoritative executor helpers. These tests should validate belief isolation without assuming that every `BeliefView` method is already purely subjective.
 
 ## Architecture Check
 
@@ -70,6 +71,10 @@ Set up: Agent A observes Agent B at Place 1 at tick 10. Agent A later observes A
 
 Verify: After E14PERBEL-006, no code path in workspace references `OmniscientBeliefView`. This is a compile-time check (if it compiles, it passes) plus a grep verification.
 
+Also verify the current interim boundary honestly:
+- unknown entities do not leak through subjective planning reads such as location, life/death, inventory, or perceived sellers
+- any remaining authoritative fallbacks in `PerAgentBeliefView` stay confined to the documented self/topology/public-structure/runtime helpers rather than reintroducing omniscient entity discovery
+
 ### 12. Full pipeline test: perception → belief → planning
 
 Set up: Agent A (merchant) at market place. Agent B (customer) arrives at same place. Perception system runs. Verify Agent A's belief store knows about Agent B. Verify Agent A's planning (via `PerAgentBeliefView`) can see Agent B as a potential trade partner.
@@ -107,6 +112,7 @@ Set up: Agent A (merchant) at market place. Agent B (customer) arrives at same p
 5. Social observations captured for cooperation/conflict events
 6. Memory capacity and retention correctly enforced
 7. Determinism: same seed produces same test outcomes
+8. Integration coverage must not mask the unresolved trait-boundary cleanup by asserting stronger subjectivity guarantees than the current architecture actually provides; that cleanup is tracked separately in `E14PERBEL-009`
 
 ## Test Plan
 

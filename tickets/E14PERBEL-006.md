@@ -19,12 +19,17 @@ The AI crate currently constructs `OmniscientBeliefView` to give agents perfect 
 5. Affordance queries already use `&dyn BeliefView` — concrete type change is transparent to them.
 6. No other crate besides `worldwake-ai` constructs `OmniscientBeliefView` for agent reasoning — confirmed (systems use World directly, which is correct).
 7. `TickInputContext` in `tick_input_producer.rs` may also reference `OmniscientBeliefView` — needs verification during implementation.
+8. `archive/tickets/completed/E14PERBEL-004.md` established that the current `BeliefView` trait still mixes subjective planning reads with authoritative executor-style helpers (reservations, facility queues, control, resource metadata, possession graph details). This ticket must migrate AI off omniscient reads, but that boundary cleanup is separate follow-up work and is **not** solved automatically by swapping concrete view types.
 
 ## Architecture Check
 
-1. Migration is mechanical: replace `OmniscientBeliefView::with_runtime(world, runtime)` with `PerAgentBeliefView::new(agent, world, belief_store, runtime)` at each call site.
+1. Migration is not fully mechanical anymore. The call-site replacement remains straightforward, but implementation and tests must preserve the explicit distinction between:
+   - subjective `PerAgentBeliefView` answers,
+   - self/topology/public-structure authoritative answers,
+   - temporary authoritative fallbacks that still exist because the current trait is broader than the stored belief schema.
 2. Deletion is clean: after migration, `omniscient_belief_view.rs` is entirely removed, `lib.rs` updated.
 3. Compile-time enforcement: after deletion, no code in `worldwake-ai` can accidentally use `OmniscientBeliefView` — it won't exist.
+4. This ticket must not “solve” the mixed-boundary problem by reintroducing omniscient helpers under a different name or by adding compatibility aliases. The follow-up architectural cleanup belongs in `E14PERBEL-009`.
 
 ## What to Change
 
@@ -91,7 +96,7 @@ Grep across workspace for `OmniscientBeliefView` and `OmniscientBeliefRuntime` a
 
 ## Out of Scope
 
-- Changing `BeliefView` trait (no changes needed)
+- Redesigning the mixed subjective/authoritative `BeliefView` boundary itself (tracked by `E14PERBEL-009`)
 - Modifying action handlers or system functions (they use World directly, correctly)
 - Implementing perception logic (done in E14PERBEL-005)
 - Adding confidence derivation (E15 scope)
@@ -119,6 +124,7 @@ Grep across workspace for `OmniscientBeliefView` and `OmniscientBeliefRuntime` a
 4. Affordance queries continue working transparently via `&dyn BeliefView`
 5. World/belief separation is enforced at compile time (no import path to omniscient view)
 6. Phase 3 gate criterion: "OmniscientBeliefView fully replaced — no code path uses it"
+7. Any remaining authoritative fallbacks exposed through `PerAgentBeliefView` stay explicit and temporary; this ticket must not normalize them as the final architecture
 
 ## Test Plan
 

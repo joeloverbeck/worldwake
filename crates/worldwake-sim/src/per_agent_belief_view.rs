@@ -1,0 +1,853 @@
+use crate::{
+    estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionInstance,
+    ActionInstanceId, ActionPayload, BeliefView, DurationExpr,
+};
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
+use worldwake_core::{
+    is_incapacitated, load_of_entity, AgentBeliefStore, BelievedEntityState, CarryCapacity,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
+    DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId,
+    ResourceSource, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
+    UniqueItemKind, WorkstationTag, World, Wound,
+};
+
+#[derive(Clone, Copy)]
+pub struct PerAgentBeliefRuntime<'a> {
+    pub active_actions: &'a BTreeMap<ActionInstanceId, ActionInstance>,
+    pub action_defs: &'a ActionDefRegistry,
+}
+
+impl<'a> PerAgentBeliefRuntime<'a> {
+    #[must_use]
+    pub const fn new(
+        active_actions: &'a BTreeMap<ActionInstanceId, ActionInstance>,
+        action_defs: &'a ActionDefRegistry,
+    ) -> Self {
+        Self {
+            active_actions,
+            action_defs,
+        }
+    }
+}
+
+pub struct PerAgentBeliefView<'w> {
+    agent: EntityId,
+    world: &'w World,
+    belief_store: &'w AgentBeliefStore,
+    runtime: Option<PerAgentBeliefRuntime<'w>>,
+}
+
+impl<'w> PerAgentBeliefView<'w> {
+    #[must_use]
+    pub const fn new(
+        agent: EntityId,
+        world: &'w World,
+        belief_store: &'w AgentBeliefStore,
+    ) -> Self {
+        Self {
+            agent,
+            world,
+            belief_store,
+            runtime: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_runtime(
+        agent: EntityId,
+        world: &'w World,
+        belief_store: &'w AgentBeliefStore,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
+        Self {
+            agent,
+            world,
+            belief_store,
+            runtime: Some(runtime),
+        }
+    }
+
+    fn believed_entity(&self, entity: EntityId) -> Option<&BelievedEntityState> {
+        (entity != self.agent)
+            .then(|| self.belief_store.get_entity(&entity))
+            .flatten()
+    }
+
+    fn knows_entity(&self, entity: EntityId) -> bool {
+        entity == self.agent || self.believed_entity(entity).is_some()
+    }
+
+    fn shares_local_context(&self, agent: EntityId, other: EntityId) -> bool {
+        if self.effective_place(agent) == self.effective_place(other)
+            && self.effective_place(agent).is_some()
+        {
+            return true;
+        }
+
+        matches!(
+            (self.in_transit_state(agent), self.in_transit_state(other)),
+            (Some(agent_transit), Some(other_transit))
+                if agent_transit.edge_id == other_transit.edge_id
+        )
+    }
+
+    fn authoritative_local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        let mut entities = self
+            .world
+            .entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+            .filter(|entity| self.can_control(agent, *entity))
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+}
+
+impl BeliefView for PerAgentBeliefView<'_> {
+    fn is_alive(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            return self.world.is_alive(entity);
+        }
+
+        self.believed_entity(entity).is_some_and(|state| state.alive)
+    }
+
+    fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+        self.knows_entity(entity)
+            .then(|| self.world.entity_kind(entity))
+            .flatten()
+    }
+
+    fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+        if entity == self.agent {
+            return self.world.effective_place(entity);
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.last_known_place)
+    }
+
+    fn is_in_transit(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            return self.world.is_in_transit(entity);
+        }
+
+        false
+    }
+
+    fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        let mut entities = self
+            .belief_store
+            .known_entities
+            .iter()
+            .filter_map(|(entity, state)| (state.last_known_place == Some(place)).then_some(*entity))
+            .collect::<Vec<_>>();
+        if self.world.effective_place(self.agent) == Some(place) {
+            entities.push(self.agent);
+        }
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+        if holder == self.agent {
+            return self.world.possessions_of(holder);
+        }
+
+        Vec::new()
+    }
+
+    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+        self.world.topology().neighbors(place)
+    }
+
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+        (actor == self.agent)
+            && self
+                .world
+                .get_component_known_recipes(actor)
+                .is_some_and(|known| known.recipes.contains(&recipe))
+    }
+
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+        if holder == self.agent {
+            return self.world.controlled_unique_item_count(holder, kind);
+        }
+
+        0
+    }
+
+    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+        if holder == self.agent {
+            return self.world.controlled_commodity_quantity(holder, kind);
+        }
+
+        self.believed_entity(holder)
+            .and_then(|state| state.last_known_inventory.get(&kind).copied())
+            .unwrap_or(Quantity(0))
+    }
+
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity {
+        if agent != self.agent {
+            return Quantity(0);
+        }
+
+        self.authoritative_local_controlled_lots_for(agent, place, commodity)
+            .into_iter()
+            .filter_map(|entity| self.world.get_component_item_lot(entity))
+            .fold(Quantity(0), |total, lot| {
+                Quantity(
+                    total
+                        .0
+                        .checked_add(lot.quantity.0)
+                        .expect("local controlled commodity quantity overflowed"),
+                )
+            })
+    }
+
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.authoritative_local_controlled_lots_for(agent, place, commodity)
+    }
+
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+        let accessible = self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.get_component_item_lot(entity).map(|lot| lot.commodity))
+            .flatten()
+    }
+
+    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
+        let commodity = self.item_lot_commodity(entity)?;
+        commodity.spec().consumable_profile
+    }
+
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible = self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible.then(|| self.world.direct_container(entity)).flatten()
+    }
+
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible = self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible.then(|| self.world.possessor_of(entity)).flatten()
+    }
+
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+        self.world
+            .get_component_workstation_marker(entity)
+            .map(|marker| marker.0)
+    }
+
+    fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+        self.world
+            .get_component_exclusive_facility_policy(entity)
+            .is_some()
+    }
+
+    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        self.world
+            .get_component_facility_use_queue(facility)
+            .and_then(|queue| queue.position_of(actor))
+    }
+
+    fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+        self.world
+            .get_component_facility_use_queue(facility)
+            .and_then(|queue| queue.granted.as_ref())
+    }
+
+    fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
+        self.world
+            .get_component_facility_use_queue(facility)
+            .and_then(|queue| {
+                queue.waiting
+                    .values()
+                    .find(|queued| queued.actor == actor)
+                    .map(|queued| queued.queued_at)
+            })
+    }
+
+    fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<NonZeroU32> {
+        self.world
+            .get_component_facility_queue_disposition_profile(agent)
+            .and_then(|profile| profile.queue_patience_ticks)
+    }
+
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        self.world.place_has_tag(place, tag)
+    }
+
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+        self.world.get_component_resource_source(entity).cloned()
+    }
+
+    fn has_production_job(&self, entity: EntityId) -> bool {
+        self.world.has_component_production_job(entity)
+    }
+
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        self.world.can_exercise_control(actor, entity).is_ok()
+    }
+
+    fn has_control(&self, entity: EntityId) -> bool {
+        self.world
+            .get_component_agent_data(entity)
+            .is_some_and(|agent_data| agent_data.control_source != ControlSource::None)
+    }
+
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.world
+            .get_component_carry_capacity(entity)
+            .map(|CarryCapacity(capacity)| *capacity)
+    }
+
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+        load_of_entity(self.world, entity).ok()
+    }
+
+    fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
+        self.world
+            .reservations_for(entity)
+            .into_iter()
+            .any(|reservation| reservation.range.overlaps(&range))
+    }
+
+    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+        self.world
+            .reservations_for(entity)
+            .into_iter()
+            .map(|reservation| reservation.range)
+            .collect()
+    }
+
+    fn is_dead(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            return self.world.get_component_dead_at(entity).is_some();
+        }
+
+        self.believed_entity(entity)
+            .is_some_and(|state| !state.alive)
+    }
+
+    fn is_incapacitated(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            let Some(wounds) = self.world.get_component_wound_list(entity) else {
+                return false;
+            };
+            let Some(profile) = self.world.get_component_combat_profile(entity) else {
+                return false;
+            };
+            return is_incapacitated(wounds, profile);
+        }
+
+        false
+    }
+
+    fn has_wounds(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            return self
+                .world
+                .get_component_wound_list(entity)
+                .is_some_and(|wounds| !wounds.wounds.is_empty());
+        }
+
+        self.believed_entity(entity)
+            .is_some_and(|state| !state.wounds.is_empty())
+    }
+
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_homeostatic_needs(agent).copied())
+            .flatten()
+    }
+
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_drive_thresholds(agent).copied())
+            .flatten()
+    }
+
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_metabolism_profile(agent).copied())
+            .flatten()
+    }
+
+    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_trade_disposition_profile(agent).cloned())
+            .flatten()
+    }
+
+    fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_travel_disposition_profile(agent).cloned())
+            .flatten()
+    }
+
+    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_combat_profile(agent).copied())
+            .flatten()
+    }
+
+    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+        if agent == self.agent {
+            return self
+                .world
+                .get_component_wound_list(agent)
+                .map(|wounds| wounds.wounds.clone())
+                .unwrap_or_default();
+        }
+
+        self.believed_entity(agent)
+            .map(|state| state.wounds.clone())
+            .unwrap_or_default()
+    }
+
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        let mut hostiles = self
+            .world
+            .hostile_targets_of(agent)
+            .into_iter()
+            .chain(self.world.hostile_towards(agent))
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .filter(|entity| self.believed_entity(*entity).is_some())
+            .collect::<BTreeSet<_>>();
+        hostiles.extend(self.current_attackers_of(agent));
+        hostiles.into_iter().collect()
+    }
+
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+        let Some(runtime) = self.runtime else {
+            return Vec::new();
+        };
+
+        runtime
+            .active_actions
+            .values()
+            .filter(|action| action.actor != agent)
+            .filter(|action| action.targets.contains(&agent))
+            .filter(|action| self.shares_local_context(agent, action.actor))
+            .filter_map(|action| {
+                let def = runtime.action_defs.get(action.def_id)?;
+                (def.domain.counts_as_combat_engagement() && def.name == "attack")
+                    .then_some(action.actor)
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| {
+                self.world
+                    .get_component_merchandise_profile(*entity)
+                    .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+            })
+            .collect()
+    }
+
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .get_component_known_recipes(agent)
+            .map(|known| known.recipes.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+        self.world
+            .entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| {
+                self.world
+                    .get_component_workstation_marker(*entity)
+                    .is_some_and(|marker| marker.0 == tag)
+            })
+            .collect()
+    }
+
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.world
+            .entities_effectively_at(place)
+            .into_iter()
+            .filter(|entity| {
+                self.world
+                    .get_component_resource_source(*entity)
+                    .is_some_and(|source| source.commodity == commodity)
+            })
+            .collect()
+    }
+
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .get_component_demand_memory(agent)
+            .map(|memory| memory.observations.clone())
+            .unwrap_or_default()
+    }
+
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+        if agent == self.agent || self.believed_entity(agent).is_some() {
+            return self.world.get_component_merchandise_profile(agent).cloned();
+        }
+
+        None
+    }
+
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.is_dead(*entity))
+            .collect()
+    }
+
+    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
+        if entity == self.agent {
+            return self.world.get_component_in_transit_on_edge(entity).cloned();
+        }
+
+        None
+    }
+
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        self.world
+            .topology()
+            .outgoing_edges(place)
+            .iter()
+            .filter_map(|edge_id| self.world.topology().edge(*edge_id))
+            .map(|edge| {
+                (
+                    edge.to(),
+                    NonZeroU32::new(edge.travel_time_ticks()).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<ActionDuration> {
+        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PerAgentBeliefRuntime, PerAgentBeliefView};
+    use crate::{
+        ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, BeliefView, Constraint,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
+    use worldwake_core::{
+        build_prototype_world, ActionDefId, AgentBeliefStore, BelievedEntityState,
+        BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource, EventLog,
+        MerchandiseProfile, Permille, Quantity, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn, Wound, WoundCause, WoundId,
+    };
+
+    fn assert_belief_view<T: BeliefView>() {}
+
+    fn entity_belief(
+        place: worldwake_core::EntityId,
+        alive: bool,
+        bread: u32,
+        observed_tick: u64,
+    ) -> BelievedEntityState {
+        let mut inventory = BTreeMap::new();
+        inventory.insert(CommodityKind::Bread, Quantity(bread));
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: inventory,
+            alive,
+            wounds: if alive { Vec::new() } else { vec![sample_wound()] },
+            observed_tick: Tick(observed_tick),
+            source: worldwake_core::PerceptionSource::DirectObservation,
+        }
+    }
+
+    fn sample_wound() -> Wound {
+        Wound {
+            id: WoundId(1),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Combat {
+                attacker: entity(99),
+                weapon: worldwake_core::CombatWeaponRef::Unarmed,
+            },
+            severity: Permille::new(250).unwrap(),
+            inflicted_at: Tick(5),
+            bleed_rate_per_tick: Permille::new(5).unwrap(),
+        }
+    }
+
+    fn entity(slot: u32) -> worldwake_core::EntityId {
+        worldwake_core::EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
+        WorldTxn::new(
+            world,
+            Tick(tick),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
+    fn attack_action_def(id: ActionDefId) -> ActionDef {
+        ActionDef {
+            id,
+            name: "attack".to_string(),
+            domain: ActionDomain::Combat,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: worldwake_core::EntityKind::Agent,
+            }],
+            preconditions: vec![Precondition::ActorAlive, Precondition::TargetAlive(0)],
+            reservation_requirements: Vec::<ReservationReq>::new(),
+            duration: DurationExpr::CombatWeapon,
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        }
+    }
+
+    #[test]
+    fn per_agent_belief_view_implements_belief_view() {
+        assert_belief_view::<PerAgentBeliefView<'_>>();
+    }
+
+    #[test]
+    fn self_queries_are_authoritative_and_other_queries_use_beliefs() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let believed_place = places[1];
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(other, entity_belief(believed_place, false, 7, 10));
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            view.homeostatic_needs(agent),
+            world.get_component_homeostatic_needs(agent).copied()
+        );
+        assert_eq!(view.effective_place(agent), Some(place));
+        assert_eq!(
+            view.commodity_quantity(agent, CommodityKind::Bread),
+            world.controlled_commodity_quantity(agent, CommodityKind::Bread)
+        );
+        assert_eq!(view.effective_place(other), Some(believed_place));
+        assert!(!view.is_alive(other));
+        assert!(view.is_dead(other));
+        assert_eq!(view.commodity_quantity(other, CommodityKind::Bread), Quantity(7));
+        assert_eq!(view.wounds(other), vec![sample_wound()]);
+    }
+
+    #[test]
+    fn unknown_entities_and_unbelieved_merchants_stay_hidden() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, believed_merchant, hidden_merchant) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let believed_merchant = txn.create_agent("Seller", ControlSource::Ai).unwrap();
+            let hidden_merchant = txn.create_agent("Hidden", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(believed_merchant, place).unwrap();
+            txn.set_ground_location(hidden_merchant, place).unwrap();
+            txn.set_component_merchandise_profile(
+                believed_merchant,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                    home_market: Some(place),
+                },
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                hidden_merchant,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                    home_market: Some(place),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, believed_merchant, hidden_merchant)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(believed_merchant, entity_belief(place, true, 3, 5));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(view.effective_place(hidden_merchant), None);
+        assert!(!view.is_alive(hidden_merchant));
+        assert_eq!(
+            view.commodity_quantity(hidden_merchant, CommodityKind::Bread),
+            Quantity(0)
+        );
+        assert_eq!(view.entities_at(place), vec![agent, believed_merchant]);
+        assert_eq!(
+            view.agents_selling_at(place, CommodityKind::Bread),
+            vec![believed_merchant]
+        );
+    }
+
+    #[test]
+    fn stale_beliefs_do_not_auto_refresh_from_world() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place_a = places[0];
+        let place_b = places[1];
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place_a).unwrap();
+            txn.set_ground_location(other, place_b).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(other, entity_belief(place_a, true, 1, 2));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(world.effective_place(other), Some(place_b));
+        assert_eq!(view.effective_place(other), Some(place_a));
+    }
+
+    #[test]
+    fn runtime_helpers_support_attacker_visibility_and_duration_estimation() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let destination = world.topology().neighbors(place)[0];
+        let (agent, attacker) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let attacker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(attacker, place).unwrap();
+            commit_txn(txn);
+            (agent, attacker)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(attacker, entity_belief(place, true, 0, 3));
+
+        let mut defs = ActionDefRegistry::new();
+        defs.register(attack_action_def(ActionDefId(0)));
+        let mut actions = BTreeMap::new();
+        actions.insert(
+            ActionInstanceId(7),
+            ActionInstance {
+                instance_id: ActionInstanceId(7),
+                def_id: ActionDefId(0),
+                actor: attacker,
+                targets: vec![agent],
+                payload: ActionPayload::None,
+                start_tick: Tick(3),
+                remaining_duration: ActionDuration::Finite(2),
+                status: ActionStatus::Active,
+                reservation_ids: Vec::new(),
+                local_state: None,
+            },
+        );
+        let runtime = PerAgentBeliefRuntime::new(&actions, &defs);
+        let view = PerAgentBeliefView::with_runtime(agent, &world, &beliefs, runtime);
+
+        assert_eq!(view.current_attackers_of(agent), vec![attacker]);
+        assert_eq!(
+            view.estimate_duration(
+                agent,
+                &DurationExpr::TravelToTarget { target_index: 0 },
+                &[destination],
+                &ActionPayload::None,
+            ),
+            Some(crate::ActionDuration::Finite(
+                NonZeroU32::new(
+                    world
+                        .topology()
+                        .outgoing_edges(place)
+                        .iter()
+                        .filter_map(|edge_id| world.topology().edge(*edge_id))
+                        .find(|edge| edge.to() == destination)
+                        .unwrap()
+                        .travel_time_ticks()
+                )
+                .unwrap()
+                .get(),
+            ))
+        );
+    }
+}
