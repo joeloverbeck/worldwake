@@ -13,7 +13,7 @@ crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
-  golden_care.rs              — 2 tests (scenario 2c + replay)
+  golden_care.rs              — 4 tests (same-place healing + treatment acquisition companion + replays)
   golden_production.rs        — 15 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
@@ -25,7 +25,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 46 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
+The golden suite contains 48 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -60,16 +60,17 @@ The golden suite contains 46 tests across 6 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes for the trade scenario.
 **Cross-system chain**: Need pressure → seller discovery via `MerchandiseProfile` → planner trade barrier selection → trade valuation/exchange → consumption.
 
-### Scenario 2c: Healing a Wounded Agent
-**File**: `golden_care.rs` | **Tests**: `golden_healing_wounded_agent`, `golden_healing_wounded_agent_replays_deterministically`
+### Scenario 2c: Healing a Wounded Agent and Acquiring Treatment
+**File**: `golden_care.rs` | **Tests**: `golden_healing_wounded_agent`, `golden_healing_wounded_agent_replays_deterministically`, `golden_healer_acquires_ground_medicine_for_patient`, `golden_healer_acquires_ground_medicine_for_patient_replays_deterministically`
 **Systems exercised**: AI (candidate generation, planning), Care action domain, Combat/wound treatment, Conservation, deterministic replay
-**Setup**: Healthy healer and wounded patient co-located at Village Square. Healer holds 1 medicine. Patient begins with a bleeding starvation wound.
+**Setup**: Two same-place care scenarios are covered. In the first, a healthy healer starts with medicine and a wounded patient is co-located. In the second, the healer starts without medicine while accessible ground medicine is available beside the same wounded patient.
 **Emergent behavior proven**:
 - Healer generates `Heal { target }` from the local wounded target plus medicine in inventory.
+- When the healer lacks medicine but a wounded local target exists, candidate generation emits the treatment-acquisition path and the planner resolves it through `pick_up` before healing.
 - Planner selects the care-domain heal action through the real action registry.
 - Heal executes through the normal lifecycle: medicine is consumed and the patient's wound load decreases.
-- Two runs with the same seed produce identical world and event-log hashes for the healing scenario.
-**Cross-system chain**: Local wound state → heal-goal generation → planner care-step selection → medicine consumption → wound severity/bleed reduction.
+- Two runs with the same seed produce identical world and event-log hashes for both care scenarios.
+**Cross-system chain**: Local wound state → treatment acquire-goal emission when needed → transport `pick_up` → heal-goal completion → medicine consumption → wound severity/bleed reduction.
 
 ### Scenario 2d: Merchant Restock and Return to Home Market
 **File**: `golden_trade.rs` | **Tests**: `golden_merchant_restock_return_stock`, `golden_merchant_restock_return_stock_replays_deterministically`
@@ -417,7 +418,7 @@ The golden suite contains 46 tests across 6 domain files. Every test uses the re
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | Yes | 2d |
 | AcquireCommodity (RecipeInput) | Yes | 6a |
-| AcquireCommodity (Treatment) | Backlog | Scenario 12 — pending implementation |
+| AcquireCommodity (Treatment) | Yes | 2c |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
 | Wash | Yes | 7e |
@@ -431,7 +432,7 @@ The golden suite contains 46 tests across 6 domain files. Every test uses the re
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 
-**Coverage: 15/17 GoalKinds tested (88.2%).**
+**Coverage: 16/17 GoalKinds tested (94.1%).**
 
 ### ActionDomain Coverage
 
@@ -514,7 +515,7 @@ The golden suite contains 46 tests across 6 domain files. Every test uses the re
 | Loot/bury suppression under self-care pressure → relief → suppression lift | Yes |
 | Stale belief → travel to depleted source → passive re-observation → replan | Backlog |
 | Memory retention decay → belief eviction → changed candidate generation → local discovery | Backlog |
-| Pain pressure → treatment acquisition → pick-up → heal | Backlog |
+| Pain pressure → treatment acquisition → pick-up → heal | Yes |
 
 ---
 
@@ -574,29 +575,6 @@ Sorted by composite score (emergence + bug-catching - effort) descending.
   - Conservation holds; deterministic replay
 - **Cross-system chain**: Memory retention → Belief eviction → Changed candidate generation → Local passive discovery → Different plan
 
-#### Scenario 12: Treatment Self-Acquisition Through AI Loop
-- **Target file**: `golden_care.rs`
-- **Emergence complexity**: 4 — Wounds → Pain pressure → Treatment candidate → Transport(pick-up) → Care(heal)
-- **Bug-catching value**: 5 — fills GoalKind gap (AcquireCommodity(Treatment)); validates FND02-003 end-to-end
-- **Implementation effort**: 2 — straightforward setup, similar to existing care scenarios
-- **Score**: 7
-- **Systems exercised**: Combat (wound tracking), AI (pressure, candidate generation, planning), Transport (pick-up), Care (heal)
-- **Setup**: Agent (Rex) at VillageSquare with pre-inflicted wounds (2+ wounds for pain pressure). Ground medicine lot at VillageSquare (3 units). Rex seeded with belief about the medicine lot. Rex is sated (hunger/thirst/fatigue all low) so pain pressure is dominant. Rex has `CombatProfile` for wound tracking.
-- **Emergent behavior to prove**:
-  1. Pain/danger pressure from wounds drives goal ranking
-  2. `candidate_generation` emits `AcquireCommodity { commodity: Medicine, purpose: Treatment }` (FND02-003)
-  3. Rex plans: pick-up medicine → heal self
-  4. Rex executes: transport(pick-up) → care(heal)
-  5. Wound load decreases
-- **Key assertions**:
-  - `AcquireCommodity(Treatment)` goal is generated (verify via action events)
-  - Medicine is picked up (transport action)
-  - Heal action executes (care action)
-  - Wound count or wound load decreases
-  - Medicine conservation holds; deterministic replay
-- **Cross-system chain**: Wounds → Pain pressure → Treatment candidate → Transport(pick-up) → Care(heal)
-- **GoalKind coverage impact**: `AcquireCommodity(Treatment)` → **Yes** (16/17; only SellCommodity remains deferred to S04)
-
 ### Tier 2: Medium Priority (score 3-4)
 
 No remaining Tier 2 golden backlog items. `P-NEW-11 Loot/Bury Suppression Under Self-Care Pressure` was removed on 2026-03-13 after implementation. The ticket assumptions were corrected first: the durable proof is a direct-corpse setup, not a deprivation-death cascade, and the shipped scenario proves the behavioral contract cleanly without overclaiming direct isolated proof of `is_suppressed()`.
@@ -629,7 +607,7 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 4. **SellCommodity** — `GoalKind::SellCommodity` variant exists but `candidate_generation.rs` lacks sell-specific emission logic. Not testable as a golden scenario without first implementing new system code to generate sell candidates.
 
-5. ~~**AcquireCommodity(Treatment)**~~ — Moved to Tier 1 backlog as Scenario 12. FND02-003 wired treatment emission in `candidate_generation.rs`; the gap is now golden coverage, not missing system code.
+5. **Self-treatment through ordinary `heal`** — rejected after reassessment. The current care architecture explicitly forbids self-targeted `heal`, and `AcquireCommodity(Treatment)` is already golden-covered by the healer-acquires-ground-medicine scenario. If self-treatment becomes desirable later, it should arrive as a deliberate engine design, not as a test-only extension of the existing interpersonal care action.
 
 ---
 
@@ -637,20 +615,19 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 46 | 46 + 3 scenarios (+ replays) |
-| GoalKind coverage | 15/17 (88.2%) | 16/17 (94.1%) |
+| Proven tests | 48 | 48 + 2 scenarios (+ replays) |
+| GoalKind coverage | 16/17 (94.1%) | 16/17 (94.1%) |
 | ActionDomain coverage | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 31 | 34 |
+| Cross-system chains | 32 | 34 |
 
 ### Pending Backlog Summary
 
-3 new scenarios added on 2026-03-14 targeting E14 (Perception & Belief) and FND-02 coverage:
+2 new scenarios remain in the golden backlog as of 2026-03-14, both targeting E14 (Perception & Belief):
 - **Scenario 10** (score 7): Belief isolation — unseen theft forces replan (`golden_perception.rs`)
 - **Scenario 11** (score 5): Memory retention decay — forgotten resource forces local discovery (`golden_perception.rs`)
-- **Scenario 12** (score 7): Treatment self-acquisition through AI loop (`golden_care.rs`)
 
 ### Recommended Implementation Order
 
-Scenario 12 (Treatment, score 7, effort 2) → Scenario 10 (Belief isolation, score 7, effort 3) → Scenario 11 (Memory decay, score 5, effort 3).
+Scenario 10 (Belief isolation, score 7, effort 3) → Scenario 11 (Memory decay, score 5, effort 3).
