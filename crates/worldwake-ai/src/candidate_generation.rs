@@ -643,7 +643,7 @@ fn corpse_has_known_loot(view: &dyn GoalBeliefView, corpse: EntityId) -> bool {
     CommodityKind::ALL
         .iter()
         .copied()
-        .any(|commodity| view.commodity_quantity(corpse, commodity) > Quantity(0))
+        .any(|commodity| corpse_has_known_commodity(view, corpse, commodity))
 }
 
 fn emit_bury_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
@@ -1011,9 +1011,18 @@ fn corpse_contains_commodity(
     corpse: EntityId,
     commodity: CommodityKind,
 ) -> bool {
+    corpse_has_known_commodity(view, corpse, commodity)
+}
+
+fn corpse_has_known_commodity(
+    view: &dyn GoalBeliefView,
+    corpse: EntityId,
+    commodity: CommodityKind,
+) -> bool {
     view.direct_possessions(corpse)
         .into_iter()
         .any(|entity| view.item_lot_commodity(entity) == Some(commodity))
+        || view.commodity_quantity(corpse, commodity) > Quantity(0)
 }
 
 fn relieves_hunger(commodity: CommodityKind) -> bool {
@@ -2488,6 +2497,76 @@ mod tests {
         );
 
         assert!(contains_goal(&candidates, GoalKind::LootCorpse { corpse }));
+    }
+
+    #[test]
+    fn local_corpse_with_believed_inventory_emits_acquire_commodity() {
+        let agent = entity(1);
+        let place = entity(10);
+        let corpse = entity(2);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(corpse, place);
+        view.corpses_at.insert(place, vec![corpse]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.commodity_quantities
+            .insert((corpse, CommodityKind::Bread), Quantity(2));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+    }
+
+    #[test]
+    fn local_corpse_without_matching_believed_inventory_does_not_emit_acquire_commodity() {
+        let agent = entity(1);
+        let place = entity(10);
+        let corpse = entity(2);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(corpse, place);
+        view.corpses_at.insert(place, vec![corpse]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.commodity_quantities
+            .insert((corpse, CommodityKind::Coin), Quantity(5));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
     }
 
     #[test]
