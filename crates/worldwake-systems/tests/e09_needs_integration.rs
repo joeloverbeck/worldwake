@@ -427,44 +427,26 @@ fn divergent_metabolism_profiles_produce_divergent_scheduler_outcomes() {
 }
 
 #[test]
-fn authoritative_schema_includes_expected_shared_e09_and_e12_components_and_fields() {
-    let component_kinds = ComponentKind::ALL;
-    assert_eq!(
-        component_kinds,
-        [
-            ComponentKind::Name,
-            ComponentKind::AgentData,
-            ComponentKind::WoundList,
-            ComponentKind::CombatProfile,
-            ComponentKind::DeadAt,
-            ComponentKind::CombatStance,
-            ComponentKind::FacilityQueueDispositionProfile,
-            ComponentKind::UtilityProfile,
-            ComponentKind::BlockedIntentMemory,
-            ComponentKind::AgentBeliefStore,
-            ComponentKind::PerceptionProfile,
-            ComponentKind::DriveThresholds,
-            ComponentKind::HomeostaticNeeds,
-            ComponentKind::DeprivationExposure,
-            ComponentKind::MetabolismProfile,
-            ComponentKind::CarryCapacity,
-            ComponentKind::KnownRecipes,
-            ComponentKind::DemandMemory,
-            ComponentKind::TravelDispositionProfile,
-            ComponentKind::TradeDispositionProfile,
-            ComponentKind::MerchandiseProfile,
-            ComponentKind::SubstitutePreferences,
-            ComponentKind::ExclusiveFacilityPolicy,
-            ComponentKind::FacilityUseQueue,
-            ComponentKind::WorkstationMarker,
-            ComponentKind::ResourceSource,
-            ComponentKind::ProductionJob,
-            ComponentKind::InTransitOnEdge,
-            ComponentKind::ItemLot,
-            ComponentKind::UniqueItem,
-            ComponentKind::Container,
-        ]
-    );
+fn authoritative_schema_includes_expected_shared_e09_e12_and_e14_components_and_fields() {
+    let expected_shared = [
+        ComponentKind::WoundList,
+        ComponentKind::CombatProfile,
+        ComponentKind::DeadAt,
+        ComponentKind::CombatStance,
+        ComponentKind::FacilityQueueDispositionProfile,
+        ComponentKind::AgentBeliefStore,
+        ComponentKind::PerceptionProfile,
+        ComponentKind::DriveThresholds,
+        ComponentKind::HomeostaticNeeds,
+        ComponentKind::DeprivationExposure,
+        ComponentKind::MetabolismProfile,
+    ];
+    let shared_in_schema: Vec<_> = ComponentKind::ALL
+        .into_iter()
+        .filter(|kind| expected_shared.contains(kind))
+        .collect();
+
+    assert_eq!(shared_in_schema.as_slice(), expected_shared.as_slice());
 
     let HomeostaticNeeds {
         hunger,

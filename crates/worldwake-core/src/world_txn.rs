@@ -671,68 +671,6 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
-    pub fn set_component_exclusive_facility_policy(
-        &mut self,
-        entity: EntityId,
-        component: crate::ExclusiveFacilityPolicy,
-    ) -> Result<(), WorldError> {
-        self.replace_simple_component(
-            entity,
-            component,
-            |world, entity| {
-                world
-                    .get_component_exclusive_facility_policy(entity)
-                    .cloned()
-            },
-            super::world::World::remove_component_exclusive_facility_policy,
-            |world, entity, component: crate::ExclusiveFacilityPolicy| {
-                world.insert_component_exclusive_facility_policy(entity, component)
-            },
-            ComponentKind::ExclusiveFacilityPolicy,
-            ComponentValue::ExclusiveFacilityPolicy,
-        )
-    }
-
-    pub fn set_component_facility_use_queue(
-        &mut self,
-        entity: EntityId,
-        component: crate::FacilityUseQueue,
-    ) -> Result<(), WorldError> {
-        self.replace_simple_component(
-            entity,
-            component,
-            |world, entity| world.get_component_facility_use_queue(entity).cloned(),
-            super::world::World::remove_component_facility_use_queue,
-            |world, entity, component: crate::FacilityUseQueue| {
-                world.insert_component_facility_use_queue(entity, component)
-            },
-            ComponentKind::FacilityUseQueue,
-            ComponentValue::FacilityUseQueue,
-        )
-    }
-
-    pub fn set_component_facility_queue_disposition_profile(
-        &mut self,
-        entity: EntityId,
-        component: crate::FacilityQueueDispositionProfile,
-    ) -> Result<(), WorldError> {
-        self.replace_simple_component(
-            entity,
-            component,
-            |world, entity| {
-                world
-                    .get_component_facility_queue_disposition_profile(entity)
-                    .cloned()
-            },
-            super::world::World::remove_component_facility_queue_disposition_profile,
-            |world, entity, component: crate::FacilityQueueDispositionProfile| {
-                world.insert_component_facility_queue_disposition_profile(entity, component)
-            },
-            ComponentKind::FacilityQueueDispositionProfile,
-            ComponentValue::FacilityQueueDispositionProfile,
-        )
-    }
-
     with_component_schema_entries!(
         select_txn_simple_set_components,
         world_txn_component_setters
@@ -1210,6 +1148,7 @@ impl Deref for WorldTxn<'_> {
 mod tests {
     use super::WorldTxn;
     use crate::{
+        component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -1342,6 +1281,19 @@ mod tests {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
     }
+
+    macro_rules! define_txn_simple_set_component_kinds {
+        ($({ $component_ty:ty, $get_fn:ident, $remove_fn:ident, $insert_fn:ident, $set_fn:ident, $clear_fn:ident, $component_variant:ident })*) => {
+            const TXN_SIMPLE_SET_COMPONENT_KINDS: &[ComponentKind] = &[
+                $(ComponentKind::$component_variant,)*
+            ];
+        };
+    }
+
+    with_component_schema_entries!(
+        select_txn_simple_set_components,
+        define_txn_simple_set_component_kinds
+    );
 
     fn archive_teardown_fixture(world: &mut World) -> ArchiveTeardownFixture {
         let archived = world
@@ -1493,6 +1445,38 @@ mod tests {
                 ..
             }) if entity == unique_item
         ));
+    }
+
+    #[test]
+    fn txn_simple_set_components_match_manifest_projection() {
+        let expected: Vec<_> = ComponentKind::ALL
+            .into_iter()
+            .filter(|kind| {
+                !matches!(
+                    kind,
+                    ComponentKind::ItemLot | ComponentKind::UniqueItem | ComponentKind::Container
+                )
+            })
+            .collect();
+
+        assert_eq!(TXN_SIMPLE_SET_COMPONENT_KINDS, expected.as_slice());
+    }
+
+    #[test]
+    fn txn_simple_setter_methods_exist_for_every_selected_component() {
+        macro_rules! assert_world_txn_setters_exist {
+            ($({ $component_ty:ty, $get_fn:ident, $remove_fn:ident, $insert_fn:ident, $set_fn:ident, $clear_fn:ident, $component_variant:ident })*) => {
+                $(
+                    let _ = WorldTxn::$set_fn;
+                    let _ = WorldTxn::$clear_fn;
+                )*
+            };
+        }
+
+        with_component_schema_entries!(
+            select_txn_simple_set_components,
+            assert_world_txn_setters_exist
+        );
     }
 
     #[test]
