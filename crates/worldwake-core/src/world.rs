@@ -149,6 +149,8 @@ impl World {
         self.create_entity_with(EntityKind::Agent, tick, |world, entity| {
             world.insert_component_name(entity, Name(name.to_string()))?;
             world.insert_component_agent_data(entity, AgentData { control_source })?;
+            world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
+            world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             Ok(())
         })
     }
@@ -1006,6 +1008,23 @@ mod tests {
                 .entities_with_name_and_agent_data()
                 .collect::<Vec<_>>(),
             vec![id]
+        );
+    }
+
+    #[test]
+    fn create_agent_attaches_belief_store_and_perception_profile() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world
+            .create_agent("Watcher", ControlSource::Ai, Tick(3))
+            .unwrap();
+
+        assert_eq!(
+            world.get_component_agent_belief_store(id),
+            Some(&AgentBeliefStore::new())
+        );
+        assert!(
+            world.get_component_perception_profile(id).is_some(),
+            "new agents should start with a perception profile"
         );
     }
 

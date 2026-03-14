@@ -1223,33 +1223,6 @@ mod tests {
         }
     }
 
-    fn sample_agent_belief_store() -> AgentBeliefStore {
-        let mut known_entities = BTreeMap::new();
-        known_entities.insert(
-            entity(21),
-            BelievedEntityState {
-                last_known_place: Some(entity(5)),
-                last_known_inventory: BTreeMap::from([(CommodityKind::Apple, Quantity(2))]),
-                alive: true,
-                wounds: Vec::new(),
-                observed_tick: Tick(7),
-                source: PerceptionSource::DirectObservation,
-            },
-        );
-        AgentBeliefStore {
-            known_entities,
-            social_observations: Vec::new(),
-        }
-    }
-
-    fn sample_perception_profile() -> PerceptionProfile {
-        PerceptionProfile {
-            memory_capacity: 9,
-            memory_retention_ticks: 24,
-            observation_fidelity: Permille::new(910).unwrap(),
-        }
-    }
-
     struct ArchiveTeardownFixture {
         archived: EntityId,
         owner: EntityId,
@@ -1415,6 +1388,18 @@ mod tests {
                     after: ComponentValue::AgentData(crate::AgentData {
                         control_source: ControlSource::Human,
                     }),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::AgentBeliefStore,
+                    before: None,
+                    after: ComponentValue::AgentBeliefStore(AgentBeliefStore::new()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::PerceptionProfile,
+                    before: None,
+                    after: ComponentValue::PerceptionProfile(PerceptionProfile::default()),
                 }),
                 StateDelta::Relation(RelationDelta::Added {
                     relation_kind: RelationKind::InTransit,
@@ -2316,7 +2301,10 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = sample_agent_belief_store();
+        let before = world
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .unwrap();
         let mut after = before.clone();
         after.known_entities.insert(
             entity(22),
@@ -2329,9 +2317,6 @@ mod tests {
                 source: PerceptionSource::Inference,
             },
         );
-        world
-            .insert_component_agent_belief_store(agent, before.clone())
-            .unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.set_component_agent_belief_store(agent, after.clone())
@@ -2361,13 +2346,10 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = sample_perception_profile();
+        let before = world.get_component_perception_profile(agent).copied().unwrap();
         let mut after = before;
         after.memory_capacity += 3;
         after.observation_fidelity = Permille::new(990).unwrap();
-        world
-            .insert_component_perception_profile(agent, before)
-            .unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.set_component_perception_profile(agent, after).unwrap();
@@ -2690,9 +2672,9 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = sample_agent_belief_store();
-        world
-            .insert_component_agent_belief_store(agent, before.clone())
+        let before = world
+            .get_component_agent_belief_store(agent)
+            .cloned()
             .unwrap();
 
         let mut txn = new_txn(&mut world);
@@ -2721,10 +2703,7 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = sample_perception_profile();
-        world
-            .insert_component_perception_profile(agent, before)
-            .unwrap();
+        let before = world.get_component_perception_profile(agent).copied().unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.clear_component_perception_profile(agent).unwrap();

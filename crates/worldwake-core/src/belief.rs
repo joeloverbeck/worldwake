@@ -125,6 +125,16 @@ pub struct PerceptionProfile {
 
 impl Component for PerceptionProfile {}
 
+impl Default for PerceptionProfile {
+    fn default() -> Self {
+        Self {
+            memory_capacity: 12,
+            memory_retention_ticks: 48,
+            observation_fidelity: Permille::new(875).unwrap(),
+        }
+    }
+}
+
 fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ticks: u64) -> bool {
     current_tick.0.saturating_sub(observed_tick.0) <= retention_ticks
 }
