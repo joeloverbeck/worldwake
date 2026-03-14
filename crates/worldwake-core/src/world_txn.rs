@@ -6,8 +6,8 @@ use crate::{
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
-    PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta, RelationKind, RelationValue,
-    ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
+    EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta, RelationKind,
+    RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
@@ -24,6 +24,7 @@ pub struct WorldTxn<'w> {
     visibility: VisibilitySpec,
     witness_data: WitnessData,
     deltas: Vec<StateDelta>,
+    evidence: Vec<EvidenceRef>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -88,6 +89,7 @@ impl<'w> WorldTxn<'w> {
             visibility,
             witness_data,
             deltas: Vec::new(),
+            evidence: Vec::new(),
         }
     }
 
@@ -136,14 +138,20 @@ impl<'w> WorldTxn<'w> {
         &self.deltas
     }
 
+    #[must_use]
+    pub fn evidence(&self) -> &[EvidenceRef] {
+        &self.evidence
+    }
+
     pub fn into_pending_event(self) -> PendingEvent {
         let observed_entities = self.capture_observed_entities();
         *self.world = self.staged_world;
-        PendingEvent::new(
+        PendingEvent::new_with_evidence(
             self.tick,
             self.cause,
             self.actor_id,
             self.target_ids,
+            self.evidence,
             self.place_id,
             self.deltas,
             self.visibility,
@@ -166,6 +174,23 @@ impl<'w> WorldTxn<'w> {
 
     pub fn add_tag(&mut self, tag: EventTag) -> &mut Self {
         self.tags.insert(tag);
+        self
+    }
+
+    pub fn add_evidence(&mut self, evidence: EvidenceRef) -> &mut Self {
+        self.evidence.push(evidence);
+        self.evidence.sort();
+        self.evidence.dedup();
+        self
+    }
+
+    pub fn extend_evidence(
+        &mut self,
+        evidence: impl IntoIterator<Item = EvidenceRef>,
+    ) -> &mut Self {
+        self.evidence.extend(evidence);
+        self.evidence.sort();
+        self.evidence.dedup();
         self
     }
 
@@ -773,6 +798,7 @@ impl<'w> WorldTxn<'w> {
             entities.insert(actor);
         }
         entities.extend(self.target_ids.iter().copied());
+        entities.extend(self.evidence.iter().flat_map(observed_evidence_entities));
         for delta in &self.deltas {
             match delta {
                 StateDelta::Entity(entity_delta) => match entity_delta {
@@ -1216,6 +1242,15 @@ fn observed_relation_entities(relation_delta: &RelationDelta) -> BTreeSet<Entity
     }
 }
 
+fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
+    match evidence {
+        EvidenceRef::Wound { entity, .. } => BTreeSet::from([*entity]),
+        EvidenceRef::Mismatch {
+            observer, subject, ..
+        } => BTreeSet::from([*observer, *subject]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::WorldTxn;
@@ -1233,9 +1268,9 @@ mod tests {
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
-        EventLog, EventTag, InTransitOnEdge, KnownRecipes, QuantityDelta, RelationDelta,
-        RelationKind, RelationValue, ReservationDelta, StateDelta, TravelEdgeId, VisibilitySpec,
-        WitnessData,
+        EventLog, EventTag, EvidenceRef, InTransitOnEdge, KnownRecipes, MismatchKind,
+        QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
+        TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
     };
     use crate::{
         CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
@@ -2041,6 +2076,120 @@ mod tests {
         assert_eq!(
             record.observed_entities.get(&bread).unwrap().last_known_place,
             Some(place)
+        );
+    }
+
+    #[test]
+    fn commit_orders_and_deduplicates_transaction_owned_evidence() {
+        let mut world = World::new(test_topology()).unwrap();
+        let actor = world
+            .create_agent("Actor", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let subject = world
+            .create_agent("Subject", ControlSource::Ai, Tick(1))
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.add_evidence(EvidenceRef::Mismatch {
+            observer: actor,
+            subject,
+            kind: MismatchKind::AliveStatusChanged,
+        })
+        .add_evidence(EvidenceRef::Wound {
+            entity: subject,
+            wound_id: WoundId(2),
+        })
+        .add_evidence(EvidenceRef::Mismatch {
+            observer: actor,
+            subject,
+            kind: MismatchKind::AliveStatusChanged,
+        })
+        .extend_evidence([
+            EvidenceRef::Wound {
+                entity: subject,
+                wound_id: WoundId(1),
+            },
+            EvidenceRef::Wound {
+                entity: subject,
+                wound_id: WoundId(2),
+            },
+        ]);
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(
+            record.evidence,
+            vec![
+                EvidenceRef::Wound {
+                    entity: subject,
+                    wound_id: WoundId(1),
+                },
+                EvidenceRef::Wound {
+                    entity: subject,
+                    wound_id: WoundId(2),
+                },
+                EvidenceRef::Mismatch {
+                    observer: actor,
+                    subject,
+                    kind: MismatchKind::AliveStatusChanged,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn commit_captures_observed_entities_from_evidence_without_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(5);
+        let actor = world
+            .create_agent("Actor", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let subject = world
+            .create_agent("Subject", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(3), Tick(1))
+            .unwrap();
+
+        world.set_ground_location(actor, place).unwrap();
+        world.set_ground_location(subject, place).unwrap();
+        world.set_possessor(item, subject).unwrap();
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(9),
+            CauseRef::Bootstrap,
+            Some(actor),
+            Some(place),
+            VisibilitySpec::ParticipantsOnly,
+            WitnessData::default(),
+        );
+        txn.add_evidence(EvidenceRef::Wound {
+            entity: subject,
+            wound_id: WoundId(7),
+        });
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(
+            record
+                .observed_entities
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![actor, subject]
+        );
+        assert_eq!(
+            record
+                .observed_entities
+                .get(&subject)
+                .unwrap()
+                .last_known_inventory,
+            BTreeMap::from([(CommodityKind::Bread, Quantity(3))])
         );
     }
 

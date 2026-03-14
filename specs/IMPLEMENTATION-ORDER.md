@@ -20,6 +20,9 @@ Pulled forward from Phase 4 post-Phase 2 as the primary manual testing interface
 ### E14: Perception & Belief System — COMPLETED
 Established per-agent belief stores, passive/direct perception, social observation capture, `PerAgentBeliefView`, belief-only planner reads, public route/place structure reads, and belief-mediated remote facility/resource discovery.
 
+### E15: Rumor, Witness & Discovery — COMPLETED
+Established Tell-based social transmission, per-agent Tell profiles, discovery events for violated expectations, social observation capture for telling, and transaction-owned metadata finalization for transaction-built E15 event payloads.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -53,7 +56,6 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - Satisfied FND-01 Section B deferred information pipeline requirements
 
 **Step 10** (parallel after completed E14):
-- **E15**: Rumor, Witness & Discovery
 - **E16**: Offices, Succession & Factions
 - **S01**: Production Output Ownership Claims
 - **S02**: Goal Decision Policy Unification
@@ -113,7 +115,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `E15-rumor-witness-discovery.md` | 3 | 10 | E14 |
 | `E16-offices-succession-factions.md` | 3 | 10 | E14 |
 | `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |
 | `S02-goal-decision-policy-unification.md` | 3 | 10 | E14 |

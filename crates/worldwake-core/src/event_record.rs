@@ -54,7 +54,35 @@ impl PendingEvent {
         tick: Tick,
         cause: CauseRef,
         actor_id: Option<EntityId>,
+        target_ids: Vec<EntityId>,
+        place_id: Option<EntityId>,
+        state_deltas: Vec<StateDelta>,
+        visibility: VisibilitySpec,
+        witness_data: WitnessData,
+        tags: BTreeSet<EventTag>,
+    ) -> Self {
+        Self::new_with_evidence(
+            tick,
+            cause,
+            actor_id,
+            target_ids,
+            Vec::new(),
+            place_id,
+            state_deltas,
+            visibility,
+            witness_data,
+            tags,
+        )
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_evidence(
+        tick: Tick,
+        cause: CauseRef,
+        actor_id: Option<EntityId>,
         mut target_ids: Vec<EntityId>,
+        mut evidence: Vec<EvidenceRef>,
         place_id: Option<EntityId>,
         state_deltas: Vec<StateDelta>,
         visibility: VisibilitySpec,
@@ -63,13 +91,15 @@ impl PendingEvent {
     ) -> Self {
         target_ids.sort();
         target_ids.dedup();
+        evidence.sort();
+        evidence.dedup();
 
         Self {
             tick,
             cause,
             actor_id,
             target_ids,
-            evidence: Vec::new(),
+            evidence,
             place_id,
             state_deltas,
             observed_entities: BTreeMap::new(),
@@ -420,6 +450,74 @@ mod tests {
                 kind: MismatchKind::AliveStatusChanged,
             },
         ]);
+
+        assert_eq!(
+            pending.evidence,
+            vec![
+                EvidenceRef::Wound {
+                    entity: entity(9),
+                    wound_id: WoundId(2),
+                },
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::AliveStatusChanged,
+                },
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::InventoryDiscrepancy {
+                        commodity: CommodityKind::Bread,
+                        believed: Quantity(5),
+                        observed: Quantity(2),
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn pending_event_new_with_evidence_orders_and_deduplicates_refs() {
+        let pending = PendingEvent::new_with_evidence(
+            Tick(21),
+            CauseRef::Bootstrap,
+            Some(entity(1)),
+            vec![entity(2)],
+            vec![
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::InventoryDiscrepancy {
+                        commodity: CommodityKind::Bread,
+                        believed: Quantity(5),
+                        observed: Quantity(2),
+                    },
+                },
+                EvidenceRef::Wound {
+                    entity: entity(9),
+                    wound_id: WoundId(2),
+                },
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::InventoryDiscrepancy {
+                        commodity: CommodityKind::Bread,
+                        believed: Quantity(5),
+                        observed: Quantity(2),
+                    },
+                },
+                EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(4),
+                    kind: MismatchKind::AliveStatusChanged,
+                },
+            ],
+            Some(entity(7)),
+            Vec::new(),
+            VisibilitySpec::ParticipantsOnly,
+            WitnessData::default(),
+            BTreeSet::from([EventTag::Discovery]),
+        );
 
         assert_eq!(
             pending.evidence,

@@ -1,5 +1,7 @@
 # E15: Social Information Transmission
 
+**Status**: ✅ COMPLETED
+
 ## Epic Summary
 Implement the Tell action for social belief transmission between co-located agents, rumor propagation with source degradation and chain tracking, per-agent information-sharing profiles, and belief-mismatch discovery events that downstream systems consume.
 
@@ -288,3 +290,20 @@ No direct system-to-system calls. All influence through state (beliefs, events, 
 - Section 9.17 (traceable discovery)
 - Section 8 (no global omniscience for NPCs)
 - docs/FOUNDATIONS.md Principles 3, 7, 8, 10, 12, 13, 14, 15, 24, 28
+
+## Outcome
+
+- Completion date: 2026-03-14
+- What actually changed:
+  - Implemented Tell as a duration-bearing social action with co-location enforcement, relay-depth limits, listener acceptance fidelity, and bystander social observation.
+  - Added `TellProfile`, `EventTag::Social`, `EventTag::Discovery`, `SocialObservationKind::WitnessedTelling`, and the belief confidence derivation helper.
+  - Extended perception to emit discovery events for belief mismatches across passive observation and event-based observation.
+  - Finalized transaction-owned event metadata for transaction-built E15-related events by moving evidence ownership into `WorldTxn` and capturing observed snapshots from the final event metadata set.
+- Deviations from original plan:
+  - Manual `PendingEvent::new(...)` surfaces were retained for non-transaction emitters rather than being rewritten wholesale into transactions.
+  - AI-side use of discovery/tell outputs remains scoped to the implemented E15 runtime and existing downstream integrations rather than forcing broader speculative planner rewrites.
+- Verification results:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-systems`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

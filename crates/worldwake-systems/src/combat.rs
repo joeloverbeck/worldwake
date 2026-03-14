@@ -117,10 +117,10 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
             .add_tag(EventTag::WorldMutation)
             .add_tag(EventTag::Combat)
             .add_target(fatality.entity);
+        txn.extend_evidence(fatality.evidence);
         txn.set_component_dead_at(fatality.entity, DeadAt(tick))
             .map_err(|error| SystemError::new(error.to_string()))?;
-        let pending = txn.into_pending_event().with_evidence(fatality.evidence);
-        let _ = event_log.emit(pending);
+        let _ = txn.commit(event_log);
     }
 
     Ok(())
@@ -3144,6 +3144,15 @@ mod tests {
                 entity: guard,
                 wound_id: WoundId(7),
             }]
+        );
+        assert!(record.observed_entities.contains_key(&guard));
+        assert_eq!(
+            record
+                .observed_entities
+                .get(&guard)
+                .unwrap()
+                .last_known_inventory,
+            BTreeMap::from([(worldwake_core::CommodityKind::Bread, Quantity(1))])
         );
         assert!(record.tags.contains(&EventTag::System));
         assert!(record.tags.contains(&EventTag::WorldMutation));
