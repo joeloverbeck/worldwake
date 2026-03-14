@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Analysis and Gap Report
 
-**Date**: 2026-03-12 (updated 2026-03-13)
+**Date**: 2026-03-12 (updated 2026-03-14)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Document proven emergent scenarios, identify coverage gaps, and prioritize missing tests.
 
@@ -18,6 +18,7 @@ crates/worldwake-ai/tests/
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
+  golden_perception.rs        — (planned) scenarios 10, 11
 ```
 
 ---
@@ -416,7 +417,7 @@ The golden suite contains 46 tests across 6 domain files. Every test uses the re
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | Yes | 2d |
 | AcquireCommodity (RecipeInput) | Yes | 6a |
-| AcquireCommodity (Treatment) | **No** | — |
+| AcquireCommodity (Treatment) | Backlog | Scenario 12 — pending implementation |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
 | Wash | Yes | 7e |
@@ -511,6 +512,9 @@ The golden suite contains 46 tests across 6 domain files. Every test uses the re
 | Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
 | Wound bleed → clotting → natural recovery | Yes |
 | Loot/bury suppression under self-care pressure → relief → suppression lift | Yes |
+| Stale belief → travel to depleted source → passive re-observation → replan | Backlog |
+| Memory retention decay → belief eviction → changed candidate generation → local discovery | Backlog |
+| Pain pressure → treatment acquisition → pick-up → heal | Backlog |
 
 ---
 
@@ -523,7 +527,75 @@ Each scenario is rated on three axes:
 
 Sorted by composite score (emergence + bug-catching - effort) descending.
 
-**Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
+**Target files for new tests**: AI decision tests → `golden_ai_decisions.rs`, production/economy/transport → `golden_production.rs`, combat/death/loot → `golden_combat.rs`, determinism/replay → `golden_determinism.rs`, perception/belief → `golden_perception.rs`. New domains (trade, care) may warrant new `golden_trade.rs` or `golden_care.rs` files.
+
+### Tier 1: High Priority (score 5+)
+
+#### Scenario 10: Belief Isolation — Unseen Theft Forces Replan
+- **Target file**: `golden_perception.rs` (new file)
+- **Emergence complexity**: 5 — Perception(absent) → Stale belief → Travel → Passive observation → Belief update → Replan
+- **Bug-catching value**: 5 — core E14 behavioral contract; no existing test proves belief isolation
+- **Implementation effort**: 3 — standard harness, needs selective belief seeding
+- **Score**: 7
+- **Systems exercised**: Perception, Belief store, Travel, AI (candidate generation, planning, replanning)
+- **Setup**: Agent A (Alice) at VillageSquare, critically hungry (pm(900)), fast metabolism. Agent B (Bob) at OrchardFarm, critically hungry (pm(950)), fast metabolism. OrchardFarm has apple resource source with small quantity (3 apples). Alice seeded with belief about apples at OrchardFarm. Bob seeded with belief about apples at OrchardFarm.
+- **Emergent behavior to prove**:
+  1. Bob is already at OrchardFarm — harvests and eats the apples (SamePlace visibility; Alice cannot witness from VillageSquare)
+  2. Alice plans `AcquireCommodity(SelfConsume)` → travel to OrchardFarm based on stale belief
+  3. Alice arrives at OrchardFarm; passive observation fires (`observe_passive_local_entities`)
+  4. Alice's belief store updates: no apples remain at OrchardFarm
+  5. Alice replans (blocked intent or different goal)
+- **Key assertions**:
+  - Alice's `AgentBeliefStore` for the apple source updates only AFTER arrival (not before)
+  - Alice does NOT react to Bob eating before she arrives (belief isolation proven)
+  - Alice replans after arrival when reality contradicts stale belief
+  - Conservation holds throughout; deterministic replay
+- **Cross-system chain**: Perception(absent) → Stale belief → Travel → Passive observation → Belief update → Replan
+
+#### Scenario 11: Memory Retention Decay — Forgotten Resource Forces Local Discovery
+- **Target file**: `golden_perception.rs` (new file)
+- **Emergence complexity**: 4 — Memory retention → Belief eviction → Changed candidate generation → Local discovery → Different plan
+- **Bug-catching value**: 4 — proves `enforce_capacity()` drives real behavioral divergence; no existing test covers this
+- **Implementation effort**: 3 — needs custom `PerceptionProfile` with short `memory_retention_ticks`, careful timing
+- **Score**: 5
+- **Systems exercised**: Perception (enforce_capacity), Belief store, Needs, AI (candidate generation, planning)
+- **Setup**: Agent (Dana) at VillageSquare with short `memory_retention_ticks` (e.g., 20). Seeded with belief about apples at distant OrchardFarm (3+ hops away). Dana has high thirst (pm(800)) and fast thirst metabolism — will drink first. Water source at VillageSquare. After retention window (20 ticks), apple belief is evicted by `enforce_capacity()`. A local food source at VillageSquare (or adjacent place) exists for Dana to discover via passive observation.
+- **Emergent behavior to prove**:
+  1. Dana drinks water at VillageSquare (thirst dominant)
+  2. During drinking/recovery, 20+ ticks pass
+  3. `enforce_capacity()` evicts stale OrchardFarm apple belief (observed_tick too old)
+  4. Dana gets hungry — cannot plan to go to OrchardFarm (forgotten)
+  5. Dana discovers local food via passive observation at current location
+  6. Dana eats local food
+- **Key assertions**:
+  - Dana's belief store no longer contains OrchardFarm apple source after retention window
+  - Dana does NOT travel to OrchardFarm (would have if belief remained)
+  - Dana satisfies hunger from local source discovered via passive observation
+  - Conservation holds; deterministic replay
+- **Cross-system chain**: Memory retention → Belief eviction → Changed candidate generation → Local passive discovery → Different plan
+
+#### Scenario 12: Treatment Self-Acquisition Through AI Loop
+- **Target file**: `golden_care.rs`
+- **Emergence complexity**: 4 — Wounds → Pain pressure → Treatment candidate → Transport(pick-up) → Care(heal)
+- **Bug-catching value**: 5 — fills GoalKind gap (AcquireCommodity(Treatment)); validates FND02-003 end-to-end
+- **Implementation effort**: 2 — straightforward setup, similar to existing care scenarios
+- **Score**: 7
+- **Systems exercised**: Combat (wound tracking), AI (pressure, candidate generation, planning), Transport (pick-up), Care (heal)
+- **Setup**: Agent (Rex) at VillageSquare with pre-inflicted wounds (2+ wounds for pain pressure). Ground medicine lot at VillageSquare (3 units). Rex seeded with belief about the medicine lot. Rex is sated (hunger/thirst/fatigue all low) so pain pressure is dominant. Rex has `CombatProfile` for wound tracking.
+- **Emergent behavior to prove**:
+  1. Pain/danger pressure from wounds drives goal ranking
+  2. `candidate_generation` emits `AcquireCommodity { commodity: Medicine, purpose: Treatment }` (FND02-003)
+  3. Rex plans: pick-up medicine → heal self
+  4. Rex executes: transport(pick-up) → care(heal)
+  5. Wound load decreases
+- **Key assertions**:
+  - `AcquireCommodity(Treatment)` goal is generated (verify via action events)
+  - Medicine is picked up (transport action)
+  - Heal action executes (care action)
+  - Wound count or wound load decreases
+  - Medicine conservation holds; deterministic replay
+- **Cross-system chain**: Wounds → Pain pressure → Treatment candidate → Transport(pick-up) → Care(heal)
+- **GoalKind coverage impact**: `AcquireCommodity(Treatment)` → **Yes** (16/17; only SellCommodity remains deferred to S04)
 
 ### Tier 2: Medium Priority (score 3-4)
 
@@ -557,21 +629,28 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 4. **SellCommodity** — `GoalKind::SellCommodity` variant exists but `candidate_generation.rs` lacks sell-specific emission logic. Not testable as a golden scenario without first implementing new system code to generate sell candidates.
 
-5. **AcquireCommodity(Treatment)** — Requires candidate generation to chain "need medicine to heal someone," which is not wired in the current pipeline. The heal action itself is already proven via Scenario 2c with pre-placed medicine; the missing piece is upstream candidate generation, not downstream execution.
+5. ~~**AcquireCommodity(Treatment)**~~ — Moved to Tier 1 backlog as Scenario 12. FND02-003 wired treatment emission in `candidate_generation.rs`; the gap is now golden coverage, not missing system code.
 
 ---
 
 ## Part 4: Summary Statistics
 
-| Metric | Current | Remaining Backlog Applied |
-|--------|---------|---------------------------|
-| Proven tests | 46 | 46 |
-| GoalKind coverage | 15/17 (88.2%) | 15/17 (88.2%) |
+| Metric | Current | Pending Backlog |
+|--------|---------|-----------------|
+| Proven tests | 46 | 46 + 3 scenarios (+ replays) |
+| GoalKind coverage | 15/17 (88.2%) | 16/17 (94.1%) |
 | ActionDomain coverage | 10/10 full | 10/10 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 31 | 31 |
+| Cross-system chains | 31 | 34 |
+
+### Pending Backlog Summary
+
+3 new scenarios added on 2026-03-14 targeting E14 (Perception & Belief) and FND-02 coverage:
+- **Scenario 10** (score 7): Belief isolation — unseen theft forces replan (`golden_perception.rs`)
+- **Scenario 11** (score 5): Memory retention decay — forgotten resource forces local discovery (`golden_perception.rs`)
+- **Scenario 12** (score 7): Treatment self-acquisition through AI loop (`golden_care.rs`)
 
 ### Recommended Implementation Order
 
-No remaining golden backlog items currently require implementation ordering.
+Scenario 12 (Treatment, score 7, effort 2) → Scenario 10 (Belief isolation, score 7, effort 3) → Scenario 11 (Memory decay, score 5, effort 3).
