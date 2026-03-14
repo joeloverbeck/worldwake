@@ -84,6 +84,36 @@ impl Component for AgentBeliefStore {}
 
 /// Snapshot of what an agent believes about a specific entity.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ObservedEntitySnapshot {
+    pub last_known_place: Option<EntityId>,
+    pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
+    pub workstation_tag: Option<WorkstationTag>,
+    pub resource_source: Option<ResourceSource>,
+    pub alive: bool,
+    pub wounds: Vec<Wound>,
+}
+
+impl ObservedEntitySnapshot {
+    #[must_use]
+    pub fn to_believed_entity_state(
+        &self,
+        observed_tick: Tick,
+        source: PerceptionSource,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: self.last_known_place,
+            last_known_inventory: self.last_known_inventory.clone(),
+            workstation_tag: self.workstation_tag,
+            resource_source: self.resource_source.clone(),
+            alive: self.alive,
+            wounds: self.wounds.clone(),
+            observed_tick,
+            source,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BelievedEntityState {
     pub last_known_place: Option<EntityId>,
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
@@ -96,12 +126,10 @@ pub struct BelievedEntityState {
 }
 
 #[must_use]
-pub fn build_believed_entity_state(
+pub fn build_observed_entity_snapshot(
     world: &World,
     entity: EntityId,
-    observed_tick: Tick,
-    source: PerceptionSource,
-) -> Option<BelievedEntityState> {
+) -> Option<ObservedEntitySnapshot> {
     world.entity_kind(entity)?;
 
     let mut inventory = BTreeMap::new();
@@ -112,7 +140,7 @@ pub fn build_believed_entity_state(
         }
     }
 
-    Some(BelievedEntityState {
+    Some(ObservedEntitySnapshot {
         last_known_place: world.effective_place(entity),
         last_known_inventory: inventory,
         workstation_tag: world
@@ -124,9 +152,18 @@ pub fn build_believed_entity_state(
             .get_component_wound_list(entity)
             .map(|wounds| wounds.wounds.clone())
             .unwrap_or_default(),
-        observed_tick,
-        source,
     })
+}
+
+#[must_use]
+pub fn build_believed_entity_state(
+    world: &World,
+    entity: EntityId,
+    observed_tick: Tick,
+    source: PerceptionSource,
+) -> Option<BelievedEntityState> {
+    build_observed_entity_snapshot(world, entity)
+        .map(|snapshot| snapshot.to_believed_entity_state(observed_tick, source))
 }
 
 /// How the agent acquired a belief snapshot.
@@ -249,9 +286,10 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 #[cfg(test)]
 mod tests {
     use super::{
-        belief_confidence, build_believed_entity_state, AgentBeliefStore, BelievedEntityState,
-        MismatchKind, PerceptionProfile, PerceptionSource, SocialObservation,
-        SocialObservationKind, TellProfile,
+        belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
+        AgentBeliefStore, BelievedEntityState, MismatchKind, ObservedEntitySnapshot,
+        PerceptionProfile, PerceptionSource, SocialObservation, SocialObservationKind,
+        TellProfile,
     };
     use crate::{
         build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
@@ -438,6 +476,23 @@ mod tests {
         let roundtrip: BelievedEntityState = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, state);
+    }
+
+    #[test]
+    fn observed_entity_snapshot_roundtrips_through_bincode() {
+        let snapshot = ObservedEntitySnapshot {
+            last_known_place: Some(entity(10)),
+            last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: vec![sample_wound(1, 4)],
+        };
+
+        let bytes = bincode::serialize(&snapshot).unwrap();
+        let roundtrip: ObservedEntitySnapshot = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, snapshot);
     }
 
     #[test]
@@ -697,6 +752,32 @@ mod tests {
                 chain_len: 2,
             }
         );
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_projects_authoritative_state_without_metadata() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let holder = world
+            .create_agent("Holder", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+
+        world.set_ground_location(holder, place).unwrap();
+        world.set_ground_location(bread, place).unwrap();
+        world.set_possessor(bread, holder).unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, holder).unwrap();
+
+        assert_eq!(snapshot.last_known_place, Some(place));
+        assert_eq!(
+            snapshot.last_known_inventory,
+            BTreeMap::from([(CommodityKind::Bread, Quantity(2))])
+        );
+        assert!(snapshot.alive);
+        assert!(snapshot.wounds.is_empty());
     }
 
     #[test]

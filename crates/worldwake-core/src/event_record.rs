@@ -1,10 +1,10 @@
 //! Immutable append-only event payloads.
 
 use crate::WoundId;
-use crate::{CauseRef, EventTag, MismatchKind, StateDelta, VisibilitySpec, WitnessData};
+use crate::{CauseRef, EventTag, MismatchKind, ObservedEntitySnapshot, StateDelta, VisibilitySpec, WitnessData};
 use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum EvidenceRef {
@@ -25,6 +25,7 @@ pub struct PendingEvent {
     pub evidence: Vec<EvidenceRef>,
     pub place_id: Option<EntityId>,
     pub state_deltas: Vec<StateDelta>,
+    pub observed_entities: BTreeMap<EntityId, ObservedEntitySnapshot>,
     pub visibility: VisibilitySpec,
     pub witness_data: WitnessData,
     pub tags: BTreeSet<EventTag>,
@@ -40,6 +41,7 @@ pub struct EventRecord {
     pub evidence: Vec<EvidenceRef>,
     pub place_id: Option<EntityId>,
     pub state_deltas: Vec<StateDelta>,
+    pub observed_entities: BTreeMap<EntityId, ObservedEntitySnapshot>,
     pub visibility: VisibilitySpec,
     pub witness_data: WitnessData,
     pub tags: BTreeSet<EventTag>,
@@ -70,6 +72,7 @@ impl PendingEvent {
             evidence: Vec::new(),
             place_id,
             state_deltas,
+            observed_entities: BTreeMap::new(),
             visibility,
             witness_data,
             tags,
@@ -85,6 +88,15 @@ impl PendingEvent {
     }
 
     #[must_use]
+    pub fn with_observed_entities(
+        mut self,
+        observed_entities: BTreeMap<EntityId, ObservedEntitySnapshot>,
+    ) -> Self {
+        self.observed_entities = observed_entities;
+        self
+    }
+
+    #[must_use]
     pub fn into_record(self, event_id: EventId) -> EventRecord {
         EventRecord {
             event_id,
@@ -95,6 +107,7 @@ impl PendingEvent {
             evidence: self.evidence,
             place_id: self.place_id,
             state_deltas: self.state_deltas,
+            observed_entities: self.observed_entities,
             visibility: self.visibility,
             witness_data: self.witness_data,
             tags: self.tags,
@@ -141,12 +154,12 @@ mod tests {
         WitnessData,
     };
     use crate::{
-        CommodityKind, EntityId, EntityKind, EventId, Name, Quantity, ReservationId,
-        ReservationRecord, Tick, TickRange, WoundId,
+        CommodityKind, EntityId, EntityKind, EventId, Name, ObservedEntitySnapshot, Quantity,
+        ReservationId, ReservationRecord, Tick, TickRange, WoundId,
     };
     use crate::MismatchKind;
     use serde::{de::DeserializeOwned, Serialize};
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 
     fn entity(slot: u32) -> EntityId {
@@ -212,6 +225,7 @@ mod tests {
         assert!(pending.evidence.is_empty());
         assert_eq!(pending.place_id, Some(entity(6)));
         assert_eq!(pending.state_deltas.len(), 2);
+        assert!(pending.observed_entities.is_empty());
         assert_eq!(
             pending.tags.iter().copied().collect::<Vec<_>>(),
             vec![EventTag::WorldMutation, EventTag::System]
@@ -255,6 +269,7 @@ mod tests {
         assert!(record.evidence.is_empty());
         assert_eq!(record.place_id, Some(entity(6)));
         assert_eq!(record.state_deltas.len(), 2);
+        assert!(record.observed_entities.is_empty());
         assert_eq!(
             record.tags.iter().copied().collect::<Vec<_>>(),
             vec![EventTag::WorldMutation, EventTag::System]
@@ -279,6 +294,7 @@ mod tests {
         assert!(record.target_ids.is_empty());
         assert!(record.evidence.is_empty());
         assert!(record.state_deltas.is_empty());
+        assert!(record.observed_entities.is_empty());
         assert!(record.tags.is_empty());
     }
 
@@ -427,6 +443,41 @@ mod tests {
                     },
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn pending_event_roundtrips_with_observed_entities() {
+        let pending = PendingEvent::new(
+            Tick(7),
+            CauseRef::Bootstrap,
+            Some(entity(1)),
+            vec![entity(2)],
+            Some(entity(3)),
+            Vec::new(),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+            BTreeSet::from([EventTag::WorldMutation]),
+        )
+        .with_observed_entities(BTreeMap::from([(
+            entity(2),
+            ObservedEntitySnapshot {
+                last_known_place: Some(entity(3)),
+                last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(2))]),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+            },
+        )]));
+
+        let bytes = bincode::serialize(&pending).unwrap();
+        let roundtrip: PendingEvent = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, pending);
+        assert_eq!(
+            roundtrip.observed_entities.get(&entity(2)).unwrap().last_known_inventory,
+            BTreeMap::from([(CommodityKind::Bread, Quantity(2))])
         );
     }
 

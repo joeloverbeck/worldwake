@@ -192,8 +192,7 @@ impl TellHarness {
         self.defs
             .iter()
             .find(|def| def.name == name)
-            .map(|def| def.id)
-            .unwrap_or_else(|| panic!("missing action def {name}"))
+            .map_or_else(|| panic!("missing action def {name}"), |def| def.id)
     }
 
     fn queue_travel(&mut self, destination: EntityId) {
@@ -259,6 +258,7 @@ impl TellHarness {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_recorded_replay_state() -> (SimulationState, StateHash) {
     let recipes = RecipeRegistry::new();
     let registries = build_full_action_registries(&recipes).unwrap();

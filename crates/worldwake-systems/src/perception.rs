@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    build_believed_entity_state, AgentBeliefStore, CauseRef, ComponentDelta, EntityDelta, EntityId,
-    EntityKind, EventLog, EventRecord, EventTag, EvidenceRef, MismatchKind, PendingEvent,
-    PerceptionSource, SocialObservation, SocialObservationKind, StateDelta, VisibilitySpec,
-    WitnessData, World, WorldTxn,
+    build_believed_entity_state, AgentBeliefStore, CauseRef, EntityId, EntityKind, EventLog,
+    EventRecord, EventTag, EvidenceRef, MismatchKind, PendingEvent, PerceptionSource,
+    SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -33,7 +32,6 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         let Some(record) = event_log.get(event_id).cloned() else {
             continue;
         };
-        let observed_entities = observed_entities(&record);
         let social_observations = social_observations_for_event(world, &record, tick);
 
         for witness in resolve_witnesses(world, &record) {
@@ -51,26 +49,21 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
                     .unwrap_or_default()
             });
 
-            for entity in &observed_entities {
-                if let Some(snapshot) = build_believed_entity_state(
-                    world,
+            for (entity, observed) in &record.observed_entities {
+                let snapshot =
+                    observed.to_believed_entity_state(record.tick, PerceptionSource::DirectObservation);
+                record_observed_snapshot(
+                    event_log,
+                    DiscoveryContext {
+                        tick,
+                        observer: witness,
+                        place: record.place_id.or(snapshot.last_known_place),
+                    },
+                    store,
                     *entity,
-                    tick,
-                    PerceptionSource::DirectObservation,
-                ) {
-                    record_observed_snapshot(
-                        event_log,
-                        DiscoveryContext {
-                            tick,
-                            observer: witness,
-                            place: record.place_id.or(snapshot.last_known_place),
-                        },
-                        store,
-                        *entity,
-                        snapshot,
-                        true,
-                    );
-                }
+                    snapshot,
+                    true,
+                );
             }
 
             for observation in &social_observations {
@@ -374,80 +367,6 @@ fn passes_observation_check(fidelity: u16, rng: &mut worldwake_sim::Deterministi
     }
 }
 
-fn observed_entities(record: &EventRecord) -> BTreeSet<EntityId> {
-    let mut entities = BTreeSet::new();
-    if let Some(actor) = record.actor_id {
-        entities.insert(actor);
-    }
-    entities.extend(record.target_ids.iter().copied());
-    for evidence in &record.evidence {
-        match evidence {
-            EvidenceRef::Wound { entity, .. } => {
-                entities.insert(*entity);
-            }
-            EvidenceRef::Mismatch {
-                observer, subject, ..
-            } => {
-                entities.insert(*observer);
-                entities.insert(*subject);
-            }
-        }
-    }
-    for delta in &record.state_deltas {
-        match delta {
-            StateDelta::Entity(entity_delta) => match entity_delta {
-                EntityDelta::Created { entity, .. } | EntityDelta::Archived { entity, .. } => {
-                    entities.insert(*entity);
-                }
-            },
-            StateDelta::Component(component_delta) => match component_delta {
-                ComponentDelta::Set { entity, .. } | ComponentDelta::Removed { entity, .. } => {
-                    entities.insert(*entity);
-                }
-            },
-            StateDelta::Relation(relation_delta) => {
-                entities.extend(relation_entities(relation_delta));
-            }
-            StateDelta::Quantity(quantity_delta) => match quantity_delta {
-                worldwake_core::QuantityDelta::Changed { entity, .. } => {
-                    entities.insert(*entity);
-                }
-            },
-            StateDelta::Reservation(reservation_delta) => match reservation_delta {
-                worldwake_core::ReservationDelta::Created { reservation }
-                | worldwake_core::ReservationDelta::Released { reservation } => {
-                    entities.insert(reservation.entity);
-                    entities.insert(reservation.reserver);
-                }
-            },
-        }
-    }
-    entities
-}
-
-fn relation_entities(relation_delta: &worldwake_core::RelationDelta) -> BTreeSet<EntityId> {
-    use worldwake_core::RelationDelta::{Added, Removed};
-    use worldwake_core::RelationValue;
-
-    let relation = match relation_delta {
-        Added { relation, .. } | Removed { relation, .. } => relation,
-    };
-
-    match relation {
-        RelationValue::LocatedIn { entity, place } => BTreeSet::from([*entity, *place]),
-        RelationValue::InTransit { entity } => BTreeSet::from([*entity]),
-        RelationValue::ContainedBy { entity, container } => BTreeSet::from([*entity, *container]),
-        RelationValue::PossessedBy { entity, holder } => BTreeSet::from([*entity, *holder]),
-        RelationValue::OwnedBy { entity, owner } => BTreeSet::from([*entity, *owner]),
-        RelationValue::MemberOf { member, faction } => BTreeSet::from([*member, *faction]),
-        RelationValue::LoyalTo {
-            subject, target, ..
-        }
-        | RelationValue::HostileTo { subject, target } => BTreeSet::from([*subject, *target]),
-        RelationValue::OfficeHolder { office, holder } => BTreeSet::from([*office, *holder]),
-    }
-}
-
 fn social_observations_for_event(
     world: &World,
     record: &EventRecord,
@@ -504,10 +423,11 @@ mod tests {
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        build_prototype_world, AgentBeliefStore, BelievedEntityState, CauseRef, CommodityKind,
-        ControlSource, DeadAt, EventLog, EventTag, EvidenceRef, MismatchKind, PendingEvent,
-        PerceptionProfile, PerceptionSource, Permille, Quantity, Seed, SocialObservationKind,
-        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
+        BelievedEntityState, CauseRef, CommodityKind, ControlSource, DeadAt, EventLog, EventTag,
+        EvidenceRef, MismatchKind, ObservedEntitySnapshot, PendingEvent, PerceptionProfile,
+        PerceptionSource, Permille, Quantity, Seed, SocialObservationKind, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -537,6 +457,36 @@ mod tests {
             .iter()
             .filter_map(|event_id| event_log.get(*event_id))
             .collect()
+    }
+
+    fn observed_from_world(
+        world: &World,
+        entities: &[worldwake_core::EntityId],
+    ) -> BTreeMap<worldwake_core::EntityId, ObservedEntitySnapshot> {
+        entities
+            .iter()
+            .filter_map(|entity| {
+                build_observed_entity_snapshot(world, *entity).map(|snapshot| (*entity, snapshot))
+            })
+            .collect()
+    }
+
+    fn observed_snapshot(
+        place: Option<worldwake_core::EntityId>,
+        bread: u32,
+    ) -> ObservedEntitySnapshot {
+        let mut inventory = BTreeMap::new();
+        if bread > 0 {
+            inventory.insert(CommodityKind::Bread, Quantity(bread));
+        }
+        ObservedEntitySnapshot {
+            last_known_place: place,
+            last_known_inventory: inventory,
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+        }
     }
 
     #[test]
@@ -573,7 +523,8 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[target])));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -769,7 +720,8 @@ mod tests {
                 potential_witnesses: BTreeSet::from([bystander, direct_witness]),
             },
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[target])));
         let mut rng = DeterministicRng::new(Seed([9; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -830,7 +782,8 @@ mod tests {
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[origin_target])));
         let mut rng = DeterministicRng::new(Seed([4; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -910,7 +863,8 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[newer_target])));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1446,7 +1400,8 @@ mod tests {
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[target])));
         let mut rng = DeterministicRng::new(Seed([20; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1526,7 +1481,8 @@ mod tests {
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[target])));
         let mut rng = DeterministicRng::new(Seed([21; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1608,7 +1564,8 @@ mod tests {
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[target])));
         let mut rng = DeterministicRng::new(Seed([22; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();
@@ -1637,6 +1594,142 @@ mod tests {
                     }]
             }),
             "adjacent event witness should record place mismatch"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn same_tick_events_use_distinct_event_local_snapshots_in_sequence() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let origin = places[0];
+        let adjacent = world.topology().neighbors(origin)[0];
+        let remote = places
+            .iter()
+            .copied()
+            .find(|candidate| *candidate != origin && *candidate != adjacent)
+            .unwrap();
+        let (observer, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, adjacent).unwrap();
+            txn.set_ground_location(target, remote).unwrap();
+            let mut beliefs = AgentBeliefStore::new();
+            let mut prior_inventory = BTreeMap::new();
+            prior_inventory.insert(CommodityKind::Bread, Quantity(5));
+            beliefs.update_entity(
+                target,
+                BelievedEntityState {
+                    last_known_place: Some(origin),
+                    last_known_inventory: prior_inventory,
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(2),
+                    source: PerceptionSource::DirectObservation,
+                },
+            );
+            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, target)
+        };
+        let mut event_log = EventLog::new();
+        let _ = event_log.emit(
+            PendingEvent::new(
+                Tick(3),
+                CauseRef::Bootstrap,
+                Some(target),
+                vec![target],
+                Some(origin),
+                Vec::new(),
+                VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+                WitnessData::default(),
+                BTreeSet::new(),
+            )
+            .with_observed_entities(BTreeMap::from([(
+                target,
+                observed_snapshot(Some(origin), 4),
+            )])),
+        );
+        let _ = event_log.emit(
+            PendingEvent::new(
+                Tick(3),
+                CauseRef::Bootstrap,
+                Some(target),
+                vec![target],
+                Some(origin),
+                Vec::new(),
+                VisibilitySpec::AdjacentPlaces { max_hops: 1 },
+                WitnessData::default(),
+                BTreeSet::new(),
+            )
+            .with_observed_entities(BTreeMap::from([(
+                target,
+                observed_snapshot(Some(remote), 2),
+            )])),
+        );
+        let mut rng = DeterministicRng::new(Seed([24; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let mismatches = discovery_records(&event_log)
+            .iter()
+            .flat_map(|record| record.evidence.iter())
+            .filter_map(|evidence| match evidence {
+                EvidenceRef::Mismatch { observer: seen_by, subject, kind }
+                    if *seen_by == observer && *subject == target =>
+                {
+                    Some(*kind)
+                }
+                EvidenceRef::Wound { .. } | EvidenceRef::Mismatch { .. } => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            mismatches,
+            vec![
+                MismatchKind::InventoryDiscrepancy {
+                    commodity: CommodityKind::Bread,
+                    believed: Quantity(5),
+                    observed: Quantity(4),
+                },
+                MismatchKind::InventoryDiscrepancy {
+                    commodity: CommodityKind::Bread,
+                    believed: Quantity(4),
+                    observed: Quantity(2),
+                },
+                MismatchKind::PlaceChanged {
+                    believed_place: origin,
+                    observed_place: remote,
+                },
+            ]
+        );
+
+        let final_belief = world
+            .get_component_agent_belief_store(observer)
+            .unwrap()
+            .get_entity(&target)
+            .unwrap();
+        assert_eq!(final_belief.last_known_place, Some(remote));
+        assert_eq!(
+            final_belief.last_known_inventory,
+            BTreeMap::from([(CommodityKind::Bread, Quantity(2))])
         );
     }
 
@@ -1687,7 +1780,8 @@ mod tests {
             VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             WitnessData::default(),
             BTreeSet::new(),
-        ));
+        )
+        .with_observed_entities(observed_from_world(&world, &[target])));
         let mut rng = DeterministicRng::new(Seed([23; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();

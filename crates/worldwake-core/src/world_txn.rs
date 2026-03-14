@@ -1,4 +1,5 @@
 use crate::{
+    build_observed_entity_snapshot,
     component_schema::with_component_schema_entries, ArchiveMutationSnapshot, CommodityKind,
     Container, ControlSource, EntityId, EntityKind, EventId, Permille, Quantity, ReservationId,
     Tick, TickRange, UniqueItemKind, World, WorldError,
@@ -136,6 +137,7 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn into_pending_event(self) -> PendingEvent {
+        let observed_entities = self.capture_observed_entities();
         *self.world = self.staged_world;
         PendingEvent::new(
             self.tick,
@@ -148,6 +150,7 @@ impl<'w> WorldTxn<'w> {
             self.witness_data,
             self.tags,
         )
+        .with_observed_entities(observed_entities)
     }
 
     pub fn commit(self, event_log: &mut EventLog) -> EventId {
@@ -754,6 +757,54 @@ impl<'w> WorldTxn<'w> {
         }
     }
 
+    fn capture_observed_entities(&self) -> BTreeMap<EntityId, crate::ObservedEntitySnapshot> {
+        self.observed_entity_ids()
+            .into_iter()
+            .filter_map(|entity| {
+                build_observed_entity_snapshot(&self.staged_world, entity)
+                    .map(|snapshot| (entity, snapshot))
+            })
+            .collect()
+    }
+
+    fn observed_entity_ids(&self) -> BTreeSet<EntityId> {
+        let mut entities = BTreeSet::new();
+        if let Some(actor) = self.actor_id {
+            entities.insert(actor);
+        }
+        entities.extend(self.target_ids.iter().copied());
+        for delta in &self.deltas {
+            match delta {
+                StateDelta::Entity(entity_delta) => match entity_delta {
+                    EntityDelta::Created { entity, .. } | EntityDelta::Archived { entity, .. } => {
+                        entities.insert(*entity);
+                    }
+                },
+                StateDelta::Component(component_delta) => match component_delta {
+                    ComponentDelta::Set { entity, .. } | ComponentDelta::Removed { entity, .. } => {
+                        entities.insert(*entity);
+                    }
+                },
+                StateDelta::Relation(relation_delta) => {
+                    entities.extend(observed_relation_entities(relation_delta));
+                }
+                StateDelta::Quantity(quantity_delta) => match quantity_delta {
+                    QuantityDelta::Changed { entity, .. } => {
+                        entities.insert(*entity);
+                    }
+                },
+                StateDelta::Reservation(reservation_delta) => match reservation_delta {
+                    ReservationDelta::Created { reservation }
+                    | ReservationDelta::Released { reservation } => {
+                        entities.insert(reservation.entity);
+                        entities.insert(reservation.reserver);
+                    }
+                },
+            }
+        }
+        entities
+    }
+
     fn push_placement_delta_diff(
         &mut self,
         entity: EntityId,
@@ -1140,6 +1191,28 @@ impl Deref for WorldTxn<'_> {
 
     fn deref(&self) -> &Self::Target {
         &self.staged_world
+    }
+}
+
+fn observed_relation_entities(relation_delta: &RelationDelta) -> BTreeSet<EntityId> {
+    use RelationDelta::{Added, Removed};
+
+    let relation = match relation_delta {
+        Added { relation, .. } | Removed { relation, .. } => relation,
+    };
+
+    match relation {
+        RelationValue::LocatedIn { entity, place } => BTreeSet::from([*entity, *place]),
+        RelationValue::InTransit { entity } => BTreeSet::from([*entity]),
+        RelationValue::ContainedBy { entity, container } => BTreeSet::from([*entity, *container]),
+        RelationValue::PossessedBy { entity, holder } => BTreeSet::from([*entity, *holder]),
+        RelationValue::OwnedBy { entity, owner } => BTreeSet::from([*entity, *owner]),
+        RelationValue::MemberOf { member, faction } => BTreeSet::from([*member, *faction]),
+        RelationValue::LoyalTo {
+            subject, target, ..
+        }
+        | RelationValue::HostileTo { subject, target } => BTreeSet::from([*subject, *target]),
+        RelationValue::OfficeHolder { office, holder } => BTreeSet::from([*office, *holder]),
     }
 }
 
@@ -1913,6 +1986,62 @@ mod tests {
 
         assert_eq!(record.state_deltas, expected_deltas);
         assert_eq!(world.loyalty_to(subject, target), Some(new_strength));
+    }
+
+    #[test]
+    fn commit_captures_observed_entities_from_actor_targets_and_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(5);
+        let actor = world
+            .create_agent("Actor", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let target = world
+            .create_agent("Target", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+
+        world.set_ground_location(actor, place).unwrap();
+        world.set_ground_location(target, place).unwrap();
+        world.set_ground_location(bread, place).unwrap();
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(9),
+            CauseRef::Bootstrap,
+            Some(actor),
+            Some(place),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_target(target);
+        txn.set_possessor(bread, target).unwrap();
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(
+            record
+                .observed_entities
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![actor, target, bread]
+        );
+        assert_eq!(
+            record
+                .observed_entities
+                .get(&target)
+                .unwrap()
+                .last_known_inventory,
+            BTreeMap::from([(CommodityKind::Bread, Quantity(2))])
+        );
+        assert_eq!(
+            record.observed_entities.get(&bread).unwrap().last_known_place,
+            Some(place)
+        );
     }
 
     #[test]
