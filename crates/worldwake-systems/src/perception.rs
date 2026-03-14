@@ -19,6 +19,8 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     let event_ids = event_log.events_at_tick(tick).to_vec();
     let mut updated_stores = BTreeMap::<EntityId, AgentBeliefStore>::new();
 
+    observe_passive_local_entities(world, tick, rng, &mut updated_stores);
+
     for event_id in event_ids {
         let Some(record) = event_log.get(event_id).cloned() else {
             continue;
@@ -81,6 +83,54 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     }
     let _ = txn.commit(event_log);
     Ok(())
+}
+
+fn observe_passive_local_entities(
+    world: &World,
+    tick: worldwake_core::Tick,
+    rng: &mut worldwake_sim::DeterministicRng,
+    updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
+) {
+    for (agent, _) in world.query_agent_data() {
+        if world.get_component_dead_at(agent).is_some() {
+            continue;
+        }
+        let Some(profile) = world.get_component_perception_profile(agent).copied() else {
+            continue;
+        };
+        let Some(place) = world.effective_place(agent) else {
+            continue;
+        };
+
+        let store = updated_stores.entry(agent).or_insert_with(|| {
+            world
+                .get_component_agent_belief_store(agent)
+                .cloned()
+                .unwrap_or_default()
+        });
+
+        let mut observed_any = false;
+        for entity in world.entities_effectively_at(place) {
+            if entity == agent {
+                continue;
+            }
+            if !passes_observation_check(profile.observation_fidelity.value(), rng) {
+                continue;
+            }
+            if let Some(snapshot) =
+                build_believed_entity_state(world, entity, tick, PerceptionSource::DirectObservation)
+            {
+                store.update_entity(entity, snapshot);
+                observed_any = true;
+            }
+        }
+
+        if observed_any {
+            store.enforce_capacity(&profile, tick);
+        } else {
+            updated_stores.remove(&agent);
+        }
+    }
 }
 
 fn resolve_witnesses(world: &World, record: &EventRecord) -> Vec<EntityId> {
@@ -437,6 +487,10 @@ mod tests {
             for entity in [direct_witness, bystander, target] {
                 txn.set_ground_location(entity, place).unwrap();
             }
+            txn.set_component_perception_profile(direct_witness, profile(1000))
+                .unwrap();
+            txn.set_component_perception_profile(bystander, profile(0))
+                .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
             (direct_witness, bystander, target)
@@ -613,5 +667,99 @@ mod tests {
         let beliefs = world.get_component_agent_belief_store(observer).unwrap();
         assert!(beliefs.get_entity(&older_target).is_none());
         assert!(beliefs.get_entity(&newer_target).is_some());
+    }
+
+    #[test]
+    fn passive_same_place_observation_updates_belief_without_event_reference() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, target).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([11; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let target_belief = beliefs
+            .known_entities
+            .values()
+            .find(|belief| belief.last_known_inventory.get(&CommodityKind::Bread) == Some(&Quantity(2)))
+            .expect("passive same-place observation should capture already-present local entities");
+        assert_eq!(target_belief.last_known_place, Some(place));
+        assert_eq!(target_belief.observed_tick, Tick(3));
+        assert_eq!(target_belief.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn passive_same_place_observation_respects_zero_fidelity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(0)).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([12; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(2),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        assert!(
+            beliefs.known_entities.is_empty(),
+            "zero observation fidelity should block passive same-place observation"
+        );
     }
 }
