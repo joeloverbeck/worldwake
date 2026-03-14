@@ -60,8 +60,8 @@ mod tests {
     use std::any::type_name;
     use worldwake_core::ActionDefId;
     use worldwake_sim::{
-        ActionDefRegistry, ActionPayload, Affordance, BeliefView, GoalBeliefView, InputEvent,
-        InputKind, PerAgentBeliefView, ReplanNeeded,
+        ActionDefRegistry, ActionPayload, Affordance, GoalBeliefView, InputEvent, InputKind,
+        PerAgentBeliefView, ReplanNeeded, RuntimeBeliefView,
     };
 
     fn assert_type_is_available<T>() -> &'static str {
@@ -104,7 +104,7 @@ mod tests {
             "PerAgentBeliefView should be available from worldwake-sim"
         );
 
-        let _: Option<&dyn BeliefView> = None;
+        let _: Option<&dyn RuntimeBeliefView> = None;
         let _: Option<&dyn GoalBeliefView> = None;
         let _ = assert_type_is_available::<PlanningSnapshot>();
         let _ = assert_type_is_available::<PlanningState<'static>>();

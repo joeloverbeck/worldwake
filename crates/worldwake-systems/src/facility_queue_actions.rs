@@ -82,7 +82,7 @@ fn validate_queue_payload_override(
     _actor: EntityId,
     _targets: &[EntityId],
     payload: &ActionPayload,
-    _view: &dyn worldwake_sim::BeliefView,
+    _view: &dyn worldwake_sim::RuntimeBeliefView,
 ) -> bool {
     payload
         .as_queue_for_facility_use()

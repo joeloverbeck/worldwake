@@ -6,8 +6,8 @@ use worldwake_core::{
 use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
     ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
-    ActionPayload, ActionProgress, ActionState, BeliefView, CommitOutcome, DeterministicRng,
-    DurationExpr, Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition,
+    ActionPayload, ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr,
+    Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition, RuntimeBeliefView,
     TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
@@ -80,7 +80,7 @@ fn enumerate_trade_payloads(
     _def: &ActionDef,
     actor: EntityId,
     targets: &[EntityId],
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
 ) -> Vec<ActionPayload> {
     let Some(counterparty) = targets.first().copied() else {
         return Vec::new();
@@ -263,7 +263,7 @@ fn ensure_bundle_accepted(
 }
 
 fn trade_bundle_is_mutually_accepted(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     counterparty: EntityId,
     place: EntityId,
@@ -294,7 +294,7 @@ fn trade_bundle_is_mutually_accepted(
 }
 
 fn local_trade_alternatives(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     excluded_counterparty: EntityId,
     place: EntityId,
@@ -322,13 +322,13 @@ fn local_trade_alternatives(
     alternatives
 }
 
-fn wounds_for(view: &dyn BeliefView, actor: EntityId) -> Option<WoundList> {
+fn wounds_for(view: &dyn RuntimeBeliefView, actor: EntityId) -> Option<WoundList> {
     let wounds = view.wounds(actor);
     (!wounds.is_empty()).then_some(WoundList { wounds })
 }
 
 fn demand_memory_for(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
 ) -> Option<worldwake_core::DemandMemory> {
     let observations = view.demand_memory(actor);

@@ -1,6 +1,6 @@
 use crate::{
     ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
-    ActionState, ActionStatus, BeliefView, DeterministicRng, Interruptibility, Precondition,
+    ActionState, ActionStatus, DeterministicRng, Interruptibility, Precondition, RuntimeBeliefView,
     TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
@@ -55,9 +55,9 @@ pub type ActionAbortFn = for<'w> fn(
     &mut WorldTxn<'w>,
 ) -> Result<(), ActionError>;
 pub type AffordancePayloadFn =
-    fn(&ActionDef, EntityId, &[EntityId], &dyn BeliefView) -> Vec<ActionPayload>;
+    fn(&ActionDef, EntityId, &[EntityId], &dyn RuntimeBeliefView) -> Vec<ActionPayload>;
 pub type PayloadOverrideValidatorFn =
-    fn(&ActionDef, EntityId, &[EntityId], &ActionPayload, &dyn BeliefView) -> bool;
+    fn(&ActionDef, EntityId, &[EntityId], &ActionPayload, &dyn RuntimeBeliefView) -> bool;
 pub type AuthoritativePayloadValidatorFn = fn(
     &ActionDef,
     &ActionDefRegistry,
@@ -129,7 +129,7 @@ fn no_affordance_payloads(
     _def: &ActionDef,
     _actor: EntityId,
     _targets: &[EntityId],
-    _view: &dyn BeliefView,
+    _view: &dyn RuntimeBeliefView,
 ) -> Vec<ActionPayload> {
     Vec::new()
 }
@@ -139,7 +139,7 @@ fn no_payload_override_validator(
     _actor: EntityId,
     _targets: &[EntityId],
     _payload: &ActionPayload,
-    _view: &dyn BeliefView,
+    _view: &dyn RuntimeBeliefView,
 ) -> bool {
     false
 }

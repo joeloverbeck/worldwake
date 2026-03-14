@@ -15,9 +15,9 @@ use worldwake_core::{
     WorldTxn,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, BeliefView,
-    CommitOutcome, CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
-    RecipeRegistry, ReplanNeeded, Scheduler, SchedulerActionRuntime, TickInputError,
+    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommitOutcome,
+    CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry,
+    ReplanNeeded, RuntimeBeliefView, Scheduler, SchedulerActionRuntime, TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -513,7 +513,7 @@ fn refresh_runtime_for_read_phase(
 }
 
 fn handle_facility_queue_transitions(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     runtime: &mut AgentDecisionRuntime,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
@@ -644,7 +644,7 @@ fn handle_active_action_phase(
 }
 
 fn effective_goal_switch_margin(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     runtime: &AgentDecisionRuntime,
     budget: &PlanningBudget,
@@ -653,7 +653,7 @@ fn effective_goal_switch_margin(
 }
 
 fn goal_switch_margin_details(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     runtime: &AgentDecisionRuntime,
     budget: &PlanningBudget,
@@ -1036,7 +1036,7 @@ fn update_journey_fields_for_adopted_plan(
 }
 
 fn handle_recoverable_travel_step_blockage(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     runtime: &mut AgentDecisionRuntime,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
@@ -1206,7 +1206,7 @@ fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
 }
 
 fn observation_snapshot_changed(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     runtime: &AgentDecisionRuntime,
     recipe_registry: &RecipeRegistry,
@@ -1237,7 +1237,7 @@ fn observation_snapshot_changed(
 }
 
 fn update_runtime_observation_snapshot(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     runtime: &mut AgentDecisionRuntime,
 ) {
@@ -1250,7 +1250,7 @@ fn update_runtime_observation_snapshot(
 }
 
 fn facility_access_signature(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
 ) -> Vec<(EntityId, bool, Option<ActionDefId>)> {
     let Some(place) = view.effective_place(agent) else {
@@ -1270,7 +1270,11 @@ fn facility_access_signature(
         .collect()
 }
 
-fn facility_queue_patience_exhausted(view: &dyn BeliefView, agent: EntityId, tick: Tick) -> bool {
+fn facility_queue_patience_exhausted(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    tick: Tick,
+) -> bool {
     let Some(limit) = view.facility_queue_patience_ticks(agent) else {
         return false;
     };
@@ -1293,7 +1297,10 @@ fn facility_queue_patience_exhausted(view: &dyn BeliefView, agent: EntityId, tic
     })
 }
 
-fn commodity_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(CommodityKind, Quantity)> {
+fn commodity_signature(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+) -> Vec<(CommodityKind, Quantity)> {
     CommodityKind::ALL
         .into_iter()
         .filter_map(|commodity| {
@@ -1317,7 +1324,10 @@ fn filtered_commodity_signature(
     }
 }
 
-fn unique_item_signature(view: &dyn BeliefView, agent: EntityId) -> Vec<(UniqueItemKind, u32)> {
+fn unique_item_signature(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+) -> Vec<(UniqueItemKind, u32)> {
     UniqueItemKind::ALL
         .into_iter()
         .filter_map(|kind| {
@@ -1361,10 +1371,10 @@ mod tests {
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
-        AutonomousControllerRuntime, BeliefView, CommitOutcome, CommittedAction, ControllerState,
+        AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState,
         DeterministicRng, DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView,
-        RecipeDefinition, RecipeRegistry, Scheduler, SystemDispatchTable, SystemExecutionContext,
-        SystemId, SystemManifest, TickStepServices,
+        RecipeDefinition, RecipeRegistry, RuntimeBeliefView, Scheduler, SystemDispatchTable,
+        SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
     };
     use worldwake_systems::{
         build_full_action_registries, perception_system, register_needs_actions,
@@ -2058,7 +2068,7 @@ mod tests {
         patience_ticks: Option<NonZeroU32>,
     }
 
-    impl BeliefView for QueuePatienceBeliefView {
+    impl RuntimeBeliefView for QueuePatienceBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {
             true
         }
@@ -4024,7 +4034,7 @@ mod tests {
                 .expect("split always returns at least one segment");
             assert!(
                 !production_source.contains("worldwake_core::World"),
-                "{relative} should read through BeliefView instead of depending on World"
+                "{relative} should read through RuntimeBeliefView instead of depending on World"
             );
             assert!(
                 !production_source.contains("&World"),
@@ -4064,8 +4074,8 @@ mod tests {
                 "{relative} should compile against GoalBeliefView"
             );
             assert!(
-                !production_source.contains("&dyn BeliefView"),
-                "{relative} should not depend on the broad BeliefView boundary"
+                !production_source.contains("&dyn RuntimeBeliefView"),
+                "{relative} should not depend on the broad RuntimeBeliefView boundary"
             );
         }
     }

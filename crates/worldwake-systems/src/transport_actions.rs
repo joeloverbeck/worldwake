@@ -339,7 +339,7 @@ fn validate_pick_up_payload_override(
     actor: EntityId,
     targets: &[EntityId],
     payload: &ActionPayload,
-    view: &dyn worldwake_sim::BeliefView,
+    view: &dyn worldwake_sim::RuntimeBeliefView,
 ) -> bool {
     if def.name != "pick_up" {
         return false;

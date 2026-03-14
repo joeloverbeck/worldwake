@@ -207,7 +207,7 @@ fn run_merchant_restock_return_stock_scenario(
         UtilityProfile::default(),
     );
 
-    place_workstation_with_source(
+    let orchard_workstation = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
         ORCHARD_FARM,
@@ -247,10 +247,11 @@ fn run_merchant_restock_return_stock_scenario(
     )
     .unwrap();
     commit_txn(txn, &mut h.event_log);
-    seed_actor_world_beliefs(
+    seed_actor_beliefs(
         &mut h.world,
         &mut h.event_log,
         merchant,
+        &[orchard_workstation],
         Tick(0),
         worldwake_core::PerceptionSource::Inference,
     );
@@ -314,6 +315,83 @@ fn run_merchant_restock_return_stock_scenario(
         hash_world(&h.world).unwrap(),
         hash_event_log(&h.event_log).unwrap(),
     )
+}
+
+#[test]
+fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
+    let mut h = GoldenHarness::with_recipes(Seed([16; 32]), build_recipes());
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+
+    let merchant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let _orchard_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_perception_profile(
+        merchant,
+        PerceptionProfile {
+            memory_capacity: 64,
+            memory_retention_ticks: 240,
+            observation_fidelity: pm(875),
+        },
+    )
+    .unwrap();
+    txn.set_component_merchandise_profile(
+        merchant,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+            home_market: Some(general_store),
+        },
+    )
+    .unwrap();
+    txn.set_component_trade_disposition_profile(merchant, enterprise_trade_disposition_profile())
+        .unwrap();
+    txn.set_component_demand_memory(
+        merchant,
+        remembered_demand(CommodityKind::Apple, Quantity(2), general_store, None),
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let mut merchant_left_home = false;
+    let mut merchant_controlled_apples = false;
+
+    for _ in 0..120 {
+        h.step_once();
+        merchant_left_home |= h.world.is_in_transit(merchant)
+            || h.world.effective_place(merchant) != Some(general_store);
+        merchant_controlled_apples |=
+            h.agent_commodity_qty(merchant, CommodityKind::Apple) > Quantity(0);
+    }
+
+    assert!(
+        !merchant_left_home,
+        "public route knowledge alone should not unlock remote restock travel"
+    );
+    assert!(
+        !merchant_controlled_apples,
+        "merchant should not acquire remote stock without explicit orchard knowledge"
+    );
 }
 
 #[test]

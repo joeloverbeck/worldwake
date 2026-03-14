@@ -117,9 +117,12 @@ fn observe_passive_local_entities(
             if !passes_observation_check(profile.observation_fidelity.value(), rng) {
                 continue;
             }
-            if let Some(snapshot) =
-                build_believed_entity_state(world, entity, tick, PerceptionSource::DirectObservation)
-            {
+            if let Some(snapshot) = build_believed_entity_state(
+                world,
+                entity,
+                tick,
+                PerceptionSource::DirectObservation,
+            ) {
                 store.update_entity(entity, snapshot);
                 observed_any = true;
             }
@@ -616,6 +619,8 @@ mod tests {
                 BelievedEntityState {
                     last_known_place: Some(place),
                     last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
                     alive: true,
                     wounds: Vec::new(),
                     observed_tick: Tick(1),
@@ -714,7 +719,9 @@ mod tests {
         let target_belief = beliefs
             .known_entities
             .values()
-            .find(|belief| belief.last_known_inventory.get(&CommodityKind::Bread) == Some(&Quantity(2)))
+            .find(|belief| {
+                belief.last_known_inventory.get(&CommodityKind::Bread) == Some(&Quantity(2))
+            })
             .expect("passive same-place observation should capture already-present local entities");
         assert_eq!(target_belief.last_known_place, Some(place));
         assert_eq!(target_belief.observed_tick, Tick(3));
@@ -733,7 +740,8 @@ mod tests {
             txn.set_ground_location(target, place).unwrap();
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
-            txn.set_component_perception_profile(observer, profile(0)).unwrap();
+            txn.set_component_perception_profile(observer, profile(0))
+                .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
             observer

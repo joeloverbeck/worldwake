@@ -7,12 +7,12 @@ use worldwake_core::{
     Quantity, Tick,
 };
 use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionPayload, BeliefView, ExternalAbortReason,
-    InterruptReason, ReplanNeeded,
+    AbortReason, ActionAbortRequestReason, ActionPayload, ExternalAbortReason, InterruptReason,
+    ReplanNeeded, RuntimeBeliefView,
 };
 
 pub struct PlanFailureContext<'a> {
-    pub view: &'a dyn BeliefView,
+    pub view: &'a dyn RuntimeBeliefView,
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub failed_step: &'a PlannedStep,
@@ -57,7 +57,7 @@ pub fn handle_plan_failure(
 }
 
 pub fn clear_resolved_blockers(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     blocked_memory: &mut BlockedIntentMemory,
     current_tick: Tick,
@@ -69,7 +69,7 @@ pub fn clear_resolved_blockers(
 }
 
 fn derive_blocking_fact(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
@@ -125,7 +125,7 @@ fn derive_blocking_fact(
 }
 
 fn classify_trade_failure(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
@@ -162,7 +162,7 @@ fn classify_trade_failure(
 }
 
 fn classify_production_failure(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     step: &PlannedStep,
 ) -> Option<BlockingFact> {
@@ -226,7 +226,7 @@ fn classify_production_failure(
 }
 
 fn classify_input_failure(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
@@ -253,7 +253,7 @@ fn classify_input_failure(
         .then_some(BlockingFact::MissingInput(commodity))
 }
 
-fn target_gone(view: &dyn BeliefView, step: &PlannedStep) -> bool {
+fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
     if matches!(step.op_kind, PlannerOpKind::Travel) {
         return false;
     }
@@ -281,7 +281,7 @@ fn target_gone(view: &dyn BeliefView, step: &PlannedStep) -> bool {
     }
 }
 
-fn no_known_path(view: &dyn BeliefView, agent: EntityId, step: &PlannedStep) -> bool {
+fn no_known_path(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep) -> bool {
     let Some(current_place) = view.effective_place(agent) else {
         return false;
     };
@@ -295,11 +295,11 @@ fn no_known_path(view: &dyn BeliefView, agent: EntityId, step: &PlannedStep) -> 
         .any(|(adjacent, _)| adjacent == target_place)
 }
 
-fn danger_too_high(view: &dyn BeliefView, agent: EntityId) -> bool {
+fn danger_too_high(view: &dyn RuntimeBeliefView, agent: EntityId) -> bool {
     !view.current_attackers_of(agent).is_empty() && !view.has_wounds(agent)
 }
 
-fn combat_too_risky(view: &dyn BeliefView, agent: EntityId) -> bool {
+fn combat_too_risky(view: &dyn RuntimeBeliefView, agent: EntityId) -> bool {
     !view.current_attackers_of(agent).is_empty()
         || (!view.visible_hostiles_for(agent).is_empty() && view.has_wounds(agent))
 }
@@ -386,7 +386,7 @@ fn parse_abort_detail(detail: &str) -> Option<BlockingFact> {
     }
 }
 
-fn blocker_resolved(view: &dyn BeliefView, agent: EntityId, intent: &BlockedIntent) -> bool {
+fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &BlockedIntent) -> bool {
     match intent.blocking_fact {
         BlockingFact::NoKnownPath => {
             let Some(target_place) = intent.related_place else {
@@ -492,7 +492,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
 }
 
 fn related_place(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
@@ -562,8 +562,8 @@ mod tests {
         Wound,
     };
     use worldwake_sim::{
-        AbortReason, ActionDuration, ActionPayload, BeliefView, CombatActionPayload,
-        CraftActionPayload, DurationExpr, InterruptReason, ReplanNeeded, TradeActionPayload,
+        AbortReason, ActionDuration, ActionPayload, CombatActionPayload, CraftActionPayload,
+        DurationExpr, InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -586,7 +586,7 @@ mod tests {
         sellers: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
     }
 
-    impl BeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }

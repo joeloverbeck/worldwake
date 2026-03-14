@@ -254,9 +254,7 @@ struct CapacityConstrainedPickupOutcome {
     hunger_decreased: bool,
 }
 
-fn setup_capacity_constrained_ground_lot_pickup(
-    seed: Seed,
-) -> (GoldenHarness, EntityId) {
+fn setup_capacity_constrained_ground_lot_pickup(seed: Seed) -> (GoldenHarness, EntityId) {
     let mut h = GoldenHarness::new(seed);
     let agent = seed_agent(
         &mut h.world,

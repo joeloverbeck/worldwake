@@ -2,12 +2,12 @@ use crate::{resolve_planning_targets_with, MaterializationBindings, PlannedStep}
 use worldwake_core::EntityId;
 use worldwake_sim::{
     get_affordances, requested_affordance_matches, ActionDefRegistry, ActionHandlerRegistry,
-    BeliefView,
+    RuntimeBeliefView,
 };
 
 #[must_use]
 pub fn revalidate_next_step(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     step: &PlannedStep,
     bindings: &MaterializationBindings,
@@ -57,9 +57,9 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, BeliefView, Constraint,
-        DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
-        TransportActionPayload,
+        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, Constraint,
+        DeterministicRng, DurationExpr, Interruptibility, Precondition, RuntimeBeliefView,
+        TargetSpec, TransportActionPayload,
     };
 
     #[derive(Default)]
@@ -76,7 +76,7 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
     }
 
-    impl BeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
@@ -438,7 +438,7 @@ mod tests {
         actor: EntityId,
         targets: &[EntityId],
         payload: &ActionPayload,
-        view: &dyn BeliefView,
+        view: &dyn RuntimeBeliefView,
     ) -> bool {
         if def.name != "pick_up" {
             return false;

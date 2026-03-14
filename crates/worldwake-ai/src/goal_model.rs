@@ -8,8 +8,8 @@ use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, Permille, Quantity,
 };
 use worldwake_sim::{
-    ActionDef, ActionPayload, BeliefView, CombatActionPayload, LootActionPayload, RecipeRegistry,
-    TradeActionPayload, TransportActionPayload,
+    ActionDef, ActionPayload, CombatActionPayload, LootActionPayload, RecipeRegistry,
+    RuntimeBeliefView, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -575,8 +575,8 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionPayload, BeliefView, DurationExpr, Interruptibility, QueueForFacilityUsePayload,
-        TradeActionPayload, TransportActionPayload,
+        ActionPayload, DurationExpr, Interruptibility, QueueForFacilityUsePayload,
+        RuntimeBeliefView, TradeActionPayload, TransportActionPayload,
     };
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
@@ -938,7 +938,7 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
     }
 
-    impl BeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }

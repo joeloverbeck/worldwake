@@ -70,7 +70,13 @@ pub trait GoalBeliefView {
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
 }
 
-pub trait BeliefView {
+/// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
+/// failure handling, and duration estimation.
+///
+/// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
+/// when they truly need runtime-only helpers such as reservations, queue state, or duration
+/// estimation.
+pub trait RuntimeBeliefView {
     fn is_alive(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
@@ -163,169 +169,270 @@ pub trait BeliefView {
     ) -> Option<ActionDuration>;
 }
 
-impl<T: BeliefView + ?Sized> GoalBeliefView for T {
-    fn is_alive(&self, entity: EntityId) -> bool {
-        BeliefView::is_alive(self, entity)
-    }
+#[macro_export]
+macro_rules! impl_goal_belief_view {
+    ($ty:ty) => {
+        impl $crate::GoalBeliefView for $ty {
+            fn is_alive(&self, entity: worldwake_core::EntityId) -> bool {
+                $crate::RuntimeBeliefView::is_alive(self, entity)
+            }
 
-    fn is_dead(&self, entity: EntityId) -> bool {
-        BeliefView::is_dead(self, entity)
-    }
+            fn is_dead(&self, entity: worldwake_core::EntityId) -> bool {
+                $crate::RuntimeBeliefView::is_dead(self, entity)
+            }
 
-    fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
-        BeliefView::entity_kind(self, entity)
-    }
+            fn entity_kind(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityKind> {
+                $crate::RuntimeBeliefView::entity_kind(self, entity)
+            }
 
-    fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
-        BeliefView::effective_place(self, entity)
-    }
+            fn effective_place(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::effective_place(self, entity)
+            }
 
-    fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
-        BeliefView::entities_at(self, place)
-    }
+            fn entities_at(
+                &self,
+                place: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::entities_at(self, place)
+            }
 
-    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-        BeliefView::direct_possessions(self, holder)
-    }
+            fn direct_possessions(
+                &self,
+                holder: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::direct_possessions(self, holder)
+            }
 
-    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
-        BeliefView::adjacent_places_with_travel_ticks(self, place)
-    }
+            fn adjacent_places_with_travel_ticks(
+                &self,
+                place: worldwake_core::EntityId,
+            ) -> Vec<(worldwake_core::EntityId, std::num::NonZeroU32)> {
+                $crate::RuntimeBeliefView::adjacent_places_with_travel_ticks(self, place)
+            }
 
-    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
-        BeliefView::knows_recipe(self, actor, recipe)
-    }
+            fn knows_recipe(
+                &self,
+                actor: worldwake_core::EntityId,
+                recipe: worldwake_core::RecipeId,
+            ) -> bool {
+                $crate::RuntimeBeliefView::knows_recipe(self, actor, recipe)
+            }
 
-    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
-        BeliefView::known_recipes(self, agent)
-    }
+            fn known_recipes(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::RecipeId> {
+                $crate::RuntimeBeliefView::known_recipes(self, agent)
+            }
 
-    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-        BeliefView::unique_item_count(self, holder, kind)
-    }
+            fn unique_item_count(
+                &self,
+                holder: worldwake_core::EntityId,
+                kind: worldwake_core::UniqueItemKind,
+            ) -> u32 {
+                $crate::RuntimeBeliefView::unique_item_count(self, holder, kind)
+            }
 
-    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-        BeliefView::commodity_quantity(self, holder, kind)
-    }
+            fn commodity_quantity(
+                &self,
+                holder: worldwake_core::EntityId,
+                kind: worldwake_core::CommodityKind,
+            ) -> worldwake_core::Quantity {
+                $crate::RuntimeBeliefView::commodity_quantity(self, holder, kind)
+            }
 
-    fn controlled_commodity_quantity_at_place(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Quantity {
-        BeliefView::controlled_commodity_quantity_at_place(self, agent, place, commodity)
-    }
+            fn controlled_commodity_quantity_at_place(
+                &self,
+                agent: worldwake_core::EntityId,
+                place: worldwake_core::EntityId,
+                commodity: worldwake_core::CommodityKind,
+            ) -> worldwake_core::Quantity {
+                $crate::RuntimeBeliefView::controlled_commodity_quantity_at_place(
+                    self, agent, place, commodity,
+                )
+            }
 
-    fn local_controlled_lots_for(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Vec<EntityId> {
-        BeliefView::local_controlled_lots_for(self, agent, place, commodity)
-    }
+            fn local_controlled_lots_for(
+                &self,
+                agent: worldwake_core::EntityId,
+                place: worldwake_core::EntityId,
+                commodity: worldwake_core::CommodityKind,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::local_controlled_lots_for(self, agent, place, commodity)
+            }
 
-    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        BeliefView::item_lot_commodity(self, entity)
-    }
+            fn item_lot_commodity(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::CommodityKind> {
+                $crate::RuntimeBeliefView::item_lot_commodity(self, entity)
+            }
 
-    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
-        BeliefView::item_lot_consumable_profile(self, entity)
-    }
+            fn item_lot_consumable_profile(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::CommodityConsumableProfile> {
+                $crate::RuntimeBeliefView::item_lot_consumable_profile(self, entity)
+            }
 
-    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-        BeliefView::direct_container(self, entity)
-    }
+            fn direct_container(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::direct_container(self, entity)
+            }
 
-    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-        BeliefView::direct_possessor(self, entity)
-    }
+            fn direct_possessor(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::direct_possessor(self, entity)
+            }
 
-    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        BeliefView::workstation_tag(self, entity)
-    }
+            fn workstation_tag(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::WorkstationTag> {
+                $crate::RuntimeBeliefView::workstation_tag(self, entity)
+            }
 
-    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        BeliefView::resource_source(self, entity)
-    }
+            fn resource_source(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::ResourceSource> {
+                $crate::RuntimeBeliefView::resource_source(self, entity)
+            }
 
-    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        BeliefView::resource_sources_at(self, place, commodity)
-    }
+            fn resource_sources_at(
+                &self,
+                place: worldwake_core::EntityId,
+                commodity: worldwake_core::CommodityKind,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::resource_sources_at(self, place, commodity)
+            }
 
-    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
-        BeliefView::matching_workstations_at(self, place, tag)
-    }
+            fn matching_workstations_at(
+                &self,
+                place: worldwake_core::EntityId,
+                tag: worldwake_core::WorkstationTag,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::matching_workstations_at(self, place, tag)
+            }
 
-    fn has_production_job(&self, entity: EntityId) -> bool {
-        BeliefView::has_production_job(self, entity)
-    }
+            fn has_production_job(&self, entity: worldwake_core::EntityId) -> bool {
+                $crate::RuntimeBeliefView::has_production_job(self, entity)
+            }
 
-    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-        BeliefView::can_control(self, actor, entity)
-    }
+            fn can_control(
+                &self,
+                actor: worldwake_core::EntityId,
+                entity: worldwake_core::EntityId,
+            ) -> bool {
+                $crate::RuntimeBeliefView::can_control(self, actor, entity)
+            }
 
-    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-        BeliefView::carry_capacity(self, entity)
-    }
+            fn carry_capacity(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::LoadUnits> {
+                $crate::RuntimeBeliefView::carry_capacity(self, entity)
+            }
 
-    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-        BeliefView::load_of_entity(self, entity)
-    }
+            fn load_of_entity(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::LoadUnits> {
+                $crate::RuntimeBeliefView::load_of_entity(self, entity)
+            }
 
-    fn is_incapacitated(&self, entity: EntityId) -> bool {
-        BeliefView::is_incapacitated(self, entity)
-    }
+            fn is_incapacitated(&self, entity: worldwake_core::EntityId) -> bool {
+                $crate::RuntimeBeliefView::is_incapacitated(self, entity)
+            }
 
-    fn has_wounds(&self, entity: EntityId) -> bool {
-        BeliefView::has_wounds(self, entity)
-    }
+            fn has_wounds(&self, entity: worldwake_core::EntityId) -> bool {
+                $crate::RuntimeBeliefView::has_wounds(self, entity)
+            }
 
-    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-        BeliefView::homeostatic_needs(self, agent)
-    }
+            fn homeostatic_needs(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::HomeostaticNeeds> {
+                $crate::RuntimeBeliefView::homeostatic_needs(self, agent)
+            }
 
-    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-        BeliefView::drive_thresholds(self, agent)
-    }
+            fn drive_thresholds(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::DriveThresholds> {
+                $crate::RuntimeBeliefView::drive_thresholds(self, agent)
+            }
 
-    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
-        BeliefView::merchandise_profile(self, agent)
-    }
+            fn merchandise_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::MerchandiseProfile> {
+                $crate::RuntimeBeliefView::merchandise_profile(self, agent)
+            }
 
-    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
-        BeliefView::wounds(self, agent)
-    }
+            fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {
+                $crate::RuntimeBeliefView::wounds(self, agent)
+            }
 
-    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
-        BeliefView::hostile_targets_of(self, agent)
-    }
+            fn hostile_targets_of(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::hostile_targets_of(self, agent)
+            }
 
-    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
-        BeliefView::visible_hostiles_for(self, agent)
-    }
+            fn visible_hostiles_for(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::visible_hostiles_for(self, agent)
+            }
 
-    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
-        BeliefView::current_attackers_of(self, agent)
-    }
+            fn current_attackers_of(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::current_attackers_of(self, agent)
+            }
 
-    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        BeliefView::agents_selling_at(self, place, commodity)
-    }
+            fn agents_selling_at(
+                &self,
+                place: worldwake_core::EntityId,
+                commodity: worldwake_core::CommodityKind,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::agents_selling_at(self, place, commodity)
+            }
 
-    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-        BeliefView::demand_memory(self, agent)
-    }
+            fn demand_memory(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::DemandObservation> {
+                $crate::RuntimeBeliefView::demand_memory(self, agent)
+            }
 
-    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-        BeliefView::corpse_entities_at(self, place)
-    }
+            fn corpse_entities_at(
+                &self,
+                place: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::corpse_entities_at(self, place)
+            }
+        }
+    };
 }
 
 #[must_use]
 pub fn estimate_duration_from_beliefs(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     duration: &DurationExpr,
     targets: &[EntityId],

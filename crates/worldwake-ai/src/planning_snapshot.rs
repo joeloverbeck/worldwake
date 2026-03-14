@@ -7,7 +7,7 @@ use worldwake_core::{
     Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
     WorkstationTag, Wound,
 };
-use worldwake_sim::BeliefView;
+use worldwake_sim::RuntimeBeliefView;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SnapshotFacilityQueue {
@@ -117,7 +117,7 @@ pub struct PlanningSnapshot {
 impl PlanningSnapshot {
     #[must_use]
     pub fn build(
-        view: &dyn BeliefView,
+        view: &dyn RuntimeBeliefView,
         actor: EntityId,
         evidence_entities: &BTreeSet<EntityId>,
         evidence_places: &BTreeSet<EntityId>,
@@ -135,7 +135,7 @@ impl PlanningSnapshot {
 
     #[must_use]
     pub fn build_with_blocked_facility_uses(
-        view: &dyn BeliefView,
+        view: &dyn RuntimeBeliefView,
         actor: EntityId,
         evidence_entities: &BTreeSet<EntityId>,
         evidence_places: &BTreeSet<EntityId>,
@@ -177,7 +177,7 @@ impl PlanningSnapshot {
 }
 
 fn build_snapshot_places(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     included_places: &BTreeSet<EntityId>,
     included_entities: &BTreeSet<EntityId>,
 ) -> BTreeMap<EntityId, SnapshotPlace> {
@@ -212,7 +212,7 @@ fn build_snapshot_places(
 }
 
 fn build_snapshot_entity(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     entity: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
@@ -273,7 +273,7 @@ fn build_snapshot_entity(
 }
 
 fn snapshot_facility_queue(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     entity: EntityId,
 ) -> Option<SnapshotFacilityQueue> {
@@ -289,7 +289,7 @@ fn snapshot_facility_queue(
 }
 
 fn collect_unique_item_counts(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     entity: EntityId,
 ) -> BTreeMap<UniqueItemKind, u32> {
     UniqueItemKind::ALL
@@ -302,7 +302,7 @@ fn collect_unique_item_counts(
 }
 
 fn collect_commodity_quantities(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     entity: EntityId,
 ) -> BTreeMap<CommodityKind, Quantity> {
     CommodityKind::ALL
@@ -316,7 +316,7 @@ fn collect_commodity_quantities(
 
 #[must_use]
 pub fn build_planning_snapshot(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
     evidence_places: &BTreeSet<EntityId>,
@@ -333,7 +333,7 @@ pub fn build_planning_snapshot(
 
 #[must_use]
 pub fn build_planning_snapshot_with_blocked_facility_uses(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
     evidence_places: &BTreeSet<EntityId>,
@@ -365,7 +365,7 @@ fn blocked_facility_uses(
 }
 
 fn collect_places(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
     evidence_places: &BTreeSet<EntityId>,
@@ -404,7 +404,7 @@ fn collect_places(
 }
 
 fn collect_entities(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
     included_places: &BTreeSet<EntityId>,
@@ -440,7 +440,7 @@ fn collect_entities(
 }
 
 fn included_entities_contains(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     entity: EntityId,
     actor: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
@@ -467,7 +467,7 @@ mod tests {
         ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
         Wound,
     };
-    use worldwake_sim::{ActionDuration, ActionPayload, BeliefView, DurationExpr};
+    use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
     #[derive(Default)]
     struct StubBeliefView {
@@ -483,7 +483,7 @@ mod tests {
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
     }
 
-    impl BeliefView for StubBeliefView {
+    impl RuntimeBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }

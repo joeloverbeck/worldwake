@@ -1,6 +1,6 @@
 use crate::{
     estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionInstance,
-    ActionInstanceId, ActionPayload, BeliefView, DurationExpr,
+    ActionInstanceId, ActionPayload, DurationExpr, RuntimeBeliefView,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -132,7 +132,7 @@ impl<'w> PerAgentBeliefView<'w> {
     }
 }
 
-impl BeliefView for PerAgentBeliefView<'_> {
+impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn is_alive(&self, entity: EntityId) -> bool {
         if entity == self.agent {
             return self.world.is_alive(entity);
@@ -143,9 +143,10 @@ impl BeliefView for PerAgentBeliefView<'_> {
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
-        self.knows_entity(entity)
-            .then(|| self.world.entity_kind(entity))
-            .flatten()
+        match self.world.entity_kind(entity) {
+            Some(EntityKind::Place) => Some(EntityKind::Place),
+            kind => self.knows_entity(entity).then_some(kind).flatten(),
+        }
     }
 
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -290,9 +291,15 @@ impl BeliefView for PerAgentBeliefView<'_> {
     }
 
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        self.world
-            .get_component_workstation_marker(entity)
-            .map(|marker| marker.0)
+        if entity == self.agent {
+            return self
+                .world
+                .get_component_workstation_marker(entity)
+                .map(|marker| marker.0);
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.workstation_tag)
     }
 
     fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
@@ -336,7 +343,12 @@ impl BeliefView for PerAgentBeliefView<'_> {
     }
 
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        self.world.get_component_resource_source(entity).cloned()
+        if entity == self.agent {
+            return self.world.get_component_resource_source(entity).cloned();
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.resource_source.clone())
     }
 
     fn has_production_job(&self, entity: EntityId) -> bool {
@@ -547,24 +559,17 @@ impl BeliefView for PerAgentBeliefView<'_> {
     }
 
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
-        self.world
-            .entities_effectively_at(place)
+        self.entities_at(place)
             .into_iter()
-            .filter(|entity| {
-                self.world
-                    .get_component_workstation_marker(*entity)
-                    .is_some_and(|marker| marker.0 == tag)
-            })
+            .filter(|entity| self.workstation_tag(*entity) == Some(tag))
             .collect()
     }
 
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        self.world
-            .entities_effectively_at(place)
+        self.entities_at(place)
             .into_iter()
             .filter(|entity| {
-                self.world
-                    .get_component_resource_source(*entity)
+                self.resource_source(*entity)
                     .is_some_and(|source| source.commodity == commodity)
             })
             .collect()
@@ -630,23 +635,29 @@ impl BeliefView for PerAgentBeliefView<'_> {
     }
 }
 
+crate::impl_goal_belief_view!(PerAgentBeliefView<'_>);
+
 #[cfg(test)]
 mod tests {
     use super::{PerAgentBeliefRuntime, PerAgentBeliefView};
     use crate::{
         ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, BeliefView, Constraint,
-        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, Constraint, DurationExpr,
+        GoalBeliefView, Interruptibility, Precondition, ReservationReq, RuntimeBeliefView,
+        TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick,
-        BodyPart, CauseRef, CommodityKind, ControlSource, EventLog, MerchandiseProfile, Permille,
-        Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause, WoundId,
+        build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
+        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
+        EntityKind, EventLog, MerchandiseProfile, Permille, Quantity, ResourceSource, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId,
     };
 
-    fn assert_belief_view<T: BeliefView>() {}
+    fn assert_goal_belief_view<T: GoalBeliefView>() {}
+    fn assert_runtime_belief_view<T: RuntimeBeliefView>() {}
 
     fn entity_belief(
         place: worldwake_core::EntityId,
@@ -659,6 +670,8 @@ mod tests {
         BelievedEntityState {
             last_known_place: Some(place),
             last_known_inventory: inventory,
+            workstation_tag: None,
+            resource_source: None,
             alive,
             wounds: if alive {
                 Vec::new()
@@ -731,8 +744,9 @@ mod tests {
     }
 
     #[test]
-    fn per_agent_belief_view_implements_belief_view() {
-        assert_belief_view::<PerAgentBeliefView<'_>>();
+    fn per_agent_belief_view_implements_goal_and_runtime_surfaces() {
+        assert_goal_belief_view::<PerAgentBeliefView<'_>>();
+        assert_runtime_belief_view::<PerAgentBeliefView<'_>>();
     }
 
     #[test]
@@ -757,22 +771,25 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            view.homeostatic_needs(agent),
+            RuntimeBeliefView::homeostatic_needs(&view, agent),
             world.get_component_homeostatic_needs(agent).copied()
         );
-        assert_eq!(view.effective_place(agent), Some(place));
+        assert_eq!(RuntimeBeliefView::effective_place(&view, agent), Some(place));
         assert_eq!(
-            view.commodity_quantity(agent, CommodityKind::Bread),
+            RuntimeBeliefView::commodity_quantity(&view, agent, CommodityKind::Bread),
             world.controlled_commodity_quantity(agent, CommodityKind::Bread)
         );
-        assert_eq!(view.effective_place(other), Some(believed_place));
-        assert!(!view.is_alive(other));
-        assert!(view.is_dead(other));
         assert_eq!(
-            view.commodity_quantity(other, CommodityKind::Bread),
+            RuntimeBeliefView::effective_place(&view, other),
+            Some(believed_place)
+        );
+        assert!(!RuntimeBeliefView::is_alive(&view, other));
+        assert!(RuntimeBeliefView::is_dead(&view, other));
+        assert_eq!(
+            RuntimeBeliefView::commodity_quantity(&view, other, CommodityKind::Bread),
             Quantity(7)
         );
-        assert_eq!(view.wounds(other), vec![sample_wound()]);
+        assert_eq!(RuntimeBeliefView::wounds(&view, other), vec![sample_wound()]);
     }
 
     #[test]
@@ -811,15 +828,18 @@ mod tests {
         beliefs.update_entity(believed_merchant, entity_belief(place, true, 3, 5));
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(view.effective_place(hidden_merchant), None);
-        assert!(!view.is_alive(hidden_merchant));
+        assert_eq!(RuntimeBeliefView::effective_place(&view, hidden_merchant), None);
+        assert!(!RuntimeBeliefView::is_alive(&view, hidden_merchant));
         assert_eq!(
-            view.commodity_quantity(hidden_merchant, CommodityKind::Bread),
+            RuntimeBeliefView::commodity_quantity(&view, hidden_merchant, CommodityKind::Bread),
             Quantity(0)
         );
-        assert_eq!(view.entities_at(place), vec![agent, believed_merchant]);
         assert_eq!(
-            view.agents_selling_at(place, CommodityKind::Bread),
+            RuntimeBeliefView::entities_at(&view, place),
+            vec![agent, believed_merchant]
+        );
+        assert_eq!(
+            RuntimeBeliefView::agents_selling_at(&view, place, CommodityKind::Bread),
             vec![believed_merchant]
         );
     }
@@ -845,7 +865,120 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(world.effective_place(other), Some(place_b));
-        assert_eq!(view.effective_place(other), Some(place_a));
+        assert_eq!(RuntimeBeliefView::effective_place(&view, other), Some(place_a));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn remote_facility_discovery_requires_believed_entity_snapshot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let remote_place = world.topology().neighbors(place)[0];
+        let (agent, workstation) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let workstation = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(workstation, remote_place).unwrap();
+            txn.set_component_workstation_marker(
+                workstation,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                workstation,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(9),
+                    max_quantity: Quantity(12),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, workstation)
+        };
+
+        let empty_beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &empty_beliefs);
+        assert!(
+            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, place)
+                .iter()
+                .any(|(adjacent, _)| *adjacent == remote_place),
+            "public route topology should remain available"
+        );
+        assert_eq!(
+            RuntimeBeliefView::entity_kind(&view, remote_place),
+            Some(EntityKind::Place),
+            "public route knowledge should include place identity"
+        );
+        assert!(
+            RuntimeBeliefView::matching_workstations_at(&view, remote_place, WorkstationTag::OrchardRow)
+                .is_empty(),
+            "remote workstation discovery must not come from authoritative scans"
+        );
+        assert!(
+            RuntimeBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple)
+                .is_empty(),
+            "remote resource-source discovery must not come from authoritative scans"
+        );
+        assert_eq!(RuntimeBeliefView::workstation_tag(&view, workstation), None);
+        assert_eq!(RuntimeBeliefView::resource_source(&view, workstation), None);
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            workstation,
+            build_believed_entity_state(
+                &world,
+                workstation,
+                Tick(2),
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
+            .expect("facility should build a believed snapshot"),
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_resource_source(
+                workstation,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(3),
+                    max_quantity: Quantity(12),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        assert_eq!(
+            RuntimeBeliefView::matching_workstations_at(&view, remote_place, WorkstationTag::OrchardRow),
+            vec![workstation]
+        );
+        assert_eq!(
+            RuntimeBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple),
+            vec![workstation]
+        );
+        assert_eq!(
+            RuntimeBeliefView::workstation_tag(&view, workstation),
+            Some(WorkstationTag::OrchardRow)
+        );
+        assert_eq!(
+            RuntimeBeliefView::resource_source(&view, workstation),
+            Some(ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(9),
+                max_quantity: Quantity(12),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            }),
+            "belief-side facility/resource knowledge should remain stale until refreshed"
+        );
     }
 
     #[test]
@@ -888,7 +1021,10 @@ mod tests {
         let runtime = PerAgentBeliefRuntime::new(&actions, &defs);
         let view = PerAgentBeliefView::with_runtime(agent, &world, &beliefs, runtime);
 
-        assert_eq!(view.current_attackers_of(agent), vec![attacker]);
+        assert_eq!(
+            RuntimeBeliefView::current_attackers_of(&view, agent),
+            vec![attacker]
+        );
         assert_eq!(
             view.estimate_duration(
                 agent,

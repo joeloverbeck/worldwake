@@ -17,6 +17,9 @@ Aligned the E14/E15 specs with determinism and Section H requirements, preserved
 ### E21: CLI & Human Control — COMPLETED
 Pulled forward from Phase 4 post-Phase 2 as the primary manual testing interface.
 
+### E14: Perception & Belief System — COMPLETED
+Established per-agent belief stores, passive/direct perception, social observation capture, `PerAgentBeliefView`, belief-only planner reads, public route/place structure reads, and belief-mediated remote facility/resource discovery.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -24,21 +27,16 @@ All completed specs are archived under `archive/specs/`.
 ## Dependency Graph
 
 ```text
-Phase 1-2 + FND-01 + FND-02 + E21: COMPLETED
+Phase 1-2 + FND-01 + FND-02 + E21 + E14: COMPLETED
 
-E14 ──→ E15 (rumors build on perception)
-E14 ──→ E16 (succession needs beliefs/loyalty)
-E14 ──→ S01 (ownership claims need belief-mediated disputes)
-E14 ──→ S02 (goal policy unification needs belief-based ranking)
-E14 ──→ S03 (planner target identity needs belief view)
-E14 ──→ S07 (care intent must be belief-mediated and patient-anchored)
-E15, S01, S03 ──→ E17 (crime needs discovery + ownership claims + planner binding)
+E15 ──→ E17 (crime needs discovery + ownership claims + planner binding)
 E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
+S01, S03 ──→ E17 (crime needs discovery + ownership claims + planner binding)
 S02, E16 ──→ E18, E19, E20
-E14 ──→ S04 (merchant selling needs belief-based market awareness)
-S04, S01 ──→ S05 (stock storage needs selling + ownership)
+S04 ──→ S05 (stock storage needs selling + ownership)
 S04 ──→ S06 (opportunity valuation needs market presence)
+E14 provides the prerequisite belief boundary for E15, E16, S01, S02, S03, S04, and S07.
 E18, E19, E20 ──→ E22 (integration tests need everything)
 ```
 
@@ -48,13 +46,13 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 
 ### Phase 3: Information & Politics
 
-**Step 9** (after completed FND-02 gate):
+**Step 9**: COMPLETED
 - **E14**: Perception & Belief System
-  - Replaces `OmniscientBeliefView` entirely
-  - Establishes the belief/evidence inputs later social systems use for loyalty/support modeling
-  - Satisfies FND-01 Section B deferred information pipeline requirements
+  - Replaced `OmniscientBeliefView`
+  - Established the belief/evidence inputs later social systems use for loyalty/support modeling
+  - Satisfied FND-01 Section B deferred information pipeline requirements
 
-**Step 10** (parallel after E14):
+**Step 10** (parallel after completed E14):
 - **E15**: Rumor, Witness & Discovery
 - **E16**: Offices, Succession & Factions
 - **S01**: Production Output Ownership Claims
@@ -115,7 +113,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `E14-perception-beliefs.md` | 3 | 9 | FND-02 complete |
 | `E15-rumor-witness-discovery.md` | 3 | 10 | E14 |
 | `E16-offices-succession-factions.md` | 3 | 10 | E14 |
 | `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |

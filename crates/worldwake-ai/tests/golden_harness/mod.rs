@@ -534,7 +534,7 @@ impl GoldenHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_sim::{BeliefView, PerAgentBeliefView};
+    use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
 
     #[test]
     fn setup_does_not_seed_remote_beliefs_by_default() {

@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BinaryHeap};
 use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
     get_affordances, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
-    Affordance, BeliefView, QueueForFacilityUsePayload,
+    Affordance, QueueForFacilityUsePayload, RuntimeBeliefView,
 };
 
 #[derive(Clone)]
@@ -453,9 +453,9 @@ mod tests {
         WorldTxn, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, BeliefView,
-        DurationExpr, PerAgentBeliefView, QueueForFacilityUsePayload, RecipeDefinition,
-        RecipeRegistry, TransportActionPayload,
+        estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
+        PerAgentBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
+        RuntimeBeliefView, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -483,7 +483,7 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
     }
 
-    impl BeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
@@ -2979,6 +2979,35 @@ mod tests {
             evidence_entities: BTreeSet::from([orchard_row]),
             evidence_places: BTreeSet::from([orchard_farm]),
         };
+        {
+            let mut store = world
+                .get_component_agent_belief_store(actor)
+                .cloned()
+                .expect("actor must have AgentBeliefStore");
+            store.update_entity(
+                orchard_row,
+                build_believed_entity_state(
+                    &world,
+                    orchard_row,
+                    Tick(0),
+                    PerceptionSource::DirectObservation,
+                )
+                .expect("orchard facility should build a believed snapshot"),
+            );
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(0),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            txn.set_component_agent_belief_store(actor, store)
+                .expect("test should keep belief stores writable");
+            let mut event_log = EventLog::new();
+            let _ = txn.commit(&mut event_log);
+        }
         let view = PerAgentBeliefView::from_world(actor, &world);
         let snapshot = build_planning_snapshot(
             &view,

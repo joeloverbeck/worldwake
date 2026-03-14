@@ -61,7 +61,7 @@ Recommended placement:
 - `worldwake-systems`
 
 ## Dependencies
-- `E14-perception-beliefs.md`
+- `archive/specs/E14-perception-beliefs.md`
 - `S02-goal-decision-policy-unification.md`
 - `S03-planner-target-identity-and-affordance-binding.md`
 

@@ -149,7 +149,8 @@ mod tests {
         Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDuration, ActionPayload, BeliefView, DurationExpr,
+        estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
+        RuntimeBeliefView,
     };
 
     #[derive(Default)]
@@ -159,7 +160,9 @@ mod tests {
         controlled_quantities: BTreeMap<(EntityId, EntityId, CommodityKind), Quantity>,
     }
 
-    impl BeliefView for TestBeliefView {
+    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {
             true
         }

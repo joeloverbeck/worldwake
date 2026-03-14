@@ -8,7 +8,7 @@ use worldwake_core::{
     TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::{
-    estimate_duration_from_beliefs, ActionDuration, ActionPayload, BeliefView, DurationExpr,
+    estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -688,7 +688,7 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 }
 
-impl BeliefView for PlanningState<'_> {
+impl RuntimeBeliefView for PlanningState<'_> {
     fn is_alive(&self, entity: EntityId) -> bool {
         !self
             .removed_entities
@@ -1184,6 +1184,8 @@ impl BeliefView for PlanningState<'_> {
     }
 }
 
+worldwake_sim::impl_goal_belief_view!(PlanningState<'_>);
+
 #[cfg(test)]
 mod tests {
     use super::{HypotheticalEntityId, PlanningEntityRef, PlanningState};
@@ -1200,8 +1202,8 @@ mod tests {
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
         ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress,
-        ActionState, BeliefView, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-        Precondition, ReservationReq, TargetSpec,
+        ActionState, Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
+        Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
     };
 
     #[derive(Default)]
@@ -1233,7 +1235,7 @@ mod tests {
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
     }
 
-    impl BeliefView for StubBeliefView {
+    impl RuntimeBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
@@ -1683,9 +1685,11 @@ mod tests {
     }
 
     #[test]
-    fn planning_state_implements_belief_view() {
-        fn assert_impl<T: BeliefView>() {}
-        assert_impl::<PlanningState<'_>>();
+    fn planning_state_implements_goal_and_runtime_surfaces() {
+        fn assert_goal<T: GoalBeliefView>() {}
+        fn assert_runtime<T: RuntimeBeliefView>() {}
+        assert_goal::<PlanningState<'_>>();
+        assert_runtime::<PlanningState<'_>>();
     }
 
     #[test]
@@ -1694,13 +1698,22 @@ mod tests {
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot);
 
-        assert_eq!(state.effective_place(actor), Some(town));
-        assert_eq!(state.direct_possessions(actor), vec![bread]);
         assert_eq!(
-            state.commodity_quantity(actor, CommodityKind::Bread),
+            RuntimeBeliefView::effective_place(&state, actor),
+            Some(town)
+        );
+        assert_eq!(
+            RuntimeBeliefView::direct_possessions(&state, actor),
+            vec![bread]
+        );
+        assert_eq!(
+            RuntimeBeliefView::commodity_quantity(&state, actor, CommodityKind::Bread),
             Quantity(1)
         );
-        assert_eq!(state.demand_memory(actor), view.demand_memory(actor));
+        assert_eq!(
+            RuntimeBeliefView::demand_memory(&state, actor),
+            RuntimeBeliefView::demand_memory(&view, actor)
+        );
     }
 
     #[test]
@@ -1716,9 +1729,15 @@ mod tests {
             build_planning_snapshot(&view, actor, &BTreeSet::from([corpse]), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot);
 
-        assert_eq!(state.entity_kind(corpse), Some(EntityKind::Agent));
-        assert!(state.is_dead(corpse));
-        assert_eq!(state.effective_place(corpse), Some(town));
+        assert_eq!(
+            RuntimeBeliefView::entity_kind(&state, corpse),
+            Some(EntityKind::Agent)
+        );
+        assert!(RuntimeBeliefView::is_dead(&state, corpse));
+        assert_eq!(
+            RuntimeBeliefView::effective_place(&state, corpse),
+            Some(town)
+        );
     }
 
     #[test]
@@ -1842,10 +1861,22 @@ mod tests {
             .move_actor_to(field)
             .move_lot_to_holder(bread, actor, CommodityKind::Bread, Quantity(1));
 
-        assert_eq!(state.effective_place(actor), Some(field));
-        assert_eq!(state.effective_place(bread), Some(field));
-        assert_eq!(state.entities_at(field), vec![actor, bread]);
-        assert_eq!(state.direct_possessions(actor), vec![bread]);
+        assert_eq!(
+            RuntimeBeliefView::effective_place(&state, actor),
+            Some(field)
+        );
+        assert_eq!(
+            RuntimeBeliefView::effective_place(&state, bread),
+            Some(field)
+        );
+        assert_eq!(
+            RuntimeBeliefView::entities_at(&state, field),
+            vec![actor, bread]
+        );
+        assert_eq!(
+            RuntimeBeliefView::direct_possessions(&state, actor),
+            vec![bread]
+        );
     }
 
     #[test]
@@ -1858,8 +1889,7 @@ mod tests {
             .reserve(bread, range);
 
         assert_eq!(
-            state
-                .resource_source(bread)
+            RuntimeBeliefView::resource_source(&state, bread)
                 .map(|source| source.available_quantity),
             Some(Quantity(1))
         );
@@ -1876,10 +1906,9 @@ mod tests {
         let removed = base.clone().mark_removed(bread);
 
         assert_eq!(get_affordances(&base, actor, &registry, &handlers).len(), 1);
-        assert!(removed.is_dead(bread));
-        assert!(!removed.is_alive(bread));
-        assert!(removed
-            .entities_at(entity(10))
+        assert!(RuntimeBeliefView::is_dead(&removed, bread));
+        assert!(!RuntimeBeliefView::is_alive(&removed, bread));
+        assert!(RuntimeBeliefView::entities_at(&removed, entity(10))
             .iter()
             .all(|entity| *entity != bread));
         assert!(get_affordances(&removed, actor, &registry, &handlers).is_empty());
@@ -1890,9 +1919,14 @@ mod tests {
         let (view, actor, _town, _field, _bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot).consume_commodity(CommodityKind::Bread);
-        let thresholds = state.drive_thresholds(actor).unwrap();
+        let thresholds = RuntimeBeliefView::drive_thresholds(&state, actor).unwrap();
 
-        assert!(state.homeostatic_needs(actor).unwrap().hunger < thresholds.hunger.low());
+        assert!(
+            RuntimeBeliefView::homeostatic_needs(&state, actor)
+                .unwrap()
+                .hunger
+                < thresholds.hunger.low()
+        );
     }
 
     #[test]
@@ -1946,8 +1980,8 @@ mod tests {
 
         let moved = PlanningState::new(&snapshot).move_actor_to(field);
 
-        assert!(moved.visible_hostiles_for(actor).is_empty());
-        assert!(moved.current_attackers_of(actor).is_empty());
+        assert!(RuntimeBeliefView::visible_hostiles_for(&moved, actor).is_empty());
+        assert!(RuntimeBeliefView::current_attackers_of(&moved, actor).is_empty());
     }
 
     #[test]
@@ -2038,23 +2072,43 @@ mod tests {
         let moved = local.clone().move_actor_to(field);
 
         assert_eq!(
-            local.controlled_commodity_quantity_at_place(actor, town, CommodityKind::Bread),
+            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+                &local,
+                actor,
+                town,
+                CommodityKind::Bread
+            ),
             Quantity(3)
         );
         assert_eq!(
-            local.controlled_commodity_quantity_at_place(actor, field, CommodityKind::Bread),
+            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+                &local,
+                actor,
+                field,
+                CommodityKind::Bread
+            ),
             Quantity(0)
         );
         assert_eq!(
-            moved.controlled_commodity_quantity_at_place(actor, town, CommodityKind::Bread),
+            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+                &moved,
+                actor,
+                town,
+                CommodityKind::Bread
+            ),
             Quantity(0)
         );
         assert_eq!(
-            moved.controlled_commodity_quantity_at_place(actor, field, CommodityKind::Bread),
+            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+                &moved,
+                actor,
+                field,
+                CommodityKind::Bread
+            ),
             Quantity(3)
         );
         assert_eq!(
-            local.local_controlled_lots_for(actor, town, CommodityKind::Bread),
+            RuntimeBeliefView::local_controlled_lots_for(&local, actor, town, CommodityKind::Bread),
             vec![bread]
         );
     }
@@ -2078,11 +2132,21 @@ mod tests {
 
         assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
         assert_eq!(
-            moved.controlled_commodity_quantity_at_place(actor, field, CommodityKind::Bread),
+            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+                &moved,
+                actor,
+                field,
+                CommodityKind::Bread
+            ),
             Quantity(3)
         );
         assert_eq!(
-            moved.local_controlled_lots_for(actor, field, CommodityKind::Bread),
+            RuntimeBeliefView::local_controlled_lots_for(
+                &moved,
+                actor,
+                field,
+                CommodityKind::Bread
+            ),
             vec![bread]
         );
     }
@@ -2138,7 +2202,10 @@ mod tests {
         assert_eq!(removed.item_lot_commodity_ref(hypothetical), None);
         assert_eq!(removed.direct_possessor_ref(hypothetical), None);
         assert_eq!(removed.effective_place_ref(hypothetical), None);
-        assert_eq!(removed.direct_possessions(actor), vec![bread]);
+        assert_eq!(
+            RuntimeBeliefView::direct_possessions(&removed, actor),
+            vec![bread]
+        );
     }
 
     #[test]
@@ -2155,8 +2222,14 @@ mod tests {
             state.load_of_entity_ref(PlanningEntityRef::Authoritative(bread)),
             Some(LoadUnits(1))
         );
-        assert_eq!(state.carry_capacity(actor), Some(LoadUnits(10)));
-        assert_eq!(state.load_of_entity(bread), Some(LoadUnits(1)));
+        assert_eq!(
+            RuntimeBeliefView::carry_capacity(&state, actor),
+            Some(LoadUnits(10))
+        );
+        assert_eq!(
+            RuntimeBeliefView::load_of_entity(&state, bread),
+            Some(LoadUnits(1))
+        );
     }
 
     #[test]

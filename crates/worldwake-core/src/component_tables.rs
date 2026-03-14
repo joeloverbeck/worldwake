@@ -172,6 +172,8 @@ mod tests {
                 BelievedEntityState {
                     last_known_place: Some(entity(2)),
                     last_known_inventory: BTreeMap::from([(CommodityKind::Apple, Quantity(2))]),
+                    workstation_tag: None,
+                    resource_source: None,
                     alive: true,
                     wounds: Vec::new(),
                     observed_tick: Tick(7),

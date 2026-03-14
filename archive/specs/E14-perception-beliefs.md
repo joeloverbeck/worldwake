@@ -50,6 +50,8 @@ AgentBeliefStore:
 BelievedEntityState:
   last_known_place: Option<EntityId>
   last_known_inventory: BTreeMap<CommodityKind, Quantity>
+  workstation_tag: Option<WorkstationTag>
+  resource_source: Option<ResourceSource>
   alive: bool
   wounds: Vec<Wound>
   observed_tick: Tick
@@ -80,8 +82,9 @@ Confidence is **not stored** — it is derived at query time from `PerceptionSou
 `PerAgentBeliefView` is a struct in `worldwake-sim` that implements the existing `BeliefView` trait by reading from `AgentBeliefStore`. It answers the ~50 `BeliefView` methods as follows:
 
 - **Self-queries** (`homeostatic_needs`, `wounds`, `combat_profile`, `trade_disposition_profile`, `metabolism_profile`, `drive_thresholds`, `known_recipes`, `merchandise_profile`, `carry_capacity`, `load_of_entity` for self, own inventory queries): **authoritative from World**. An agent always knows its own state.
-- **Observed entity state** (`effective_place`, `is_alive`, `commodity_quantity`, `direct_possessions`, `wounds` for others, `agents_selling_at`, `corpse_entities_at`): from `BelievedEntityState` if agent has observed that entity. Returns `None`/empty/default if not observed.
-- **Topology queries** (`adjacent_places`, `adjacent_places_with_travel_ticks`, `place_has_tag`, `workstation_tag`, `matching_workstations_at`, `resource_sources_at`): **authoritative**. The place graph is public infrastructure — agents know where places are and how to travel between them.
+- **Observed entity state** (`effective_place`, `is_alive`, `commodity_quantity`, `direct_possessions`, `wounds` for others, `agents_selling_at`, `corpse_entities_at`, facility/resource facts for believed non-self entities): from `BelievedEntityState` if agent has observed that entity. Returns `None`/empty/default if not observed.
+- **Public structure queries** (`adjacent_places`, `adjacent_places_with_travel_ticks`, `place_has_tag`, place `entity_kind`): **authoritative**. The place graph is public infrastructure — agents know where places are and how to travel between them.
+- **Facility/resource discovery queries** (`workstation_tag`, `matching_workstations_at`, `resource_source`, `resource_sources_at` for non-self entities): belief-mediated. Remote affordance-bearing entities are discoverable only if the agent has an explicit belief snapshot for those entities.
 - **Profile queries for others** (`combat_profile`, `trade_disposition_profile` for non-self): require observation. Unknown unless the agent has perceived them.
 - **Unknown entities**: do not appear in planning snapshots — agent doesn't know they exist.
 
@@ -142,7 +145,8 @@ All agents accumulate beliefs through the same perception system regardless of `
 When `PerAgentBeliefView` is queried about an entity the agent has never observed:
 - **Unknown entities**: Do not appear in the planning snapshot. The agent doesn't know they exist.
 - **Self-queries**: Always authoritative (agent knows its own hunger, wounds, inventory, profiles).
-- **Topology**: Treat as known (place graph is public infrastructure — agents know where places are and how to travel between them).
+- **Public place structure**: Treat as known (place graph, place tags, and place identity are public infrastructure — agents know where places are and how to travel between them).
+- **Remote facility/resource entities**: Unknown unless the agent has observed or otherwise been told about the specific entity. Route knowledge alone must not reveal remote workstation/resource affordances.
 - **Others' profiles**: Unknown unless observed. Candidate generation and plan search must be robust to sparse snapshots.
 
 ### DemandMemory Coexistence
@@ -260,6 +264,8 @@ These constraints derive from Principle 7 (Locality of Interaction and Informati
 ### H4. Stored State vs. Derived Read-Models
 - Stored authoritative state:
   - Per-agent `AgentBeliefStore` with `BelievedEntityState` entries per observed entity
+  - `BelievedEntityState.workstation_tag` for believed facility/workstation identity
+  - `BelievedEntityState.resource_source` for believed remote source state, including stale quantity
   - `PerceptionSource` enum stored with each belief entry (DirectObservation, Report, Rumor, Inference)
   - `observed_tick: Tick` stored with each belief entry
   - `PerceptionProfile` component per agent

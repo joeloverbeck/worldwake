@@ -14,9 +14,9 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionDomain, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, BeliefView, CombatActionPayload, CommitOutcome, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole,
-    Precondition, SelfTargetActionKind, SystemError, SystemExecutionContext, TargetSpec,
+    ActionProgress, ActionState, CombatActionPayload, CommitOutcome, Constraint, DeterministicRng,
+    DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole, Precondition,
+    RuntimeBeliefView, SelfTargetActionKind, SystemError, SystemExecutionContext, TargetSpec,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -355,7 +355,7 @@ fn enumerate_attack_payloads(
     _def: &ActionDef,
     actor: EntityId,
     targets: &[EntityId],
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
 ) -> Vec<ActionPayload> {
     let Some(target) = targets.first().copied() else {
         return Vec::new();
@@ -503,7 +503,7 @@ fn enumerate_loot_payloads(
     _def: &ActionDef,
     _actor: EntityId,
     targets: &[EntityId],
-    _view: &dyn BeliefView,
+    _view: &dyn RuntimeBeliefView,
 ) -> Vec<ActionPayload> {
     targets
         .first()

@@ -1,4 +1,4 @@
-use crate::BeliefView;
+use crate::RuntimeBeliefView;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -30,7 +30,7 @@ struct ValuationSnapshot {
 #[must_use]
 pub fn evaluate_trade_bundle(
     actor: EntityId,
-    belief: &dyn BeliefView,
+    belief: &dyn RuntimeBeliefView,
     needs: Option<&HomeostaticNeeds>,
     wounds: Option<&WoundList>,
     current_coin: Quantity,
@@ -102,7 +102,7 @@ pub fn evaluate_trade_bundle(
 
 fn build_current_holdings(
     actor: EntityId,
-    belief: &dyn BeliefView,
+    belief: &dyn RuntimeBeliefView,
     current_coin: Quantity,
 ) -> BTreeMap<CommodityKind, u32> {
     let mut holdings = BTreeMap::new();
@@ -266,7 +266,7 @@ fn insufficient_payment_reason(offered: &[(CommodityKind, Quantity)]) -> TradeRe
 #[cfg(test)]
 mod tests {
     use super::{evaluate_trade_bundle, TradeAcceptance, TradeRejectionReason};
-    use crate::BeliefView;
+    use crate::RuntimeBeliefView;
     use std::collections::BTreeMap;
     use worldwake_core::{
         BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandMemory,
@@ -281,7 +281,7 @@ mod tests {
         commodities: BTreeMap<(EntityId, CommodityKind), Quantity>,
     }
 
-    impl BeliefView for StubBeliefView {
+    impl RuntimeBeliefView for StubBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {
             false
         }

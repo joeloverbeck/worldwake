@@ -2310,6 +2310,8 @@ mod tests {
             BelievedEntityState {
                 last_known_place: Some(entity(2)),
                 last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
                 alive: false,
                 wounds: Vec::new(),
                 observed_tick: Tick(12),

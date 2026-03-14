@@ -60,7 +60,7 @@ mod tests {
         ResourceSource, ThresholdBand, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
         WorkstationTag, Wound, WoundCause, WoundId,
     };
-    use worldwake_sim::{ActionDuration, ActionPayload, BeliefView, DurationExpr};
+    use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
     #[derive(Default)]
     struct TestBeliefView {
@@ -71,7 +71,9 @@ mod tests {
         incapacitated: BTreeSet<EntityId>,
     }
 
-    impl BeliefView for TestBeliefView {
+    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {
             true
         }

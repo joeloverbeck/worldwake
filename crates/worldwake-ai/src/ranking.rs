@@ -483,7 +483,8 @@ mod tests {
         WoundCause, WoundId,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,
+        ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
+        RuntimeBeliefView,
     };
 
     #[derive(Default)]
@@ -500,7 +501,9 @@ mod tests {
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
     }
 
-    impl BeliefView for TestBeliefView {
+    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }

@@ -284,6 +284,8 @@ mod tests {
                             (CommodityKind::Apple, Quantity(2)),
                             (CommodityKind::Water, Quantity(1)),
                         ]),
+                        workstation_tag: None,
+                        resource_source: None,
                         alive: true,
                         wounds: Vec::new(),
                         observed_tick: Tick(14),

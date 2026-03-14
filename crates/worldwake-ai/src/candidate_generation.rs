@@ -1057,7 +1057,8 @@ mod tests {
         UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, BeliefView, DurationExpr, RecipeDefinition, RecipeRegistry,
+        ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
+        RuntimeBeliefView,
     };
 
     #[derive(Default)]
@@ -1097,7 +1098,9 @@ mod tests {
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
     }
 
-    impl BeliefView for TestBeliefView {
+    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity) && !self.dead.contains(&entity)
         }

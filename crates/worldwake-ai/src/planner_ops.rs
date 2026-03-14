@@ -670,7 +670,7 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionPayload,
-        BeliefView, DurationExpr, MaterializationTag, RecipeDefinition, RecipeRegistry,
+        DurationExpr, MaterializationTag, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
         TradeActionPayload, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
@@ -798,7 +798,7 @@ mod tests {
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
     }
 
-    impl BeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }

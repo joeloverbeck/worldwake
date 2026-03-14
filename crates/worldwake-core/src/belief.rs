@@ -1,6 +1,9 @@
 //! Authoritative belief and perception state for E14.
 
-use crate::{CommodityKind, Component, EntityId, Permille, Quantity, Tick, World, Wound};
+use crate::{
+    CommodityKind, Component, EntityId, Permille, Quantity, ResourceSource, Tick, WorkstationTag,
+    World, Wound,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -84,6 +87,8 @@ impl Component for AgentBeliefStore {}
 pub struct BelievedEntityState {
     pub last_known_place: Option<EntityId>,
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
+    pub workstation_tag: Option<WorkstationTag>,
+    pub resource_source: Option<ResourceSource>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
     pub observed_tick: Tick,
@@ -110,6 +115,10 @@ pub fn build_believed_entity_state(
     Some(BelievedEntityState {
         last_known_place: world.effective_place(entity),
         last_known_inventory: inventory,
+        workstation_tag: world
+            .get_component_workstation_marker(entity)
+            .map(|marker| marker.0),
+        resource_source: world.get_component_resource_source(entity).cloned(),
         alive: world.get_component_dead_at(entity).is_none(),
         wounds: world
             .get_component_wound_list(entity)
@@ -219,6 +228,8 @@ mod tests {
         BelievedEntityState {
             last_known_place: Some(entity(10)),
             last_known_inventory: inventory,
+            workstation_tag: None,
+            resource_source: None,
             alive: true,
             wounds: vec![sample_wound(1, observed_tick)],
             observed_tick: Tick(observed_tick),

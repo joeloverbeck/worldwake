@@ -1,12 +1,12 @@
 use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
-    BeliefView, Constraint, ConsumableEffect, Precondition, TargetSpec,
+    Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
 };
 use worldwake_core::{ActionDefId, EntityId, EntityKind};
 
 #[must_use]
 pub fn get_affordances(
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     actor: EntityId,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
@@ -61,7 +61,7 @@ pub fn requested_affordance_matches(
     actor: EntityId,
     targets: &[EntityId],
     payload_override: Option<&ActionPayload>,
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
 ) -> bool {
     if affordance.matches_request_identity(def, actor, targets, payload_override) {
         return true;
@@ -89,7 +89,7 @@ fn expand_payload_variants(
     def: &ActionDef,
     handler: &crate::ActionHandler,
     affordance: &Affordance,
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
 ) -> Vec<Affordance> {
     payload_variants(
         def,
@@ -111,7 +111,7 @@ fn payload_variants(
     handler: &crate::ActionHandler,
     actor: EntityId,
     targets: &[EntityId],
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
 ) -> Vec<Option<ActionPayload>> {
     if !matches!(def.payload, ActionPayload::None) {
         return vec![Some(def.payload.clone())];
@@ -133,7 +133,7 @@ fn payload_variants(
 pub fn evaluate_constraint(
     constraint: &Constraint,
     actor: EntityId,
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
 ) -> bool {
     match constraint {
         Constraint::ActorAlive => view.is_alive(actor),
@@ -161,7 +161,7 @@ pub fn evaluate_precondition(
     precondition: Precondition,
     actor: EntityId,
     targets: &[EntityId],
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
 ) -> bool {
     match precondition {
         Precondition::ActorAlive => view.is_alive(actor),
@@ -246,7 +246,11 @@ pub fn evaluate_precondition(
 }
 
 #[must_use]
-fn enumerate_targets(spec: &TargetSpec, actor: EntityId, view: &dyn BeliefView) -> Vec<EntityId> {
+fn enumerate_targets(
+    spec: &TargetSpec,
+    actor: EntityId,
+    view: &dyn RuntimeBeliefView,
+) -> Vec<EntityId> {
     let mut targets = match spec {
         TargetSpec::SpecificEntity(entity) => view
             .is_alive(*entity)
@@ -288,7 +292,7 @@ fn enumerate_targets(spec: &TargetSpec, actor: EntityId, view: &dyn BeliefView) 
 fn enumerate_bindings(
     specs: &[TargetSpec],
     actor: EntityId,
-    view: &dyn BeliefView,
+    view: &dyn RuntimeBeliefView,
     current: &mut Vec<EntityId>,
     affordances: &mut Vec<Affordance>,
     def_id: ActionDefId,
@@ -359,7 +363,7 @@ mod tests {
         wound_lists: BTreeMap<EntityId, Vec<Wound>>,
     }
 
-    impl crate::BeliefView for StubBeliefView {
+    impl crate::RuntimeBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }

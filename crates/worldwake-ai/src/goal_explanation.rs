@@ -62,8 +62,8 @@ mod tests {
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDuration, ActionPayload, BeliefView, DurationExpr,
-        RecipeRegistry,
+        estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
+        RecipeRegistry, RuntimeBeliefView,
     };
 
     #[derive(Default)]
@@ -83,7 +83,9 @@ mod tests {
         drive_thresholds: BTreeMap<EntityId, DriveThresholds>,
     }
 
-    impl BeliefView for TestBeliefView {
+    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
