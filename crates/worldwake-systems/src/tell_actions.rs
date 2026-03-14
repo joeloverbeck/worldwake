@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, PerceptionProfile,
-    PerceptionSource, TellProfile, VisibilitySpec, World, WorldTxn,
+    ActionDefId, AgentBeliefStore, BodyCostPerTick, EntityId, EntityKind, EventTag,
+    PerceptionProfile, PerceptionSource, TellProfile, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -145,18 +145,54 @@ fn validate_tell_context(
     Ok(listener)
 }
 
-fn tell_profile(world: &WorldTxn<'_>, entity: EntityId) -> TellProfile {
+fn required_tell_profile_in_world(world: &World, entity: EntityId) -> Result<TellProfile, ActionError> {
     world
         .get_component_tell_profile(entity)
         .copied()
-        .unwrap_or_else(TellProfile::default)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "live agent {entity} lacks required TellProfile"
+            ))
+        })
 }
 
-fn perception_profile(world: &WorldTxn<'_>, entity: EntityId) -> PerceptionProfile {
+fn required_tell_profile(world: &WorldTxn<'_>, entity: EntityId) -> Result<TellProfile, ActionError> {
+    world
+        .get_component_tell_profile(entity)
+        .copied()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!(
+                "live agent {entity} lacks required TellProfile"
+            ))
+        })
+}
+
+fn required_perception_profile(
+    world: &WorldTxn<'_>,
+    entity: EntityId,
+) -> Result<PerceptionProfile, ActionError> {
     world
         .get_component_perception_profile(entity)
         .copied()
-        .unwrap_or_else(PerceptionProfile::default)
+        .ok_or_else(|| {
+            ActionError::InternalError(format!(
+                "live agent {entity} lacks required PerceptionProfile"
+            ))
+        })
+}
+
+fn required_belief_store(
+    world: &WorldTxn<'_>,
+    entity: EntityId,
+) -> Result<AgentBeliefStore, ActionError> {
+    world
+        .get_component_agent_belief_store(entity)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!(
+                "live agent {entity} lacks required AgentBeliefStore"
+            ))
+        })
 }
 
 fn validate_tell_payload_override(
@@ -242,11 +278,7 @@ fn validate_tell_payload_authoritatively(
         ))
     })?;
 
-    let relay_limit = world
-        .get_component_tell_profile(actor)
-        .copied()
-        .unwrap_or_else(TellProfile::default)
-        .max_relay_chain_len;
+    let relay_limit = required_tell_profile_in_world(world, actor)?.max_relay_chain_len;
     let chain_len = belief_chain_len(belief.source);
     if chain_len > relay_limit {
         return Err(ActionError::PreconditionFailed(format!(
@@ -290,19 +322,17 @@ fn commit_tell(
     let listener = validate_tell_context(txn, instance, payload)?;
     let speaker = instance.actor;
 
-    let Some(speaker_beliefs) = txn.get_component_agent_belief_store(speaker) else {
-        return Ok(CommitOutcome::empty());
-    };
+    let speaker_beliefs = required_belief_store(txn, speaker)?;
     let Some(speaker_belief) = speaker_beliefs.get_entity(&payload.subject_entity).cloned() else {
         return Ok(CommitOutcome::empty());
     };
 
-    let relay_limit = tell_profile(txn, speaker).max_relay_chain_len;
+    let relay_limit = required_tell_profile(txn, speaker)?.max_relay_chain_len;
     if belief_chain_len(speaker_belief.source) > relay_limit {
         return Ok(CommitOutcome::empty());
     }
 
-    let listener_profile = tell_profile(txn, listener);
+    let listener_profile = required_tell_profile(txn, listener)?;
     if !passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng) {
         return Ok(CommitOutcome::empty());
     }
@@ -310,12 +340,9 @@ fn commit_tell(
     let mut transferred = speaker_belief.clone();
     transferred.source = degrade_source(speaker, speaker_belief.source);
 
-    let mut listener_beliefs = txn
-        .get_component_agent_belief_store(listener)
-        .cloned()
-        .unwrap_or_default();
+    let mut listener_beliefs = required_belief_store(txn, listener)?;
     listener_beliefs.update_entity(payload.subject_entity, transferred);
-    listener_beliefs.enforce_capacity(&perception_profile(txn, listener), txn.tick());
+    listener_beliefs.enforce_capacity(&required_perception_profile(txn, listener)?, txn.tick());
     txn.set_component_agent_belief_store(listener, listener_beliefs)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     Ok(CommitOutcome::empty())
@@ -508,6 +535,23 @@ mod tests {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
         assert_eq!(log.len(), 1);
+    }
+
+    fn commit_tell_result(
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        tell_id: ActionDefId,
+        world: &mut World,
+        instance: &ActionInstance,
+        seed: u8,
+        tick: u64,
+    ) -> Result<worldwake_sim::CommitOutcome, ActionError> {
+        let def = defs.get(tell_id).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let mut rng = test_rng(seed);
+        let mut txn = new_action_txn(world, instance.actor, def.visibility, tick);
+
+        (handler.on_commit)(def, instance, &mut rng, &mut txn)
     }
 
     #[derive(Default)]
@@ -969,6 +1013,38 @@ mod tests {
     }
 
     #[test]
+    fn tell_payload_validator_rejects_missing_speaker_tell_profile() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let tell_id = register_tell_action(&mut defs, &mut handlers);
+        let tell = defs.get(tell_id).unwrap();
+        let (mut world, _place, speaker, listener, subject) =
+            world_with_speaker_listener_and_subject(PerceptionSource::DirectObservation);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.clear_component_tell_profile(speaker).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let err = validate_tell_payload_authoritatively(
+            tell,
+            &defs,
+            speaker,
+            &[listener],
+            &ActionPayload::Tell(TellActionPayload {
+                listener,
+                subject_entity: subject,
+            }),
+            &world,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+        assert!(format!("{err:?}").contains("TellProfile"));
+    }
+
+    #[test]
     fn tell_action_starts_with_tell_payload() {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
@@ -1090,6 +1166,84 @@ mod tests {
 
         let listener_store = world.get_component_agent_belief_store(listener).unwrap();
         assert!(listener_store.get_entity(&subject).is_none());
+    }
+
+    #[test]
+    fn tell_commit_fails_if_speaker_lacks_belief_store() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.clear_component_agent_belief_store(speaker).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
+            .unwrap_err();
+
+        assert!(matches!(err, ActionError::InternalError(_)));
+        assert!(format!("{err:?}").contains("AgentBeliefStore"));
+        let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        assert!(listener_store.get_entity(&subject).is_none());
+    }
+
+    #[test]
+    fn tell_commit_fails_if_listener_lacks_belief_store() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.clear_component_agent_belief_store(listener).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
+            .unwrap_err();
+
+        assert!(matches!(err, ActionError::InternalError(_)));
+        assert!(format!("{err:?}").contains("AgentBeliefStore"));
+    }
+
+    #[test]
+    fn tell_commit_fails_if_listener_lacks_tell_profile() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.clear_component_tell_profile(listener).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
+            .unwrap_err();
+
+        assert!(matches!(err, ActionError::InternalError(_)));
+        assert!(format!("{err:?}").contains("TellProfile"));
+    }
+
+    #[test]
+    fn tell_commit_fails_if_listener_lacks_perception_profile() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.clear_component_perception_profile(listener).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let err = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8)
+            .unwrap_err();
+
+        assert!(matches!(err, ActionError::InternalError(_)));
+        assert!(format!("{err:?}").contains("PerceptionProfile"));
     }
 
     #[test]
