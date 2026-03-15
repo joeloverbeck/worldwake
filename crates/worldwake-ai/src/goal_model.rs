@@ -28,6 +28,7 @@ pub enum GoalKindTag {
     MoveCargo,
     LootCorpse,
     BuryCorpse,
+    ShareBelief,
 }
 
 pub trait GoalKindPlannerExt {
@@ -115,6 +116,7 @@ const RESTOCK_OPS: &[PlannerOpKind] = &[
 const MOVE_CARGO_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::MoveCargo];
 const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
 const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
+const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -182,6 +184,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::MoveCargo { .. } => GoalKindTag::MoveCargo,
             GoalKind::LootCorpse { .. } => GoalKindTag::LootCorpse,
             GoalKind::BuryCorpse { .. } => GoalKindTag::BuryCorpse,
+            GoalKind::ShareBelief { .. } => GoalKindTag::ShareBelief,
         }
     }
 
@@ -201,6 +204,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::MoveCargo { .. } => MOVE_CARGO_OPS,
             GoalKind::LootCorpse { .. } => LOOT_OPS,
             GoalKind::BuryCorpse { .. } => BURY_OPS,
+            GoalKind::ShareBelief { .. } => SHARE_BELIEF_OPS,
         }
     }
 
@@ -229,7 +233,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ReduceDanger
             | GoalKind::Heal { .. }
             | GoalKind::LootCorpse { .. }
-            | GoalKind::BuryCorpse { .. } => Some(BTreeSet::new()),
+            | GoalKind::BuryCorpse { .. }
+            | GoalKind::ShareBelief { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -506,6 +511,7 @@ impl GoalKindPlannerExt for GoalKind {
                 .all(|commodity| state.commodity_quantity(*corpse, commodity) == Quantity(0)),
             GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
             GoalKind::ProduceCommodity { .. }
+            | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. } => false,
         }
@@ -662,6 +668,14 @@ mod tests {
             .goal_kind_tag(),
             GoalKindTag::BuryCorpse
         );
+        assert_eq!(
+            GoalKind::ShareBelief {
+                listener: entity_id(3, 0),
+                subject: entity_id(4, 0),
+            }
+            .goal_kind_tag(),
+            GoalKindTag::ShareBelief
+        );
     }
 
     #[test]
@@ -695,11 +709,35 @@ mod tests {
     }
 
     #[test]
+    fn share_belief_goal_relevant_ops_are_tell_only() {
+        let goal = GoalKind::ShareBelief {
+            listener: entity_id(4, 0),
+            subject: entity_id(5, 0),
+        };
+
+        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Tell]);
+    }
+
+    #[test]
     fn sleep_goal_observed_commodities_are_empty() {
         let recipes = worldwake_sim::RecipeRegistry::new();
 
         assert_eq!(
             GoalKind::Sleep.relevant_observed_commodities(&recipes),
+            Some(BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn share_belief_goal_observed_commodities_are_empty() {
+        let recipes = worldwake_sim::RecipeRegistry::new();
+
+        assert_eq!(
+            GoalKind::ShareBelief {
+                listener: entity_id(6, 0),
+                subject: entity_id(7, 0),
+            }
+            .relevant_observed_commodities(&recipes),
             Some(BTreeSet::new())
         );
     }

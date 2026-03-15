@@ -24,6 +24,7 @@ pub enum PlannerOpKind {
     Heal,
     Loot,
     Bury,
+    Tell,
     Attack,
     Defend,
 }
@@ -99,6 +100,7 @@ const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
 const GOALS_HEAL: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::Heal];
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
 const GOALS_BURY: &[GoalKindTag] = &[GoalKindTag::BuryCorpse];
+const GOALS_TELL: &[GoalKindTag] = &[GoalKindTag::ShareBelief];
 const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 
@@ -137,6 +139,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Care, "heal", _) => Some(PlannerOpKind::Heal),
         (ActionDomain::Corpse, "loot", _) => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury", _) => Some(PlannerOpKind::Bury),
+        (ActionDomain::Social, "tell", ActionPayload::None) => Some(PlannerOpKind::Tell),
         (ActionDomain::Combat, "attack", _) => Some(PlannerOpKind::Attack),
         (ActionDomain::Combat, "defend", _) => Some(PlannerOpKind::Defend),
         _ => None,
@@ -237,6 +240,13 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             true,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_BURY,
+        ),
+        PlannerOpKind::Tell => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_TELL,
         ),
         PlannerOpKind::Attack => base_semantics(
             op_kind,
@@ -656,7 +666,7 @@ mod tests {
         PlannerOpSemantics, PlannerTransitionKind, GOALS_MOVE_CARGO,
     };
     use crate::{
-        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GroundedGoal,
+        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GoalKindTag, GroundedGoal,
         HypotheticalEntityId, PlanningEntityRef, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -1217,11 +1227,12 @@ mod tests {
             PlannerOpKind::Heal,
             PlannerOpKind::Loot,
             PlannerOpKind::Bury,
+            PlannerOpKind::Tell,
             PlannerOpKind::Attack,
             PlannerOpKind::Defend,
         ];
 
-        assert_eq!(all.len(), 15);
+        assert_eq!(all.len(), 16);
     }
 
     #[test]
@@ -1236,89 +1247,43 @@ mod tests {
                     .map(|semantics| (def.name.as_str(), semantics))
             })
             .collect::<std::collections::BTreeMap<_, _>>();
+        let expected_ops = [
+            ("tell", PlannerOpKind::Tell),
+            ("eat", PlannerOpKind::Consume),
+            ("drink", PlannerOpKind::Consume),
+            ("sleep", PlannerOpKind::Sleep),
+            ("toilet", PlannerOpKind::Relieve),
+            ("wash", PlannerOpKind::Wash),
+            ("travel", PlannerOpKind::Travel),
+            ("pick_up", PlannerOpKind::MoveCargo),
+            ("put_down", PlannerOpKind::MoveCargo),
+            ("trade", PlannerOpKind::Trade),
+            ("queue_for_facility_use", PlannerOpKind::QueueForFacilityUse),
+            ("attack", PlannerOpKind::Attack),
+            ("defend", PlannerOpKind::Defend),
+            ("loot", PlannerOpKind::Loot),
+            ("bury", PlannerOpKind::Bury),
+            ("heal", PlannerOpKind::Heal),
+        ];
+        let expected_transitions = [
+            ("tell", PlannerTransitionKind::GoalModelFallback),
+            ("eat", PlannerTransitionKind::ConsumeMatchingTargetCommodity),
+            ("drink", PlannerTransitionKind::ConsumeMatchingTargetCommodity),
+            ("pick_up", PlannerTransitionKind::PickUpGroundLot),
+            ("put_down", PlannerTransitionKind::PutDownGroundLot),
+        ];
 
-        assert_eq!(table.len() + 1, defs.len());
+        assert_eq!(table.len(), defs.len());
         assert!(defs.iter().any(|def| def.name == "tell"));
-        assert!(!semantics_by_name.contains_key("tell"));
-        assert_eq!(
-            semantics_by_name.get("eat").unwrap().op_kind,
-            PlannerOpKind::Consume
-        );
-        assert_eq!(
-            semantics_by_name.get("drink").unwrap().op_kind,
-            PlannerOpKind::Consume
-        );
-        assert_eq!(
-            semantics_by_name.get("eat").unwrap().transition_kind,
-            PlannerTransitionKind::ConsumeMatchingTargetCommodity
-        );
-        assert_eq!(
-            semantics_by_name.get("drink").unwrap().transition_kind,
-            PlannerTransitionKind::ConsumeMatchingTargetCommodity
-        );
-        assert_eq!(
-            semantics_by_name.get("sleep").unwrap().op_kind,
-            PlannerOpKind::Sleep
-        );
-        assert_eq!(
-            semantics_by_name.get("toilet").unwrap().op_kind,
-            PlannerOpKind::Relieve
-        );
-        assert_eq!(
-            semantics_by_name.get("wash").unwrap().op_kind,
-            PlannerOpKind::Wash
-        );
-        assert_eq!(
-            semantics_by_name.get("travel").unwrap().op_kind,
-            PlannerOpKind::Travel
-        );
-        assert_eq!(
-            semantics_by_name.get("pick_up").unwrap().op_kind,
-            PlannerOpKind::MoveCargo
-        );
-        assert_eq!(
-            semantics_by_name.get("pick_up").unwrap().transition_kind,
-            PlannerTransitionKind::PickUpGroundLot
-        );
-        assert_eq!(
-            semantics_by_name.get("put_down").unwrap().op_kind,
-            PlannerOpKind::MoveCargo
-        );
-        assert_eq!(
-            semantics_by_name.get("put_down").unwrap().transition_kind,
-            PlannerTransitionKind::PutDownGroundLot
-        );
-        assert_eq!(
-            semantics_by_name.get("trade").unwrap().op_kind,
-            PlannerOpKind::Trade
-        );
-        assert_eq!(
-            semantics_by_name
-                .get("queue_for_facility_use")
-                .unwrap()
-                .op_kind,
-            PlannerOpKind::QueueForFacilityUse
-        );
-        assert_eq!(
-            semantics_by_name.get("attack").unwrap().op_kind,
-            PlannerOpKind::Attack
-        );
-        assert_eq!(
-            semantics_by_name.get("defend").unwrap().op_kind,
-            PlannerOpKind::Defend
-        );
-        assert_eq!(
-            semantics_by_name.get("loot").unwrap().op_kind,
-            PlannerOpKind::Loot
-        );
-        assert_eq!(
-            semantics_by_name.get("bury").unwrap().op_kind,
-            PlannerOpKind::Bury
-        );
-        assert_eq!(
-            semantics_by_name.get("heal").unwrap().op_kind,
-            PlannerOpKind::Heal
-        );
+        for (name, op_kind) in expected_ops {
+            assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);
+        }
+        for (name, transition_kind) in expected_transitions {
+            assert_eq!(
+                semantics_by_name.get(name).unwrap().transition_kind,
+                transition_kind
+            );
+        }
         assert!(defs.iter().any(|def| {
             def.name.starts_with("harvest:")
                 && table.get(&def.id).unwrap().op_kind == PlannerOpKind::Harvest
@@ -1335,10 +1300,7 @@ mod tests {
         let table = build_semantics_table(&defs);
 
         for def in defs.iter() {
-            let Some(semantics) = table.get(&def.id) else {
-                assert_eq!(def.name, "tell");
-                continue;
-            };
+            let semantics = table.get(&def.id).unwrap();
             let should_be_barrier = def.name == "trade"
                 || def.name == "bury"
                 || def.name == "loot"
@@ -1352,8 +1314,16 @@ mod tests {
         }
         assert!(defs
             .iter()
-            .filter(|def| matches!(def.name.as_str(), "attack" | "defend" | "bury"))
+            .filter(|def| matches!(def.name.as_str(), "attack" | "defend" | "bury" | "tell"))
             .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
+        assert_eq!(
+            table
+                .values()
+                .find(|semantics| semantics.op_kind == PlannerOpKind::Tell)
+                .unwrap()
+                .relevant_goal_kinds,
+            &[GoalKindTag::ShareBelief]
+        );
     }
 
     #[test]

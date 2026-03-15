@@ -93,7 +93,7 @@ impl<'a> RankingContext<'a> {
 fn is_suppressed(candidate: &GroundedGoal, context: &RankingContext<'_>) -> bool {
     matches!(
         candidate.key.kind,
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. }
+        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } | GoalKind::ShareBelief { .. }
     ) && (context.danger_high_or_above() || context.self_care_high_or_above())
 }
 
@@ -157,7 +157,9 @@ fn priority_class(
                 pain_class
             }
         }
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => GoalPriorityClass::Low,
+        GoalKind::LootCorpse { .. }
+        | GoalKind::BuryCorpse { .. }
+        | GoalKind::ShareBelief { .. } => GoalPriorityClass::Low,
     }
 }
 
@@ -275,7 +277,9 @@ fn motive_score(
                 market_signal_for_place(context.view, context.agent, commodity, destination);
             score_product(context.utility.enterprise_weight, signal)
         }
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::LootCorpse { .. }
+        | GoalKind::BuryCorpse { .. }
+        | GoalKind::ShareBelief { .. } => 1,
     }
 }
 
@@ -465,6 +469,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::MoveCargo { .. } => 11,
         GoalKind::LootCorpse { .. } => 12,
         GoalKind::BuryCorpse { .. } => 13,
+        GoalKind::ShareBelief { .. } => 14,
     }
 }
 

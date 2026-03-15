@@ -50,6 +50,10 @@ pub enum GoalKind {
         corpse: EntityId,
         burial_site: EntityId,
     },
+    ShareBelief {
+        listener: EntityId,
+        subject: EntityId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -84,6 +88,9 @@ impl From<GoalKind> for GoalKey {
                 corpse,
                 burial_site,
             } => (None, Some(corpse), Some(burial_site)),
+            GoalKind::ShareBelief { listener, subject } => {
+                (None, Some(listener), Some(subject))
+            }
             GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
@@ -205,5 +212,42 @@ mod tests {
         let roundtrip: GoalKey = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, key);
+    }
+
+    #[test]
+    fn goal_key_extracts_listener_and_subject_for_share_belief() {
+        let listener = entity_id(11, 0);
+        let subject = entity_id(12, 0);
+        let key = GoalKey::from(GoalKind::ShareBelief { listener, subject });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(listener));
+        assert_eq!(key.place, Some(subject));
+    }
+
+    #[test]
+    fn share_belief_goal_identity_distinguishes_listener_and_subject() {
+        let listener_a = entity_id(13, 0);
+        let listener_b = entity_id(13, 1);
+        let subject_a = entity_id(14, 0);
+        let subject_b = entity_id(14, 1);
+
+        let first = GoalKey::from(GoalKind::ShareBelief {
+            listener: listener_a,
+            subject: subject_a,
+        });
+        let second = GoalKey::from(GoalKind::ShareBelief {
+            listener: listener_b,
+            subject: subject_a,
+        });
+        let third = GoalKey::from(GoalKind::ShareBelief {
+            listener: listener_a,
+            subject: subject_b,
+        });
+
+        assert_ne!(first, second);
+        assert_ne!(first, third);
+        assert_eq!(first.entity, Some(listener_a));
+        assert_eq!(first.place, Some(subject_a));
     }
 }

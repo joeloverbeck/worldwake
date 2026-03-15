@@ -110,7 +110,8 @@ fn derive_blocking_fact(
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Loot
-        | PlannerOpKind::Bury => {}
+        | PlannerOpKind::Bury
+        | PlannerOpKind::Tell => {}
     }
 
     if danger_too_high(view, agent) {
@@ -245,6 +246,7 @@ fn classify_input_failure(
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
+        | PlannerOpKind::Tell
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend => None,
     }?;
@@ -275,6 +277,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
         | PlannerOpKind::Heal
+        | PlannerOpKind::Tell
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend => view.entity_kind(target).is_none() || view.is_dead(target),
         PlannerOpKind::Travel => false,
@@ -487,6 +490,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Craft
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Heal
+        | PlannerOpKind::Tell
         | PlannerOpKind::Defend => step.targets.first().copied().and_then(authoritative_target),
     }
 }
@@ -519,6 +523,7 @@ fn related_place(
         | PlannerOpKind::Loot
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend => goal_key.place.or_else(|| view.effective_place(agent)),
+        PlannerOpKind::Tell => view.effective_place(agent),
     }
 }
 

@@ -905,6 +905,7 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::MoveCargo
         | crate::PlannerOpKind::Loot
         | crate::PlannerOpKind::Bury
+        | crate::PlannerOpKind::Tell
         | crate::PlannerOpKind::Attack
         | crate::PlannerOpKind::Defend => {}
     }
