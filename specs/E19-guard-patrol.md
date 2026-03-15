@@ -11,6 +11,7 @@ Phase 4: Group Adaptation, CLI & Verification
 
 ## Dependencies
 - E16 (public order metric, offices, factions)
+- E16b (contested-office control state for coup response and patrol escalation)
 
 ## Deliverables
 
@@ -48,6 +49,7 @@ Phase 4: Group Adaptation, CLI & Verification
 - Guards loyal to office holder (via LoyalTo relation)
 - When ruler changes: guards may change patrol priorities based on new orders
 - Guard captain office: if vacant, patrols may become disorganized
+- If an office is contested under E16b force-legitimacy rules, guards may escalate around the disputed jurisdiction before a new holder is formally installed
 
 ## Tests
 - [ ] Patrols change when ruler dies (intensity increases during vacancy)

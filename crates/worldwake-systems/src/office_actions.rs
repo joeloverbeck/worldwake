@@ -1,9 +1,10 @@
+use crate::offices::candidate_is_eligible;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CombatProfile, CommodityKind, EligibilityRule, EntityId,
-    EntityKind, EventTag, OfficeData, Permille, Quantity, VisibilitySpec, World, WorldTxn,
+    ActionDefId, BodyCostPerTick, CombatProfile, CommodityKind, EntityId, EntityKind, EventTag,
+    Permille, Quantity, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -602,12 +603,6 @@ fn validate_declare_support_context_in_world(
         )));
     }
     Ok(())
-}
-
-fn candidate_is_eligible(world: &World, office: &OfficeData, candidate: EntityId) -> bool {
-    office.eligibility_rules.iter().all(|rule| match rule {
-        EligibilityRule::FactionMember(faction) => world.factions_of(candidate).contains(faction),
-    })
 }
 
 fn required_combat_profile(

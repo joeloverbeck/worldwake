@@ -36,11 +36,14 @@ All completed specs are archived under `archive/specs/`.
 Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b: COMPLETED
 
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
+E16 ──→ E16b (explicit force legitimacy needs offices, factions, and succession substrate)
 E15 ──→ E17 (crime needs discovery + ownership claims + planner binding)
 E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
+E16b ──→ E19 (guards need contested-office control state)
 S01, S03 ──→ E17 (crime needs discovery + ownership claims + planner binding)
-S02, E16 ──→ E18, E19, E20
+S02, E16 ──→ E18, E20
+S02, E16, E16b ──→ E19
 S04 ──→ S05 (stock storage needs selling + ownership)
 S04 ──→ S06 (opportunity valuation needs market presence)
 E14 provides the prerequisite belief boundary for E15, E16, S01, S02, S03, S04, and S07.
@@ -67,13 +70,16 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S03**: Planner Target Identity & Affordance Binding
 - **S07**: Care Intent & Treatment Targeting
 
-**Step 11** (needs E15, S01, S03):
+**Step 11**:
+- **E16b**: Force Legitimacy & Jurisdiction Control (needs E16)
 - **E17**: Crime, Theft & Justice
+  - needs E15, S01, S03
 
 #### Phase 3 Gate
 - [ ] `OmniscientBeliefView` fully replaced — no code path uses it
 - [ ] Information propagates through explicit channels (witnesses, rumors, records)
 - [ ] Offices transfer through succession
+- [ ] Force succession uses explicit contest/control state rather than presence-only installation
 - [ ] All FND-02 tickets verified closed
 - [ ] T10: Belief isolation — agent does not react to unseen theft, death, or camp migration
 - [ ] T11: Office uniqueness
@@ -83,10 +89,13 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 
 ### Phase 4: Adaptation & Integration
 
-**Step 12** (parallel, needs S02 + E16):
+**Step 12** (parallel):
 - **E18**: Bandit Camp Dynamics
+  - needs S02, E16
 - **E19**: Guard & Patrol Adaptation
+  - needs S02, E16, E16b
 - **E20**: Companion Behaviors
+  - needs S02
 
 **Step 13** (needs E18–E20):
 - **E22**: Scenario Integration & Soak Tests
@@ -121,13 +130,14 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
 | `E16-offices-succession-factions.md` | 3 | 10 | E14 |
+| `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 11 | E16, E14, E15 |
 | `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |
 | `S02-goal-decision-policy-unification.md` | 3 | 10 | E14 |
 | `S03-planner-target-identity-and-affordance-binding.md` | 3 | 10 | E14 |
 | `S07-care-intent-and-treatment-targeting.md` | 3 | 10 | E14 |
 | `E17-crime-theft-justice.md` | 3 | 11 | E15, S01, S03 |
 | `E18-bandit-dynamics.md` | 4 | 12 | E16, S02 |
-| `E19-guard-patrol.md` | 4 | 12 | E16, S02 |
+| `E19-guard-patrol.md` | 4 | 12 | E16, E16b, S02 |
 | `E20-companion-behaviors.md` | 4 | 12 | S02 |
 | `E22-integration-soak-tests.md` | 4 | 13 | E18, E19, E20 |
 | `S04-merchant-selling-market-presence.md` | 4+ | 14 | E14 |
@@ -153,6 +163,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b complete) |
+| 3: Information & Politics | E14–E17, E15b, E16b, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

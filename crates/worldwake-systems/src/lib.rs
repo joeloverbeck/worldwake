@@ -11,6 +11,7 @@ mod inventory;
 pub mod needs;
 pub mod needs_actions;
 pub mod office_actions;
+pub mod offices;
 pub mod perception;
 pub mod production;
 pub mod production_actions;
@@ -30,6 +31,7 @@ pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
 pub use office_actions::register_office_actions;
+pub use offices::succession_system;
 pub use perception::perception_system;
 pub use production::resource_regeneration_system;
 pub use production_actions::{register_craft_actions, register_harvest_actions};
@@ -39,7 +41,7 @@ pub use trade_actions::register_trade_action;
 pub use transport_actions::register_transport_actions;
 pub use travel_actions::register_travel_actions;
 
-use worldwake_sim::{SystemDispatchTable, SystemError, SystemExecutionContext};
+use worldwake_sim::SystemDispatchTable;
 
 pub fn dispatch_table() -> SystemDispatchTable {
     SystemDispatchTable::from_handlers([
@@ -49,11 +51,6 @@ pub fn dispatch_table() -> SystemDispatchTable {
         combat_system,
         facility_queue_system,
         perception_system,
-        noop_system,
+        succession_system,
     ])
-}
-
-#[allow(clippy::unnecessary_wraps)]
-fn noop_system(_ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
-    Ok(())
 }

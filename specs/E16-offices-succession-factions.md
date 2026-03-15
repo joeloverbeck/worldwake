@@ -224,10 +224,10 @@ For each Office entity with OfficeData:
              emit InstallationEvent
           -> If no declarations: extend period
       Force:
-        -> Check if any eligible agent is alone at jurisdiction
-           (no other eligible claimants present)
-           AND has been present for >= succession_period_ticks / 2
-        -> If so: install them, emit InstallationEvent
+        -> Minimum closed-world implementation: if exactly one eligible claimant
+           is present at jurisdiction after the succession period, install them
+        -> Richer control / contest / hold-by-force legitimacy is deferred to
+           E16b-force-legitimacy-and-jurisdiction-control.md
         -> Combatants at jurisdiction resolve naturally via existing combat system
 ```
 
@@ -437,7 +437,9 @@ All paths require co-location or physical carrier. No information teleports. (Pr
 
 **For E19 spec**: Extend `public_order()` with guard factor — guard presence at place increases order.
 
-**Implementation order**: E16 remains at Step 10 in `IMPLEMENTATION-ORDER.md` (no new dependencies discovered). Public order's E17/E19 factors are extension points, not dependencies.
+**For E16b spec**: Replace the minimal E16 force branch with explicit claim, control, contest, and uncontested-hold state. Do not preserve both paths long-term.
+
+**Implementation order**: E16 remains at Step 10 in `IMPLEMENTATION-ORDER.md`. E16b now follows as the explicit force-legitimacy extension for contested control; public order's E17/E19 factors remain extension points, not dependencies.
 
 ## Critical Files to Modify
 
