@@ -9,6 +9,9 @@ pub enum ActionPayload {
     #[default]
     None,
     Tell(TellActionPayload),
+    Bribe(BribeActionPayload),
+    Threaten(ThreatenActionPayload),
+    DeclareSupport(DeclareSupportActionPayload),
     Transport(TransportActionPayload),
     Harvest(HarvestActionPayload),
     Craft(CraftActionPayload),
@@ -20,11 +23,68 @@ pub enum ActionPayload {
 
 impl ActionPayload {
     #[must_use]
+    pub const fn as_bribe(&self) -> Option<&BribeActionPayload> {
+        match self {
+            Self::Bribe(payload) => Some(payload),
+            Self::None
+            | Self::Tell(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_threaten(&self) -> Option<&ThreatenActionPayload> {
+        match self {
+            Self::Threaten(payload) => Some(payload),
+            Self::None
+            | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::DeclareSupport(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_declare_support(&self) -> Option<&DeclareSupportActionPayload> {
+        match self {
+            Self::DeclareSupport(payload) => Some(payload),
+            Self::None
+            | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_harvest(&self) -> Option<&HarvestActionPayload> {
         match self {
             Self::Harvest(payload) => Some(payload),
             Self::None
             | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Transport(_)
             | Self::Craft(_)
             | Self::Trade(_)
@@ -40,6 +100,9 @@ impl ActionPayload {
             Self::Transport(payload) => Some(payload),
             Self::None
             | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
             | Self::Trade(_)
@@ -55,6 +118,9 @@ impl ActionPayload {
             Self::Craft(payload) => Some(payload),
             Self::None
             | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Trade(_)
@@ -70,6 +136,9 @@ impl ActionPayload {
             Self::Trade(payload) => Some(payload),
             Self::None
             | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -85,6 +154,9 @@ impl ActionPayload {
             Self::Combat(payload) => Some(payload),
             Self::None
             | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -100,6 +172,9 @@ impl ActionPayload {
             Self::Loot(payload) => Some(payload),
             Self::None
             | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -115,6 +190,9 @@ impl ActionPayload {
             Self::QueueForFacilityUse(payload) => Some(payload),
             Self::None
             | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -129,6 +207,9 @@ impl ActionPayload {
         match self {
             Self::Tell(payload) => Some(payload),
             Self::None
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -144,6 +225,24 @@ impl ActionPayload {
 pub struct TellActionPayload {
     pub listener: EntityId,
     pub subject_entity: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct BribeActionPayload {
+    pub target: EntityId,
+    pub offered_commodity: CommodityKind,
+    pub offered_quantity: Quantity,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ThreatenActionPayload {
+    pub target: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct DeclareSupportActionPayload {
+    pub office: EntityId,
+    pub candidate: EntityId,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -197,9 +296,10 @@ pub struct QueueForFacilityUsePayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-        LootActionPayload, QueueForFacilityUsePayload, TellActionPayload, TradeActionPayload,
-        TransportActionPayload,
+        ActionPayload, BribeActionPayload, CombatActionPayload, CraftActionPayload,
+        DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
+        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload,
+        TradeActionPayload, TransportActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
@@ -228,6 +328,39 @@ mod tests {
             subject_entity: EntityId {
                 slot: 8,
                 generation: 2,
+            },
+        }
+    }
+
+    fn sample_bribe_payload() -> BribeActionPayload {
+        BribeActionPayload {
+            target: EntityId {
+                slot: 9,
+                generation: 1,
+            },
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(7),
+        }
+    }
+
+    fn sample_threaten_payload() -> ThreatenActionPayload {
+        ThreatenActionPayload {
+            target: EntityId {
+                slot: 12,
+                generation: 3,
+            },
+        }
+    }
+
+    fn sample_declare_support_payload() -> DeclareSupportActionPayload {
+        DeclareSupportActionPayload {
+            office: EntityId {
+                slot: 14,
+                generation: 0,
+            },
+            candidate: EntityId {
+                slot: 16,
+                generation: 1,
             },
         }
     }
@@ -284,6 +417,9 @@ mod tests {
     fn action_payload_satisfies_required_traits() {
         assert_traits::<ActionPayload>();
         assert_traits::<TellActionPayload>();
+        assert_traits::<BribeActionPayload>();
+        assert_traits::<ThreatenActionPayload>();
+        assert_traits::<DeclareSupportActionPayload>();
         assert_traits::<TransportActionPayload>();
         assert_traits::<HarvestActionPayload>();
         assert_traits::<CraftActionPayload>();
@@ -299,20 +435,17 @@ mod tests {
     }
 
     #[test]
-    fn typed_accessors_return_only_matching_payload_variant() {
+    fn typed_accessors_cover_social_payload_variants() {
         let harvest = ActionPayload::Harvest(sample_payload());
         let tell = ActionPayload::Tell(sample_tell_payload());
-        let transport = ActionPayload::Transport(TransportActionPayload {
-            quantity: Quantity(3),
-        });
-        let craft = ActionPayload::Craft(sample_craft_payload());
-        let trade = ActionPayload::Trade(sample_trade_payload());
-        let combat = ActionPayload::Combat(sample_combat_payload());
-        let loot = ActionPayload::Loot(sample_loot_payload());
-        let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
-        let none = ActionPayload::None;
+        let bribe = ActionPayload::Bribe(sample_bribe_payload());
+        let threaten = ActionPayload::Threaten(sample_threaten_payload());
+        let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
 
         assert_eq!(tell.as_tell(), Some(&sample_tell_payload()));
+        assert_eq!(tell.as_bribe(), None);
+        assert_eq!(tell.as_threaten(), None);
+        assert_eq!(tell.as_declare_support(), None);
         assert_eq!(tell.as_harvest(), None);
         assert_eq!(tell.as_transport(), None);
         assert_eq!(tell.as_craft(), None);
@@ -321,60 +454,121 @@ mod tests {
         assert_eq!(tell.as_loot(), None);
         assert_eq!(tell.as_queue_for_facility_use(), None);
 
+        assert_eq!(bribe.as_tell(), None);
+        assert_eq!(bribe.as_bribe(), Some(&sample_bribe_payload()));
+        assert_eq!(bribe.as_threaten(), None);
+        assert_eq!(bribe.as_declare_support(), None);
+        assert_eq!(bribe.as_harvest(), None);
+        assert_eq!(bribe.as_transport(), None);
+        assert_eq!(bribe.as_craft(), None);
+        assert_eq!(bribe.as_trade(), None);
+
+        assert_eq!(threaten.as_tell(), None);
+        assert_eq!(threaten.as_bribe(), None);
+        assert_eq!(threaten.as_threaten(), Some(&sample_threaten_payload()));
+        assert_eq!(threaten.as_declare_support(), None);
+        assert_eq!(threaten.as_harvest(), None);
+        assert_eq!(threaten.as_transport(), None);
+        assert_eq!(threaten.as_craft(), None);
+        assert_eq!(threaten.as_trade(), None);
+
+        assert_eq!(declare_support.as_tell(), None);
+        assert_eq!(declare_support.as_bribe(), None);
+        assert_eq!(declare_support.as_threaten(), None);
+        assert_eq!(
+            declare_support.as_declare_support(),
+            Some(&sample_declare_support_payload())
+        );
+        assert_eq!(declare_support.as_harvest(), None);
+        assert_eq!(declare_support.as_transport(), None);
+        assert_eq!(declare_support.as_craft(), None);
+        assert_eq!(declare_support.as_trade(), None);
+
+        assert_eq!(harvest.as_tell(), None);
+        assert_eq!(harvest.as_bribe(), None);
+        assert_eq!(harvest.as_threaten(), None);
+        assert_eq!(harvest.as_declare_support(), None);
+    }
+
+    #[test]
+    fn typed_accessors_cover_trade_and_production_payload_variants() {
+        let transport = ActionPayload::Transport(TransportActionPayload {
+            quantity: Quantity(3),
+        });
+        let harvest = ActionPayload::Harvest(sample_payload());
+        let craft = ActionPayload::Craft(sample_craft_payload());
+        let trade = ActionPayload::Trade(sample_trade_payload());
+
         assert_eq!(
             transport.as_transport(),
             Some(&TransportActionPayload {
                 quantity: Quantity(3)
             })
         );
+        assert_eq!(transport.as_bribe(), None);
+        assert_eq!(transport.as_threaten(), None);
+        assert_eq!(transport.as_declare_support(), None);
         assert_eq!(transport.as_harvest(), None);
         assert_eq!(transport.as_craft(), None);
         assert_eq!(transport.as_trade(), None);
-        assert_eq!(transport.as_combat(), None);
-        assert_eq!(transport.as_loot(), None);
-        assert_eq!(transport.as_queue_for_facility_use(), None);
 
         assert_eq!(harvest.as_harvest(), Some(&sample_payload()));
+        assert_eq!(harvest.as_bribe(), None);
+        assert_eq!(harvest.as_threaten(), None);
+        assert_eq!(harvest.as_declare_support(), None);
         assert_eq!(harvest.as_transport(), None);
         assert_eq!(harvest.as_craft(), None);
         assert_eq!(harvest.as_trade(), None);
-        assert_eq!(harvest.as_combat(), None);
-        assert_eq!(harvest.as_loot(), None);
-        assert_eq!(harvest.as_queue_for_facility_use(), None);
 
         assert_eq!(craft.as_harvest(), None);
+        assert_eq!(craft.as_bribe(), None);
+        assert_eq!(craft.as_threaten(), None);
+        assert_eq!(craft.as_declare_support(), None);
         assert_eq!(craft.as_transport(), None);
         assert_eq!(craft.as_craft(), Some(&sample_craft_payload()));
         assert_eq!(craft.as_trade(), None);
-        assert_eq!(craft.as_combat(), None);
-        assert_eq!(craft.as_loot(), None);
-        assert_eq!(craft.as_queue_for_facility_use(), None);
 
         assert_eq!(trade.as_harvest(), None);
+        assert_eq!(trade.as_bribe(), None);
+        assert_eq!(trade.as_threaten(), None);
+        assert_eq!(trade.as_declare_support(), None);
         assert_eq!(trade.as_transport(), None);
         assert_eq!(trade.as_craft(), None);
         assert_eq!(trade.as_trade(), Some(&sample_trade_payload()));
-        assert_eq!(trade.as_combat(), None);
-        assert_eq!(trade.as_loot(), None);
-        assert_eq!(trade.as_queue_for_facility_use(), None);
+    }
 
+    #[test]
+    fn typed_accessors_cover_combat_and_queue_payload_variants() {
+        let combat = ActionPayload::Combat(sample_combat_payload());
+        let loot = ActionPayload::Loot(sample_loot_payload());
+        let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
+
+        assert_eq!(combat.as_tell(), None);
         assert_eq!(combat.as_harvest(), None);
+        assert_eq!(combat.as_bribe(), None);
+        assert_eq!(combat.as_threaten(), None);
+        assert_eq!(combat.as_declare_support(), None);
         assert_eq!(combat.as_transport(), None);
         assert_eq!(combat.as_craft(), None);
         assert_eq!(combat.as_trade(), None);
         assert_eq!(combat.as_combat(), Some(&sample_combat_payload()));
-        assert_eq!(combat.as_loot(), None);
-        assert_eq!(combat.as_queue_for_facility_use(), None);
 
+        assert_eq!(loot.as_tell(), None);
         assert_eq!(loot.as_harvest(), None);
+        assert_eq!(loot.as_bribe(), None);
+        assert_eq!(loot.as_threaten(), None);
+        assert_eq!(loot.as_declare_support(), None);
         assert_eq!(loot.as_transport(), None);
         assert_eq!(loot.as_craft(), None);
         assert_eq!(loot.as_trade(), None);
         assert_eq!(loot.as_combat(), None);
         assert_eq!(loot.as_loot(), Some(&sample_loot_payload()));
-        assert_eq!(loot.as_queue_for_facility_use(), None);
 
+        assert_eq!(queue.as_tell(), None);
         assert_eq!(queue.as_harvest(), None);
+        assert_eq!(queue.as_bribe(), None);
+        assert_eq!(queue.as_threaten(), None);
+        assert_eq!(queue.as_declare_support(), None);
         assert_eq!(queue.as_transport(), None);
         assert_eq!(queue.as_craft(), None);
         assert_eq!(queue.as_trade(), None);
@@ -384,9 +578,17 @@ mod tests {
             queue.as_queue_for_facility_use(),
             Some(&sample_queue_payload())
         );
+    }
+
+    #[test]
+    fn typed_accessors_return_none_for_action_payload_none() {
+        let none = ActionPayload::None;
 
         assert_eq!(none.as_harvest(), None);
         assert_eq!(none.as_tell(), None);
+        assert_eq!(none.as_bribe(), None);
+        assert_eq!(none.as_threaten(), None);
+        assert_eq!(none.as_declare_support(), None);
         assert_eq!(none.as_transport(), None);
         assert_eq!(none.as_craft(), None);
         assert_eq!(none.as_trade(), None);
@@ -408,6 +610,36 @@ mod tests {
     #[test]
     fn tell_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::Tell(sample_tell_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn bribe_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::Bribe(sample_bribe_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn threaten_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::Threaten(sample_threaten_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn declare_support_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::DeclareSupport(sample_declare_support_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

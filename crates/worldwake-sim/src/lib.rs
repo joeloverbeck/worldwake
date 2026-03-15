@@ -61,8 +61,9 @@ pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
-    ActionPayload, CombatActionPayload, CraftActionPayload, HarvestActionPayload,
-    LootActionPayload, QueueForFacilityUsePayload, TellActionPayload, TradeActionPayload,
+    ActionPayload, BribeActionPayload, CombatActionPayload, CraftActionPayload,
+    DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
+    QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
     TransportActionPayload,
 };
 pub use action_semantics::{
