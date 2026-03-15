@@ -5,10 +5,11 @@ use worldwake_core::{
     PerceptionProfile, PerceptionSource, TellProfile, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
-    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, CommitOutcome, Constraint, DeterministicRng, DurationExpr,
-    Interruptibility, PayloadEntityRole, Precondition, TargetSpec, TellActionPayload,
+    belief_chain_len, relayable_social_subjects, AbortReason, ActionAbortRequestReason, ActionDef,
+    ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
+    ActionInstance, ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint,
+    DeterministicRng, DurationExpr, Interruptibility, PayloadEntityRole, Precondition, TargetSpec,
+    TellActionPayload,
 };
 
 pub fn register_tell_action(
@@ -72,15 +73,6 @@ fn tell_payload<'a>(
     payload.as_tell().ok_or_else(|| {
         ActionError::PreconditionFailed(format!("action def {} requires Tell payload", def.id))
     })
-}
-
-fn belief_chain_len(source: PerceptionSource) -> u8 {
-    match source {
-        PerceptionSource::DirectObservation | PerceptionSource::Inference => 0,
-        PerceptionSource::Report { chain_len, .. } | PerceptionSource::Rumor { chain_len } => {
-            chain_len
-        }
-    }
 }
 
 fn degrade_source(speaker: EntityId, source: PerceptionSource) -> PerceptionSource {
@@ -222,24 +214,15 @@ fn enumerate_tell_payloads(
     let Some(profile) = view.tell_profile(actor) else {
         return Vec::new();
     };
-    let mut subjects = view
-        .known_entity_beliefs(actor)
-        .into_iter()
-        .filter_map(|(subject, belief)| {
-            (belief_chain_len(belief.source) <= profile.max_relay_chain_len)
-                .then_some((belief.observed_tick, subject))
-        })
-        .collect::<Vec<_>>();
-    subjects.sort_unstable_by(|(left_tick, left_subject), (right_tick, right_subject)| {
-        right_tick
-            .cmp(left_tick)
-            .then_with(|| left_subject.cmp(right_subject))
-    });
-    subjects.truncate(usize::from(profile.max_tell_candidates));
+    let subjects = relayable_social_subjects(
+        view.known_entity_beliefs(actor),
+        profile.max_relay_chain_len,
+        profile.max_tell_candidates,
+    );
 
     subjects
         .into_iter()
-        .map(|(_, subject)| {
+        .map(|subject| {
             ActionPayload::Tell(TellActionPayload {
                 listener,
                 subject_entity: subject,

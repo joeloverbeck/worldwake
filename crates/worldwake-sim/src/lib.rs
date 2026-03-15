@@ -37,6 +37,7 @@ pub mod replay_state;
 pub mod save_load;
 pub mod scheduler;
 pub mod simulation_state;
+pub mod social_relay;
 pub mod start_gate;
 pub mod system_dispatch;
 pub mod system_manifest;
@@ -98,6 +99,7 @@ pub use save_load::{
 };
 pub use scheduler::{CommittedAction, Scheduler, SchedulerActionRuntime};
 pub use simulation_state::SimulationState;
+pub use social_relay::{belief_chain_len, relayable_social_subjects};
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};

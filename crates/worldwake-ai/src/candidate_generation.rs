@@ -8,7 +8,7 @@ use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
     EntityKind, GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
 };
-use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
+use worldwake_sim::{relayable_social_subjects, GoalBeliefView, RecipeDefinition, RecipeRegistry};
 
 #[derive(Default)]
 struct Evidence {
@@ -156,13 +156,17 @@ fn emit_social_candidates(
         return;
     };
 
-    let subjects = relayable_social_subjects(ctx.view, ctx.agent, profile.max_relay_chain_len);
+    let subjects = relayable_social_subjects(
+        ctx.view.known_entity_beliefs(ctx.agent),
+        profile.max_relay_chain_len,
+        profile.max_tell_candidates,
+    );
     if subjects.is_empty() {
         return;
     }
 
     for listener in social_listeners_at(ctx.view, ctx.agent, place) {
-        for subject in subjects.iter().copied().take(usize::from(profile.max_tell_candidates)) {
+        for subject in subjects.iter().copied() {
             let mut evidence = Evidence::with_entity(listener);
             evidence.entities.insert(subject);
             evidence.places.insert(place);
@@ -492,7 +496,11 @@ fn local_hostility_targets(
         .collect()
 }
 
-fn social_listeners_at(view: &dyn GoalBeliefView, agent: EntityId, place: EntityId) -> Vec<EntityId> {
+fn social_listeners_at(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+) -> Vec<EntityId> {
     let mut listeners = view
         .entities_at(place)
         .into_iter()
@@ -503,36 +511,6 @@ fn social_listeners_at(view: &dyn GoalBeliefView, agent: EntityId, place: Entity
     listeners.sort_unstable();
     listeners.dedup();
     listeners
-}
-
-fn relayable_social_subjects(
-    view: &dyn GoalBeliefView,
-    agent: EntityId,
-    max_relay_chain_len: u8,
-) -> Vec<EntityId> {
-    let mut subjects = view
-        .known_entity_beliefs(agent)
-        .into_iter()
-        .filter_map(|(subject, belief)| {
-            (belief_chain_len(belief.source) <= max_relay_chain_len)
-                .then_some((belief.observed_tick, subject))
-        })
-        .collect::<Vec<_>>();
-    subjects.sort_unstable_by(|(left_tick, left_subject), (right_tick, right_subject)| {
-        right_tick
-            .cmp(left_tick)
-            .then_with(|| left_subject.cmp(right_subject))
-    });
-    subjects.into_iter().map(|(_, subject)| subject).collect()
-}
-
-fn belief_chain_len(source: worldwake_core::PerceptionSource) -> u8 {
-    match source {
-        worldwake_core::PerceptionSource::DirectObservation
-        | worldwake_core::PerceptionSource::Inference => 0,
-        worldwake_core::PerceptionSource::Report { chain_len, .. }
-        | worldwake_core::PerceptionSource::Rumor { chain_len } => chain_len,
-    }
 }
 
 fn emit_produce_goals(
@@ -1127,8 +1105,8 @@ mod tests {
     use worldwake_core::{
         BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind, GoalKey,
+        GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
         MetabolismProfile, PerceptionSource, Permille, Quantity, RecipeId, ResourceSource,
         TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
         Wound, WoundCause, WoundId,
@@ -2786,6 +2764,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn social_candidates_emit_for_live_colocated_listeners_and_relayable_subjects() {
         let speaker = entity(1);
         let listener_a = entity(2);
@@ -2797,7 +2776,8 @@ mod tests {
         let too_deep = entity(22);
         let place = entity(10);
         let mut view = TestBeliefView::default();
-        view.alive.extend([speaker, listener_a, listener_b, crate_lot]);
+        view.alive
+            .extend([speaker, listener_a, listener_b, crate_lot]);
         view.dead.insert(dead_listener);
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener_a, EntityKind::Agent);
@@ -2805,8 +2785,10 @@ mod tests {
         view.entity_kinds.insert(dead_listener, EntityKind::Agent);
         view.entity_kinds.insert(crate_lot, EntityKind::ItemLot);
         view.effective_places.insert(speaker, place);
-        view.entities_at
-            .insert(place, vec![speaker, listener_a, listener_b, dead_listener, crate_lot]);
+        view.entities_at.insert(
+            place,
+            vec![speaker, listener_a, listener_b, dead_listener, crate_lot],
+        );
         view.tell_profiles.insert(
             speaker,
             TellProfile {
@@ -2818,7 +2800,10 @@ mod tests {
         view.beliefs.insert(
             speaker,
             vec![
-                (subject_a, believed_state(8, PerceptionSource::DirectObservation)),
+                (
+                    subject_a,
+                    believed_state(8, PerceptionSource::DirectObservation),
+                ),
                 (
                     subject_b,
                     believed_state(
@@ -2902,7 +2887,10 @@ mod tests {
         view.entities_at.insert(place, vec![speaker, listener]);
         view.beliefs.insert(
             speaker,
-            vec![(subject, believed_state(8, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(8, PerceptionSource::DirectObservation),
+            )],
         );
 
         let none = generate_candidates(
