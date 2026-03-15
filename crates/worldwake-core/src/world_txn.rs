@@ -550,6 +550,26 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    /// Creates an item lot, places it at the given location, and optionally assigns an owner.
+    ///
+    /// This is an atomic convenience wrapper that prevents the failure mode where
+    /// ownership assignment is forgotten after lot creation.  The lot is left
+    /// unpossessed — custody is intentionally separate from ownership.
+    pub fn create_item_lot_with_owner(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        place: EntityId,
+        owner: Option<EntityId>,
+    ) -> Result<EntityId, WorldError> {
+        let lot = self.create_item_lot(commodity, quantity)?;
+        self.set_ground_location(lot, place)?;
+        if let Some(owner_id) = owner {
+            self.set_owner(lot, owner_id)?;
+        }
+        Ok(lot)
+    }
+
     pub fn set_possessor(&mut self, entity: EntityId, holder: EntityId) -> Result<(), WorldError> {
         let before = self.staged_world.possessor_of(entity);
         self.staged_world.set_possessor(entity, holder)?;
@@ -3917,5 +3937,119 @@ mod tests {
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
         assert!(txn.deltas().is_empty());
+    }
+
+    // --- create_item_lot_with_owner tests ---
+
+    #[test]
+    fn create_item_lot_with_owner_sets_location_and_owner() {
+        let mut world = World::new(test_topology()).unwrap();
+        let owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        world.set_ground_location(owner, entity(5)).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        let lot = txn
+            .create_item_lot_with_owner(CommodityKind::Apple, Quantity(3), entity(5), Some(owner))
+            .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+
+        // Verify location after commit
+        assert_eq!(world.owner_of(lot), Some(owner));
+        assert_eq!(world.possessor_of(lot), None);
+    }
+
+    #[test]
+    fn create_item_lot_with_owner_none_creates_unowned_lot() {
+        let mut world = World::new(test_topology()).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        let lot = txn
+            .create_item_lot_with_owner(CommodityKind::Grain, Quantity(5), entity(5), None)
+            .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+
+        // Verify no owner after commit
+        assert_eq!(world.owner_of(lot), None);
+        assert_eq!(world.possessor_of(lot), None);
+    }
+
+    #[test]
+    fn create_item_lot_with_owner_produces_ownership_relation_delta() {
+        let mut world = World::new(test_topology()).unwrap();
+        let owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        world.set_ground_location(owner, entity(5)).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        let lot = txn
+            .create_item_lot_with_owner(CommodityKind::Apple, Quantity(2), entity(5), Some(owner))
+            .unwrap();
+
+        let has_ownership_delta = txn.deltas().iter().any(|d| {
+            matches!(
+                d,
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::OwnedBy,
+                    relation: RelationValue::OwnedBy {
+                        entity: lot_id,
+                        owner: owner_id,
+                    },
+                }) if *lot_id == lot && *owner_id == owner
+            )
+        });
+        assert!(has_ownership_delta, "expected OwnedBy relation delta for lot");
+    }
+
+    #[test]
+    fn create_item_lot_with_owner_none_produces_no_ownership_delta() {
+        let mut world = World::new(test_topology()).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        let _lot = txn
+            .create_item_lot_with_owner(CommodityKind::Water, Quantity(1), entity(5), None)
+            .unwrap();
+
+        let has_ownership_delta = txn.deltas().iter().any(|d| {
+            matches!(d, StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OwnedBy,
+                ..
+            }))
+        });
+        assert!(!has_ownership_delta, "no OwnedBy delta expected for unowned lot");
+    }
+
+    #[test]
+    fn create_item_lot_with_owner_lot_is_unpossessed() {
+        let mut world = World::new(test_topology()).unwrap();
+        let owner = world
+            .create_agent("Bram", ControlSource::Ai, Tick(1))
+            .unwrap();
+        world.set_ground_location(owner, entity(5)).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        let lot = txn
+            .create_item_lot_with_owner(CommodityKind::Bread, Quantity(1), entity(5), Some(owner))
+            .unwrap();
+
+        // No PossessedBy delta should exist
+        let has_possession_delta = txn.deltas().iter().any(|d| {
+            matches!(d, StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::PossessedBy,
+                ..
+            }))
+        });
+        assert!(!has_possession_delta, "lot must not be auto-possessed");
+
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+
+        // Lot must be unpossessed after commit (custody separate from ownership)
+        assert_eq!(world.possessor_of(lot), None);
+        assert_eq!(world.owner_of(lot), Some(owner));
     }
 }

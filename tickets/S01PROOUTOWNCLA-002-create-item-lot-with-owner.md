@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-002: Add WorldTxn::create_item_lot_with_owner() helper
 
-**Status**: PENDING
+**Status**: DONE
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — WorldTxn API
