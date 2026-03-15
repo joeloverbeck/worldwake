@@ -31,7 +31,10 @@ pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
 pub use office_actions::register_office_actions;
-pub use offices::succession_system;
+pub use offices::{
+    count_present_hostile_faction_pairs_at, office_is_vacant, offices_with_jurisdiction,
+    public_order, succession_system,
+};
 pub use perception::perception_system;
 pub use production::resource_regeneration_system;
 pub use production_actions::{register_craft_actions, register_harvest_actions};

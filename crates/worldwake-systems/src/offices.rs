@@ -1,10 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_core::{
     CauseRef, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, OfficeData,
-    VisibilitySpec, WitnessData, World, WorldTxn,
+    Permille, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
+
+const PUBLIC_ORDER_BASELINE: Permille = Permille::new_unchecked(750);
+const VACANT_OFFICE_PENALTY: Permille = Permille::new_unchecked(200);
+const HOSTILE_FACTION_PAIR_PENALTY: Permille = Permille::new_unchecked(100);
 
 pub fn succession_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
     let SystemExecutionContext {
@@ -75,6 +79,37 @@ pub fn offices_with_jurisdiction(place: EntityId, world: &World) -> Vec<EntityId
 
 pub fn office_is_vacant(office: EntityId, world: &World) -> bool {
     world.entity_kind(office) == Some(EntityKind::Office) && living_holder(world, office).is_none()
+}
+
+pub fn public_order(place: EntityId, world: &World) -> Permille {
+    let mut order = PUBLIC_ORDER_BASELINE;
+
+    for office in offices_with_jurisdiction(place, world) {
+        if office_is_vacant(office, world) {
+            order = order.saturating_sub(VACANT_OFFICE_PENALTY);
+        }
+    }
+
+    for _ in 0..count_present_hostile_faction_pairs_at(place, world) {
+        order = order.saturating_sub(HOSTILE_FACTION_PAIR_PENALTY);
+    }
+
+    order
+}
+
+pub fn count_present_hostile_faction_pairs_at(place: EntityId, world: &World) -> usize {
+    let present_factions = present_factions_at(place, world).into_iter().collect::<Vec<_>>();
+    let mut count = 0;
+
+    for (index, faction_a) in present_factions.iter().enumerate() {
+        for faction_b in present_factions.iter().skip(index + 1) {
+            if factions_are_hostile(*faction_a, *faction_b, world) {
+                count += 1;
+            }
+        }
+    }
+
+    count
 }
 
 pub fn eligible_agents_at(office: EntityId, place: EntityId, world: &World) -> Vec<EntityId> {
@@ -231,17 +266,31 @@ fn living_holder(world: &World, office: EntityId) -> Option<EntityId> {
     (world.get_component_dead_at(holder).is_none()).then_some(holder)
 }
 
+fn present_factions_at(place: EntityId, world: &World) -> BTreeSet<EntityId> {
+    world.entities_effectively_at(place)
+        .into_iter()
+        .filter(|entity| world.entity_kind(*entity) == Some(EntityKind::Agent))
+        .flat_map(|entity| world.factions_of(entity))
+        .collect()
+}
+
+fn factions_are_hostile(faction_a: EntityId, faction_b: EntityId, world: &World) -> bool {
+    world.hostile_targets_of(faction_a).contains(&faction_b)
+        || world.hostile_targets_of(faction_b).contains(&faction_a)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        candidate_is_eligible, eligible_agents_at, office_is_vacant, offices_with_jurisdiction,
-        succession_system,
+        candidate_is_eligible, count_present_hostile_faction_pairs_at, eligible_agents_at,
+        office_is_vacant, offices_with_jurisdiction, public_order, succession_system,
     };
     use crate::dispatch_table;
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
-        OfficeData, Seed, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        OfficeData, Permille, Seed, Tick, UtilityProfile, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -280,13 +329,14 @@ mod tests {
         holder: EntityId,
         candidate_a: EntityId,
         candidate_b: EntityId,
+        faction: EntityId,
     }
 
     impl Fixture {
         fn new(law: worldwake_core::SuccessionLaw) -> Self {
             let mut world = World::new(build_prototype_world()).unwrap();
             let place = world.topology().place_ids().next().unwrap();
-            let (office, _faction, holder, candidate_a, candidate_b) = {
+            let (office, faction, holder, candidate_a, candidate_b) = {
                 let mut txn = new_txn(&mut world, 1);
                 let office = txn.create_office("Ruler").unwrap();
                 let faction = txn.create_faction("Ward").unwrap();
@@ -331,6 +381,7 @@ mod tests {
                 holder,
                 candidate_a,
                 candidate_b,
+                faction,
             }
         }
 
@@ -524,6 +575,157 @@ mod tests {
 
         assert_eq!(fx.world.office_holder(fx.office), None);
         assert!(event_log.events_by_tag(EventTag::Political).is_empty());
+    }
+
+    #[test]
+    fn public_order_baseline_is_stable_when_place_has_no_vacancy_or_hostility() {
+        let fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+
+        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(750));
+    }
+
+    #[test]
+    fn public_order_subtracts_vacant_office_penalties() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        let office_two = {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let office = txn.create_office("Captain").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Captain".to_string(),
+                    jurisdiction: fx.place,
+                    succession_law: worldwake_core::SuccessionLaw::Support,
+                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
+                        fx.faction,
+                    )],
+                    succession_period_ticks: 3,
+                    vacancy_since: Some(Tick(2)),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            office
+        };
+        let _ = office_two;
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 3);
+
+        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(350));
+    }
+
+    #[test]
+    fn hostile_faction_pairs_count_one_way_hostility_once() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        let faction_b = {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let faction_b = txn.create_faction("Rivals").unwrap();
+            let rival = txn.create_agent("Rival", ControlSource::Ai).unwrap();
+            txn.set_ground_location(rival, fx.place).unwrap();
+            txn.add_member(rival, faction_b).unwrap();
+            txn.add_hostility(fx.faction, faction_b).unwrap();
+            txn.set_component_utility_profile(rival, UtilityProfile::default())
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            faction_b
+        };
+
+        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 1);
+        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(650));
+
+        {
+            let mut txn = new_txn(&mut fx.world, 3);
+            txn.add_hostility(faction_b, fx.faction).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 1);
+        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(650));
+    }
+
+    #[test]
+    fn hostile_pair_count_ignores_duplicate_members_from_same_faction() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let faction_b = txn.create_faction("Rivals").unwrap();
+            let rival_a = txn.create_agent("Rival A", ControlSource::Ai).unwrap();
+            let rival_b = txn.create_agent("Rival B", ControlSource::Ai).unwrap();
+            for rival in [rival_a, rival_b] {
+                txn.set_ground_location(rival, fx.place).unwrap();
+                txn.add_member(rival, faction_b).unwrap();
+                txn.set_component_utility_profile(rival, UtilityProfile::default())
+                    .unwrap();
+            }
+            txn.add_hostility(fx.faction, faction_b).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 1);
+    }
+
+    #[test]
+    fn public_order_combines_vacancy_and_hostility_and_saturates_at_zero() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        let extra_places = fx
+            .world
+            .topology()
+            .place_ids()
+            .filter(|place| *place != fx.place)
+            .take(3)
+            .collect::<Vec<_>>();
+        let extra_places_len = extra_places.len();
+        assert_eq!(extra_places_len, 3);
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            for index in 0..4 {
+                let office = txn.create_office(&format!("Vacant {index}")).unwrap();
+                txn.set_component_office_data(
+                    office,
+                    OfficeData {
+                        title: format!("Vacant {index}"),
+                        jurisdiction: fx.place,
+                        succession_law: worldwake_core::SuccessionLaw::Support,
+                        eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
+                            fx.faction,
+                        )],
+                        succession_period_ticks: 3,
+                        vacancy_since: Some(Tick(2)),
+                    },
+                )
+                .unwrap();
+            }
+
+            let faction_b = txn.create_faction("F2").unwrap();
+            let faction_c = txn.create_faction("F3").unwrap();
+            let faction_d = txn.create_faction("F4").unwrap();
+            for (name, faction) in [("B", faction_b), ("C", faction_c), ("D", faction_d)] {
+                let agent = txn.create_agent(name, ControlSource::Ai).unwrap();
+                txn.set_ground_location(agent, fx.place).unwrap();
+                txn.add_member(agent, faction).unwrap();
+                txn.set_component_utility_profile(agent, UtilityProfile::default())
+                    .unwrap();
+            }
+            txn.add_hostility(fx.faction, faction_b).unwrap();
+            txn.add_hostility(fx.faction, faction_c).unwrap();
+            txn.add_hostility(fx.faction, faction_d).unwrap();
+            txn.add_hostility(faction_b, faction_c).unwrap();
+            txn.add_hostility(faction_b, faction_d).unwrap();
+            txn.add_hostility(faction_c, faction_d).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 3);
+
+        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 6);
+        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(0));
     }
 
     #[test]
