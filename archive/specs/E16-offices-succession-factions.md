@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # E16: Offices, Succession & Factions
 
 ## Epic Summary
@@ -24,7 +26,7 @@ Phase 3: Information & Politics
 
 ## Dependency Note
 
-Institutional producers need a way to own the goods they produce through ordinary world relations. Workshop/source output claim policy should be established before office- or faction-owned facilities are expected to accumulate assets cleanly. See [DRAFT-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/DRAFT-production-output-ownership-claims.md).
+Institutional producers need a way to own the goods they produce through ordinary world relations. Workshop/source output claim policy should be established before office- or faction-owned facilities are expected to accumulate assets cleanly. See [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md).
 
 ## Existing Infrastructure (Leveraged, Not Reimplemented)
 
@@ -439,7 +441,7 @@ All paths require co-location or physical carrier. No information teleports. (Pr
 
 **For E16b spec**: Replace the minimal E16 force branch with explicit claim, control, contest, and uncontested-hold state. Do not preserve both paths long-term.
 
-**Implementation order**: E16 remains at Step 10 in `IMPLEMENTATION-ORDER.md`. E16b now follows as the explicit force-legitimacy extension for contested control; public order's E17/E19 factors remain extension points, not dependencies.
+**Implementation order**: E16 is complete and archived. E16b remains the active follow-up for explicit force legitimacy and contested control; public order's E17/E19 factors remain extension points, not dependencies.
 
 ## Critical Files to Modify
 
@@ -468,3 +470,21 @@ All paths require co-location or physical carrier. No information teleports. (Pr
 - Section 9.13 (office uniqueness)
 - Section 8 (no leader replacement cutscene)
 - `docs/FOUNDATIONS.md` Principles 3, 7, 8, 10, 12, 20
+
+## Outcome
+
+- Completion date: 2026-03-15
+- What actually changed:
+  - Added office and faction core data, support declarations, courage, office actions, succession resolution, public order, and political AI integration
+  - Reused existing relations and action/system scaffolding rather than duplicating institutional state
+  - Extended the belief/runtime-view boundary so political AI remains belief-driven instead of reading `World` directly
+- Deviations from original plan:
+  - Force succession shipped as a conservative placeholder based on uncontested eligible presence after the vacancy period, not as a full control/hold-state model
+  - Full force legitimacy architecture was split into active follow-up spec `E16b-force-legitimacy-and-jurisdiction-control.md`
+  - The dependency note now points at `S01-production-output-ownership-claims.md` because the earlier draft reference is obsolete
+- Verification results:
+  - `cargo test -p worldwake-systems` passed
+  - `cargo test -p worldwake-ai` passed
+  - `cargo test -p worldwake-sim` passed
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed
+  - `cargo test --workspace` passed

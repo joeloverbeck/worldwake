@@ -26,7 +26,7 @@ The clean architecture is to keep lot provenance focused on lot-lineage facts an
 5. The remaining active E16 tickets do not own this issue:
    - [tickets/E16OFFSUCFAC-007.md](/home/joeloverbeck/projects/worldwake/tickets/E16OFFSUCFAC-007.md) is succession-system work
    - [tickets/E16OFFSUCFAC-008.md](/home/joeloverbeck/projects/worldwake/tickets/E16OFFSUCFAC-008.md) is public-order derivation
-   - [tickets/E16OFFSUCFAC-009.md](/home/joeloverbeck/projects/worldwake/tickets/E16OFFSUCFAC-009.md) is AI planning/candidate generation
+   - [E16OFFSUCFAC-009-political-ai-integration-for-offices.md](/home/joeloverbeck/projects/worldwake/archive/tickets/completed/E16OFFSUCFAC-009-political-ai-integration-for-offices.md) is AI planning/candidate generation
 6. `ProvenanceEntry` does already carry `event_id`, but current action-layer callers append transfer provenance with `event_id: None`, and [world_txn.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/world_txn.rs) does not backfill the committed event id during `commit()`. The previous draft overstated the current linkage behavior.
 7. `specs/S04-merchant-selling-market-presence.md` says trade should append traded provenance, but that spec is about preserving trade-specific meaning, not about blessing `Traded` as the generic marker for every transfer. The current codebase can satisfy that intent more robustly by using transfer provenance plus trade-tagged event linkage.
 

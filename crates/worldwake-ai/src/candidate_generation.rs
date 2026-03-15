@@ -5,8 +5,9 @@ use crate::{
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
-    EntityKind, GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
+    load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
+    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, OfficeData,
+    Quantity, Tick,
 };
 use worldwake_sim::{relayable_social_subjects, GoalBeliefView, RecipeDefinition, RecipeRegistry};
 
@@ -96,6 +97,7 @@ pub fn generate_candidates_with_travel_horizon(
     emit_enterprise_candidates(&mut candidates, &ctx);
     emit_combat_candidates(&mut candidates, &ctx);
     emit_social_candidates(&mut candidates, &ctx);
+    emit_political_candidates(&mut candidates, &ctx);
 
     candidates.into_values().collect()
 }
@@ -185,6 +187,113 @@ fn emit_social_candidates(
             );
         }
     }
+}
+
+fn emit_political_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
+    let known_entities = ctx.view.known_entity_beliefs(ctx.agent);
+    for (office, _) in known_entities {
+        if ctx.view.entity_kind(office) != Some(EntityKind::Office) {
+            continue;
+        }
+        let Some(office_data) = ctx.view.office_data(office) else {
+            continue;
+        };
+        if !office_is_visibly_vacant(ctx.view, office, &office_data) {
+            continue;
+        }
+
+        emit_claim_office_candidate(candidates, ctx, office, &office_data);
+        emit_support_candidate_goals(candidates, ctx, office, &office_data);
+    }
+}
+
+fn emit_claim_office_candidate(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+    office_data: &OfficeData,
+) {
+    if !candidate_is_eligible(ctx.view, office_data, ctx.agent) {
+        return;
+    }
+    if ctx.view.office_holder(office) == Some(ctx.agent) {
+        return;
+    }
+    if ctx.view.support_declaration(ctx.agent, office) == Some(ctx.agent) {
+        return;
+    }
+
+    let mut evidence = Evidence::with_entity(office);
+    evidence.entities.insert(ctx.agent);
+    evidence.places.insert(office_data.jurisdiction);
+    emit_candidate(
+        candidates,
+        GoalKind::ClaimOffice { office },
+        evidence,
+        ctx.blocked,
+        ctx.current_tick,
+    );
+}
+
+fn emit_support_candidate_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+    office_data: &OfficeData,
+) {
+    let current_declaration = ctx.view.support_declaration(ctx.agent, office);
+    for (candidate, _) in ctx.view.known_entity_beliefs(ctx.agent) {
+        if candidate == ctx.agent {
+            continue;
+        }
+        let Some(loyalty) = ctx.view.loyalty_to(ctx.agent, candidate) else {
+            continue;
+        };
+        if loyalty == worldwake_core::Permille::new_unchecked(0) {
+            continue;
+        }
+        if !candidate_is_eligible(ctx.view, office_data, candidate) {
+            continue;
+        }
+        if current_declaration == Some(candidate) {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(office);
+        evidence.entities.insert(candidate);
+        evidence.places.insert(office_data.jurisdiction);
+        emit_candidate(
+            candidates,
+            GoalKind::SupportCandidateForOffice { office, candidate },
+            evidence,
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
+}
+
+fn office_is_visibly_vacant(
+    view: &dyn GoalBeliefView,
+    office: EntityId,
+    office_data: &OfficeData,
+) -> bool {
+    office_data.vacancy_since.is_some() && view.office_holder(office).is_none()
+}
+
+fn candidate_is_eligible(
+    view: &dyn GoalBeliefView,
+    office_data: &OfficeData,
+    candidate: EntityId,
+) -> bool {
+    view.entity_kind(candidate) == Some(EntityKind::Agent)
+        && view.is_alive(candidate)
+        && office_data
+            .eligibility_rules
+            .iter()
+            .all(|rule| matches!(rule, EligibilityRule::FactionMember(faction) if view.factions_of(candidate).contains(faction)))
 }
 
 fn emit_engage_hostile_goals(
@@ -1111,11 +1220,11 @@ mod tests {
     use worldwake_core::{
         BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind, GoalKey,
-        GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, PerceptionSource, Permille, Quantity, RecipeId, ResourceSource,
-        TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity, RecipeId,
+        ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1159,6 +1268,11 @@ mod tests {
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        office_data: BTreeMap<EntityId, OfficeData>,
+        office_holders: BTreeMap<EntityId, EntityId>,
+        factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
+        loyalties: BTreeMap<(EntityId, EntityId), Permille>,
+        support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
@@ -1408,6 +1522,29 @@ mod tests {
             self.corpses_at.get(&place).cloned().unwrap_or_default()
         }
 
+        fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+            self.office_data.get(&office).cloned()
+        }
+
+        fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+            self.office_holders.get(&office).copied()
+        }
+
+        fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
+            self.factions_by_member
+                .get(&member)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
+            self.loyalties.get(&(subject, target)).copied()
+        }
+
+        fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
+            self.support_declarations.get(&(supporter, office)).copied()
+        }
+
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
             None
         }
@@ -1514,6 +1651,27 @@ mod tests {
             wounds: Vec::new(),
             observed_tick: Tick(observed_tick),
             source,
+        }
+    }
+
+    fn known_entity(subject: EntityId, place: EntityId) -> (EntityId, BelievedEntityState) {
+        (
+            subject,
+            BelievedEntityState {
+                last_known_place: Some(place),
+                ..believed_state(5, PerceptionSource::DirectObservation)
+            },
+        )
+    }
+
+    fn vacant_office(title: &str, jurisdiction: EntityId, faction: EntityId) -> OfficeData {
+        OfficeData {
+            title: title.to_string(),
+            jurisdiction,
+            succession_law: worldwake_core::SuccessionLaw::Support,
+            eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
+            succession_period_ticks: 8,
+            vacancy_since: Some(Tick(3)),
         }
     }
 
@@ -3336,5 +3494,85 @@ mod tests {
             }
         ));
         assert!(contains_goal(&candidates, GoalKind::ReduceDanger));
+    }
+
+    #[test]
+    fn political_candidates_emit_claim_and_support_for_visible_vacant_office() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+        );
+
+        assert!(contains_goal(&candidates, GoalKind::ClaimOffice { office }));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::SupportCandidateForOffice { office, candidate }
+        ));
+    }
+
+    #[test]
+    fn political_candidates_require_visible_vacancy_and_skip_existing_declaration() {
+        let agent = entity(1);
+        let office = entity(2);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.entities_at.insert(town, vec![agent]);
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.beliefs.insert(agent, vec![known_entity(office, town)]);
+
+        let mut office_data = vacant_office("Captain", town, faction);
+        office_data.vacancy_since = None;
+        view.office_data.insert(office, office_data.clone());
+        let filled = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+        );
+        assert!(!contains_goal(&filled, GoalKind::ClaimOffice { office }));
+
+        office_data.vacancy_since = Some(Tick(2));
+        view.office_data.insert(office, office_data);
+        view.support_declarations.insert((agent, office), agent);
+        let declared = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+        );
+        assert!(!contains_goal(&declared, GoalKind::ClaimOffice { office }));
     }
 }

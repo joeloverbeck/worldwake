@@ -8,8 +8,9 @@ use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, Permille, Quantity,
 };
 use worldwake_sim::{
-    ActionDef, ActionPayload, CombatActionPayload, LootActionPayload, RecipeRegistry,
-    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
+    ActionDef, ActionPayload, CombatActionPayload, DeclareSupportActionPayload,
+    LootActionPayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
+    TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -119,7 +120,14 @@ const MOVE_CARGO_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind:
 const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
 const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
-const POLITICAL_OFFICE_OPS: &[PlannerOpKind] = &[];
+const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::Bribe,
+    PlannerOpKind::Threaten,
+    PlannerOpKind::DeclareSupport,
+];
+const SUPPORT_OFFICE_OPS: &[PlannerOpKind] =
+    &[PlannerOpKind::Travel, PlannerOpKind::DeclareSupport];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -170,6 +178,38 @@ fn build_attack_payload_override(
     }
 }
 
+fn build_declare_support_payload_override(
+    goal: &GoalKind,
+    actor: EntityId,
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    match goal {
+        GoalKind::ClaimOffice { office } => Ok(Some(ActionPayload::DeclareSupport(
+            DeclareSupportActionPayload {
+                office: *office,
+                candidate: actor,
+            },
+        ))),
+        GoalKind::SupportCandidateForOffice { office, candidate } => {
+            Ok(Some(ActionPayload::DeclareSupport(
+                DeclareSupportActionPayload {
+                    office: *office,
+                    candidate: *candidate,
+                },
+            )))
+        }
+        _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+    }
+}
+
+fn build_loot_payload_override(
+    targets: &[EntityId],
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    let Some(target) = targets.first().copied() else {
+        return Err(GoalPayloadOverrideError::MissingTarget);
+    };
+    Ok(Some(ActionPayload::Loot(LootActionPayload { target })))
+}
+
 impl GoalKindPlannerExt for GoalKind {
     fn goal_kind_tag(&self) -> GoalKindTag {
         match self {
@@ -212,9 +252,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::LootCorpse { .. } => LOOT_OPS,
             GoalKind::BuryCorpse { .. } => BURY_OPS,
             GoalKind::ShareBelief { .. } => SHARE_BELIEF_OPS,
-            GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => {
-                POLITICAL_OFFICE_OPS
-            }
+            GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
+            GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
         }
     }
 
@@ -314,12 +353,8 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::Loot => {
-                let Some(target) = targets.first().copied() else {
-                    return Err(GoalPayloadOverrideError::MissingTarget);
-                };
-                Ok(Some(ActionPayload::Loot(LootActionPayload { target })))
-            }
+            PlannerOpKind::DeclareSupport => build_declare_support_payload_override(self, actor),
+            PlannerOpKind::Loot => build_loot_payload_override(targets),
             PlannerOpKind::MoveCargo => match self {
                 GoalKind::MoveCargo {
                     commodity,
@@ -366,6 +401,7 @@ impl GoalKindPlannerExt for GoalKind {
         targets: &[EntityId],
         payload_override: Option<&ActionPayload>,
     ) -> PlanningState<'snapshot> {
+        let actor = state.snapshot().actor();
         // Cargo uses transport transition kinds in planner_ops.rs for hypothetical state changes,
         // so MoveCargo intentionally falls through the default no-op path here.
         match op_kind {
@@ -440,6 +476,15 @@ impl GoalKindPlannerExt for GoalKind {
                     state
                 }
             }
+            PlannerOpKind::DeclareSupport => match self {
+                GoalKind::ClaimOffice { office } => {
+                    state.with_support_declaration(actor, *office, actor)
+                }
+                GoalKind::SupportCandidateForOffice { office, candidate } => {
+                    state.with_support_declaration(actor, *office, *candidate)
+                }
+                _ => state,
+            },
             _ => state,
         }
     }
@@ -457,6 +502,14 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         if matches!(self, GoalKind::ShareBelief { .. }) && step.op_kind == PlannerOpKind::Tell {
+            return true;
+        }
+
+        if matches!(
+            self,
+            GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. }
+        ) && step.op_kind == PlannerOpKind::DeclareSupport
+        {
             return true;
         }
 
@@ -541,12 +594,14 @@ impl GoalKindPlannerExt for GoalKind {
                 .copied()
                 .all(|commodity| state.commodity_quantity(*corpse, commodity) == Quantity(0)),
             GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
+            GoalKind::SupportCandidateForOffice { office, candidate } => {
+                state.support_declaration(actor, *office) == Some(*candidate)
+            }
             GoalKind::ProduceCommodity { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
-            | GoalKind::ClaimOffice { .. }
-            | GoalKind::SupportCandidateForOffice { .. } => false,
+            | GoalKind::ClaimOffice { .. } => false,
         }
     }
 }
@@ -1714,5 +1769,99 @@ mod tests {
         }
         .is_progress_barrier(&queue_step));
         assert!(!GoalKind::Sleep.is_progress_barrier(&queue_step));
+    }
+
+    #[test]
+    fn political_goals_expose_political_op_families() {
+        assert_eq!(
+            GoalKind::ClaimOffice { office: entity(40) }.relevant_op_kinds(),
+            &[
+                PlannerOpKind::Travel,
+                PlannerOpKind::Bribe,
+                PlannerOpKind::Threaten,
+                PlannerOpKind::DeclareSupport,
+            ]
+        );
+        assert_eq!(
+            GoalKind::SupportCandidateForOffice {
+                office: entity(40),
+                candidate: entity(41),
+            }
+            .relevant_op_kinds(),
+            &[PlannerOpKind::Travel, PlannerOpKind::DeclareSupport]
+        );
+    }
+
+    #[test]
+    fn support_candidate_builds_declare_support_payload_and_satisfies_after_step() {
+        let actor = entity(1);
+        let office = entity(40);
+        let candidate = entity(41);
+        let town = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, candidate, office]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(candidate, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(candidate, town);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, candidate, office]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, candidate]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SupportCandidateForOffice { office, candidate };
+        let def = ActionDef {
+            id: ActionDefId(77),
+            name: "declare_support".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::NonInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::DeclareSupport,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[GoalKindTag::SupportCandidateForOffice],
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[], &def, &semantics)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            payload.as_declare_support(),
+            Some(&worldwake_sim::DeclareSupportActionPayload { office, candidate })
+        );
+
+        let progressed =
+            goal.apply_planner_step(state, PlannerOpKind::DeclareSupport, &[], Some(&payload));
+        assert!(goal.is_satisfied(&progressed));
+        assert!(goal.is_progress_barrier(&PlannedStep {
+            def_id: def.id,
+            targets: Vec::new(),
+            payload_override: Some(payload),
+            op_kind: PlannerOpKind::DeclareSupport,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }));
     }
 }

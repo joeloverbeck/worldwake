@@ -27,6 +27,9 @@ pub enum PlannerOpKind {
     Tell,
     Attack,
     Defend,
+    Bribe,
+    Threaten,
+    DeclareSupport,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -103,6 +106,12 @@ const GOALS_BURY: &[GoalKindTag] = &[GoalKindTag::BuryCorpse];
 const GOALS_TELL: &[GoalKindTag] = &[GoalKindTag::ShareBelief];
 const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
+const GOALS_BRIBE: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
+const GOALS_THREATEN: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
+const GOALS_DECLARE_SUPPORT: &[GoalKindTag] = &[
+    GoalKindTag::ClaimOffice,
+    GoalKindTag::SupportCandidateForOffice,
+];
 
 #[must_use]
 pub fn build_semantics_table(
@@ -140,6 +149,11 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Corpse, "loot", _) => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury", _) => Some(PlannerOpKind::Bury),
         (ActionDomain::Social, "tell", ActionPayload::None) => Some(PlannerOpKind::Tell),
+        (ActionDomain::Social, "bribe", ActionPayload::None) => Some(PlannerOpKind::Bribe),
+        (ActionDomain::Social, "threaten", ActionPayload::None) => Some(PlannerOpKind::Threaten),
+        (ActionDomain::Social, "declare_support", ActionPayload::None) => {
+            Some(PlannerOpKind::DeclareSupport)
+        }
         (ActionDomain::Combat, "attack", _) => Some(PlannerOpKind::Attack),
         (ActionDomain::Combat, "defend", _) => Some(PlannerOpKind::Defend),
         _ => None,
@@ -163,6 +177,10 @@ const fn base_semantics(
 }
 
 fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics {
+    if let Some(semantics) = social_or_combat_semantics(op_kind) {
+        return semantics;
+    }
+
     match op_kind {
         PlannerOpKind::Travel => base_semantics(
             op_kind,
@@ -241,6 +259,17 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             PlannerTransitionKind::GoalModelFallback,
             GOALS_BURY,
         ),
+        PlannerOpKind::Tell
+        | PlannerOpKind::Attack
+        | PlannerOpKind::Defend
+        | PlannerOpKind::Bribe
+        | PlannerOpKind::Threaten
+        | PlannerOpKind::DeclareSupport => unreachable!("handled by social_or_combat_semantics"),
+    }
+}
+
+fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemantics> {
+    Some(match op_kind {
         PlannerOpKind::Tell => base_semantics(
             op_kind,
             false,
@@ -262,7 +291,29 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             PlannerTransitionKind::GoalModelFallback,
             GOALS_DEFEND,
         ),
-    }
+        PlannerOpKind::Bribe => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_BRIBE,
+        ),
+        PlannerOpKind::Threaten => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_THREATEN,
+        ),
+        PlannerOpKind::DeclareSupport => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_DECLARE_SUPPORT,
+        ),
+        _ => return None,
+    })
 }
 
 fn single_goal_semantics(op_kind: PlannerOpKind, goal_kind: GoalKindTag) -> PlannerOpSemantics {
@@ -1236,9 +1287,12 @@ mod tests {
             PlannerOpKind::Tell,
             PlannerOpKind::Attack,
             PlannerOpKind::Defend,
+            PlannerOpKind::Bribe,
+            PlannerOpKind::Threaten,
+            PlannerOpKind::DeclareSupport,
         ];
 
-        assert_eq!(all.len(), 16);
+        assert_eq!(all.len(), 19);
     }
 
     #[test]
@@ -1270,6 +1324,9 @@ mod tests {
             ("loot", PlannerOpKind::Loot),
             ("bury", PlannerOpKind::Bury),
             ("heal", PlannerOpKind::Heal),
+            ("bribe", PlannerOpKind::Bribe),
+            ("threaten", PlannerOpKind::Threaten),
+            ("declare_support", PlannerOpKind::DeclareSupport),
         ];
         let expected_transitions = [
             ("tell", PlannerTransitionKind::GoalModelFallback),
@@ -1279,14 +1336,8 @@ mod tests {
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
         ];
 
-        assert_eq!(table.len(), defs.len() - 3);
+        assert_eq!(table.len(), defs.len());
         assert!(defs.iter().any(|def| def.name == "tell"));
-        for deferred in ["bribe", "threaten", "declare_support"] {
-            assert!(
-                !semantics_by_name.contains_key(deferred),
-                "{deferred} should remain out of planner semantics until E16OFFSUCFAC-009"
-            );
-        }
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);
         }

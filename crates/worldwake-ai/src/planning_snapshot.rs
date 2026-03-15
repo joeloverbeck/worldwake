@@ -114,6 +114,7 @@ pub struct PlanningSnapshot {
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
+    pub(crate) actor_support_declarations: BTreeMap<EntityId, EntityId>,
     pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
     pub(crate) actor_tell_profile: Option<TellProfile>,
 }
@@ -172,6 +173,12 @@ impl PlanningSnapshot {
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
+            actor_support_declarations: included_entities
+                .iter()
+                .copied()
+                .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
+                .filter_map(|office| view.support_declaration(actor, office).map(|candidate| (office, candidate)))
+                .collect(),
             actor_confidence_policy: view.belief_confidence_policy(actor),
             actor_tell_profile: view.tell_profile(actor),
         }

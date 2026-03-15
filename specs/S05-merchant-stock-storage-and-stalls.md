@@ -364,5 +364,5 @@ Derived transient read-model:
 - [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md)
 - [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
 - [E15-rumor-witness-discovery.md](/home/joeloverbeck/projects/worldwake/specs/E15-rumor-witness-discovery.md)
-- [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/specs/E16-offices-succession-factions.md)
+- [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/archive/specs/E16-offices-succession-factions.md)
 - [E17-crime-theft-justice.md](/home/joeloverbeck/projects/worldwake/specs/E17-crime-theft-justice.md)

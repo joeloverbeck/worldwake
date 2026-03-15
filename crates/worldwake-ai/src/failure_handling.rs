@@ -111,7 +111,10 @@ fn derive_blocking_fact(
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
-        | PlannerOpKind::Tell => {}
+        | PlannerOpKind::Tell
+        | PlannerOpKind::Bribe
+        | PlannerOpKind::Threaten
+        | PlannerOpKind::DeclareSupport => {}
     }
 
     if danger_too_high(view, agent) {
@@ -248,7 +251,10 @@ fn classify_input_failure(
         | PlannerOpKind::Bury
         | PlannerOpKind::Tell
         | PlannerOpKind::Attack
-        | PlannerOpKind::Defend => None,
+        | PlannerOpKind::Defend
+        | PlannerOpKind::Bribe
+        | PlannerOpKind::Threaten
+        | PlannerOpKind::DeclareSupport => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -279,7 +285,10 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
         | PlannerOpKind::Attack
-        | PlannerOpKind::Defend => view.entity_kind(target).is_none() || view.is_dead(target),
+        | PlannerOpKind::Defend
+        | PlannerOpKind::Bribe
+        | PlannerOpKind::Threaten
+        | PlannerOpKind::DeclareSupport => view.entity_kind(target).is_none() || view.is_dead(target),
         PlannerOpKind::Travel => false,
     }
 }
@@ -492,6 +501,23 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
         | PlannerOpKind::Defend => step.targets.first().copied().and_then(authoritative_target),
+        PlannerOpKind::Bribe => step
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_bribe)
+            .map(|payload| payload.target)
+            .or_else(|| step.targets.first().copied().and_then(authoritative_target)),
+        PlannerOpKind::Threaten => step
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_threaten)
+            .map(|payload| payload.target)
+            .or_else(|| step.targets.first().copied().and_then(authoritative_target)),
+        PlannerOpKind::DeclareSupport => step
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_declare_support)
+            .map(|payload| payload.office),
     }
 }
 
@@ -523,7 +549,10 @@ fn related_place(
         | PlannerOpKind::Loot
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend => goal_key.place.or_else(|| view.effective_place(agent)),
-        PlannerOpKind::Tell => view.effective_place(agent),
+        PlannerOpKind::Tell
+        | PlannerOpKind::Bribe
+        | PlannerOpKind::Threaten
+        | PlannerOpKind::DeclareSupport => view.effective_place(agent),
     }
 }
 

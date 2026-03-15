@@ -4,8 +4,9 @@ use worldwake_core::{
     BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId, ResourceSource,
+    TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -77,6 +78,26 @@ pub trait GoalBeliefView {
     fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+        let _ = office;
+        None
+    }
+    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+        let _ = office;
+        None
+    }
+    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
+        let _ = member;
+        Vec::new()
+    }
+    fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
+        let _ = (subject, target);
+        None
+    }
+    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
+        let _ = (supporter, office);
+        None
+    }
 }
 
 /// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
@@ -176,6 +197,26 @@ pub trait RuntimeBeliefView {
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+        let _ = office;
+        None
+    }
+    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+        let _ = office;
+        None
+    }
+    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
+        let _ = member;
+        Vec::new()
+    }
+    fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
+        let _ = (subject, target);
+        None
+    }
+    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
+        let _ = (supporter, office);
+        None
+    }
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
     fn estimate_duration(
@@ -464,6 +505,37 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::corpse_entities_at(self, place)
+            }
+
+            fn office_data(
+                &self,
+                office: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::OfficeData> {
+                $crate::RuntimeBeliefView::office_data(self, office)
+            }
+
+            fn office_holder(&self, office: worldwake_core::EntityId) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::office_holder(self, office)
+            }
+
+            fn factions_of(&self, member: worldwake_core::EntityId) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::factions_of(self, member)
+            }
+
+            fn loyalty_to(
+                &self,
+                subject: worldwake_core::EntityId,
+                target: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::Permille> {
+                $crate::RuntimeBeliefView::loyalty_to(self, subject, target)
+            }
+
+            fn support_declaration(
+                &self,
+                supporter: worldwake_core::EntityId,
+                office: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::support_declaration(self, supporter, office)
             }
         }
     };

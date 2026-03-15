@@ -44,6 +44,7 @@ pub struct PlanningState<'snapshot> {
     removed_entities: BTreeSet<PlanningEntityRef>,
     needs_overrides: BTreeMap<EntityId, HomeostaticNeeds>,
     pain_overrides: BTreeMap<EntityId, Permille>,
+    support_declaration_overrides: BTreeMap<(EntityId, EntityId), Option<EntityId>>,
     facility_queue_membership_overrides: BTreeMap<EntityId, Option<HypotheticalQueueJoin>>,
     facility_grant_overrides: BTreeMap<EntityId, Option<GrantedFacilityUse>>,
     hypothetical_registry: BTreeMap<HypotheticalEntityId, HypotheticalEntityMeta>,
@@ -64,6 +65,7 @@ impl<'snapshot> PlanningState<'snapshot> {
             removed_entities: BTreeSet::new(),
             needs_overrides: BTreeMap::new(),
             pain_overrides: BTreeMap::new(),
+            support_declaration_overrides: BTreeMap::new(),
             facility_queue_membership_overrides: BTreeMap::new(),
             facility_grant_overrides: BTreeMap::new(),
             hypothetical_registry: BTreeMap::new(),
@@ -96,6 +98,18 @@ impl<'snapshot> PlanningState<'snapshot> {
     pub fn move_actor_to(self, destination: EntityId) -> Self {
         let actor = self.snapshot.actor();
         self.move_entity(actor, destination)
+    }
+
+    #[must_use]
+    pub fn with_support_declaration(
+        mut self,
+        supporter: EntityId,
+        office: EntityId,
+        candidate: EntityId,
+    ) -> Self {
+        self.support_declaration_overrides
+            .insert((supporter, office), Some(candidate));
+        self
     }
 
     #[must_use]
@@ -1167,6 +1181,18 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .get(&agent)
             .map(|snapshot| snapshot.demand_memory.clone())
             .unwrap_or_default()
+    }
+
+    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
+        if supporter != self.snapshot.actor() {
+            return None;
+        }
+
+        self.support_declaration_overrides
+            .get(&(supporter, office))
+            .copied()
+            .flatten()
+            .or_else(|| self.snapshot.actor_support_declarations.get(&office).copied())
     }
 
     fn merchandise_profile(&self, agent: EntityId) -> Option<worldwake_core::MerchandiseProfile> {

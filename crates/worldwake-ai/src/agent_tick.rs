@@ -908,7 +908,10 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Bury
         | crate::PlannerOpKind::Tell
         | crate::PlannerOpKind::Attack
-        | crate::PlannerOpKind::Defend => {}
+        | crate::PlannerOpKind::Defend
+        | crate::PlannerOpKind::Bribe
+        | crate::PlannerOpKind::Threaten
+        | crate::PlannerOpKind::DeclareSupport => {}
     }
 }
 

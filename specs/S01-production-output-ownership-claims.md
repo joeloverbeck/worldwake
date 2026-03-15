@@ -271,7 +271,7 @@ Derived transient state:
 - [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md)
 - [E17-crime-theft-justice.md](/home/joeloverbeck/projects/worldwake/specs/E17-crime-theft-justice.md)
 - [E15-rumor-witness-discovery.md](/home/joeloverbeck/projects/worldwake/specs/E15-rumor-witness-discovery.md)
-- [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/specs/E16-offices-succession-factions.md)
+- [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/archive/specs/E16-offices-succession-factions.md)
 - [E05-relations-ownership.md](/home/joeloverbeck/projects/worldwake/archive/specs/E05-relations-ownership.md)
 - [E10-production-transport.md](/home/joeloverbeck/projects/worldwake/archive/specs/E10-production-transport.md)
 - [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)

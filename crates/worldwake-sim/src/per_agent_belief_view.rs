@@ -8,9 +8,10 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
     BelievedEntityState, CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
     ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag,
-    Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItemKind, WorkstationTag, World, Wound,
+    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    OfficeData, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, World,
+    Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -630,6 +631,49 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
+    fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+        (self.entity_kind(office) == Some(EntityKind::Office))
+            .then(|| self.world.get_component_office_data(office).cloned())
+            .flatten()
+    }
+
+    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+        if self.entity_kind(office) != Some(EntityKind::Office) {
+            return None;
+        }
+
+        self.world.office_holder(office).filter(|holder| {
+            *holder == self.agent || self.believed_entity(*holder).is_some()
+        })
+    }
+
+    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
+        if member != self.agent && self.believed_entity(member).is_none() {
+            return Vec::new();
+        }
+
+        self.world.factions_of(member)
+    }
+
+    fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<worldwake_core::Permille> {
+        if subject != self.agent {
+            return None;
+        }
+        if target != self.agent && self.believed_entity(target).is_none() {
+            return None;
+        }
+
+        self.world.loyalty_to(subject, target)
+    }
+
+    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
+        if supporter != self.agent || self.entity_kind(office) != Some(EntityKind::Office) {
+            return None;
+        }
+
+        self.world.support_declaration(supporter, office)
+    }
+
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
         if entity == self.agent {
             return self.world.get_component_in_transit_on_edge(entity).cloned();
@@ -680,9 +724,10 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
-        CommodityKind, ControlSource, EntityKind, EventLog, MerchandiseProfile, Permille,
-        PerceptionProfile, Quantity, ResourceSource, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+        CommodityKind, ControlSource, EntityKind, EventLog, FactionData, FactionPurpose,
+        MerchandiseProfile, OfficeData, Permille, PerceptionProfile, Quantity, ResourceSource,
+        SuccessionLaw, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+        World, WorldTxn, Wound, WoundCause, WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1198,6 +1243,72 @@ mod tests {
                 .unwrap()
                 .get(),
             ))
+        );
+    }
+
+    #[test]
+    fn political_queries_expose_known_public_office_state_and_actor_private_relations() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, holder, office, faction) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            let faction = txn.create_faction("River Pact").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            txn.add_member(agent, faction).unwrap();
+            txn.add_member(holder, faction).unwrap();
+            txn.set_loyalty(agent, holder, Permille::new(620).unwrap())
+                .unwrap();
+            txn.assign_office(office, holder).unwrap();
+            txn.declare_support(agent, office, holder).unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Steward".to_string(),
+                    jurisdiction: place,
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+                    succession_period_ticks: 6,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_faction_data(
+                faction,
+                FactionData {
+                    name: "River Pact".to_string(),
+                    purpose: FactionPurpose::Political,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, holder, office, faction)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(holder, entity_belief(place, true, 0, 3));
+        beliefs.update_entity(office, entity_belief(place, true, 0, 3));
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::office_data(&view, office)
+                .unwrap()
+                .jurisdiction,
+            place
+        );
+        assert_eq!(RuntimeBeliefView::office_holder(&view, office), Some(holder));
+        assert_eq!(RuntimeBeliefView::factions_of(&view, agent), vec![faction]);
+        assert_eq!(
+            RuntimeBeliefView::loyalty_to(&view, agent, holder),
+            Some(Permille::new(620).unwrap())
+        );
+        assert_eq!(
+            RuntimeBeliefView::support_declaration(&view, agent, office),
+            Some(holder)
         );
     }
 }

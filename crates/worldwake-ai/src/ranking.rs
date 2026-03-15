@@ -137,7 +137,8 @@ fn priority_class(
         | GoalKind::ProduceCommodity { .. }
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
-        | GoalKind::MoveCargo { .. } => GoalPriorityClass::Medium,
+        | GoalKind::MoveCargo { .. }
+        | GoalKind::ClaimOffice { .. } => GoalPriorityClass::Medium,
         GoalKind::Sleep => drive_priority(
             context,
             |needs| needs.fatigue,
@@ -170,7 +171,6 @@ fn priority_class(
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
         | GoalKind::ShareBelief { .. }
-        | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Low,
     }
 }
@@ -294,7 +294,11 @@ fn motive_score(
             social_pressure_for_subject(context, subject),
         ),
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
-        GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => 0,
+        GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
+        GoalKind::SupportCandidateForOffice { candidate, .. } => context
+            .view
+            .loyalty_to(context.agent, candidate)
+            .map_or(0, |loyalty| score_product(context.utility.social_weight, loyalty)),
     }
 }
 
@@ -567,6 +571,7 @@ mod tests {
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        loyalties: BTreeMap<(EntityId, EntityId), Permille>,
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
@@ -741,6 +746,9 @@ mod tests {
         }
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+        fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
+            self.loyalties.get(&(subject, target)).copied()
         }
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
             None
@@ -1623,5 +1631,54 @@ mod tests {
             }
         ));
         assert!(matches!(ranked[2].grounded.key.kind, GoalKind::Sleep));
+    }
+
+    #[test]
+    fn claim_office_uses_enterprise_weight_and_medium_priority() {
+        let agent = entity(1);
+        let view = base_view(agent);
+
+        let ranked = rank_candidates(
+            &[goal(GoalKind::ClaimOffice { office: entity(7) })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(
+            ranked[0].motive_score,
+            u32::from(utility().enterprise_weight.value())
+        );
+    }
+
+    #[test]
+    fn support_candidate_uses_social_weight_times_loyalty() {
+        let agent = entity(1);
+        let candidate = entity(2);
+        let mut view = base_view(agent);
+        view.loyalties.insert((agent, candidate), pm(600));
+
+        let ranked = rank_candidates(
+            &[goal(GoalKind::SupportCandidateForOffice {
+                office: entity(7),
+                candidate,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(
+            ranked[0].motive_score,
+            u32::from(utility().social_weight.value()) * u32::from(pm(600).value())
+        );
     }
 }
