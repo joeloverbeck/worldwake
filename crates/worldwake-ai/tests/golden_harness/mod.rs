@@ -11,12 +11,13 @@ use std::num::NonZeroU32;
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
-    AgentBeliefStore, BlockedIntentMemory, BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile,
-    CombatStance, CommodityKind, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
-    EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityUseQueue, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile,
-    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed, Tick,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, BodyCostPerTick, CarryCapacity,
+    CauseRef, CombatProfile, CombatStance, CommodityKind, ControlSource, DeprivationExposure,
+    DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
+    RecipeId, ResourceSource, Seed, TellProfile, Tick, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -128,6 +129,62 @@ pub fn seed_actor_world_beliefs(
         .filter(|entity| *entity != actor)
         .collect::<Vec<_>>();
     seed_actor_beliefs(world, event_log, actor, &entities, observed_tick, source);
+}
+
+pub fn set_agent_tell_profile(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    tell_profile: TellProfile,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_tell_profile(agent, tell_profile)
+        .expect("golden harness should keep tell profiles writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn set_agent_perception_profile(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    perception_profile: PerceptionProfile,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_perception_profile(agent, perception_profile)
+        .expect("golden harness should keep perception profiles writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn seed_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    subject: EntityId,
+    believed_state: BelievedEntityState,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    store.update_entity(subject, believed_state);
+
+    let mut txn = new_txn(world, 0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn agent_belief_about(
+    world: &World,
+    agent: EntityId,
+    subject: EntityId,
+) -> Option<&BelievedEntityState> {
+    world.get_component_agent_belief_store(agent)?.get_entity(&subject)
+}
+
+pub fn agent_belief_count(world: &World, agent: EntityId) -> usize {
+    world.get_component_agent_belief_store(agent)
+        .map_or(0, |store| store.known_entities.len())
 }
 
 pub fn build_harvest_apple_recipe() -> RecipeDefinition {
@@ -534,6 +591,7 @@ impl GoldenHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
 
     #[test]
@@ -612,5 +670,185 @@ mod tests {
             None,
             "bounded local seeding must not leak remote knowledge"
         );
+    }
+
+    #[test]
+    fn profile_override_helpers_update_agent_components() {
+        let mut h = GoldenHarness::new(Seed([43; 32]));
+        let agent = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Talker",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let tell_profile = TellProfile {
+            max_tell_candidates: 2,
+            max_relay_chain_len: 1,
+            acceptance_fidelity: pm(250),
+        };
+        let perception_profile = PerceptionProfile {
+            memory_capacity: 5,
+            memory_retention_ticks: 17,
+            observation_fidelity: pm(600),
+            confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+        };
+
+        set_agent_tell_profile(&mut h.world, &mut h.event_log, agent, tell_profile);
+        set_agent_perception_profile(&mut h.world, &mut h.event_log, agent, perception_profile);
+
+        assert_eq!(h.world.get_component_tell_profile(agent), Some(&tell_profile));
+        assert_eq!(
+            h.world.get_component_perception_profile(agent),
+            Some(&perception_profile)
+        );
+    }
+
+    #[test]
+    fn seed_belief_accessors_and_count_reflect_seeded_state() {
+        let mut h = GoldenHarness::new(Seed([44; 32]));
+        let agent = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Observer",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let subject = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Subject",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        assert_eq!(agent_belief_count(&h.world, agent), 0);
+
+        let mut belief = build_believed_entity_state(
+            &h.world,
+            subject,
+            Tick(5),
+            PerceptionSource::Report {
+                from: agent,
+                chain_len: 1,
+            },
+        )
+        .expect("subject should produce a belief snapshot");
+        belief.last_known_place = Some(ORCHARD_FARM);
+        belief.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(7))]);
+
+        seed_belief(&mut h.world, &mut h.event_log, agent, subject, belief.clone());
+
+        assert_eq!(agent_belief_count(&h.world, agent), 1);
+        assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&belief));
+    }
+
+    #[test]
+    fn seed_belief_replaces_same_subject_when_tick_is_equal_or_newer() {
+        let mut h = GoldenHarness::new(Seed([45; 32]));
+        let agent = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Observer",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let subject = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Subject",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let mut earlier = build_believed_entity_state(
+            &h.world,
+            subject,
+            Tick(3),
+            PerceptionSource::DirectObservation,
+        )
+        .expect("subject should produce a belief snapshot");
+        earlier.last_known_place = Some(VILLAGE_SQUARE);
+        earlier.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(1))]);
+        seed_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            subject,
+            earlier.clone(),
+        );
+
+        let mut newer = earlier.clone();
+        newer.observed_tick = Tick(4);
+        newer.last_known_place = Some(ORCHARD_FARM);
+        newer.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(9))]);
+        seed_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            subject,
+            newer.clone(),
+        );
+
+        assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&newer));
+    }
+
+    #[test]
+    fn seed_belief_preserves_newer_existing_belief_against_older_input() {
+        let mut h = GoldenHarness::new(Seed([46; 32]));
+        let agent = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Observer",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let subject = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Subject",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let mut newer = build_believed_entity_state(
+            &h.world,
+            subject,
+            Tick(8),
+            PerceptionSource::DirectObservation,
+        )
+        .expect("subject should produce a belief snapshot");
+        newer.last_known_place = Some(ORCHARD_FARM);
+        newer.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(8))]);
+        seed_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            subject,
+            newer.clone(),
+        );
+
+        let mut older = newer.clone();
+        older.observed_tick = Tick(7);
+        older.last_known_place = Some(VILLAGE_SQUARE);
+        older.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(2))]);
+        seed_belief(&mut h.world, &mut h.event_log, agent, subject, older);
+
+        assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&newer));
     }
 }
