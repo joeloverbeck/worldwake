@@ -54,6 +54,13 @@ pub enum GoalKind {
         listener: EntityId,
         subject: EntityId,
     },
+    ClaimOffice {
+        office: EntityId,
+    },
+    SupportCandidateForOffice {
+        office: EntityId,
+        candidate: EntityId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -79,7 +86,8 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::RestockCommodity { commodity } => (Some(commodity), None, None),
             GoalKind::EngageHostile { target }
             | GoalKind::Heal { target }
-            | GoalKind::LootCorpse { corpse: target } => (None, Some(target), None),
+            | GoalKind::LootCorpse { corpse: target }
+            | GoalKind::ClaimOffice { office: target } => (None, Some(target), None),
             GoalKind::MoveCargo {
                 commodity,
                 destination,
@@ -90,6 +98,9 @@ impl From<GoalKind> for GoalKey {
             } => (None, Some(corpse), Some(burial_site)),
             GoalKind::ShareBelief { listener, subject } => {
                 (None, Some(listener), Some(subject))
+            }
+            GoalKind::SupportCandidateForOffice { office, candidate } => {
+                (None, Some(office), Some(candidate))
             }
             GoalKind::Sleep
             | GoalKind::Relieve
@@ -249,5 +260,69 @@ mod tests {
         assert_ne!(first, third);
         assert_eq!(first.entity, Some(listener_a));
         assert_eq!(first.place, Some(subject_a));
+    }
+
+    #[test]
+    fn claim_office_goal_roundtrips_through_bincode() {
+        let office = entity_id(15, 0);
+        let goal = GoalKind::ClaimOffice { office };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn support_candidate_goal_roundtrips_through_bincode() {
+        let office = entity_id(16, 0);
+        let candidate = entity_id(16, 1);
+        let goal = GoalKind::SupportCandidateForOffice { office, candidate };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_office_for_claim_office() {
+        let office = entity_id(17, 0);
+        let key = GoalKey::from(GoalKind::ClaimOffice { office });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(office));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn goal_key_extracts_office_and_candidate_for_support_candidate() {
+        let office = entity_id(18, 0);
+        let candidate = entity_id(18, 1);
+        let key = GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(office));
+        assert_eq!(key.place, Some(candidate));
+    }
+
+    #[test]
+    fn support_candidate_goal_identity_distinguishes_candidate() {
+        let office = entity_id(19, 0);
+        let candidate_a = entity_id(19, 1);
+        let candidate_b = entity_id(19, 2);
+
+        let first = GoalKey::from(GoalKind::SupportCandidateForOffice {
+            office,
+            candidate: candidate_a,
+        });
+        let second = GoalKey::from(GoalKind::SupportCandidateForOffice {
+            office,
+            candidate: candidate_b,
+        });
+
+        assert_ne!(first, second);
+        assert_eq!(first.entity, Some(office));
+        assert_eq!(first.place, Some(candidate_a));
     }
 }

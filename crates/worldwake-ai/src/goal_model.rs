@@ -29,6 +29,8 @@ pub enum GoalKindTag {
     LootCorpse,
     BuryCorpse,
     ShareBelief,
+    ClaimOffice,
+    SupportCandidateForOffice,
 }
 
 pub trait GoalKindPlannerExt {
@@ -117,6 +119,7 @@ const MOVE_CARGO_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind:
 const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
 const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
+const POLITICAL_OFFICE_OPS: &[PlannerOpKind] = &[];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -185,6 +188,10 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::LootCorpse { .. } => GoalKindTag::LootCorpse,
             GoalKind::BuryCorpse { .. } => GoalKindTag::BuryCorpse,
             GoalKind::ShareBelief { .. } => GoalKindTag::ShareBelief,
+            GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
+            GoalKind::SupportCandidateForOffice { .. } => {
+                GoalKindTag::SupportCandidateForOffice
+            }
         }
     }
 
@@ -205,6 +212,9 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::LootCorpse { .. } => LOOT_OPS,
             GoalKind::BuryCorpse { .. } => BURY_OPS,
             GoalKind::ShareBelief { .. } => SHARE_BELIEF_OPS,
+            GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => {
+                POLITICAL_OFFICE_OPS
+            }
         }
     }
 
@@ -234,7 +244,9 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Heal { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
-            | GoalKind::ShareBelief { .. } => Some(BTreeSet::new()),
+            | GoalKind::ShareBelief { .. }
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -532,7 +544,9 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ProduceCommodity { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
-            | GoalKind::SellCommodity { .. } => false,
+            | GoalKind::SellCommodity { .. }
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. } => false,
         }
     }
 }

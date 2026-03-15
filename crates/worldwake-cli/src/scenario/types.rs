@@ -191,6 +191,7 @@ mod tests {
                         danger_weight: 500,
                         enterprise_weight: 500,
                         social_weight: 200,
+                        courage: 500,
                     ),
                     merchandise_profile: (
                         sale_kinds: [Apple, Bread],

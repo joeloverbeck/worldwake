@@ -102,7 +102,11 @@ impl<'a> RankingContext<'a> {
 fn is_suppressed(candidate: &GroundedGoal, context: &RankingContext<'_>) -> bool {
     matches!(
         candidate.key.kind,
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } | GoalKind::ShareBelief { .. }
+        GoalKind::LootCorpse { .. }
+            | GoalKind::BuryCorpse { .. }
+            | GoalKind::ShareBelief { .. }
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. }
     ) && (context.danger_high_or_above() || context.self_care_high_or_above())
 }
 
@@ -165,7 +169,9 @@ fn priority_class(
         }
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
-        | GoalKind::ShareBelief { .. } => GoalPriorityClass::Low,
+        | GoalKind::ShareBelief { .. }
+        | GoalKind::ClaimOffice { .. }
+        | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Low,
     }
 }
 
@@ -288,6 +294,7 @@ fn motive_score(
             social_pressure_for_subject(context, subject),
         ),
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => 0,
     }
 }
 
@@ -521,6 +528,8 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::LootCorpse { .. } => 12,
         GoalKind::BuryCorpse { .. } => 13,
         GoalKind::ShareBelief { .. } => 14,
+        GoalKind::ClaimOffice { .. } => 15,
+        GoalKind::SupportCandidateForOffice { .. } => 16,
     }
 }
 
@@ -818,6 +827,7 @@ mod tests {
             danger_weight: pm(300),
             enterprise_weight: pm(200),
             social_weight: pm(150),
+            courage: pm(500),
         }
     }
 
