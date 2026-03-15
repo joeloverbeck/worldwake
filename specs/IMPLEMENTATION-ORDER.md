@@ -28,6 +28,7 @@ Established GoalKind::ShareBelief, PlannerOpKind::Tell, social candidate generat
 
 ### E16: Offices, Succession & Factions — COMPLETED
 Established offices and factions as first-class institutions, support declarations, courage-driven coercion handling, office actions, succession resolution, public-order aggregation, and political AI integration through the belief/runtime-view boundary. The force branch remains intentionally conservative; explicit contested control stays in active follow-up spec E16b.
+Political follow-up work remains active in E16d (planner semantics + golden coverage) and E16c (institutional beliefs + records).
 
 All completed specs are archived under `archive/specs/`.
 
@@ -39,6 +40,7 @@ All completed specs are archived under `archive/specs/`.
 Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b: COMPLETED
 
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
+E16 ──→ E16d (political planning fix and E16 golden coverage build on office/faction actions)
 E16 ──→ E16c (institutional beliefs need offices/factions/support substrate)
 E16c ──→ E16b (force legitimacy needs institutional records and belief propagation)
 E16c ──→ E17 (justice records and institutional knowledge should reuse one record/belief architecture)
@@ -79,10 +81,15 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S07**: Care Intent & Treatment Targeting
 
 **Step 11**:
+- **E16d**: Political Planning Fix & Golden E2E Coverage
+  - needs E16, E13, E12
+  - restores `Bribe`/`Threaten` planning semantics and proves the E16 political loop through golden coverage
+
+**Step 12**:
 - **E16c**: Institutional Beliefs & Record Consultation
   - needs E14, E15, E16
 
-**Step 12**:
+**Step 13**:
 - **E16b**: Force Legitimacy & Jurisdiction Control
   - needs E16, E16c
 - **E17**: Crime, Theft & Justice
@@ -92,6 +99,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - [ ] `OmniscientBeliefView` fully replaced — no code path uses it
 - [ ] Information propagates through explicit channels (witnesses, rumors, records)
 - [ ] Offices transfer through succession
+- [ ] Political planning gives explicit `Bribe`/`Threaten` outcomes instead of falling through unchanged planning state
+- [ ] Political golden coverage proves claim, coalition, threat, travel, eligibility, suppression, and force-succession scenarios
 - [ ] Institutional facts propagate through records and consultation rather than live helper shortcuts
 - [ ] Force succession uses explicit contest/control state rather than presence-only installation
 - [ ] All FND-02 tickets verified closed
@@ -103,7 +112,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 
 ### Phase 4: Adaptation & Integration
 
-**Step 13** (parallel):
+**Step 14** (parallel):
 - **E18**: Bandit Camp Dynamics
   - needs S02, E16
 - **E19**: Guard & Patrol Adaptation
@@ -111,7 +120,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **E20**: Companion Behaviors
   - needs S02
 
-**Step 14** (needs E18–E20):
+**Step 15** (needs E18–E20):
 - **E22**: Scenario Integration & Soak Tests
 
 #### Phase 4 Gate
@@ -124,7 +133,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 
 ### Phase 4+: Economy Deepening
 
-**Step 15** (parallel after E22):
+**Step 16** (parallel after E22):
 - **S04**: Merchant Selling Market Presence (needs E14)
 - **S05**: Merchant Stock Storage & Stalls (needs S04, S01, E16c)
 - **S06**: Commodity Opportunity Valuation (needs S04)
@@ -143,20 +152,21 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 11 | E14, E15, E16 |
-| `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 12 | E16, E16c, E14, E15 |
 | `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |
 | `S02-goal-decision-policy-unification.md` | 3 | 10 | E14 |
 | `S03-planner-target-identity-and-affordance-binding.md` | 3 | 10 | E14 |
 | `S07-care-intent-and-treatment-targeting.md` | 3 | 10 | E14 |
-| `E17-crime-theft-justice.md` | 3 | 12 | E15, S01, S03, E16c |
-| `E18-bandit-dynamics.md` | 4 | 13 | E16, S02 |
-| `E19-guard-patrol.md` | 4 | 13 | E16, E16b, E16c, S02 |
-| `E20-companion-behaviors.md` | 4 | 13 | S02 |
-| `E22-integration-soak-tests.md` | 4 | 14 | E18, E19, E20 |
-| `S04-merchant-selling-market-presence.md` | 4+ | 15 | E14 |
-| `S05-merchant-stock-storage-and-stalls.md` | 4+ | 15 | S04, S01, E16c |
-| `S06-commodity-opportunity-valuation.md` | 4+ | 15 | S04 |
+| `E16d-political-planning-and-golden-coverage.md` | 3 | 11 | E16, E13, E12 |
+| `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 12 | E14, E15, E16 |
+| `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
+| `E17-crime-theft-justice.md` | 3 | 13 | E15, S01, S03, E16c |
+| `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
+| `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, S02 |
+| `E20-companion-behaviors.md` | 4 | 14 | S02 |
+| `E22-integration-soak-tests.md` | 4 | 15 | E18, E19, E20 |
+| `S04-merchant-selling-market-presence.md` | 4+ | 16 | E14 |
+| `S05-merchant-stock-storage-and-stalls.md` | 4+ | 16 | S04, S01, E16c |
+| `S06-commodity-opportunity-valuation.md` | 4+ | 16 | S04 |
 
 ## Crate Dependency Graph
 
@@ -177,6 +187,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E16b, E16c, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16 complete) |
+| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
