@@ -42,6 +42,7 @@ pub mod error;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
+pub mod factions;
 pub mod facility_queue;
 pub mod goal;
 pub mod ids;
@@ -49,6 +50,7 @@ pub mod items;
 pub mod load;
 pub mod needs;
 pub mod numerics;
+pub mod offices;
 pub mod production;
 pub mod relations;
 pub mod test_utils;
@@ -95,6 +97,7 @@ pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
+pub use factions::{FactionData, FactionPurpose};
 pub use facility_queue::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueError, FacilityUseQueue,
     GrantedFacilityUse, QueuedFacilityUse,
@@ -113,6 +116,7 @@ pub use load::{
 };
 pub use needs::{BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
 pub use numerics::{LoadUnits, Permille, Quantity};
+pub use offices::{EligibilityRule, OfficeData, SuccessionLaw};
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, RecipeId, ResourceSource,
     WorkstationMarker, WorkstationTag,
