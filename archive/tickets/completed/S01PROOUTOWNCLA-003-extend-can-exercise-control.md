@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-003: Extend can_exercise_control() for institutional delegation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — ownership control logic
@@ -94,3 +94,12 @@ Note: The exact placement must be after the direct ownership check succeeds/fail
 1. `cargo test -p worldwake-core can_exercise_control`
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**:
+  - Extended `can_exercise_control()` in `crates/worldwake-core/src/world/ownership.rs` with two new delegation checks for unpossessed entities: faction membership via `factions_of()` and office holding via `offices_held_by()`
+  - Added 8 new tests in `crates/worldwake-core/src/world.rs` covering faction delegation, office delegation, non-member/non-holder rejection, possession override, direct ownership/possession regression, and vacant office semantics
+- **Deviations from plan**: None
+- **Verification**: 670 tests pass in worldwake-core (8 new), clippy clean

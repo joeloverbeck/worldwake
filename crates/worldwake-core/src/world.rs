@@ -3284,6 +3284,145 @@ mod tests {
     }
 
     #[test]
+    fn can_exercise_control_faction_member_on_faction_owned_unpossessed() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, faction).unwrap();
+        world.add_member(member, faction).unwrap();
+
+        assert!(world.can_exercise_control(member, item).is_ok());
+    }
+
+    #[test]
+    fn can_exercise_control_office_holder_on_office_owned_unpossessed() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let holder = world
+            .create_agent("Bram", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, office).unwrap();
+        world.assign_office(office, holder).unwrap();
+
+        assert!(world.can_exercise_control(holder, item).is_ok());
+    }
+
+    #[test]
+    fn can_exercise_control_rejects_non_member_on_faction_owned() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let outsider = world
+            .create_agent("Cora", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, faction).unwrap();
+
+        let err = world.can_exercise_control(outsider, item).unwrap_err();
+        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn can_exercise_control_rejects_non_holder_on_office_owned() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let outsider = world
+            .create_agent("Dara", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, office).unwrap();
+        // Office is vacant — no one holds it
+
+        let err = world.can_exercise_control(outsider, item).unwrap_err();
+        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn can_exercise_control_faction_member_rejected_when_entity_possessed_by_other() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let possessor = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(4))
+            .unwrap();
+
+        world.set_owner(item, faction).unwrap();
+        world.add_member(member, faction).unwrap();
+        world.set_possessor(item, possessor).unwrap();
+
+        let err = world.can_exercise_control(member, item).unwrap_err();
+        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn can_exercise_control_direct_ownership_still_works() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        world.set_owner(item, owner).unwrap();
+
+        assert!(world.can_exercise_control(owner, item).is_ok());
+    }
+
+    #[test]
+    fn can_exercise_control_possession_still_works() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let possessor = world
+            .create_agent("Bram", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        world.set_possessor(item, possessor).unwrap();
+
+        assert!(world.can_exercise_control(possessor, item).is_ok());
+    }
+
+    #[test]
+    fn can_exercise_control_vacant_office_means_no_control() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let agent = world
+            .create_agent("Cora", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, office).unwrap();
+        // Office is vacant — agent does not hold it
+
+        let err = world.can_exercise_control(agent, item).unwrap_err();
+        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
     fn can_exercise_control_flows_through_controlled_containers() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world

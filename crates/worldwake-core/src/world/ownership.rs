@@ -167,6 +167,18 @@ impl World {
             return Ok(());
         }
 
+        // Institutional delegation: faction membership or office holding
+        if let Some(owner) = self.relations.owned_by.get(&entity).copied() {
+            if !self.relations.possessed_by.contains_key(&entity) {
+                if self.factions_of(actor).contains(&owner) {
+                    return Ok(());
+                }
+                if self.offices_held_by(actor).contains(&owner) {
+                    return Ok(());
+                }
+            }
+        }
+
         if let Some(holder) = self.relations.possessed_by.get(&entity) {
             return Err(WorldError::PreconditionFailed(format!(
                 "entity {entity} is possessed by {holder}, so {actor} cannot exercise control"
