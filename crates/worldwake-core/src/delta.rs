@@ -65,12 +65,13 @@ pub enum RelationKind {
     OwnedBy,
     MemberOf,
     LoyalTo,
+    SupportDeclaration,
     OfficeHolder,
     HostileTo,
 }
 
 impl RelationKind {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::LocatedIn,
         Self::InTransit,
         Self::ContainedBy,
@@ -78,6 +79,7 @@ impl RelationKind {
         Self::OwnedBy,
         Self::MemberOf,
         Self::LoyalTo,
+        Self::SupportDeclaration,
         Self::OfficeHolder,
         Self::HostileTo,
     ];
@@ -113,6 +115,11 @@ pub enum RelationValue {
         target: EntityId,
         strength: Permille,
     },
+    SupportDeclaration {
+        supporter: EntityId,
+        office: EntityId,
+        candidate: EntityId,
+    },
     OfficeHolder {
         office: EntityId,
         holder: EntityId,
@@ -134,6 +141,7 @@ impl RelationValue {
             Self::OwnedBy { .. } => RelationKind::OwnedBy,
             Self::MemberOf { .. } => RelationKind::MemberOf,
             Self::LoyalTo { .. } => RelationKind::LoyalTo,
+            Self::SupportDeclaration { .. } => RelationKind::SupportDeclaration,
             Self::OfficeHolder { .. } => RelationKind::OfficeHolder,
             Self::HostileTo { .. } => RelationKind::HostileTo,
         }
@@ -425,13 +433,18 @@ mod tests {
                 target: entity(13),
                 strength: Permille::new(650).unwrap(),
             },
+            RelationValue::SupportDeclaration {
+                supporter: entity(14),
+                office: entity(15),
+                candidate: entity(16),
+            },
             RelationValue::OfficeHolder {
-                office: entity(14),
-                holder: entity(15),
+                office: entity(17),
+                holder: entity(18),
             },
             RelationValue::HostileTo {
-                subject: entity(16),
-                target: entity(17),
+                subject: entity(19),
+                target: entity(20),
             },
         ]
     }
@@ -521,6 +534,7 @@ mod tests {
                 RelationKind::OwnedBy,
                 RelationKind::MemberOf,
                 RelationKind::LoyalTo,
+                RelationKind::SupportDeclaration,
                 RelationKind::OfficeHolder,
                 RelationKind::HostileTo,
             ]

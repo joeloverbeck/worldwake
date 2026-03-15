@@ -562,6 +562,44 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    pub fn declare_support(
+        &mut self,
+        supporter: EntityId,
+        office: EntityId,
+        candidate: EntityId,
+    ) -> Result<(), WorldError> {
+        let before = self.staged_world.support_declaration(supporter, office);
+        self.staged_world
+            .declare_support(supporter, office, candidate)?;
+        let after = self.staged_world.support_declaration(supporter, office);
+        self.push_support_declaration_delta(supporter, office, before, after);
+        Ok(())
+    }
+
+    pub fn clear_support_declaration(
+        &mut self,
+        supporter: EntityId,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        let before = self.staged_world.support_declaration(supporter, office);
+        self.staged_world
+            .clear_support_declaration(supporter, office)?;
+        let after = self.staged_world.support_declaration(supporter, office);
+        self.push_support_declaration_delta(supporter, office, before, after);
+        Ok(())
+    }
+
+    pub fn clear_support_declarations_for_office(
+        &mut self,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        let before = self.staged_world.support_declarations_for_office(office);
+        self.staged_world.clear_support_declarations_for_office(office)?;
+        let after = self.staged_world.support_declarations_for_office(office);
+        self.push_support_declaration_set_delta(office, &before, &after);
+        Ok(())
+    }
+
     pub fn assign_office(&mut self, office: EntityId, holder: EntityId) -> Result<(), WorldError> {
         let before = self.staged_world.office_holder(office);
         self.staged_world.assign_office(office, holder)?;
@@ -969,7 +1007,71 @@ impl<'w> WorldTxn<'w> {
                     target,
                     strength,
                 },
+                }));
+        }
+    }
+
+    fn push_support_declaration_delta(
+        &mut self,
+        supporter: EntityId,
+        office: EntityId,
+        before: Option<EntityId>,
+        after: Option<EntityId>,
+    ) {
+        if before == after {
+            return;
+        }
+
+        if let Some(candidate) = before {
+            self.deltas
+                .push(StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter,
+                        office,
+                        candidate,
+                    },
+                }));
+        }
+        if let Some(candidate) = after {
+            self.deltas.push(StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::SupportDeclaration,
+                relation: RelationValue::SupportDeclaration {
+                    supporter,
+                    office,
+                    candidate,
+                },
             }));
+        }
+    }
+
+    fn push_support_declaration_set_delta(
+        &mut self,
+        office: EntityId,
+        before: &[(EntityId, EntityId)],
+        after: &[(EntityId, EntityId)],
+    ) {
+        let before_map = before
+            .iter()
+            .copied()
+            .collect::<BTreeMap<EntityId, EntityId>>();
+        let after_map = after
+            .iter()
+            .copied()
+            .collect::<BTreeMap<EntityId, EntityId>>();
+        let supporters = before_map
+            .keys()
+            .chain(after_map.keys())
+            .copied()
+            .collect::<BTreeSet<_>>();
+
+        for supporter in supporters {
+            self.push_support_declaration_delta(
+                supporter,
+                office,
+                before_map.get(&supporter).copied(),
+                after_map.get(&supporter).copied(),
+            );
         }
     }
 
@@ -991,6 +1093,7 @@ impl<'w> WorldTxn<'w> {
         self.push_archive_removed_members(snapshot.entity, &snapshot.members_of);
         self.push_archive_removed_loyalty_targets(snapshot.entity, &snapshot.loyal_to);
         self.push_archive_removed_loyalty_subjects(snapshot.entity, &snapshot.loyalty_from);
+        self.push_archive_removed_support_declarations(&snapshot.support_declarations);
         self.push_archive_removed_office_holder(snapshot.entity, snapshot.office_holder);
         self.push_archive_removed_offices_held(snapshot.entity, &snapshot.offices_held);
         self.push_archive_removed_hostility_targets(snapshot.entity, &snapshot.hostile_to);
@@ -1185,6 +1288,26 @@ impl<'w> WorldTxn<'w> {
         }
     }
 
+    fn push_archive_removed_support_declarations(
+        &mut self,
+        declarations: &[(EntityId, EntityId, EntityId)],
+    ) {
+        let mut seen = BTreeSet::new();
+        for (supporter, office, candidate) in declarations {
+            if seen.insert((*supporter, *office, *candidate)) {
+                self.deltas
+                    .push(StateDelta::Relation(RelationDelta::Removed {
+                        relation_kind: RelationKind::SupportDeclaration,
+                        relation: RelationValue::SupportDeclaration {
+                            supporter: *supporter,
+                            office: *office,
+                            candidate: *candidate,
+                        },
+                    }));
+            }
+        }
+    }
+
     fn push_archive_removed_hostility_targets(&mut self, subject: EntityId, targets: &[EntityId]) {
         for target in targets {
             self.deltas
@@ -1238,6 +1361,11 @@ fn observed_relation_entities(relation_delta: &RelationDelta) -> BTreeSet<Entity
             subject, target, ..
         }
         | RelationValue::HostileTo { subject, target } => BTreeSet::from([*subject, *target]),
+        RelationValue::SupportDeclaration {
+            supporter,
+            office,
+            candidate,
+        } => BTreeSet::from([*supporter, *office, *candidate]),
         RelationValue::OfficeHolder { office, holder } => BTreeSet::from([*office, *holder]),
     }
 }
@@ -1355,6 +1483,7 @@ mod tests {
         holder: EntityId,
         faction: EntityId,
         loyal_target: EntityId,
+        support_candidate: EntityId,
         hostile_target: EntityId,
         reserved_target: EntityId,
         loyal_strength: Permille,
@@ -1418,6 +1547,7 @@ mod tests {
         world
             .set_loyalty(archived, loyal_target, loyal_strength)
             .unwrap();
+        world.declare_support(archived, loyal_target, holder).unwrap();
         world.add_hostility(archived, hostile_target).unwrap();
         let first_reservation = world.try_reserve(archived, holder, first_range).unwrap();
         let second_reservation = world
@@ -1430,6 +1560,7 @@ mod tests {
             holder,
             faction,
             loyal_target,
+            support_candidate: holder,
             hostile_target,
             reserved_target,
             loyal_strength,
@@ -1739,6 +1870,14 @@ mod tests {
                     },
                 }),
                 StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter: fx.archived,
+                        office: fx.loyal_target,
+                        candidate: fx.support_candidate,
+                    },
+                }),
+                StateDelta::Relation(RelationDelta::Removed {
                     relation_kind: RelationKind::HostileTo,
                     relation: RelationValue::HostileTo {
                         subject: fx.archived,
@@ -1953,6 +2092,129 @@ mod tests {
                 relation: RelationValue::HostileTo { subject, target: actual_target },
             }) if *subject == member && *actual_target == owner
         )));
+    }
+
+    #[test]
+    fn support_declaration_wrappers_record_add_overwrite_and_clear_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let supporter = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let office = world.create_office("Chair", Tick(2)).unwrap();
+        let candidate_a = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let candidate_b = world
+            .create_agent("Cato", ControlSource::Human, Tick(4))
+            .unwrap();
+
+        let mut add_txn = new_txn(&mut world);
+        add_txn
+            .declare_support(supporter, office, candidate_a)
+            .unwrap();
+        assert_eq!(
+            add_txn.deltas(),
+            &[StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::SupportDeclaration,
+                relation: RelationValue::SupportDeclaration {
+                    supporter,
+                    office,
+                    candidate: candidate_a,
+                },
+            })]
+        );
+        commit_txn(add_txn);
+
+        let mut overwrite_txn = new_txn(&mut world);
+        overwrite_txn
+            .declare_support(supporter, office, candidate_b)
+            .unwrap();
+        assert_eq!(
+            overwrite_txn.deltas(),
+            &[
+                StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter,
+                        office,
+                        candidate: candidate_a,
+                    },
+                }),
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter,
+                        office,
+                        candidate: candidate_b,
+                    },
+                }),
+            ]
+        );
+        commit_txn(overwrite_txn);
+
+        let mut clear_txn = new_txn(&mut world);
+        clear_txn.clear_support_declaration(supporter, office).unwrap();
+        assert_eq!(
+            clear_txn.deltas(),
+            &[StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: RelationKind::SupportDeclaration,
+                relation: RelationValue::SupportDeclaration {
+                    supporter,
+                    office,
+                    candidate: candidate_b,
+                },
+            })]
+        );
+    }
+
+    #[test]
+    fn clear_support_declarations_for_office_records_removed_rows() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Chair", Tick(1)).unwrap();
+        let supporter_a = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let supporter_b = world
+            .create_agent("Bram", ControlSource::Human, Tick(3))
+            .unwrap();
+        let candidate_a = world
+            .create_agent("Cato", ControlSource::Ai, Tick(4))
+            .unwrap();
+        let candidate_b = world
+            .create_agent("Dara", ControlSource::Ai, Tick(5))
+            .unwrap();
+
+        world
+            .declare_support(supporter_b, office, candidate_b)
+            .unwrap();
+        world
+            .declare_support(supporter_a, office, candidate_a)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_support_declarations_for_office(office).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[
+                StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter: supporter_a,
+                        office,
+                        candidate: candidate_a,
+                    },
+                }),
+                StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter: supporter_b,
+                        office,
+                        candidate: candidate_b,
+                    },
+                }),
+            ]
+        );
     }
 
     #[test]

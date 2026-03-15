@@ -329,6 +329,13 @@ impl ActualWorldState {
                 strength,
             });
         }
+        for (office, candidate) in world.support_declarations_made_by(entity) {
+            relations.insert(RelationValue::SupportDeclaration {
+                supporter: entity,
+                office,
+                candidate,
+            });
+        }
         for target in world.hostile_targets_of(entity) {
             relations.insert(RelationValue::HostileTo {
                 subject: entity,
@@ -377,6 +384,15 @@ fn relation_is_live(
         }
         | RelationValue::HostileTo { subject, target } => {
             live_entities.contains_key(subject) && live_entities.contains_key(target)
+        }
+        RelationValue::SupportDeclaration {
+            supporter,
+            office,
+            candidate,
+        } => {
+            live_entities.contains_key(supporter)
+                && live_entities.get(office) == Some(&EntityKind::Office)
+                && live_entities.contains_key(candidate)
         }
         RelationValue::OfficeHolder { office, holder } => {
             live_entities.get(office) == Some(&EntityKind::Office)

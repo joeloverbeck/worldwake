@@ -220,6 +220,120 @@ impl World {
             .unwrap_or_default()
     }
 
+    pub(crate) fn declare_support(
+        &mut self,
+        supporter: EntityId,
+        office: EntityId,
+        candidate: EntityId,
+    ) -> Result<(), WorldError> {
+        self.ensure_alive(supporter)?;
+        self.ensure_live_kind(office, EntityKind::Office, "support declaration office")?;
+        self.ensure_alive(candidate)?;
+        self.relations
+            .support_declarations
+            .insert((supporter, office), candidate);
+        Ok(())
+    }
+
+    pub(crate) fn clear_support_declaration(
+        &mut self,
+        supporter: EntityId,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        self.ensure_alive(supporter)?;
+        self.ensure_live_kind(office, EntityKind::Office, "support declaration office")?;
+        self.relations.support_declarations.remove(&(supporter, office));
+        Ok(())
+    }
+
+    pub(crate) fn clear_support_declarations_for_office(
+        &mut self,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        self.ensure_live_kind(office, EntityKind::Office, "support declaration office")?;
+        self.relations
+            .support_declarations
+            .retain(|(_, declared_office), _| *declared_office != office);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
+        if !self.is_alive(supporter)
+            || self
+                .ensure_live_kind(office, EntityKind::Office, "support declaration office")
+                .is_err()
+        {
+            return None;
+        }
+
+        let candidate = self
+            .relations
+            .support_declarations
+            .get(&(supporter, office))
+            .copied()?;
+        self.is_alive(candidate).then_some(candidate)
+    }
+
+    #[must_use]
+    pub fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+        if self
+            .ensure_live_kind(office, EntityKind::Office, "support declaration office")
+            .is_err()
+        {
+            return Vec::new();
+        }
+
+        self.relations
+            .support_declarations
+            .iter()
+            .filter_map(|((supporter, declared_office), candidate)| {
+                (*declared_office == office
+                    && self.is_alive(*supporter)
+                    && self.is_alive(*candidate))
+                .then_some((*supporter, *candidate))
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn support_declarations_made_by(
+        &self,
+        supporter: EntityId,
+    ) -> Vec<(EntityId, EntityId)> {
+        if !self.is_alive(supporter) {
+            return Vec::new();
+        }
+
+        self.relations
+            .support_declarations
+            .iter()
+            .filter_map(|((declared_supporter, office), candidate)| {
+                (*declared_supporter == supporter
+                    && self.entity_kind(*office) == Some(EntityKind::Office)
+                    && self.is_alive(*candidate))
+                .then_some((*office, *candidate))
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn count_support_declarations_for_candidate(
+        &self,
+        office: EntityId,
+        candidate: EntityId,
+    ) -> usize {
+        if !self.is_alive(candidate) {
+            return 0;
+        }
+
+        self.support_declarations_for_office(office)
+            .into_iter()
+            .filter(|(_, declared_candidate)| *declared_candidate == candidate)
+            .count()
+    }
+
     pub(crate) fn add_hostility(
         &mut self,
         subject: EntityId,

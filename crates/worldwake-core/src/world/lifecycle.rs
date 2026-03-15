@@ -15,6 +15,7 @@ pub enum ArchiveResolution {
     TransferOwnershipTo(EntityId),
     RevokeMemberships,
     RevokeLoyalty,
+    RevokeSupportDeclarations,
     RevokeHostility,
     VacateOffice,
     RelinquishOffices,
@@ -49,6 +50,10 @@ impl ArchivePreparationPolicy {
                 (
                     ArchiveDependencyKind::HasLoyalSubjects,
                     ArchiveResolution::RevokeLoyalty,
+                ),
+                (
+                    ArchiveDependencyKind::HasSupportDeclarers,
+                    ArchiveResolution::RevokeSupportDeclarations,
                 ),
                 (
                     ArchiveDependencyKind::HasHostileSubjects,
@@ -153,6 +158,7 @@ pub struct ArchiveMutationSnapshot {
     pub members_of: Vec<EntityId>,
     pub loyal_to: Vec<(EntityId, Permille)>,
     pub loyalty_from: Vec<(EntityId, Permille)>,
+    pub support_declarations: Vec<(EntityId, EntityId, EntityId)>,
     pub office_holder: Option<EntityId>,
     pub offices_held: Vec<EntityId>,
     pub hostile_to: Vec<EntityId>,
@@ -182,6 +188,7 @@ impl World {
             members_of: Self::snapshot_entities(&self.relations.members_of, entity),
             loyal_to: Self::snapshot_weighted_entities(&self.relations.loyal_to, entity),
             loyalty_from: Self::snapshot_weighted_entities(&self.relations.loyalty_from, entity),
+            support_declarations: self.snapshot_support_declarations(entity),
             office_holder: self.relations.office_holder.get(&entity).copied(),
             offices_held: Self::snapshot_entities(&self.relations.offices_held, entity),
             hostile_to: Self::snapshot_entities(&self.relations.hostile_to, entity),
@@ -275,6 +282,13 @@ impl World {
             }
             (ArchiveDependencyKind::HasLoyalSubjects, ArchiveResolution::RevokeLoyalty) => {
                 self.clear_loyalty_dependents(entity, &dependency.dependents);
+                Ok(())
+            }
+            (
+                ArchiveDependencyKind::HasSupportDeclarers,
+                ArchiveResolution::RevokeSupportDeclarations,
+            ) => {
+                self.clear_support_declarations_referencing(entity);
                 Ok(())
             }
             (ArchiveDependencyKind::HasHostileSubjects, ArchiveResolution::RevokeHostility) => {
@@ -413,6 +427,13 @@ impl World {
         }
     }
 
+    #[allow(dead_code)]
+    fn clear_support_declarations_referencing(&mut self, entity: EntityId) {
+        self.relations
+            .support_declarations
+            .retain(|(_, office), candidate| *office != entity && *candidate != entity);
+    }
+
     pub(super) fn clear_office_assignment(&mut self, office: EntityId) {
         Self::clear_entity_relation(
             &mut self.relations.office_holder,
@@ -444,6 +465,10 @@ impl World {
             | (ArchiveDependencyKind::OwnsEntities, ArchiveResolution::RelinquishOwnership)
             | (ArchiveDependencyKind::HasMembers, ArchiveResolution::RevokeMemberships)
             | (ArchiveDependencyKind::HasLoyalSubjects, ArchiveResolution::RevokeLoyalty)
+            | (
+                ArchiveDependencyKind::HasSupportDeclarers,
+                ArchiveResolution::RevokeSupportDeclarations,
+            )
             | (ArchiveDependencyKind::HasHostileSubjects, ArchiveResolution::RevokeHostility)
             | (ArchiveDependencyKind::HasOfficeHolder, ArchiveResolution::VacateOffice)
             | (ArchiveDependencyKind::HoldsOffices, ArchiveResolution::RelinquishOffices) => Ok(()),
@@ -501,6 +526,17 @@ impl World {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn snapshot_support_declarations(&self, entity: EntityId) -> Vec<(EntityId, EntityId, EntityId)> {
+        self.relations
+            .support_declarations
+            .iter()
+            .filter_map(|((supporter, office), candidate)| {
+                (*supporter == entity || *office == entity || *candidate == entity)
+                    .then_some((*supporter, *office, *candidate))
+            })
+            .collect()
     }
 
     fn snapshot_archive_reservations(&self, entity: EntityId) -> Vec<ReservationRecord> {

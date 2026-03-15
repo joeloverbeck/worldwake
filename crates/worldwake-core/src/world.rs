@@ -3475,6 +3475,59 @@ mod tests {
     }
 
     #[test]
+    fn support_declarations_overwrite_count_and_clear_by_office() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Granary Chair", Tick(1)).unwrap();
+        let supporter_a = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let supporter_b = world
+            .create_agent("Bram", ControlSource::Human, Tick(3))
+            .unwrap();
+        let candidate_a = world
+            .create_agent("Cato", ControlSource::Ai, Tick(4))
+            .unwrap();
+        let candidate_b = world
+            .create_agent("Dara", ControlSource::Ai, Tick(5))
+            .unwrap();
+
+        world
+            .declare_support(supporter_b, office, candidate_a)
+            .unwrap();
+        world
+            .declare_support(supporter_a, office, candidate_a)
+            .unwrap();
+        world
+            .declare_support(supporter_a, office, candidate_b)
+            .unwrap();
+
+        assert_eq!(
+            world.support_declaration(supporter_a, office),
+            Some(candidate_b)
+        );
+        assert_eq!(
+            world.support_declarations_for_office(office),
+            vec![(supporter_a, candidate_b), (supporter_b, candidate_a)]
+        );
+        assert_eq!(
+            world.count_support_declarations_for_candidate(office, candidate_a),
+            1
+        );
+        assert_eq!(
+            world.count_support_declarations_for_candidate(office, candidate_b),
+            1
+        );
+
+        world.clear_support_declaration(supporter_b, office).unwrap();
+        assert_eq!(world.support_declaration(supporter_b, office), None);
+
+        world.clear_support_declarations_for_office(office).unwrap();
+        world.clear_support_declarations_for_office(office).unwrap();
+
+        assert_eq!(world.support_declarations_for_office(office), Vec::<(EntityId, EntityId)>::new());
+    }
+
+    #[test]
     fn social_query_helpers_hide_archived_entities_even_if_rows_are_stale() {
         let mut world = World::new(Topology::new()).unwrap();
         let member = world
@@ -3521,6 +3574,10 @@ mod tests {
             loyal_target,
             BTreeMap::from([(member, Permille::new(700).unwrap())]),
         );
+        world
+            .relations
+            .support_declarations
+            .insert((member, office), hostile_target);
         world.relations.office_holder.insert(office, member);
         world
             .relations
@@ -3545,6 +3602,8 @@ mod tests {
             world.loyal_subjects_of(loyal_target),
             Vec::<(EntityId, Permille)>::new()
         );
+        assert_eq!(world.support_declaration(member, office), None);
+        assert_eq!(world.support_declarations_for_office(office), Vec::<(EntityId, EntityId)>::new());
         assert_eq!(world.office_holder(office), None);
         assert_eq!(world.offices_held_by(member), Vec::<EntityId>::new());
         assert_eq!(world.hostile_targets_of(member), Vec::<EntityId>::new());
@@ -3584,11 +3643,19 @@ mod tests {
             Err(WorldError::ArchivedEntity(id)) if id == archived_agent
         ));
         assert!(matches!(
+            world.declare_support(agent, item, faction),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
             world.add_hostility(missing, faction),
             Err(WorldError::EntityNotFound(id)) if id == missing
         ));
         assert!(matches!(
             world.vacate_office(missing),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
+        assert!(matches!(
+            world.clear_support_declarations_for_office(missing),
             Err(WorldError::EntityNotFound(id)) if id == missing
         ));
     }

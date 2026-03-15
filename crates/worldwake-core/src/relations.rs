@@ -21,6 +21,7 @@ pub enum ArchiveDependencyKind {
     OwnsEntities,
     HasMembers,
     HasLoyalSubjects,
+    HasSupportDeclarers,
     HasHostileSubjects,
     HasOfficeHolder,
     HoldsOffices,
@@ -35,6 +36,7 @@ impl ArchiveDependencyKind {
             Self::OwnsEntities => "owns other entities",
             Self::HasMembers => "has member entities",
             Self::HasLoyalSubjects => "has loyal subjects",
+            Self::HasSupportDeclarers => "has support declarations referencing it",
             Self::HasHostileSubjects => "has hostile subjects",
             Self::HasOfficeHolder => "has an office holder",
             Self::HoldsOffices => "holds offices",
@@ -63,6 +65,7 @@ pub struct RelationTables {
     pub(crate) members_of: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) loyal_to: BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
     pub(crate) loyalty_from: BTreeMap<EntityId, BTreeMap<EntityId, Permille>>,
+    pub(crate) support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
     pub(crate) office_holder: BTreeMap<EntityId, EntityId>,
     pub(crate) offices_held: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) hostile_to: BTreeMap<EntityId, BTreeSet<EntityId>>,
@@ -101,6 +104,12 @@ impl RelationTables {
             ArchiveDependencyKind::HasLoyalSubjects,
             self.loyalty_from.get(&entity),
         );
+        Self::push_support_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::HasSupportDeclarers,
+            &self.support_declarations,
+            entity,
+        );
         Self::push_archive_dependency(
             &mut dependencies,
             ArchiveDependencyKind::HasHostileSubjects,
@@ -133,6 +142,7 @@ impl RelationTables {
             &mut self.loyalty_from,
             entity,
         );
+        self.remove_support_declarations(entity);
         Self::remove_entity_relations(&mut self.office_holder, &mut self.offices_held, entity);
         Self::remove_many_to_many_relations(&mut self.hostile_to, &mut self.hostility_from, entity);
         self.remove_entity_reservations(entity);
@@ -228,6 +238,13 @@ impl RelationTables {
         }
     }
 
+    fn remove_support_declarations(&mut self, entity: EntityId) {
+        self.support_declarations
+            .retain(|(supporter, office), candidate| {
+                *supporter != entity && *office != entity && *candidate != entity
+            });
+    }
+
     fn remove_reverse_link(
         reverse: &mut BTreeMap<EntityId, BTreeSet<EntityId>>,
         target: EntityId,
@@ -276,6 +293,27 @@ impl RelationTables {
             dependencies.push(ArchiveDependency {
                 kind,
                 dependents: rows.keys().copied().collect(),
+            });
+        }
+    }
+
+    fn push_support_archive_dependency(
+        dependencies: &mut Vec<ArchiveDependency>,
+        kind: ArchiveDependencyKind,
+        rows: &BTreeMap<(EntityId, EntityId), EntityId>,
+        entity: EntityId,
+    ) {
+        let dependents = rows
+            .iter()
+            .filter_map(|((supporter, office), candidate)| {
+                (*office == entity || *candidate == entity).then_some(*supporter)
+            })
+            .collect::<BTreeSet<_>>();
+
+        if !dependents.is_empty() {
+            dependencies.push(ArchiveDependency {
+                kind,
+                dependents: dependents.into_iter().collect(),
             });
         }
     }
@@ -330,6 +368,7 @@ mod tests {
         assert!(tables.members_of.is_empty());
         assert!(tables.loyal_to.is_empty());
         assert!(tables.loyalty_from.is_empty());
+        assert!(tables.support_declarations.is_empty());
         assert!(tables.office_holder.is_empty());
         assert!(tables.offices_held.is_empty());
         assert!(tables.hostile_to.is_empty());
@@ -357,6 +396,7 @@ mod tests {
         let loyal_target = entity(16);
         let office = entity(17);
         let enemy = entity(18);
+        let candidate = entity(19);
         let reservation_id = ReservationId(7);
         let reservation = ReservationRecord {
             id: reservation_id,
@@ -397,6 +437,7 @@ mod tests {
             loyal_target,
             BTreeMap::from([(item, Permille::new(650).unwrap())]),
         );
+        tables.support_declarations.insert((item, office), candidate);
         tables.office_holder.insert(office, item);
         tables
             .offices_held
@@ -503,6 +544,7 @@ mod tests {
         assert!(tables.members_of.is_empty());
         assert!(tables.loyal_to.is_empty());
         assert!(tables.loyalty_from.is_empty());
+        assert!(tables.support_declarations.is_empty());
         assert!(tables.office_holder.is_empty());
         assert!(tables.offices_held.is_empty());
         assert!(tables.hostile_to.is_empty());
@@ -521,6 +563,7 @@ mod tests {
         let faction = entity(15);
         let office = entity(16);
         let enemy = entity(17);
+        let candidate = entity(18);
         let reservation_id = ReservationId(7);
 
         let mut tables = RelationTables::default();
@@ -543,6 +586,7 @@ mod tests {
         tables
             .members_of
             .insert(faction, [item].into_iter().collect());
+        tables.support_declarations.insert((item, office), candidate);
         tables.office_holder.insert(office, item);
         tables
             .offices_held
@@ -576,6 +620,7 @@ mod tests {
             tables.member_of.get(&item),
             Some(&BTreeSet::from([faction]))
         );
+        assert_eq!(tables.support_declarations.get(&(item, office)), Some(&candidate));
         assert_eq!(tables.office_holder.get(&office), Some(&item));
         assert_eq!(tables.hostile_to.get(&item), Some(&BTreeSet::from([enemy])));
         assert_eq!(
@@ -588,6 +633,7 @@ mod tests {
         assert!(tables.reservations_by_entity.is_empty());
         assert_eq!(tables.possessed_by.get(&item), Some(&holder));
         assert_eq!(tables.owned_by.get(&item), Some(&owner));
+        assert_eq!(tables.support_declarations.get(&(item, office)), Some(&candidate));
     }
 
     #[test]
@@ -599,6 +645,7 @@ mod tests {
         let office = entity(14);
         let holder = entity(15);
         let hostile_subject = entity(16);
+        let supporter = entity(17);
 
         let mut tables = RelationTables::default();
         tables
@@ -615,6 +662,7 @@ mod tests {
             target,
             BTreeMap::from([(loyal_subject, Permille::new(500).unwrap())]),
         );
+        tables.support_declarations.insert((supporter, office), target);
         tables.office_holder.insert(office, holder);
         tables
             .offices_held
@@ -629,6 +677,7 @@ mod tests {
         tables.remove_all(target);
         assert!(tables.loyal_to.is_empty());
         assert!(tables.loyalty_from.is_empty());
+        assert!(tables.support_declarations.is_empty());
         assert!(tables.hostile_to.is_empty());
         assert!(tables.hostility_from.is_empty());
         assert_eq!(
@@ -653,8 +702,10 @@ mod tests {
         tables
             .offices_held
             .insert(member, [office].into_iter().collect());
+        tables.support_declarations.insert((supporter, office), member);
 
         tables.remove_all(office);
+        assert!(tables.support_declarations.is_empty());
         assert!(tables.office_holder.is_empty());
         assert!(tables.offices_held.is_empty());
     }
