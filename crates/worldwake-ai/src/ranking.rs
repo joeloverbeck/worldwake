@@ -28,6 +28,7 @@ pub fn rank_candidates(
             priority_class: priority_class(candidate, &context, recipes),
             motive_score: motive_score(candidate, &context, recipes),
         })
+        .filter(|ranked| ranked.motive_score > 0)
         .collect::<Vec<_>>();
 
     ranked.sort_unstable_by(compare_ranked_goals);
@@ -122,10 +123,7 @@ fn priority_class(
         } => context
             .thresholds
             .map_or(GoalPriorityClass::Background, |thresholds| {
-                classify_band(
-                    derive_pain_pressure(context.view, context.agent),
-                    &thresholds.pain,
-                )
+                classify_band(treatment_pain(context), &thresholds.pain)
             }),
         GoalKind::AcquireCommodity {
             commodity: _,
@@ -329,15 +327,33 @@ fn drive_score(
     }
 }
 
+/// Maximum pain across the agent itself and any local wounded patients.
+/// Used by both `priority_class` and `motive_score` for treatment acquisition.
+fn treatment_pain(context: &RankingContext<'_>) -> Permille {
+    let self_pain = derive_pain_pressure(context.view, context.agent);
+    let local_patient_pain = context
+        .view
+        .effective_place(context.agent)
+        .map_or(Permille::new_unchecked(0), |place| {
+            context
+                .view
+                .entities_at(place)
+                .into_iter()
+                .filter(|e| *e != context.agent)
+                .filter(|e| context.view.is_alive(*e) && context.view.has_wounds(*e))
+                .map(|e| derive_pain_pressure(context.view, e))
+                .max()
+                .unwrap_or(Permille::new_unchecked(0))
+        });
+    std::cmp::max(self_pain, local_patient_pain)
+}
+
 fn treatment_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
     if commodity.spec().treatment_profile.is_none() {
         return 0;
     }
 
-    let pain_score = score_product(
-        context.utility.pain_weight,
-        derive_pain_pressure(context.view, context.agent),
-    );
+    let pain_score = score_product(context.utility.pain_weight, treatment_pain(context));
     if context.danger_pressure.value() == 0 {
         pain_score
     } else {
@@ -1228,8 +1244,10 @@ mod tests {
             &RecipeRegistry::new(),
         );
 
-        assert_eq!(ranked[0].motive_score, 0);
-        assert_eq!(ranked[1].motive_score, 0);
+        assert!(
+            ranked.is_empty(),
+            "zero social_weight and missing-subject goals should produce zero motive and be excluded from the ranked list"
+        );
     }
 
     #[test]
@@ -1435,7 +1453,10 @@ mod tests {
             &RecipeRegistry::new(),
         );
 
-        assert_eq!(ranked[0].motive_score, 0);
+        assert!(
+            ranked.is_empty(),
+            "restock goal with no demand memory should produce zero motive and be excluded from the ranked list"
+        );
     }
 
     #[test]

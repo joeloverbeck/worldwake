@@ -1021,3 +1021,590 @@ fn golden_survival_needs_suppress_social_goals() {
         "survival-needs suppression scenario should replay deterministically"
     );
 }
+
+// ===== T11: Chain length filtering stops gossip =====
+
+#[allow(clippy::too_many_lines)]
+fn run_chain_length_filtering_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+
+    // 4 agents co-located at Village Square + subject at Orchard Farm.
+    let alice = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Alice",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let bob = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bob",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let carol = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Carol",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let dave = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Dave",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Subject",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // All agents: empty beliefs, blind perception (no passive observation).
+    for agent in [alice, bob, carol, dave] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            blind_perception_profile(),
+        );
+    }
+
+    // Alice, Bob: can relay chains up to 3.
+    for agent in [alice, bob] {
+        set_agent_tell_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            TellProfile {
+                max_tell_candidates: 1,
+                max_relay_chain_len: 3,
+                acceptance_fidelity: pm(1000),
+            },
+        );
+    }
+    // Carol: max_relay_chain_len=1 — speaker-side filter blocks relay of chain_len=2 rumor.
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        carol,
+        TellProfile {
+            max_tell_candidates: 1,
+            max_relay_chain_len: 1,
+            acceptance_fidelity: pm(1000),
+        },
+    );
+    // Dave: willing to relay up to 3, but never receives because Carol cannot relay.
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        dave,
+        TellProfile {
+            max_tell_candidates: 1,
+            max_relay_chain_len: 3,
+            acceptance_fidelity: pm(1000),
+        },
+    );
+
+    // Seed beliefs: Alice knows subject (DirectObservation) and Bob (tell target).
+    let subject_belief = build_believed_entity_state(
+        &h.world,
+        subject,
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("subject should be observable");
+    seed_belief(&mut h.world, &mut h.event_log, alice, subject, subject_belief);
+
+    let bob_belief = build_believed_entity_state(
+        &h.world,
+        bob,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("bob should be observable");
+    seed_belief(&mut h.world, &mut h.event_log, alice, bob, bob_belief);
+
+    // Bob knows Carol (relay target).
+    let carol_belief = build_believed_entity_state(
+        &h.world,
+        carol,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("carol should be observable");
+    seed_belief(&mut h.world, &mut h.event_log, bob, carol, carol_belief);
+
+    // Carol knows Dave (would-be relay target, but blocked by chain_len filter).
+    let dave_belief = build_believed_entity_state(
+        &h.world,
+        dave,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("dave should be observable");
+    seed_belief(&mut h.world, &mut h.event_log, carol, dave, dave_belief);
+
+    // Step 1: wait for Alice → Bob propagation.
+    let bob_received = run_until(40, || {
+        h.step_once();
+        agent_belief_about(&h.world, bob, subject).is_some()
+    });
+    assert!(bob_received, "Bob should receive Alice's told belief about subject");
+
+    // Step 2: wait for Bob → Carol propagation.
+    let carol_received = run_until(40, || {
+        h.step_once();
+        agent_belief_about(&h.world, carol, subject).is_some()
+    });
+    assert!(carol_received, "Carol should receive Bob's relayed belief about subject");
+
+    // Step 3: give Dave enough time to potentially receive (he should not).
+    for _ in 0..40 {
+        h.step_once();
+    }
+
+    // Verify chain degradation.
+    let bob_belief = agent_belief_about(&h.world, bob, subject).unwrap();
+    assert_eq!(
+        bob_belief.source,
+        PerceptionSource::Report {
+            from: alice,
+            chain_len: 1
+        },
+        "Bob should have Report from Alice with chain_len=1"
+    );
+
+    let carol_belief = agent_belief_about(&h.world, carol, subject).unwrap();
+    assert_eq!(
+        carol_belief.source,
+        PerceptionSource::Rumor { chain_len: 2 },
+        "Carol should have Rumor with chain_len=2"
+    );
+
+    assert!(
+        agent_belief_about(&h.world, dave, subject).is_none(),
+        "Dave should have NO belief about subject — Carol's max_relay_chain_len=1 blocks relay of chain_len=2 rumor"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+}
+
+#[test]
+fn golden_chain_length_filtering_stops_gossip() {
+    let first = run_chain_length_filtering_scenario(Seed([98; 32]));
+    let second = run_chain_length_filtering_scenario(Seed([98; 32]));
+
+    assert_eq!(
+        first, second,
+        "chain-length filtering scenario should replay deterministically"
+    );
+}
+
+// ===== T12: Agent diversity in social behavior =====
+
+#[allow(clippy::too_many_lines)]
+fn run_agent_diversity_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+
+    // Three speakers with different social weights.
+    let gossip = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Gossip",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let normal = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Normal",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(200),
+    );
+    let loner = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Loner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(0),
+    );
+
+    // Common listener (social_weight=0 so it won't relay).
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(0),
+    );
+
+    // Three unique subjects at Orchard Farm — one per speaker.
+    let subject_g = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SubjectG",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let subject_n = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SubjectN",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let subject_l = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SubjectL",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // Configure speakers: blind perception, focused tell profile.
+    for agent in [gossip, normal, loner] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            blind_perception_profile(),
+        );
+        set_agent_tell_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            focused_accepting_tell_profile(),
+        );
+    }
+
+    // Listener: keen perception, accepting tell profile.
+    ensure_empty_belief_store(&mut h.world, &mut h.event_log, listener);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        keen_perception_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+
+    // Seed beliefs: each speaker knows the listener + their unique subject.
+    let listener_belief = build_believed_entity_state(
+        &h.world,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("listener should be observable");
+    for speaker in [gossip, normal, loner] {
+        seed_belief(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            listener,
+            listener_belief.clone(),
+        );
+    }
+
+    for (speaker, subject, label) in [
+        (gossip, subject_g, "subject_g"),
+        (normal, subject_n, "subject_n"),
+        (loner, subject_l, "subject_l"),
+    ] {
+        let believed = build_believed_entity_state(
+            &h.world,
+            subject,
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        )
+        .unwrap_or_else(|| panic!("{label} should be observable"));
+        seed_belief(&mut h.world, &mut h.event_log, speaker, subject, believed);
+    }
+
+    // Run simulation for extended ticks.
+    let mut gossip_told = false;
+    let mut normal_told = false;
+
+    for _ in 0..60 {
+        h.step_once();
+        gossip_told |= agent_belief_about(&h.world, listener, subject_g).is_some();
+        normal_told |= agent_belief_about(&h.world, listener, subject_n).is_some();
+
+        if gossip_told && normal_told {
+            break;
+        }
+    }
+
+    assert!(
+        gossip_told,
+        "Gossip (social_weight=900) should tell listener about subject_g"
+    );
+    assert!(
+        normal_told,
+        "Normal (social_weight=200) should tell listener about subject_n"
+    );
+    assert!(
+        agent_belief_about(&h.world, listener, subject_l).is_none(),
+        "Loner (social_weight=0) should never tell listener — zero-motive filter excludes ShareBelief from ranked list"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+}
+
+#[test]
+fn golden_agent_diversity_in_social_behavior() {
+    let first = run_agent_diversity_scenario(Seed([99; 32]));
+    let second = run_agent_diversity_scenario(Seed([99; 32]));
+
+    assert_eq!(
+        first, second,
+        "agent-diversity scenario should replay deterministically"
+    );
+}
+
+// ===== T13: Rumor leads to wasted trip then discovery =====
+
+#[allow(clippy::too_many_lines)]
+fn run_rumor_wasted_trip_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+
+    // Informant: the original observer (used as the Report `from` field).
+    let informant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Informant",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // Speaker: has second-hand knowledge (Report from informant) about orchard.
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+
+    // Agent: hungry, will act on received rumor.
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Forager",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // Orchard starts with apples (for belief building).
+    let orchard = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    // Build speaker's belief about orchard as Report{from: informant, chain_len: 1}.
+    // This captures the pre-depletion state (10 apples available).
+    let orchard_report = build_believed_entity_state(
+        &h.world,
+        orchard,
+        Tick(1),
+        PerceptionSource::Report {
+            from: informant,
+            chain_len: 1,
+        },
+    )
+    .expect("orchard should be observable for belief building");
+
+    // Deplete the orchard — the real world now has 0 apples.
+    let mut txn = new_txn(&mut h.world, 2);
+    txn.set_component_resource_source(
+        orchard,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(0),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    // Configure speaker and agent.
+    ensure_empty_belief_store(&mut h.world, &mut h.event_log, speaker);
+    ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        accepting_tell_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        blind_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        keen_perception_profile(),
+    );
+
+    // Seed speaker's beliefs: knows agent (tell target) and orchard (Report source).
+    let agent_belief = build_believed_entity_state(
+        &h.world,
+        agent,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("agent should be observable for tell targeting");
+    seed_belief(&mut h.world, &mut h.event_log, speaker, agent, agent_belief);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        orchard,
+        orchard_report,
+    );
+
+    // Track the full information lifecycle.
+    let mut received_rumor = false;
+    let mut left_village = false;
+    let mut reached_orchard = false;
+    let mut saw_discovery = false;
+    let mut corrected_belief = false;
+
+    for _ in 0..120 {
+        h.step_once();
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+
+        if let Some(belief) = agent_belief_about(&h.world, agent, orchard) {
+            received_rumor |= matches!(belief.source, PerceptionSource::Rumor { chain_len: 2 });
+        }
+
+        let place = h.world.effective_place(agent);
+        left_village |= place != Some(VILLAGE_SQUARE) || h.world.is_in_transit(agent);
+        reached_orchard |= place == Some(ORCHARD_FARM);
+
+        saw_discovery |=
+            saw_inventory_discovery(&h.event_log, agent, orchard, CommodityKind::Apple);
+
+        if let Some(belief) = agent_belief_about(&h.world, agent, orchard) {
+            corrected_belief |= belief.source == PerceptionSource::DirectObservation
+                && belief
+                    .resource_source
+                    .as_ref()
+                    .is_some_and(|source| source.available_quantity == Quantity(0));
+        }
+
+        if received_rumor && left_village && reached_orchard && saw_discovery && corrected_belief {
+            break;
+        }
+    }
+
+    assert!(
+        received_rumor,
+        "agent should receive a Rumor(chain_len=2) about the orchard from the speaker's told Report"
+    );
+    assert!(
+        left_village,
+        "rumor should drive travel toward the orchard"
+    );
+    assert!(
+        reached_orchard,
+        "agent should reach Orchard Farm before discovering depletion"
+    );
+    assert!(
+        saw_discovery,
+        "arrival should emit a resource-source discrepancy discovery event"
+    );
+    assert!(
+        corrected_belief,
+        "direct observation should replace the rumor-sourced belief with the actual depleted state"
+    );
+
+    let final_belief = agent_belief_about(&h.world, agent, orchard)
+        .expect("agent should retain corrected belief about orchard");
+    assert_eq!(
+        final_belief.source,
+        PerceptionSource::DirectObservation,
+        "belief source should be upgraded from Rumor to DirectObservation after discovery"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+}
+
+#[test]
+fn golden_rumor_leads_to_wasted_trip_then_discovery() {
+    let first = run_rumor_wasted_trip_scenario(Seed([100; 32]));
+    let second = run_rumor_wasted_trip_scenario(Seed([100; 32]));
+
+    assert_eq!(
+        first, second,
+        "rumor-wasted-trip-discovery scenario should replay deterministically"
+    );
+}

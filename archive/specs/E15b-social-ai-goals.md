@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # E15b: Social AI Goals + Golden E2E Test Suites
 
 ## Context
@@ -268,3 +270,17 @@ Update `reports/golden-e2e-coverage-analysis.md`:
 3. `cargo clippy --workspace --all-targets -- -D warnings` — clean
 4. Determinism: each scenario with replay produces identical hashes
 5. Conservation: every test checks `verify_live_lot_conservation()` per tick
+
+## Outcome
+
+**Completion date**: 2026-03-16
+
+**What was delivered**:
+- **Deliverable 1 (Social AI Goal Integration)**: GoalKind::ShareBelief, GoalKindTag::ShareBelief, PlannerOpKind::Tell with GoalModelFallback semantics, social_weight in UtilityProfile, emit_social_candidates() with chain-length and co-location filtering, ShareBelief ranking with suppression under danger/self-care, social_pressure-based motive scoring. All implemented across tickets E15BSOCAIGOA-001 through E15BSOCAIGOA-006.
+- **Deliverable 2 (Golden E2E Test Suite)**: 10 golden social tests in golden_social.rs covering autonomous Tell, rumor chain degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, survival-needs suppression, chain-length filtering, agent diversity (Principle 20), and full rumor→wasted-trip→discovery lifecycle. Coverage report updated.
+- **Architectural improvements discovered during T11-T13**: Zero-motive filter in rank_candidates() (system-wide invariant preventing execution of unmotivated goals) and treatment_pain() helper fixing healthy-healer treatment scoring.
+
+**Deviations from spec**:
+- Spec planned 13 tests; implemented 10 (T1-T7 from Phase A were replaced by T8-T10 which cover the same scenarios autonomously without manual InputQueue injection, plus T11-T13).
+- InvestigateMismatch deferred as planned.
+- Harness helpers (seed_belief, agent_belief_about, etc.) were added incrementally across tickets rather than in a single Phase A batch.
