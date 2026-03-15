@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Analysis and Gap Report
 
-**Date**: 2026-03-12 (updated 2026-03-14)
+**Date**: 2026-03-12 (updated 2026-03-15)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Document proven emergent scenarios, identify coverage gaps, and prioritize missing tests.
 
@@ -18,13 +18,14 @@ crates/worldwake-ai/tests/
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
+  golden_social.rs            — 4 tests (autonomous tell, rumor relay degradation, stale-belief correction, skeptical-listener rejection)
 ```
 
 ---
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 48 tests across 6 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch — no manual action queueing after scenario setup. All behavior is emergent.
+The golden suite contains 52 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The new social slice locks down autonomous Tell and discovery correction end-to-end without falling back to manual queue injection after setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -83,6 +84,18 @@ The golden suite contains 48 tests across 6 domain files. Every test uses the re
 - The scenario exposed a planner-budget gap: the default search node-expansion budget was too low for the branch-heavy restock route from Village Square. Raising the default node-expansion budget fixed the real runtime path without adding special cases.
 - Two runs with the same seed produce identical world and event-log hashes for the merchant restock scenario.
 **Cross-system chain**: Demand memory at home market → enterprise restock signal → multi-leg travel → harvest/materialization → cargo return to home market.
+
+### Scenario 2e: Social Belief Sharing, Relay, and Correction
+**File**: `golden_social.rs` | **Tests**: `golden_agent_autonomously_tells_colocated_peer`, `golden_rumor_chain_degrades_through_three_agents`, `golden_stale_belief_travel_reobserve_replan`, `golden_skeptical_listener_rejects_told_belief`
+**Systems exercised**: Perception/beliefs, Tell actions, AI social candidate generation and ranking, planner payload wiring, travel, deterministic replay
+**Setup**: Four focused social scenarios cover colocated speaker/listener tell behavior, three-agent relay chains, stale harvest beliefs contradicted by local re-observation, and hard listener rejection via `acceptance_fidelity: Permille(0)`.
+**Emergent behavior proven**:
+- Speakers can autonomously select `ShareBelief`, execute Tell, and cause listeners to replan from reported information.
+- Relay chains degrade provenance and confidence across hops rather than duplicating the original direct observation unchanged.
+- A stale believed `ResourceSource` quantity can pull an agent to travel, then be contradicted by local observation, forcing abandonment of the invalid harvest path.
+- A skeptical listener can reject a told belief cleanly without mutating belief state or producing follow-up travel.
+- The social slice exposed and fixed two architectural gaps: share-belief plans were only partially wired through planner payload/progress semantics, and perception contradicted entity/location state but not stale `ResourceSource` quantities.
+**Cross-system chain**: Belief pressure/opportunity → `ShareBelief` candidate generation and ranking → Tell execution and report propagation → listener replanning, or local re-observation contradicting stale harvest beliefs.
 
 ### Scenario 3: Resource Contention with Conservation
 **File**: `golden_production.rs` | **Test**: `golden_resource_contention_with_conservation`

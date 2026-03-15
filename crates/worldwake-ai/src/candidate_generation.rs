@@ -155,9 +155,10 @@ fn emit_social_candidates(
     let Some(profile) = ctx.view.tell_profile(ctx.agent) else {
         return;
     };
+    let known_beliefs = ctx.view.known_entity_beliefs(ctx.agent);
 
     let subjects = relayable_social_subjects(
-        ctx.view.known_entity_beliefs(ctx.agent),
+        known_beliefs.clone(),
         profile.max_relay_chain_len,
         profile.max_tell_candidates,
     );
@@ -167,6 +168,11 @@ fn emit_social_candidates(
 
     for listener in social_listeners_at(ctx.view, ctx.agent, place) {
         for subject in subjects.iter().copied() {
+            if known_beliefs.iter().any(|(known_subject, belief)| {
+                *known_subject == subject && belief.last_known_place == Some(place)
+            }) {
+                continue;
+            }
             let mut evidence = Evidence::with_entity(listener);
             evidence.entities.insert(subject);
             evidence.places.insert(place);
@@ -2929,6 +2935,81 @@ mod tests {
         assert!(!contains_goal(
             &blocked_candidates,
             GoalKind::ShareBelief { listener, subject }
+        ));
+    }
+
+    #[test]
+    fn social_candidates_skip_subjects_already_known_to_be_colocated() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let local_subject = entity(20);
+        let remote_subject = entity(21);
+        let place = entity(10);
+        let remote_place = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener, local_subject, remote_subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(local_subject, EntityKind::Agent);
+        view.entity_kinds.insert(remote_subject, EntityKind::Facility);
+        view.effective_places.insert(speaker, place);
+        view.effective_places.insert(local_subject, place);
+        view.effective_places.insert(remote_subject, remote_place);
+        view.entities_at.insert(place, vec![speaker, listener, local_subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        view.beliefs.insert(
+            speaker,
+            vec![
+                (
+                    local_subject,
+                    BelievedEntityState {
+                        last_known_place: Some(place),
+                        last_known_inventory: BTreeMap::new(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(8),
+                        source: PerceptionSource::DirectObservation,
+                    },
+                ),
+                (
+                    remote_subject,
+                    BelievedEntityState {
+                        last_known_place: Some(remote_place),
+                        last_known_inventory: BTreeMap::new(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        observed_tick: Tick(9),
+                        source: PerceptionSource::DirectObservation,
+                    },
+                ),
+            ],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener,
+                subject: local_subject,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener,
+                subject: remote_subject,
+            }
         ));
     }
 

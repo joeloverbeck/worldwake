@@ -230,6 +230,32 @@ fn detect_observation_mismatches(
         }
     }
 
+    let source_commodities = prior
+        .resource_source
+        .iter()
+        .chain(observed.resource_source.iter())
+        .map(|source| source.commodity)
+        .collect::<BTreeSet<_>>();
+    for commodity in source_commodities {
+        let believed = prior
+            .resource_source
+            .as_ref()
+            .filter(|source| source.commodity == commodity)
+            .map_or(worldwake_core::Quantity(0), |source| source.available_quantity);
+        let seen = observed
+            .resource_source
+            .as_ref()
+            .filter(|source| source.commodity == commodity)
+            .map_or(worldwake_core::Quantity(0), |source| source.available_quantity);
+        if believed != seen {
+            mismatches.push(MismatchKind::ResourceSourceDiscrepancy {
+                commodity,
+                believed,
+                observed: seen,
+            });
+        }
+    }
+
     if include_place_change {
         if let (Some(believed_place), Some(observed_place)) =
             (prior.last_known_place, observed.last_known_place)
@@ -427,10 +453,10 @@ mod tests {
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
-        DeadAt, EventLog, EventPayload, EventTag, EventView, EvidenceRef, MismatchKind,
-        ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
-        Quantity, Seed,
-        SocialObservationKind, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        DeadAt, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
+        MismatchKind, ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource,
+        Permille, Quantity, ResourceSource, Seed, SocialObservationKind, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -1179,6 +1205,89 @@ mod tests {
                 subject: target,
                 kind: MismatchKind::InventoryDiscrepancy {
                     commodity: CommodityKind::Bread,
+                    believed: Quantity(5),
+                    observed: Quantity(2),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn passive_observation_emits_discovery_for_resource_source_mismatch() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(
+                target,
+                BelievedEntityState {
+                    last_known_place: Some(place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: Some(WorkstationTag::OrchardRow),
+                    resource_source: Some(ResourceSource {
+                        commodity: CommodityKind::Apple,
+                        available_quantity: Quantity(5),
+                        max_quantity: Quantity(10),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    }),
+                    alive: true,
+                    wounds: Vec::new(),
+                    observed_tick: Tick(2),
+                    source: PerceptionSource::DirectObservation,
+                },
+            );
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_workstation_marker(target, WorkstationMarker(WorkstationTag::OrchardRow))
+                .unwrap();
+            txn.set_component_resource_source(
+                target,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(2),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, target)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([19; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let discoveries = discovery_records(&event_log);
+        assert_eq!(discoveries.len(), 1);
+        assert_eq!(
+            discoveries[0].evidence(),
+            vec![EvidenceRef::Mismatch {
+                observer,
+                subject: target,
+                kind: MismatchKind::ResourceSourceDiscrepancy {
+                    commodity: CommodityKind::Apple,
                     believed: Quantity(5),
                     observed: Quantity(2),
                 },

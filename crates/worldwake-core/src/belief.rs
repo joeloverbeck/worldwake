@@ -261,6 +261,11 @@ pub enum MismatchKind {
         believed: Quantity,
         observed: Quantity,
     },
+    ResourceSourceDiscrepancy {
+        commodity: CommodityKind,
+        believed: Quantity,
+        observed: Quantity,
+    },
     PlaceChanged {
         believed_place: EntityId,
         observed_place: EntityId,
@@ -569,6 +574,11 @@ mod tests {
                 believed: Quantity(5),
                 observed: Quantity(2),
             },
+            MismatchKind::ResourceSourceDiscrepancy {
+                commodity: CommodityKind::Apple,
+                believed: Quantity(9),
+                observed: Quantity(1),
+            },
             MismatchKind::AliveStatusChanged,
         ];
 
@@ -583,6 +593,11 @@ mod tests {
                     commodity: CommodityKind::Bread,
                     believed: Quantity(5),
                     observed: Quantity(2),
+                },
+                MismatchKind::ResourceSourceDiscrepancy {
+                    commodity: CommodityKind::Apple,
+                    believed: Quantity(9),
+                    observed: Quantity(1),
                 },
                 MismatchKind::PlaceChanged {
                     believed_place: entity(4),

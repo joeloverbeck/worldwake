@@ -9,7 +9,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, CombatActionPayload, LootActionPayload, RecipeRegistry,
-    RuntimeBeliefView, TradeActionPayload, TransportActionPayload,
+    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -287,6 +287,21 @@ impl GoalKindPlannerExt for GoalKind {
                 })))
             }
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
+            PlannerOpKind::Tell => match self {
+                GoalKind::ShareBelief { listener, subject } => {
+                    let Some(target_listener) = targets.first().copied() else {
+                        return Err(GoalPayloadOverrideError::MissingTarget);
+                    };
+                    if target_listener != *listener {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
+                    Ok(Some(ActionPayload::Tell(TellActionPayload {
+                        listener: *listener,
+                        subject_entity: *subject,
+                    })))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::Loot => {
                 let Some(target) = targets.first().copied() else {
                     return Err(GoalPayloadOverrideError::MissingTarget);
@@ -427,6 +442,10 @@ impl GoalKindPlannerExt for GoalKind {
                     | GoalKind::ProduceCommodity { .. }
                     | GoalKind::RestockCommodity { .. }
             );
+        }
+
+        if matches!(self, GoalKind::ShareBelief { .. }) && step.op_kind == PlannerOpKind::Tell {
+            return true;
         }
 
         if !step.is_materialization_barrier {
@@ -582,7 +601,7 @@ mod tests {
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDomain, ActionDuration, ActionHandlerId,
         ActionPayload, DurationExpr, Interruptibility, QueueForFacilityUsePayload,
-        RuntimeBeliefView, TradeActionPayload, TransportActionPayload,
+        RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
     };
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
@@ -740,6 +759,25 @@ mod tests {
             .relevant_observed_commodities(&recipes),
             Some(BTreeSet::new())
         );
+    }
+
+    #[test]
+    fn share_belief_tell_step_is_a_progress_barrier() {
+        let goal = GoalKind::ShareBelief {
+            listener: entity_id(6, 0),
+            subject: entity_id(7, 0),
+        };
+        let step = PlannedStep {
+            def_id: ActionDefId(77),
+            op_kind: PlannerOpKind::Tell,
+            targets: vec![crate::PlanningEntityRef::Authoritative(entity_id(6, 0))],
+            payload_override: None,
+            estimated_ticks: 2,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+
+        assert!(goal.is_progress_barrier(&step));
     }
 
     #[test]
@@ -1422,6 +1460,70 @@ mod tests {
             payload,
             Some(ActionPayload::Transport(TransportActionPayload {
                 quantity: Quantity(2),
+            }))
+        );
+    }
+
+    #[test]
+    fn share_belief_goal_builds_tell_payload_override() {
+        let actor = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, listener, subject, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(listener, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::Facility);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(listener, place);
+        view.effective_places.insert(subject, place);
+        view.entities_at.insert(place, vec![actor, listener, subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([listener, subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ShareBelief { listener, subject };
+        let def = ActionDef {
+            id: ActionDefId(10),
+            name: "tell".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Tell,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[listener], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Tell(TellActionPayload {
+                listener,
+                subject_entity: subject,
             }))
         );
     }
