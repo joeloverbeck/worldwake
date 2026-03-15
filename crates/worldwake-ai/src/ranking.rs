@@ -5,8 +5,9 @@ use crate::{
 };
 use std::cmp::Ordering;
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKind, HomeostaticNeeds,
-    Permille, UtilityProfile,
+    belief_confidence, BelievedEntityState, BeliefConfidencePolicy, CommodityKind,
+    CommodityPurpose, DriveThresholds, EntityId, GoalKind, HomeostaticNeeds, Permille, Tick,
+    UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -15,10 +16,11 @@ pub fn rank_candidates(
     candidates: &[GroundedGoal],
     view: &dyn GoalBeliefView,
     agent: EntityId,
+    current_tick: Tick,
     utility: &UtilityProfile,
     recipes: &RecipeRegistry,
 ) -> Vec<RankedGoal> {
-    let context = RankingContext::new(view, agent, utility);
+    let context = RankingContext::new(view, agent, current_tick, utility);
     let mut ranked = candidates
         .iter()
         .filter(|candidate| !is_suppressed(candidate, &context))
@@ -36,6 +38,7 @@ pub fn rank_candidates(
 struct RankingContext<'a> {
     view: &'a dyn GoalBeliefView,
     agent: EntityId,
+    current_tick: Tick,
     utility: &'a UtilityProfile,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
@@ -43,10 +46,16 @@ struct RankingContext<'a> {
 }
 
 impl<'a> RankingContext<'a> {
-    fn new(view: &'a dyn GoalBeliefView, agent: EntityId, utility: &'a UtilityProfile) -> Self {
+    fn new(
+        view: &'a dyn GoalBeliefView,
+        agent: EntityId,
+        current_tick: Tick,
+        utility: &'a UtilityProfile,
+    ) -> Self {
         Self {
             view,
             agent,
+            current_tick,
             utility,
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
@@ -277,10 +286,33 @@ fn motive_score(
                 market_signal_for_place(context.view, context.agent, commodity, destination);
             score_product(context.utility.enterprise_weight, signal)
         }
-        GoalKind::LootCorpse { .. }
-        | GoalKind::BuryCorpse { .. }
-        | GoalKind::ShareBelief { .. } => 1,
+        GoalKind::ShareBelief { subject, .. } => score_product(
+            context.utility.social_weight,
+            social_pressure_for_subject(context, subject),
+        ),
+        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
     }
+}
+
+fn social_pressure_for_subject(context: &RankingContext<'_>, subject: EntityId) -> Permille {
+    let belief = context
+        .view
+        .known_entity_beliefs(context.agent)
+        .into_iter()
+        .find_map(|(entity, belief)| (entity == subject).then_some(belief));
+
+    belief.map_or(Permille::new_unchecked(0), |belief| {
+        belief_pressure_from_state(&belief, context.current_tick)
+    })
+}
+
+fn belief_pressure_from_state(state: &BelievedEntityState, current_tick: Tick) -> Permille {
+    let staleness_ticks = current_tick.0.saturating_sub(state.observed_tick.0);
+    belief_confidence(
+        &state.source,
+        staleness_ticks,
+        &BeliefConfidencePolicy::default(),
+    )
 }
 
 fn drive_score(
@@ -480,10 +512,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BodyCostPerTick, BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        CommodityPurpose, DemandObservation, DemandObservationReason, DeprivationKind,
-        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
+        belief_confidence, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
+        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, PerceptionSource, Permille, Quantity, RecipeId, ResourceSource, Tick,
         TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, Wound,
         WoundCause, WoundId,
     };
@@ -502,6 +535,7 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
+        beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
     }
@@ -523,6 +557,9 @@ mod tests {
         }
         fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
             Vec::new()
@@ -712,6 +749,19 @@ mod tests {
         }
     }
 
+    fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(entity(99)),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            observed_tick: Tick(observed_tick),
+            source,
+        }
+    }
+
     fn wound(severity: u16) -> Wound {
         Wound {
             id: WoundId(u64::from(severity)),
@@ -745,6 +795,10 @@ mod tests {
         }
     }
 
+    fn current_tick() -> Tick {
+        Tick(10)
+    }
+
     fn base_view(agent: EntityId) -> TestBeliefView {
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
@@ -772,6 +826,7 @@ mod tests {
             })],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -802,6 +857,7 @@ mod tests {
             })],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -838,6 +894,7 @@ mod tests {
             })],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &recipes,
         );
@@ -868,6 +925,7 @@ mod tests {
             })],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -888,6 +946,7 @@ mod tests {
             &[goal(GoalKind::LootCorpse { corpse })],
             &danger_view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -904,6 +963,7 @@ mod tests {
             &[goal(GoalKind::LootCorpse { corpse })],
             &self_care_view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -916,11 +976,265 @@ mod tests {
             })],
             &base_view(agent),
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
         assert_eq!(ranked[0].motive_score, 1);
+    }
+
+    #[test]
+    fn share_belief_is_low_priority_and_suppressed_by_high_danger_or_self_care() {
+        let agent = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let attacker = entity(9);
+        let mut danger_view = base_view(agent);
+        danger_view.attackers.insert(agent, vec![attacker]);
+        danger_view.beliefs.insert(
+            agent,
+            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+        );
+
+        let ranked = rank_candidates(
+            &[goal(GoalKind::ShareBelief { listener, subject })],
+            &danger_view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+        assert!(ranked.is_empty());
+
+        let mut self_care_view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        self_care_view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        self_care_view.beliefs.insert(
+            agent,
+            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+        );
+
+        let ranked = rank_candidates(
+            &[goal(GoalKind::ShareBelief { listener, subject })],
+            &self_care_view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+        assert!(ranked.is_empty());
+
+        let mut calm_view = base_view(agent);
+        calm_view.beliefs.insert(
+            agent,
+            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+        );
+        let ranked = rank_candidates(
+            &[goal(GoalKind::ShareBelief { listener, subject })],
+            &calm_view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(
+            ranked[0].motive_score,
+            150
+                * u32::from(
+                    belief_confidence(
+                        &PerceptionSource::DirectObservation,
+                        1,
+                        &BeliefConfidencePolicy::default(),
+                    )
+                    .value(),
+                )
+        );
+    }
+
+    #[test]
+    fn share_belief_scoring_tracks_social_weight_and_subject_belief_confidence() {
+        let agent = entity(1);
+        let listener = entity(2);
+        let fresh_subject = entity(3);
+        let rumor_subject = entity(4);
+        let mut view = base_view(agent);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    fresh_subject,
+                    believed_state(9, PerceptionSource::DirectObservation),
+                ),
+                (
+                    rumor_subject,
+                    believed_state(1, PerceptionSource::Rumor { chain_len: 3 }),
+                ),
+            ],
+        );
+
+        let baseline = utility();
+        let stronger_social = UtilityProfile {
+            social_weight: pm(300),
+            ..baseline.clone()
+        };
+        let fresh_goal = goal(GoalKind::ShareBelief {
+            listener,
+            subject: fresh_subject,
+        });
+        let rumor_goal = goal(GoalKind::ShareBelief {
+            listener,
+            subject: rumor_subject,
+        });
+
+        let baseline_ranked = rank_candidates(
+            &[fresh_goal.clone(), rumor_goal.clone()],
+            &view,
+            agent,
+            current_tick(),
+            &baseline,
+            &RecipeRegistry::new(),
+        );
+        let boosted_ranked = rank_candidates(
+            &[fresh_goal, rumor_goal],
+            &view,
+            agent,
+            current_tick(),
+            &stronger_social,
+            &RecipeRegistry::new(),
+        );
+
+        let fresh_pressure = belief_confidence(
+            &PerceptionSource::DirectObservation,
+            1,
+            &BeliefConfidencePolicy::default(),
+        );
+        let rumor_pressure = belief_confidence(
+            &PerceptionSource::Rumor { chain_len: 3 },
+            9,
+            &BeliefConfidencePolicy::default(),
+        );
+
+        assert!(baseline_ranked[0].motive_score > baseline_ranked[1].motive_score);
+        assert_eq!(baseline_ranked[0].motive_score, 150 * u32::from(fresh_pressure.value()));
+        assert_eq!(baseline_ranked[1].motive_score, 150 * u32::from(rumor_pressure.value()));
+        assert_eq!(boosted_ranked[0].motive_score, 300 * u32::from(fresh_pressure.value()));
+    }
+
+    #[test]
+    fn share_belief_scoring_is_zero_without_social_weight_or_known_subject() {
+        let agent = entity(1);
+        let listener = entity(2);
+        let known_subject = entity(3);
+        let missing_subject = entity(4);
+        let mut view = base_view(agent);
+        view.beliefs.insert(
+            agent,
+            vec![(known_subject, believed_state(9, PerceptionSource::DirectObservation))],
+        );
+
+        let zero_social = UtilityProfile {
+            social_weight: pm(0),
+            ..utility()
+        };
+        let ranked = rank_candidates(
+            &[
+                goal(GoalKind::ShareBelief {
+                    listener,
+                    subject: known_subject,
+                }),
+                goal(GoalKind::ShareBelief {
+                    listener,
+                    subject: missing_subject,
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &zero_social,
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(ranked[0].motive_score, 0);
+        assert_eq!(ranked[1].motive_score, 0);
+    }
+
+    #[test]
+    fn medium_priority_enterprise_and_critical_self_care_outrank_share_belief() {
+        let agent = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let market = entity(4);
+        let mut enterprise_view = base_view(agent);
+        enterprise_view.beliefs.insert(
+            agent,
+            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+        );
+        enterprise_view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+        enterprise_view
+            .demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+
+        let enterprise_first = rank_candidates(
+            &[
+                goal(GoalKind::ShareBelief { listener, subject }),
+                goal(GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                }),
+            ],
+            &enterprise_view,
+            agent,
+            current_tick(),
+            &UtilityProfile {
+                enterprise_weight: pm(1),
+                social_weight: pm(1000),
+                ..utility()
+            },
+            &RecipeRegistry::new(),
+        );
+        assert!(matches!(
+            enterprise_first[0].grounded.key.kind,
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread
+            }
+        ));
+
+        let mut self_care_view = enterprise_view;
+        let thresholds = DriveThresholds::default();
+        self_care_view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        let self_care_first = rank_candidates(
+            &[
+                goal(GoalKind::ShareBelief { listener, subject }),
+                goal(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                }),
+            ],
+            &self_care_view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+        assert!(matches!(
+            self_care_first[0].grounded.key.kind,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread
+            }
+        ));
     }
 
     #[test]
@@ -954,6 +1268,7 @@ mod tests {
             ],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -1001,6 +1316,7 @@ mod tests {
             ],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -1046,6 +1362,7 @@ mod tests {
             })],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -1066,6 +1383,7 @@ mod tests {
             &[goal(GoalKind::Heal { target })],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -1103,6 +1421,7 @@ mod tests {
             &[goal(GoalKind::ProduceCommodity { recipe_id })],
             &view,
             agent,
+            current_tick(),
             &utility(),
             &recipes,
         );
@@ -1137,6 +1456,7 @@ mod tests {
             &candidates,
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -1144,6 +1464,7 @@ mod tests {
             &candidates,
             &view,
             agent,
+            current_tick(),
             &utility(),
             &RecipeRegistry::new(),
         );
@@ -1185,6 +1506,7 @@ mod tests {
             ],
             &view,
             agent,
+            current_tick(),
             &utility,
             &RecipeRegistry::new(),
         );

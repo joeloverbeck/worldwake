@@ -23,7 +23,7 @@ pub fn explain_goal(
     current_tick: Tick,
 ) -> Option<GoalExplanation> {
     let candidates = generate_candidates(view, agent, blocked, recipes, current_tick);
-    let ranked = rank_candidates(&candidates, view, agent, utility, recipes);
+    let ranked = rank_candidates(&candidates, view, agent, current_tick, utility, recipes);
     let target = ranked
         .iter()
         .find(|candidate| candidate.grounded.key.kind == *goal)?;

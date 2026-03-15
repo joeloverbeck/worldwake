@@ -507,6 +507,7 @@ fn refresh_runtime_for_read_phase(
         &candidates,
         &view,
         agent,
+        phase.tick,
         phase.utility,
         phase.recipe_registry,
     )
