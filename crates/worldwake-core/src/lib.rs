@@ -118,8 +118,8 @@ pub use needs::{BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, Metaboli
 pub use numerics::{LoadUnits, Permille, Quantity};
 pub use offices::{EligibilityRule, OfficeData, SuccessionLaw};
 pub use production::{
-    CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, RecipeId, ResourceSource,
-    WorkstationMarker, WorkstationTag,
+    CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
+    ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{

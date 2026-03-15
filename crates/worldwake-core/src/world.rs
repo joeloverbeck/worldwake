@@ -8,9 +8,10 @@ use crate::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
     InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
     MetabolismProfile, Name, OfficeData, PerceptionProfile, PlaceTag, ProductionJob,
-    ProvenanceEntry, Quantity, RelationTables, ResourceSource, SubstitutePreferences,
-    TellProfile, Tick, Topology, TradeDispositionProfile, TravelDispositionProfile, UniqueItem,
-    UniqueItemKind, UtilityProfile, WorkstationMarker, WorldError, WoundList,
+    ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RelationTables, ResourceSource,
+    SubstitutePreferences, TellProfile, Tick, Topology, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker,
+    WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -4376,12 +4377,83 @@ mod tests {
     }
 
     #[test]
+    fn production_output_ownership_policy_component_roundtrip_on_facility() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+        let policy = crate::ProductionOutputOwnershipPolicy {
+            output_owner: crate::ProductionOutputOwner::ProducerOwner,
+        };
+
+        world
+            .insert_component_production_output_ownership_policy(id, policy)
+            .unwrap();
+        assert_eq!(
+            world.get_component_production_output_ownership_policy(id),
+            Some(&policy)
+        );
+        assert!(world.has_component_production_output_ownership_policy(id));
+
+        let removed = world
+            .remove_component_production_output_ownership_policy(id)
+            .unwrap();
+        assert_eq!(removed, Some(policy));
+        assert_eq!(
+            world.get_component_production_output_ownership_policy(id),
+            None
+        );
+    }
+
+    #[test]
+    fn production_output_ownership_policy_component_roundtrip_on_place() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let policy = crate::ProductionOutputOwnershipPolicy {
+            output_owner: crate::ProductionOutputOwner::Unowned,
+        };
+
+        world
+            .insert_component_production_output_ownership_policy(place, policy)
+            .unwrap();
+        assert_eq!(
+            world.get_component_production_output_ownership_policy(place),
+            Some(&policy)
+        );
+        assert!(world.has_component_production_output_ownership_policy(place));
+
+        let removed = world
+            .remove_component_production_output_ownership_policy(place)
+            .unwrap();
+        assert_eq!(removed, Some(policy));
+        assert_eq!(
+            world.get_component_production_output_ownership_policy(place),
+            None
+        );
+    }
+
+    #[test]
     fn insert_resource_source_on_non_matching_entity_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
 
         let err = world
             .insert_component_resource_source(id, sample_resource_source())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_production_output_ownership_policy_on_non_matching_entity_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_production_output_ownership_policy(
+                id,
+                crate::ProductionOutputOwnershipPolicy {
+                    output_owner: crate::ProductionOutputOwner::Actor,
+                },
+            )
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

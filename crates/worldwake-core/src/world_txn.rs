@@ -1530,6 +1530,12 @@ mod tests {
         }
     }
 
+    fn sample_production_output_ownership_policy() -> crate::ProductionOutputOwnershipPolicy {
+        crate::ProductionOutputOwnershipPolicy {
+            output_owner: crate::ProductionOutputOwner::ProducerOwner,
+        }
+    }
+
     fn sample_office_data() -> OfficeData {
         OfficeData {
             title: "Granary Chair".to_string(),
@@ -2671,6 +2677,44 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_resource_source(facility), Some(&after));
+    }
+
+    #[test]
+    fn set_component_production_output_ownership_policy_records_component_delta_and_updates_world_on_commit(
+    ) {
+        let mut world = World::new(test_topology()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let before = sample_production_output_ownership_policy();
+        let after = crate::ProductionOutputOwnershipPolicy {
+            output_owner: crate::ProductionOutputOwner::Actor,
+        };
+        world
+            .insert_component_production_output_ownership_policy(facility, before)
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_production_output_ownership_policy(facility, after)
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: facility,
+                component_kind: ComponentKind::ProductionOutputOwnershipPolicy,
+                before: Some(ComponentValue::ProductionOutputOwnershipPolicy(before)),
+                after: ComponentValue::ProductionOutputOwnershipPolicy(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(
+            world.get_component_production_output_ownership_policy(facility),
+            Some(&after)
+        );
     }
 
     #[test]

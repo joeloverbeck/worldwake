@@ -6,10 +6,10 @@ use crate::{
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, Name, OfficeData, PerceptionProfile, Permille, ProductionJob, Quantity,
-    ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UtilityProfile,
-    WorkstationMarker, WoundList,
+    MetabolismProfile, Name, OfficeData, PerceptionProfile, Permille, ProductionJob,
+    ProductionOutputOwnershipPolicy, Quantity, ReservationRecord, ResourceSource,
+    SubstitutePreferences, TellProfile, TradeDispositionProfile, TravelDispositionProfile,
+    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -225,9 +225,10 @@ mod tests {
         EventId, ExclusiveFacilityPolicy, FacilityUseQueue, FactionData, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
         OfficeData, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, TellProfile,
-        Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, Wound, WoundCause, WoundList,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
+        ReservationId, ReservationRecord, ResourceSource, TellProfile, Tick, TickRange,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -363,6 +364,9 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(4).unwrap()),
                 last_regeneration_tick: Some(Tick(12)),
+            }),
+            ComponentValue::ProductionOutputOwnershipPolicy(ProductionOutputOwnershipPolicy {
+                output_owner: ProductionOutputOwner::ProducerOwner,
             }),
             ComponentValue::ProductionJob(ProductionJob {
                 recipe_id: crate::RecipeId(3),
@@ -503,6 +507,7 @@ mod tests {
                 ComponentKind::FacilityUseQueue,
                 ComponentKind::WorkstationMarker,
                 ComponentKind::ResourceSource,
+                ComponentKind::ProductionOutputOwnershipPolicy,
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
                 ComponentKind::ItemLot,

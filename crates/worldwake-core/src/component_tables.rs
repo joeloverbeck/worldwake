@@ -13,8 +13,8 @@ use crate::{
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::OfficeData,
     production::{
-        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
-        WorkstationMarker,
+        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
+        ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
     },
     trade::{DemandMemory, MerchandiseProfile, SubstitutePreferences, TradeDispositionProfile},
     travel_disposition::TravelDispositionProfile,
@@ -131,8 +131,9 @@ mod tests {
         ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
         ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge, ItemLot,
         KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProductionJob,
-        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
+        ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -285,6 +286,12 @@ mod tests {
         );
         tables.insert_metabolism_profile(entity(16), MetabolismProfile::default());
         tables.insert_substitute_preferences(entity(17), sample_substitute_preferences());
+        tables.insert_production_output_ownership_policy(
+            entity(23),
+            ProductionOutputOwnershipPolicy {
+                output_owner: ProductionOutputOwner::ProducerOwner,
+            },
+        );
     }
 
     #[test]
@@ -318,6 +325,7 @@ mod tests {
         assert_eq!(tables.iter_exclusive_facility_policies().count(), 0);
         assert_eq!(tables.iter_facility_use_queues().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
+        assert_eq!(tables.iter_production_output_ownership_policies().count(), 0);
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
@@ -510,9 +518,33 @@ mod tests {
     }
 
     #[test]
-    fn insert_and_get_carry_capacity() {
+    fn insert_and_get_production_output_ownership_policy() {
         let mut tables = ComponentTables::default();
         let id = entity(20);
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Actor,
+        };
+
+        assert_eq!(
+            tables.insert_production_output_ownership_policy(id, policy),
+            None
+        );
+        assert_eq!(
+            tables.get_production_output_ownership_policy(id),
+            Some(&policy)
+        );
+        assert!(tables.has_production_output_ownership_policy(id));
+        assert_eq!(
+            tables.remove_production_output_ownership_policy(id),
+            Some(policy)
+        );
+        assert_eq!(tables.get_production_output_ownership_policy(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_carry_capacity() {
+        let mut tables = ComponentTables::default();
+        let id = entity(21);
         let capacity = CarryCapacity(LoadUnits(18));
 
         assert_eq!(tables.insert_carry_capacity(id, capacity), None);
@@ -525,7 +557,7 @@ mod tests {
     #[test]
     fn insert_and_get_known_recipes() {
         let mut tables = ComponentTables::default();
-        let id = entity(21);
+        let id = entity(22);
         let recipes = KnownRecipes::with([crate::RecipeId(3), crate::RecipeId(1)]);
 
         assert_eq!(tables.insert_known_recipes(id, recipes.clone()), None);

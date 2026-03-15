@@ -730,6 +730,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                production_output_ownership_policies,
+                ProductionOutputOwnershipPolicy,
+                insert_production_output_ownership_policy,
+                get_production_output_ownership_policy,
+                get_production_output_ownership_policy_mut,
+                remove_production_output_ownership_policy,
+                has_production_output_ownership_policy,
+                iter_production_output_ownership_policies,
+                insert_component_production_output_ownership_policy,
+                get_component_production_output_ownership_policy,
+                get_component_production_output_ownership_policy_mut,
+                remove_component_production_output_ownership_policy,
+                has_component_production_output_ownership_policy,
+                entities_with_production_output_ownership_policy,
+                query_production_output_ownership_policy,
+                count_with_production_output_ownership_policy,
+                "ProductionOutputOwnershipPolicy",
+                |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
+                ProductionOutputOwnershipPolicy,
+                crate::ProductionOutputOwnershipPolicy,
+                set_component_production_output_ownership_policy,
+                clear_component_production_output_ownership_policy,
+                txn_simple_set
+            }
+            {
                 production_jobs,
                 ProductionJob,
                 insert_production_job,

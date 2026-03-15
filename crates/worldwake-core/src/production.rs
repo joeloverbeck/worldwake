@@ -80,6 +80,25 @@ pub struct ResourceSource {
 
 impl Component for ResourceSource {}
 
+/// Policy describing who owns output materialized by a producer.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ProductionOutputOwner {
+    Actor,
+    ProducerOwner,
+    Unowned,
+}
+
+impl ProductionOutputOwner {
+    pub const ALL: [Self; 3] = [Self::Actor, Self::ProducerOwner, Self::Unowned];
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct ProductionOutputOwnershipPolicy {
+    pub output_owner: ProductionOutputOwner,
+}
+
+impl Component for ProductionOutputOwnershipPolicy {}
+
 /// Persistent work-in-progress state on a workstation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProductionJob {
@@ -106,8 +125,9 @@ impl Component for InTransitOnEdge {}
 #[cfg(test)]
 mod tests {
     use super::{
-        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, RecipeId, ResourceSource,
-        WorkstationMarker, WorkstationTag,
+        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker,
+        WorkstationTag,
     };
     use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
     use serde::{de::DeserializeOwned, Serialize};
@@ -151,6 +171,17 @@ mod tests {
     }
 
     #[test]
+    fn production_output_owner_trait_bounds() {
+        assert_bounds::<ProductionOutputOwner>();
+    }
+
+    #[test]
+    fn production_output_ownership_policy_trait_bounds() {
+        assert_bounds::<ProductionOutputOwnershipPolicy>();
+        assert_component_bounds::<ProductionOutputOwnershipPolicy>();
+    }
+
+    #[test]
     fn production_job_trait_bounds() {
         assert_component_bounds::<ProductionJob>();
     }
@@ -190,6 +221,39 @@ mod tests {
             let roundtrip: WorkstationTag = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, tag);
         }
+    }
+
+    #[test]
+    fn production_output_owner_variants_roundtrip_through_bincode() {
+        for owner in ProductionOutputOwner::ALL {
+            let bytes = bincode::serialize(&owner).unwrap();
+            let roundtrip: ProductionOutputOwner = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, owner);
+        }
+    }
+
+    #[test]
+    fn production_output_owner_ordering_is_deterministic() {
+        assert_eq!(
+            ProductionOutputOwner::ALL,
+            [
+                ProductionOutputOwner::Actor,
+                ProductionOutputOwner::ProducerOwner,
+                ProductionOutputOwner::Unowned,
+            ]
+        );
+    }
+
+    #[test]
+    fn production_output_ownership_policy_roundtrips_through_bincode() {
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::ProducerOwner,
+        };
+
+        let bytes = bincode::serialize(&policy).unwrap();
+        let roundtrip: ProductionOutputOwnershipPolicy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, policy);
     }
 
     #[test]
