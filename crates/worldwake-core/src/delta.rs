@@ -4,11 +4,12 @@ use crate::{
     component_schema::with_component_schema_entries, AgentBeliefStore, AgentData,
     BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
-    InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
-    PerceptionProfile, Permille, ProductionJob, Quantity, ReservationRecord, ResourceSource,
-    SubstitutePreferences, TellProfile, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
+    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
+    MetabolismProfile, Name, OfficeData, PerceptionProfile, Permille, ProductionJob, Quantity,
+    ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UtilityProfile,
+    WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -213,11 +214,12 @@ mod tests {
         AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart,
         CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container, ControlSource,
         DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EventId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge,
-        ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name, PerceptionProfile,
-        PerceptionSource, Permille, ProductionJob, ProvenanceEntry, Quantity, ReservationId,
-        ReservationRecord, ResourceSource, TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        EventId, ExclusiveFacilityPolicy, FacilityUseQueue, FactionData, HomeostaticNeeds,
+        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
+        OfficeData, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
+        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource, TellProfile,
+        Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -274,6 +276,18 @@ mod tests {
                 sample_facility_queue_disposition_profile(),
             ),
             ComponentValue::UtilityProfile(sample_utility_profile()),
+            ComponentValue::OfficeData(OfficeData {
+                title: "Granary Chair".to_string(),
+                jurisdiction: entity(32),
+                succession_law: crate::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 12,
+                vacancy_since: Some(Tick(6)),
+            }),
+            ComponentValue::FactionData(FactionData {
+                name: "River Pact".to_string(),
+                purpose: crate::FactionPurpose::Political,
+            }),
             ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
             ComponentValue::AgentBeliefStore(AgentBeliefStore {
                 known_entities: BTreeMap::from([(
@@ -455,6 +469,8 @@ mod tests {
                 ComponentKind::CombatStance,
                 ComponentKind::FacilityQueueDispositionProfile,
                 ComponentKind::UtilityProfile,
+                ComponentKind::OfficeData,
+                ComponentKind::FactionData,
                 ComponentKind::BlockedIntentMemory,
                 ComponentKind::AgentBeliefStore,
                 ComponentKind::PerceptionProfile,

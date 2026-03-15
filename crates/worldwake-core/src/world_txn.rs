@@ -1,7 +1,8 @@
 use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
     ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
-    EventId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
+    EventId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World,
+    WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
@@ -1260,9 +1261,10 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_travel_disposition_profile, sample_utility_profile,
         },
-        AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, DemandMemory,
-        MerchandiseProfile, PerceptionProfile, PerceptionSource, SubstitutePreferences,
-        TellProfile, TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
+        AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, DemandMemory, FactionData,
+        FactionPurpose, MerchandiseProfile, OfficeData, PerceptionProfile, PerceptionSource,
+        SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
+        TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -1326,6 +1328,24 @@ mod tests {
             max_quantity: Quantity(9),
             regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(6).unwrap()),
             last_regeneration_tick: Some(Tick(3)),
+        }
+    }
+
+    fn sample_office_data() -> OfficeData {
+        OfficeData {
+            title: "Granary Chair".to_string(),
+            jurisdiction: entity(5),
+            succession_law: SuccessionLaw::Support,
+            eligibility_rules: Vec::new(),
+            succession_period_ticks: 8,
+            vacancy_since: Some(Tick(3)),
+        }
+    }
+
+    fn sample_faction_data() -> FactionData {
+        FactionData {
+            name: "River Pact".to_string(),
+            purpose: FactionPurpose::Political,
         }
     }
 
@@ -2577,6 +2597,72 @@ mod tests {
     }
 
     #[test]
+    fn set_component_office_data_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
+        let before = sample_office_data();
+        let mut after = before.clone();
+        after.vacancy_since = Some(Tick(9));
+        world
+            .insert_component_office_data(office, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_office_data(office, after.clone()).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: office,
+                component_kind: ComponentKind::OfficeData,
+                before: Some(ComponentValue::OfficeData(before)),
+                after: ComponentValue::OfficeData(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_office_data(office), Some(&after));
+    }
+
+    #[test]
+    fn set_component_faction_data_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let before = sample_faction_data();
+        let after = FactionData {
+            name: before.name.clone(),
+            purpose: FactionPurpose::Trade,
+        };
+        world
+            .insert_component_faction_data(faction, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_faction_data(faction, after.clone()).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: faction,
+                component_kind: ComponentKind::FactionData,
+                before: Some(ComponentValue::FactionData(before)),
+                after: ComponentValue::FactionData(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_faction_data(faction), Some(&after));
+    }
+
+    #[test]
     fn set_component_agent_belief_store_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -2984,6 +3070,64 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_utility_profile(agent), None);
+    }
+
+    #[test]
+    fn clear_component_office_data_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
+        let before = sample_office_data();
+        world
+            .insert_component_office_data(office, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_office_data(office).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: office,
+                component_kind: ComponentKind::OfficeData,
+                before: ComponentValue::OfficeData(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_office_data(office), None);
+    }
+
+    #[test]
+    fn clear_component_faction_data_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let before = sample_faction_data();
+        world
+            .insert_component_faction_data(faction, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_faction_data(faction).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: faction,
+                component_kind: ComponentKind::FactionData,
+                before: ComponentValue::FactionData(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_faction_data(faction), None);
     }
 
     #[test]

@@ -8,8 +8,10 @@ use crate::{
     components::{AgentData, Name},
     drives::DriveThresholds,
     facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
+    factions::FactionData,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
+    offices::OfficeData,
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ResourceSource,
         WorkstationMarker,
@@ -117,6 +119,8 @@ mod tests {
             PerceptionSource, TellProfile,
         },
         components::{AgentData, Name},
+        factions::{FactionData, FactionPurpose},
+        offices::{EligibilityRule, OfficeData, SuccessionLaw},
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
@@ -195,6 +199,24 @@ mod tests {
         }
     }
 
+    fn sample_office_data() -> OfficeData {
+        OfficeData {
+            title: "Granary Chair".to_string(),
+            jurisdiction: entity(30),
+            succession_law: SuccessionLaw::Support,
+            eligibility_rules: vec![EligibilityRule::FactionMember(entity(31))],
+            succession_period_ticks: 24,
+            vacancy_since: Some(Tick(7)),
+        }
+    }
+
+    fn sample_faction_data() -> FactionData {
+        FactionData {
+            name: "River Pact".to_string(),
+            purpose: FactionPurpose::Political,
+        }
+    }
+
     fn seed_roundtrip_components(tables: &mut ComponentTables) {
         let name_id = entity(2);
         let agent_id = entity(8);
@@ -225,6 +247,8 @@ mod tests {
         tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
         tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
+        tables.insert_office_data(entity(26), sample_office_data());
+        tables.insert_faction_data(entity(27), sample_faction_data());
         tables.insert_item_lot(
             entity(11),
             ItemLot {
@@ -282,6 +306,8 @@ mod tests {
         assert_eq!(tables.iter_homeostatic_needs().count(), 0);
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
+        assert_eq!(tables.iter_office_data().count(), 0);
+        assert_eq!(tables.iter_faction_data().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_known_recipes().count(), 0);
         assert_eq!(tables.iter_demand_memories().count(), 0);
@@ -416,6 +442,28 @@ mod tests {
         assert_eq!(tables.insert_deprivation_exposure(id, exposure), None);
         assert_eq!(tables.get_deprivation_exposure(id), Some(&exposure));
         assert!(tables.has_deprivation_exposure(id));
+    }
+
+    #[test]
+    fn insert_and_get_office_data() {
+        let mut tables = ComponentTables::default();
+        let id = entity(32);
+        let office = sample_office_data();
+
+        assert_eq!(tables.insert_office_data(id, office.clone()), None);
+        assert_eq!(tables.get_office_data(id), Some(&office));
+        assert!(tables.has_office_data(id));
+    }
+
+    #[test]
+    fn insert_and_get_faction_data() {
+        let mut tables = ComponentTables::default();
+        let id = entity(33);
+        let faction = sample_faction_data();
+
+        assert_eq!(tables.insert_faction_data(id, faction.clone()), None);
+        assert_eq!(tables.get_faction_data(id), Some(&faction));
+        assert!(tables.has_faction_data(id));
     }
 
     #[test]
