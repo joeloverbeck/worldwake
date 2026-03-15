@@ -1,7 +1,7 @@
 use crate::{ActionDuration, ActionPayload, DurationExpr};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    BelievedEntityState, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
     MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
@@ -64,6 +64,7 @@ pub trait GoalBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
         None
@@ -153,6 +154,7 @@ pub trait RuntimeBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile>;
@@ -394,6 +396,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::DriveThresholds> {
                 $crate::RuntimeBeliefView::drive_thresholds(self, agent)
+            }
+
+            fn belief_confidence_policy(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> worldwake_core::BeliefConfidencePolicy {
+                $crate::RuntimeBeliefView::belief_confidence_policy(self, agent)
             }
 
             fn tell_profile(

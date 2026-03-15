@@ -5,11 +5,11 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    is_incapacitated, load_of_entity, AgentBeliefStore, BelievedEntityState, CarryCapacity,
-    CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
-    DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
-    TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
+    is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
+    BelievedEntityState, CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, PlaceTag,
+    Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
     UniqueItemKind, WorkstationTag, World, Wound,
 };
 
@@ -449,6 +449,17 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
+        assert_eq!(
+            agent, self.agent,
+            "belief_confidence_policy is a self-authoritative read and must only be requested for the acting agent"
+        );
+        self.world
+            .get_component_perception_profile(agent)
+            .map(|profile| profile.confidence_policy)
+            .expect("acting agents must have PerceptionProfile before reading belief confidence policy")
+    }
+
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_metabolism_profile(agent).copied())
@@ -668,10 +679,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
-        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
-        EntityKind, EventLog, MerchandiseProfile, Permille, Quantity, ResourceSource, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId,
+        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
+        CommodityKind, ControlSource, EntityKind, EventLog, MerchandiseProfile, Permille,
+        PerceptionProfile, Quantity, ResourceSource, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -943,6 +954,62 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(RuntimeBeliefView::tell_profile(&view, agent), None);
+    }
+
+    #[test]
+    fn belief_confidence_policy_returns_actor_policy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    confidence_policy: BeliefConfidencePolicy {
+                        rumor_base: Permille::new(875).unwrap(),
+                        staleness_penalty_per_tick: Permille::new(7).unwrap(),
+                        ..BeliefConfidencePolicy::default()
+                    },
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        let expected = world
+            .get_component_perception_profile(agent)
+            .unwrap()
+            .confidence_policy;
+
+        assert_eq!(RuntimeBeliefView::belief_confidence_policy(&view, agent), expected);
+        assert_eq!(GoalBeliefView::belief_confidence_policy(&view, agent), expected);
+    }
+
+    #[test]
+    #[should_panic(expected = "self-authoritative read")]
+    fn belief_confidence_policy_rejects_non_self_reads() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bryn", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        let _ = RuntimeBeliefView::belief_confidence_policy(&view, other);
     }
 
     #[test]

@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BelievedEntityState, BlockedIntentMemory, BlockingFact, CombatProfile,
+    ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory, BlockingFact,
+    CombatProfile,
     CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
     EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
     MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
@@ -113,6 +114,7 @@ pub struct PlanningSnapshot {
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
+    pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
     pub(crate) actor_tell_profile: Option<TellProfile>,
 }
 
@@ -170,6 +172,7 @@ impl PlanningSnapshot {
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
+            actor_confidence_policy: view.belief_confidence_policy(actor),
             actor_tell_profile: view.tell_profile(actor),
         }
     }
@@ -465,11 +468,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, BeliefConfidencePolicy, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind,
+        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
@@ -486,6 +489,7 @@ mod tests {
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -635,6 +639,13 @@ mod tests {
 
         fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
             None
+        }
+
+        fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
+            self.confidence_policies
+                .get(&agent)
+                .copied()
+                .unwrap_or_default()
         }
 
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {

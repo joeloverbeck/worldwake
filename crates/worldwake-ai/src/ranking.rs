@@ -5,9 +5,8 @@ use crate::{
 };
 use std::cmp::Ordering;
 use worldwake_core::{
-    belief_confidence, BelievedEntityState, BeliefConfidencePolicy, CommodityKind,
-    CommodityPurpose, DriveThresholds, EntityId, GoalKind, HomeostaticNeeds, Permille, Tick,
-    UtilityProfile,
+    belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
+    EntityId, GoalKind, HomeostaticNeeds, Permille, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -302,17 +301,21 @@ fn social_pressure_for_subject(context: &RankingContext<'_>, subject: EntityId) 
         .find_map(|(entity, belief)| (entity == subject).then_some(belief));
 
     belief.map_or(Permille::new_unchecked(0), |belief| {
-        belief_pressure_from_state(&belief, context.current_tick)
+        belief_pressure_from_state(
+            &belief,
+            context.current_tick,
+            &context.view.belief_confidence_policy(context.agent),
+        )
     })
 }
 
-fn belief_pressure_from_state(state: &BelievedEntityState, current_tick: Tick) -> Permille {
+fn belief_pressure_from_state(
+    state: &BelievedEntityState,
+    current_tick: Tick,
+    policy: &worldwake_core::BeliefConfidencePolicy,
+) -> Permille {
     let staleness_ticks = current_tick.0.saturating_sub(state.observed_tick.0);
-    belief_confidence(
-        &state.source,
-        staleness_ticks,
-        &BeliefConfidencePolicy::default(),
-    )
+    belief_confidence(&state.source, staleness_ticks, policy)
 }
 
 fn drive_score(
@@ -530,6 +533,7 @@ mod tests {
         alive: BTreeSet<EntityId>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
@@ -653,6 +657,12 @@ mod tests {
         }
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
+        }
+        fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
+            *self
+                .confidence_policies
+                .get(&agent)
+                .expect("tests must seed a confidence policy for the acting agent")
         }
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None
@@ -807,6 +817,8 @@ mod tests {
             HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
         );
         view.thresholds.insert(agent, DriveThresholds::default());
+        view.confidence_policies
+            .insert(agent, BeliefConfidencePolicy::default());
         view
     }
 
@@ -1112,18 +1124,74 @@ mod tests {
         let fresh_pressure = belief_confidence(
             &PerceptionSource::DirectObservation,
             1,
-            &BeliefConfidencePolicy::default(),
+            &view.belief_confidence_policy(agent),
         );
         let rumor_pressure = belief_confidence(
             &PerceptionSource::Rumor { chain_len: 3 },
             9,
-            &BeliefConfidencePolicy::default(),
+            &view.belief_confidence_policy(agent),
         );
 
         assert!(baseline_ranked[0].motive_score > baseline_ranked[1].motive_score);
         assert_eq!(baseline_ranked[0].motive_score, 150 * u32::from(fresh_pressure.value()));
         assert_eq!(baseline_ranked[1].motive_score, 150 * u32::from(rumor_pressure.value()));
         assert_eq!(boosted_ranked[0].motive_score, 300 * u32::from(fresh_pressure.value()));
+    }
+
+    #[test]
+    fn share_belief_scoring_respects_per_agent_confidence_policy() {
+        let agent = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let mut skeptical_view = base_view(agent);
+        skeptical_view.beliefs.insert(
+            agent,
+            vec![(subject, believed_state(4, PerceptionSource::Rumor { chain_len: 2 }))],
+        );
+        skeptical_view.confidence_policies.insert(
+            agent,
+            BeliefConfidencePolicy {
+                rumor_base: pm(400),
+                rumor_chain_penalty: pm(180),
+                staleness_penalty_per_tick: pm(20),
+                ..BeliefConfidencePolicy::default()
+            },
+        );
+
+        let mut trusting_view = base_view(agent);
+        trusting_view.beliefs = skeptical_view.beliefs.clone();
+        trusting_view.confidence_policies.insert(
+            agent,
+            BeliefConfidencePolicy {
+                rumor_base: pm(850),
+                rumor_chain_penalty: pm(25),
+                staleness_penalty_per_tick: pm(5),
+                ..BeliefConfidencePolicy::default()
+            },
+        );
+
+        let goal = goal(GoalKind::ShareBelief { listener, subject });
+        let skeptical_ranked = rank_candidates(
+            std::slice::from_ref(&goal),
+            &skeptical_view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+        let trusting_ranked = rank_candidates(
+            &[goal],
+            &trusting_view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert!(
+            trusting_ranked[0].motive_score > skeptical_ranked[0].motive_score,
+            "the acting agent's confidence policy should directly affect ShareBelief motive"
+        );
     }
 
     #[test]

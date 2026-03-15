@@ -259,6 +259,12 @@ mod tests {
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.drive_thresholds.get(&agent).copied()
         }
+        fn belief_confidence_policy(
+            &self,
+            _agent: EntityId,
+        ) -> worldwake_core::BeliefConfidencePolicy {
+            worldwake_core::BeliefConfidencePolicy::default()
+        }
 
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None

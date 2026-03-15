@@ -989,6 +989,15 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.drive_thresholds)
     }
 
+    fn belief_confidence_policy(&self, agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
+        assert_eq!(
+            agent,
+            self.snapshot.actor(),
+            "belief_confidence_policy is a self-authoritative read and must only be requested for the planning actor"
+        );
+        self.snapshot.actor_confidence_policy
+    }
+
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
         self.snapshot
             .entities
@@ -1435,6 +1444,13 @@ mod tests {
 
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
+        }
+
+        fn belief_confidence_policy(
+            &self,
+            _agent: EntityId,
+        ) -> worldwake_core::BeliefConfidencePolicy {
+            worldwake_core::BeliefConfidencePolicy::default()
         }
 
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
