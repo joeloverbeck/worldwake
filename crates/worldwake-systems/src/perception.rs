@@ -431,14 +431,17 @@ fn social_observations_for_event(
 }
 
 fn social_kind(record: &impl EventView) -> Option<SocialObservationKind> {
-    if record.tags().contains(&EventTag::Social) {
-        return Some(SocialObservationKind::WitnessedTelling);
+    if record.tags().contains(&EventTag::Coercion) || record.tags().contains(&EventTag::Combat) {
+        return Some(SocialObservationKind::WitnessedConflict);
     }
-    if record.tags().contains(&EventTag::Trade) {
+    if record.tags().contains(&EventTag::Political) || record.tags().contains(&EventTag::Trade) {
         return Some(SocialObservationKind::WitnessedCooperation);
     }
-    if record.tags().contains(&EventTag::Combat) {
-        return Some(SocialObservationKind::WitnessedConflict);
+    if record.tags().contains(&EventTag::Social) && record.tags().contains(&EventTag::Transfer) {
+        return Some(SocialObservationKind::WitnessedObligation);
+    }
+    if record.tags().contains(&EventTag::Social) {
+        return Some(SocialObservationKind::WitnessedTelling);
     }
     None
 }
@@ -716,6 +719,206 @@ mod tests {
     }
 
     #[test]
+    fn social_transfer_event_records_witnessed_obligation() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, actor, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            for entity in [observer, actor, target] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor, target)
+        };
+        let mut event_log = EventLog::new();
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(4),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(actor),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
+        }));
+        let mut rng = DeterministicRng::new(Seed([6; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(4),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        assert!(
+            beliefs.social_observations.iter().any(|observation| {
+                observation.kind == SocialObservationKind::WitnessedObligation
+                    && observation.place == place
+                    && observation.subjects == (actor, target)
+                    && observation.source == PerceptionSource::DirectObservation
+                    && observation.observed_tick == Tick(4)
+            }),
+            "social transfer witness should record obligation evidence"
+        );
+    }
+
+    #[test]
+    fn political_event_records_witnessed_cooperation() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, actor, candidate, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let candidate = txn.create_agent("Candidate", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Office").unwrap();
+            for entity in [observer, actor, candidate] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor, candidate, office)
+        };
+        let mut event_log = EventLog::new();
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(4),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(actor),
+            target_ids: vec![office, candidate],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Political]),
+        }));
+        let mut rng = DeterministicRng::new(Seed([7; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(4),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        assert!(
+            beliefs.social_observations.iter().any(|observation| {
+                observation.kind == SocialObservationKind::WitnessedCooperation
+                    && observation.place == place
+                    && observation.subjects == (actor, candidate)
+                    && observation.source == PerceptionSource::DirectObservation
+                    && observation.observed_tick == Tick(4)
+            }),
+            "political witness should record cooperation evidence for agent targets only"
+        );
+        assert!(
+            beliefs
+                .social_observations
+                .iter()
+                .all(|observation| observation.subjects != (actor, office)),
+            "non-agent office targets must not produce social observations"
+        );
+    }
+
+    #[test]
+    fn coercion_event_records_witnessed_conflict() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, actor, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            for entity in [observer, actor, target] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor, target)
+        };
+        let mut event_log = EventLog::new();
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(4),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(actor),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
+        }));
+        let mut rng = DeterministicRng::new(Seed([8; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            tick: Tick(4),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        assert!(
+            beliefs.social_observations.iter().any(|observation| {
+                observation.kind == SocialObservationKind::WitnessedConflict
+                    && observation.place == place
+                    && observation.subjects == (actor, target)
+                    && observation.source == PerceptionSource::DirectObservation
+                    && observation.observed_tick == Tick(4)
+            }),
+            "coercion witness should record conflict evidence"
+        );
+    }
+
+    #[test]
     fn dispatch_table_installs_perception_system() {
         let handler = dispatch_table().get(SystemId::Perception);
         assert_eq!(handler as usize, perception_system as *const () as usize);
@@ -828,6 +1031,48 @@ mod tests {
         assert_eq!(
             social_kind(&pending),
             Some(SocialObservationKind::WitnessedTelling)
+        );
+
+        let obligation_pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(6),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(speaker),
+            target_ids: vec![listener],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::ParticipantsOnly,
+            witness_data: WitnessData {
+                direct_witnesses: BTreeSet::from([direct_witness]),
+                potential_witnesses: BTreeSet::from([direct_witness, bystander]),
+            },
+            tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
+        });
+        assert_eq!(
+            social_kind(&obligation_pending),
+            Some(SocialObservationKind::WitnessedObligation)
+        );
+
+        let coercion_pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(6),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(speaker),
+            target_ids: vec![listener],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::ParticipantsOnly,
+            witness_data: WitnessData {
+                direct_witnesses: BTreeSet::from([direct_witness]),
+                potential_witnesses: BTreeSet::from([direct_witness, bystander]),
+            },
+            tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
+        });
+        assert_eq!(
+            social_kind(&coercion_pending),
+            Some(SocialObservationKind::WitnessedConflict)
         );
 
         let observations = social_observations_for_event(&world, &pending, Tick(6));

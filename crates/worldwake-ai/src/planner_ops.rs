@@ -1279,8 +1279,14 @@ mod tests {
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
         ];
 
-        assert_eq!(table.len(), defs.len());
+        assert_eq!(table.len(), defs.len() - 3);
         assert!(defs.iter().any(|def| def.name == "tell"));
+        for deferred in ["bribe", "threaten", "declare_support"] {
+            assert!(
+                !semantics_by_name.contains_key(deferred),
+                "{deferred} should remain out of planner semantics until E16OFFSUCFAC-009"
+            );
+        }
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);
         }
@@ -1305,7 +1311,7 @@ mod tests {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
 
-        for def in defs.iter() {
+        for def in defs.iter().filter(|def| table.contains_key(&def.id)) {
             let semantics = table.get(&def.id).unwrap();
             let should_be_barrier = def.name == "trade"
                 || def.name == "bury"
@@ -1320,7 +1326,10 @@ mod tests {
         }
         assert!(defs
             .iter()
-            .filter(|def| matches!(def.name.as_str(), "attack" | "defend" | "bury" | "tell"))
+            .filter(|def| {
+                table.contains_key(&def.id)
+                    && matches!(def.name.as_str(), "attack" | "defend" | "bury" | "tell")
+            })
             .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
         assert_eq!(
             table
