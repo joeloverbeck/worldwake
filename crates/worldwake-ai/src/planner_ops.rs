@@ -1327,6 +1327,30 @@ mod tests {
     }
 
     #[test]
+    fn tell_semantics_remain_standalone_non_barrier_share_belief_fallback() {
+        let defs = build_phase_two_registry();
+        let table = build_semantics_table(&defs);
+        let tell_semantics = defs
+            .iter()
+            .find(|def| def.name == "tell")
+            .and_then(|def| table.get(&def.id))
+            .copied()
+            .expect("tell action should be classified into planner semantics");
+
+        assert_eq!(tell_semantics.op_kind, PlannerOpKind::Tell);
+        assert!(!tell_semantics.may_appear_mid_plan);
+        assert!(!tell_semantics.is_materialization_barrier);
+        assert_eq!(
+            tell_semantics.transition_kind,
+            PlannerTransitionKind::GoalModelFallback
+        );
+        assert_eq!(
+            tell_semantics.relevant_goal_kinds,
+            &[GoalKindTag::ShareBelief]
+        );
+    }
+
+    #[test]
     fn hypothetical_transition_preserves_goal_model_fallback_for_non_pickup_ops() {
         let (state, actor, _town, bread) = sample_snapshot();
         let goal = GroundedGoal {
