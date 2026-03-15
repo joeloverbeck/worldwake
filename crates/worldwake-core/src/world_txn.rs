@@ -1,8 +1,8 @@
 use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
     ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
-    EventId, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind, World,
-    WorldError,
+    EventId, LotOperation, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind,
+    World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
@@ -25,6 +25,7 @@ pub struct WorldTxn<'w> {
     witness_data: WitnessData,
     deltas: Vec<StateDelta>,
     evidence: Vec<EvidenceRef>,
+    pending_provenance_event_links: Vec<PendingProvenanceEventLink>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -32,6 +33,13 @@ struct PlacementSnapshot {
     located_in: Option<EntityId>,
     in_transit: bool,
     contained_by: Option<EntityId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PendingProvenanceEventLink {
+    lot_id: EntityId,
+    provenance_index: usize,
+    delta_index: usize,
 }
 
 macro_rules! world_txn_component_setters {
@@ -90,6 +98,7 @@ impl<'w> WorldTxn<'w> {
             witness_data,
             deltas: Vec::new(),
             evidence: Vec::new(),
+            pending_provenance_event_links: Vec::new(),
         }
     }
 
@@ -161,8 +170,12 @@ impl<'w> WorldTxn<'w> {
         })
     }
 
-    pub fn commit(self, event_log: &mut EventLog) -> EventId {
-        event_log.emit(self.into_pending_event())
+    pub fn commit(mut self, event_log: &mut EventLog) -> EventId {
+        let event_id = event_log.next_id();
+        self.finalize_pending_provenance_event_links(event_id);
+        let emitted_id = event_log.emit(self.into_pending_event());
+        debug_assert_eq!(emitted_id, event_id);
+        emitted_id
     }
 
     pub fn add_target(&mut self, target_id: EntityId) -> &mut Self {
@@ -426,6 +439,33 @@ impl<'w> WorldTxn<'w> {
         lot_id: EntityId,
         entry: ProvenanceEntry,
     ) -> Result<(), WorldError> {
+        self.append_lot_provenance_internal(lot_id, entry, false)
+    }
+
+    pub fn append_transfer_provenance(
+        &mut self,
+        lot_id: EntityId,
+        amount: Quantity,
+    ) -> Result<(), WorldError> {
+        self.append_lot_provenance_internal(
+            lot_id,
+            ProvenanceEntry {
+                tick: self.tick,
+                event_id: None,
+                operation: LotOperation::Transferred,
+                related_lot: None,
+                amount,
+            },
+            true,
+        )
+    }
+
+    fn append_lot_provenance_internal(
+        &mut self,
+        lot_id: EntityId,
+        entry: ProvenanceEntry,
+        link_to_current_event: bool,
+    ) -> Result<(), WorldError> {
         let before = self
             .staged_world
             .get_component_item_lot(lot_id)
@@ -441,6 +481,7 @@ impl<'w> WorldTxn<'w> {
             },
         )?;
         lot.provenance.push(entry);
+        let provenance_index = lot.provenance.len() - 1;
         let after = lot.clone();
         self.deltas.push(StateDelta::Component(ComponentDelta::Set {
             entity: lot_id,
@@ -448,7 +489,37 @@ impl<'w> WorldTxn<'w> {
             before: Some(ComponentValue::ItemLot(before)),
             after: ComponentValue::ItemLot(after),
         }));
+        if link_to_current_event {
+            self.pending_provenance_event_links
+                .push(PendingProvenanceEventLink {
+                    lot_id,
+                    provenance_index,
+                    delta_index: self.deltas.len() - 1,
+                });
+        }
         Ok(())
+    }
+
+    fn finalize_pending_provenance_event_links(&mut self, event_id: EventId) {
+        for pending in &self.pending_provenance_event_links {
+            let lot = self
+                .staged_world
+                .get_component_item_lot_mut(pending.lot_id)
+                .expect("pending provenance link should reference a live item lot");
+            lot.provenance[pending.provenance_index].event_id = Some(event_id);
+
+            let StateDelta::Component(ComponentDelta::Set {
+                entity,
+                component_kind: ComponentKind::ItemLot,
+                after: ComponentValue::ItemLot(after),
+                ..
+            }) = &mut self.deltas[pending.delta_index]
+            else {
+                panic!("pending provenance link should reference an item-lot component delta");
+            };
+            debug_assert_eq!(*entity, pending.lot_id);
+            after.provenance[pending.provenance_index].event_id = Some(event_id);
+        }
     }
 
     pub fn set_owner(&mut self, entity: EntityId, owner: EntityId) -> Result<(), WorldError> {
@@ -1402,9 +1473,9 @@ mod tests {
     };
     use crate::{
         CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
-        HomeostaticNeeds, LoadUnits, Name, Permille, Place, PlaceTag, Quantity, ReservationId,
-        ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
-        WorldError,
+        HomeostaticNeeds, LoadUnits, LotOperation, Name, Permille, Place, PlaceTag, Quantity,
+        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, Topology,
+        UniqueItemKind, World, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -3701,6 +3772,47 @@ mod tests {
         assert!(record.state_deltas().is_empty());
         assert!(record.tags().is_empty());
         assert!(record.target_ids().is_empty());
+    }
+
+    #[test]
+    fn commit_links_transfer_provenance_to_committed_event() {
+        let mut world = World::new(test_topology()).unwrap();
+        let holder = world
+            .create_agent("Holder", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let lot = world
+            .create_item_lot(CommodityKind::Coin, Quantity(3), Tick(2))
+            .unwrap();
+
+        world.set_owner(lot, holder).unwrap();
+        world.set_possessor(lot, holder).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.add_tag(EventTag::Transfer);
+        txn.append_transfer_provenance(lot, Quantity(2)).unwrap();
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+        let provenance = world.get_component_item_lot(lot).unwrap().provenance.last().unwrap();
+
+        assert_eq!(provenance.operation, LotOperation::Transferred);
+        assert_eq!(provenance.amount, Quantity(2));
+        assert_eq!(provenance.event_id, Some(event_id));
+        assert!(record.tags().contains(&EventTag::Transfer));
+        assert!(record.state_deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Component(ComponentDelta::Set {
+                entity,
+                component_kind: ComponentKind::ItemLot,
+                after: ComponentValue::ItemLot(after),
+                ..
+            }) if *entity == lot
+                && after.provenance.last().is_some_and(|entry| {
+                    entry.operation == LotOperation::Transferred
+                        && entry.event_id == Some(event_id)
+                })
+        )));
     }
 
     #[test]

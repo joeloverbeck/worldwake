@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, LotOperation,
-    ProvenanceEntry, Quantity, VisibilitySpec, WorldTxn, WoundList,
+    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, Quantity,
+    VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
@@ -556,17 +556,8 @@ fn transfer_trade_lot(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_possessor(lot_id, new_holder)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    txn.append_lot_provenance(
-        lot_id,
-        ProvenanceEntry {
-            tick: txn.tick(),
-            event_id: None,
-            operation: LotOperation::Traded,
-            related_lot: None,
-            amount: quantity,
-        },
-    )
-    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.append_transfer_provenance(lot_id, quantity)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot_id);
     debug_assert_eq!(
         txn.get_component_item_lot(lot_id).map(|lot| lot.commodity),
@@ -965,15 +956,16 @@ mod tests {
         assert!(record.tags().contains(&EventTag::Transfer));
         assert!(record.tags().contains(&EventTag::Trade));
 
-        let traded_entry = harness
+        let transferred_entry = harness
             .world
             .get_component_item_lot(harness.counterparty_offer)
             .unwrap()
             .provenance
             .last()
             .unwrap();
-        assert_eq!(traded_entry.operation, LotOperation::Traded);
-        assert_eq!(traded_entry.amount, Quantity(1));
+        assert_eq!(transferred_entry.operation, LotOperation::Transferred);
+        assert_eq!(transferred_entry.amount, Quantity(1));
+        assert_eq!(transferred_entry.event_id, Some(trade_events[0]));
 
         verify_live_lot_conservation(&harness.world, CommodityKind::Coin, 1).unwrap();
         verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 1).unwrap();

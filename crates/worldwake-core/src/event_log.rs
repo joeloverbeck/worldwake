@@ -70,6 +70,11 @@ impl EventLog {
     }
 
     #[must_use]
+    pub const fn next_id(&self) -> EventId {
+        self.next_id
+    }
+
+    #[must_use]
     pub fn get(&self, id: EventId) -> Option<&EventRecord> {
         usize::try_from(id.0)
             .ok()

@@ -754,17 +754,8 @@ fn transfer_lot(
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.set_possessor(lot_id, new_holder)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    txn.append_lot_provenance(
-        lot_id,
-        worldwake_core::ProvenanceEntry {
-            tick: txn.tick(),
-            event_id: None,
-            operation: worldwake_core::LotOperation::Traded,
-            related_lot: None,
-            amount: quantity,
-        },
-    )
-    .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    txn.append_transfer_provenance(lot_id, quantity)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.add_target(lot_id);
     Ok(())
 }
@@ -1008,7 +999,26 @@ mod tests {
             local_state: None,
         };
 
-        let _ = commit_action(&mut fx.world, &defs, &handlers, ids[0], &instance, 1, 3);
+        let log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &instance, 1, 3);
+        let bribe_event_id = log.events_by_tag(EventTag::ActionCommitted)[0];
+        let transferred_lot = fx
+            .world
+            .entities_with_item_lot()
+            .find(|lot_id| {
+                fx.world.owner_of(*lot_id) == Some(fx.target)
+                    && fx
+                        .world
+                        .get_component_item_lot(*lot_id)
+                        .is_some_and(|lot| lot.commodity == CommodityKind::Coin)
+            })
+            .unwrap();
+        let provenance = fx
+            .world
+            .get_component_item_lot(transferred_lot)
+            .unwrap()
+            .provenance
+            .last()
+            .unwrap();
 
         assert_eq!(
             fx.world.controlled_commodity_quantity(fx.actor, CommodityKind::Coin),
@@ -1022,6 +1032,9 @@ mod tests {
             fx.world.loyalty_to(fx.target, fx.actor),
             Some(pm(300))
         );
+        assert_eq!(provenance.operation, worldwake_core::LotOperation::Transferred);
+        assert_eq!(provenance.amount, Quantity(300));
+        assert_eq!(provenance.event_id, Some(bribe_event_id));
         verify_live_lot_conservation(&fx.world, CommodityKind::Coin, 300).unwrap();
     }
 
