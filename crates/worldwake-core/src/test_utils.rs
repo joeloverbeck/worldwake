@@ -87,6 +87,7 @@ pub fn sample_utility_profile() -> UtilityProfile {
         pain_weight: Permille::new(950).unwrap(),
         danger_weight: Permille::new(1000).unwrap(),
         enterprise_weight: Permille::new(425).unwrap(),
+        social_weight: Permille::new(200).unwrap(),
     }
 }
 

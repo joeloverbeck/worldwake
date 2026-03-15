@@ -190,6 +190,7 @@ mod tests {
                         pain_weight: 500,
                         danger_weight: 500,
                         enterprise_weight: 500,
+                        social_weight: 200,
                     ),
                     merchandise_profile: (
                         sale_kinds: [Apple, Bread],

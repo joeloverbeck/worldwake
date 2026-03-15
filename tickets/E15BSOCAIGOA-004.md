@@ -25,6 +25,10 @@ The AI candidate generation has 4 emitter groups (needs, production, enterprise,
 2. Bounded by `max_tell_candidates * memory_capacity` (defaults: 3 * 12 = 36 max candidates) — no explosion risk.
 3. Pure derived computation (Principle 3) — no state stored, all computed from beliefs + profiles.
 
+## Note
+
+This ticket is now the primary implementation ticket for the remaining autonomous-social-behavior gap. `ShareBelief` goal/planner plumbing already exists, but without a social candidate emitter agents still cannot decide to Tell on their own. Completing this ticket is what changes Tell from manual-only behavior into AI-generated behavior.
+
 ## What to Change
 
 ### 1. Add emit_social_candidates() function

@@ -13,9 +13,13 @@ Tests T11–T13 validate chain-length gossip cutoff, agent diversity in social b
 ## Assumption Reassessment (2026-03-15)
 
 1. T11 needs emit_social_candidates() chain_len filtering (E15BSOCAIGOA-004). Agent D with max_relay_chain_len=1 should not receive a chain_len=2 rumor from C.
-2. T12 tests Principle 20 (agent diversity) via different social_weight values (900, 200, 0).
+2. T12 tests Principle 20 (agent diversity) via different social_weight values (900, 200, 0), so it specifically depends on E15BSOCAIGOA-005 replacing the current placeholder ShareBelief motive score with real social-weight-sensitive scoring.
 3. T13 exercises the full information lifecycle: rumor received → travel → arrival → passive observation contradicts rumor → InventoryDiscrepancy Discovery → replan with corrected belief.
 4. `reports/golden-e2e-coverage-analysis.md` exists and needs social coverage section.
+
+## Note
+
+T12 is the strongest architecture-facing regression test for the remaining gap. It does not just check that agents can Tell; it checks that different agents Tell differently for principled reasons. If T12 cannot pass, the social AI layer is still mechanically wired but not yet behaviorally differentiated.
 
 ## Architecture Check
 

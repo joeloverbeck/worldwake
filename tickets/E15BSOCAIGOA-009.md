@@ -12,10 +12,14 @@ Tier 2 tests T8–T10 require Deliverable 1 (autonomous social AI goals). These 
 
 ## Assumption Reassessment (2026-03-15)
 
-1. T8 requires GoalKind::ShareBelief, PlannerOpKind::Tell, emit_social_candidates(), and ranking — all from E15BSOCAIGOA-001 through E15BSOCAIGOA-005.
-2. T9 requires suppression logic for ShareBelief (E15BSOCAIGOA-005).
+1. T8 no longer depends on `GoalKind::ShareBelief` or `PlannerOpKind::Tell` landing; those already exist. The real production prerequisites are `emit_social_candidates()` (E15BSOCAIGOA-004) plus non-placeholder ShareBelief motive scoring (E15BSOCAIGOA-005).
+2. T9 depends on the already-present suppression logic continuing to hold once autonomous ShareBelief candidates exist. E15BSOCAIGOA-005 should treat suppression coverage as regression protection, not brand-new functionality.
 3. T10 is the most complex golden test — exercises Tell → belief update → enterprise candidate generation (restock goal) → production → travel → trade. Requires all systems working in concert.
 4. `golden_social.rs` will have T1–T7 from previous tickets.
+
+## Note
+
+This ticket is the first end-to-end proof that the remaining autonomous-social-behavior gap is actually closed. If T8 or T9 cannot pass after E15BSOCAIGOA-004 and E15BSOCAIGOA-005, then the social AI architecture is still incomplete even if the lower-level implementation tickets are nominally done.
 
 ## Architecture Check
 

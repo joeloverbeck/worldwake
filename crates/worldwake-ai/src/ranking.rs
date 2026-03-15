@@ -741,6 +741,7 @@ mod tests {
             pain_weight: pm(400),
             danger_weight: pm(300),
             enterprise_weight: pm(200),
+            social_weight: pm(150),
         }
     }
 
