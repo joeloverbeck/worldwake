@@ -309,9 +309,9 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, DeadAt,
         DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EventLog, EventTag, HomeostaticNeeds, MetabolismProfile,
-        Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec, WitnessData,
-        World, WorldTxn, WoundCause,
+        DeprivationKind, DriveThresholds, EventLog, EventTag, EventView, HomeostaticNeeds,
+        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile,
+        VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
@@ -513,8 +513,8 @@ mod tests {
             ))
         );
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
-        assert!(record.payload.tags.contains(&EventTag::System));
-        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
+        assert!(record.tags().contains(&EventTag::System));
+        assert!(record.tags().contains(&EventTag::WorldMutation));
     }
 
     #[test]
@@ -790,8 +790,8 @@ mod tests {
             0
         );
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
-        assert!(record.payload.tags.contains(&EventTag::System));
-        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
+        assert!(record.tags().contains(&EventTag::System));
+        assert!(record.tags().contains(&EventTag::WorldMutation));
     }
 
     #[test]

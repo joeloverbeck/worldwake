@@ -239,8 +239,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CombatProfile,
-        CombatWeaponRef, CommodityKind, ControlSource, EntityId, EventLog, EventTag, Quantity,
-        Seed, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
+        CombatWeaponRef, CommodityKind, ControlSource, EntityId, EventLog, EventTag, EventView,
+        Quantity, Seed, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -439,12 +439,12 @@ mod tests {
         assert_eq!(log.events_by_tag(EventTag::ActionStarted).len(), 1);
 
         let record = log.get(worldwake_core::EventId(0)).unwrap();
-        assert_eq!(record.payload.cause, CauseRef::Bootstrap);
-        assert_eq!(record.payload.actor_id, Some(actor));
-        assert_eq!(record.payload.place_id, Some(place));
-        assert_eq!(record.payload.target_ids, vec![target]);
-        assert!(record.payload.tags.contains(&EventTag::ActionStarted));
-        assert_eq!(record.payload.state_deltas.len(), 1);
+        assert_eq!(record.cause(), CauseRef::Bootstrap);
+        assert_eq!(record.actor_id(), Some(actor));
+        assert_eq!(record.place_id(), Some(place));
+        assert_eq!(record.target_ids(), vec![target]);
+        assert!(record.tags().contains(&EventTag::ActionStarted));
+        assert_eq!(record.state_deltas().len(), 1);
     }
 
     #[test]

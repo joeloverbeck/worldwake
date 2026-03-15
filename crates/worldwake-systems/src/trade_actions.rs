@@ -614,9 +614,10 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
         AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
-        DemandObservationReason, EntityId, EventLog, EventTag, HomeostaticNeeds, LotOperation,
-        MerchandiseProfile, PerceptionSource, Permille, Quantity, Seed, SubstitutePreferences,
-        Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        DemandObservationReason, EntityId, EventLog, EventTag, EventView, HomeostaticNeeds,
+        LotOperation, MerchandiseProfile, PerceptionSource, Permille, Quantity, Seed,
+        SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
@@ -960,9 +961,9 @@ mod tests {
         let trade_events = harness.log.events_by_tag(EventTag::Trade);
         assert_eq!(trade_events.len(), 1);
         let record = harness.log.get(trade_events[0]).unwrap();
-        assert!(record.payload.tags.contains(&EventTag::ActionCommitted));
-        assert!(record.payload.tags.contains(&EventTag::Transfer));
-        assert!(record.payload.tags.contains(&EventTag::Trade));
+        assert!(record.tags().contains(&EventTag::ActionCommitted));
+        assert!(record.tags().contains(&EventTag::Transfer));
+        assert!(record.tags().contains(&EventTag::Trade));
 
         let traded_entry = harness
             .world

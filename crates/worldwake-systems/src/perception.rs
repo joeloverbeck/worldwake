@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     build_believed_entity_state, AgentBeliefStore, CauseRef, EntityId, EntityKind, EventLog,
-    EventPayload, EventRecord, EventTag, EvidenceRef, MismatchKind, PendingEvent, PerceptionSource,
-    SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World, WorldTxn,
+    EventPayload, EventRecord, EventTag, EventView, EvidenceRef, MismatchKind, PendingEvent,
+    PerceptionSource, SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World,
+    WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -49,18 +50,15 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
                     .unwrap_or_default()
             });
 
-            for (entity, observed) in &record.payload.observed_entities {
+            for (entity, observed) in record.observed_entities() {
                 let snapshot = observed
-                    .to_believed_entity_state(
-                        record.payload.tick,
-                        PerceptionSource::DirectObservation,
-                    );
+                    .to_believed_entity_state(record.tick(), PerceptionSource::DirectObservation);
                 record_observed_snapshot(
                     event_log,
                     DiscoveryContext {
                         tick,
                         observer: witness,
-                        place: record.payload.place_id.or(snapshot.last_known_place),
+                        place: record.place_id().or(snapshot.last_known_place),
                     },
                     store,
                     *entity,
@@ -307,11 +305,11 @@ fn emit_discovery_event(
 }
 
 fn resolve_witnesses(world: &World, record: &EventRecord) -> Vec<EntityId> {
-    let candidates = match record.payload.visibility {
-        VisibilitySpec::ParticipantsOnly => record.payload.witness_data.direct_witnesses.clone(),
-        VisibilitySpec::SamePlace => place_witnesses(world, record.payload.place_id),
+    let candidates = match record.visibility() {
+        VisibilitySpec::ParticipantsOnly => record.witness_data().direct_witnesses.clone(),
+        VisibilitySpec::SamePlace => place_witnesses(world, record.place_id()),
         VisibilitySpec::AdjacentPlaces { max_hops } => {
-            adjacent_place_witnesses(world, record.payload.place_id, max_hops)
+            adjacent_place_witnesses(world, record.place_id(), max_hops)
         }
         VisibilitySpec::PublicRecord | VisibilitySpec::Hidden => BTreeSet::new(),
     };
@@ -374,19 +372,17 @@ fn social_observations_for_event(
     record: &EventRecord,
     tick: worldwake_core::Tick,
 ) -> Vec<SocialObservation> {
-    let Some(place) = record.payload.place_id else {
+    let Some(place) = record.place_id() else {
         return Vec::new();
     };
     let Some(actor) = record
-        .payload
-        .actor_id
+        .actor_id()
         .filter(|actor| world.entity_kind(*actor) == Some(EntityKind::Agent))
     else {
         return Vec::new();
     };
     let targets = record
-        .payload
-        .target_ids
+        .target_ids()
         .iter()
         .copied()
         .filter(|target| world.entity_kind(*target) == Some(EntityKind::Agent))
@@ -409,13 +405,13 @@ fn social_observations_for_event(
 }
 
 fn social_kind(record: &EventRecord) -> Option<SocialObservationKind> {
-    if record.payload.tags.contains(&EventTag::Social) {
+    if record.tags().contains(&EventTag::Social) {
         return Some(SocialObservationKind::WitnessedTelling);
     }
-    if record.payload.tags.contains(&EventTag::Trade) {
+    if record.tags().contains(&EventTag::Trade) {
         return Some(SocialObservationKind::WitnessedCooperation);
     }
-    if record.payload.tags.contains(&EventTag::Combat) {
+    if record.tags().contains(&EventTag::Combat) {
         return Some(SocialObservationKind::WitnessedConflict);
     }
     None
@@ -429,8 +425,9 @@ mod tests {
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
-        DeadAt, EventLog, EventPayload, EventTag, EvidenceRef, MismatchKind, ObservedEntitySnapshot,
-        PendingEvent, PerceptionProfile, PerceptionSource, Permille, Quantity, Seed,
+        DeadAt, EventLog, EventPayload, EventTag, EventView, EvidenceRef, MismatchKind,
+        ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
+        Quantity, Seed,
         SocialObservationKind, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
@@ -1048,13 +1045,13 @@ mod tests {
         let discoveries = discovery_records(&event_log);
         assert_eq!(discoveries.len(), 1);
         let discovery = discoveries[0];
-        assert_eq!(discovery.payload.actor_id, Some(observer));
-        assert_eq!(discovery.payload.place_id, Some(place));
-        assert_eq!(discovery.payload.visibility, VisibilitySpec::ParticipantsOnly);
-        assert!(discovery.payload.tags.contains(&EventTag::Discovery));
-        assert!(discovery.payload.tags.contains(&EventTag::WorldMutation));
+        assert_eq!(discovery.actor_id(), Some(observer));
+        assert_eq!(discovery.place_id(), Some(place));
+        assert_eq!(discovery.visibility(), VisibilitySpec::ParticipantsOnly);
+        assert!(discovery.tags().contains(&EventTag::Discovery));
+        assert!(discovery.tags().contains(&EventTag::WorldMutation));
         assert_eq!(
-            discovery.payload.evidence,
+            discovery.evidence(),
             vec![EvidenceRef::Mismatch {
                 observer,
                 subject: target,
@@ -1121,7 +1118,7 @@ mod tests {
         let discoveries = discovery_records(&event_log);
         assert_eq!(discoveries.len(), 1);
         assert_eq!(
-            discoveries[0].payload.evidence,
+            discoveries[0].evidence(),
             vec![EvidenceRef::Mismatch {
                 observer,
                 subject: target,
@@ -1282,7 +1279,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            discovery_records(&event_log)[0].payload.evidence,
+            discovery_records(&event_log)[0].evidence(),
             vec![EvidenceRef::Mismatch {
                 observer,
                 subject: target,
@@ -1441,7 +1438,7 @@ mod tests {
 
         assert!(
             discovery_records(&event_log).iter().any(|record| {
-                record.payload.evidence
+                record.evidence()
                     == vec![EvidenceRef::Mismatch {
                         observer,
                         subject: target,
@@ -1524,7 +1521,7 @@ mod tests {
 
         assert!(
             discovery_records(&event_log).iter().any(|record| {
-                record.payload.evidence
+                record.evidence()
                     == vec![EvidenceRef::Mismatch {
                         observer,
                         subject: target,
@@ -1609,7 +1606,7 @@ mod tests {
 
         assert!(
             discovery_records(&event_log).iter().any(|record| {
-                record.payload.evidence
+                record.evidence()
                     == vec![EvidenceRef::Mismatch {
                         observer,
                         subject: target,
@@ -1709,7 +1706,7 @@ mod tests {
 
         let mismatches = discovery_records(&event_log)
             .iter()
-            .flat_map(|record| record.payload.evidence.iter())
+            .flat_map(|record| record.evidence().iter())
             .filter_map(|evidence| match evidence {
                 EvidenceRef::Mismatch {
                     observer: seen_by,

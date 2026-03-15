@@ -9,6 +9,20 @@ use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub trait EventView {
+    fn tick(&self) -> Tick;
+    fn cause(&self) -> CauseRef;
+    fn actor_id(&self) -> Option<EntityId>;
+    fn target_ids(&self) -> &[EntityId];
+    fn evidence(&self) -> &[EvidenceRef];
+    fn place_id(&self) -> Option<EntityId>;
+    fn state_deltas(&self) -> &[StateDelta];
+    fn observed_entities(&self) -> &BTreeMap<EntityId, ObservedEntitySnapshot>;
+    fn visibility(&self) -> VisibilitySpec;
+    fn witness_data(&self) -> &WitnessData;
+    fn tags(&self) -> &BTreeSet<EventTag>;
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum EvidenceRef {
     Wound {
@@ -24,7 +38,7 @@ pub enum EvidenceRef {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PendingEvent {
-    pub payload: EventPayload,
+    payload: EventPayload,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -45,7 +59,99 @@ pub struct EventPayload {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
     pub event_id: EventId,
-    pub payload: EventPayload,
+    payload: EventPayload,
+}
+
+impl EventView for PendingEvent {
+    fn tick(&self) -> Tick {
+        self.payload.tick
+    }
+
+    fn cause(&self) -> CauseRef {
+        self.payload.cause
+    }
+
+    fn actor_id(&self) -> Option<EntityId> {
+        self.payload.actor_id
+    }
+
+    fn target_ids(&self) -> &[EntityId] {
+        &self.payload.target_ids
+    }
+
+    fn evidence(&self) -> &[EvidenceRef] {
+        &self.payload.evidence
+    }
+
+    fn place_id(&self) -> Option<EntityId> {
+        self.payload.place_id
+    }
+
+    fn state_deltas(&self) -> &[StateDelta] {
+        &self.payload.state_deltas
+    }
+
+    fn observed_entities(&self) -> &BTreeMap<EntityId, ObservedEntitySnapshot> {
+        &self.payload.observed_entities
+    }
+
+    fn visibility(&self) -> VisibilitySpec {
+        self.payload.visibility
+    }
+
+    fn witness_data(&self) -> &WitnessData {
+        &self.payload.witness_data
+    }
+
+    fn tags(&self) -> &BTreeSet<EventTag> {
+        &self.payload.tags
+    }
+}
+
+impl EventView for EventRecord {
+    fn tick(&self) -> Tick {
+        self.payload.tick
+    }
+
+    fn cause(&self) -> CauseRef {
+        self.payload.cause
+    }
+
+    fn actor_id(&self) -> Option<EntityId> {
+        self.payload.actor_id
+    }
+
+    fn target_ids(&self) -> &[EntityId] {
+        &self.payload.target_ids
+    }
+
+    fn evidence(&self) -> &[EvidenceRef] {
+        &self.payload.evidence
+    }
+
+    fn place_id(&self) -> Option<EntityId> {
+        self.payload.place_id
+    }
+
+    fn state_deltas(&self) -> &[StateDelta] {
+        &self.payload.state_deltas
+    }
+
+    fn observed_entities(&self) -> &BTreeMap<EntityId, ObservedEntitySnapshot> {
+        &self.payload.observed_entities
+    }
+
+    fn visibility(&self) -> VisibilitySpec {
+        self.payload.visibility
+    }
+
+    fn witness_data(&self) -> &WitnessData {
+        &self.payload.witness_data
+    }
+
+    fn tags(&self) -> &BTreeSet<EventTag> {
+        &self.payload.tags
+    }
 }
 
 impl PendingEvent {

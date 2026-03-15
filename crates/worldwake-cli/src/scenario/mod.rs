@@ -10,10 +10,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    hash_world, CauseRef, ControlSource, DeprivationExposure, DriveThresholds, EntityId,
-    EntityKind, EventLog, MerchandiseProfile, MetabolismProfile, Place, ResourceSource, Seed, Tick,
-    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
-    WorldTxn,
+    hash_world, CarryCapacity, CauseRef, ControlSource, DeprivationExposure, DriveThresholds,
+    EntityId, EntityKind, EventLog, LoadUnits, MerchandiseProfile, MetabolismProfile, Place,
+    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+    WorkstationMarker, World, WorldTxn,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -31,6 +31,8 @@ pub struct SpawnedSimulation {
     pub action_registries: ActionRegistries,
     pub dispatch_table: SystemDispatchTable,
 }
+
+const DEFAULT_AGENT_CARRY_CAPACITY: CarryCapacity = CarryCapacity(LoadUnits(20));
 
 /// Errors that can occur during scenario loading or spawning.
 #[derive(Debug)]
@@ -274,6 +276,7 @@ fn spawn_agent(
     txn.set_component_deprivation_exposure(agent_id, DeprivationExposure::default())?;
     txn.set_component_drive_thresholds(agent_id, DriveThresholds::default())?;
     txn.set_component_metabolism_profile(agent_id, MetabolismProfile::default())?;
+    txn.set_component_carry_capacity(agent_id, DEFAULT_AGENT_CARRY_CAPACITY)?;
 
     if let Some(ref combat) = agent_def.combat_profile {
         txn.set_component_combat_profile(agent_id, *combat)?;
@@ -407,7 +410,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
-        CommodityKind, ControlSource, HomeostaticNeeds, Permille, Quantity, WorkstationTag,
+        CarryCapacity, CommodityKind, ControlSource, HomeostaticNeeds, LoadUnits, Permille,
+        Quantity, WorkstationTag,
     };
 
     /// Helper: build a minimal `ScenarioDef` with given places and agents.
@@ -522,6 +526,43 @@ mod tests {
 
         let bob_place = world.effective_place(*bob).unwrap();
         assert_eq!(world.topology().place(bob_place).unwrap().name, "Forest");
+    }
+
+    #[test]
+    fn test_spawn_agents_receive_default_carry_capacity() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                name: "Alice".into(),
+                location: "Town".into(),
+                control: ControlSource::Ai,
+                needs: None,
+                combat_profile: None,
+                utility_profile: None,
+                merchandise_profile: None,
+                trade_disposition: None,
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_carry_capacity(agent),
+            Some(&CarryCapacity(LoadUnits(20)))
+        );
     }
 
     #[test]

@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     is_wound_load_fatal, load_per_unit, ActionDefId, BodyCostPerTick, BodyPart, CauseRef,
     CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container,
-    DeadAt, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EvidenceRef,
+    DeadAt, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView, EvidenceRef,
     HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec, WitnessData,
     WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
 };
@@ -301,14 +301,14 @@ fn latest_wound_event(
         .map(|index| worldwake_core::EventId(index as u64))
         .find(|event_id| {
             event_log.get(*event_id).is_some_and(|record| {
-                record.payload.state_deltas.iter().any(|delta| {
+                record.state_deltas().iter().any(|delta| {
                     matches!(
                         delta,
                         StateDelta::Component(ComponentDelta::Set {
                             entity: changed,
                             component_kind: ComponentKind::WoundList,
                             ..
-                        }) if changed == &entity
+                        }) if *changed == entity
                     )
                 })
             })
@@ -1344,9 +1344,9 @@ mod tests {
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyPart,
         CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef, CommodityKind,
         Container, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EntityKind, EventLog,
-        EventTag, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille, Quantity,
-        Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource,
+        Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
@@ -2044,10 +2044,10 @@ mod tests {
         let record = log
             .get(*log.events_by_tag(EventTag::ActionCommitted).last().unwrap())
             .unwrap();
-        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
-        assert!(record.payload.tags.contains(&EventTag::Inventory));
-        assert!(record.payload.tags.contains(&EventTag::Transfer));
-        assert!(record.payload.target_ids.contains(&bread));
+        assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
+        assert!(record.tags().contains(&EventTag::Inventory));
+        assert!(record.tags().contains(&EventTag::Transfer));
+        assert!(record.target_ids().contains(&bread));
     }
 
     #[test]
@@ -2583,10 +2583,10 @@ mod tests {
         let record = log
             .get(*log.events_by_tag(EventTag::ActionCommitted).last().unwrap())
             .unwrap();
-        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
-        assert!(record.payload.tags.contains(&EventTag::Combat));
-        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
-        assert!(record.payload.target_ids.contains(&target));
+        assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
+        assert!(record.tags().contains(&EventTag::Combat));
+        assert!(record.tags().contains(&EventTag::WorldMutation));
+        assert!(record.target_ids().contains(&target));
     }
 
     #[test]
@@ -3136,27 +3136,26 @@ mod tests {
         assert!(!world.is_archived(guard));
         assert_eq!(log.events_by_tag(EventTag::Combat).len(), 1);
         let record = log.get(log.events_by_tag(EventTag::Combat)[0]).unwrap();
-        assert_eq!(record.payload.actor_id, Some(guard));
-        assert!(matches!(record.payload.cause, CauseRef::Event(_)));
+        assert_eq!(record.actor_id(), Some(guard));
+        assert!(matches!(record.cause(), CauseRef::Event(_)));
         assert_eq!(
-            record.payload.evidence,
+            record.evidence(),
             vec![EvidenceRef::Wound {
                 entity: guard,
                 wound_id: WoundId(7),
             }]
         );
-        assert!(record.payload.observed_entities.contains_key(&guard));
+        assert!(record.observed_entities().contains_key(&guard));
         assert_eq!(
             record
-                .payload
-                .observed_entities
+                .observed_entities()
                 .get(&guard)
                 .unwrap()
                 .last_known_inventory,
             BTreeMap::from([(worldwake_core::CommodityKind::Bread, Quantity(1))])
         );
-        assert!(record.payload.tags.contains(&EventTag::System));
-        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
+        assert!(record.tags().contains(&EventTag::System));
+        assert!(record.tags().contains(&EventTag::WorldMutation));
     }
 
     #[test]
@@ -3585,6 +3584,6 @@ mod tests {
 
         assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(3))));
         let record = log.get(log.events_by_tag(EventTag::Combat)[0]).unwrap();
-        assert!(matches!(record.payload.cause, CauseRef::Event(_)));
+        assert!(matches!(record.cause(), CauseRef::Event(_)));
     }
 }

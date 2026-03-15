@@ -93,7 +93,7 @@ pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use error::WorldError;
 pub use event_log::EventLog;
-pub use event_record::{EventPayload, EventRecord, EvidenceRef, PendingEvent};
+pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
 pub use facility_queue::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueError, FacilityUseQueue,

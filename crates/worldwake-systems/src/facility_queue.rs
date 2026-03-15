@@ -282,9 +282,9 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, ActionDefId, CauseRef, CommodityKind, ControlSource, EntityId,
-        EntityKind, EventLog, EventTag, ExclusiveFacilityPolicy, FacilityUseQueue, KnownRecipes,
-        ProductionJob, Quantity, ResourceSource, Seed, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        EntityKind, EventLog, EventTag, EventView, ExclusiveFacilityPolicy, FacilityUseQueue,
+        KnownRecipes, ProductionJob, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -572,7 +572,7 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::QueueGrantExpired)[0])
             .unwrap();
-        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
     }
 
     #[test]

@@ -375,9 +375,9 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, CarryCapacity,
-        CauseRef, CommodityKind, Container, ControlSource, EventLog, LoadUnits, PerceptionSource,
-        Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        CauseRef, CommodityKind, Container, ControlSource, EventLog, EventView, LoadUnits,
+        PerceptionSource, Place, Quantity, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
@@ -605,8 +605,8 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::ActionCommitted)[0])
             .unwrap();
-        assert!(record.payload.tags.contains(&EventTag::Inventory));
-        assert!(record.payload.tags.contains(&EventTag::Transfer));
+        assert!(record.tags().contains(&EventTag::Inventory));
+        assert!(record.tags().contains(&EventTag::Transfer));
     }
 
     #[test]

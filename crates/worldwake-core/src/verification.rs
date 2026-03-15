@@ -1,7 +1,7 @@
 //! Debug-time verification for event-log structure and journaled world state.
 
 use crate::EventId;
-use crate::{CauseRef, EventLog};
+use crate::{CauseRef, EventLog, EventView};
 use std::collections::BTreeSet;
 
 #[cfg(test)]
@@ -61,17 +61,17 @@ pub fn verify_completeness(event_log: &EventLog) -> Result<(), Vec<VerificationE
             });
         }
 
-        if let CauseRef::Event(cause_id) = record.payload.cause {
+        if let CauseRef::Event(cause_id) = record.cause() {
             if cause_id >= record.event_id {
                 errors.push(VerificationError::FutureCauseRef {
                     event_id: record.event_id,
-                    cause: record.payload.cause,
+                    cause: record.cause(),
                 });
             }
             if event_log.get(cause_id).is_none() {
                 errors.push(VerificationError::DanglingCauseRef {
                     event_id: record.event_id,
-                    cause: record.payload.cause,
+                    cause: record.cause(),
                 });
             }
         }
@@ -103,7 +103,7 @@ fn cause_chain_reaches_explicit_root(event_log: &EventLog, start_id: EventId) ->
             return false;
         };
 
-        match record.payload.cause {
+        match record.cause() {
             CauseRef::Bootstrap | CauseRef::SystemTick(_) | CauseRef::ExternalInput(_) => {
                 return true;
             }
@@ -184,7 +184,7 @@ impl ExpectedWorldState {
                 .get(expected_id)
                 .expect("event log must return a record for every in-bounds index");
 
-            for delta in &record.payload.state_deltas {
+            for delta in record.state_deltas() {
                 match delta {
                     StateDelta::Entity(EntityDelta::Created { entity, kind }) => {
                         entity_kinds.insert(*entity, *kind);

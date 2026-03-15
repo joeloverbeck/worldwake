@@ -2,7 +2,7 @@
 //!
 //! All handlers are read-only — zero world mutation.
 
-use worldwake_core::{cause::CauseRef, event_log::EventLog, ids::EventId};
+use worldwake_core::{cause::CauseRef, event_log::EventLog, event_record::EventView, ids::EventId};
 use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
@@ -15,21 +15,21 @@ fn format_event_summary(sim: &SimulationState, event_id: EventId) -> Option<Stri
     let record = sim.event_log().get(event_id)?;
     let world = sim.world();
 
-    let tags: Vec<String> = record.payload.tags.iter().map(|t| format!("{t:?}")).collect();
+    let tags: Vec<String> = record.tags().iter().map(|t| format!("{t:?}")).collect();
     let tag_str = if tags.is_empty() {
         "(no tags)".to_string()
     } else {
         tags.join(", ")
     };
 
-    let actor_str = match record.payload.actor_id {
+    let actor_str = match record.actor_id() {
         Some(actor) => format!(" by {}", entity_display_name(world, actor)),
         None => String::new(),
     };
 
     Some(format!(
         "[E{}] tick {} — {}{actor_str}",
-        event_id.0, record.payload.tick.0, tag_str
+        event_id.0, record.tick().0, tag_str
     ))
 }
 
@@ -86,10 +86,10 @@ pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
     let world = sim.world();
 
     println!("Event [E{id}]");
-    println!("  tick: {}", record.payload.tick.0);
+    println!("  tick: {}", record.tick().0);
 
     // Tags
-    let tags: Vec<String> = record.payload.tags.iter().map(|t| format!("{t:?}")).collect();
+    let tags: Vec<String> = record.tags().iter().map(|t| format!("{t:?}")).collect();
     println!(
         "  tags: {}",
         if tags.is_empty() {
@@ -100,27 +100,26 @@ pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
     );
 
     // Cause
-    println!("  cause: {}", format_cause(&record.payload.cause));
+    println!("  cause: {}", format_cause(&record.cause()));
 
     // Actor
-    match record.payload.actor_id {
+    match record.actor_id() {
         Some(actor) => println!("  actor: {}", entity_display_name(world, actor)),
         None => println!("  actor: (none)"),
     }
 
     // Place
-    match record.payload.place_id {
+    match record.place_id() {
         Some(place) => println!("  place: {}", entity_display_name(world, place)),
         None => println!("  place: (none)"),
     }
 
     // Targets
-    if record.payload.target_ids.is_empty() {
+    if record.target_ids().is_empty() {
         println!("  targets: (none)");
     } else {
         let names: Vec<String> = record
-            .payload
-            .target_ids
+            .target_ids()
             .iter()
             .map(|id| entity_display_name(world, *id))
             .collect();
@@ -128,7 +127,7 @@ pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
     }
 
     // Witnesses
-    let direct = &record.payload.witness_data.direct_witnesses;
+    let direct = &record.witness_data().direct_witnesses;
     if direct.is_empty() {
         println!("  witnesses: (none)");
     } else {
@@ -140,11 +139,11 @@ pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
     }
 
     // State deltas
-    if record.payload.state_deltas.is_empty() {
+    if record.state_deltas().is_empty() {
         println!("  deltas: (none)");
     } else {
-        println!("  deltas ({}):", record.payload.state_deltas.len());
-        for delta in &record.payload.state_deltas {
+        println!("  deltas ({}):", record.state_deltas().len());
+        for delta in record.state_deltas() {
             println!("    {delta:?}");
         }
     }
@@ -214,8 +213,8 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         cause::CauseRef, control::ControlSource, event_record::PendingEvent,
-        event_record::EventPayload, event_tag::EventTag, ids::EventId, topology::PlaceTag,
-        visibility::VisibilitySpec, witness::WitnessData,
+        event_record::EventPayload, event_record::EventView, event_tag::EventTag, ids::EventId,
+        topology::PlaceTag, visibility::VisibilitySpec, witness::WitnessData,
     };
 
     fn minimal_scenario() -> ScenarioDef {
@@ -330,8 +329,8 @@ mod tests {
 
         // Verify event record exists with expected fields.
         let record = sim.event_log().get(eid).unwrap();
-        assert_eq!(record.payload.tick, sim.scheduler().current_tick());
-        assert!(record.payload.tags.contains(&EventTag::System));
+        assert_eq!(record.tick(), sim.scheduler().current_tick());
+        assert!(record.tags().contains(&EventTag::System));
     }
 
     #[test]

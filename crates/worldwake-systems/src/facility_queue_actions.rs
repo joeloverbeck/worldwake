@@ -238,9 +238,9 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EntityKind, EventLog, EventTag, ExclusiveFacilityPolicy,
-        FacilityUseQueue, Permille, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView,
+        ExclusiveFacilityPolicy, FacilityUseQueue, Permille, Quantity, ResourceSource, Seed,
+        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
@@ -460,8 +460,8 @@ mod tests {
         let record = log
             .get(*log.events_by_tag(EventTag::ActionCommitted).last().unwrap())
             .unwrap();
-        assert_eq!(record.payload.visibility, VisibilitySpec::SamePlace);
-        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
+        assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
+        assert!(record.tags().contains(&EventTag::WorldMutation));
     }
 
     #[test]

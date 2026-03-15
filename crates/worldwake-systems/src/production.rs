@@ -106,7 +106,7 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
         ComponentValue, DemandMemory, DemandObservation, DemandObservationReason, EventLog,
-        EventTag, Permille, Quantity, ResourceSource, Seed, StateDelta, Tick,
+        EventTag, EventView, Permille, Quantity, ResourceSource, Seed, StateDelta, Tick,
         TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
@@ -255,13 +255,13 @@ mod tests {
         );
         assert_eq!(event_log.len(), 1);
         let record = event_log.get(worldwake_core::EventId(0)).unwrap();
-        assert_eq!(record.payload.cause, CauseRef::SystemTick(Tick(7)));
-        assert_eq!(record.payload.place_id, Some(place));
-        assert_eq!(record.payload.target_ids, vec![place]);
-        assert!(record.payload.tags.contains(&EventTag::System));
-        assert!(record.payload.tags.contains(&EventTag::WorldMutation));
+        assert_eq!(record.cause(), CauseRef::SystemTick(Tick(7)));
+        assert_eq!(record.place_id(), Some(place));
+        assert_eq!(record.target_ids(), vec![place]);
+        assert!(record.tags().contains(&EventTag::System));
+        assert!(record.tags().contains(&EventTag::WorldMutation));
         assert_eq!(
-            record.payload.state_deltas,
+            record.state_deltas(),
             vec![StateDelta::Component(ComponentDelta::Set {
                 entity: place,
                 component_kind: ComponentKind::ResourceSource,

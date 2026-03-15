@@ -11,6 +11,7 @@ use worldwake_cli::handlers::dispatch_command;
 use worldwake_cli::repl::ReplState;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::control::ControlSource;
+use worldwake_core::event_record::EventView;
 use worldwake_core::ids::EntityId;
 use worldwake_sim::{SimulationState, SystemDispatchTable};
 use worldwake_systems::ActionRegistries;
@@ -106,6 +107,31 @@ fn test_scenario_loads_and_ticks() {
     assert!(
         ctx.sim.event_log().len() > events_before,
         "events should be generated after ticking"
+    );
+}
+
+#[test]
+fn test_default_scenario_ai_produces_actor_events_within_100_ticks() {
+    let mut ctx = TestContext::load_default();
+    let ai_agents = ctx
+        .sim
+        .world()
+        .query_name_and_agent_data()
+        .filter_map(|(id, _, data)| (data.control_source == ControlSource::Ai).then_some(id))
+        .collect::<Vec<_>>();
+    assert!(
+        !ai_agents.is_empty(),
+        "default scenario should include AI agents"
+    );
+
+    ctx.dispatch(CliCommand::Tick { n: Some(100) }).unwrap();
+
+    let any_ai_authored_event = ai_agents.iter().any(|agent| {
+        !ctx.sim.event_log().events_by_actor(*agent).is_empty()
+    });
+    assert!(
+        any_ai_authored_event,
+        "default scenario should produce at least one AI-authored event within 100 ticks"
     );
 }
 
@@ -297,7 +323,7 @@ fn test_event_trace_backward() {
     for i in (0..log_len).rev() {
         let eid = worldwake_core::ids::EventId(u64::try_from(i).unwrap());
         if let Some(record) = ctx.sim.event_log().get(eid) {
-            if matches!(record.payload.cause, worldwake_core::cause::CauseRef::Event(_)) {
+            if matches!(record.cause(), worldwake_core::cause::CauseRef::Event(_)) {
                 // Trace backward — verify chain terminates at a root event.
                 let chain = ctx.sim.event_log().trace_event_cause(eid);
 
@@ -305,7 +331,7 @@ fn test_event_trace_backward() {
                 let root_id = *chain.first().unwrap();
                 let root = ctx.sim.event_log().get(root_id).unwrap();
                 assert!(
-                    !matches!(root.payload.cause, worldwake_core::cause::CauseRef::Event(_)),
+                    !matches!(root.cause(), worldwake_core::cause::CauseRef::Event(_)),
                     "trace should terminate at a root event (Bootstrap, SystemTick, or ExternalInput)"
                 );
 

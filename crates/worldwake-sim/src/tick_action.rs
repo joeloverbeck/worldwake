@@ -201,7 +201,7 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EntityKind, EventLog, EventTag, Quantity, Seed, Tick,
+        ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView, Quantity, Seed, Tick,
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
@@ -610,9 +610,9 @@ mod tests {
         assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
         let event_id = log.events_by_tag(EventTag::ActionCommitted)[0];
         let record = log.get(event_id).unwrap();
-        assert!(record.payload.tags.contains(&EventTag::ActionCommitted));
-        assert!(record.payload.tags.contains(&EventTag::Travel));
-        assert_eq!(record.payload.target_ids, vec![target]);
+        assert!(record.tags().contains(&EventTag::ActionCommitted));
+        assert!(record.tags().contains(&EventTag::Travel));
+        assert_eq!(record.target_ids(), vec![target]);
 
         let state = hook_state().lock().unwrap().clone();
         assert_eq!(state.tick_calls, 1);
@@ -797,9 +797,9 @@ mod tests {
         let record = log
             .get(log.events_by_tag(EventTag::ActionAborted)[0])
             .unwrap();
-        assert!(record.payload.tags.contains(&EventTag::ActionAborted));
-        assert!(!record.payload.tags.contains(&EventTag::Travel));
-        assert_eq!(record.payload.target_ids, vec![target]);
+        assert!(record.tags().contains(&EventTag::ActionAborted));
+        assert!(!record.tags().contains(&EventTag::Travel));
+        assert_eq!(record.target_ids(), vec![target]);
 
         let state = hook_state().lock().unwrap().clone();
         assert_eq!(state.tick_calls, 1);
@@ -852,9 +852,9 @@ mod tests {
         assert_eq!(world.query_agent_data().count(), before_agents + 1);
         assert_eq!(log.len(), 2);
         let record = log.get(worldwake_core::EventId(1)).unwrap();
-        assert_eq!(record.payload.actor_id, Some(actor));
-        assert_eq!(record.payload.tick, Tick(11));
-        assert!(!record.payload.state_deltas.is_empty());
+        assert_eq!(record.actor_id(), Some(actor));
+        assert_eq!(record.tick(), Tick(11));
+        assert!(!record.state_deltas().is_empty());
     }
 
     #[test]

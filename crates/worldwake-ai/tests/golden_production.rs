@@ -9,9 +9,9 @@ use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact, BodyPart,
     CarryCapacity, CombatProfile, CommodityKind, DeprivationExposure, DeprivationKind, EntityId,
-    EventTag, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile,
-    PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
-    WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    EventTag, EventView, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
+    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 
 // ---------------------------------------------------------------------------
@@ -831,8 +831,7 @@ fn record_new_promotions(
             .get(*event_id)
             .expect("queue promotion event should exist");
         let promoted_actor = record
-            .payload
-            .target_ids
+            .target_ids()
             .iter()
             .copied()
             .find(|target| *target != workstation)
