@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     build_believed_entity_state, AgentBeliefStore, CauseRef, EntityId, EntityKind, EventLog,
-    EventPayload, EventRecord, EventTag, EventView, EvidenceRef, MismatchKind, PendingEvent,
+    EventPayload, EventTag, EventView, EvidenceRef, MismatchKind, PendingEvent,
     PerceptionSource, SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World,
     WorldTxn,
 };
@@ -304,7 +304,7 @@ fn emit_discovery_event(
     }));
 }
 
-fn resolve_witnesses(world: &World, record: &EventRecord) -> Vec<EntityId> {
+fn resolve_witnesses(world: &World, record: &impl EventView) -> Vec<EntityId> {
     let candidates = match record.visibility() {
         VisibilitySpec::ParticipantsOnly => record.witness_data().direct_witnesses.clone(),
         VisibilitySpec::SamePlace => place_witnesses(world, record.place_id()),
@@ -369,7 +369,7 @@ fn passes_observation_check(fidelity: u16, rng: &mut worldwake_sim::Deterministi
 
 fn social_observations_for_event(
     world: &World,
-    record: &EventRecord,
+    record: &impl EventView,
     tick: worldwake_core::Tick,
 ) -> Vec<SocialObservation> {
     let Some(place) = record.place_id() else {
@@ -404,7 +404,7 @@ fn social_observations_for_event(
         .collect()
 }
 
-fn social_kind(record: &EventRecord) -> Option<SocialObservationKind> {
+fn social_kind(record: &impl EventView) -> Option<SocialObservationKind> {
     if record.tags().contains(&EventTag::Social) {
         return Some(SocialObservationKind::WitnessedTelling);
     }
@@ -419,7 +419,9 @@ fn social_kind(record: &EventRecord) -> Option<SocialObservationKind> {
 
 #[cfg(test)]
 mod tests {
-    use super::perception_system;
+    use super::{
+        perception_system, resolve_witnesses, social_kind, social_observations_for_event,
+    };
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
@@ -755,6 +757,59 @@ mod tests {
             .unwrap()
             .get_entity(&target)
             .is_none());
+    }
+
+    #[test]
+    fn pending_event_satisfies_perception_eventview_helpers() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (direct_witness, bystander, speaker, listener) = {
+            let mut txn = new_txn(&mut world, 1);
+            let direct_witness = txn.create_agent("Witness", ControlSource::Ai).unwrap();
+            let bystander = txn.create_agent("Bystander", ControlSource::Ai).unwrap();
+            let speaker = txn.create_agent("Speaker", ControlSource::Ai).unwrap();
+            let listener = txn.create_agent("Listener", ControlSource::Ai).unwrap();
+            for entity in [direct_witness, bystander, speaker, listener] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (direct_witness, bystander, speaker, listener)
+        };
+
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: Tick(6),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(speaker),
+            target_ids: vec![listener],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::ParticipantsOnly,
+            witness_data: WitnessData {
+                direct_witnesses: BTreeSet::from([direct_witness]),
+                potential_witnesses: BTreeSet::from([direct_witness, bystander]),
+            },
+            tags: BTreeSet::from([EventTag::Social]),
+        });
+
+        assert_eq!(
+            resolve_witnesses(&world, &pending),
+            vec![direct_witness],
+            "participants-only witness resolution should work for PendingEvent via EventView"
+        );
+        assert_eq!(
+            social_kind(&pending),
+            Some(SocialObservationKind::WitnessedTelling)
+        );
+
+        let observations = social_observations_for_event(&world, &pending, Tick(6));
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].kind, SocialObservationKind::WitnessedTelling);
+        assert_eq!(observations[0].subjects, (speaker, listener));
+        assert_eq!(observations[0].place, place);
+        assert_eq!(observations[0].observed_tick, Tick(6));
     }
 
     #[test]
