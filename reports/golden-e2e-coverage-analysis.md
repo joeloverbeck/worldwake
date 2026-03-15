@@ -18,14 +18,14 @@ crates/worldwake-ai/tests/
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
-  golden_social.rs            — 6 tests (autonomous tell, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery)
+  golden_social.rs            — 7 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery)
 ```
 
 ---
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 54 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice now locks down autonomous Tell, bystander locality, entity-missing discovery, and stale-belief correction end to end without falling back to manual queue injection after setup. All behavior is emergent.
+The golden suite contains 55 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice now locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, and stale-belief correction end to end without falling back to manual queue injection after setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -86,11 +86,12 @@ The golden suite contains 54 tests across 7 domain files. Every test uses the re
 **Cross-system chain**: Demand memory at home market → enterprise restock signal → multi-leg travel → harvest/materialization → cargo return to home market.
 
 ### Scenario 2e: Social Belief Sharing, Locality, and Discovery
-**File**: `golden_social.rs` | **Tests**: `golden_agent_autonomously_tells_colocated_peer`, `golden_rumor_chain_degrades_through_three_agents`, `golden_stale_belief_travel_reobserve_replan`, `golden_skeptical_listener_rejects_told_belief`, `golden_bystander_sees_telling_but_gets_no_belief`, `golden_entity_missing_discovery_does_not_teleport_belief`
-**Systems exercised**: Perception/beliefs, Tell actions, AI social candidate generation and ranking, planner payload wiring, travel, deterministic replay
-**Setup**: Six focused social scenarios cover colocated speaker/listener tell behavior, three-agent relay chains, stale harvest beliefs contradicted by local re-observation, hard listener rejection via `acceptance_fidelity: Permille(0)`, bystander witnessing without belief transfer, and entity-missing discovery from a violated place expectation.
+**File**: `golden_social.rs` | **Tests**: `golden_agent_autonomously_tells_colocated_peer`, `golden_survival_needs_suppress_social_goals`, `golden_rumor_chain_degrades_through_three_agents`, `golden_stale_belief_travel_reobserve_replan`, `golden_skeptical_listener_rejects_told_belief`, `golden_bystander_sees_telling_but_gets_no_belief`, `golden_entity_missing_discovery_does_not_teleport_belief`
+**Systems exercised**: Perception/beliefs, Tell actions, AI social candidate generation and ranking, self-care suppression, planner payload wiring, travel, deterministic replay
+**Setup**: Seven focused social scenarios cover colocated speaker/listener tell behavior, survival-need suppression of gossip, three-agent relay chains, stale harvest beliefs contradicted by local re-observation, hard listener rejection via `acceptance_fidelity: Permille(0)`, bystander witnessing without belief transfer, and entity-missing discovery from a violated place expectation.
 **Emergent behavior proven**:
 - Speakers can autonomously select `ShareBelief`, execute Tell, and cause listeners to replan from reported information.
+- Critically hungry agents relieve survival pressure before any told-belief transfer can resolve, proving `ShareBelief` stays suppressed under high self-care pressure in the real AI loop.
 - Relay chains degrade provenance and confidence across hops rather than duplicating the original direct observation unchanged.
 - A stale believed `ResourceSource` quantity can pull an agent to travel, then be contradicted by local observation, forcing abandonment of the invalid harvest path.
 - A skeptical listener can reject a told belief cleanly without mutating belief state or producing follow-up travel.
@@ -98,6 +99,7 @@ The golden suite contains 54 tests across 7 domain files. Every test uses the re
 - An agent can discover that an expected entity is absent from the locally re-observed place without the belief system inventing a replacement location.
 - The social slice exposed and fixed two architectural gaps: share-belief plans were only partially wired through planner payload/progress semantics, and perception contradicted entity/location state but not stale `ResourceSource` quantities.
 **Cross-system chain**: Belief pressure/opportunity → `ShareBelief` candidate generation and ranking → Tell execution and report propagation → listener replanning, while bystanders receive only witnessed-social evidence and local re-observation emits discovery when expectations are violated.
+**Deferred boundary**: Social Tell currently propagates `BelievedEntityState`, not `DemandMemory`. A future market-demand communication feature should introduce its own explicit information carrier rather than coupling enterprise restock directly to Tell payloads.
 
 ### Scenario 3: Resource Contention with Conservation
 **File**: `golden_production.rs` | **Test**: `golden_resource_contention_with_conservation`

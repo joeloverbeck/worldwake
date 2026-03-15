@@ -795,6 +795,156 @@ fn run_entity_missing_scenario(
     (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
 }
 
+#[allow(clippy::too_many_lines)]
+fn run_survival_needs_suppression_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "HungrySpeaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let orchard = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    ensure_empty_belief_store(&mut h.world, &mut h.event_log, listener);
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(&mut h.world, &mut h.event_log, listener, accepting_tell_profile());
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        blind_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        keen_perception_profile(),
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let orchard_belief = build_believed_entity_state(
+        &h.world,
+        orchard,
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("orchard should be observable for belief seeding");
+    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, orchard_belief);
+
+    let initial_hunger = h.agent_hunger(speaker);
+    let initial_bread = h.agent_commodity_qty(speaker, CommodityKind::Bread);
+    let mut first_relief_tick = None;
+    let mut first_social_tick = None;
+    let mut social_before_relief = false;
+    let mut listener_learned_before_relief = false;
+    let mut hunger_decreased = false;
+    let mut bread_consumed = false;
+
+    for _ in 0..120 {
+        h.step_once();
+
+        let current_tick = h.scheduler.current_tick().0;
+        let current_bread = h.agent_commodity_qty(speaker, CommodityKind::Bread);
+        let current_hunger = h.agent_hunger(speaker);
+        hunger_decreased |= current_hunger < initial_hunger;
+        bread_consumed |= current_bread < initial_bread;
+        if first_relief_tick.is_none() && (hunger_decreased || bread_consumed) {
+            first_relief_tick = Some(current_tick);
+        }
+        if first_social_tick.is_none() && !h.event_log.events_by_tag(EventTag::Social).is_empty() {
+            first_social_tick = Some(current_tick);
+        }
+
+        let listener_knows_orchard = agent_belief_about(&h.world, listener, orchard).is_some();
+        if first_relief_tick.is_none() {
+            social_before_relief |= first_social_tick.is_some();
+            listener_learned_before_relief |= listener_knows_orchard;
+        }
+
+        if first_relief_tick.is_some() && hunger_decreased && bread_consumed {
+            break;
+        }
+    }
+
+    assert!(
+        first_relief_tick.is_some(),
+        "critically hungry speaker should consume local bread before pursuing social goals"
+    );
+    assert!(
+        hunger_decreased,
+        "consuming owned bread should reduce the speaker's hunger"
+    );
+    assert!(
+        bread_consumed,
+        "speaker should consume the local bread rather than defer survival relief"
+    );
+    assert!(
+        !social_before_relief,
+        "no social tell event should fire before the hunger-driven food relief occurs"
+    );
+    assert!(
+        !listener_learned_before_relief,
+        "listener should not receive the told belief before hunger is addressed"
+    );
+    assert!(
+        first_social_tick.is_none_or(|social_tick| {
+            first_relief_tick.is_some_and(|relief_tick| social_tick > relief_tick)
+        }),
+        "if a social event occurs in this scenario, it must occur strictly after the first survival-relief tick"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+}
+
 #[test]
 fn golden_agent_autonomously_tells_colocated_peer() {
     let first = run_autonomous_tell_scenario(Seed([91; 32]));
@@ -858,5 +1008,16 @@ fn golden_entity_missing_discovery_does_not_teleport_belief() {
     assert_eq!(
         first, second,
         "entity-missing discovery scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_survival_needs_suppress_social_goals() {
+    let first = run_survival_needs_suppression_scenario(Seed([97; 32]));
+    let second = run_survival_needs_suppression_scenario(Seed([97; 32]));
+
+    assert_eq!(
+        first, second,
+        "survival-needs suppression scenario should replay deterministically"
     );
 }
