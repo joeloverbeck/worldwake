@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-002: Add WorldTxn::create_item_lot_with_owner() helper
 
-**Status**: DONE
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — WorldTxn API
@@ -85,3 +85,10 @@ The `set_owner` call within the transaction produces the standard `RelationDelta
 1. `cargo test -p worldwake-core create_item_lot_with_owner`
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-15
+- **What changed**: Added `WorldTxn::create_item_lot_with_owner()` at `world_txn.rs:553-571`. Atomic helper wrapping `create_item_lot()` + `set_ground_location()` + optional `set_owner()`. Five tests added covering both `Some`/`None` owner paths, delta traceability, and custody/ownership separation.
+- **Deviations**: None. Implementation matches ticket spec exactly.
+- **Verification**: `cargo test -p worldwake-core` (662 tests pass), `cargo clippy --workspace` clean.
