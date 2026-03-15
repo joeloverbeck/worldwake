@@ -26,6 +26,10 @@ pub trait GoalBeliefView {
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        let _ = agent;
+        Vec::new()
+    }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
@@ -60,6 +64,10 @@ pub trait GoalBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+        let _ = agent;
+        None
+    }
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId>;
@@ -215,6 +223,13 @@ macro_rules! impl_goal_belief_view {
                 holder: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::direct_possessions(self, holder)
+            }
+
+            fn known_entity_beliefs(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<(worldwake_core::EntityId, worldwake_core::BelievedEntityState)> {
+                $crate::RuntimeBeliefView::known_entity_beliefs(self, agent)
             }
 
             fn adjacent_places_with_travel_ticks(
@@ -379,6 +394,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::DriveThresholds> {
                 $crate::RuntimeBeliefView::drive_thresholds(self, agent)
+            }
+
+            fn tell_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::TellProfile> {
+                $crate::RuntimeBeliefView::tell_profile(self, agent)
             }
 
             fn merchandise_profile(

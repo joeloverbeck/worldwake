@@ -6,7 +6,7 @@ use crate::{
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
-    GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
+    EntityKind, GoalKey, GoalKind, HomeostaticNeeds, Quantity, Tick,
 };
 use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
 
@@ -95,6 +95,7 @@ pub fn generate_candidates_with_travel_horizon(
     emit_production_candidates(&mut candidates, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &ctx);
     emit_combat_candidates(&mut candidates, &ctx);
+    emit_social_candidates(&mut candidates, &ctx);
 
     candidates.into_values().collect()
 }
@@ -142,6 +143,38 @@ fn emit_combat_candidates(
     emit_heal_goals(candidates, ctx);
     emit_loot_goals(candidates, ctx);
     emit_bury_goals(candidates, ctx);
+}
+
+fn emit_social_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    ctx: &GenerationContext<'_>,
+) {
+    let Some(place) = ctx.place else {
+        return;
+    };
+    let Some(profile) = ctx.view.tell_profile(ctx.agent) else {
+        return;
+    };
+
+    let subjects = relayable_social_subjects(ctx.view, ctx.agent, profile.max_relay_chain_len);
+    if subjects.is_empty() {
+        return;
+    }
+
+    for listener in social_listeners_at(ctx.view, ctx.agent, place) {
+        for subject in subjects.iter().copied().take(usize::from(profile.max_tell_candidates)) {
+            let mut evidence = Evidence::with_entity(listener);
+            evidence.entities.insert(subject);
+            evidence.places.insert(place);
+            emit_candidate(
+                candidates,
+                GoalKind::ShareBelief { listener, subject },
+                evidence,
+                ctx.blocked,
+                ctx.current_tick,
+            );
+        }
+    }
 }
 
 fn emit_engage_hostile_goals(
@@ -457,6 +490,49 @@ fn local_hostility_targets(
         })
         .filter(|target| view.effective_place(*target) == Some(place))
         .collect()
+}
+
+fn social_listeners_at(view: &dyn GoalBeliefView, agent: EntityId, place: EntityId) -> Vec<EntityId> {
+    let mut listeners = view
+        .entities_at(place)
+        .into_iter()
+        .filter(|entity| *entity != agent)
+        .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Agent))
+        .filter(|entity| view.is_alive(*entity) && !view.is_dead(*entity))
+        .collect::<Vec<_>>();
+    listeners.sort_unstable();
+    listeners.dedup();
+    listeners
+}
+
+fn relayable_social_subjects(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    max_relay_chain_len: u8,
+) -> Vec<EntityId> {
+    let mut subjects = view
+        .known_entity_beliefs(agent)
+        .into_iter()
+        .filter_map(|(subject, belief)| {
+            (belief_chain_len(belief.source) <= max_relay_chain_len)
+                .then_some((belief.observed_tick, subject))
+        })
+        .collect::<Vec<_>>();
+    subjects.sort_unstable_by(|(left_tick, left_subject), (right_tick, right_subject)| {
+        right_tick
+            .cmp(left_tick)
+            .then_with(|| left_subject.cmp(right_subject))
+    });
+    subjects.into_iter().map(|(_, subject)| subject).collect()
+}
+
+fn belief_chain_len(source: worldwake_core::PerceptionSource) -> u8 {
+    match source {
+        worldwake_core::PerceptionSource::DirectObservation
+        | worldwake_core::PerceptionSource::Inference => 0,
+        worldwake_core::PerceptionSource::Report { chain_len, .. }
+        | worldwake_core::PerceptionSource::Rumor { chain_len } => chain_len,
+    }
 }
 
 fn emit_produce_goals(
@@ -1049,12 +1125,13 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, PerceptionSource, Permille, Quantity, RecipeId, ResourceSource,
+        TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1096,6 +1173,8 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
+        beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        tell_profiles: BTreeMap<EntityId, TellProfile>,
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
@@ -1126,6 +1205,10 @@ mod tests {
                 .get(&holder)
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
@@ -1278,6 +1361,10 @@ mod tests {
             None
         }
 
+        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            self.tell_profiles.get(&agent).copied()
+        }
+
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
@@ -1425,6 +1512,19 @@ mod tests {
         candidates
             .iter()
             .any(|candidate| candidate.key.kind == goal)
+    }
+
+    fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: None,
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            observed_tick: Tick(observed_tick),
+            source,
+        }
     }
 
     #[test]
@@ -2682,6 +2782,159 @@ mod tests {
                 corpse,
                 burial_site: grave_plot,
             }
+        ));
+    }
+
+    #[test]
+    fn social_candidates_emit_for_live_colocated_listeners_and_relayable_subjects() {
+        let speaker = entity(1);
+        let listener_a = entity(2);
+        let listener_b = entity(3);
+        let dead_listener = entity(4);
+        let crate_lot = entity(5);
+        let subject_a = entity(20);
+        let subject_b = entity(21);
+        let too_deep = entity(22);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener_a, listener_b, crate_lot]);
+        view.dead.insert(dead_listener);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener_a, EntityKind::Agent);
+        view.entity_kinds.insert(listener_b, EntityKind::Agent);
+        view.entity_kinds.insert(dead_listener, EntityKind::Agent);
+        view.entity_kinds.insert(crate_lot, EntityKind::ItemLot);
+        view.effective_places.insert(speaker, place);
+        view.entities_at
+            .insert(place, vec![speaker, listener_a, listener_b, dead_listener, crate_lot]);
+        view.tell_profiles.insert(
+            speaker,
+            TellProfile {
+                max_tell_candidates: 2,
+                max_relay_chain_len: 2,
+                acceptance_fidelity: pm(800),
+            },
+        );
+        view.beliefs.insert(
+            speaker,
+            vec![
+                (subject_a, believed_state(8, PerceptionSource::DirectObservation)),
+                (
+                    subject_b,
+                    believed_state(
+                        9,
+                        PerceptionSource::Report {
+                            from: listener_a,
+                            chain_len: 2,
+                        },
+                    ),
+                ),
+                (
+                    too_deep,
+                    believed_state(10, PerceptionSource::Rumor { chain_len: 3 }),
+                ),
+            ],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener: listener_a,
+                subject: subject_b,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener: listener_a,
+                subject: subject_a,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener: listener_b,
+                subject: subject_b,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener: listener_b,
+                subject: subject_a,
+            }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener: dead_listener,
+                subject: subject_b,
+            }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener: listener_a,
+                subject: too_deep,
+            }
+        ));
+    }
+
+    #[test]
+    fn social_candidates_require_tell_profile_and_respect_blocked_memory() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.effective_places.insert(speaker, place);
+        view.entities_at.insert(place, vec![speaker, listener]);
+        view.beliefs.insert(
+            speaker,
+            vec![(subject, believed_state(8, PerceptionSource::DirectObservation))],
+        );
+
+        let none = generate_candidates(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+        );
+        assert!(!contains_goal(
+            &none,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let blocked = BlockedIntentMemory {
+            intents: vec![BlockedIntent {
+                goal_key: GoalKey::from(GoalKind::ShareBelief { listener, subject }),
+                blocking_fact: BlockingFact::NoKnownPath,
+                related_entity: Some(listener),
+                related_place: Some(place),
+                related_action: None,
+                observed_tick: Tick(10),
+                expires_tick: Tick(20),
+            }],
+        };
+
+        let blocked_candidates =
+            generate_candidates(&view, speaker, &blocked, &RecipeRegistry::new(), Tick(11));
+        assert!(!contains_goal(
+            &blocked_candidates,
+            GoalKind::ShareBelief { listener, subject }
         ));
     }
 
