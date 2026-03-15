@@ -7,7 +7,7 @@ use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
     HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
-    Seed, TellProfile, Tick, UtilityProfile, WorkstationTag,
+    Seed, SocialObservationKind, TellProfile, Tick, UtilityProfile, WorkstationTag,
 };
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
@@ -91,6 +91,27 @@ fn saw_inventory_discovery(
                     } if *evidence_observer == observer
                         && *evidence_subject == subject
                         && *mismatch_commodity == commodity
+                )
+            })
+        })
+    })
+}
+
+fn saw_entity_missing_discovery(
+    log: &worldwake_core::EventLog,
+    observer: EntityId,
+    subject: EntityId,
+) -> bool {
+    log.events_by_tag(EventTag::Discovery).iter().any(|event_id| {
+        log.get(*event_id).is_some_and(|event| {
+            event.evidence().iter().any(|evidence| {
+                matches!(
+                    evidence,
+                    EvidenceRef::Mismatch {
+                        observer: evidence_observer,
+                        subject: evidence_subject,
+                        kind: MismatchKind::EntityMissing,
+                    } if *evidence_observer == observer && *evidence_subject == subject
                 )
             })
         })
@@ -575,6 +596,205 @@ fn run_skeptical_listener_scenario(
     (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
 }
 
+#[allow(clippy::too_many_lines)]
+fn run_bystander_witness_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let bystander = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bystander",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let orchard = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+    );
+
+    for agent in [speaker, listener, bystander] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            keen_perception_profile(),
+        );
+    }
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(&mut h.world, &mut h.event_log, listener, accepting_tell_profile());
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        bystander,
+        rejecting_tell_profile(),
+    );
+
+    let listener_belief = build_believed_entity_state(
+        &h.world,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("listener should be observable for tell targeting");
+    seed_belief(&mut h.world, &mut h.event_log, speaker, listener, listener_belief);
+    let orchard_belief = build_believed_entity_state(
+        &h.world,
+        orchard,
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("orchard should be observable for belief seeding");
+    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, orchard_belief);
+
+    let scenario_completed = run_until(60, || {
+        h.step_once();
+        let bystander_store = h
+            .world
+            .get_component_agent_belief_store(bystander)
+            .expect("bystander should keep a belief store");
+        let witnessed_telling = bystander_store.social_observations.iter().any(|observation| {
+            observation.kind == SocialObservationKind::WitnessedTelling
+                && observation.subjects == (speaker, listener)
+                && observation.place == VILLAGE_SQUARE
+        });
+        let listener_learned_orchard = agent_belief_about(&h.world, listener, orchard).is_some();
+        witnessed_telling && listener_learned_orchard
+    });
+
+    assert!(
+        scenario_completed,
+        "speaker should tell the listener while the bystander witnesses the social act"
+    );
+    let bystander_store = h
+        .world
+        .get_component_agent_belief_store(bystander)
+        .expect("bystander should keep a belief store");
+    assert!(
+        bystander_store.social_observations.iter().any(|observation| {
+            observation.kind == SocialObservationKind::WitnessedTelling
+                && observation.subjects == (speaker, listener)
+                && observation.place == VILLAGE_SQUARE
+        }),
+        "bystander should record the witnessed telling event"
+    );
+    assert!(
+        agent_belief_about(&h.world, bystander, orchard).is_none(),
+        "bystander should not receive the orchard belief content merely by witnessing the tell"
+    );
+    assert_eq!(
+        h.world.effective_place(bystander),
+        Some(VILLAGE_SQUARE),
+        "bystander should remain local instead of acting on an unreceived remote belief"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+}
+
+fn run_entity_missing_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+
+    let observer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Observer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let missing_subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "MissingSubject",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    ensure_empty_belief_store(&mut h.world, &mut h.event_log, observer);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        keen_perception_profile(),
+    );
+
+    let mut stale_belief = build_believed_entity_state(
+        &h.world,
+        missing_subject,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("missing subject should be observable for belief seeding");
+    stale_belief.last_known_place = Some(VILLAGE_SQUARE);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        missing_subject,
+        stale_belief,
+    );
+
+    let observed_missing = run_until(8, || {
+        h.step_once();
+        saw_entity_missing_discovery(&h.event_log, observer, missing_subject)
+    });
+
+    assert!(
+        observed_missing,
+        "passive local observation should emit an EntityMissing discovery for a violated place expectation"
+    );
+    let belief = agent_belief_about(&h.world, observer, missing_subject)
+        .expect("observer should retain the prior belief snapshot");
+    assert_eq!(
+        belief.last_known_place,
+        Some(VILLAGE_SQUARE),
+        "entity-missing discovery should not silently teleport the subject to a new place"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+}
+
 #[test]
 fn golden_agent_autonomously_tells_colocated_peer() {
     let first = run_autonomous_tell_scenario(Seed([91; 32]));
@@ -616,5 +836,27 @@ fn golden_skeptical_listener_rejects_told_belief() {
     assert_eq!(
         first, second,
         "skeptical-listener scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_bystander_sees_telling_but_gets_no_belief() {
+    let first = run_bystander_witness_scenario(Seed([95; 32]));
+    let second = run_bystander_witness_scenario(Seed([95; 32]));
+
+    assert_eq!(
+        first, second,
+        "bystander locality scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_entity_missing_discovery_does_not_teleport_belief() {
+    let first = run_entity_missing_scenario(Seed([96; 32]));
+    let second = run_entity_missing_scenario(Seed([96; 32]));
+
+    assert_eq!(
+        first, second,
+        "entity-missing discovery scenario should replay deterministically"
     );
 }
