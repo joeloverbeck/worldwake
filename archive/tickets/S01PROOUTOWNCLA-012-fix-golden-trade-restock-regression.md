@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-012: Fix golden merchant restock trade test regression
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED (resolved by prior work)
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Likely — merchant restock planner behavior under actor-owned output
@@ -34,3 +34,10 @@
 
 1. `cargo test -p worldwake-ai --test golden_trade golden_merchant_restock_return_stock`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**: No code changes required. The regression was resolved by prior tickets S01PROOUTOWNCLA-011 (CONSUME_OPS narrowing, barrier fix, GoalSatisfied search preference) and S01PROOUTOWNCLA-008 (belief affordance filtering). Both `golden_merchant_restock_return_stock` and its replay test pass at HEAD.
+- **Deviations**: Ticket assumed the regression persisted; it had already been fixed by the time this ticket was reached in the implementation order.
+- **Verification**: `cargo test -p worldwake-ai --test golden_trade golden_merchant_restock_return_stock` — 2/2 passed. `cargo test --workspace` — all passed.

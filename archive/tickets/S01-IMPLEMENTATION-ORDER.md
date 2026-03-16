@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # S01 Production Output Ownership Claims — Implementation Order
 
 ## Problem
@@ -69,5 +71,14 @@ FINALLY (golden integration — everything wired):
                               ↓
                            -008 ✅ (affordance filter)
                               ↓
-                           -009b (golden tests)
+                           -009b ✅ (golden tests)
+                              ↓
+                           -012 ✅ (trade restock — resolved by -011/-008)
 ```
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**: All 12 tickets plus 2 mid-flight additions (-009a split, -010 insertion, -011 planner fix) completed. The corrected ordering prevented broken intermediate states and enabled incremental validation at each step.
+- **Deviations**: -012 required no code changes (resolved by prior work). -009b golden tests validated the full ownership lifecycle end-to-end.
+- **Verification**: `cargo test --workspace` — all tests pass.

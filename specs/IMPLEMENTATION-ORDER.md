@@ -30,6 +30,9 @@ Established GoalKind::ShareBelief, PlannerOpKind::Tell, social candidate generat
 Established offices and factions as first-class institutions, support declarations, courage-driven coercion handling, office actions, succession resolution, public-order aggregation, and political AI integration through the belief/runtime-view boundary. The force branch remains intentionally conservative; explicit contested control stays in active follow-up spec E16b.
 Political follow-up work remains active in E16d (planner semantics + golden coverage) and E16c (institutional beliefs + records).
 
+### S01: Production Output Ownership Claims — COMPLETED
+Established explicit ownership for production output: `ProductionOutputOwnershipPolicy` component with Actor/ProducerOwner/Unowned variants, `create_item_lot_with_owner()` atomic helper, `can_exercise_control()` extended with faction/office delegation, harvest and craft commit ownership resolution, `believed_owner_of()` belief query, ownership-gated pickup validation, and GOAP planner adaptations for actor-owned output.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -40,6 +43,7 @@ All completed specs are archived under `archive/specs/`.
 Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b: COMPLETED
 
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
+S01 ──→ ✅ COMPLETED (production output ownership claims)
 E16 ──→ E16d (political planning fix and E16 golden coverage build on office/faction actions)
 E16 ──→ E16c (institutional beliefs need offices/factions/support substrate)
 E16c ──→ E16b (force legitimacy needs institutional records and belief propagation)
@@ -50,7 +54,7 @@ E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
 E16b ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
-S01, S03, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
+S01 ✅, S03, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
 S02, E16 ──→ E18, E20
 S02, E16, E16b, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
@@ -75,7 +79,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 **Step 10** (parallel after completed E14/E15):
 - **E15b**: Social AI Goals — ✅ COMPLETED
 - **E16**: Offices, Succession & Factions — ✅ COMPLETED
-- **S01**: Production Output Ownership Claims
+- **S01**: Production Output Ownership Claims — ✅ COMPLETED
 - **S02**: Goal Decision Policy Unification
 - **S03**: Planner Target Identity & Affordance Binding
 - **S07**: Care Intent & Treatment Targeting
@@ -152,7 +156,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S01-production-output-ownership-claims.md` | 3 | 10 | E14 |
 | `S02-goal-decision-policy-unification.md` | 3 | 10 | E14 |
 | `S03-planner-target-identity-and-affordance-binding.md` | 3 | 10 | E14 |
 | `S07-care-intent-and-treatment-targeting.md` | 3 | 10 | E14 |
@@ -187,6 +190,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16 complete) |
+| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16, S01 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

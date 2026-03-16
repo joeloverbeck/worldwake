@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Production Output Ownership Claims
 
@@ -371,3 +371,10 @@ Derived transient state:
 - [E05-relations-ownership.md](/home/joeloverbeck/projects/worldwake/archive/specs/E05-relations-ownership.md)
 - [E10-production-transport.md](/home/joeloverbeck/projects/worldwake/archive/specs/E10-production-transport.md)
 - [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**: All 12 tickets (S01PROOUTOWNCLA-001 through -012) implemented across worldwake-core, worldwake-sim, worldwake-systems, and worldwake-ai. Key deliverables: `ProductionOutputOwnershipPolicy` component and `ProductionOutputOwner` enum; `create_item_lot_with_owner()` atomic helper; `can_exercise_control()` extended with faction membership and office holding delegation; harvest and craft commit handlers resolve output ownership from policy; `believed_owner_of()` added to `RuntimeBeliefView`; authoritative and belief-based pickup validation gates ownership/control; GOAP planner adapted for actor-owned production output (CONSUME_OPS narrowing, barrier fixes, GoalSatisfied search preference).
+- **Deviations**: Ticket -012 (golden trade restock regression) required no code changes — the regression was already resolved by -011 and -008. Implementation order was corrected mid-flight via S01-IMPLEMENTATION-ORDER.md to split -009 into fixture migration (-009a) and golden tests (-009b), and to insert -010 (consumption requires possession) and -011 (planner search fix).
+- **Verification**: `cargo test --workspace` — all tests pass. Golden production, trade, and restock E2E tests pass including deterministic replay.
