@@ -64,8 +64,6 @@ Phase 3: Information & Politics, Step 10 (parallel after E14)
 
 ## Crates
 - `worldwake-ai`
-- `worldwake-sim`
-- `worldwake-core`
 
 ## Dependencies
 - E14
@@ -88,132 +86,275 @@ Phase 3: Information & Politics, Step 10 (parallel after E14)
 - replacing `GoalPriorityClass` or motive scoring with a different model
 - moving AI transient policy into authoritative components
 - adding new gameplay goal families in this draft
+- changing `priority_class()` derivation (already centralized in ranking.rs, not policy drift)
+- changing `motive_score()` derivation (already centralized in ranking.rs, not policy drift)
+- changing `GoalKindTag` (serves planner ops, a different purpose)
 
 ## Deliverables
 
 ### 1. Shared `DecisionContext` Read Model
-Add one derived AI-layer context object, built once per agent decision pass, that exposes the currently relevant local pressure classes and runtime facts needed by both ranking and interrupts.
-
-Suggested shape:
+Add one derived AI-layer context object, built once per agent decision pass, that exposes the currently relevant local pressure classes needed by both ranking and interrupts.
 
 ```rust
-struct DecisionContext {
-    max_self_care_class: GoalPriorityClass,
-    danger_class: GoalPriorityClass,
-    current_goal: Option<GoalKey>,
-    current_action_interruptibility: Option<Interruptibility>,
-    plan_valid: bool,
+pub struct DecisionContext {
+    pub max_self_care_class: GoalPriorityClass,
+    pub danger_class: GoalPriorityClass,
+}
+
+impl DecisionContext {
+    /// True if either self-care or danger is at or above the given class.
+    pub fn is_stressed_at_or_above(&self, threshold: GoalPriorityClass) -> bool {
+        self.max_self_care_class >= threshold || self.danger_class >= threshold
+    }
 }
 ```
 
-The exact fields may vary, but the context must remain:
-- transient
-- belief-facing
-- deterministic
-- shared by ranking and interrupt evaluation
+The context contains ONLY the shared pressure state that both ranking and interrupts need. Interrupt-specific parameters (`current_goal`, `current_action_interruptibility`, `plan_valid`) are already passed directly to `evaluate_interrupt()` and do NOT belong here.
 
 This avoids one module classifying "high danger / high self-care" one way while another reconstructs it differently.
 
+Note: suppression uses a `>= High` threshold while opportunistic interrupt gating uses `>= Medium`. The `DecisionContext` exposes raw class values so each consumer can compare at its own threshold via `is_stressed_at_or_above()`.
+
 ### 2. Goal-Family Decision Policy Declaration
-Extend the AI goal-semantics layer with explicit decision policy per goal family.
 
-Suggested shape:
+Extend the AI goal-semantics layer with explicit decision policy per goal family. Policy is keyed on `&GoalKind` (not `GoalKindTag`), because some GoalKindTag values have multiple behaviors depending on payload — e.g., `AcquireCommodity` with `CommodityPurpose::SelfConsume` is CriticalSurvival, while `AcquireCommodity` with other purposes is enterprise. `GoalKindTag` cannot discriminate these.
+
+The interrupt posture is two-dimensional, not a single enum. The codebase has two independent interrupt dimensions:
+
+1. **Penalty interrupt eligibility**: Can this goal interrupt `InterruptibleWithPenalty` actions? (Only critical survival + ReduceDanger, and only at Critical priority)
+2. **Free interrupt role**: How does this goal behave as a challenger in freely-interruptible context? (Reactive/margin-free, Opportunistic, Normal)
+
+These are orthogonal: `Heal` is reactive but NOT penalty-eligible. `EngageHostile` is neither.
 
 ```rust
-struct GoalDecisionPolicy {
-    availability: GoalAvailabilityPolicy,
-    priority_cap: Option<GoalPriorityClass>,
-    interrupt: GoalInterruptPolicy,
+pub struct GoalFamilyPolicy {
+    pub suppression: SuppressionRule,
+    pub penalty_interrupt: PenaltyInterruptEligibility,
+    pub free_interrupt: FreeInterruptRole,
+}
+
+pub enum SuppressionRule {
+    /// Never suppressed regardless of stress level.
+    Never,
+    /// Suppressed when agent stress (max self-care or danger) is at or above this class.
+    WhenStressedAtOrAbove(GoalPriorityClass),
+}
+
+pub enum PenaltyInterruptEligibility {
+    /// Can interrupt InterruptibleWithPenalty actions when this goal reaches Critical priority.
+    WhenCritical { trigger: InterruptTrigger },
+    /// Cannot interrupt penalty actions.
+    Never,
+}
+
+pub enum FreeInterruptRole {
+    /// Reactive: can interrupt via HigherPriorityGoal (margin-free) and SameClassMargin.
+    Reactive,
+    /// Opportunistic: can interrupt freely only when no medium+ self-care/danger pressure.
+    Opportunistic,
+    /// Normal: can only interrupt via SameClassMargin; HigherPriorityGoal alone → NoInterrupt.
+    Normal,
 }
 ```
 
-Suggested subtypes:
-
-```rust
-enum GoalAvailabilityPolicy {
-    AlwaysConsider,
-    SuppressWhenSelfCareAtOrAbove(GoalPriorityClass),
-    SuppressWhenDangerAtOrAbove(GoalPriorityClass),
-    SuppressWhenAny(Vec<GoalSuppressionRule>),
-}
-
-enum GoalInterruptPolicy {
-    NeverVoluntary,
-    CompareNormally,
-    OpportunisticOnlyWhen(Vec<GoalInterruptGate>),
-}
-```
-
-The exact type names may differ, but the policy must express:
-- whether a goal family is currently considered at all
-- whether it is capped in priority
-- whether it is interrupt-eligible, and under what gate
+No `priority_cap` field. Current priority is *derived* from needs/danger/enterprise pressure via `priority_class()`, not capped. The derivation logic is already centralized in one function in ranking.rs and is genuinely varied per goal kind (not policy drift). It stays.
 
 ### 3. Goal Families Own Their Policy
-Policy must be declared by goal family in the goal-model / semantics layer, not in ranking or interrupts.
 
-Examples:
-- self-care goals: always considered, compare normally
-- `ReduceDanger`: always considered, compare normally
-- `LootCorpse`:
-  - suppressed when self-care is `High+`
-  - suppressed when danger is `High+`
-  - interrupt-eligible only when no medium-or-above self-care/danger challenger exists
-- `BuryCorpse`:
-  - suppressed when self-care is `High+`
-  - suppressed when danger is `High+`
-  - no opportunistic interrupt special case unless explicitly justified later
+Policy is declared by goal family via a single lookup function that takes `&GoalKind` and pattern-matches including purpose fields. All 16 goal families are migrated in one pass.
+
+```rust
+pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
+    match kind {
+        // Self-care: critical survival interrupt, reactive
+        GoalKind::ConsumeOwnedCommodity { .. }
+        | GoalKind::AcquireCommodity { purpose: CommodityPurpose::SelfConsume, .. }
+        | GoalKind::Sleep | GoalKind::Relieve | GoalKind::Wash => GoalFamilyPolicy {
+            suppression: SuppressionRule::Never,
+            penalty_interrupt: PenaltyInterruptEligibility::WhenCritical {
+                trigger: InterruptTrigger::CriticalSurvival,
+            },
+            free_interrupt: FreeInterruptRole::Reactive,
+        },
+
+        // Danger response: critical danger interrupt, reactive
+        GoalKind::ReduceDanger => GoalFamilyPolicy {
+            suppression: SuppressionRule::Never,
+            penalty_interrupt: PenaltyInterruptEligibility::WhenCritical {
+                trigger: InterruptTrigger::CriticalDanger,
+            },
+            free_interrupt: FreeInterruptRole::Reactive,
+        },
+
+        // Healing: reactive but NOT penalty-eligible
+        GoalKind::Heal { .. } => GoalFamilyPolicy {
+            suppression: SuppressionRule::Never,
+            penalty_interrupt: PenaltyInterruptEligibility::Never,
+            free_interrupt: FreeInterruptRole::Reactive,
+        },
+
+        // Combat engagement: NOT reactive, NOT penalty-eligible
+        // (is_reactive_goal does NOT include EngageHostile;
+        //  interrupt_with_penalty does NOT include EngageHostile)
+        GoalKind::EngageHostile { .. } => GoalFamilyPolicy {
+            suppression: SuppressionRule::Never,
+            penalty_interrupt: PenaltyInterruptEligibility::Never,
+            free_interrupt: FreeInterruptRole::Normal,
+        },
+
+        // Corpse looting: suppressed in stress, opportunistic interrupt
+        GoalKind::LootCorpse { .. } => GoalFamilyPolicy {
+            suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
+            penalty_interrupt: PenaltyInterruptEligibility::Never,
+            free_interrupt: FreeInterruptRole::Opportunistic,
+        },
+
+        // Corpse burial, social, political: suppressed in stress, normal interrupt
+        // (BuryCorpse gets Normal, NOT Opportunistic — different from LootCorpse)
+        GoalKind::BuryCorpse { .. }
+        | GoalKind::ShareBelief { .. }
+        | GoalKind::ClaimOffice { .. }
+        | GoalKind::SupportCandidateForOffice { .. } => GoalFamilyPolicy {
+            suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
+            penalty_interrupt: PenaltyInterruptEligibility::Never,
+            free_interrupt: FreeInterruptRole::Normal,
+        },
+
+        // Enterprise, treatment, recipe input, other acquisition: never suppressed, normal
+        GoalKind::AcquireCommodity { .. }
+        | GoalKind::ProduceCommodity { .. }
+        | GoalKind::SellCommodity { .. }
+        | GoalKind::RestockCommodity { .. }
+        | GoalKind::MoveCargo { .. } => GoalFamilyPolicy {
+            suppression: SuppressionRule::Never,
+            penalty_interrupt: PenaltyInterruptEligibility::Never,
+            free_interrupt: FreeInterruptRole::Normal,
+        },
+    }
+}
+```
 
 This is the central rule:
 - ranking and interrupts consume declared policy
 - they do not own goal-family policy themselves
 
-### 4. Ranking Consumes Shared Policy
-`rank_candidates()` must:
-- evaluate family policy against the shared `DecisionContext`
-- drop suppressed candidates through the shared policy layer
-- apply any declared priority caps through the same policy layer
+Future Principle 20 (agent diversity) extension: change signature to `goal_family_policy(&GoalKind, &AgentPolicyProfile)` to support per-agent policy variation.
 
-`ranking.rs` may still own generic deterministic ordering and motive scoring, but not family-specific suppression branches once this draft lands.
-
-### 5. Interrupt Evaluation Consumes Shared Policy
-`interrupts.rs` must:
-- stop hardcoding opportunistic `LootCorpse` branches directly
-- ask goal-family policy whether a challenger is interrupt-eligible under current context
-- continue reusing the shared switch-margin comparison logic for normal same-class / higher-class comparison
-
-This preserves the good part of E13DECARC-015:
-- interrupt evaluation remains pure and cheap
-
-But it removes the bad part:
-- goal-family interrupt exceptions living outside the policy declaration surface
-
-### 6. Explainable Decision Diagnostics
-Add a small AI-layer diagnostic surface for policy outcomes.
-
-Suggested shape:
+### 4. Suppression Evaluation
 
 ```rust
-enum GoalPolicyOutcome {
-    Available,
-    Suppressed { reason: GoalSuppressionReason },
-    AvailableButInterruptBlocked { reason: GoalInterruptBlockReason },
+pub fn evaluate_suppression(
+    kind: &GoalKind,
+    context: &DecisionContext,
+) -> GoalPolicyOutcome {
+    let policy = goal_family_policy(kind);
+    match policy.suppression {
+        SuppressionRule::Never => GoalPolicyOutcome::Available,
+        SuppressionRule::WhenStressedAtOrAbove(threshold) => {
+            if context.is_stressed_at_or_above(threshold) {
+                GoalPolicyOutcome::Suppressed {
+                    threshold,
+                    max_self_care: context.max_self_care_class,
+                    danger: context.danger_class,
+                }
+            } else {
+                GoalPolicyOutcome::Available
+            }
+        }
+    }
 }
 ```
 
-This data remains transient and optional, but the architecture should support answers such as:
+### 5. Ranking Consumes Shared Policy
+`rank_candidates()` must:
+- evaluate family policy against the shared `DecisionContext`
+- drop suppressed candidates through `evaluate_suppression()`
+
+`RankingContext` embeds a `DecisionContext` instead of recomputing pressure independently:
+```rust
+struct RankingContext<'a> {
+    view: &'a dyn GoalBeliefView,
+    agent: EntityId,
+    current_tick: Tick,
+    utility: &'a UtilityProfile,
+    needs: Option<HomeostaticNeeds>,
+    thresholds: Option<DriveThresholds>,
+    danger_pressure: Permille,
+    decision_context: DecisionContext,  // NEW: shared context
+}
+```
+
+`ranking.rs` continues to own generic deterministic ordering, `priority_class()`, and `motive_score()`, but family-specific suppression branches are replaced by shared policy consumption.
+
+### 6. Interrupt Evaluation Consumes Shared Policy
+`evaluate_interrupt()` receives `decision_context: &DecisionContext` as a new parameter.
+
+**Penalty interrupt migration**: Replace `is_critical_survival_goal()` + `ReduceDanger` check with policy lookup:
+```rust
+let policy = goal_family_policy(&challenger.grounded.key.kind);
+match policy.penalty_interrupt {
+    PenaltyInterruptEligibility::WhenCritical { trigger }
+        if challenger.priority_class == GoalPriorityClass::Critical =>
+    {
+        InterruptDecision::InterruptForReplan { trigger }
+    }
+    _ => InterruptDecision::NoInterrupt,
+}
+```
+
+**Free interrupt migration**: Replace hardcoded `LootCorpse` check with policy lookup:
+```rust
+let policy = goal_family_policy(&challenger.grounded.key.kind);
+match policy.free_interrupt {
+    FreeInterruptRole::Opportunistic => {
+        if !decision_context.is_stressed_at_or_above(GoalPriorityClass::Medium) {
+            InterruptDecision::InterruptForReplan {
+                trigger: InterruptTrigger::OpportunisticLoot,
+            }
+        } else {
+            InterruptDecision::NoInterrupt
+        }
+    }
+    FreeInterruptRole::Reactive => { /* existing HigherPriorityGoal + SameClassMargin logic */ }
+    FreeInterruptRole::Normal => { /* existing SameClassMargin-only logic */ }
+}
+```
+
+Replace `is_reactive_goal()` check in switch_kind matching with `policy.free_interrupt == Reactive`.
+
+**Semantic note**: The current `no_medium_or_above_self_care_or_danger()` scans *ranked candidates* for medium+ self-care/danger goals. The new approach uses `DecisionContext.is_stressed_at_or_above(Medium)` which checks raw pressure classes directly. These should be equivalent (same pressure → same classification), but golden tests will verify.
+
+This preserves the good part of E13DECARC-015 (interrupt evaluation remains pure and cheap) while removing goal-family interrupt exceptions living outside the policy declaration surface.
+
+### 7. Explainable Decision Diagnostics
+Add a runtime-accessible diagnostic surface for policy outcomes.
+
+```rust
+pub enum GoalPolicyOutcome {
+    Available,
+    Suppressed {
+        threshold: GoalPriorityClass,
+        max_self_care: GoalPriorityClass,
+        danger: GoalPriorityClass,
+    },
+}
+```
+
+This data remains transient, but the architecture supports answers such as:
 - "loot corpse suppressed because hunger is High"
-- "loot corpse not allowed to interrupt because medium-or-above self-care pressure exists"
+- "loot corpse not allowed to interrupt because medium-or-above stress exists"
 - "bury corpse suppressed because danger is High"
 
 This directly supports Principle 27.
 
-### 7. Migration Requirement
-Do not preserve both the old branchy logic and the new policy layer.
+### 8. Migration Requirement
+Do not preserve both the old branchy logic and the new policy layer. All 16 goal families are migrated in one pass.
 
 When this lands:
-- ranking-side corpse suppression branches must be removed
-- interrupt-side corpse-opportunity special casing must be rewritten to consume goal-family policy
+- `is_suppressed()` is removed from ranking.rs
+- `is_critical_survival_goal()` is removed from interrupts.rs
+- `is_reactive_goal()` is removed from interrupts.rs
+- `no_medium_or_above_self_care_or_danger()` is removed from interrupts.rs
 - duplicated pressure-threshold logic must not survive in two places
 
 ## Component Registration
@@ -224,11 +365,10 @@ This draft introduces AI transient read-model and policy types only. They must n
 ## SystemFn Integration
 
 ### `worldwake-ai`
-- add the shared decision-context derivation helper
-- add goal-family decision-policy declarations in the goal semantics layer
-- update ranking to consume shared policy outcomes
-- update interrupt evaluation to consume shared policy outcomes
-- expose optional debug snapshots or helper methods for policy diagnostics if useful
+- add `goal_policy.rs` module with shared decision-context derivation, policy types, lookup function, and suppression evaluation
+- update ranking to embed `DecisionContext` in `RankingContext` and consume shared policy
+- update interrupt evaluation to accept `&DecisionContext` and consume shared policy
+- update `agent_tick.rs` to build `DecisionContext` once per agent tick and thread it to both ranking and interrupts
 
 ### `worldwake-sim`
 - no new authoritative simulation system is required
@@ -284,42 +424,55 @@ Derived transient state:
 - `DecisionContext`
 - goal-family policy outcomes
 - suppression reasons
-- interrupt-block reasons
-- capped priority application
 
 ## Invariants
-- goal-family decision policy is declared in one AI-layer place
+- goal-family decision policy is declared in one AI-layer place (`goal_family_policy()`)
 - ranking and interrupts do not carry diverging family-specific suppression/preemption rules
 - all policy evaluation remains deterministic
 - all policy inputs are belief-facing or AI-runtime-facing, never authoritative-world shortcuts
 - no compatibility wrappers preserve both old and new policy paths
 - debug diagnostics can explain why a goal was suppressed or denied as an interrupt challenger
+- policy is keyed on `&GoalKind`, not `GoalKindTag`, to discriminate purpose-dependent behavior
 
 ## Tests
-- [ ] goal-family policy declaration exists for every currently emitted Phase 2 goal family
-- [ ] `LootCorpse` suppression and interrupt gating are both driven by the same policy declaration
-- [ ] `BuryCorpse` suppression is driven by the same policy declaration surface as `LootCorpse`
-- [ ] ranking drops suppressed corpse candidates via shared policy, not local hardcoded branches
-- [ ] interrupt evaluation rejects opportunistic loot via shared policy when self-care or danger gates fail
+- [ ] `goal_family_policy()` returns correct policy for every `GoalKind` variant
+- [ ] `evaluate_suppression()` with various `DecisionContext` stress levels
+- [ ] `LootCorpse` suppression uses `High` threshold; opportunistic interrupt gate uses `Medium` threshold
+- [ ] `BuryCorpse` suppression uses `High` threshold; free interrupt role is `Normal` (not `Opportunistic`)
+- [ ] penalty interrupt eligibility: self-care goals + ReduceDanger → `WhenCritical`; Heal/EngageHostile → `Never`
+- [ ] free interrupt role: self-care/ReduceDanger/Heal → `Reactive`; LootCorpse → `Opportunistic`; EngageHostile/enterprise → `Normal`
+- [ ] ranking drops suppressed candidates via `evaluate_suppression()`, not local hardcoded branches
+- [ ] interrupt evaluation rejects opportunistic loot via shared policy when stress is `>= Medium`
 - [ ] normal same-class and higher-class switch-margin comparisons still route through shared switch-policy logic
 - [ ] deterministic ranking/interrupt behavior is unchanged for scenarios not covered by special family policy
-- [ ] debug diagnostics report suppression and interrupt-block reasons deterministically
 - [ ] existing golden corpse-opportunism and suppression scenarios continue to pass after migration
 
 ## Acceptance Criteria
 - the active corpse-opportunism split between `ranking.rs` and `interrupts.rs` is removed
-- one shared goal-family policy declaration surface exists
+- one shared goal-family policy declaration surface exists in `goal_policy.rs`
 - ranking and interrupts both consume that surface
+- `is_suppressed()`, `is_critical_survival_goal()`, `is_reactive_goal()`, `no_medium_or_above_self_care_or_danger()` are completely removed
 - no new world components or compatibility shims are introduced
 - the resulting architecture is easier to extend for future goal families than the current branch-per-module approach
+- all 16 goal families are migrated, not just corpse families
 
 ## Suggested Implementation Sequence
-1. introduce shared decision-context derivation
-2. introduce goal-family policy declaration types in the goal semantics layer
-3. migrate corpse families (`LootCorpse`, `BuryCorpse`) first
-4. migrate any other existing family-specific suppression/preemption carve-outs to the same model where lawful
-5. remove legacy branches
-6. add focused unit coverage, then preserve behavior-level proof through existing goldens
+1. create `goal_policy.rs` module with types, `goal_family_policy()`, `evaluate_suppression()`, `DecisionContext`
+2. migrate `RankingContext` to embed `DecisionContext`; replace `is_suppressed()` with `evaluate_suppression()`
+3. thread `DecisionContext` into `evaluate_interrupt()`; migrate `interrupt_with_penalty()` to use policy
+4. migrate `interrupt_freely()` to use policy; remove `is_reactive_goal()`, `no_medium_or_above_self_care_or_danger()`
+5. update `agent_tick.rs` to build `DecisionContext` once and pass to both ranking and interrupts
+6. add focused unit coverage for policy module, then verify all existing goldens pass
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `crates/worldwake-ai/src/goal_policy.rs` | **NEW** — policy types, lookup, evaluation, DecisionContext |
+| `crates/worldwake-ai/src/lib.rs` | Add `goal_policy` module, re-exports |
+| `crates/worldwake-ai/src/ranking.rs` | Embed DecisionContext in RankingContext, replace `is_suppressed()` |
+| `crates/worldwake-ai/src/interrupts.rs` | Consume policy for penalty/free interrupt, remove hardcoded functions |
+| `crates/worldwake-ai/src/agent_tick.rs` | Build DecisionContext, thread to `evaluate_interrupt()` |
 
 ## Relationship to Existing and Future Specs
 - supersedes the Phase 2 narrow corpse-opportunism carve-out documented by archived E13 interrupt work
@@ -327,7 +480,7 @@ Derived transient state:
 - should be completed before broadening behavior-specific overrides in [E20-companion-behaviors.md](/home/joeloverbeck/projects/worldwake/specs/E20-companion-behaviors.md)
 - leaves planner target identity to [S03-planner-target-identity-and-affordance-binding.md](/home/joeloverbeck/projects/worldwake/specs/S03-planner-target-identity-and-affordance-binding.md)
 
-## Open Questions
-1. Should `BuryCorpse` remain non-interrupt-eligible even when `LootCorpse` stays opportunistic, or should both corpse interactions eventually share one opportunistic family policy?
-2. Should the eventual diagnostic surface be test-only, or exposed through a lightweight runtime snapshot for CLI/debug tooling?
-3. Are there any current non-corpse goal families whose suppression rules should migrate in the same first pass, or should the initial implementation stay intentionally narrow to corpse opportunism plus policy infrastructure?
+## Open Questions (Resolved)
+1. **BuryCorpse interrupt**: BuryCorpse gets `Normal` free_interrupt, not `Opportunistic`. Different from LootCorpse.
+2. **Diagnostics**: Runtime-accessible (not test-only).
+3. **Non-corpse migration**: All 16 families in one pass.
