@@ -6,9 +6,28 @@ use crate::{
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKind, HomeostaticNeeds, Permille, Tick, UtilityProfile,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
+
+/// Outcome of the ranking pipeline, preserving information about filtered candidates.
+#[derive(Clone, Debug)]
+pub struct RankingOutcome {
+    /// Ranked goals after all filters (sorted by ranking order).
+    pub ranked: Vec<RankedGoal>,
+    /// Goals that were suppressed by situational conditions (danger/self-care pressure).
+    pub suppressed: Vec<GoalKey>,
+    /// Goals that passed suppression but had zero motive score.
+    pub zero_motive: Vec<GoalKey>,
+}
+
+impl RankingOutcome {
+    /// Consume the outcome, returning only the ranked goals.
+    #[must_use]
+    pub fn into_ranked(self) -> Vec<RankedGoal> {
+        self.ranked
+    }
+}
 
 #[must_use]
 pub fn rank_candidates(
@@ -18,21 +37,36 @@ pub fn rank_candidates(
     current_tick: Tick,
     utility: &UtilityProfile,
     recipes: &RecipeRegistry,
-) -> Vec<RankedGoal> {
+) -> RankingOutcome {
     let context = RankingContext::new(view, agent, current_tick, utility);
-    let mut ranked = candidates
-        .iter()
-        .filter(|candidate| !is_suppressed(candidate, &context))
-        .map(|candidate| RankedGoal {
+
+    let mut suppressed = Vec::new();
+    let mut zero_motive = Vec::new();
+
+    let mut ranked = Vec::new();
+    for candidate in candidates {
+        if is_suppressed(candidate, &context) {
+            suppressed.push(candidate.key);
+            continue;
+        }
+        let scored = RankedGoal {
             grounded: candidate.clone(),
             priority_class: priority_class(candidate, &context, recipes),
             motive_score: motive_score(candidate, &context, recipes),
-        })
-        .filter(|ranked| ranked.motive_score > 0)
-        .collect::<Vec<_>>();
+        };
+        if scored.motive_score == 0 {
+            zero_motive.push(candidate.key);
+        } else {
+            ranked.push(scored);
+        }
+    }
 
     ranked.sort_unstable_by(compare_ranked_goals);
-    ranked
+    RankingOutcome {
+        ranked,
+        suppressed,
+        zero_motive,
+    }
 }
 
 struct RankingContext<'a> {
@@ -878,7 +912,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
@@ -909,7 +944,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 200 * 1000);
@@ -946,7 +982,8 @@ mod tests {
             current_tick(),
             &utility(),
             &recipes,
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
         assert_eq!(ranked[0].motive_score, 900 * 900);
@@ -977,7 +1014,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 200 * 1000);
@@ -998,7 +1036,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         assert!(ranked.is_empty());
 
         let mut self_care_view = base_view(agent);
@@ -1015,7 +1054,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         assert!(ranked.is_empty());
 
         let ranked = rank_candidates(
@@ -1028,7 +1068,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
         assert_eq!(ranked[0].motive_score, 1);
     }
@@ -1053,7 +1094,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         assert!(ranked.is_empty());
 
         let mut self_care_view = base_view(agent);
@@ -1074,7 +1116,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         assert!(ranked.is_empty());
 
         let mut calm_view = base_view(agent);
@@ -1089,7 +1132,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
         assert_eq!(
@@ -1148,7 +1192,8 @@ mod tests {
             current_tick(),
             &baseline,
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         let boosted_ranked = rank_candidates(
             &[fresh_goal, rumor_goal],
             &view,
@@ -1156,7 +1201,8 @@ mod tests {
             current_tick(),
             &stronger_social,
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         let fresh_pressure = belief_confidence(
             &PerceptionSource::DirectObservation,
@@ -1215,7 +1261,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         let trusting_ranked = rank_candidates(
             &[goal],
             &trusting_view,
@@ -1223,7 +1270,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert!(
             trusting_ranked[0].motive_score > skeptical_ranked[0].motive_score,
@@ -1263,7 +1311,8 @@ mod tests {
             current_tick(),
             &zero_social,
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert!(
             ranked.is_empty(),
@@ -1309,7 +1358,8 @@ mod tests {
                 ..utility()
             },
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         assert!(matches!(
             enterprise_first[0].grounded.key.kind,
             GoalKind::RestockCommodity {
@@ -1335,7 +1385,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         assert!(matches!(
             self_care_first[0].grounded.key.kind,
             GoalKind::ConsumeOwnedCommodity {
@@ -1378,7 +1429,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert!(matches!(
             ranked.first().map(|goal| goal.grounded.key.kind),
@@ -1426,7 +1478,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert!(matches!(
             ranked[0].grounded.key.kind,
@@ -1472,7 +1525,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert!(
             ranked.is_empty(),
@@ -1496,7 +1550,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
         assert_eq!(ranked[0].motive_score, (400 * 650) + (300 * 550));
@@ -1534,7 +1589,8 @@ mod tests {
             current_tick(),
             &utility(),
             &recipes,
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 200 * 1000);
@@ -1569,7 +1625,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
         let second = rank_candidates(
             &candidates,
             &view,
@@ -1577,7 +1634,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(first, second);
     }
@@ -1619,7 +1677,8 @@ mod tests {
             current_tick(),
             &utility,
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert!(matches!(
             ranked[0].grounded.key.kind,
@@ -1648,7 +1707,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
@@ -1675,7 +1735,8 @@ mod tests {
             current_tick(),
             &utility(),
             &RecipeRegistry::new(),
-        );
+        )
+        .into_ranked();
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);

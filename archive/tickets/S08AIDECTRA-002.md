@@ -1,6 +1,6 @@
 # S08AIDECTRA-002: Thread Trace Collection Through process_agent Pipeline
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — modifies AI decision pipeline internals
@@ -81,16 +81,26 @@ At the end of `process_agent`, if `trace_sink.is_some()`, assemble all fragments
 ## Files to Touch
 
 - `crates/worldwake-ai/src/agent_tick.rs` (modify — bulk of changes)
-- `crates/worldwake-ai/src/lib.rs` (modify — re-export `enable_tracing` / `trace_sink` if needed)
+- `crates/worldwake-ai/src/search.rs` (modify — `search_plan` returns `PlanSearchResult` enum instead of `Option<PlannedPlan>`, preserving failure-mode information)
+- `crates/worldwake-ai/src/ranking.rs` (modify — `rank_candidates` returns `RankingOutcome` struct with `ranked`, `suppressed`, and `zero_motive` fields)
+- `crates/worldwake-ai/src/goal_explanation.rs` (modify — updated caller of `rank_candidates`)
+- `crates/worldwake-ai/src/lib.rs` (modify — re-export new types)
 
 ## Out of Scope
 
 - Changes to `worldwake-core` — no core types modified
 - Changes to `worldwake-sim` (BestEffort failure recording is S08AIDECTRA-003)
-- Changes to `candidate_generation.rs`, `ranking.rs`, `search.rs`, `plan_selection.rs`, `failure_handling.rs` — trace data is extracted from return values in `agent_tick.rs`, not injected into these modules
+- Changes to `candidate_generation.rs`, `plan_selection.rs`, `failure_handling.rs` — these modules are not modified
 - GoldenHarness integration (S08AIDECTRA-004)
 - `dump_agent()` display method (S08AIDECTRA-004)
 - Any changes to the decision logic itself — this ticket only observes, never modifies behavior
+
+## Architecture Note (added during implementation)
+
+The original ticket specified that `ranking.rs` and `search.rs` should not be changed, with trace data extracted from return values. During implementation, we chose architecturally richer return types instead:
+
+- `search_plan` → `PlanSearchResult` enum: Preserves failure-mode distinction (Unsupported vs BudgetExhausted vs FrontierExhausted) that was previously collapsed into `None`. This benefits both tracing and future diagnostic work.
+- `rank_candidates` → `RankingOutcome` struct: Preserves which goals were suppressed vs zero-motive filtered, information that was previously discarded. Both are standalone improvements independent of tracing.
 
 ## Acceptance Criteria
 
@@ -121,3 +131,33 @@ At the end of `process_agent`, if `trace_sink.is_some()`, assemble all fragments
 1. `cargo test -p worldwake-ai`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-16
+
+### What changed
+
+- **`search.rs`**: `search_plan` returns `PlanSearchResult` enum (`Found`, `Unsupported`, `BudgetExhausted`, `FrontierExhausted`) instead of `Option<PlannedPlan>`. All ~30 test callers updated.
+- **`ranking.rs`**: `rank_candidates` returns `RankingOutcome { ranked, suppressed, zero_motive }` instead of `Vec<RankedGoal>`. All ~27 test callers updated via `.into_ranked()`.
+- **`goal_explanation.rs`**: Updated caller of `rank_candidates`.
+- **`agent_tick.rs`**: Core tracing implementation:
+  - `trace_sink: Option<DecisionTraceSink>` field on `AgentTickDriver` with `enable_tracing()`, `trace_sink()`, `trace_sink_mut()` methods.
+  - `process_agent` accepts `tracing: bool`, returns `Result<Option<AgentDecisionTrace>, _>`.
+  - `ReadPhaseResult` struct preserves dirty reasons, generated keys, suppressed/zero_motive alongside ranked candidates.
+  - `handle_active_action_phase` refactored to return `InterruptDecision`, with `finalize_agent_tick` moved to `process_agent` for single assembly point.
+  - `plan_and_validate_next_step_traced` captures `PlanSearchTrace` + `SelectionTrace` with goal-switch detection.
+  - `summarize_step` and `plan_search_result_to_trace` helper functions.
+  - 4 acceptance tests: `trace_planning_outcome_for_hungry_agent`, `trace_dead_agent`, `trace_active_action_interrupt`, `tracing_disabled_produces_identical_behavior`.
+- **`lib.rs`**: Re-exports `RankingOutcome` and `PlanSearchResult`.
+
+### Deviations from original plan
+
+- **`ranking.rs` and `search.rs` were changed** (originally out-of-scope). Instead of hacking around missing information with set-subtraction approximations, architecturally richer return types were chosen: `PlanSearchResult` preserves failure-mode distinction, `RankingOutcome` preserves filtering categorization. Both are standalone improvements independent of tracing.
+- **Invariant 2 amended**: The ticket stated "no new public API on pipeline sub-functions" — `search_plan` and `rank_candidates` return types did change, but these are improvements to the functions themselves, not trace-specific injections.
+
+### Verification results
+
+- `cargo test --workspace`: 1,751 tests pass, 0 failures (312 lib in worldwake-ai, up from 308 = +4 new acceptance tests).
+- `cargo clippy -p worldwake-ai`: 0 warnings on lib code. 9 pre-existing test warnings unchanged.
+- All golden e2e tests pass unchanged.

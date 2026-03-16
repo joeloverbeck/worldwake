@@ -23,8 +23,9 @@ pub fn explain_goal(
     current_tick: Tick,
 ) -> Option<GoalExplanation> {
     let candidates = generate_candidates(view, agent, blocked, recipes, current_tick);
-    let ranked = rank_candidates(&candidates, view, agent, current_tick, utility, recipes);
-    let target = ranked
+    let outcome = rank_candidates(&candidates, view, agent, current_tick, utility, recipes);
+    let target = outcome
+        .ranked
         .iter()
         .find(|candidate| candidate.grounded.key.kind == *goal)?;
 
@@ -34,7 +35,8 @@ pub fn explain_goal(
         motive_value: target.motive_score,
         evidence_entities: target.grounded.evidence_entities.iter().copied().collect(),
         evidence_places: target.grounded.evidence_places.iter().copied().collect(),
-        competing_goals: ranked
+        competing_goals: outcome
+            .ranked
             .iter()
             .filter(|candidate| candidate.grounded.key.kind != *goal)
             .map(|candidate| {

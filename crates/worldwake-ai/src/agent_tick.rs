@@ -1,4 +1,11 @@
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
+use crate::decision_trace::{
+    AgentDecisionTrace, CandidateTrace, DecisionOutcome, DecisionTraceSink, DirtyReason,
+    ExecutionFailureReason, ExecutionTrace, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome,
+    PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
+    GoalSwitchSummary,
+};
+use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
     build_semantics_table, clear_resolved_blockers, evaluate_interrupt, handle_plan_failure,
@@ -24,6 +31,8 @@ pub struct AgentTickDriver {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
     budget: PlanningBudget,
     semantics_cache: Option<(usize, BTreeMap<ActionDefId, PlannerOpSemantics>)>,
+    /// Optional trace collector. When `Some`, decision traces are recorded.
+    trace_sink: Option<DecisionTraceSink>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -46,7 +55,24 @@ impl AgentTickDriver {
             runtime_by_agent: BTreeMap::new(),
             budget,
             semantics_cache: None,
+            trace_sink: None,
         }
+    }
+
+    /// Enable decision tracing. Must be called before stepping.
+    pub fn enable_tracing(&mut self) {
+        self.trace_sink = Some(DecisionTraceSink::new());
+    }
+
+    /// Read access to the trace sink.
+    #[must_use]
+    pub fn trace_sink(&self) -> Option<&DecisionTraceSink> {
+        self.trace_sink.as_ref()
+    }
+
+    /// Mutable access to the trace sink (for tests).
+    pub fn trace_sink_mut(&mut self) -> Option<&mut DecisionTraceSink> {
+        self.trace_sink.as_mut()
     }
 
     fn semantics_table(
@@ -144,7 +170,8 @@ impl AutonomousController for AgentTickDriver {
         committed_actions: &[CommittedAction],
     ) -> Result<(), TickInputError> {
         let semantics_table = self.semantics_table(ctx.action_defs).clone();
-        process_agent(
+        let tracing = self.trace_sink.is_some();
+        let trace = process_agent(
             &mut AgentTickContext {
                 world: ctx.world,
                 event_log: ctx.event_log,
@@ -161,7 +188,12 @@ impl AutonomousController for AgentTickDriver {
             agent,
             replan_signals,
             committed_actions,
-        )
+            tracing,
+        )?;
+        if let (Some(sink), Some(trace)) = (self.trace_sink.as_mut(), trace) {
+            sink.record(trace);
+        }
+        Ok(())
     }
 }
 
@@ -172,7 +204,8 @@ fn process_agent(
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     committed_actions: &[CommittedAction],
-) -> Result<(), TickInputError> {
+    tracing: bool,
+) -> Result<Option<AgentDecisionTrace>, TickInputError> {
     let action_defs = ctx.action_defs;
     let action_handlers = ctx.action_handlers;
     let recipe_registry = ctx.recipe_registry;
@@ -194,6 +227,7 @@ fn process_agent(
     let runtime = runtime_by_agent.entry(agent).or_default();
     let active_action = active_action_for_agent(ctx, agent);
 
+    // ── Dead-agent early return ──
     {
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
         if view.is_dead(agent) || !view.is_alive(agent) {
@@ -205,7 +239,11 @@ fn process_agent(
             runtime.dirty = false;
             runtime.materialization_bindings.clear();
             update_runtime_observation_snapshot(&view, agent, runtime);
-            return Ok(());
+            return Ok(tracing.then_some(AgentDecisionTrace {
+                agent,
+                tick,
+                outcome: DecisionOutcome::Dead,
+            }));
         }
     }
 
@@ -221,7 +259,8 @@ fn process_agent(
 
     let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
 
-    let ranked_candidates = refresh_runtime_for_read_phase(
+    // ── Read phase: candidate generation + ranking ──
+    let read_result = refresh_runtime_for_read_phase(
         ctx.world,
         ctx.scheduler,
         action_defs,
@@ -237,6 +276,7 @@ fn process_agent(
             structural_block_ticks: budget.structural_block_ticks,
         },
     );
+    let ranked_candidates = read_result.ranked;
     let active_action = active_action_for_agent(ctx, agent);
     let journey_switch_margin = {
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
@@ -244,12 +284,12 @@ fn process_agent(
     };
     let default_switch_margin = budget.switch_margin_permille;
 
-    if let Some(active_action) = active_action {
-        return handle_active_action_phase(
+    // ── Active-action path: interrupt evaluation ──
+    let outcome_trace = if let Some(active_action) = active_action {
+        let interrupt_decision = handle_active_action_phase(
             ctx,
             runtime,
             &mut blocked_memory,
-            &original_blocked,
             agent,
             &ranked_candidates,
             &active_action,
@@ -258,39 +298,126 @@ fn process_agent(
             tick,
             action_defs,
             action_handlers,
-        );
-    }
-
-    let (next_step, next_step_valid) = plan_and_validate_next_step(
-        ctx.world,
-        ctx.scheduler,
-        runtime,
-        agent,
-        &ranked_candidates,
-        &blocked_memory,
-        default_switch_margin,
-        journey_switch_margin,
-        tick,
-        budget,
-        semantics_table,
-        action_defs,
-        action_handlers,
-    );
-
-    if let Some(step) = next_step {
-        let valid = next_step_valid.expect("validation result must exist for current step");
-        enqueue_valid_step_or_handle_failure(
-            ctx,
-            runtime,
-            &mut blocked_memory,
-            agent,
-            tick,
-            &original_blocked,
-            &step,
-            valid,
         )?;
-    }
 
+        tracing.then(|| {
+            let action_name = action_defs
+                .get(active_action.def_id)
+                .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
+            let top_challenger = ranked_candidates.first().map(|r| RankedGoalSummary {
+                goal: r.grounded.key,
+                priority_class: r.priority_class,
+                motive_score: r.motive_score,
+            });
+            DecisionOutcome::ActiveAction {
+                action_def_id: active_action.def_id,
+                action_name,
+                interrupt: InterruptTrace {
+                    decision: interrupt_decision,
+                    top_challenger,
+                },
+            }
+        })
+    } else {
+        // ── Planning path ──
+        let previous_goal = runtime.current_goal;
+
+        let (next_step, next_step_valid, plan_search_trace, selection_trace) =
+            plan_and_validate_next_step_traced(
+                ctx.world,
+                ctx.scheduler,
+                runtime,
+                agent,
+                &ranked_candidates,
+                &blocked_memory,
+                default_switch_margin,
+                journey_switch_margin,
+                tick,
+                budget,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                tracing,
+                previous_goal,
+            );
+
+        // ── Execution ──
+        let mut execution_trace = if tracing {
+            Some(ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            })
+        } else {
+            None
+        };
+
+        if let Some(step) = next_step {
+            let valid = next_step_valid.expect("validation result must exist for current step");
+
+            if tracing {
+                let et = execution_trace.as_mut().unwrap();
+                et.revalidation_passed = Some(valid);
+                et.enqueued_step = Some(summarize_step(&step, action_defs));
+            }
+
+            let exec_result = enqueue_valid_step_or_handle_failure(
+                ctx,
+                runtime,
+                &mut blocked_memory,
+                agent,
+                tick,
+                &original_blocked,
+                &step,
+                valid,
+            );
+
+            if let Err(ref _e) = exec_result {
+                if let Some(et) = execution_trace.as_mut() {
+                    if !valid {
+                        et.failure = Some(ExecutionFailureReason::RevalidationFailed);
+                    }
+                }
+            }
+            exec_result?;
+        }
+
+        tracing.then(|| {
+            let candidate_trace = CandidateTrace {
+                generated: read_result.generated_keys,
+                ranked: ranked_candidates
+                    .iter()
+                    .map(|r| RankedGoalSummary {
+                        goal: r.grounded.key,
+                        priority_class: r.priority_class,
+                        motive_score: r.motive_score,
+                    })
+                    .collect(),
+                suppressed: read_result.suppressed,
+                zero_motive: read_result.zero_motive,
+            };
+
+            DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                dirty_reasons: read_result.dirty_reasons,
+                candidates: candidate_trace,
+                planning: plan_search_trace.unwrap_or(PlanSearchTrace {
+                    attempts: Vec::new(),
+                }),
+                selection: selection_trace.unwrap_or(SelectionTrace {
+                    selected: None,
+                    goal_switch: None,
+                    previous_goal: None,
+                }),
+                execution: execution_trace.unwrap_or(ExecutionTrace {
+                    enqueued_step: None,
+                    revalidation_passed: None,
+                    failure: None,
+                }),
+            }))
+        })
+    };
+
+    // ── Finalize (runs for both paths) ──
     finalize_agent_tick(
         ctx.world,
         ctx.event_log,
@@ -301,7 +428,34 @@ fn process_agent(
         &original_blocked,
         &blocked_memory,
         runtime,
-    )
+    )?;
+
+    Ok(outcome_trace.map(|outcome| AgentDecisionTrace {
+        agent,
+        tick,
+        outcome,
+    }))
+}
+
+/// Build a `PlannedStepSummary` from a `PlannedStep` for trace output.
+fn summarize_step(
+    step: &PlannedStep,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+) -> PlannedStepSummary {
+    let action_name = action_defs
+        .get(step.def_id)
+        .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
+    PlannedStepSummary {
+        action_def_id: step.def_id,
+        action_name,
+        op_kind: step.op_kind,
+        targets: step
+            .targets
+            .iter()
+            .filter_map(|t| authoritative_target(*t))
+            .collect(),
+        estimated_ticks: step.estimated_ticks,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -464,6 +618,18 @@ fn abandon_expired_facility_queues_with_limit(
     Ok(changed)
 }
 
+/// Result of the read phase, preserving trace-relevant data alongside ranked candidates.
+struct ReadPhaseResult {
+    ranked: Vec<RankedGoal>,
+    dirty_reasons: Vec<DirtyReason>,
+    /// Generated candidate keys (before ranking filter).
+    generated_keys: Vec<worldwake_core::GoalKey>,
+    /// Goals suppressed by situational conditions.
+    suppressed: Vec<worldwake_core::GoalKey>,
+    /// Goals with zero motive score.
+    zero_motive: Vec<worldwake_core::GoalKey>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn refresh_runtime_for_read_phase(
     world: &worldwake_core::World,
@@ -474,7 +640,7 @@ fn refresh_runtime_for_read_phase(
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
-) -> Vec<RankedGoal> {
+) -> ReadPhaseResult {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let before = blocked_memory.clone();
@@ -486,14 +652,32 @@ fn refresh_runtime_for_read_phase(
         observation_snapshot_changed(&view, agent, runtime, phase.recipe_registry);
     let queue_patience_exhausted = facility_queue_patience_exhausted(&view, agent, phase.tick);
 
-    runtime.dirty = runtime.dirty
-        || runtime.current_plan.is_none()
-        || plan_finished(runtime)
-        || !replan_signals.is_empty()
-        || queue_transition_changed
-        || blocked_changed_from_cleanup
-        || snapshot_changed
-        || queue_patience_exhausted;
+    // Decompose dirty-flag into individual reasons for tracing.
+    let mut dirty_reasons = Vec::new();
+    if runtime.current_plan.is_none() {
+        dirty_reasons.push(DirtyReason::NoPlan);
+    }
+    if plan_finished(runtime) {
+        dirty_reasons.push(DirtyReason::PlanFinished);
+    }
+    if !replan_signals.is_empty() {
+        dirty_reasons.push(DirtyReason::ReplanSignal);
+    }
+    if queue_transition_changed {
+        dirty_reasons.push(DirtyReason::QueueTransition);
+    }
+    if blocked_changed_from_cleanup {
+        dirty_reasons.push(DirtyReason::BlockerCleanup);
+    }
+    if snapshot_changed {
+        dirty_reasons.push(DirtyReason::SnapshotChanged);
+    }
+    if queue_patience_exhausted {
+        dirty_reasons.push(DirtyReason::QueuePatienceExhausted);
+    }
+
+    // Preserve original boolean behavior exactly.
+    runtime.dirty = runtime.dirty || !dirty_reasons.is_empty();
 
     let candidates = generate_candidates_with_travel_horizon(
         &view,
@@ -503,14 +687,23 @@ fn refresh_runtime_for_read_phase(
         phase.tick,
         phase.travel_horizon,
     );
-    rank_candidates(
+    let generated_keys = candidates.iter().map(|c| c.key).collect();
+    let outcome = rank_candidates(
         &candidates,
         &view,
         agent,
         phase.tick,
         phase.utility,
         phase.recipe_registry,
-    )
+    );
+
+    ReadPhaseResult {
+        ranked: outcome.ranked,
+        dirty_reasons,
+        generated_keys,
+        suppressed: outcome.suppressed,
+        zero_motive: outcome.zero_motive,
+    }
 }
 
 fn handle_facility_queue_transitions(
@@ -568,7 +761,6 @@ fn handle_active_action_phase(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
     blocked_memory: &mut BlockedIntentMemory,
-    original_blocked: &BlockedIntentMemory,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     active_action: &worldwake_sim::ActionInstance,
@@ -577,7 +769,7 @@ fn handle_active_action_phase(
     tick: Tick,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
-) -> Result<(), TickInputError> {
+) -> Result<InterruptDecision, TickInputError> {
     let interruptibility = action_defs
         .get(active_action.def_id)
         .map_or(worldwake_sim::Interruptibility::NonInterruptible, |def| {
@@ -601,15 +793,17 @@ fn handle_active_action_phase(
             action_handlers,
         )
     });
-    if let InterruptDecision::InterruptForReplan { trigger: _ } = evaluate_interrupt(
+    let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
+    let decision = evaluate_interrupt(
         runtime,
         interruptibility,
         ranked_candidates,
-        planned_candidates.as_deref(),
+        planned_as_options.as_deref(),
         plan_valid,
         default_switch_margin,
         journey_switch_margin,
-    ) {
+    );
+    if let InterruptDecision::InterruptForReplan { trigger: _ } = decision {
         let replan = ctx
             .scheduler
             .interrupt_active_action(
@@ -631,17 +825,7 @@ fn handle_active_action_phase(
         reconcile_in_flight_state(ctx, runtime, blocked_memory, None, agent, &[&replan], &[])?;
     }
 
-    finalize_agent_tick(
-        ctx.world,
-        ctx.event_log,
-        ctx.scheduler,
-        action_defs,
-        agent,
-        tick,
-        original_blocked,
-        blocked_memory,
-        runtime,
-    )
+    Ok(decision)
 }
 
 fn effective_goal_switch_margin(
@@ -686,7 +870,7 @@ fn build_candidate_plans(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
-) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
+) -> Vec<(crate::GoalKey, PlanSearchResult)> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     ranked_candidates
         .iter()
@@ -701,7 +885,7 @@ fn build_candidate_plans(
                 blocked_memory,
                 current_tick,
             );
-            let plan = search_plan(
+            let result = search_plan(
                 &snapshot,
                 &ranked.grounded,
                 semantics_table,
@@ -709,8 +893,19 @@ fn build_candidate_plans(
                 action_handlers,
                 budget,
             );
-            (ranked.grounded.key, plan)
+            (ranked.grounded.key, result)
         })
+        .collect()
+}
+
+/// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
+/// only care about found plans (selection, interrupt evaluation).
+fn plans_as_options(
+    plans: &[(crate::GoalKey, PlanSearchResult)],
+) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
+    plans
+        .iter()
+        .map(|(key, result)| (*key, result.clone().into_plan()))
         .collect()
 }
 
@@ -745,10 +940,11 @@ fn plan_and_validate_next_step(
             action_defs,
             action_handlers,
         );
+        let plans_options = plans_as_options(&plans);
 
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
-            &plans,
+            &plans_options,
             runtime,
             default_switch_margin,
             journey_switch_margin,
@@ -789,6 +985,191 @@ fn plan_and_validate_next_step(
         )
     });
     (next_step, next_step_valid)
+}
+
+/// Wrapper around `plan_and_validate_next_step` that also captures trace data.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn plan_and_validate_next_step_traced(
+    world: &worldwake_core::World,
+    scheduler: &Scheduler,
+    runtime: &mut AgentDecisionRuntime,
+    agent: EntityId,
+    ranked_candidates: &[RankedGoal],
+    blocked_memory: &BlockedIntentMemory,
+    default_switch_margin: Permille,
+    journey_switch_margin: Permille,
+    tick: Tick,
+    budget: &PlanningBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+    tracing: bool,
+    previous_goal: Option<worldwake_core::GoalKey>,
+) -> (
+    Option<PlannedStep>,
+    Option<bool>,
+    Option<PlanSearchTrace>,
+    Option<SelectionTrace>,
+) {
+    if !tracing {
+        let (step, valid) = plan_and_validate_next_step(
+            world,
+            scheduler,
+            runtime,
+            agent,
+            ranked_candidates,
+            blocked_memory,
+            default_switch_margin,
+            journey_switch_margin,
+            tick,
+            budget,
+            semantics_table,
+            action_defs,
+            action_handlers,
+        );
+        return (step, valid, None, None);
+    }
+
+    // Traced path: inline the logic to capture intermediate results.
+    let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let mut plan_search_trace = PlanSearchTrace {
+        attempts: Vec::new(),
+    };
+    let mut selection_trace = SelectionTrace {
+        selected: None,
+        goal_switch: None,
+        previous_goal,
+    };
+
+    if runtime.dirty {
+        let plans = build_candidate_plans(
+            world,
+            scheduler,
+            agent,
+            ranked_candidates,
+            blocked_memory,
+            tick,
+            budget,
+            semantics_table,
+            action_defs,
+            action_handlers,
+        );
+
+        // Populate PlanSearchTrace from search results.
+        for (goal_key, result) in &plans {
+            plan_search_trace
+                .attempts
+                .push(plan_search_result_to_trace(*goal_key, result, action_defs));
+        }
+
+        let plans_options = plans_as_options(&plans);
+
+        if let Some(selected_plan) = select_best_plan(
+            ranked_candidates,
+            &plans_options,
+            runtime,
+            default_switch_margin,
+            journey_switch_margin,
+        ) {
+            let selected_goal = selected_plan.goal;
+            selection_trace.selected = Some(selected_goal);
+
+            // Detect goal switch.
+            if let Some(prev) = previous_goal {
+                if prev != selected_goal {
+                    // Determine switch kind from ranking comparison.
+                    let prev_rank = ranked_candidates
+                        .iter()
+                        .find(|c| c.grounded.key == prev);
+                    let new_rank = ranked_candidates
+                        .iter()
+                        .find(|c| c.grounded.key == selected_goal);
+                    let kind = match (prev_rank, new_rank) {
+                        (Some(p), Some(n)) if n.priority_class > p.priority_class => {
+                            crate::GoalSwitchKind::HigherPriorityGoal
+                        }
+                        _ => crate::GoalSwitchKind::SameClassMargin,
+                    };
+                    selection_trace.goal_switch = Some(GoalSwitchSummary {
+                        from: prev,
+                        to: selected_goal,
+                        kind,
+                    });
+                }
+            }
+
+            runtime.materialization_bindings.clear();
+            runtime.current_goal = Some(selected_plan.goal);
+            update_journey_fields_for_adopted_plan(runtime, &selected_plan, tick);
+            runtime.current_plan = Some(selected_plan);
+            runtime.current_step_index = 0;
+            runtime.step_in_flight = false;
+            runtime.last_priority_class = ranked_candidates
+                .iter()
+                .find(|candidate| Some(candidate.grounded.key) == runtime.current_goal)
+                .map(|candidate| candidate.priority_class);
+        } else {
+            runtime.clear_journey_commitment_with_reason(JourneyClearReason::LostTravelPlan);
+            runtime.materialization_bindings.clear();
+            runtime.current_goal = None;
+            runtime.current_plan = None;
+            runtime.current_step_index = 0;
+            runtime.step_in_flight = false;
+            runtime.last_priority_class = ranked_candidates
+                .first()
+                .map(|candidate| candidate.priority_class);
+        }
+        runtime.dirty = false;
+    }
+
+    let next_step = current_step(runtime).cloned();
+    let next_step_valid = next_step.as_ref().map(|step| {
+        revalidate_next_step(
+            &view,
+            agent,
+            step,
+            &runtime.materialization_bindings,
+            action_defs,
+            action_handlers,
+        )
+    });
+
+    (
+        next_step,
+        next_step_valid,
+        Some(plan_search_trace),
+        Some(selection_trace),
+    )
+}
+
+/// Convert a `PlanSearchResult` into a `PlanAttemptTrace` for the trace model.
+fn plan_search_result_to_trace(
+    goal: worldwake_core::GoalKey,
+    result: &PlanSearchResult,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+) -> PlanAttemptTrace {
+    let outcome = match result {
+        PlanSearchResult::Found(plan) => PlanSearchOutcome::Found {
+            steps: plan
+                .steps
+                .iter()
+                .map(|s| summarize_step(s, action_defs))
+                .collect(),
+            terminal_kind: plan.terminal_kind,
+        },
+        PlanSearchResult::Unsupported => PlanSearchOutcome::Unsupported,
+        PlanSearchResult::BudgetExhausted { expansions_used } => {
+            PlanSearchOutcome::BudgetExhausted {
+                expansions_used: *expansions_used,
+            }
+        }
+        PlanSearchResult::FrontierExhausted { expansions_used } => {
+            PlanSearchOutcome::FrontierExhausted {
+                expansions_used: *expansions_used,
+            }
+        }
+    };
+    PlanAttemptTrace { goal, outcome }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1893,6 +2274,7 @@ mod tests {
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
         )
+        .ranked
     }
 
     fn has_goal(ranked: &[RankedGoal], goal: GoalKind) -> bool {
@@ -3667,7 +4049,7 @@ mod tests {
             &budget,
         );
         assert!(
-            plan.is_some(),
+            plan.is_found(),
             "partial cargo pickup should be plannable before runtime continuity is asserted"
         );
 
@@ -3697,7 +4079,8 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
-        );
+        )
+        .ranked;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
             &harness.scheduler,
@@ -3786,7 +4169,8 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
-        );
+        )
+        .ranked;
         assert!(runtime.dirty);
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
@@ -4322,5 +4706,122 @@ mod tests {
                 "{relative} should not depend on the broad RuntimeBeliefView boundary"
             );
         }
+    }
+
+    // ── S08AIDECTRA-002: Trace collection acceptance tests ──
+
+    #[test]
+    fn trace_planning_outcome_for_hungry_agent() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let sink = harness.driver.trace_sink().unwrap();
+        let traces = sink.traces_for(harness.actor);
+        assert_eq!(
+            traces.len(),
+            1,
+            "one agent processed per tick should produce one trace"
+        );
+
+        let trace = &traces[0];
+        assert_eq!(trace.agent, harness.actor);
+
+        match &trace.outcome {
+            crate::DecisionOutcome::Planning(planning) => {
+                assert!(
+                    !planning.candidates.generated.is_empty(),
+                    "hungry agent should generate at least one goal candidate"
+                );
+                assert!(
+                    !planning.candidates.ranked.is_empty(),
+                    "hungry agent should have at least one ranked goal"
+                );
+            }
+            other => panic!("expected Planning outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trace_dead_agent() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        // Kill the agent by setting DeadAt.
+        {
+            let mut txn = new_txn(&mut harness.world, 1);
+            txn.set_component_dead_at(harness.actor, DeadAt(Tick(0)))
+                .unwrap();
+            commit_txn(txn);
+        }
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let sink = harness.driver.trace_sink().unwrap();
+        let traces = sink.traces_for(harness.actor);
+        assert_eq!(traces.len(), 1, "dead agent should produce exactly one trace");
+        assert!(
+            matches!(traces[0].outcome, crate::DecisionOutcome::Dead),
+            "dead agent should produce Dead outcome"
+        );
+    }
+
+    #[test]
+    fn trace_active_action_interrupt() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        // Step once without tracing to get agent into an active action.
+        harness.step_once();
+        assert!(
+            harness.active_action_name().is_some(),
+            "agent should have started an action after first tick"
+        );
+
+        // Enable tracing and step again — agent now has an active action.
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let sink = harness.driver.trace_sink().unwrap();
+        let traces = sink.traces_for(harness.actor);
+        assert_eq!(traces.len(), 1, "should produce one trace per tick");
+        match &traces[0].outcome {
+            crate::DecisionOutcome::ActiveAction {
+                action_def_id: _,
+                action_name,
+                interrupt,
+            } => {
+                assert!(
+                    !action_name.is_empty(),
+                    "active action trace should include action name"
+                );
+                // InterruptTrace should be populated regardless of decision.
+                let _ = &interrupt.decision;
+            }
+            other => panic!("expected ActiveAction outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tracing_disabled_produces_identical_behavior() {
+        // Run two identical harnesses — one with tracing, one without.
+        let mut harness_no_trace = Harness::new(ControlSource::Ai);
+        let mut harness_traced = Harness::new(ControlSource::Ai);
+        harness_traced.driver.enable_tracing();
+
+        let result_no_trace = harness_no_trace.step_once();
+        let result_traced = harness_traced.step_once();
+
+        // Both should produce the same tick advancement.
+        assert_eq!(result_no_trace.tick, result_traced.tick);
+
+        // Both should have identical active actions.
+        assert_eq!(
+            harness_no_trace.active_action_name(),
+            harness_traced.active_action_name(),
+            "tracing should not change which action is selected"
+        );
+
+        // Traced harness should have trace data.
+        assert!(!harness_traced.driver.trace_sink().unwrap().traces().is_empty());
+
+        // Non-traced harness should have no trace data.
+        assert!(harness_no_trace.driver.trace_sink().is_none());
     }
 }

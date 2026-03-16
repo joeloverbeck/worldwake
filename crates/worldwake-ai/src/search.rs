@@ -61,6 +61,39 @@ impl Ord for FrontierEntry<'_> {
     }
 }
 
+/// Outcome of a plan search for one goal.
+///
+/// Replaces the previous `Option<PlannedPlan>` return type to preserve
+/// failure-mode information needed by both diagnostics and tracing.
+#[derive(Clone, Debug)]
+pub enum PlanSearchResult {
+    /// A valid plan was found.
+    Found(PlannedPlan),
+    /// Goal kind is not supported by the planner.
+    Unsupported,
+    /// Node expansion budget was exhausted before finding a plan.
+    BudgetExhausted { expansions_used: u16 },
+    /// Search frontier was fully explored without finding a plan.
+    FrontierExhausted { expansions_used: u16 },
+}
+
+impl PlanSearchResult {
+    /// Extract the plan if found, discarding failure information.
+    #[must_use]
+    pub fn into_plan(self) -> Option<PlannedPlan> {
+        match self {
+            Self::Found(plan) => Some(plan),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if a plan was found.
+    #[must_use]
+    pub fn is_found(&self) -> bool {
+        matches!(self, Self::Found(_))
+    }
+}
+
 pub fn search_plan(
     snapshot: &PlanningSnapshot,
     goal: &GroundedGoal,
@@ -68,9 +101,9 @@ pub fn search_plan(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
     budget: &PlanningBudget,
-) -> Option<PlannedPlan> {
+) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
-        return None;
+        return PlanSearchResult::Unsupported;
     }
 
     let mut frontier = BinaryHeap::new();
@@ -79,7 +112,7 @@ pub fn search_plan(
 
     while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
         if goal.key.kind.is_satisfied(&node.state) {
-            return Some(PlannedPlan::new(
+            return PlanSearchResult::Found(PlannedPlan::new(
                 goal.key,
                 node.steps,
                 PlanTerminalKind::GoalSatisfied,
@@ -89,7 +122,7 @@ pub fn search_plan(
             continue;
         }
         if expansions >= budget.max_node_expansions {
-            return None;
+            return PlanSearchResult::BudgetExhausted { expansions_used: expansions };
         }
         expansions = expansions.saturating_add(1);
 
@@ -126,20 +159,20 @@ pub fn search_plan(
                     .sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
             }
             let (terminal_kind, successor) = terminal_successors.remove(0);
-            return Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
+            return PlanSearchResult::Found(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
         }
         successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
         successors.truncate(usize::from(budget.beam_width));
 
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
-                return Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
+                return PlanSearchResult::Found(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
             }
             frontier.push(FrontierEntry::new(successor));
         }
     }
 
-    None
+    PlanSearchResult::FrontierExhausted { expansions_used: expansions }
 }
 
 fn root_node(snapshot: &PlanningSnapshot) -> SearchNode<'_> {
@@ -1025,6 +1058,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
@@ -1131,6 +1165,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         // ConsumeOwnedCommodity treats MoveCargo as a progress barrier because
@@ -1175,7 +1210,7 @@ mod tests {
             &PlanningBudget::default(),
         );
 
-        assert_eq!(plan, None);
+        assert!(!plan.is_found());
     }
 
     #[test]
@@ -1240,6 +1275,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
@@ -1322,6 +1358,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .expect("local trade barrier should not be pruned by cheaper travel branches");
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
@@ -1389,6 +1426,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .expect("local recipe-input acquire goal should plan through trade");
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
@@ -1446,7 +1484,7 @@ mod tests {
             &budget,
         );
 
-        assert_eq!(plan, None);
+        assert!(!plan.is_found());
     }
 
     #[test]
@@ -1495,7 +1533,7 @@ mod tests {
             &budget,
         );
 
-        assert_eq!(plan, None);
+        assert!(!plan.is_found());
     }
 
     #[test]
@@ -1550,9 +1588,10 @@ mod tests {
                 ..PlanningBudget::default()
             },
         )
+        .into_plan()
         .unwrap();
 
-        assert_eq!(narrow_beam_plan, None);
+        assert!(!narrow_beam_plan.is_found());
         assert_eq!(
             wide_beam_plan.terminal_kind,
             PlanTerminalKind::ProgressBarrier
@@ -1623,9 +1662,10 @@ mod tests {
                 ..PlanningBudget::default()
             },
         )
+        .into_plan()
         .unwrap();
 
-        assert_eq!(beam_two_plan, None);
+        assert!(!beam_two_plan.is_found());
         assert_eq!(
             beam_three_plan.terminal_kind,
             PlanTerminalKind::ProgressBarrier
@@ -1696,9 +1736,10 @@ mod tests {
                 ..PlanningBudget::default()
             },
         )
+        .into_plan()
         .unwrap();
 
-        assert_eq!(exhausted_plan, None);
+        assert!(!exhausted_plan.is_found());
         assert_eq!(
             sufficient_budget_plan.terminal_kind,
             PlanTerminalKind::ProgressBarrier
@@ -1737,7 +1778,7 @@ mod tests {
             },
         );
 
-        assert_eq!(plan, None);
+        assert!(!plan.is_found());
     }
 
     #[test]
@@ -1801,7 +1842,7 @@ mod tests {
             &PlanningBudget::default(),
         );
 
-        assert_eq!(plan, None);
+        assert!(!plan.is_found());
     }
 
     #[test]
@@ -1854,6 +1895,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
@@ -1903,6 +1945,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
@@ -1960,6 +2003,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
@@ -2043,6 +2087,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
@@ -2128,6 +2173,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
@@ -2340,6 +2386,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert_eq!(plan.steps.len(), 1);
@@ -2388,6 +2435,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .unwrap();
 
         assert!(matches!(
@@ -2537,6 +2585,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .expect("default search budget should find the branchy market-hub restock route");
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
@@ -2704,6 +2753,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .expect("exclusive orchard should yield a queue barrier plan");
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
@@ -2751,6 +2801,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .expect("matching grant should allow direct harvest plan");
 
         assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
@@ -2948,6 +2999,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
         )
+        .into_plan()
         .expect("second facility should still yield a queue-backed plan");
 
         assert_eq!(plan.steps.len(), 1);
