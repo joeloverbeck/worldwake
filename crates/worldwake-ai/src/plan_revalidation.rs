@@ -1,8 +1,9 @@
 use crate::{resolve_planning_targets_with, MaterializationBindings, PlannedStep};
+use std::collections::BTreeSet;
 use worldwake_core::EntityId;
 use worldwake_sim::{
-    get_affordances, requested_affordance_matches, ActionDefRegistry, ActionHandlerRegistry,
-    RuntimeBeliefView,
+    get_affordances_for_defs, requested_affordance_matches, ActionDefRegistry,
+    ActionHandlerRegistry, RuntimeBeliefView,
 };
 
 #[must_use]
@@ -24,7 +25,8 @@ pub fn revalidate_next_step(
     else {
         return false;
     };
-    get_affordances(view, actor, registry, handlers)
+    let single_def = BTreeSet::from([step.def_id]);
+    get_affordances_for_defs(view, actor, registry, handlers, &single_def)
         .into_iter()
         .any(|affordance| {
             requested_affordance_matches(
