@@ -242,6 +242,12 @@ pub fn evaluate_precondition(
         Precondition::TargetHasWounds(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.has_wounds(*target)),
+        Precondition::TargetUnownedOrActorControls(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| match view.believed_owner_of(*target) {
+                None => true,
+                Some(_) => view.can_control(actor, *target),
+            }),
     }
 }
 
@@ -363,6 +369,7 @@ mod tests {
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         wound_lists: BTreeMap<EntityId, Vec<Wound>>,
+        believed_owners: BTreeMap<EntityId, EntityId>,
     }
 
     impl crate::RuntimeBeliefView for StubBeliefView {
@@ -475,8 +482,8 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+            self.believed_owners.get(&entity).copied()
         }
 
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
@@ -1517,5 +1524,180 @@ mod tests {
         assert_eq!(affordances_a[0].bound_targets, vec![target_a]);
         assert_eq!(affordances_b[0].bound_targets, vec![target_b]);
         assert_ne!(affordances_a, affordances_b);
+    }
+
+    // ── Ownership-aware affordance filtering tests ──
+
+    #[test]
+    fn evaluate_precondition_target_unowned_or_actor_controls_allows_unowned() {
+        let actor = entity(1);
+        let target = entity(4);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        // No believed owner → should pass
+        assert!(evaluate_precondition(
+            Precondition::TargetUnownedOrActorControls(0),
+            actor,
+            &[target],
+            &view,
+        ));
+    }
+
+    #[test]
+    fn evaluate_precondition_target_unowned_or_actor_controls_allows_controllable() {
+        let actor = entity(1);
+        let target = entity(4);
+        let owner = entity(9);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.believed_owners.insert(target, owner);
+        view.controllable.insert((actor, target), true);
+        assert!(evaluate_precondition(
+            Precondition::TargetUnownedOrActorControls(0),
+            actor,
+            &[target],
+            &view,
+        ));
+    }
+
+    #[test]
+    fn evaluate_precondition_target_unowned_or_actor_controls_rejects_uncontrollable_owned() {
+        let actor = entity(1);
+        let target = entity(4);
+        let owner = entity(9);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.believed_owners.insert(target, owner);
+        // controllable not set → defaults to false
+        assert!(!evaluate_precondition(
+            Precondition::TargetUnownedOrActorControls(0),
+            actor,
+            &[target],
+            &view,
+        ));
+    }
+
+    #[test]
+    fn evaluate_precondition_target_unowned_or_actor_controls_rejects_out_of_bounds() {
+        let actor = entity(1);
+        let view = StubBeliefView::default();
+        assert!(!evaluate_precondition(
+            Precondition::TargetUnownedOrActorControls(5),
+            actor,
+            &[entity(4)],
+            &view,
+        ));
+    }
+
+    #[test]
+    fn get_affordances_excludes_pickup_of_owned_lot_actor_cannot_control() {
+        let actor = entity(1);
+        let place = entity(10);
+        let owned_lot = entity(20);
+        let other_owner = entity(30);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(owned_lot, EntityKind::ItemLot);
+        view.places.insert(actor, place);
+        view.places.insert(owned_lot, place);
+        view.colocated.insert(place, vec![owned_lot]);
+        view.believed_owners.insert(owned_lot, other_owner);
+        // controllable NOT set → actor cannot control owned_lot
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            vec![
+                Precondition::TargetUnpossessed(0),
+                Precondition::TargetUnownedOrActorControls(0),
+            ],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+        assert!(
+            affordances.is_empty(),
+            "should exclude owned lot actor cannot control"
+        );
+    }
+
+    #[test]
+    fn get_affordances_includes_pickup_of_unowned_lot() {
+        let actor = entity(1);
+        let place = entity(10);
+        let lot = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.places.insert(actor, place);
+        view.places.insert(lot, place);
+        view.colocated.insert(place, vec![lot]);
+        // No believed owner
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            vec![
+                Precondition::TargetUnpossessed(0),
+                Precondition::TargetUnownedOrActorControls(0),
+            ],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+        assert_eq!(affordances.len(), 1, "should include unowned lot");
+        assert_eq!(affordances[0].bound_targets, vec![lot]);
+    }
+
+    #[test]
+    fn get_affordances_includes_pickup_of_actor_controlled_owned_lot() {
+        let actor = entity(1);
+        let place = entity(10);
+        let lot = entity(20);
+        let faction = entity(30);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.places.insert(actor, place);
+        view.places.insert(lot, place);
+        view.colocated.insert(place, vec![lot]);
+        view.believed_owners.insert(lot, faction);
+        view.controllable.insert((actor, lot), true);
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            vec![
+                Precondition::TargetUnpossessed(0),
+                Precondition::TargetUnownedOrActorControls(0),
+            ],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+        assert_eq!(
+            affordances.len(),
+            1,
+            "should include owned lot actor can control"
+        );
+        assert_eq!(affordances[0].bound_targets, vec![lot]);
     }
 }

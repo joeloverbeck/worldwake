@@ -13,6 +13,7 @@ use worldwake_sim::{
 
 use crate::inventory::{move_entity_to_direct_possession, remaining_capacity};
 
+#[allow(clippy::too_many_lines)]
 pub fn register_transport_actions(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
@@ -54,6 +55,7 @@ pub fn register_transport_actions(
                 },
                 Precondition::TargetNotInContainer(0),
                 Precondition::TargetUnpossessed(0),
+                Precondition::TargetUnownedOrActorControls(0),
             ],
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
@@ -68,6 +70,7 @@ pub fn register_transport_actions(
                 },
                 Precondition::TargetNotInContainer(0),
                 Precondition::TargetUnpossessed(0),
+                Precondition::TargetUnownedOrActorControls(0),
             ],
             visibility: VisibilitySpec::ParticipantsOnly,
             causal_event_tags: BTreeSet::from([
@@ -1207,7 +1210,8 @@ mod tests {
             ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(5) },
         ).unwrap_err();
 
-        assert!(matches!(err, ActionError::PreconditionFailed(msg) if msg.contains("cannot lawfully pick up")));
+        assert!(matches!(err, ActionError::PreconditionFailed(msg) if
+            msg.contains("TargetUnownedOrActorControls") || msg.contains("cannot lawfully pick up")));
         let _ = other_owner;
     }
 

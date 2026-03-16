@@ -71,6 +71,9 @@ pub enum Precondition {
         effect: ConsumableEffect,
     },
     TargetHasWounds(u8),
+    /// Target has no believed owner, or the actor can control it.
+    /// Used for ownership-aware affordance filtering (e.g. lawful `pick_up`).
+    TargetUnownedOrActorControls(u8),
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]

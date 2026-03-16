@@ -125,6 +125,12 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .get(usize::from(index))
             .and_then(|target| world.get_component_wound_list(*target))
             .is_some_and(|wounds| !wounds.wounds.is_empty()),
+        Precondition::TargetUnownedOrActorControls(index) => targets
+            .get(usize::from(index))
+            .is_some_and(|target| match world.owner_of(*target) {
+                None => true,
+                Some(_) => world.can_exercise_control(actor, *target).is_ok(),
+            }),
     }
 }
 

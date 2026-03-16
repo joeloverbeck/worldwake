@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-008: Ownership-aware belief-based affordance filtering for pick_up
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — affordance query, belief-based precondition evaluation
@@ -102,3 +102,18 @@ Alternatively, if the filtering is done inline in `get_affordances()`, handle it
 1. `cargo test -p worldwake-sim affordance`
 2. `cargo test -p worldwake-sim`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**:
+  - Added `TargetUnownedOrActorControls(u8)` variant to `Precondition` enum (`action_semantics.rs`)
+  - Added belief-based evaluation in `evaluate_precondition` (`affordance_query.rs`): no believed owner → allow, else check `can_control()`
+  - Added authoritative evaluation in `evaluate_precondition_authoritatively` (`action_validation.rs`): no `owner_of` → allow, else check `can_exercise_control()`
+  - Added the new precondition to `pick_up`'s preconditions and commit_conditions (`transport_actions.rs`)
+  - Added `believed_owners` field to `StubBeliefView` and 7 new tests
+- **Deviations from original plan**:
+  - Ticket suggested either a new `Precondition` variant or inline filtering in `get_affordances()`. Chose the `Precondition` variant approach for consistency with the existing architecture.
+  - No changes needed to `per_agent_belief_view.rs` or `belief_view.rs` — the existing `believed_owner_of()` and `can_control()` trait methods from S01PROOUTOWNCLA-006 were sufficient.
+  - Also added authoritative evaluation in `action_validation.rs` (not mentioned in ticket but required by exhaustive match on `Precondition` enum, and correct for commit_conditions).
+- **Verification**: 1,743 workspace tests passed, clippy clean

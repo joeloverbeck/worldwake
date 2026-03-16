@@ -31,7 +31,7 @@ COMPLETED:
   -007  Authoritative pickup validation (can_exercise_control gate)
   -011  Fix ConsumeOwnedCommodity planner search (CONSUME_OPS narrowing, barrier fix, GoalSatisfied preference)
 
-THEN (belief affordance layer):
+COMPLETED:
   -008  Belief affordance filtering (exclude uncontrollable owned lots)
 
 FINALLY (golden integration — everything wired):
@@ -67,7 +67,7 @@ FINALLY (golden integration — everything wired):
                               ↓
                            -011 ✅ (planner search fix)
                               ↓
-                           -008 (affordance filter)
+                           -008 ✅ (affordance filter)
                               ↓
                            -009b (golden tests)
 ```
