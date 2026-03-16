@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-009: Golden integration tests for ownership lifecycle
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No — integration tests only
@@ -90,3 +90,16 @@ Run replay tests to confirm deterministic replay remains unchanged after policy 
 1. `cargo test --workspace`
 2. `cargo clippy --workspace`
 3. `cargo test -p worldwake-sim replay` (replay consistency)
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**: Golden integration tests for the full ownership lifecycle were implemented across multiple test files:
+  - `crates/worldwake-ai/tests/golden_production.rs`: `golden_materialized_output_ownership_prevents_theft` (actor-owned output prevents theft, crafter eats own bread, thief must use orchard), `golden_materialization_barrier_chain` (harvest→pickup→eat with actor policy)
+  - `crates/worldwake-systems/src/production_actions.rs`: Unit tests for all three ownership variants (Actor, ProducerOwner, Unowned) for both harvest and craft, plus ProducerOwner-on-ownerless-producer failure tests, ownership relation delta verification, and `craft_golden_scenario_works_with_actor_owned_output`
+  - `crates/worldwake-systems/src/transport_actions.rs`: `pick_up_succeeds_for_actor_owned_lot`, `pick_up_succeeds_for_unowned_lot`
+  - `crates/worldwake-systems/tests/e10_production_transport_integration.rs`: Full lifecycle (harvest→pickup→travel→put_down) with Actor policy, deterministic replay verification, craft conservation
+  - `crates/worldwake-ai/tests/golden_production.rs`: 4 deterministic replay verification tests
+  - `crates/worldwake-sim/src/affordance_query.rs`: Pickup affordance tests for unowned/controlled lots
+- **Deviations**: Tests were distributed across existing test files rather than a single new golden integration test file, which provides better locality and coverage
+- **Verification**: `cargo test --workspace` passes, `cargo clippy --workspace` clean, all 9 acceptance criteria satisfied
