@@ -75,7 +75,8 @@ pub use action_status::ActionStatus;
 pub use action_validation::validate_action_def_authoritatively;
 pub use affordance::Affordance;
 pub use affordance_query::{
-    evaluate_constraint, evaluate_precondition, get_affordances, requested_affordance_matches,
+    evaluate_constraint, evaluate_precondition, get_affordances, get_affordances_for_defs,
+    requested_affordance_matches,
 };
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,

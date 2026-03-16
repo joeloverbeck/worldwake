@@ -5,11 +5,11 @@ use crate::{
     PlanningSnapshot, PlanningState,
 };
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
-    get_affordances, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
-    Affordance, QueueForFacilityUsePayload, RuntimeBeliefView,
+    get_affordances_for_defs, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
+    ActionPayload, Affordance, QueueForFacilityUsePayload, RuntimeBeliefView,
 };
 
 #[derive(Clone)]
@@ -227,6 +227,18 @@ fn build_successor<'snapshot>(
     ))
 }
 
+fn relevant_action_defs(
+    goal: &GroundedGoal,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) -> BTreeSet<ActionDefId> {
+    let relevant_ops = goal.key.kind.relevant_op_kinds();
+    semantics_table
+        .iter()
+        .filter(|(_, sem)| relevant_ops.contains(&sem.op_kind))
+        .map(|(def_id, _)| *def_id)
+        .collect()
+}
+
 fn search_candidates(
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
@@ -234,11 +246,13 @@ fn search_candidates(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
 ) -> Vec<SearchCandidate> {
-    let mut candidates = get_affordances(
+    let relevant_defs = relevant_action_defs(goal, semantics_table);
+    let mut candidates = get_affordances_for_defs(
         &node.state,
         node.state.snapshot().actor(),
         registry,
         handlers,
+        &relevant_defs,
     )
     .into_iter()
     .flat_map(|affordance| {
