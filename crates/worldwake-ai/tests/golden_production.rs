@@ -14,6 +14,15 @@ use worldwake_core::{
     UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 
+fn production_perception_profile() -> PerceptionProfile {
+    PerceptionProfile {
+        memory_capacity: 20,
+        memory_retention_ticks: 100,
+        observation_fidelity: pm(1000),
+        confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario runners (only used by tests in this file)
 // ---------------------------------------------------------------------------
@@ -273,6 +282,9 @@ fn setup_capacity_constrained_ground_lot_pickup(seed: Seed) -> (GoldenHarness, E
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
+    set_agent_perception_profile(
+        &mut h.world, &mut h.event_log, agent, production_perception_profile(),
+    );
 
     let mut txn = new_txn(&mut h.world, 0);
     txn.set_component_carry_capacity(agent, CarryCapacity(LoadUnits(1)))
@@ -358,7 +370,8 @@ fn observe_capacity_constrained_pickup_step(
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum MaterializedOutputTheftMilestone {
     BreadMaterialized,
-    ThiefAteCraftedBreadBeforeOrchardUse,
+    CrafterAteBread,
+    ThiefUsedOrchard,
     CrafterRecordedMissingBreadBlocker,
     CrafterRecoveredViaOrchard,
 }
@@ -403,7 +416,10 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
         MetabolismProfile::default(),
         UtilityProfile::default(),
-        KnownRecipes::new(),
+        KnownRecipes::with([apple_recipe]),
+    );
+    set_agent_perception_profile(
+        &mut harness.world, &mut harness.event_log, thief, production_perception_profile(),
     );
     let crafter = seed_agent_with_recipes(
         &mut harness.world,
@@ -414,6 +430,9 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         MetabolismProfile::default(),
         UtilityProfile::default(),
         KnownRecipes::with([apple_recipe, bread_recipe]),
+    );
+    set_agent_perception_profile(
+        &mut harness.world, &mut harness.event_log, crafter, production_perception_profile(),
     );
     give_commodity(
         &mut harness.world,
@@ -465,6 +484,13 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         Tick(0),
         worldwake_core::PerceptionSource::Inference,
     );
+    seed_actor_world_beliefs(
+        &mut harness.world,
+        &mut harness.event_log,
+        thief,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
 
     MaterializedOutputTheftScenario {
         initial_thief_hunger: harness.agent_hunger(thief),
@@ -496,11 +522,19 @@ fn record_materialized_output_theft_milestones(
         milestones.insert(MaterializedOutputTheftMilestone::BreadMaterialized);
     }
 
+    // Crafter eats their own bread (ownership prevents theft via pick_up).
     if milestones.contains(&MaterializedOutputTheftMilestone::BreadMaterialized)
-        && scenario.harness.agent_hunger(scenario.thief) < scenario.initial_thief_hunger
-        && orchard_quantity == scenario.initial_orchard_quantity
+        && scenario.harness.agent_hunger(scenario.crafter) < scenario.initial_crafter_hunger
+        && total_live_lot_quantity(&scenario.harness.world, CommodityKind::Bread) == 0
     {
-        milestones.insert(MaterializedOutputTheftMilestone::ThiefAteCraftedBreadBeforeOrchardUse);
+        milestones.insert(MaterializedOutputTheftMilestone::CrafterAteBread);
+    }
+
+    // Thief cannot take crafter's bread, so must use orchard independently.
+    if scenario.harness.agent_hunger(scenario.thief) < scenario.initial_thief_hunger
+        && orchard_quantity < scenario.initial_orchard_quantity
+    {
+        milestones.insert(MaterializedOutputTheftMilestone::ThiefUsedOrchard);
     }
 
     if scenario
@@ -559,7 +593,9 @@ fn run_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputTheft
         scenario.harness.step_once();
         record_materialized_output_theft_milestones(&scenario, &mut milestones);
         assert_materialized_output_theft_conservation(&scenario.harness.world);
-        if milestones.contains(&MaterializedOutputTheftMilestone::CrafterRecoveredViaOrchard) {
+        if milestones.contains(&MaterializedOutputTheftMilestone::CrafterAteBread)
+            && milestones.contains(&MaterializedOutputTheftMilestone::ThiefUsedOrchard)
+        {
             break;
         }
     }
@@ -616,6 +652,11 @@ fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOu
             UtilityProfile::default(),
         ),
     ];
+    for agent in &agents {
+        set_agent_perception_profile(
+            &mut h.world, &mut h.event_log, *agent, production_perception_profile(),
+        );
+    }
 
     let initial_hunger = agents.map(|agent| h.agent_hunger(agent));
     let workstation = place_workstation_with_source(
@@ -707,7 +748,7 @@ struct DeadAgentPrunedFromFacilityQueueOutcome {
 }
 
 fn seed_exclusive_orchard_contenders(h: &mut GoldenHarness) -> [EntityId; 4] {
-    [
+    let agents = [
         seed_agent(
             &mut h.world,
             &mut h.event_log,
@@ -744,7 +785,13 @@ fn seed_exclusive_orchard_contenders(h: &mut GoldenHarness) -> [EntityId; 4] {
             MetabolismProfile::default(),
             UtilityProfile::default(),
         ),
-    ]
+    ];
+    for agent in &agents {
+        set_agent_perception_profile(
+            &mut h.world, &mut h.event_log, *agent, production_perception_profile(),
+        );
+    }
+    agents
 }
 
 fn seed_fragile_queued_waiter(h: &mut GoldenHarness) -> EntityId {
@@ -1741,7 +1788,7 @@ fn golden_grant_expiry_before_intended_action() {
 }
 
 #[test]
-fn golden_materialized_output_theft_forces_replan() {
+fn golden_materialized_output_ownership_prevents_theft() {
     let outcome = run_materialized_output_theft_scenario(Seed([21; 32]));
 
     assert!(
@@ -1749,16 +1796,12 @@ fn golden_materialized_output_theft_forces_replan() {
         "Crafter should first complete the local bread craft and materialize a ground lot"
     );
     assert!(
-        outcome.has(MaterializedOutputTheftMilestone::ThiefAteCraftedBreadBeforeOrchardUse),
-        "A co-located hungry agent should opportunistically consume the crafted bread before any orchard fallback is used"
+        outcome.has(MaterializedOutputTheftMilestone::CrafterAteBread),
+        "Crafter should pick up and eat their own actor-owned bread"
     );
     assert!(
-        !outcome.has(MaterializedOutputTheftMilestone::CrafterRecordedMissingBreadBlocker),
-        "Craft completion should end at a progress barrier, so losing the unowned output before the next plan is adopted should trigger fresh replanning rather than a stale MissingInput(Bread) blocker"
-    );
-    assert!(
-        outcome.has(MaterializedOutputTheftMilestone::CrafterRecoveredViaOrchard),
-        "After the theft invalidates the local follow-up plan, the crafter should recover by replanning to the orchard path"
+        outcome.has(MaterializedOutputTheftMilestone::ThiefUsedOrchard),
+        "Thief cannot lawfully take crafter's owned bread and must find food via the orchard"
     );
 }
 

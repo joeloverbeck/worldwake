@@ -24,11 +24,14 @@ COMPLETED:
 COMPLETED:
   -005  Craft commit ownership (same pattern for commit_craft)
 
-THEN (belief/affordance layer — no fixture dependencies):
+COMPLETED:
   -006  Belief view ownership query (believed_owner_of trait method)
 
-THEN (pickup validation — needs -004/-005 for owned lots, -006 for beliefs):
+COMPLETED:
   -007  Authoritative pickup validation (can_exercise_control gate)
+  -011  Fix ConsumeOwnedCommodity planner search (CONSUME_OPS narrowing, barrier fix, GoalSatisfied preference)
+
+THEN (belief affordance layer):
   -008  Belief affordance filtering (exclude uncontrollable owned lots)
 
 FINALLY (golden integration — everything wired):
@@ -58,12 +61,13 @@ FINALLY (golden integration — everything wired):
                               ↓
                            -005 ✅ (craft ownership)
                               ↓
-                           -006 (belief view)
+                           -006 ✅ (belief view)
                               ↓
-                    ┌─────────┴──────────┐
-                  -007                 -008
-                  (auth pickup)        (affordance filter)
-                    └─────────┬──────────┘
+                           -007 ✅ (auth pickup)
+                              ↓
+                           -011 ✅ (planner search fix)
+                              ↓
+                           -008 (affordance filter)
                               ↓
                            -009b (golden tests)
 ```

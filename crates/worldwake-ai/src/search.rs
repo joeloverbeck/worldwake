@@ -108,7 +108,23 @@ pub fn search_plan(
             }
         }
         if !terminal_successors.is_empty() {
-            terminal_successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+            // For consumption goals, prefer GoalSatisfied (eat) over
+            // ProgressBarrier (pick_up) when both are available — eating
+            // possessed stock is better than picking up more ground stock.
+            if matches!(goal.key.kind, GoalKind::ConsumeOwnedCommodity { .. }) {
+                terminal_successors.sort_by(|left, right| {
+                    let kind_order = |kind: &PlanTerminalKind| match kind {
+                        PlanTerminalKind::GoalSatisfied => 0,
+                        _ => 1,
+                    };
+                    kind_order(&left.0)
+                        .cmp(&kind_order(&right.0))
+                        .then_with(|| compare_search_nodes(&left.1, &right.1))
+                });
+            } else {
+                terminal_successors
+                    .sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+            }
             let (terminal_kind, successor) = terminal_successors.remove(0);
             return Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
         }
@@ -1103,10 +1119,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(plan.steps.len(), 3);
+        // ConsumeOwnedCommodity treats MoveCargo as a progress barrier because
+        // the planner cannot model possession transfer. After pick_up commits,
+        // the agent replans and finds eat as a 1-step GoalSatisfied plan.
+        assert_eq!(plan.steps.len(), 2);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
-        assert_eq!(plan.steps[2].op_kind, PlannerOpKind::Consume);
+        assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
     }
 
     #[test]
@@ -1522,12 +1541,11 @@ mod tests {
         assert_eq!(narrow_beam_plan, None);
         assert_eq!(
             wide_beam_plan.terminal_kind,
-            PlanTerminalKind::GoalSatisfied
+            PlanTerminalKind::ProgressBarrier
         );
-        assert_eq!(wide_beam_plan.steps.len(), 3);
+        assert_eq!(wide_beam_plan.steps.len(), 2);
         assert_eq!(wide_beam_plan.steps[0].op_kind, PlannerOpKind::Travel);
         assert_eq!(wide_beam_plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
-        assert_eq!(wide_beam_plan.steps[2].op_kind, PlannerOpKind::Consume);
         assert_eq!(
             wide_beam_plan.steps[0].targets,
             vec![PlanningEntityRef::Authoritative(pantry)]
@@ -1596,9 +1614,9 @@ mod tests {
         assert_eq!(beam_two_plan, None);
         assert_eq!(
             beam_three_plan.terminal_kind,
-            PlanTerminalKind::GoalSatisfied
+            PlanTerminalKind::ProgressBarrier
         );
-        assert_eq!(beam_three_plan.steps.len(), 3);
+        assert_eq!(beam_three_plan.steps.len(), 2);
         assert_eq!(
             beam_three_plan.steps[0].targets,
             vec![PlanningEntityRef::Authoritative(pantry)]
@@ -1669,7 +1687,7 @@ mod tests {
         assert_eq!(exhausted_plan, None);
         assert_eq!(
             sufficient_budget_plan.terminal_kind,
-            PlanTerminalKind::GoalSatisfied
+            PlanTerminalKind::ProgressBarrier
         );
         assert_eq!(
             sufficient_budget_plan.steps[0].targets,

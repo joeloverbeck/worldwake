@@ -155,6 +155,14 @@ fn validate_pick_up(
             "target {target} is already possessed"
         )));
     }
+    // Ownership check: actor can pick up only if unowned or actor can exercise control
+    if txn.owner_of(target).is_some() {
+        txn.can_exercise_control(actor, target).map_err(|e| {
+            ActionError::PreconditionFailed(format!(
+                "actor {actor} cannot lawfully pick up owned entity {target}: {e}"
+            ))
+        })?;
+    }
     let lot = txn
         .get_component_item_lot(target)
         .ok_or(ActionError::InvalidTarget(target))?;
@@ -1119,5 +1127,147 @@ mod tests {
         assert!(!affordances
             .iter()
             .any(|affordance| affordance.bound_targets == vec![contained_lot]));
+    }
+
+    #[test]
+    fn pick_up_succeeds_for_actor_owned_lot() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_owner(lot, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, _, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        let instance_id = start_action_for_target(
+            &mut world, &mut log, &mut active_actions, &mut rng,
+            &defs, &handlers, actor, lot,
+        );
+        let outcome = tick_action(
+            instance_id, &defs, &handlers,
+            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
+            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
+        ).unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(lot), Some(actor));
+        assert_eq!(world.owner_of(lot), Some(actor));
+        assert_eq!(world.effective_place(lot), Some(place));
+    }
+
+    #[test]
+    fn pick_up_succeeds_for_unowned_lot() {
+        let (mut world, actor, lot, _place, _) = setup_world();
+        assert_eq!(world.owner_of(lot), None);
+        let (defs, handlers, _, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        let instance_id = start_action_for_target(
+            &mut world, &mut log, &mut active_actions, &mut rng,
+            &defs, &handlers, actor, lot,
+        );
+        let outcome = tick_action(
+            instance_id, &defs, &handlers,
+            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
+            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
+        ).unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(lot), Some(actor));
+    }
+
+    #[test]
+    fn pick_up_rejects_owned_lot_when_actor_lacks_control() {
+        let (mut world, actor, lot, _, _) = setup_world();
+        let other_owner = {
+            let mut txn = new_txn(&mut world, 2);
+            let other = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            txn.set_owner(lot, other).unwrap();
+            commit_txn(txn);
+            other
+        };
+        let (defs, handlers, pick_up_id, _) = setup_registries();
+        let affordance = worldwake_sim::Affordance {
+            def_id: pick_up_id, actor, bound_targets: vec![lot],
+            payload_override: None, explanation: None,
+        };
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+        let err = start_action(
+            &affordance, &defs, &handlers,
+            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
+            &mut next_instance_id,
+            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(5) },
+        ).unwrap_err();
+
+        assert!(matches!(err, ActionError::PreconditionFailed(msg) if msg.contains("cannot lawfully pick up")));
+        let _ = other_owner;
+    }
+
+    #[test]
+    fn pick_up_succeeds_for_faction_member_on_faction_owned_lot() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let faction = txn.create_faction("Bakers Guild").unwrap();
+            txn.set_owner(lot, faction).unwrap();
+            txn.add_member(actor, faction).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, _, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        let instance_id = start_action_for_target(
+            &mut world, &mut log, &mut active_actions, &mut rng,
+            &defs, &handlers, actor, lot,
+        );
+        let outcome = tick_action(
+            instance_id, &defs, &handlers,
+            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
+            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
+        ).unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(lot), Some(actor));
+        assert_eq!(world.effective_place(lot), Some(place));
+    }
+
+    #[test]
+    fn pick_up_succeeds_for_office_holder_on_office_owned_lot() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let office = txn.create_office("Lord of the Granary").unwrap();
+            txn.set_owner(lot, office).unwrap();
+            txn.assign_office(office, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, _, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        let instance_id = start_action_for_target(
+            &mut world, &mut log, &mut active_actions, &mut rng,
+            &defs, &handlers, actor, lot,
+        );
+        let outcome = tick_action(
+            instance_id, &defs, &handlers,
+            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
+            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
+        ).unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(lot), Some(actor));
+        assert_eq!(world.effective_place(lot), Some(place));
     }
 }

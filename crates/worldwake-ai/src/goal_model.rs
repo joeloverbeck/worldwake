@@ -63,10 +63,6 @@ pub trait GoalKindPlannerExt {
 const CONSUME_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Consume,
     PlannerOpKind::Travel,
-    PlannerOpKind::Trade,
-    PlannerOpKind::QueueForFacilityUse,
-    PlannerOpKind::Harvest,
-    PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
 ];
 const ACQUIRE_OPS: &[PlannerOpKind] = &[
@@ -513,6 +509,16 @@ impl GoalKindPlannerExt for GoalKind {
             return true;
         }
 
+        // ConsumeOwnedCommodity treats pick_up (MoveCargo) as a progress barrier
+        // because the planner cannot model possession transfer in hypothetical state.
+        // This check runs before the is_materialization_barrier guard because MoveCargo
+        // is not a materialization barrier but IS a logical barrier for consumption goals.
+        if matches!(self, GoalKind::ConsumeOwnedCommodity { .. })
+            && step.op_kind == PlannerOpKind::MoveCargo
+        {
+            return true;
+        }
+
         if !step.is_materialization_barrier {
             return false;
         }
@@ -526,13 +532,6 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. } => true,
-            GoalKind::ConsumeOwnedCommodity { .. } => matches!(
-                step.op_kind,
-                PlannerOpKind::Trade
-                    | PlannerOpKind::Harvest
-                    | PlannerOpKind::Craft
-                    | PlannerOpKind::MoveCargo
-            ),
             GoalKind::Heal { .. } => step.op_kind == PlannerOpKind::Trade,
             _ => false,
         }
@@ -767,13 +766,17 @@ mod tests {
     }
 
     #[test]
-    fn consume_goal_relevant_ops_include_consumption_and_access_paths() {
+    fn consume_goal_relevant_ops_include_consumption_and_pickup_only() {
         let goal = GoalKind::ConsumeOwnedCommodity {
             commodity: CommodityKind::Bread,
         };
 
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Consume));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
+        assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::MoveCargo));
+        assert!(!goal.relevant_op_kinds().contains(&PlannerOpKind::Harvest));
+        assert!(!goal.relevant_op_kinds().contains(&PlannerOpKind::Craft));
+        assert!(!goal.relevant_op_kinds().contains(&PlannerOpKind::Trade));
         assert!(!goal.relevant_op_kinds().contains(&PlannerOpKind::Attack));
     }
 

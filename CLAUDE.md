@@ -187,6 +187,19 @@ These are non-negotiable design rules enforced by tests:
 - **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`
 - **Unique location** — every entity exists in exactly one place
 
+## Authoritative-to-AI Impact Rule
+
+Any change to authoritative validation (action preconditions, `validate_*` functions, `can_exercise_control`) must trace the full agent decision cycle before claiming completion:
+
+1. **Affordance generation**: Does `get_affordances` still produce correct candidates? (affordance_query.rs)
+2. **Candidate generation**: Does `generate_candidates` emit the right goal kinds? (candidate_generation.rs)
+3. **Search**: Does `search_plan` find valid plans? Check terminal ordering and barrier logic. (search.rs)
+4. **Execution**: Does `BestEffort` action start handle the new validation gracefully? (tick_step.rs)
+5. **Failure recovery**: Does `handle_plan_failure` replan correctly after the new check rejects? (agent_tick.rs)
+6. **Golden tests**: Do ALL golden tests pass? (`cargo test -p worldwake-ai`)
+
+Golden production tests require `PerceptionProfile` on agents that need to observe post-production output. Tests without perception profiles will silently fail to observe newly created entities.
+
 ## Spec Drafting Rules
 
 All new spec drafts MUST:
