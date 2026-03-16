@@ -2,7 +2,7 @@ use crate::GoalPriorityClass;
 use worldwake_core::Permille;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum GoalSwitchKind {
+pub enum GoalSwitchKind {
     HigherPriorityGoal,
     SameClassMargin,
 }

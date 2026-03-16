@@ -1,6 +1,6 @@
 # S08AIDECTRA-001: Trace Data Model and DecisionTraceSink
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new module in worldwake-ai
@@ -119,3 +119,13 @@ Also add `GoalSwitchKind` to the `goal_switching` re-exports.
 1. `cargo test -p worldwake-ai decision_trace`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**:
+  - Created `crates/worldwake-ai/src/decision_trace.rs` with all 16 trace types and `DecisionTraceSink`
+  - Changed `GoalSwitchKind` from `pub(crate)` to `pub` in `goal_switching.rs`
+  - Added `pub mod decision_trace`, re-exported all trace types and `GoalSwitchKind` in `lib.rs`
+- **Deviations**: `DecisionOutcome::Planning` wraps `Box<PlanningPipelineTrace>` instead of bare `PlanningPipelineTrace`, per clippy `large_enum_variant` lint (464 bytes vs 88 bytes for the next largest variant)
+- **Verification**: 3 new unit tests pass, full `cargo test -p worldwake-ai` (308 tests) pass, `cargo clippy --workspace` clean, no new dependencies

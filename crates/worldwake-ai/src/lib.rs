@@ -7,6 +7,7 @@ pub mod agent_tick;
 pub mod budget;
 pub mod candidate_generation;
 pub mod decision_runtime;
+pub mod decision_trace;
 mod enterprise;
 pub mod failure_handling;
 pub mod goal_explanation;
@@ -26,11 +27,18 @@ pub mod search;
 pub use agent_tick::{AgentTickDriver, JourneyDebugSnapshot, JourneySwitchMarginSource};
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
+pub use decision_trace::{
+    AgentDecisionTrace, CandidateTrace, DecisionOutcome, DecisionTraceSink, DirtyReason,
+    ExecutionFailureReason, ExecutionTrace, GoalSwitchSummary, InterruptTrace,
+    PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
+    PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
+};
 pub use decision_runtime::{
     AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation,
     JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
+pub use goal_switching::GoalSwitchKind;
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
 };
