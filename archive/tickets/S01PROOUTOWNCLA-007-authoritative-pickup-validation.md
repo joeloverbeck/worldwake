@@ -94,13 +94,7 @@ Verify: does `pick_up` use both the `ActionDef` precondition list AND the `valid
 
 ## Outcome
 
-**Completion date**: 2026-03-16
-
-**What changed**:
-- Added ownership check to `validate_pick_up()` in `transport_actions.rs:158-164`: after the unpossessed check, if the target lot has an owner, `can_exercise_control(actor, target)` must succeed. Unowned lots remain freely pickable.
-- Added 5 new tests: actor-owned pickup succeeds, unowned pickup succeeds, unauthorized pickup rejected, faction member pickup succeeds, office holder pickup succeeds.
-
-**Deviations from plan**:
-- Section 2 ("Update authoritative validation in `action_validation.rs`") was not needed — `action_validation.rs` has no pick_up-specific code; all pick_up validation goes through `validate_pick_up()` only.
-
-**Verification**: `cargo test -p worldwake-systems` (all 236 tests pass), `cargo clippy --workspace` (clean).
+- **Completion date**: 2026-03-16
+- **What changed**: Added ownership check to `validate_pick_up()` in `crates/worldwake-systems/src/transport_actions.rs`. Owned unpossessed lots now require `can_exercise_control(actor, lot)` to succeed; unowned lots remain freely pickable.
+- **Deviations**: None — implemented as specified (option 3: conditional check in `validate_pick_up` rather than a new precondition type).
+- **Verification**: `cargo test -p worldwake-systems`, `cargo clippy --workspace` — all pass. Commit `77560e3`.

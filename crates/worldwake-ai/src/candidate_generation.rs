@@ -368,8 +368,16 @@ fn emit_need_driven_candidates(
         return;
     }
 
+    // Merchants should not treat their sale stock as personal food/drink.
+    let sale_kinds = ctx
+        .view
+        .merchandise_profile(ctx.agent)
+        .map(|p| p.sale_kinds)
+        .unwrap_or_default();
+
     let already_satisfied = CommodityKind::ALL.into_iter().any(|commodity| {
         matches_need(commodity)
+            && !sale_kinds.contains(&commodity)
             && local_controlled_commodity_exists(ctx.view, ctx.agent, ctx.place, commodity)
     });
 
@@ -377,17 +385,21 @@ fn emit_need_driven_candidates(
         .into_iter()
         .filter(|commodity| matches_need(*commodity))
     {
-        if let Some(evidence) =
-            local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
-        {
-            emit_candidate(
-                candidates,
-                GoalKind::ConsumeOwnedCommodity { commodity },
-                evidence,
-                ctx.blocked,
-                ctx.current_tick,
-            );
-            continue;
+        // Skip ConsumeOwnedCommodity for merchandise stock — merchants
+        // should not eat their own sale inventory.
+        if !sale_kinds.contains(&commodity) {
+            if let Some(evidence) =
+                local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
+            {
+                emit_candidate(
+                    candidates,
+                    GoalKind::ConsumeOwnedCommodity { commodity },
+                    evidence,
+                    ctx.blocked,
+                    ctx.current_tick,
+                );
+                continue;
+            }
         }
 
         if already_satisfied {
@@ -1735,6 +1747,57 @@ mod tests {
             &candidates,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
+            }
+        ));
+    }
+
+    #[test]
+    fn merchant_does_not_emit_consume_owned_for_sale_commodity() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.direct_possessions.insert(agent, vec![apple]);
+        view.direct_possessors.insert(apple, agent);
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, apple));
+        view.controlled_entities.insert(agent);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Apple), Quantity(1));
+        // Mark Apple as sale stock for this merchant.
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: std::iter::once(CommodityKind::Apple).collect(),
+                home_market: Some(place),
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        // Must NOT emit ConsumeOwnedCommodity for a sale commodity.
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Apple,
             }
         ));
     }
