@@ -23,6 +23,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) in_transit_state: Option<InTransitOnEdge>,
     pub(crate) direct_container: Option<EntityId>,
     pub(crate) direct_possessor: Option<EntityId>,
+    pub(crate) owner: Option<EntityId>,
     pub(crate) direct_possessions: BTreeSet<EntityId>,
     pub(crate) known_recipes: Vec<RecipeId>,
     pub(crate) unique_item_counts: BTreeMap<UniqueItemKind, u32>,
@@ -58,6 +59,7 @@ impl Default for SnapshotEntity {
             in_transit_state: None,
             direct_container: None,
             direct_possessor: None,
+            owner: None,
             direct_possessions: BTreeSet::new(),
             known_recipes: Vec::new(),
             unique_item_counts: BTreeMap::new(),
@@ -238,6 +240,7 @@ fn build_snapshot_entity(
         in_transit_state: view.in_transit_state(entity),
         direct_container: view.direct_container(entity),
         direct_possessor: view.direct_possessor(entity),
+        owner: view.believed_owner_of(entity),
         direct_possessions: view
             .direct_possessions(entity)
             .into_iter()
@@ -575,6 +578,10 @@ mod tests {
         }
 
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
 

@@ -158,6 +158,10 @@ mod tests {
             None
         }
 
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }

@@ -53,6 +53,7 @@ pub trait GoalBeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
@@ -137,6 +138,7 @@ pub trait RuntimeBeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
         let _ = entity;
@@ -359,6 +361,13 @@ macro_rules! impl_goal_belief_view {
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::direct_possessor(self, entity)
+            }
+
+            fn believed_owner_of(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::believed_owner_of(self, entity)
             }
 
             fn workstation_tag(

@@ -870,6 +870,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
             })
     }
 
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.owner)
+    }
+
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
         self.snapshot
             .entities
@@ -1398,6 +1405,10 @@ mod tests {
 
         fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
             self.direct_possessors.get(&entity).copied()
+        }
+
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
         }
 
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {

@@ -303,6 +303,14 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible =
+            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.owner_of(entity))
+            .flatten()
+    }
+
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
         if entity == self.agent {
             return self
@@ -1309,6 +1317,107 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::support_declaration(&view, agent, office),
             Some(holder)
+        );
+    }
+
+    #[test]
+    fn believed_owner_of_returns_owner_when_agent_knows_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(agent))
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(lot, entity_belief(place, true, 3, 10));
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        assert_eq!(
+            RuntimeBeliefView::believed_owner_of(&view, lot),
+            Some(agent)
+        );
+    }
+
+    #[test]
+    fn believed_owner_of_returns_none_for_unowned_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(lot, entity_belief(place, true, 3, 10));
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        assert_eq!(RuntimeBeliefView::believed_owner_of(&view, lot), None);
+    }
+
+    #[test]
+    fn believed_owner_of_returns_none_for_unknown_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(
+                    CommodityKind::Bread,
+                    Quantity(3),
+                    place,
+                    Some(other),
+                )
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        // Agent has NO belief about this lot
+        let beliefs = AgentBeliefStore::new();
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        assert_eq!(RuntimeBeliefView::believed_owner_of(&view, lot), None);
+    }
+
+    #[test]
+    fn believed_owner_of_returns_owner_when_self_is_owner() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(agent))
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        // Agent has NO belief entry, but is the owner — accessible via self-ownership check
+        let beliefs = AgentBeliefStore::new();
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        assert_eq!(
+            RuntimeBeliefView::believed_owner_of(&view, lot),
+            Some(agent)
         );
     }
 }
