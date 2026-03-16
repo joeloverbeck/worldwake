@@ -1,10 +1,12 @@
-# S01PROOUTOWNCLA-009: Migrate fixtures and add golden integration tests
+# S01PROOUTOWNCLA-009: Golden integration tests for ownership lifecycle
 
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — test fixtures, prototype world setup, integration tests
-**Deps**: S01PROOUTOWNCLA-001 through S01PROOUTOWNCLA-008 (all prior tickets)
+**Engine Changes**: No — integration tests only
+**Deps**: S01PROOUTOWNCLA-009a (fixture migration), S01PROOUTOWNCLA-004 through S01PROOUTOWNCLA-008 (all engine tickets)
+
+> **Note**: This ticket was split. Fixture migration moved to S01PROOUTOWNCLA-009a (must run BEFORE engine tickets -004 through -008). This ticket now covers only golden integration tests and replay verification, which require all engine changes to be in place. See `tickets/S01-IMPLEMENTATION-ORDER.md` for the corrected sequence.
 
 ## Problem
 
@@ -27,22 +29,9 @@ All existing production scenarios (harvest, craft, trade tests, golden E2E tests
 
 ## What to Change
 
-### 1. Update `build_prototype_world()` in `topology.rs`
+> Fixture migration (build_prototype_world, test helpers, existing test fixtures) is handled by S01PROOUTOWNCLA-009a.
 
-Add `ProductionOutputOwnershipPolicy` to all Facility and Place entities that have `ResourceSource` or `WorkstationTag`:
-- Personal workstations → `ProductionOutputOwner::Actor`
-- Public resource sources (berry bushes, etc.) → `ProductionOutputOwner::Unowned`
-- Any faction/office-owned facilities → `ProductionOutputOwner::ProducerOwner`
-
-### 2. Update test utilities
-
-Any test helper that creates workstations or resource sources must also assign a `ProductionOutputOwnershipPolicy`. Update `test_utils.rs` and any inline test setup in `production_actions.rs`, `transport_actions.rs`, etc.
-
-### 3. Update existing production tests
-
-All existing harvest/craft tests must add explicit policy to their test workstations. The policy should match the test's intent (usually `Actor` for simple tests).
-
-### 4. Add golden integration tests
+### 1. Add golden integration tests
 
 Add integration tests that exercise the full production → ownership → pickup lifecycle:
 - Harvest with `Actor` policy → agent picks up own goods
@@ -51,19 +40,14 @@ Add integration tests that exercise the full production → ownership → pickup
 - Ownership survives travel (possessed lots retain ownership)
 - `put_down` + `pick_up` cycle preserves ownership
 
-### 5. Verify deterministic replay
+### 2. Verify deterministic replay
 
 Run replay tests to confirm deterministic replay remains unchanged after policy migration. The policy adds deterministic component state that should hash consistently.
 
 ## Files to Touch
 
-- `crates/worldwake-core/src/topology.rs` (modify — `build_prototype_world` adds policies)
-- `crates/worldwake-core/src/test_utils.rs` (modify — test helpers assign policies)
-- `crates/worldwake-systems/src/production_actions.rs` (modify — test fixtures)
-- `crates/worldwake-systems/src/transport_actions.rs` (modify — test fixtures)
-- `crates/worldwake-systems/src/needs_actions.rs` (modify — test fixtures if production-related)
-- `crates/worldwake-ai/` test modules (modify — golden E2E test fixtures)
-- Integration test files as needed (new or modify)
+- `crates/worldwake-systems/tests/` or `crates/worldwake-ai/tests/` (new — golden integration test files)
+- Existing integration test files as needed for replay verification
 
 ## Out of Scope
 
