@@ -14,7 +14,7 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
   golden_care.rs              — 4 tests (same-place healing + treatment acquisition companion + replays)
-  golden_production.rs        — 15 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
+  golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
   golden_determinism.rs       — 2 tests (scenarios 6, 6e)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
@@ -25,7 +25,7 @@ crates/worldwake-ai/tests/
 
 ## Part 1: Proven Emergent Scenarios
 
-The golden suite contains 58 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice now locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle end to end without falling back to manual queue injection after setup. All behavior is emergent.
+The golden suite contains 60 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice now locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle end to end without falling back to manual queue injection after setup. All behavior is emergent.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_goal_invalidation_by_another_agent`
@@ -236,6 +236,21 @@ The golden suite contains 58 tests across 7 domain files. Every test uses the re
 - Crafter does not carry a stale bread-follow-up plan across the craft progress barrier and therefore does not record a stale `MissingInput(Bread)` blocker for this case.
 - Crafter instead replans from updated authoritative state, travels to Orchard Farm, and recovers hunger there.
 **Cross-system chain**: Local craft/materialization → opportunistic theft by another agent → progress-barrier replan from fresh state → distant harvest fallback → hunger relief.
+
+### Scenario 3f: Faction-Owned Production — Member Retrieval vs Outsider Blocking
+**File**: `golden_production.rs` | **Tests**: `golden_faction_ownership_producer_owner_delegation`, `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
+**Systems exercised**: Production (`resolve_output_owner` with `ProducerOwner`), Ownership (`can_exercise_control` institutional delegation via `factions_of`), AI (affordance filtering, GOAP planning, replan after blocked pickup), Travel, Needs, Conservation
+**Setup**: Faction "River Pact" owns an orchard at Orchard Farm with `ProductionOutputOwner::ProducerOwner` policy. Agent Kael (faction member) and Agent Wren (outsider) are both critically hungry at Orchard Farm. A fallback Actor-policy orchard exists at Village Square.
+**Emergent behavior proven**:
+- Harvested apple lots materialize with the faction as owner (not the harvesting actor), proving `resolve_output_owner` with `ProducerOwner` routes ownership to the workstation's owner entity.
+- Faction member picks up faction-owned apples via institutional delegation in `can_exercise_control` (faction membership check via `factions_of`).
+- Member completes the full harvest → pickup → eat chain and reduces hunger.
+- Outsider is blocked from picking up faction-owned apples (affordance filtering rejects the pickup), leaves Orchard Farm, and replans toward the fallback orchard.
+- Outsider finds and eats from the Actor-policy fallback orchard at Village Square.
+- Deterministic replay: two runs with the same seed produce identical world and event-log hashes.
+- Per-tick conservation: authoritative apple total never exceeds the combined stock of both orchards (40).
+**Cross-system chain**: ProducerOwner policy → faction-owned output materialization → institutional delegation pickup (member) / affordance blocking (outsider) → outsider travel + replan → fallback harvest → hunger relief for both agents.
+**S01 code paths covered**: `resolve_output_owner()` ProducerOwner branch, `create_item_lot_with_owner()`, `believed_owner_of()`, `can_exercise_control()` faction delegation, affordance filtering by ownership, GOAP divergent planning based on faction membership.
 
 ### Scenario 7: Deprivation Cascade
 **File**: `golden_ai_decisions.rs` | **Test**: `golden_deprivation_cascade`

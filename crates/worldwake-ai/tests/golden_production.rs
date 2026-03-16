@@ -2000,3 +2000,265 @@ fn golden_dead_agent_pruned_from_facility_queue_replays_deterministically() {
         "Dead-agent queue prune scenario should replay to the same event log hash"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 3f: Faction-Owned Production — Member vs Outsider
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum FactionOwnershipMilestone {
+    FactionOwnedApplesMaterialized,
+    MemberPickedUpFactionApples,
+    MemberAteApples,
+    OutsiderLeftFactionOrchard,
+    OutsiderAteFromFallback,
+}
+
+struct FactionOwnershipOutcome {
+    milestones: BTreeSet<FactionOwnershipMilestone>,
+    world_hash: StateHash,
+    log_hash: StateHash,
+}
+
+impl FactionOwnershipOutcome {
+    fn has(&self, milestone: FactionOwnershipMilestone) -> bool {
+        self.milestones.contains(&milestone)
+    }
+}
+
+struct FactionOwnershipScenario {
+    harness: GoldenHarness,
+    member: EntityId,
+    outsider: EntityId,
+    faction: EntityId,
+    initial_member_hunger: worldwake_core::Permille,
+    initial_outsider_hunger: worldwake_core::Permille,
+}
+
+fn setup_faction_ownership_scenario(seed: Seed) -> FactionOwnershipScenario {
+    let mut harness = GoldenHarness::new(seed);
+
+    let member = seed_agent(
+        &mut harness.world,
+        &mut harness.event_log,
+        "Kael",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut harness.world,
+        &mut harness.event_log,
+        member,
+        production_perception_profile(),
+    );
+
+    let outsider = seed_agent(
+        &mut harness.world,
+        &mut harness.event_log,
+        "Wren",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut harness.world,
+        &mut harness.event_log,
+        outsider,
+        production_perception_profile(),
+    );
+
+    // Faction orchard at ORCHARD_FARM with ProducerOwner policy.
+    let faction_orchard = place_workstation_with_source(
+        &mut harness.world,
+        &mut harness.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(20),
+            max_quantity: Quantity(20),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor, // temporary — overridden below
+    );
+
+    // Fallback orchard at VILLAGE_SQUARE with Actor policy.
+    place_workstation_with_source(
+        &mut harness.world,
+        &mut harness.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(20),
+            max_quantity: Quantity(20),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    // Create faction, add member, set workstation ownership + ProducerOwner policy.
+    let faction;
+    {
+        let mut txn = new_txn(&mut harness.world, 0);
+        faction = txn.create_faction("River Pact").unwrap();
+        txn.add_member(member, faction).unwrap();
+        txn.set_owner(faction_orchard, faction).unwrap();
+        txn.set_component_production_output_ownership_policy(
+            faction_orchard,
+            ProductionOutputOwnershipPolicy {
+                output_owner: ProductionOutputOwner::ProducerOwner,
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut harness.event_log);
+    }
+
+    // Seed world beliefs for both agents so they can see everything.
+    seed_actor_world_beliefs(
+        &mut harness.world,
+        &mut harness.event_log,
+        member,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+    seed_actor_world_beliefs(
+        &mut harness.world,
+        &mut harness.event_log,
+        outsider,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_member_hunger = harness.agent_hunger(member);
+    let initial_outsider_hunger = harness.agent_hunger(outsider);
+
+    FactionOwnershipScenario {
+        harness,
+        member,
+        outsider,
+        faction,
+        initial_member_hunger,
+        initial_outsider_hunger,
+    }
+}
+
+fn record_faction_ownership_milestones(
+    scenario: &FactionOwnershipScenario,
+    milestones: &mut BTreeSet<FactionOwnershipMilestone>,
+) {
+    let world = &scenario.harness.world;
+
+    // Check for faction-owned apple lots at ORCHARD_FARM.
+    let has_faction_owned_apples = world
+        .entities()
+        .filter(|e| world.get_component_item_lot(*e).is_some_and(|lot| lot.commodity == CommodityKind::Apple))
+        .any(|lot| world.owner_of(lot) == Some(scenario.faction));
+    if has_faction_owned_apples {
+        milestones.insert(FactionOwnershipMilestone::FactionOwnedApplesMaterialized);
+    }
+
+    // Member picked up faction apples (possesses apples).
+    if milestones.contains(&FactionOwnershipMilestone::FactionOwnedApplesMaterialized)
+        && scenario.harness.agent_commodity_qty(scenario.member, CommodityKind::Apple) > Quantity(0)
+    {
+        milestones.insert(FactionOwnershipMilestone::MemberPickedUpFactionApples);
+    }
+
+    // Member ate apples (hunger decreased).
+    if scenario.harness.agent_hunger(scenario.member) < scenario.initial_member_hunger {
+        milestones.insert(FactionOwnershipMilestone::MemberAteApples);
+    }
+
+    // Outsider left ORCHARD_FARM.
+    if world.effective_place(scenario.outsider) != Some(ORCHARD_FARM) {
+        milestones.insert(FactionOwnershipMilestone::OutsiderLeftFactionOrchard);
+    }
+
+    // Outsider ate from fallback (hunger decreased).
+    if scenario.harness.agent_hunger(scenario.outsider) < scenario.initial_outsider_hunger {
+        milestones.insert(FactionOwnershipMilestone::OutsiderAteFromFallback);
+    }
+}
+
+fn assert_faction_ownership_conservation(world: &worldwake_core::World) {
+    let live_apples = total_live_lot_quantity(world, CommodityKind::Apple);
+    let authoritative_apples = total_authoritative_commodity_quantity(world, CommodityKind::Apple);
+
+    assert!(
+        authoritative_apples <= 40,
+        "Apple authority should never exceed the two orchards' combined stock (40): got {authoritative_apples}"
+    );
+    verify_live_lot_conservation(world, CommodityKind::Apple, live_apples).unwrap();
+    verify_authoritative_conservation(world, CommodityKind::Apple, authoritative_apples).unwrap();
+}
+
+fn run_faction_ownership_scenario(seed: Seed) -> FactionOwnershipOutcome {
+    let mut scenario = setup_faction_ownership_scenario(seed);
+    let mut milestones = BTreeSet::new();
+
+    for _ in 0..160 {
+        scenario.harness.step_once();
+        record_faction_ownership_milestones(&scenario, &mut milestones);
+        assert_faction_ownership_conservation(&scenario.harness.world);
+        if milestones.contains(&FactionOwnershipMilestone::MemberAteApples)
+            && milestones.contains(&FactionOwnershipMilestone::OutsiderAteFromFallback)
+        {
+            break;
+        }
+    }
+
+    FactionOwnershipOutcome {
+        milestones,
+        world_hash: hash_world(&scenario.harness.world).unwrap(),
+        log_hash: hash_event_log(&scenario.harness.event_log).unwrap(),
+    }
+}
+
+#[test]
+fn golden_faction_ownership_producer_owner_delegation() {
+    let outcome = run_faction_ownership_scenario(Seed([25; 32]));
+
+    assert!(
+        outcome.has(FactionOwnershipMilestone::FactionOwnedApplesMaterialized),
+        "Faction orchard with ProducerOwner policy should materialize apple lots owned by the faction"
+    );
+    assert!(
+        outcome.has(FactionOwnershipMilestone::MemberPickedUpFactionApples),
+        "Faction member should pick up faction-owned apples via institutional delegation in can_exercise_control"
+    );
+    assert!(
+        outcome.has(FactionOwnershipMilestone::MemberAteApples),
+        "Faction member should complete the full chain: harvest → pickup → eat"
+    );
+    assert!(
+        outcome.has(FactionOwnershipMilestone::OutsiderLeftFactionOrchard),
+        "Outsider should leave ORCHARD_FARM after being blocked from picking up faction-owned apples"
+    );
+    assert!(
+        outcome.has(FactionOwnershipMilestone::OutsiderAteFromFallback),
+        "Outsider should find and eat from the fallback Actor-policy orchard at VILLAGE_SQUARE"
+    );
+}
+
+#[test]
+fn golden_faction_ownership_producer_owner_delegation_replays_deterministically() {
+    let seed = Seed([25; 32]);
+
+    let outcome_1 = run_faction_ownership_scenario(seed);
+    let outcome_2 = run_faction_ownership_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Faction ownership scenario must replay to the same world hash"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Faction ownership scenario must replay to the same event log hash"
+    );
+}
