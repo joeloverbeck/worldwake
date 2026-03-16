@@ -458,8 +458,9 @@ mod tests {
         BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
         DeadAt, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
         MismatchKind, ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource,
-        Permille, Quantity, ResourceSource, Seed, SocialObservationKind, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource,
+        Seed, SocialObservationKind, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -1501,6 +1502,13 @@ mod tests {
                     max_quantity: Quantity(10),
                     regeneration_ticks_per_unit: None,
                     last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_production_output_ownership_policy(
+                target,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::Actor,
                 },
             )
             .unwrap();

@@ -60,6 +60,7 @@ fn run_multi_recipe_craft_scenario(seed: Seed) -> (StateHash, StateHash) {
         &mut h.event_log,
         VILLAGE_SQUARE,
         WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
     );
 
     verify_live_lot_conservation(&h.world, CommodityKind::Firewood, 1).unwrap();
@@ -132,6 +133,7 @@ fn run_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
         &mut h.event_log,
         VILLAGE_SQUARE,
         WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
     );
 
     let mut txn = new_txn(&mut h.world, 0);
@@ -283,6 +285,7 @@ fn setup_capacity_constrained_ground_lot_pickup(seed: Seed) -> (GoldenHarness, E
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
     seed_actor_local_beliefs(
         &mut h.world,
@@ -428,6 +431,7 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         &mut harness.event_log,
         VILLAGE_SQUARE,
         WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
     );
     let orchard = place_workstation_with_source(
         &mut harness.world,
@@ -441,6 +445,7 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
     {
         let mut txn = new_txn(&mut harness.world, 0);
@@ -628,6 +633,7 @@ fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOu
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     let mut observed_source_quantities = BTreeSet::from([4_u32]);
@@ -858,6 +864,7 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
             last_regeneration_tick: None,
         },
         nz(3),
+        ProductionOutputOwner::Actor,
     );
 
     let mut max_waiting_len = 0;
@@ -961,6 +968,7 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
             last_regeneration_tick: None,
         },
         nz(12),
+        ProductionOutputOwner::Actor,
     );
 
     let harvest_action = h
@@ -1128,6 +1136,7 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
             last_regeneration_tick: None,
         },
         nz(12),
+        ProductionOutputOwner::Actor,
     );
     let facility_b = place_exclusive_workstation_with_source(
         &mut h.world,
@@ -1142,6 +1151,7 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
             last_regeneration_tick: None,
         },
         nz(3),
+        ProductionOutputOwner::Actor,
     );
 
     let harvest_action = h
@@ -1361,6 +1371,7 @@ fn run_grant_expiry_before_intended_action_scenario(
             last_regeneration_tick: None,
         },
         nz(1),
+        ProductionOutputOwner::Actor,
     );
     seed_actor_local_beliefs(
         &mut h.world,
@@ -1519,6 +1530,7 @@ fn golden_resource_contention_with_conservation() {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     // Record initial authoritative totals.
@@ -1785,6 +1797,7 @@ fn golden_materialization_barrier_chain() {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     let initial_hunger = h.agent_hunger(agent);

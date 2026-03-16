@@ -27,6 +27,9 @@ use worldwake_sim::{
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
+// Re-export so test files using `use golden_harness::*` get the ownership types.
+pub use worldwake_core::{ProductionOutputOwner, ProductionOutputOwnershipPolicy};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -361,6 +364,7 @@ pub fn place_workstation_with_source(
     place: EntityId,
     tag: WorkstationTag,
     source: ResourceSource,
+    ownership_policy: ProductionOutputOwner,
 ) -> EntityId {
     let mut txn = new_txn(world, 0);
     let ws = txn.create_entity(EntityKind::Facility);
@@ -368,6 +372,13 @@ pub fn place_workstation_with_source(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
+    txn.set_component_production_output_ownership_policy(
+        ws,
+        ProductionOutputOwnershipPolicy {
+            output_owner: ownership_policy,
+        },
+    )
+    .unwrap();
     commit_txn(txn, event_log);
     ws
 }
@@ -379,6 +390,7 @@ pub fn place_exclusive_workstation_with_source(
     tag: WorkstationTag,
     source: ResourceSource,
     grant_hold_ticks: NonZeroU32,
+    ownership_policy: ProductionOutputOwner,
 ) -> EntityId {
     let mut txn = new_txn(world, 0);
     let ws = txn.create_entity(EntityKind::Facility);
@@ -390,6 +402,13 @@ pub fn place_exclusive_workstation_with_source(
         .unwrap();
     txn.set_component_facility_use_queue(ws, FacilityUseQueue::default())
         .unwrap();
+    txn.set_component_production_output_ownership_policy(
+        ws,
+        ProductionOutputOwnershipPolicy {
+            output_owner: ownership_policy,
+        },
+    )
+    .unwrap();
     commit_txn(txn, event_log);
     ws
 }
@@ -399,12 +418,20 @@ pub fn place_workstation(
     event_log: &mut EventLog,
     place: EntityId,
     tag: WorkstationTag,
+    ownership_policy: ProductionOutputOwner,
 ) -> EntityId {
     let mut txn = new_txn(world, 0);
     let ws = txn.create_entity(EntityKind::Facility);
     txn.set_ground_location(ws, place).unwrap();
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
+    txn.set_component_production_output_ownership_policy(
+        ws,
+        ProductionOutputOwnershipPolicy {
+            output_owner: ownership_policy,
+        },
+    )
+    .unwrap();
     commit_txn(txn, event_log);
     ws
 }

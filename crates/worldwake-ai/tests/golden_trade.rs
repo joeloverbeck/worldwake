@@ -219,6 +219,7 @@ fn run_merchant_restock_return_stock_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     let mut txn = new_txn(&mut h.world, 0);
@@ -345,6 +346,7 @@ fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     let mut txn = new_txn(&mut h.world, 0);

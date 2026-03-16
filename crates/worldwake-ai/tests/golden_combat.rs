@@ -476,6 +476,7 @@ fn golden_bury_corpse() {
         &mut h.event_log,
         VILLAGE_SQUARE,
         WorkstationTag::GravePlot,
+        ProductionOutputOwner::Actor,
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
@@ -611,6 +612,7 @@ fn build_death_while_traveling_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
     seed_actor_world_beliefs(
         &mut h.world,

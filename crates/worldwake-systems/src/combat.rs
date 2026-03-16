@@ -1345,8 +1345,9 @@ mod tests {
         CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef, CommodityKind,
         Container, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EntityKind, EventLog,
         EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource,
-        Permille, Quantity, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, Seed, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
@@ -1551,6 +1552,13 @@ mod tests {
         txn.set_component_workstation_marker(
             facility,
             WorkstationMarker(WorkstationTag::GravePlot),
+        )
+        .unwrap();
+        txn.set_component_production_output_ownership_policy(
+            facility,
+            ProductionOutputOwnershipPolicy {
+                output_owner: ProductionOutputOwner::Unowned,
+            },
         )
         .unwrap();
         commit_txn(txn);

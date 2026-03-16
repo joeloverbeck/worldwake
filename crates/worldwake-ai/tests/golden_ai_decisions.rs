@@ -8,8 +8,8 @@ use golden_harness::*;
 use worldwake_ai::JourneyCommitmentState;
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
-    HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, TravelDispositionProfile, UtilityProfile, WorkstationTag,
+    HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PrototypePlace,
+    Quantity, ResourceSource, Seed, TravelDispositionProfile, UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,7 @@ fn golden_goal_invalidation_by_another_agent() {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     let initial_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
@@ -227,6 +228,7 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
             regeneration_ticks_per_unit: Some(nz(5)),
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     let mut saw_blocker = false;
@@ -878,6 +880,7 @@ fn golden_goal_switching_during_multi_leg_travel() {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
     seed_actor_world_beliefs(
         &mut h.world,
@@ -1144,6 +1147,7 @@ fn setup_multi_hop_travel_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
     seed_actor_world_beliefs(
         &mut h.world,

@@ -106,8 +106,9 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
         ComponentValue, DemandMemory, DemandObservation, DemandObservationReason, EventLog,
-        EventTag, EventView, Permille, Quantity, ResourceSource, Seed, StateDelta, Tick,
-        TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        EventTag, EventView, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        Quantity, ResourceSource, Seed, StateDelta, Tick, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -152,6 +153,13 @@ mod tests {
         let place = world.topology().place_ids().next().unwrap();
         let mut txn = new_txn(world, 1);
         txn.set_component_resource_source(place, source).unwrap();
+        txn.set_component_production_output_ownership_policy(
+            place,
+            ProductionOutputOwnershipPolicy {
+                output_owner: ProductionOutputOwner::Unowned,
+            },
+        )
+        .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
         place

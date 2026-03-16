@@ -283,8 +283,9 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, ActionDefId, CauseRef, CommodityKind, ControlSource, EntityId,
         EntityKind, EventLog, EventTag, EventView, ExclusiveFacilityPolicy, FacilityUseQueue,
-        KnownRecipes, ProductionJob, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        KnownRecipes, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        Quantity, ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -383,6 +384,13 @@ mod tests {
             .unwrap();
             txn.set_component_facility_use_queue(facility, FacilityUseQueue::default())
                 .unwrap();
+            txn.set_component_production_output_ownership_policy(
+                facility,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::Actor,
+                },
+            )
+            .unwrap();
             if tag == WorkstationTag::OrchardRow {
                 txn.set_component_resource_source(
                     facility,

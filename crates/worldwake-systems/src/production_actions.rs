@@ -642,8 +642,8 @@ mod tests {
         CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
         EntityId, EventId, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
         EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource, Permille,
-        Quantity, ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed,
+        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -728,6 +728,13 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        txn.set_component_production_output_ownership_policy(
+            workstation,
+            ProductionOutputOwnershipPolicy {
+                output_owner: ProductionOutputOwner::Actor,
             },
         )
         .unwrap();

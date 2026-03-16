@@ -6,8 +6,9 @@ use golden_harness::*;
 use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
-    HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
-    Seed, SocialObservationKind, TellProfile, Tick, UtilityProfile, WorkstationTag,
+    HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource,
+    Quantity, ResourceSource, Seed, SocialObservationKind, TellProfile, Tick, UtilityProfile,
+    WorkstationTag,
 };
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
@@ -163,6 +164,7 @@ fn run_autonomous_tell_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     ensure_empty_belief_store(&mut h.world, &mut h.event_log, speaker);
@@ -415,6 +417,7 @@ fn run_stale_belief_replan_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     let stale_belief = build_believed_entity_state(
@@ -530,6 +533,7 @@ fn run_skeptical_listener_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     ensure_empty_belief_store(&mut h.world, &mut h.event_log, speaker);
@@ -641,6 +645,7 @@ fn run_bystander_witness_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     for agent in [speaker, listener, bystander] {
@@ -831,6 +836,7 @@ fn run_survival_needs_suppression_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     ensure_empty_belief_store(&mut h.world, &mut h.event_log, listener);
@@ -1456,6 +1462,7 @@ fn run_rumor_wasted_trip_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     // Build speaker's belief about orchard as Report{from: informant, chain_len: 1}.

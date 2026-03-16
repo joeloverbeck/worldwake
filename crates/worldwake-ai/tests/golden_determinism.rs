@@ -56,6 +56,7 @@ fn build_deterministic_scenario(seed: Seed) -> GoldenHarness {
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
+        ProductionOutputOwner::Actor,
     );
 
     h

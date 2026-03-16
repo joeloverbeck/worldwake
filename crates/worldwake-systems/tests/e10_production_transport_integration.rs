@@ -5,8 +5,9 @@ use worldwake_core::{
     build_believed_entity_state, hash_serializable, total_authoritative_commodity_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
     BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource, EventLog, LoadUnits,
-    PerceptionSource, Place, Quantity, ResourceSource, Seed, StateHash, Tick, Topology, TravelEdge,
-    TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+    PerceptionSource, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
+    ResourceSource, Seed, StateHash, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
 };
 use worldwake_sim::{
     get_affordances, step_tick, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
@@ -167,10 +168,24 @@ impl Harness {
             )
             .unwrap();
             txn.set_component_resource_source(orchard, source).unwrap();
+            txn.set_component_production_output_ownership_policy(
+                orchard,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::Actor,
+                },
+            )
+            .unwrap();
 
             txn.set_ground_location(mill, orchard_place).unwrap();
             txn.set_component_workstation_marker(mill, WorkstationMarker(WorkstationTag::Mill))
                 .unwrap();
+            txn.set_component_production_output_ownership_policy(
+                mill,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::Actor,
+                },
+            )
+            .unwrap();
 
             commit_txn(txn);
             (actor, orchard, mill)

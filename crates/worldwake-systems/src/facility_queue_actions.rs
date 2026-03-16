@@ -239,8 +239,9 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
         ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView,
-        ExclusiveFacilityPolicy, FacilityUseQueue, Permille, Quantity, ResourceSource, Seed,
-        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ExclusiveFacilityPolicy, FacilityUseQueue, Permille, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
@@ -345,6 +346,13 @@ mod tests {
             .unwrap();
             txn.set_component_facility_use_queue(facility, FacilityUseQueue::default())
                 .unwrap();
+            txn.set_component_production_output_ownership_policy(
+                facility,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::Actor,
+                },
+            )
+            .unwrap();
             if with_policy {
                 txn.set_component_exclusive_facility_policy(
                     facility,
