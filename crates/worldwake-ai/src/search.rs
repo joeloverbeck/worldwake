@@ -817,6 +817,8 @@ mod tests {
         view.effective_places.insert(lot, place);
         view.controllable.insert((actor, lot));
         view.lot_commodities.insert(lot, commodity);
+        view.commodity_quantities
+            .insert((lot, commodity), Quantity(1));
         view.consumable_profiles
             .insert(lot, commodity.spec().consumable_profile.unwrap());
         entities_at_place.push(lot);
@@ -967,6 +969,9 @@ mod tests {
         view.effective_places.insert(bread, town);
         view.entities_at.insert(town, vec![actor, bread]);
         view.controllable.insert((actor, bread));
+        view.direct_possessions
+            .insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
         view.consumable_profiles.insert(
             bread,
@@ -1071,6 +1076,9 @@ mod tests {
         view.adjacent
             .insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
+        view.carry_capacities.insert(actor, LoadUnits(10));
         view.consumable_profiles.insert(
             bread,
             CommodityKind::Bread.spec().consumable_profile.unwrap(),
@@ -1092,9 +1100,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(plan.steps.len(), 2);
+        assert_eq!(plan.steps.len(), 3);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
-        assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Consume);
+        assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(plan.steps[2].op_kind, PlannerOpKind::Consume);
     }
 
     #[test]
@@ -1472,6 +1481,7 @@ mod tests {
         view.entities_at.insert(dead_end, Vec::new());
         insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
         view.entities_at.insert(pantry, pantry_entities);
+        view.carry_capacities.insert(actor, LoadUnits(10));
         view.adjacent.insert(
             town,
             vec![
@@ -1511,9 +1521,10 @@ mod tests {
             wide_beam_plan.terminal_kind,
             PlanTerminalKind::GoalSatisfied
         );
-        assert_eq!(wide_beam_plan.steps.len(), 2);
+        assert_eq!(wide_beam_plan.steps.len(), 3);
         assert_eq!(wide_beam_plan.steps[0].op_kind, PlannerOpKind::Travel);
-        assert_eq!(wide_beam_plan.steps[1].op_kind, PlannerOpKind::Consume);
+        assert_eq!(wide_beam_plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(wide_beam_plan.steps[2].op_kind, PlannerOpKind::Consume);
         assert_eq!(
             wide_beam_plan.steps[0].targets,
             vec![PlanningEntityRef::Authoritative(pantry)]
@@ -1543,6 +1554,7 @@ mod tests {
         view.entities_at.insert(dead_end_b, Vec::new());
         insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
         view.entities_at.insert(pantry, pantry_entities);
+        view.carry_capacities.insert(actor, LoadUnits(10));
         view.adjacent.insert(
             town,
             vec![
@@ -1583,7 +1595,7 @@ mod tests {
             beam_three_plan.terminal_kind,
             PlanTerminalKind::GoalSatisfied
         );
-        assert_eq!(beam_three_plan.steps.len(), 2);
+        assert_eq!(beam_three_plan.steps.len(), 3);
         assert_eq!(
             beam_three_plan.steps[0].targets,
             vec![PlanningEntityRef::Authoritative(pantry)]
@@ -1613,6 +1625,7 @@ mod tests {
         view.entities_at.insert(dead_end_b, Vec::new());
         insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
         view.entities_at.insert(pantry, pantry_entities);
+        view.carry_capacities.insert(actor, LoadUnits(10));
         view.adjacent.insert(
             town,
             vec![
@@ -1644,7 +1657,7 @@ mod tests {
             &handlers,
             &PlanningBudget {
                 beam_width: 3,
-                max_node_expansions: 4,
+                max_node_expansions: 6,
                 ..PlanningBudget::default()
             },
         )

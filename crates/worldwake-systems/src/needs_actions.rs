@@ -105,7 +105,7 @@ fn register_def(
             _ => vec![Constraint::ActorAlive],
         },
         targets: match name {
-            "eat" | "drink" | "wash" => vec![TargetSpec::EntityAtActorPlace {
+            "eat" | "drink" | "wash" => vec![TargetSpec::EntityDirectlyPossessedByActor {
                 kind: worldwake_core::EntityKind::ItemLot,
             }],
             _ => Vec::new(),
@@ -127,12 +127,11 @@ fn eat_preconditions() -> Vec<Precondition> {
     vec![
         Precondition::ActorAlive,
         Precondition::TargetExists(0),
-        Precondition::TargetAtActorPlace(0),
         Precondition::TargetKind {
             target_index: 0,
             kind: worldwake_core::EntityKind::ItemLot,
         },
-        Precondition::ActorCanControlTarget(0),
+        Precondition::TargetDirectlyPossessedByActor(0),
         Precondition::TargetHasConsumableEffect {
             target_index: 0,
             effect: ConsumableEffect::Hunger,
@@ -144,12 +143,11 @@ fn drink_preconditions() -> Vec<Precondition> {
     vec![
         Precondition::ActorAlive,
         Precondition::TargetExists(0),
-        Precondition::TargetAtActorPlace(0),
         Precondition::TargetKind {
             target_index: 0,
             kind: worldwake_core::EntityKind::ItemLot,
         },
-        Precondition::ActorCanControlTarget(0),
+        Precondition::TargetDirectlyPossessedByActor(0),
         Precondition::TargetHasConsumableEffect {
             target_index: 0,
             effect: ConsumableEffect::Thirst,
@@ -161,12 +159,11 @@ fn wash_preconditions() -> Vec<Precondition> {
     vec![
         Precondition::ActorAlive,
         Precondition::TargetExists(0),
-        Precondition::TargetAtActorPlace(0),
         Precondition::TargetKind {
             target_index: 0,
             kind: worldwake_core::EntityKind::ItemLot,
         },
-        Precondition::ActorCanControlTarget(0),
+        Precondition::TargetDirectlyPossessedByActor(0),
         Precondition::TargetCommodity {
             target_index: 0,
             kind: CommodityKind::Water,
@@ -393,8 +390,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
-        AgentBeliefStore, CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure,
-        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, LoadUnits, MetabolismProfile,
+        AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
+        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile,
         PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
         WitnessData, World, WorldTxn,
     };
@@ -580,17 +577,8 @@ mod tests {
             let bread = txn
                 .create_item_lot(CommodityKind::Bread, Quantity(2))
                 .unwrap();
-            let satchel = txn
-                .create_container(Container {
-                    capacity: LoadUnits(20),
-                    allowed_commodities: None,
-                    allows_unique_items: true,
-                    allows_nested_containers: true,
-                })
-                .unwrap();
-            txn.set_ground_location(satchel, place).unwrap();
-            txn.set_possessor(satchel, actor).unwrap();
-            txn.put_into_container(bread, satchel).unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, actor).unwrap();
             commit_txn(txn);
             bread
         };
@@ -887,5 +875,149 @@ mod tests {
         assert!(affordances
             .iter()
             .all(|affordance| affordance.def_id != ActionDefId(0)));
+    }
+
+    // --- Possession-requirement tests (S01PROOUTOWNCLA-010) ---
+
+    fn eat_def_id() -> ActionDefId {
+        ActionDefId(0)
+    }
+    fn drink_def_id() -> ActionDefId {
+        ActionDefId(1)
+    }
+    fn wash_def_id() -> ActionDefId {
+        ActionDefId(4)
+    }
+
+    #[test]
+    fn eat_rejects_unpossessed_owned_ground_lot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_owner(bread, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != eat_def_id()),
+            "eat should not be offered for owned-but-unpossessed ground lot"
+        );
+    }
+
+    #[test]
+    fn eat_accepts_possessed_lot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances.iter().any(|a| a.def_id == eat_def_id()),
+            "eat should be offered for possessed lot"
+        );
+    }
+
+    #[test]
+    fn drink_rejects_unpossessed_owned_ground_lot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_owner(water, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != drink_def_id()),
+            "drink should not be offered for owned-but-unpossessed ground lot"
+        );
+    }
+
+    #[test]
+    fn drink_accepts_possessed_lot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_possessor(water, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances.iter().any(|a| a.def_id == drink_def_id()),
+            "drink should be offered for possessed lot"
+        );
+    }
+
+    #[test]
+    fn wash_rejects_unpossessed_water_lot_on_ground() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_owner(water, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != wash_def_id()),
+            "wash should not be offered for owned-but-unpossessed water lot"
+        );
+    }
+
+    #[test]
+    fn wash_accepts_possessed_water_lot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_possessor(water, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances.iter().any(|a| a.def_id == wash_def_id()),
+            "wash should be offered for possessed water lot"
+        );
     }
 }

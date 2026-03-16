@@ -2,8 +2,8 @@ use std::num::NonZeroU32;
 
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
-    CauseRef, CommodityKind, ComponentKind, Container, ControlSource, DeprivationExposure,
-    DeprivationKind, DriveThresholds, EventLog, HomeostaticNeeds, LoadUnits, MetabolismProfile,
+    CauseRef, CommodityKind, ComponentKind, ControlSource, DeprivationExposure,
+    DeprivationKind, DriveThresholds, EventLog, HomeostaticNeeds, MetabolismProfile,
     PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, WitnessData,
     World, WorldTxn, WoundCause,
 };
@@ -196,30 +196,6 @@ fn add_controlled_lot(
     lot
 }
 
-fn add_controlled_bread_in_satchel(
-    harness: &mut Harness,
-    quantity: u32,
-) -> worldwake_core::EntityId {
-    let mut txn = new_txn(&mut harness.world, 2);
-    let bread = txn
-        .create_item_lot(CommodityKind::Bread, Quantity(quantity))
-        .unwrap();
-    let satchel = txn
-        .create_container(Container {
-            capacity: LoadUnits(20),
-            allowed_commodities: None,
-            allows_unique_items: true,
-            allows_nested_containers: true,
-        })
-        .unwrap();
-    txn.set_ground_location(satchel, harness.place).unwrap();
-    txn.set_possessor(satchel, harness.actor).unwrap();
-    txn.put_into_container(bread, satchel).unwrap();
-    commit_txn(txn);
-    sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
-    bread
-}
-
 fn metabolism_profile(rates: [u16; 6], timings: [u32; 6]) -> MetabolismProfile {
     MetabolismProfile::new(
         pm(rates[0]),
@@ -293,7 +269,7 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
         HomeostaticNeeds::new(pm(700), pm(650), pm(400), pm(200), pm(350)),
         profile,
     );
-    let bread = add_controlled_bread_in_satchel(&mut harness, 2);
+    let bread = add_controlled_lot(&mut harness, CommodityKind::Bread, 2);
     let water = add_controlled_lot(&mut harness, CommodityKind::Water, 3);
 
     harness.queue_action("eat", vec![bread]);
