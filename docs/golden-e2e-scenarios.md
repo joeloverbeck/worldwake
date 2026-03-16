@@ -1,12 +1,12 @@
 # Golden E2E Suite: Scenario Catalog
 
-**Date**: 2026-03-12 (updated 2026-03-16)
+**Date**: 2026-03-12 (updated 2026-03-17)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Detailed reference for what each golden test proves. Consult when you need to understand a specific scenario or verify whether a behavior is already tested. For coverage gaps and matrices, see [golden-e2e-coverage.md](golden-e2e-coverage.md).
 
 ---
 
-The golden suite contains 60 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice now locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle end to end without falling back to manual queue injection after setup. All behavior is emergent.
+The golden suite contains 64 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). All behavior is emergent.
 
 ---
 
@@ -422,3 +422,33 @@ The golden suite contains 60 tests across 7 domain files. Every test uses the re
 - The next living waiter becomes queue head and later receives a real `QueueGrantPromoted` event.
 - Two runs with the same seed produce identical world and event-log hashes for the death-in-queue scenario.
 **Cross-system chain**: Hunger pressure under blocked exclusive access → queue_for_facility_use → deprivation death while queued → authoritative queue prune → next-waiter promotion → deterministic replay.
+
+### Scenario S02: World Runs Without Observers (Principle 6)
+**File**: `golden_determinism.rs` | **Tests**: `golden_world_runs_without_observers`, `golden_world_runs_without_observers_replays_deterministically`
+**Systems exercised**: Needs (metabolism, consumption), Production (harvest, resource regeneration), Travel, Enterprise (restock signal), Trade (merchant setup), AI (candidate generation, planning, multi-agent coordination), Conservation, deterministic replay
+**Setup**: Four agents across three places running for 200 ticks under the full AI loop with no human intervention:
+- **Farmer** at Orchard Farm: hungry (pm(800)), OrchardRow workstation with regenerating apple source (qty=20, regen=1/5 ticks), PerceptionProfile, knows harvest recipe.
+- **Merchant** at General Store: enterprise-focused (enterprise_weight=pm(800)), coins(10), MerchandiseProfile(Apple), enterprise TradeDispositionProfile, DemandMemory with apple demand, beliefs about orchard workstation, PerceptionProfile.
+- **Villager** at Village Square: hungry (pm(700)), thirsty (pm(500)), bread(1), water(2), coins(5).
+- **Wanderer** at Village Square: thirsty (pm(800)), fatigued (pm(600)), water(1), thirst_weight=pm(800), fatigue_weight=pm(600).
+**Emergent behavior proven**:
+- The world hash differs from the initial state after 200 ticks (non-trivial simulation).
+- The event log grows by at least 20 events.
+- No agent dies (the world is provisioned and sustainable over 200 ticks).
+- Per-tick authoritative conservation holds for Bread, Water, and Coin (Apple is regenerating so excluded from strict per-tick conservation).
+- At least one agent enters transit (travel system engaged).
+- At least one consumable commodity total decreases (needs system engaged via consumption).
+- Two runs with the same seed produce identical world and event-log hashes, proving 200-tick multi-agent determinism far beyond the existing 50-tick 2-agent test.
+**Cross-system chain**: Needs→AI→action, Production→regeneration→harvest, Travel→location change, Enterprise→restock gap, Conservation across 200 ticks of multi-system interaction. Proves Principle 6 (world runs without observers) comprehensively.
+
+### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
+**File**: `golden_ai_decisions.rs` | **Test**: `golden_utility_weight_diversity_in_need_selection`
+**Systems exercised**: Needs (hunger), Enterprise (restock signal), AI (candidate generation, ranking, goal selection divergence), Travel, Production
+**Setup**: Two agents at Village Square with identical initial conditions but divergent UtilityProfile weights:
+- **HungerDriven**: critically hungry (pm(900)), hunger_weight=pm(800), enterprise_weight=pm(100), has bread(2) locally.
+- **EnterpriseDriven**: no hunger (pm(0)), hunger_weight=pm(100), enterprise_weight=pm(900), MerchandiseProfile(Apple), enterprise TradeDispositionProfile, DemandMemory with apple demand, beliefs about orchard workstation, PerceptionProfile. Orchard Farm has apple source.
+**Emergent behavior proven**:
+- HungerDriven eats bread locally under hunger pressure (hunger decreases).
+- EnterpriseDriven leaves Village Square to pursue the enterprise restock goal despite having no survival pressure.
+- The two agents make observably different first choices — one stays to eat, one travels to restock — proving that UtilityProfile weight divergence produces distinct goal selection.
+**Cross-system chain**: UtilityProfile weights → divergent candidate ranking → HungerDriven selects ConsumeOwnedCommodity path while EnterpriseDriven selects RestockCommodity path → different first actions under different weight profiles. Proves Principle 20 (agent diversity through concrete variation) in the survival-vs-enterprise domain.

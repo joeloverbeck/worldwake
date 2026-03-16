@@ -1220,3 +1220,180 @@ fn orchard_has_apple_lot(h: &GoldenHarness) -> bool {
                 .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
         })
 }
+
+// ---------------------------------------------------------------------------
+// Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn golden_utility_weight_diversity_in_need_selection() {
+    let mut h = GoldenHarness::new(Seed([200; 32]));
+
+    // Two agents at Village Square with identical critical hunger, but
+    // divergent UtilityProfile weights. Only one agent has food locally;
+    // the other has no food and must travel to Orchard Farm.
+    //
+    // HungerDriven has hunger_weight=1000 and bread → eats locally.
+    // EnterpriseDriven has enterprise_weight=900 and a restock signal →
+    //   pursues enterprise restocking rather than hunger relief,
+    //   because enterprise motive outweighs the hunger-driven goal.
+    //
+    // This proves Principle 20: "two agents with the same role should
+    // sometimes choose differently" — different UtilityProfile weights
+    // produce divergent goal selection under identical environmental
+    // conditions.
+    let hunger_driven = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "HungerDriven",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(800),
+            enterprise_weight: pm(100),
+            ..UtilityProfile::default()
+        },
+    );
+
+    let enterprise_driven = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "EnterpriseDriven",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(100),
+            enterprise_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    // HungerDriven has bread to eat locally.
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        hunger_driven,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+
+    // EnterpriseDriven is a merchant with restock signal.
+    let orchard_ws = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    {
+        use worldwake_core::{
+            DemandMemory, DemandObservation, DemandObservationReason,
+            MerchandiseProfile, Tick, TradeDispositionProfile,
+        };
+
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(
+            enterprise_driven,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 240,
+                observation_fidelity: pm(875),
+                confidence_policy: BeliefConfidencePolicy::default(),
+            },
+        )
+        .unwrap();
+        txn.set_component_merchandise_profile(
+            enterprise_driven,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+                home_market: Some(VILLAGE_SQUARE),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(
+            enterprise_driven,
+            TradeDispositionProfile {
+                negotiation_round_ticks: nz(4),
+                initial_offer_bias: pm(500),
+                concession_rate: pm(100),
+                demand_memory_retention_ticks: 240,
+            },
+        )
+        .unwrap();
+        txn.set_component_demand_memory(
+            enterprise_driven,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(2),
+                    place: VILLAGE_SQUARE,
+                    tick: Tick(0),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        enterprise_driven,
+        &[orchard_ws],
+        worldwake_core::Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_hunger = h.agent_hunger(hunger_driven);
+    let initial_bread = h.agent_commodity_qty(hunger_driven, CommodityKind::Bread);
+
+    let mut hunger_driven_ate = false;
+    let mut enterprise_driven_left = false;
+
+    for _ in 0..50 {
+        h.step_once();
+
+        // Track HungerDriven eating locally.
+        if h.agent_commodity_qty(hunger_driven, CommodityKind::Bread) < initial_bread {
+            hunger_driven_ate = true;
+        }
+
+        // Track EnterpriseDriven leaving for restock.
+        if h.world.is_in_transit(enterprise_driven)
+            || h.world.effective_place(enterprise_driven) != Some(VILLAGE_SQUARE)
+        {
+            enterprise_driven_left = true;
+        }
+
+        if hunger_driven_ate && enterprise_driven_left {
+            break;
+        }
+    }
+
+    // HungerDriven (hunger_weight=800) should eat locally.
+    assert!(
+        hunger_driven_ate,
+        "HungerDriven should eat bread locally under hunger pressure"
+    );
+    assert!(
+        h.agent_hunger(hunger_driven) < initial_hunger,
+        "HungerDriven's hunger should decrease after eating"
+    );
+
+    // EnterpriseDriven (enterprise_weight=900) should pursue restock travel.
+    assert!(
+        enterprise_driven_left,
+        "EnterpriseDriven should leave Village Square to pursue enterprise restock goal"
+    );
+}

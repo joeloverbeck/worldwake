@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-16)
+**Date**: 2026-03-12 (updated 2026-03-17)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 
@@ -12,11 +12,11 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 10 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e)
+  golden_ai_decisions.rs      — 11 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b)
   golden_care.rs              — 4 tests (same-place healing + treatment acquisition companion + replays)
   golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
   golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
-  golden_determinism.rs       — 2 tests (scenarios 6, 6e)
+  golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
 ```
@@ -139,6 +139,8 @@ crates/worldwake-ai/tests/
 | social_weight diversity → distinct social behavior (Principle 20) | Yes |
 | Zero-motive filter prevents execution of unmotivated goals | Yes |
 | Rumor → travel → passive observation → discovery → belief source upgrade → replan | Yes |
+| 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
+| UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
 
 ---
 
@@ -146,16 +148,16 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 54 | 54 |
+| Proven tests | 64 | 67 |
 | GoalKind coverage | 17/18 (94.4%) | 17/18 (94.4%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 35 | 35 |
+| Cross-system chains | 37 | 40 |
 
 ### Pending Backlog Summary
 
-No remaining golden backlog items as of 2026-03-15.
+**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — blocked on `specs/S08-ai-decision-traceability.md`. The producer→merchant→consumer end-to-end test could not be debugged to completion without AI decision traces. Will be re-implemented after S08 lands.
 
 ### Recommended Implementation Order
 
