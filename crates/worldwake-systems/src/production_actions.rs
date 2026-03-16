@@ -625,11 +625,10 @@ fn commit_craft(
     txn.clear_component_production_job(workstation)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
+    let owner = resolve_output_owner(txn, instance.actor, workstation)?;
     for (commodity, quantity) in &payload.outputs {
         let lot = txn
-            .create_item_lot(*commodity, *quantity)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        txn.set_ground_location(lot, place)
+            .create_item_lot_with_owner(*commodity, *quantity, place, owner)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
         txn.add_target(lot);
     }
@@ -2487,5 +2486,342 @@ mod tests {
 
         assert_eq!(world.effective_place(lot), Some(place));
         assert_eq!(world.possessor_of(lot), None);
+    }
+
+    // ── Craft ownership tests (S01PROOUTOWNCLA-005) ──────────────────────
+
+    /// Helper: set up a craft, run to completion, and return the world + event log.
+    /// Uses the standard Grain→Bread recipe (2 Grain → 1 Bread, Mill workstation).
+    fn run_craft_to_completion_with_policy(
+        policy: ProductionOutputOwnershipPolicy,
+    ) -> (World, EntityId, EntityId, EntityId, EventLog) {
+        let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
+        // Override the default Actor policy with the requested one.
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_production_output_ownership_policy(workstation, policy)
+                .unwrap();
+            commit_txn(txn);
+        }
+        grant_recipe(&mut world, actor, recipe_id);
+        // Craft requires possessed input lots (2 Grain).
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xB0);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            &mut active,
+            11,
+        );
+        (world, actor, workstation, place, event_log)
+    }
+
+    /// Find the single bread lot at `place`.
+    fn find_bread_lot(world: &World, place: EntityId) -> EntityId {
+        let lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Bread
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert_eq!(lots.len(), 1, "expected exactly one bread lot at place");
+        lots[0].0
+    }
+
+    #[test]
+    fn craft_actor_policy_creates_actor_owned_unpossessed_ground_lot() {
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Actor,
+        };
+        let (world, actor, _ws, place, _log) = run_craft_to_completion_with_policy(policy);
+        let lot = find_bread_lot(&world, place);
+
+        assert_eq!(world.owner_of(lot), Some(actor));
+        assert_eq!(world.possessor_of(lot), None);
+        assert_eq!(world.effective_place(lot), Some(place));
+    }
+
+    #[test]
+    fn craft_producer_owner_policy_creates_producer_owner_owned_output() {
+        let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
+        // Create a facility owner and assign ownership.
+        let facility_owner = {
+            let mut txn = new_txn(&mut world, 5);
+            let owner = txn.create_agent("GuildMaster", ControlSource::None).unwrap();
+            txn.set_ground_location(owner, place).unwrap();
+            txn.set_owner(workstation, owner).unwrap();
+            txn.set_component_production_output_ownership_policy(
+                workstation,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::ProducerOwner,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            owner
+        };
+        grant_recipe(&mut world, actor, recipe_id);
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xB1);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            &mut active,
+            11,
+        );
+
+        let lot = find_bread_lot(&world, place);
+        assert_eq!(world.owner_of(lot), Some(facility_owner));
+        assert_eq!(world.possessor_of(lot), None);
+    }
+
+    #[test]
+    fn craft_unowned_policy_creates_unowned_output() {
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Unowned,
+        };
+        let (world, _actor, _ws, place, _log) = run_craft_to_completion_with_policy(policy);
+        let lot = find_bread_lot(&world, place);
+
+        assert_eq!(world.owner_of(lot), None);
+        assert_eq!(world.possessor_of(lot), None);
+    }
+
+    #[test]
+    fn craft_producer_owner_on_ownerless_producer_fails_commit() {
+        let (recipes, recipe_id) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
+        // Set ProducerOwner policy but do NOT assign an owner to the workstation.
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_production_output_ownership_policy(
+                workstation,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::ProducerOwner,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        assert_eq!(world.owner_of(workstation), None, "workstation must be ownerless");
+
+        grant_recipe(&mut world, actor, recipe_id);
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xB2);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        // Tick manually — expect commit failure, not panic.
+        let mut committed = false;
+        let mut errored = false;
+        for tick in 11..15 {
+            match tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(Tick(tick)),
+                    tick: Tick(tick),
+                },
+            ) {
+                Ok(TickOutcome::Continuing) => {}
+                Ok(TickOutcome::Committed { .. }) => {
+                    committed = true;
+                    break;
+                }
+                Err(_) => {
+                    errored = true;
+                    break;
+                }
+                _ => break,
+            }
+        }
+        assert!(errored || !committed, "ProducerOwner on ownerless producer must fail craft commit");
+    }
+
+    #[test]
+    fn craft_all_outputs_share_same_ownership() {
+        // Use a recipe with multiple outputs to verify all get the same owner.
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Multi-Output".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![
+                (CommodityKind::Bread, Quantity(1)),
+                (CommodityKind::Firewood, Quantity(1)),
+            ],
+            work_ticks: nz(2),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+        let (defs, handlers, ids) = setup_craft_registries(&recipes);
+        let (mut world, actor, workstation, place) = craft_fixture(false);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_production_output_ownership_policy(
+                workstation,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::Actor,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        grant_recipe(&mut world, actor, recipe_id);
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_craft_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xB3);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            &mut active,
+            11,
+        );
+
+        // All output lots at place should be owned by the actor.
+        let output_lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                (lot.commodity == CommodityKind::Bread || lot.commodity == CommodityKind::Firewood)
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert_eq!(output_lots.len(), 2, "expected two output lots");
+        for (lot_id, _lot) in &output_lots {
+            assert_eq!(world.owner_of(*lot_id), Some(actor), "all outputs must share actor ownership");
+            assert_eq!(world.possessor_of(*lot_id), None, "outputs must be unpossessed");
+        }
+    }
+
+    #[test]
+    fn craft_golden_scenario_works_with_actor_owned_output() {
+        // This is the standard craft test with explicit Actor policy — regression guard.
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Actor,
+        };
+        let (world, actor, _ws, place, event_log) = run_craft_to_completion_with_policy(policy);
+        let lot = find_bread_lot(&world, place);
+
+        // Output exists, is owned, unpossessed, at place.
+        assert_eq!(world.owner_of(lot), Some(actor));
+        assert_eq!(world.possessor_of(lot), None);
+        assert_eq!(world.effective_place(lot), Some(place));
+        // Commit event was recorded.
+        let commit_event = (0..event_log.len())
+            .rev()
+            .map(|i| event_log.get(EventId(i as u64)).unwrap())
+            .find(|r| r.tags().contains(&EventTag::ActionCommitted))
+            .expect("expected an ActionCommitted event");
+        assert!(commit_event.tags().contains(&EventTag::WorldMutation));
     }
 }

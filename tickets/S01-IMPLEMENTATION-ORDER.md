@@ -21,7 +21,7 @@ COMPLETED:
 COMPLETED:
   -010  Consumption requires possession
 
-NEXT (engine changes — fixtures already healthy):
+COMPLETED:
   -005  Craft commit ownership (same pattern for commit_craft)
 
 THEN (belief/affordance layer — no fixture dependencies):
@@ -56,7 +56,7 @@ FINALLY (golden integration — everything wired):
                               ↓
                            -010 ✅ (consumption requires possession)
                               ↓
-                           -005 (craft ownership)
+                           -005 ✅ (craft ownership)
                               ↓
                            -006 (belief view)
                               ↓

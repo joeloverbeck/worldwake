@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-005: Update craft commit to resolve and assign output ownership
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — craft action handler
@@ -73,3 +73,10 @@ The resolution should happen once before the loop (same policy for all outputs i
 1. `cargo test -p worldwake-systems craft`
 2. `cargo test -p worldwake-systems`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**: In `commit_craft` (`production_actions.rs`), replaced `create_item_lot()` + `set_ground_location()` with `resolve_output_owner()` (once before the loop) + `create_item_lot_with_owner()` per output lot. Same pattern as harvest (S01PROOUTOWNCLA-004).
+- **Deviations**: None. Implementation matched the ticket exactly.
+- **Verification**: 6 new craft ownership tests added and passing. Full `cargo test -p worldwake-systems` green. `cargo clippy --workspace` clean. One pre-existing failure (`golden_capacity_constrained_ground_lot_pickup`) unrelated to this change.
