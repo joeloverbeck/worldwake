@@ -2,6 +2,7 @@ use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
     Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
 };
+use std::collections::BTreeSet;
 use worldwake_core::{ActionDefId, EntityId, EntityKind};
 
 #[must_use]
@@ -14,6 +15,59 @@ pub fn get_affordances(
     let mut affordances = Vec::new();
 
     for def in registry.iter() {
+        if !def
+            .actor_constraints
+            .iter()
+            .all(|constraint| evaluate_constraint(constraint, actor, view))
+        {
+            continue;
+        }
+
+        let mut def_affordances = Vec::new();
+        let mut bound_targets = Vec::new();
+        enumerate_bindings(
+            &def.targets,
+            actor,
+            view,
+            &mut bound_targets,
+            &mut def_affordances,
+            def.id,
+        );
+        def_affordances.retain(|affordance| {
+            def.preconditions.iter().all(|precondition| {
+                evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
+            })
+        });
+        let handler = handlers.get(def.handler).unwrap_or_else(|| {
+            panic!(
+                "action def {} references missing handler {}",
+                def.id.0, def.handler.0
+            )
+        });
+        for affordance in &def_affordances {
+            affordances.extend(expand_payload_variants(def, handler, affordance, view));
+        }
+    }
+
+    affordances.sort();
+    affordances.dedup();
+    affordances
+}
+
+#[must_use]
+pub fn get_affordances_for_defs(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    allowed_defs: &BTreeSet<ActionDefId>,
+) -> Vec<Affordance> {
+    let mut affordances = Vec::new();
+
+    for def in registry.iter() {
+        if !allowed_defs.contains(&def.id) {
+            continue;
+        }
         if !def
             .actor_constraints
             .iter()
