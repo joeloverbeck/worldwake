@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits, Quantity,
-    VisibilitySpec, WorkstationMarker, World, WorldTxn,
+    ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits,
+    ProductionOutputOwner, Quantity, VisibilitySpec, WorkstationMarker, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -508,6 +508,34 @@ fn tick_craft(
     Ok(ActionProgress::Continue)
 }
 
+/// Resolves the `ProductionOutputOwnershipPolicy` on a producer entity to determine
+/// who should own the output lots.
+fn resolve_output_owner(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    producer: EntityId,
+) -> Result<Option<EntityId>, ActionError> {
+    let policy = txn
+        .get_component_production_output_ownership_policy(producer)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "producer {producer} has no ProductionOutputOwnershipPolicy"
+            ))
+        })?;
+    match policy.output_owner {
+        ProductionOutputOwner::Actor => Ok(Some(actor)),
+        ProductionOutputOwner::ProducerOwner => {
+            let owner = txn.owner_of(producer).ok_or_else(|| {
+                ActionError::PreconditionFailed(format!(
+                    "producer {producer} has ProducerOwner policy but no owner"
+                ))
+            })?;
+            Ok(Some(owner))
+        }
+        ProductionOutputOwner::Unowned => Ok(None),
+    }
+}
+
 fn commit_harvest(
     def: &ActionDef,
     instance: &ActionInstance,
@@ -554,10 +582,9 @@ fn commit_harvest(
     txn.set_component_resource_source(workstation, source)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
+    let owner = resolve_output_owner(txn, instance.actor, workstation)?;
     let lot = txn
-        .create_item_lot(payload.output_commodity, payload.output_quantity)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    txn.set_ground_location(lot, place)
+        .create_item_lot_with_owner(payload.output_commodity, payload.output_quantity, place, owner)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
     Ok(CommitOutcome::empty())
@@ -640,10 +667,11 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyCostPerTick,
         CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
-        EntityId, EventId, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource, Permille,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed,
-        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        EntityId, EventId, EventLog, EventView, ExclusiveFacilityPolicy, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
+        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
+        RelationDelta, RelationKind, RelationValue, ResourceSource, Seed, StateDelta, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -2072,5 +2100,392 @@ mod tests {
             *needs,
             HomeostaticNeeds::new(pm(4), pm(5), pm(7), pm(2), pm(9))
         );
+    }
+
+    // ── Harvest ownership tests (S01PROOUTOWNCLA-004) ──────────────────────
+
+    /// Helper: set up a harvest, run to completion, and return the world + event log.
+    fn run_harvest_to_completion_with_policy(
+        policy: ProductionOutputOwnershipPolicy,
+    ) -> (World, EntityId, EntityId, EntityId, EventLog) {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        // Override the default Actor policy with the requested one.
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_production_output_ownership_policy(workstation, policy)
+                .unwrap();
+            commit_txn(txn);
+        }
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA0);
+        let mut next_id = ActionInstanceId(0);
+        let _instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            _instance_id,
+            &mut active,
+            11,
+        );
+        (world, actor, workstation, place, event_log)
+    }
+
+    /// Find the single apple lot at `place`.
+    fn find_apple_lot(world: &World, place: EntityId) -> EntityId {
+        let lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Apple
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert_eq!(lots.len(), 1, "expected exactly one apple lot at place");
+        lots[0].0
+    }
+
+    #[test]
+    fn harvest_actor_policy_creates_actor_owned_unpossessed_ground_lot() {
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Actor,
+        };
+        let (world, actor, _ws, place, _log) = run_harvest_to_completion_with_policy(policy);
+        let lot = find_apple_lot(&world, place);
+
+        // Owned by the actor.
+        assert_eq!(world.owner_of(lot), Some(actor));
+        // Unpossessed (on ground, not in inventory).
+        assert_eq!(world.possessor_of(lot), None);
+        // At the workstation's place.
+        assert_eq!(world.effective_place(lot), Some(place));
+    }
+
+    #[test]
+    fn harvest_producer_owner_policy_creates_producer_owner_owned_output() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        // Create a facility owner and assign ownership.
+        let facility_owner = {
+            let mut txn = new_txn(&mut world, 5);
+            let owner = txn.create_agent("Lord", ControlSource::None).unwrap();
+            txn.set_ground_location(owner, place).unwrap();
+            txn.set_owner(workstation, owner).unwrap();
+            txn.set_component_production_output_ownership_policy(
+                workstation,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::ProducerOwner,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            owner
+        };
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA1);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            &mut active,
+            11,
+        );
+
+        let lot = find_apple_lot(&world, place);
+        assert_eq!(world.owner_of(lot), Some(facility_owner));
+        assert_eq!(world.possessor_of(lot), None);
+    }
+
+    #[test]
+    fn harvest_unowned_policy_creates_unowned_output() {
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Unowned,
+        };
+        let (world, _actor, _ws, place, _log) = run_harvest_to_completion_with_policy(policy);
+        let lot = find_apple_lot(&world, place);
+
+        assert_eq!(world.owner_of(lot), None);
+        assert_eq!(world.possessor_of(lot), None);
+    }
+
+    #[test]
+    fn harvest_producer_owner_on_ownerless_producer_fails_commit() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        // Set ProducerOwner policy but do NOT assign an owner to the workstation.
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_production_output_ownership_policy(
+                workstation,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::ProducerOwner,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        assert_eq!(world.owner_of(workstation), None, "workstation must be ownerless");
+
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA2);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        // run_to_completion panics on error; tick manually and expect commit failure.
+        let mut committed = false;
+        let mut errored = false;
+        for tick in 11..15 {
+            match tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(Tick(tick)),
+                    tick: Tick(tick),
+                },
+            ) {
+                Ok(TickOutcome::Continuing) => {}
+                Ok(TickOutcome::Committed { .. }) => {
+                    committed = true;
+                    break;
+                }
+                Err(_) => {
+                    errored = true;
+                    break;
+                }
+                _ => break,
+            }
+        }
+        assert!(errored || !committed, "ProducerOwner on ownerless producer must fail commit");
+    }
+
+    #[test]
+    fn harvest_missing_policy_fails_commit() {
+        // Build world manually without setting ProductionOutputOwnershipPolicy.
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (actor, workstation) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let ws = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(ws, place).unwrap();
+            txn.set_component_workstation_marker(ws, WorkstationMarker(WorkstationTag::OrchardRow))
+                .unwrap();
+            txn.set_component_resource_source(
+                ws,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(5),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            // Deliberately NOT setting ProductionOutputOwnershipPolicy.
+            txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::new_sated())
+                .unwrap();
+            txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(
+                actor,
+                MetabolismProfile::new(
+                    pm(1), pm(1), pm(1), pm(1), pm(1), pm(20),
+                    nz(10), nz(10), nz(10), nz(10), nz(2), nz(3),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, ws)
+        };
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+
+        // Affordance filtering should still produce the harvest (policy is not a precondition
+        // at affordance level — it's checked at commit time).
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA3);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        let mut committed = false;
+        let mut errored = false;
+        for tick in 11..15 {
+            match tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(Tick(tick)),
+                    tick: Tick(tick),
+                },
+            ) {
+                Ok(TickOutcome::Continuing) => {}
+                Ok(TickOutcome::Committed { .. }) => {
+                    committed = true;
+                    break;
+                }
+                Err(_) => {
+                    errored = true;
+                    break;
+                }
+                _ => break,
+            }
+        }
+        assert!(errored || !committed, "missing policy on producer must fail commit");
+    }
+
+    #[test]
+    fn harvest_ownership_produces_relation_delta_in_committed_event() {
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Actor,
+        };
+        let (world, actor, _ws, place, event_log) =
+            run_harvest_to_completion_with_policy(policy);
+        let lot = find_apple_lot(&world, place);
+
+        // Find the commit event (last event with ActionCommitted tag).
+        let commit_event = (0..event_log.len())
+            .rev()
+            .map(|i| event_log.get(EventId(i as u64)).unwrap())
+            .find(|r| r.tags().contains(&EventTag::ActionCommitted))
+            .expect("expected an ActionCommitted event");
+
+        let has_ownership_delta = commit_event.state_deltas().iter().any(|d| {
+            matches!(
+                d,
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::OwnedBy,
+                    relation: RelationValue::OwnedBy {
+                        entity: lot_id,
+                        owner: owner_id,
+                    },
+                }) if *lot_id == lot && *owner_id == actor
+            )
+        });
+        assert!(
+            has_ownership_delta,
+            "expected OwnedBy relation delta in committed event for lot {lot}"
+        );
+    }
+
+    #[test]
+    fn harvest_output_is_at_workstation_place_and_unpossessed() {
+        let policy = ProductionOutputOwnershipPolicy {
+            output_owner: ProductionOutputOwner::Actor,
+        };
+        let (world, _actor, _ws, place, _log) = run_harvest_to_completion_with_policy(policy);
+        let lot = find_apple_lot(&world, place);
+
+        assert_eq!(world.effective_place(lot), Some(place));
+        assert_eq!(world.possessor_of(lot), None);
     }
 }
