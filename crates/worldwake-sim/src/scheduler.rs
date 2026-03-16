@@ -9,6 +9,14 @@ use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId, EventLog, Tick, World};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ActionStartFailure {
+    pub tick: Tick,
+    pub actor: EntityId,
+    pub def_id: ActionDefId,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommittedAction {
     pub actor: EntityId,
     pub def_id: ActionDefId,
@@ -33,6 +41,7 @@ pub struct Scheduler {
     input_queue: InputQueue,
     pending_replans: Vec<ReplanNeeded>,
     committed_actions: Vec<CommittedAction>,
+    action_start_failures: Vec<ActionStartFailure>,
     next_instance_id: ActionInstanceId,
 }
 
@@ -51,6 +60,7 @@ impl Scheduler {
             input_queue: InputQueue::new(),
             pending_replans: Vec::new(),
             committed_actions: Vec::new(),
+            action_start_failures: Vec::new(),
             next_instance_id: ActionInstanceId(0),
         }
     }
@@ -112,6 +122,19 @@ impl Scheduler {
             }
         });
         taken
+    }
+
+    #[must_use]
+    pub fn action_start_failures(&self) -> &[ActionStartFailure] {
+        &self.action_start_failures
+    }
+
+    pub fn record_action_start_failure(&mut self, failure: ActionStartFailure) {
+        self.action_start_failures.push(failure);
+    }
+
+    pub fn drain_action_start_failures(&mut self) -> Vec<ActionStartFailure> {
+        std::mem::take(&mut self.action_start_failures)
     }
 
     pub(crate) fn drain_current_tick_inputs(&mut self) -> Vec<InputEvent> {
@@ -270,7 +293,7 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommittedAction, Scheduler};
+    use super::{ActionStartFailure, CommittedAction, Scheduler};
     use crate::{
         ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
         CommitOutcome, InputKind, SystemManifest,
@@ -465,5 +488,51 @@ mod tests {
 
         assert_eq!(scheduler.take_committed_actions_for(actor), vec![committed]);
         assert_eq!(scheduler.committed_actions(), &[other_committed]);
+    }
+
+    #[test]
+    fn action_start_failure_drain_returns_all_then_empty() {
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let f1 = ActionStartFailure {
+            tick: Tick(1),
+            actor: entity(2),
+            def_id: ActionDefId(3),
+            reason: "precondition failed".into(),
+        };
+        let f2 = ActionStartFailure {
+            tick: Tick(1),
+            actor: entity(4),
+            def_id: ActionDefId(5),
+            reason: "reservation unavailable".into(),
+        };
+
+        scheduler.record_action_start_failure(f1.clone());
+        scheduler.record_action_start_failure(f2.clone());
+
+        let drained = scheduler.drain_action_start_failures();
+        assert_eq!(drained, vec![f1, f2]);
+        assert!(scheduler.drain_action_start_failures().is_empty());
+    }
+
+    #[test]
+    fn action_start_failure_read_access() {
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        assert!(scheduler.action_start_failures().is_empty());
+
+        let failure = ActionStartFailure {
+            tick: Tick(5),
+            actor: entity(7),
+            def_id: ActionDefId(9),
+            reason: "invalid target".into(),
+        };
+        scheduler.record_action_start_failure(failure.clone());
+
+        assert_eq!(scheduler.action_start_failures().len(), 1);
+        assert_eq!(scheduler.action_start_failures()[0], failure);
+    }
+
+    #[test]
+    fn action_start_failure_satisfies_required_traits() {
+        assert_traits::<ActionStartFailure>();
     }
 }

@@ -232,6 +232,14 @@ fn apply_input(
                 if mode == crate::ActionRequestMode::BestEffort
                     && is_best_effort_start_failure(&err)
                 {
+                    runtime.scheduler.record_action_start_failure(
+                        crate::scheduler::ActionStartFailure {
+                            tick,
+                            actor,
+                            def_id,
+                            reason: format!("{err:?}"),
+                        },
+                    );
                     return Ok(InputOutcome::default());
                 }
                 return Err(TickStepError::Action(err));
@@ -1122,6 +1130,13 @@ mod tests {
         assert_eq!(result.actions_started, 1);
         assert_eq!(scheduler.active_actions().len(), 1);
         assert_eq!(scheduler.current_tick(), Tick(1));
+
+        let failures = scheduler.action_start_failures();
+        assert_eq!(failures.len(), 1, "BestEffort failure should be recorded");
+        assert_eq!(failures[0].tick, Tick(0));
+        assert_eq!(failures[0].actor, actor);
+        assert_eq!(failures[0].def_id, ActionDefId(2));
+        assert!(!failures[0].reason.is_empty(), "reason must be non-empty");
     }
 
     #[test]

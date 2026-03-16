@@ -1,6 +1,6 @@
 # S08AIDECTRA-003: BestEffort Action Start Failure Recording in worldwake-sim
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — adds field to Scheduler in worldwake-sim
@@ -102,3 +102,16 @@ Re-export `ActionStartFailure` from `worldwake-sim/src/lib.rs`.
 1. `cargo test -p worldwake-sim`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**:
+  - `scheduler.rs`: Added `ActionStartFailure` struct (derives `Clone, Debug, Eq, PartialEq, Serialize, Deserialize`), `action_start_failures` field on `Scheduler`, `action_start_failures()`, `record_action_start_failure()`, `drain_action_start_failures()` methods, 3 unit tests
+  - `tick_step.rs`: BestEffort path now records `ActionStartFailure` before silent return; existing BestEffort test extended with failure recording assertions
+  - `lib.rs`: Re-exported `ActionStartFailure`
+- **Deviations from original plan**:
+  - Used `format!("{err:?}")` (Debug) instead of `err.to_string()` (Display) since `ActionError` does not implement `Display`
+  - Derived `Serialize, Deserialize` on `ActionStartFailure` and included the field in Scheduler serialization naturally (no `#[serde(skip)]`) — architecturally cleanest per user decision
+  - Added `record_action_start_failure()` as a named push method rather than exposing the vec directly
+- **Verification**: `cargo test -p worldwake-sim` (297 passed), `cargo test --workspace` (all passed), `cargo clippy --workspace` (0 warnings)
