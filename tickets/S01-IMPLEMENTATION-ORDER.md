@@ -15,16 +15,13 @@ COMPLETED:
   -001  Types (ProductionOutputOwnershipPolicy, ProductionOutputOwner)
   -002  Helper (create_item_lot_with_owner)
   -003  Extend can_exercise_control (faction/office delegation)
-
-NEXT (infrastructure — enables all subsequent tickets):
   -009a Fixture migration
-        - Update golden_harness helpers (place_workstation_with_source, etc.)
-        - Update setup_world() in production_actions.rs tests
-        - Update e10_production_transport_integration.rs
-        - Verify: cargo test --workspace passes
-
-THEN (engine changes — fixtures already healthy):
   -004  Harvest commit ownership (resolve_output_owner + update commit_harvest)
+
+COMPLETED:
+  -010  Consumption requires possession
+
+NEXT (engine changes — fixtures already healthy):
   -005  Craft commit ownership (same pattern for commit_craft)
 
 THEN (belief/affordance layer — no fixture dependencies):
@@ -44,6 +41,7 @@ FINALLY (golden integration — everything wired):
 |------|-----------|
 | -009a first | Decouples infrastructure from features. Every subsequent ticket inherits healthy fixtures. No broken intermediate states. |
 | -004 before -005 | -005 reuses `resolve_output_owner` from -004 |
+| -010 after -004 | -004 creates actor-owned ground lots; -010 enforces possession for consumption so agents don't bypass pickup. Unblocks golden trade/production tests. |
 | -006 before -007/-008 | -007/-008 need belief-layer ownership queries |
 | -009b last | Golden tests validate the full lifecycle end-to-end |
 
@@ -52,12 +50,13 @@ FINALLY (golden integration — everything wired):
 ```text
 -001 ✅ ──→ -002 ✅ ──→ -003 ✅
                               ↓
-                           -009a (fixture migration)
+                           -009a ✅ (fixture migration)
                               ↓
-                    ┌─────────┴──────────┐
-                  -004                 -005
-                  (harvest)            (craft)
-                    └─────────┬──────────┘
+                           -004 ✅ (harvest ownership)
+                              ↓
+                           -010 ✅ (consumption requires possession)
+                              ↓
+                           -005 (craft ownership)
                               ↓
                            -006 (belief view)
                               ↓
