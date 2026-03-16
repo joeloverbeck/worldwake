@@ -5,7 +5,7 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::JourneyCommitmentState;
+use worldwake_ai::{DecisionOutcome, JourneyCommitmentState};
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
     HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PrototypePlace,
@@ -1396,4 +1396,92 @@ fn golden_utility_weight_diversity_in_need_selection() {
         enterprise_driven_left,
         "EnterpriseDriven should leave Village Square to pursue enterprise restock goal"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Trace-Enabled Golden Test: Decision Trace End-to-End
+// ---------------------------------------------------------------------------
+
+/// Validates the trace system end-to-end: enable → step → query → dump.
+///
+/// Creates a simple scenario with one hungry agent that has bread, runs 5 ticks
+/// with tracing enabled, then asserts traces were collected and contain at least
+/// one Planning outcome with non-empty candidates.
+#[test]
+fn golden_trace_enabled_scenario() {
+    let mut h = GoldenHarness::new(Seed([99; 32]));
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "TracedAgent",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // Give the agent bread to eat.
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
+    );
+
+    // Seed local beliefs so the agent can observe its surroundings.
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        worldwake_core::Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    // Enable tracing before stepping.
+    h.driver.enable_tracing();
+
+    // Run 5 ticks.
+    for _ in 0..5 {
+        h.step_once();
+    }
+
+    // Query traces — must have been collected.
+    let sink = h.driver.trace_sink().expect("tracing was enabled");
+    assert!(
+        !sink.traces().is_empty(),
+        "traces should be non-empty after 5 ticks"
+    );
+
+    // All traces should be for our agent.
+    let agent_traces = sink.traces_for(agent);
+    assert_eq!(
+        agent_traces.len(),
+        sink.traces().len(),
+        "all traces should be for the single agent"
+    );
+
+    // At least one Planning outcome with non-empty candidates.
+    let has_planning_with_candidates = agent_traces.iter().any(|t| {
+        if let DecisionOutcome::Planning(ref planning) = t.outcome {
+            !planning.candidates.ranked.is_empty()
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_planning_with_candidates,
+        "at least one tick should have a Planning outcome with non-empty ranked candidates"
+    );
+
+    // summary() should produce non-empty strings for all traces.
+    for trace in sink.traces() {
+        let summary = trace.outcome.summary();
+        assert!(!summary.is_empty(), "summary should never be empty");
+    }
+
+    // dump_agent must not panic (output goes to stderr, not asserted).
+    sink.dump_agent(agent, &h.defs);
 }

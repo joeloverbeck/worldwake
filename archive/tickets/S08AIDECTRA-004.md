@@ -1,6 +1,6 @@
 # S08AIDECTRA-004: GoldenHarness Trace Integration and dump_agent
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — test infrastructure only
@@ -117,3 +117,15 @@ This test validates the end-to-end flow: enable → step → query.
 2. `cargo test -p worldwake-ai decision_trace`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-16
+- **What changed**:
+  - Added `DecisionOutcome::summary()` for one-line human-readable outcome strings.
+  - Added `DecisionTraceSink::dump_agent()` with `format_outcome()` helper for registry-resolved stderr output.
+  - Added 3 unit tests for `summary()` variants (Dead, ActiveAction, Planning).
+  - Added `golden_trace_enabled_scenario` golden test: 5-tick trace-enabled end-to-end validation.
+  - Added "Debugging AI Decisions with Decision Traces" sections to both `CLAUDE.md` and `AGENTS.md`.
+- **Deviations from ticket**: Ticket assumption #1 incorrectly stated "no GoldenHarness struct" — there is one, but since `driver` is a public field, the direct-call approach (`h.driver.enable_tracing()`) works as designed. The optional `assert_candidate_generated` helper was skipped since the raw `trace_at` API is sufficient. `Planning` variant uses `Box<PlanningPipelineTrace>` (actual code) not unboxed as shown in ticket examples.
+- **Verification**: `cargo test --workspace` — 1762 tests pass, 0 failures. `cargo clippy --workspace` — clean.

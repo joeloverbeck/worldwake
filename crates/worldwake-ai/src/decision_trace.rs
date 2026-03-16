@@ -4,6 +4,7 @@
 //! and test query purposes. See spec S08 for design rationale.
 
 use worldwake_core::{ActionDefId, EntityId, GoalKey, Tick};
+use worldwake_sim::ActionDefRegistry;
 
 use crate::goal_model::GoalPriorityClass;
 use crate::goal_switching::GoalSwitchKind;
@@ -35,6 +36,38 @@ pub enum DecisionOutcome {
 
     /// Agent had no active action — full planning pipeline ran.
     Planning(Box<PlanningPipelineTrace>),
+}
+
+impl DecisionOutcome {
+    /// One-line human-readable summary using stored strings only (no registry lookup).
+    pub fn summary(&self) -> String {
+        match self {
+            DecisionOutcome::Dead => "DEAD — no decision".to_string(),
+            DecisionOutcome::ActiveAction {
+                action_name,
+                interrupt,
+                ..
+            } => {
+                let decision = &interrupt.decision;
+                format!("ACTIVE: {action_name} — interrupt: {decision:?}")
+            }
+            DecisionOutcome::Planning(planning) => {
+                let selected = planning
+                    .selection
+                    .selected
+                    .as_ref()
+                    .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+                let candidates = planning.candidates.ranked.len();
+                let plans_found = planning
+                    .planning
+                    .attempts
+                    .iter()
+                    .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
+                    .count();
+                format!("PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}")
+            }
+        }
+    }
 }
 
 // ── Planning Pipeline ───────────────────────────────────────────
@@ -218,6 +251,54 @@ impl DecisionTraceSink {
     pub fn clear(&mut self) {
         self.traces.clear();
     }
+
+    /// Print a human-readable summary for one agent across all recorded ticks.
+    ///
+    /// Output goes to stderr for interactive debugging. This method never panics
+    /// regardless of trace contents.
+    pub fn dump_agent(&self, agent: EntityId, action_defs: &ActionDefRegistry) {
+        for trace in self.traces_for(agent) {
+            eprintln!(
+                "[tick {}] {}",
+                trace.tick.0,
+                format_outcome(&trace.outcome, action_defs)
+            );
+        }
+    }
+}
+
+/// Format a `DecisionOutcome` with action name resolution via the registry.
+fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) -> String {
+    match outcome {
+        DecisionOutcome::Dead => "DEAD — no decision".to_string(),
+        DecisionOutcome::ActiveAction {
+            action_def_id,
+            action_name,
+            interrupt,
+            ..
+        } => {
+            let name = action_defs
+                .get(*action_def_id)
+                .map_or(action_name.as_str(), |d| d.name.as_str());
+            let decision = &interrupt.decision;
+            format!("ACTIVE: {name} — interrupt: {decision:?}")
+        }
+        DecisionOutcome::Planning(planning) => {
+            let selected = planning
+                .selection
+                .selected
+                .as_ref()
+                .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+            let candidates = planning.candidates.ranked.len();
+            let plans_found = planning
+                .planning
+                .attempts
+                .iter()
+                .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
+                .count();
+            format!("PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}")
+        }
+    }
 }
 
 impl Default for DecisionTraceSink {
@@ -294,5 +375,62 @@ mod tests {
         let agent = entity(0);
 
         assert!(sink.trace_at(agent, Tick(99)).is_none());
+    }
+
+    #[test]
+    fn summary_dead_returns_non_empty_string() {
+        let summary = DecisionOutcome::Dead.summary();
+        assert!(!summary.is_empty());
+        assert!(summary.contains("DEAD"));
+    }
+
+    #[test]
+    fn summary_active_action_includes_action_name() {
+        let outcome = DecisionOutcome::ActiveAction {
+            action_def_id: ActionDefId(0),
+            action_name: "eat".to_string(),
+            interrupt: InterruptTrace {
+                decision: InterruptDecision::NoInterrupt,
+                top_challenger: None,
+            },
+        };
+        let summary = outcome.summary();
+        assert!(summary.contains("ACTIVE"));
+        assert!(summary.contains("eat"));
+        assert!(summary.contains("NoInterrupt"));
+    }
+
+    #[test]
+    fn summary_planning_includes_candidate_count() {
+        use worldwake_core::GoalKind;
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty_reasons: vec![DirtyReason::NoPlan],
+            candidates: CandidateTrace {
+                generated: vec![],
+                ranked: vec![RankedGoalSummary {
+                    goal: GoalKey::new(GoalKind::Sleep),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: 800,
+                }],
+                suppressed: vec![],
+                zero_motive: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: Some(GoalKey::new(GoalKind::Sleep)),
+                goal_switch: None,
+                previous_goal: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+        }));
+        let summary = outcome.summary();
+        assert!(summary.contains("PLAN"));
+        assert!(summary.contains("candidates=1"));
+        assert!(summary.contains("plans_found=0"));
+        assert!(summary.contains("Sleep"));
     }
 }

@@ -159,6 +159,7 @@ The AI crate contains the decision architecture: pressure-based goal ranking, GO
 | `agent_tick` | `AgentTickDriver` — manages per-agent decision runtime and semantics caching for tick-driven AI execution |
 | `budget` | `PlanningBudget` — tunable planning constraints (candidates, depth, expansions, beam width, margins, blocking periods) |
 | `candidate_generation` | Goal candidate enumeration — derives goal candidates from agent beliefs (needs, pressure, enterprise signals) |
+| `decision_trace` | `DecisionTraceSink`, `AgentDecisionTrace`, `DecisionOutcome` — opt-in structured trace of per-agent per-tick decisions; `dump_agent()` for interactive debugging, `summary()` for one-line outcome strings |
 | `decision_runtime` | `AgentDecisionRuntime` — per-agent persistent state (current goal/plan/step, dirty flags, last observations) |
 | `enterprise` | Merchant enterprise logic — restock gap, opportunity signals for trading/commerce planning |
 | `failure_handling` | `PlanFailureContext`, `handle_plan_failure()` — analyzes plan breakdowns, updates blocked memory with barriers |
@@ -199,6 +200,50 @@ Any change to authoritative validation (action preconditions, `validate_*` funct
 6. **Golden tests**: Do ALL golden tests pass? (`cargo test -p worldwake-ai`)
 
 Golden production tests require `PerceptionProfile` on agents that need to observe post-production output. Tests without perception profiles will silently fail to observe newly created entities.
+
+## Debugging AI Decisions with Decision Traces
+
+When debugging golden tests or AI behavior ("Why did this agent do X?" / "Why didn't this agent do Y?"), use the **decision trace system** instead of ad-hoc `eprintln` instrumentation. Traces record the full decision pipeline per-agent per-tick: candidate generation, ranking, plan search, selection, and execution outcome.
+
+### How to use in golden tests
+
+```rust
+// 1. Enable tracing on the driver before stepping.
+h.driver.enable_tracing();
+
+// 2. Run ticks as normal.
+for _ in 0..20 { h.step_once(); }
+
+// 3. Query traces.
+let sink = h.driver.trace_sink().unwrap();
+
+// Per-agent per-tick lookup:
+let trace = sink.trace_at(agent, Tick(5)).unwrap();
+
+// All traces for one agent:
+let agent_traces = sink.traces_for(agent);
+
+// Check what candidates were generated:
+if let DecisionOutcome::Planning(ref p) = trace.outcome {
+    eprintln!("candidates: {:?}", p.candidates.ranked);
+    eprintln!("plan search: {:?}", p.planning.attempts);
+}
+
+// Human-readable dump to stderr:
+sink.dump_agent(agent, &h.defs);
+
+// One-line summary per outcome:
+eprintln!("{}", trace.outcome.summary());
+```
+
+### When to use traces
+
+- **Test failure diagnosis**: Before adding `eprintln` to pipeline code, enable tracing and query the sink.
+- **"Why did/didn't the agent X?"**: Check `candidates.generated`, `planning.attempts`, `selection.selected`.
+- **Goal switching issues**: Check `InterruptTrace` on `ActiveAction` outcomes.
+- **Plan search failures**: Check `PlanSearchOutcome::BudgetExhausted` / `FrontierExhausted` / `Unsupported`.
+
+Tracing is opt-in and zero-cost when disabled. Existing tests without `enable_tracing()` are unaffected.
 
 ## Spec Drafting Rules
 

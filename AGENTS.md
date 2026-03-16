@@ -81,6 +81,37 @@ All new spec drafts must:
 
 These rules exist to prevent specs from drifting into magic numbers, float-based scoring, and missing foundation analysis that would need correction before implementation.
 
+## Debugging AI Decisions with Decision Traces
+
+When debugging AI-related test failures or investigating agent behavior, use the **decision trace system** before resorting to ad-hoc `eprintln` instrumentation. The trace system records structured per-agent per-tick decision data covering the full pipeline: candidate generation, ranking, plan search, selection, and execution outcome.
+
+**Quick start in golden tests:**
+
+```rust
+// Enable before stepping:
+h.driver.enable_tracing();
+
+// Run ticks, then query:
+let sink = h.driver.trace_sink().unwrap();
+let trace = sink.trace_at(agent, Tick(5)).unwrap();
+
+// Dump human-readable summary to stderr:
+sink.dump_agent(agent, &h.defs);
+```
+
+**Key queries:**
+- `sink.traces_for(agent)` — all traces for one agent
+- `sink.trace_at(agent, tick)` — single tick lookup
+- `trace.outcome.summary()` — one-line human-readable string
+- `DecisionOutcome::Planning(p)` — inspect `p.candidates`, `p.planning.attempts`, `p.selection`
+
+**When to reach for traces:**
+- "Why did/didn't agent X do Y?" → check `candidates.generated` and `planning.attempts`
+- "Why did the agent switch goals?" → check `InterruptTrace` on `ActiveAction` outcomes
+- "Why did plan search fail?" → check `PlanSearchOutcome` variants (`BudgetExhausted`, `FrontierExhausted`, `Unsupported`)
+
+Tracing is opt-in and zero-cost when disabled. Do not leave `enable_tracing()` in committed test code unless the test explicitly asserts on trace data.
+
 ## Delivery Planning
 
 - The implementation plan spans 22 epics across 4 phases.
