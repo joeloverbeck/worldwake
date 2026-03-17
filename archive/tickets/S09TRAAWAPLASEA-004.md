@@ -1,6 +1,6 @@
 # S09TRAAWAPLASEA-004: Add goal-directed travel pruning
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new pruning step in search candidate generation
@@ -107,3 +107,10 @@ Insert the call to `prune_travel_away_from_goal` after `search_candidates()` ret
 1. `cargo test -p worldwake-ai search`
 2. `cargo test -p worldwake-ai` (all golden tests)
 3. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added `prune_travel_away_from_goal` function in `crates/worldwake-ai/src/search.rs` and integrated it into the search loop after `search_candidates()` and before beam width truncation. 6 unit tests added.
+- **Deviations from plan**: Added a safety guard: when `current_min == 0` (actor is already at a goal-relevant place but goal is unsatisfied, e.g. blocked facility), pruning is skipped entirely to allow the agent to route to alternative goal-relevant places. Without this, two golden tests (`golden_facility_queue_patience_timeout`, `golden_faction_ownership_producer_owner_delegation`) failed because agents at blocked facilities couldn't leave.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.

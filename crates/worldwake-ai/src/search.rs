@@ -132,9 +132,23 @@ pub fn search_plan(
         }
         expansions = expansions.saturating_add(1);
 
+        let mut candidates = search_candidates(goal, &node, semantics_table, registry, handlers);
+        if let Some(current_place) = node
+            .state
+            .effective_place_ref(PlanningEntityRef::Authoritative(node.state.snapshot().actor()))
+        {
+            prune_travel_away_from_goal(
+                &mut candidates,
+                current_place,
+                goal_relevant_places,
+                snapshot,
+                semantics_table,
+            );
+        }
+
         let mut terminal_successors = Vec::new();
         let mut successors = Vec::new();
-        for candidate in search_candidates(goal, &node, semantics_table, registry, handlers) {
+        for candidate in candidates {
             let Some((terminal, successor)) =
                 build_successor(goal, semantics_table, registry, &node, &candidate, goal_relevant_places)
             else {
@@ -213,6 +227,50 @@ fn root_node<'snapshot>(
         total_estimated_ticks: 0,
         heuristic_ticks,
     }
+}
+
+/// Removes travel candidates that move the actor farther from every
+/// goal-relevant place.  Non-travel candidates are never pruned.
+/// When `goal_places` is empty, the function is a no-op.
+///
+/// When the actor is already AT a goal-relevant place (`current_min == 0`)
+/// but the goal isn't yet satisfied (otherwise we wouldn't still be
+/// searching), pruning is skipped so the agent can leave for another
+/// goal-relevant place.
+fn prune_travel_away_from_goal(
+    candidates: &mut Vec<SearchCandidate>,
+    current_place: EntityId,
+    goal_places: &[EntityId],
+    snapshot: &PlanningSnapshot,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) {
+    if goal_places.is_empty() {
+        return;
+    }
+    let current_min = snapshot
+        .min_travel_ticks_to_any(current_place, goal_places)
+        .unwrap_or(u32::MAX);
+    // If the actor is already at a goal-relevant place (distance 0) but the
+    // goal is unsatisfied here, allow unrestricted travel so the agent can
+    // route to an alternative goal-relevant place.
+    if current_min == 0 {
+        return;
+    }
+    candidates.retain(|c| {
+        let Some(sem) = semantics_table.get(&c.def_id) else {
+            return true;
+        };
+        if sem.op_kind != PlannerOpKind::Travel {
+            return true;
+        }
+        let Some(dest) = c.authoritative_targets.first() else {
+            return true;
+        };
+        let dest_min = snapshot
+            .min_travel_ticks_to_any(*dest, goal_places)
+            .unwrap_or(u32::MAX);
+        dest_min <= current_min
+    });
 }
 
 fn build_successor<'snapshot>(
@@ -536,17 +594,17 @@ fn terminal_kind(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_successor, compare_search_nodes, root_node, search_candidate_from_planner,
-        search_candidates, search_candidates_from_affordance, search_plan, FrontierEntry,
-        SearchCandidate, SearchNode,
+        build_successor, compare_search_nodes, prune_travel_away_from_goal, root_node,
+        search_candidate_from_planner, search_candidates, search_candidates_from_affordance,
+        search_plan, FrontierEntry, SearchCandidate, SearchNode,
     };
     use std::cmp::Ordering;
     use crate::planner_ops::planner_only_candidates;
     use crate::{
         build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
         build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanTerminalKind,
-        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
-        PlanningSnapshot, PlanningState,
+        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningBudget,
+        PlanningEntityRef, PlanningSnapshot, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
@@ -3414,5 +3472,360 @@ mod tests {
         };
         // Pure g-cost: node_b (3) < node_a (5)
         assert_eq!(compare_search_nodes(&node_b, &node_a), Ordering::Less);
+    }
+
+    // ── Travel pruning tests ──────────────────────────────────────────────
+
+    /// Build a hub topology for pruning tests:
+    ///
+    ///   north(13) --3-- hub(10) --5-- east(11)
+    ///                     |
+    ///                     4
+    ///                     |
+    ///                   south(12)
+    ///
+    /// Actor starts at hub.  goal_store(14) is adjacent to east(11) at cost 2.
+    fn build_hub_pruning_view() -> (
+        TestBeliefView,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+    ) {
+        let actor = entity(1);
+        let hub = entity(10);
+        let east = entity(11);
+        let south = entity(12);
+        let north = entity(13);
+        let goal_store = entity(14);
+
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, hub, east, south, north, goal_store]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        for &place in &[hub, east, south, north, goal_store] {
+            view.kinds.insert(place, EntityKind::Place);
+        }
+        view.effective_places.insert(actor, hub);
+        view.entities_at.insert(hub, vec![actor]);
+
+        view.adjacent.insert(
+            hub,
+            vec![
+                (east, NonZeroU32::new(5).unwrap()),
+                (south, NonZeroU32::new(4).unwrap()),
+                (north, NonZeroU32::new(3).unwrap()),
+            ],
+        );
+        view.adjacent.insert(
+            east,
+            vec![
+                (hub, NonZeroU32::new(5).unwrap()),
+                (goal_store, NonZeroU32::new(2).unwrap()),
+            ],
+        );
+        view.adjacent
+            .insert(south, vec![(hub, NonZeroU32::new(4).unwrap())]);
+        view.adjacent
+            .insert(north, vec![(hub, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(goal_store, vec![(east, NonZeroU32::new(2).unwrap())]);
+
+        (view, actor, hub, east, south, north, goal_store)
+    }
+
+    fn make_travel_candidate(def_id: ActionDefId, destination: EntityId) -> SearchCandidate {
+        SearchCandidate {
+            def_id,
+            authoritative_targets: vec![destination],
+            planning_targets: vec![PlanningEntityRef::Authoritative(destination)],
+            payload_override: None,
+        }
+    }
+
+    fn make_non_travel_candidate(def_id: ActionDefId, target: EntityId) -> SearchCandidate {
+        SearchCandidate {
+            def_id,
+            authoritative_targets: vec![target],
+            planning_targets: vec![PlanningEntityRef::Authoritative(target)],
+            payload_override: None,
+        }
+    }
+
+    fn travel_semantics() -> PlannerOpSemantics {
+        PlannerOpSemantics {
+            op_kind: PlannerOpKind::Travel,
+            may_appear_mid_plan: true,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        }
+    }
+
+    fn harvest_semantics() -> PlannerOpSemantics {
+        PlannerOpSemantics {
+            op_kind: PlannerOpKind::Harvest,
+            may_appear_mid_plan: true,
+            is_materialization_barrier: true,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        }
+    }
+
+    #[test]
+    fn prune_travel_keeps_only_toward_goal() {
+        // Actor at hub, goal at goal_store.
+        // hub→east (dist to goal_store: 5+2=7 via east) vs hub distance = 5+2=7
+        // Actually: hub→east: east is 2 ticks from goal_store. hub is 5+2=7.
+        // hub→south: south is dead-end, dist to goal_store = 4+5+2 (back through hub) or None if no path.
+        // hub→north: north is dead-end similarly.
+        // So only east should survive.
+        let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([hub, east, south, north, goal_store]),
+            5,
+        );
+
+        let travel_east_id = ActionDefId(100);
+        let travel_south_id = ActionDefId(101);
+        let travel_north_id = ActionDefId(102);
+
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(travel_east_id, travel_semantics());
+        semantics_table.insert(travel_south_id, travel_semantics());
+        semantics_table.insert(travel_north_id, travel_semantics());
+
+        let mut candidates = vec![
+            make_travel_candidate(travel_east_id, east),
+            make_travel_candidate(travel_south_id, south),
+            make_travel_candidate(travel_north_id, north),
+        ];
+
+        prune_travel_away_from_goal(
+            &mut candidates,
+            hub,
+            &[goal_store],
+            &snapshot,
+            &semantics_table,
+        );
+
+        // Only travel to east should survive (dest_min=2 < current_min=7).
+        // south and north are dead-ends farther from goal.
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].def_id, travel_east_id);
+    }
+
+    #[test]
+    fn prune_travel_noop_when_goal_places_empty() {
+        let (view, actor, hub, east, south, north, _goal_store) = build_hub_pruning_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([hub, east, south, north]),
+            5,
+        );
+
+        let travel_east_id = ActionDefId(100);
+        let travel_south_id = ActionDefId(101);
+
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(travel_east_id, travel_semantics());
+        semantics_table.insert(travel_south_id, travel_semantics());
+
+        let mut candidates = vec![
+            make_travel_candidate(travel_east_id, east),
+            make_travel_candidate(travel_south_id, south),
+        ];
+
+        prune_travel_away_from_goal(
+            &mut candidates,
+            hub,
+            &[],
+            &snapshot,
+            &semantics_table,
+        );
+
+        assert_eq!(candidates.len(), 2, "no candidates should be pruned when goal_places is empty");
+    }
+
+    #[test]
+    fn prune_travel_never_prunes_non_travel_actions() {
+        let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([hub, east, south, north, goal_store]),
+            5,
+        );
+
+        let harvest_id = ActionDefId(200);
+        let trade_id = ActionDefId(201);
+
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(harvest_id, harvest_semantics());
+        semantics_table.insert(
+            trade_id,
+            PlannerOpSemantics {
+                op_kind: PlannerOpKind::Trade,
+                may_appear_mid_plan: true,
+                is_materialization_barrier: true,
+                transition_kind: PlannerTransitionKind::GoalModelFallback,
+                relevant_goal_kinds: &[],
+            },
+        );
+
+        let mut candidates = vec![
+            make_non_travel_candidate(harvest_id, south),
+            make_non_travel_candidate(trade_id, north),
+        ];
+
+        prune_travel_away_from_goal(
+            &mut candidates,
+            hub,
+            &[goal_store],
+            &snapshot,
+            &semantics_table,
+        );
+
+        assert_eq!(candidates.len(), 2, "non-travel candidates must never be pruned");
+    }
+
+    #[test]
+    fn prune_travel_retains_equal_distance() {
+        // Linear topology: A --3--> B --3--> C
+        // Actor at B, goal at C. dist(B,C) = 3. dist(A,C) = 6.
+        // Travel to A: dest_min=6 > current_min=3 → pruned.
+        // Travel to C: dest_min=0 <= current_min=3 → retained.
+        // But also test equal distance: if there were a D where dist(D,C) = 3,
+        // it should be retained (dest_min == current_min).
+        //
+        // We use the chain view: A --3--> B --5--> C
+        // Actor at B. dist(B,C)=5. dist(A,C)=8.
+        // Travel to A: dest_min=8 > 5 → pruned.
+        // Travel to C: dest_min=0 <= 5 → retained.
+        let (view, actor, place_a, place_b, place_c) = build_chain_heuristic_view();
+        // Move actor to place_b for this test.
+        let mut view = view;
+        view.effective_places.insert(actor, place_b);
+        view.entities_at.insert(place_a, Vec::new());
+        view.entities_at.insert(place_b, vec![actor]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_a, place_b, place_c]),
+            3,
+        );
+
+        let travel_a_id = ActionDefId(100);
+        let travel_c_id = ActionDefId(101);
+
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(travel_a_id, travel_semantics());
+        semantics_table.insert(travel_c_id, travel_semantics());
+
+        let mut candidates = vec![
+            make_travel_candidate(travel_a_id, place_a),
+            make_travel_candidate(travel_c_id, place_c),
+        ];
+
+        prune_travel_away_from_goal(
+            &mut candidates,
+            place_b,
+            &[place_c],
+            &snapshot,
+            &semantics_table,
+        );
+
+        // Travel to C is retained (closer), travel to A is pruned (farther).
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].def_id, travel_c_id);
+    }
+
+    #[test]
+    fn prune_travel_retains_only_path_forward_in_linear_topology() {
+        // Chain: A --3--> B --5--> C
+        // Actor at A, goal at C. Only one travel option: A→B.
+        // dist(A,C) = 8, dist(B,C) = 5. 5 <= 8 → retained.
+        let (view, actor, _place_a, place_b, place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_b, place_c]),
+            3,
+        );
+
+        let travel_b_id = ActionDefId(100);
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(travel_b_id, travel_semantics());
+
+        let mut candidates = vec![make_travel_candidate(travel_b_id, place_b)];
+
+        let place_a = entity(10); // actor is at place_a
+        prune_travel_away_from_goal(
+            &mut candidates,
+            place_a,
+            &[place_c],
+            &snapshot,
+            &semantics_table,
+        );
+
+        assert_eq!(candidates.len(), 1, "only path forward must be retained");
+        assert_eq!(candidates[0].def_id, travel_b_id);
+    }
+
+    #[test]
+    fn prune_travel_skips_when_actor_at_goal_relevant_place() {
+        // When the actor is already at a goal-relevant place but the goal is
+        // unsatisfied (e.g. facility blocked), pruning must be skipped so the
+        // agent can leave for an alternative goal-relevant place.
+        let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([hub, east, south, north, goal_store]),
+            5,
+        );
+
+        let travel_east_id = ActionDefId(100);
+        let travel_south_id = ActionDefId(101);
+        let travel_north_id = ActionDefId(102);
+
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(travel_east_id, travel_semantics());
+        semantics_table.insert(travel_south_id, travel_semantics());
+        semantics_table.insert(travel_north_id, travel_semantics());
+
+        let mut candidates = vec![
+            make_travel_candidate(travel_east_id, east),
+            make_travel_candidate(travel_south_id, south),
+            make_travel_candidate(travel_north_id, north),
+        ];
+
+        // Actor is at hub, and hub IS a goal-relevant place → current_min == 0
+        // → pruning is skipped, all candidates survive.
+        prune_travel_away_from_goal(
+            &mut candidates,
+            hub,
+            &[hub, goal_store],
+            &snapshot,
+            &semantics_table,
+        );
+
+        assert_eq!(
+            candidates.len(),
+            3,
+            "all travel candidates must survive when actor is at a goal-relevant place"
+        );
     }
 }
