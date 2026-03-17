@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: READY
 
 # Care Intent and Treatment Targeting
 
@@ -9,23 +9,22 @@ Today the architecture splits care across:
 - `GoalKind::AcquireCommodity { purpose: Treatment }`, which knows the commodity but not the patient
 - `GoalKind::Heal { target }`, which knows the patient but not the acquisition intent
 
-That split is not the long-term architecture we want. It causes one goal family to carry the resource need and another to carry the patient identity, which then leaks into candidate generation, ranking, search, and action legality.
+That split is the wrong architecture. It causes one goal family to carry the resource need and another to carry the patient identity, which then leaks into candidate generation, ranking, search, and action legality.
 
 The clean design is:
-- one top-level care goal family anchored to a concrete patient
+- one top-level care goal family anchored to a concrete patient: `GoalKind::TreatWounds { patient: EntityId }`
 - planner semantics that let that goal acquire treatment commodities, produce them, move toward the patient, and apply treatment as needed
 - no separate top-level generic treatment-acquisition goal
 - no self-target prohibition for treatment if the action is otherwise legal
-
-This spec proposes that redesign.
+- belief-driven candidate generation using E14's `AgentBeliefStore` and `PerceptionSource`
 
 ## Why This Exists
 The current architecture has four linked faults:
 
 1. `AcquireCommodity(Treatment)` has no patient identity.
-2. `Heal { target }` has patient identity but currently sits beside a separate treatment-acquisition goal instead of owning that procurement path.
-3. Ranking for `AcquireCommodity(Treatment)` uses the actor's own pain pressure, which is wrong for third-party care and misleading for future belief-driven care.
-4. Combat treatment currently forbids self-targeting, so self-wounds and treatment procurement do not compose into a lawful self-care loop.
+2. `Heal { target }` has patient identity but sits beside a separate treatment-acquisition goal instead of owning that procurement path.
+3. Ranking for `AcquireCommodity(Treatment)` uses `treatment_pain()` which takes the max of actor's own pain and local patient pain — wrong for both self-care and third-party care, and does not use per-agent care sensitivity.
+4. Combat treatment currently forbids self-targeting (`combat.rs:790-796`), so self-wounds and treatment procurement do not compose into a lawful self-care loop.
 
 Those are not isolated bugs. They are one design problem:
 - the architecture models treatment supply and treatment intent as separate goal families even though the simulation reason is "this patient needs care."
@@ -43,16 +42,13 @@ That violates the direction set by:
 This work crosses architectural boundaries:
 - `worldwake-core` goal identity and utility profile semantics
 - `worldwake-ai` candidate generation, ranking, goal semantics, search, and diagnostics
+- `worldwake-sim` action handler self-target enum
 - `worldwake-systems` treatment action legality
-- future `E14` belief integration for how agents know a patient is wounded
 
 It is too large and too structural for a ticket-first patch. The correct ownership is a formal spec.
 
 ## Phase
-Phase 3: Information & Politics hardening, after `E14`, and before further care-domain expansion relies on the current split model.
-
-Recommended placement:
-- Step 10, parallel with `S02` and `S03`, after `E14`
+Phase 3: Information & Politics hardening. All dependencies are complete.
 
 ## Crates
 - `worldwake-core`
@@ -60,185 +56,207 @@ Recommended placement:
 - `worldwake-sim`
 - `worldwake-systems`
 
-## Dependencies
-- `archive/specs/E14-perception-beliefs.md`
-- `S02-goal-decision-policy-unification.md`
-- `S03-planner-target-identity-and-affordance-binding.md`
-
-`S02` and `S03` are architectural siblings. This spec should align with them, and may share implementation surfaces with them, but owns care-domain modeling specifically.
+## Completed Dependencies
+| Dependency | Status | What it provides |
+|-----------|--------|-----------------|
+| `archive/specs/E14-perception-beliefs.md` | Complete | `AgentBeliefStore`, `BelievedEntityState` with `wounds` field, `PerceptionSource` enum (`DirectObservation`, `Report`, `Rumor`, `Inference`), `PerAgentBeliefView` |
+| `S02-goal-decision-policy-unification.md` | Complete | `GoalFamilyPolicy` in `goal_policy.rs`, exhaustive match over `GoalKind` variants, `SuppressionRule`/`PenaltyInterruptEligibility`/`FreeInterruptRole` |
+| `S03-planner-target-identity-and-affordance-binding.md` | Complete | `matches_binding()` on `GoalKindPlannerExt` with exact patient binding for `Heal` — reusable for `TreatWounds` |
 
 ## Design Goals
 1. Make care intent patient-anchored, not commodity-anchored.
 2. Remove the split between treatment procurement and treatment application as top-level goal families.
 3. Support both self-care and third-party care under one lawful model.
-4. Keep all reasoning grounded in concrete world state and belief-facing reads.
+4. Keep all reasoning grounded in concrete belief state via E14's `AgentBeliefStore`.
 5. Preserve deterministic planning and ranking behavior.
-6. Support future belief-mediated care, role-based care, and relationship-sensitive care without another redesign.
+6. Support future non-medicine treatment methods without another redesign.
 7. Remove obsolete goal variants and logic instead of layering wrappers beside them.
 
 ## Non-Goals
 - Implementing full medical institutions, triage queues, hospitals, or diagnosis
 - Replacing the entire planner
-- Modeling non-commodity treatment methods in this spec
+- Implementing non-medicine treatment methods (architecture must be extensible to them)
 - Adding omniscient patient-discovery shortcuts
 - Introducing backward-compatibility aliases for old goal variants
+- Adding an `InvestigateReport` goal kind (future extension, not this spec)
+
+## Resolved Design Questions
+
+These were open in the original draft. User decisions recorded here:
+
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| Should care thresholds reuse `DriveThresholds.pain` or become their own surface? | Reuse existing pain `ThresholdBand` | Avoids new profile surface; pain thresholds already calibrated for wound urgency |
+| Should future non-medicine treatment methods join this goal family? | Architecture extensible, implement medicine only | Future methods add new `ActionDomain::Care` action defs and planner ops; `TreatWounds` goal and satisfaction remain stable |
+| After E14, should indirect reports create care intent? | Only `PerceptionSource::DirectObservation` triggers `TreatWounds` | Respects Principle 7 (locality). Agents must independently travel to patient; direct observation upon arrival triggers care. No `InvestigateReport` goal in this spec. |
+| How should ranking distinguish self-care from care-for-others? | New `care_weight: Permille` field in `UtilityProfile` | `pain_weight` governs self-pain urgency; `care_weight` governs third-party care urgency. Per-agent diversity via profile parameters (Principle 20). |
 
 ## Deliverables
 
-### 1. Replace Split Care Goals With One Patient-Anchored Goal
-Remove the top-level split between:
-- `GoalKind::AcquireCommodity { commodity, purpose: Treatment }`
-- `GoalKind::Heal { target }`
+### D01. Replace split care goals with `TreatWounds { patient: EntityId }`
 
-Replace them with one goal family equivalent to:
+**Files**: `crates/worldwake-core/src/goal.rs`
 
+Remove:
+- `GoalKind::Heal { target: EntityId }`
+- `CommodityPurpose::Treatment` variant
+
+Add:
 ```rust
 GoalKind::TreatWounds { patient: EntityId }
 ```
 
-The exact name may differ, but the semantics must be:
-- the goal is about a concrete patient
-- the planner may acquire or produce treatment supplies as part of satisfying that goal
-- the goal remains anchored to the same patient throughout planning and execution
+Goal naming uses `TreatWounds` (not `Heal`) to disambiguate from `PlannerOpKind::Heal` which names the action op, not the goal.
+
+Update `GoalKey::from(GoalKind)`:
+- `GoalKind::TreatWounds { patient }` → `GoalKey { entity: Some(patient), commodity: None, place: None }`
 
 Migration rule:
 - do not preserve `CommodityPurpose::Treatment` as a parallel top-level path
 - do not preserve `Heal { target }` beside the new goal family
 - update all callers and tests directly
 
-### 2. Care Goal Owns Its Supply Path
-The care goal must own the entire treatment chain:
-- if treatment commodity is already controlled, plan can proceed directly to treatment
-- if treatment commodity is nearby, sold, or reachable, plan may acquire it
-- if treatment commodity can be produced from known recipes, plan may produce it
-- if the patient is not local, plan may travel if and only if belief/action rules later allow that care path
+### D02. Care goal owns its supply path
 
-This means the planner must treat treatment commodity acquisition as a subordinate means of satisfying `TreatWounds { patient }`, not as a separate top-level intention.
+**Files**: `crates/worldwake-ai/src/goal_model.rs`
 
-### 3. Care Goal Must Be Exact About Patient Identity
-The patient identity is canonical goal identity.
+`TREAT_WOUNDS_OPS`: `[Travel, Heal, Trade, QueueForFacilityUse, Craft]` (same op set as current `HEAL_OPS`).
 
-Requirements:
-- `GoalKey` canonical entity for care is the patient
-- search and affordance binding must preserve exact patient identity
-- acquiring medicine for one patient must not silently retarget to another patient mid-plan
-- if the intended patient disappears, dies, moves away, or no longer needs treatment, the plan must invalidate and replan from fresh evidence
+The planner treats medicine acquisition/production as subordinate steps within the `TreatWounds` goal. No separate top-level treatment-acquisition goal exists.
 
-This reuses the target-binding direction of `S03`, but care ownership lives here.
+### D03. Patient identity exact-bound (leveraging S03)
 
-### 4. Treatment Commodity Capability Remains Item-Defined
-Treatment capability must continue to come from concrete commodity definitions:
-- `CommodityKind::spec().treatment_profile`
+**Files**: `crates/worldwake-ai/src/goal_model.rs`
 
-Do not add:
-- a second treatment-capability registry
-- recipe-only treatment tagging
-- hardcoded care-only aliases
+`matches_binding()` for `TreatWounds { patient }`:
+- Terminal `Heal` op: `authoritative_targets.contains(patient)` — must match exact patient
+- Auxiliary ops (Travel, Trade, QueueForFacilityUse, Craft): always pass
 
-The item catalog remains the source of truth for which commodities can reduce wounds.
+Identical structure to current `Heal` binding — rename to `TreatWounds`.
 
-### 5. Self-Care Must Be Lawful
-If an agent has wounds and treatment supply, self-care must be lawful when physical constraints permit it.
+### D04. Treatment commodity capability remains item-defined
 
-Required action-model change:
-- remove the current self-target prohibition for the wound-treatment action
+No new files. `CommodityKind::spec().treatment_profile` stays source of truth.
 
-The action should be renamed to match the new concrete semantics if needed, for example:
+Future extensibility: new treatment methods add new `ActionDomain::Care` action defs that classify to new `PlannerOpKind` entries, and `TREAT_WOUNDS_OPS` expands. The `TreatWounds` goal family and satisfaction condition remain stable.
 
+### D05. Self-care must be lawful
+
+**Files**:
+- `crates/worldwake-systems/src/combat.rs` (lines 790-796): Remove `target == instance.actor` check in `validate_heal_context()`
+- `crates/worldwake-sim/src/action_handler.rs` (line 250): Remove `SelfTargetActionKind::Heal` variant, leaving single-variant enum with just `Attack`
+
+Keep all other constraints in `validate_heal_context()`: Medicine required, co-location, actor alive/not incapacitated, target has wounds.
+
+### D06. Add `care_weight` to UtilityProfile; split ranking semantics
+
+**Files**:
+- `crates/worldwake-core/src/utility_profile.rs`: Add `care_weight: Permille` field, default `Permille(200)` (low baseline — most agents prioritize self over others)
+- `crates/worldwake-ai/src/ranking.rs`: New ranking logic for `TreatWounds`
+
+Ranking for `TreatWounds { patient }`:
+- **Self-care** (`patient == agent`):
+  - Priority: `classify_band(self_pain, &thresholds.pain)`
+  - Motive: `score_product(pain_weight, self_pain)`
+- **Other-care** (`patient != agent`):
+  - Priority: `classify_band(patient_pain, &thresholds.pain)`
+  - Motive: `score_product(care_weight, patient_pain)`
+
+Remove from `ranking.rs`:
+- `treatment_pain()` function (lines 373-390)
+- `treatment_score()` function (lines 392-403)
+- `AcquireCommodity { purpose: Treatment }` branches in `priority_class()` (lines 152-159) and `motive_score()` (lines 254-257)
+
+### D07. Belief-driven candidate generation
+
+**Files**: `crates/worldwake-ai/src/candidate_generation.rs`
+
+Replace `emit_heal_goals()` (lines 536-558) + `emit_treatment_candidates()` (lines 560-605) with single `emit_care_goals()`.
+
+Logic:
+1. **Self-care**: If agent believes self wounded (`view.has_wounds(agent)`), emit `TreatWounds { patient: agent }`.
+2. **Third-party care**: Iterate `view.known_entity_beliefs(agent)`. For each entity with non-empty `wounds`:
+   - If `source == PerceptionSource::DirectObservation`: emit `TreatWounds { patient }`
+   - If `source` is `Report`/`Rumor`/`Inference`: **skip** (investigation-first; agent must independently travel and observe)
+
+**No medicine gate**: Care intent forms even without medicine. The planner handles supply acquisition through Trade/Craft/Harvest ops. The current `emit_heal_goals()` early-returns when agent has zero medicine — this is removed.
+
+Remove:
+- `emit_heal_goals()` function
+- `emit_treatment_candidates()` function
+- `local_heal_targets()` function (which excluded self via `filter(|target| *target != agent)`)
+
+Update `emit_combat_candidates()` (line 138-148) to call `emit_care_goals()` instead of `emit_treatment_candidates()` + `emit_heal_goals()`.
+
+### D08. Patient-semantic goal satisfaction
+
+**Files**: `crates/worldwake-ai/src/goal_model.rs`
+
+`TreatWounds { patient }` satisfied when `pain_summary(patient) == Some(Permille(0))`.
+
+Identical to current `Heal` satisfaction — NOT satisfied by merely holding medicine.
+
+### D09. Patient-centric failure handling
+
+**Files**: `crates/worldwake-ai/src/failure_handling.rs`
+
+Update `GoalKind::Heal { .. }` match arm (line 457) to `GoalKind::TreatWounds { .. }`.
+
+Blocker messages reference patient identity (not generic "treatment acquisition failed").
+`BlockingFact::TargetGone` resolution checks patient aliveness.
+
+### D10. GoalFamilyPolicy for TreatWounds (leveraging S02)
+
+**Files**: `crates/worldwake-ai/src/goal_policy.rs`
+
+Replace `GoalKind::Heal { .. }` match arm (lines 143-147) with:
 ```rust
-ActionDef { name: "treat_wounds", ... }
+GoalKind::TreatWounds { .. } => GoalFamilyPolicy {
+    suppression: SuppressionRule::Never,
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Reactive,
+},
 ```
 
-The exact action name may differ, but the action must:
-- allow `patient == actor`
-- continue to require treatment commodity, co-location, action duration, and ordinary actor constraints
-- remain interruptible and state-mediated
+Identical policy to current `Heal`.
 
-This is a direct agent-symmetry requirement. Human-controlled and AI-controlled agents must follow the same treatment legality.
+### D11. Direct-observation gate for third-party care
 
-### 6. Ranking Must Use Patient-Aware Care Semantics
-Care urgency must derive from the patient, not from a generic treatment commodity purpose.
+Implemented as part of D07's `emit_care_goals()` logic.
 
-Required ranking direction:
-- self-care urgency uses the actor's own wound pressure
-- third-party care urgency uses the patient's wound pressure
-- actor danger can still promote or suppress care decisions through shared decision policy
+Only `PerceptionSource::DirectObservation` in `BelievedEntityState.source` triggers `TreatWounds` for other patients. `Report`, `Rumor`, `Inference` sources do NOT produce care goals.
 
-To support agent diversity, this spec recommends splitting current motivation semantics into:
-- self pain sensitivity
-- care-for-others sensitivity
+No new `InvestigateReport` goal kind. The agent must independently travel to the patient's location; direct observation upon arrival triggers care. Document this as a future extension point.
 
-Equivalent profile direction:
+### D12. Remove obsolete code paths
 
-```rust
-struct UtilityProfile {
-    pain_weight: Permille,
-    care_weight: Permille,
-    ...
-}
-```
+Across all crates, remove:
+- `CommodityPurpose::Treatment` variant from `goal.rs`
+- `SelfTargetActionKind::Heal` from `action_handler.rs`
+- `emit_treatment_candidates()`, `emit_heal_goals()`, `local_heal_targets()` from `candidate_generation.rs`
+- `treatment_pain()`, `treatment_score()` from `ranking.rs`
+- All `GoalKind::Heal` match arms across the codebase (replaced by `TreatWounds`)
+- All `AcquireCommodity { purpose: Treatment }` ranking branches
 
-The exact field shape may differ, but the architecture must support:
-- agents who strongly prioritize their own pain
-- agents who strongly prioritize helping others
-- agents who do both
+Update `GoalKindTag` enum in `goal_model.rs`:
+- Remove `Heal` variant
+- Add `TreatWounds` variant
 
-Do not hardcode altruism tiers in ranking logic. Use per-agent parameters.
+## Key Architectural Decisions
 
-### 7. Candidate Generation Must Emit Care, Not Generic Treatment Procurement
-Candidate generation must stop emitting top-level treatment-acquisition goals.
+**A. Goal naming**: `TreatWounds` (not `Heal`) to disambiguate from `PlannerOpKind::Heal` which names the action op, not the goal.
 
-Instead it must emit patient-anchored care goals from concrete believed evidence:
-- self observed as wounded
-- co-located wounded patient perceived directly
-- later, after `E14`, wounded patients learned through witness/report/record paths that remain locally knowable
+**B. `care_weight` vs `pain_weight` split**: `pain_weight` governs self-pain urgency. `care_weight` governs third-party care urgency. Per-agent diversity via profile parameters (Principle 20), not hardcoded altruism tiers.
 
-Evidence for the care goal should include:
-- the patient entity
-- the place of the patient when locally known
-- any currently known local or reachable treatment supply evidence that motivated the immediate plan path
+**C. No medicine gate on care goal emission**: Current `emit_heal_goals()` early-returns when agent has zero medicine (`candidate_generation.rs:537-543`). This is wrong — the care intent should form regardless. The planner handles supply acquisition through Trade/Craft/Harvest ops in `TREAT_WOUNDS_OPS`.
 
-But canonical identity remains the patient, not the supply.
+**D. Direct-observation gate**: Only `PerceptionSource::DirectObservation` triggers care goals for others. This respects Principle 7 (locality) and prevents "psychic healing" from stale rumors.
 
-### 8. Goal Satisfaction Must Be Care-Semantic, Not Inventory-Semantic
-`TreatWounds { patient }` must be satisfied by patient state, not by merely holding medicine.
-
-Satisfaction should be defined in one care-semantic place in the goal model. The exact threshold may be tuned through profile-driven or threshold-driven semantics, but the rule must remain patient-based.
-
-Allowed forms:
-- patient has no active wounds
-- patient pain/wound severity falls below the configured care threshold
-
-Disallowed form:
-- actor merely acquired medicine, so the top-level care goal is considered satisfied
-
-### 9. Failure Handling and Debugging Must Stay Patient-Centric
-Blocked-intent and explanation surfaces must report care failures in patient terms.
-
-Examples:
-- no reachable treatment supply for patient X
-- patient X moved away
-- patient X no longer has wounds
-- treatment action invalid because actor became incapacitated
-
-Do not collapse these into a generic "treatment acquisition failed" reason once care is patient-anchored.
-
-### 10. Future Belief Integration Hook
-After `E14`, care candidate generation and ranking must be driven from belief-traceable patient knowledge, not from omniscient wound scans.
-
-This spec therefore requires that the care goal architecture work with:
-- stale patient state
-- contradictory reports
-- missed observations
-- local records or testimony
-
-The care model must not assume omniscient patient truth in its long-term design.
+**E. Treatment method extensibility**: Future methods (bandage, rest, etc.) add new `ActionDomain::Care` entries and planner ops. `TreatWounds` goal family and satisfaction condition remain stable.
 
 ## Component Registration
-Authoritative world-state changes may include updates to existing profile components, but this spec should not add a new "care manager" component or any global treatment singleton.
-
-Allowed authoritative additions:
-- extending an existing per-agent profile type with care-related weights or thresholds if needed
+Authoritative world-state changes:
+- `UtilityProfile` gains `care_weight: Permille` field
 
 Disallowed:
 - global treatment routing service state
@@ -247,120 +265,163 @@ Disallowed:
 ## SystemFn Integration
 
 ### `worldwake-core`
-- replace split treatment goal variants with one patient-anchored care goal family
-- update `GoalKey` canonical identity accordingly
-- extend per-agent profile data if separate `care_weight` or care thresholds are adopted
-- remove obsolete treatment-purpose goal identity paths
+- Replace `GoalKind::Heal { target }` with `GoalKind::TreatWounds { patient: EntityId }`
+- Remove `CommodityPurpose::Treatment` variant
+- Update `GoalKey::from()` to extract `entity: Some(patient)` for `TreatWounds`
+- Add `care_weight: Permille` to `UtilityProfile`
 
 ### `worldwake-ai`
-- emit patient-anchored care goals in candidate generation
-- rank care goals from patient-aware pressure and actor-specific care preferences
-- let search satisfy care goals through medicine acquisition, production, travel, and treatment actions as lawful means
-- update goal explanation and blocker reporting to remain patient-centric
-- remove generic top-level treatment acquisition logic
+- `goal_model.rs`: `GoalKindTag::TreatWounds`, ops, satisfaction, binding, places, hypothetical outcome
+- `goal_policy.rs`: `TreatWounds` policy entry (Never/Never/Reactive)
+- `candidate_generation.rs`: Single `emit_care_goals()` with belief-driven generation and direct-observation gate
+- `ranking.rs`: Self/other split using `pain_weight`/`care_weight`, remove `treatment_pain`/`treatment_score`
+- `failure_handling.rs`: `Heal` → `TreatWounds` match arms with patient-centric blocker messages
 
 ### `worldwake-sim`
-- preserve deterministic affordance, duration, and binding semantics for treatment actions
-- ensure action semantics and planner affordance matching support self-target treatment lawfully
+- `action_handler.rs`: Remove `SelfTargetActionKind::Heal` variant
+- Preserve deterministic affordance, duration, and binding semantics for treatment actions
 
 ### `worldwake-systems`
-- rename and/or update the treatment action definition to reflect concrete wound treatment semantics
-- remove self-target prohibition
-- preserve ordinary co-location, inventory, wound, and actor-state constraints
-- keep treatment effects derived from treatment commodity profiles and wound data
+- `combat.rs`: Remove self-target prohibition in `validate_heal_context()` (lines 790-796)
+- Preserve co-location, inventory, wound, and actor-state constraints
+- Keep treatment effects derived from treatment commodity profiles and wound data
 
 ## Cross-System Interactions (Principle 12)
-- combat and deprivation create concrete wounds
-- belief/perception exposes wounded patients to agents through lawful information paths
-- AI emits and ranks patient-anchored care goals from those beliefs
-- planner chooses lawful means such as acquiring medicine, producing it, traveling, or treating
-- treatment action mutates wound state and commodity stock
+- Combat and deprivation create concrete wounds (stored in component tables)
+- E14 passive perception exposes wounded patients to agents through `AgentBeliefStore` with `PerceptionSource`
+- AI emits and ranks patient-anchored care goals from those beliefs (direct-observation gate for third-party)
+- Planner chooses lawful means: acquiring medicine, producing it, traveling, or treating
+- Treatment action mutates wound state and commodity stock via `WorldTxn`
 
 No direct system-to-system calls are introduced. Care remains state-mediated.
 
 ## FND-01 Section H
 
 ### H1. Information-Path Analysis
-- self-care path: agent experiences wounds directly -> own belief/memory contains wound evidence -> emits `TreatWounds { self }`
-- local third-party care path: wounded patient is directly perceived at the same place -> belief/memory records patient condition -> emits `TreatWounds { patient }`
-- later indirect path after `E14`: witness/report/record conveys patient state -> belief store updates -> care goal may form if the patient remains locally actionable under those beliefs
-- treatment supply path remains concrete: visible local lots, reachable sellers, known recipes, and resource sources
+- **Self-care**: Agent's own wounds always known (self-authoritative via `has_wounds(agent)` on belief view). Emits `TreatWounds { patient: agent }`.
+- **Local third-party care**: Wounded patient directly observed at same place via E14 passive perception → `BelievedEntityState { wounds: [...], source: DirectObservation }` stored in `AgentBeliefStore.known_entities` → `emit_care_goals()` iterates `known_entity_beliefs(agent)`, checks `source == DirectObservation`, emits `TreatWounds { patient }`.
+- **Indirect path**: Agent A tells Agent C about wounded Agent B via E15b social telling. C's belief records `source: Report { from: A, chain_len: 1 }`. C does NOT emit `TreatWounds`. C must independently travel to B's believed location. Upon arrival, E14 passive perception fires, belief updates to `DirectObservation`, next tick `emit_care_goals()` emits care goal.
+- **Treatment supply**: Visible lots, reachable sellers, known recipes all belief-traced through `AgentBeliefStore.known_entities[entity].last_known_inventory` and `view.known_recipes(agent)`.
 
 ### H2. Positive-Feedback Analysis
-- untreated wounds can create more danger and more future wounds if patients remain vulnerable
-- better care capability can increase survival, which increases the number of agents who can later perform care
-- role-sensitive care could create care concentration loops if one healer keeps being selected for every case
+- Successful treatment increases survival → more agents can perform care (positive loop).
+- No care-weight amplification — `care_weight` is static profile parameter, not updated by care outcomes.
 
 ### H3. Concrete Dampeners
-- treatment consumes concrete medicine
-- treatment occupies actor time and attention
-- actor incapacitation and danger can prevent care
-- travel time and locality limit who can be treated
-- belief staleness after `E14` prevents perfect care routing
-- per-agent care preferences and physical constraints spread responsibility rather than relying on an invisible dispatcher
+- **Medicine consumption**: Finite supply limits treatment rate (concrete commodity depletion per treatment action)
+- **Action occupancy**: Actor cannot do other things while treating (action framework single-action constraint)
+- **Travel time and locality**: Topology graph distance limits who can be treated (place graph travel edges)
+- **Belief staleness**: `enforce_capacity()` evicts old beliefs past `memory_retention_ticks` (prevents indefinite stale care intent)
+- **Actor incapacitation**: Cannot treat while incapacitated (checked in `validate_heal_context()`)
+- **Per-agent `care_weight` diversity**: Spreads responsibility rather than funneling all care through highest-altruism agent
 
-### H4. Stored State vs Derived Read-Models
-Stored authoritative state:
-- wounds on agents
-- treatment-capable commodity definitions
-- inventory and location state
-- action state and actor constraints
-- per-agent utility/profile fields if care-specific weights are added
+### H4. Stored State vs Derived
+**Stored authoritative state**:
+- Wounds on agents (component tables)
+- Treatment-capable commodity definitions (`CommodityKind::spec().treatment_profile`)
+- Inventory and location state (relation tables)
+- Action state and actor constraints (scheduler)
+- `care_weight` in `UtilityProfile` (component tables)
+- `AgentBeliefStore` with wound snapshots and `PerceptionSource` (component tables)
 
-Derived read-models:
-- care-goal candidate generation
-- care urgency/ranking
-- patient-aware plan decomposition
-- care explanations and blocker classifications
+**Derived read-models**:
+- Care-goal candidate generation (`emit_care_goals()` output)
+- Care urgency ranking (`priority_class()` / `motive_score()` for `TreatWounds`)
+- Patient-aware plan decomposition (planner search output)
+- Care explanations and blocker classifications (failure handling output)
+- `pain_summary()` / `derive_pain_pressure()` computations
 
 No derived care summary may become the source of truth over wounds, inventory, or patient identity.
 
 ## Invariants
-- there is one top-level care goal family anchored to a patient
-- top-level generic treatment-acquisition goals do not exist beside it
-- care plans preserve exact patient identity throughout planning
-- self-treatment is lawful when ordinary action constraints allow it
-- treatment capability comes only from concrete commodity definitions
-- all ranking and explanation for care are patient-aware
-- no backward-compatibility aliases preserve the old split care model
+- There is one top-level care goal family anchored to a patient: `TreatWounds { patient }`
+- Top-level generic treatment-acquisition goals (`AcquireCommodity { purpose: Treatment }`) do not exist
+- Care plans preserve exact patient identity throughout planning via `matches_binding()`
+- Self-treatment is lawful when ordinary action constraints allow it
+- Treatment capability comes only from concrete commodity definitions
+- All ranking and explanation for care are patient-aware
+- No backward-compatibility aliases preserve the old split care model
+- Only `DirectObservation` triggers third-party care goals
 
 ## Tests
-- [ ] Goal identity tests prove the care goal canonical entity is the patient
-- [ ] Candidate-generation tests emit care for wounded self and wounded others from lawful evidence
-- [ ] Candidate-generation tests do not emit obsolete top-level treatment-acquisition goals
-- [ ] Ranking tests distinguish self pain weighting from other-care weighting
-- [ ] Search tests prove a care goal can satisfy through treatment supply acquisition before treatment application
-- [ ] Search tests preserve exact patient identity while acquiring medicine
-- [ ] Action tests prove self-treatment is lawful and deterministic when the actor holds medicine
-- [ ] Golden tests prove:
-  - wounded self can acquire/apply medicine when lawful
-  - healer can acquire/apply medicine for another patient
-  - deterministic replay holds for both
-- [ ] Blocker/explanation tests report patient-centric failure reasons
+
+### Core Tests
+- [ ] `GoalKind::TreatWounds` satisfies value bounds (Clone, Eq, Ord, Serialize, Deserialize)
+- [ ] `GoalKey::from(TreatWounds { patient })` extracts `entity: Some(patient)`, `commodity: None`, `place: None`
+- [ ] `CommodityPurpose` does not contain `Treatment` (compile-time — exhaustive match)
+- [ ] `UtilityProfile` with `care_weight` defaults correctly and roundtrips through bincode
+
+### Systems Tests
+- [ ] Self-treatment lawful when actor has wounds + Medicine + same place
+- [ ] Self-treatment still requires all constraints (Medicine, alive, not incapacitated, target has wounds)
+- [ ] Third-party treatment regression passes (existing heal tests adapted)
+- [ ] Attack self-target still forbidden (`SelfTargetActionKind::Attack` remains)
+
+### AI Candidate Generation Tests
+- [ ] `emit_care_goals` emits `TreatWounds { patient: self }` when agent believes self wounded — even without medicine
+- [ ] `emit_care_goals` emits `TreatWounds { patient: other }` when other is wounded via `DirectObservation`
+- [ ] `emit_care_goals` does NOT emit `TreatWounds` for `Report`/`Rumor`/`Inference` sources
+- [ ] No `AcquireCommodity { purpose: Treatment }` goals emitted anywhere
+
+### AI Ranking Tests
+- [ ] Self-`TreatWounds` uses `pain_weight` for motive score
+- [ ] Other-`TreatWounds` uses `care_weight` for motive score
+- [ ] Agent with high `care_weight` + low `pain_weight` prioritizes other-care over self-care
+- [ ] Agent with high `pain_weight` + low `care_weight` prioritizes self-care over other-care
+
+### AI Goal Model Tests
+- [ ] `TreatWounds` ops include `[Travel, Heal, Trade, QueueForFacilityUse, Craft]`
+- [ ] `TreatWounds` satisfied when `pain_summary(patient) == Some(Permille(0))`
+- [ ] `matches_binding` exact-bound for terminal `Heal` op, pass for auxiliaries
+
+### AI Failure Handling Tests
+- [ ] `TreatWounds` blocker messages reference patient identity
+- [ ] `BlockingFact::TargetGone` resolution checks patient aliveness
+
+### Golden Tests
+- [ ] Wounded agent self-treats (with and without initial medicine)
+- [ ] Healer treats directly-observed wounded patient
+- [ ] Indirect wound report (via telling) does NOT trigger care goal — agent must travel and observe
+- [ ] Deterministic replay holds for all care scenarios
+- [ ] Care goal invalidates when patient heals before treatment arrives
 
 ## Acceptance Criteria
-- the split between `AcquireCommodity(Treatment)` and `Heal` is removed
-- one patient-anchored care goal family owns treatment procurement and application
-- self-treatment and third-party care both work under one lawful action model
-- ranking and explanation become patient-aware instead of generic-treatment-aware
-- the resulting architecture can absorb `E14` belief isolation without another care redesign
+- The split between `AcquireCommodity(Treatment)` and `Heal` is removed
+- One patient-anchored care goal family `TreatWounds { patient }` owns treatment procurement and application
+- Self-treatment and third-party care both work under one lawful action model
+- Ranking uses `pain_weight` for self-care and `care_weight` for other-care
+- Candidate generation uses E14 `AgentBeliefStore` with `DirectObservation` gate
+- The resulting architecture absorbs belief-driven care without another redesign
+- No `CommodityPurpose::Treatment`, `GoalKind::Heal`, or `SelfTargetActionKind::Heal` remain
 
 ## Suggested Implementation Sequence
-1. replace split care goal identity in `worldwake-core`
-2. update goal semantics and planner decomposition in `worldwake-ai`
-3. update ranking and candidate generation to emit/rank patient-anchored care goals
-4. rename/update treatment action semantics in `worldwake-systems` and remove self-target prohibition
-5. migrate tests and remove obsolete code paths
-6. add patient-centric explanation/blocker coverage
-7. validate with focused and workspace-wide tests
+1. `worldwake-core`: Add `TreatWounds` to `GoalKind`, remove `Heal`, remove `CommodityPurpose::Treatment`, add `care_weight` to `UtilityProfile`
+2. `worldwake-sim`: Remove `SelfTargetActionKind::Heal`
+3. `worldwake-systems`: Remove self-target prohibition in `validate_heal_context()` (`combat.rs:790-796`)
+4. `worldwake-ai` `goal_model.rs`: `TreatWounds` ops, satisfaction, binding, places, hypothetical outcome; replace `GoalKindTag::Heal` with `GoalKindTag::TreatWounds`
+5. `worldwake-ai` `goal_policy.rs`: `TreatWounds` policy entry (identical to current `Heal`)
+6. `worldwake-ai` `candidate_generation.rs`: Replace `emit_heal_goals` + `emit_treatment_candidates` with `emit_care_goals` using belief/observation gate
+7. `worldwake-ai` `ranking.rs`: Self/other split with `pain_weight`/`care_weight`; remove `treatment_pain`/`treatment_score`
+8. `worldwake-ai` `failure_handling.rs`: `Heal` → `TreatWounds` match arms
+9. Test migration and new tests
+10. Golden test validation: `cargo test --workspace`
 
-## Relationship to Existing Specs
-- depends on `E14` because long-term care intent must be belief-driven
-- complements `S02` by giving the decision-policy layer one coherent care goal family instead of split special cases
-- complements `S03` because care is an exact patient-bound planning problem
-- should land before later role-based or companion care work expands the current care model
+## Critical Files
 
-## Open Questions
-1. Should care thresholds reuse `DriveThresholds.pain`, or should care willingness become its own profile/threshold surface?
-2. Should future non-medicine treatment methods join this same care goal family as alternative means, or should they wait for a later medical-system spec?
-3. After `E14`, should indirect reports of wounded patients create only investigation/travel intent first, or may they directly emit care intent when the patient location is believed strongly enough?
+| File | Change Category |
+|------|----------------|
+| `crates/worldwake-core/src/goal.rs` | Add `TreatWounds`, remove `Heal`, remove `CommodityPurpose::Treatment`, update `GoalKey` |
+| `crates/worldwake-core/src/utility_profile.rs` | Add `care_weight: Permille` field |
+| `crates/worldwake-sim/src/action_handler.rs` | Remove `SelfTargetActionKind::Heal` |
+| `crates/worldwake-systems/src/combat.rs` | Remove self-target prohibition in `validate_heal_context()` |
+| `crates/worldwake-ai/src/candidate_generation.rs` | Replace `emit_heal_goals` + `emit_treatment_candidates` with `emit_care_goals` |
+| `crates/worldwake-ai/src/ranking.rs` | Self/other ranking split, remove `treatment_pain`/`treatment_score` |
+| `crates/worldwake-ai/src/goal_model.rs` | `TreatWounds` ops, satisfaction, binding, places, hypothetical outcome |
+| `crates/worldwake-ai/src/goal_policy.rs` | `TreatWounds` policy entry |
+| `crates/worldwake-ai/src/failure_handling.rs` | `Heal` → `TreatWounds` match arms |
+
+## Future Extension Points
+- **Non-medicine treatment**: New `ActionDomain::Care` action defs (bandage, rest) with corresponding `PlannerOpKind` entries added to `TREAT_WOUNDS_OPS`
+- **Investigation goal**: Dedicated `InvestigateReport` goal kind that triggers travel to a reported-wounded patient's location, leading to direct observation and then care
+- **Triage priority**: Multiple concurrent `TreatWounds` goals ranked by patient severity and agent relationship
+- **Role-based care**: Specialized healer roles via profile weights and equipment requirements
