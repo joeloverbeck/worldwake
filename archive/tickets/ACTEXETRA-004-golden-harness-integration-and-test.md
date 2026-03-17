@@ -1,6 +1,6 @@
 # ACTEXETRA-004: Integrate into `GoldenHarness` and write golden test
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — test infrastructure only
@@ -100,3 +100,12 @@ In `crates/worldwake-ai/tests/golden_combat.rs`, add a test that:
 2. `cargo test -p worldwake-ai --test golden_combat`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**:
+  - `golden_harness/mod.rs`: Added `action_trace: Option<ActionTraceSink>` field, `enable_action_tracing()` / `action_trace_sink()` methods, threaded sink through `step_once()` via `self.action_trace.as_mut()`
+  - `golden_combat.rs`: Added `golden_action_trace_records_loot_lifecycle` test
+- **Deviations**: None — implemented exactly as specified
+- **Verification**: All 26 golden combat tests pass, full workspace green, clippy clean

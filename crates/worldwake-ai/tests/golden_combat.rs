@@ -12,7 +12,7 @@ use worldwake_core::{
     MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, WoundList,
 };
-use worldwake_sim::{PerAgentBeliefRuntime, PerAgentBeliefView};
+use worldwake_sim::{ActionTraceKind, PerAgentBeliefRuntime, PerAgentBeliefView};
 
 // ---------------------------------------------------------------------------
 // Combat-specific helpers (only used by tests in this file)
@@ -1643,4 +1643,86 @@ fn golden_suppression_then_binding_combined_replays_deterministically() {
         first, second,
         "suppression-then-binding combined scenario should replay deterministically"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Action trace integration
+// ---------------------------------------------------------------------------
+
+#[test]
+fn golden_action_trace_records_loot_lifecycle() {
+    let (mut h, _corpse_a, _corpse_b, looter, _, _) =
+        build_multi_corpse_loot_binding_scenario(Seed([30; 32]));
+    h.enable_action_tracing();
+
+    for _ in 0..10 {
+        h.step_once();
+    }
+
+    let sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let looter_events = sink.events_for(looter);
+
+    // The looter should have at least 2 Started + 2 Committed events (one per corpse loot).
+    let started_count = looter_events
+        .iter()
+        .filter(|e| matches!(e.kind, ActionTraceKind::Started { .. }))
+        .count();
+    let committed_count = looter_events
+        .iter()
+        .filter(|e| matches!(e.kind, ActionTraceKind::Committed { .. }))
+        .count();
+
+    assert!(
+        started_count >= 2,
+        "Looter should have at least 2 Started trace events (one per corpse); got {started_count}"
+    );
+    assert!(
+        committed_count >= 2,
+        "Looter should have at least 2 Committed trace events; got {committed_count}"
+    );
+
+    // Every Started event should have a matching Committed event at the same or later tick.
+    for event in &looter_events {
+        if let ActionTraceKind::Started { .. } = &event.kind {
+            let has_commit = looter_events.iter().any(|e| {
+                matches!(e.kind, ActionTraceKind::Committed { .. })
+                    && e.action_name == event.action_name
+                    && e.tick >= event.tick
+            });
+            assert!(
+                has_commit,
+                "Started '{}' at tick {} should have a matching Committed event",
+                event.action_name, event.tick.0
+            );
+        }
+    }
+
+    // Verify loot actions specifically complete in the same tick they start.
+    let loot_starts: Vec<_> = looter_events
+        .iter()
+        .filter(|e| e.action_name == "loot" && matches!(e.kind, ActionTraceKind::Started { .. }))
+        .collect();
+    let loot_commits: Vec<_> = looter_events
+        .iter()
+        .filter(|e| {
+            e.action_name == "loot" && matches!(e.kind, ActionTraceKind::Committed { .. })
+        })
+        .collect();
+
+    assert_eq!(
+        loot_starts.len(),
+        loot_commits.len(),
+        "Every loot start should have a corresponding commit"
+    );
+
+    for start in &loot_starts {
+        let same_tick_commit = loot_commits.iter().any(|c| c.tick == start.tick);
+        assert!(
+            same_tick_commit,
+            "Loot action started at tick {} should commit in the same tick (1-tick action)",
+            start.tick.0
+        );
+    }
 }

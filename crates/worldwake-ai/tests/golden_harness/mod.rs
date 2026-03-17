@@ -21,9 +21,9 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
-    AutonomousControllerRuntime, ControllerState, DeterministicRng, RecipeDefinition,
-    RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState, SystemManifest,
-    TickStepResult, TickStepServices,
+    ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
+    RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler,
+    SimulationState, SystemManifest, TickStepResult, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -461,6 +461,7 @@ pub struct GoldenHarness {
     pub handlers: ActionHandlerRegistry,
     pub recipes: RecipeRegistry,
     pub driver: AgentTickDriver,
+    pub action_trace: Option<ActionTraceSink>,
 }
 
 impl GoldenHarness {
@@ -482,7 +483,16 @@ impl GoldenHarness {
             handlers,
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
+            action_trace: None,
         }
+    }
+
+    pub fn enable_action_tracing(&mut self) {
+        self.action_trace = Some(ActionTraceSink::new());
+    }
+
+    pub fn action_trace_sink(&self) -> Option<&ActionTraceSink> {
+        self.action_trace.as_ref()
     }
 
     pub fn step_once(&mut self) -> TickStepResult {
@@ -499,7 +509,7 @@ impl GoldenHarness {
                 recipe_registry: &self.recipes,
                 systems: &dispatch_table(),
                 input_producer: Some(&mut controllers),
-                action_trace: None,
+                action_trace: self.action_trace.as_mut(),
             },
         )
         .unwrap()
@@ -554,6 +564,7 @@ impl GoldenHarness {
             handlers,
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
+            action_trace: None,
         }
     }
 
