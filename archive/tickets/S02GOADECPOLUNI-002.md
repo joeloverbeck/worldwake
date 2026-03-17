@@ -1,6 +1,6 @@
 # S02GOADECPOLUNI-002: Migrate ranking to embed DecisionContext and consume shared policy
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — ranking.rs refactor
@@ -106,3 +106,17 @@ Option (b) is cleaner (ticket 005 builds it in agent_tick), but requires a signa
 1. `cargo test -p worldwake-ai ranking`
 2. `cargo test -p worldwake-ai` (includes golden tests)
 3. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**:
+  - Added `build_decision_context()` pub helper in `ranking.rs` (exported via `lib.rs`) to extract pressure classification from a belief view
+  - Added `decision_context: &DecisionContext` parameter to `rank_candidates()`
+  - Stored `DecisionContext` in `RankingContext`; replaced `is_suppressed()` with `evaluate_suppression()` from `goal_policy.rs`
+  - Replaced `context.danger_class()` calls in `priority_class()` with `context.decision_context.danger_class`
+  - Deleted dead code: `is_suppressed()`, `self_care_high_or_above()`, `danger_high_or_above()`, `danger_class()`, `max_self_care_class()`
+  - Updated call sites in `agent_tick.rs` and `goal_explanation.rs`
+  - Added test helper `rank()` in ranking tests to avoid updating 20+ test call signatures individually
+- **Deviations**: Kept `danger_pressure` field on `RankingContext` (used by `heal_motive_score`, not just `danger_class`). Added `build_decision_context()` helper not mentioned in ticket — needed for tests and call sites to construct `DecisionContext` from belief views.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean

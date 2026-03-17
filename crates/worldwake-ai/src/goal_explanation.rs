@@ -1,4 +1,4 @@
-use crate::{generate_candidates, rank_candidates, GoalPriorityClass};
+use crate::{build_decision_context, generate_candidates, rank_candidates, GoalPriorityClass};
 use worldwake_core::{BlockedIntentMemory, EntityId, GoalKind, Tick, UtilityProfile};
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -23,7 +23,16 @@ pub fn explain_goal(
     current_tick: Tick,
 ) -> Option<GoalExplanation> {
     let candidates = generate_candidates(view, agent, blocked, recipes, current_tick);
-    let outcome = rank_candidates(&candidates, view, agent, current_tick, utility, recipes);
+    let dc = build_decision_context(view, agent);
+    let outcome = rank_candidates(
+        &candidates,
+        view,
+        agent,
+        current_tick,
+        utility,
+        recipes,
+        &dc,
+    );
     let target = outcome
         .ranked
         .iter()

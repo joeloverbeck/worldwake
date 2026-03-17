@@ -1,7 +1,8 @@
 use crate::{
     classify_band, derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
-    GoalPriorityClass, GroundedGoal, RankedGoal,
+    evaluate_suppression, DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
+    RankedGoal,
 };
 use std::cmp::Ordering;
 use worldwake_core::{
@@ -29,6 +30,38 @@ impl RankingOutcome {
     }
 }
 
+/// Build a `DecisionContext` from a belief view by computing the two pressure
+/// classifications (self-care and danger) that suppression and priority logic need.
+#[must_use]
+pub fn build_decision_context(view: &dyn GoalBeliefView, agent: EntityId) -> DecisionContext {
+    let needs = view.homeostatic_needs(agent);
+    let thresholds = view.drive_thresholds(agent);
+    let danger_pressure = derive_danger_pressure(view, agent);
+
+    let danger_class = thresholds.map_or(GoalPriorityClass::Background, |t| {
+        classify_band(danger_pressure, &t.danger)
+    });
+
+    let max_self_care_class = match (needs, thresholds) {
+        (Some(needs), Some(t)) => [
+            classify_band(needs.hunger, &t.hunger),
+            classify_band(needs.thirst, &t.thirst),
+            classify_band(needs.fatigue, &t.fatigue),
+            classify_band(needs.bladder, &t.bladder),
+            classify_band(needs.dirtiness, &t.dirtiness),
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(GoalPriorityClass::Background),
+        _ => GoalPriorityClass::Background,
+    };
+
+    DecisionContext {
+        max_self_care_class,
+        danger_class,
+    }
+}
+
 #[must_use]
 pub fn rank_candidates(
     candidates: &[GroundedGoal],
@@ -37,15 +70,19 @@ pub fn rank_candidates(
     current_tick: Tick,
     utility: &UtilityProfile,
     recipes: &RecipeRegistry,
+    decision_context: &DecisionContext,
 ) -> RankingOutcome {
-    let context = RankingContext::new(view, agent, current_tick, utility);
+    let context = RankingContext::new(view, agent, current_tick, utility, *decision_context);
 
     let mut suppressed = Vec::new();
     let mut zero_motive = Vec::new();
 
     let mut ranked = Vec::new();
     for candidate in candidates {
-        if is_suppressed(candidate, &context) {
+        if !matches!(
+            evaluate_suppression(&candidate.key.kind, &context.decision_context),
+            GoalPolicyOutcome::Available
+        ) {
             suppressed.push(candidate.key);
             continue;
         }
@@ -77,6 +114,7 @@ struct RankingContext<'a> {
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
     danger_pressure: Permille,
+    decision_context: DecisionContext,
 }
 
 impl<'a> RankingContext<'a> {
@@ -85,6 +123,7 @@ impl<'a> RankingContext<'a> {
         agent: EntityId,
         current_tick: Tick,
         utility: &'a UtilityProfile,
+        decision_context: DecisionContext,
     ) -> Self {
         Self {
             view,
@@ -94,54 +133,9 @@ impl<'a> RankingContext<'a> {
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
             danger_pressure: derive_danger_pressure(view, agent),
+            decision_context,
         }
     }
-
-    fn self_care_high_or_above(&self) -> bool {
-        self.max_self_care_class() >= GoalPriorityClass::High
-    }
-
-    fn danger_high_or_above(&self) -> bool {
-        self.danger_class() >= GoalPriorityClass::High
-    }
-
-    fn danger_class(&self) -> GoalPriorityClass {
-        self.thresholds
-            .map_or(GoalPriorityClass::Background, |thresholds| {
-                classify_band(self.danger_pressure, &thresholds.danger)
-            })
-    }
-
-    fn max_self_care_class(&self) -> GoalPriorityClass {
-        let Some(needs) = self.needs else {
-            return GoalPriorityClass::Background;
-        };
-        let Some(thresholds) = self.thresholds else {
-            return GoalPriorityClass::Background;
-        };
-
-        [
-            classify_band(needs.hunger, &thresholds.hunger),
-            classify_band(needs.thirst, &thresholds.thirst),
-            classify_band(needs.fatigue, &thresholds.fatigue),
-            classify_band(needs.bladder, &thresholds.bladder),
-            classify_band(needs.dirtiness, &thresholds.dirtiness),
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or(GoalPriorityClass::Background)
-    }
-}
-
-fn is_suppressed(candidate: &GroundedGoal, context: &RankingContext<'_>) -> bool {
-    matches!(
-        candidate.key.kind,
-        GoalKind::LootCorpse { .. }
-            | GoalKind::BuryCorpse { .. }
-            | GoalKind::ShareBelief { .. }
-            | GoalKind::ClaimOffice { .. }
-            | GoalKind::SupportCandidateForOffice { .. }
-    ) && (context.danger_high_or_above() || context.self_care_high_or_above())
 }
 
 fn priority_class(
@@ -188,7 +182,9 @@ fn priority_class(
             |needs| needs.dirtiness,
             |thresholds| thresholds.dirtiness,
         ),
-        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => context.danger_class(),
+        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
+            context.decision_context.danger_class
+        }
         GoalKind::Heal { target } => {
             let target_pain = derive_pain_pressure(context.view, target);
             let pain_class = context
@@ -196,7 +192,7 @@ fn priority_class(
                 .map_or(GoalPriorityClass::Background, |thresholds| {
                     classify_band(target_pain, &thresholds.pain)
                 });
-            if context.danger_class() >= GoalPriorityClass::High {
+            if context.decision_context.danger_class >= GoalPriorityClass::High {
                 promote_priority_class(pain_class)
             } else {
                 pain_class
@@ -573,7 +569,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::rank_candidates;
+    use super::{build_decision_context, rank_candidates};
     use crate::{GoalKey, GoalKind, GoalPriorityClass, GroundedGoal};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -893,6 +889,19 @@ mod tests {
         view
     }
 
+    /// Test helper: builds `DecisionContext` from the view and delegates to `rank_candidates`.
+    fn rank(
+        candidates: &[GroundedGoal],
+        view: &TestBeliefView,
+        agent: EntityId,
+        current_tick: Tick,
+        utility: &UtilityProfile,
+        recipes: &RecipeRegistry,
+    ) -> super::RankingOutcome {
+        let dc = build_decision_context(view, agent);
+        rank_candidates(candidates, view, agent, current_tick, utility, recipes, &dc)
+    }
+
     #[test]
     fn hunger_candidate_becomes_critical_and_uses_weight_times_pressure() {
         let agent = entity(1);
@@ -903,7 +912,7 @@ mod tests {
             HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
         );
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             })],
@@ -935,7 +944,7 @@ mod tests {
         view.demand_memory
             .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
             })],
@@ -972,7 +981,7 @@ mod tests {
             body_cost_per_tick: BodyCostPerTick::zero(),
         });
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::RecipeInput(recipe_id),
@@ -1004,7 +1013,7 @@ mod tests {
         view.demand_memory
             .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::MoveCargo {
                 commodity: CommodityKind::Bread,
                 destination: market,
@@ -1029,7 +1038,7 @@ mod tests {
         let mut danger_view = base_view(agent);
         danger_view.attackers.insert(agent, vec![attacker]);
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::LootCorpse { corpse })],
             &danger_view,
             agent,
@@ -1047,7 +1056,7 @@ mod tests {
             HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
         );
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::LootCorpse { corpse })],
             &self_care_view,
             agent,
@@ -1058,7 +1067,7 @@ mod tests {
         .into_ranked();
         assert!(ranked.is_empty());
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::BuryCorpse {
                 corpse,
                 burial_site: entity(4),
@@ -1087,7 +1096,7 @@ mod tests {
             vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
         );
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::ShareBelief { listener, subject })],
             &danger_view,
             agent,
@@ -1109,7 +1118,7 @@ mod tests {
             vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
         );
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::ShareBelief { listener, subject })],
             &self_care_view,
             agent,
@@ -1125,7 +1134,7 @@ mod tests {
             agent,
             vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
         );
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::ShareBelief { listener, subject })],
             &calm_view,
             agent,
@@ -1185,7 +1194,7 @@ mod tests {
             subject: rumor_subject,
         });
 
-        let baseline_ranked = rank_candidates(
+        let baseline_ranked = rank(
             &[fresh_goal.clone(), rumor_goal.clone()],
             &view,
             agent,
@@ -1194,7 +1203,7 @@ mod tests {
             &RecipeRegistry::new(),
         )
         .into_ranked();
-        let boosted_ranked = rank_candidates(
+        let boosted_ranked = rank(
             &[fresh_goal, rumor_goal],
             &view,
             agent,
@@ -1254,7 +1263,7 @@ mod tests {
         );
 
         let goal = goal(GoalKind::ShareBelief { listener, subject });
-        let skeptical_ranked = rank_candidates(
+        let skeptical_ranked = rank(
             std::slice::from_ref(&goal),
             &skeptical_view,
             agent,
@@ -1263,7 +1272,7 @@ mod tests {
             &RecipeRegistry::new(),
         )
         .into_ranked();
-        let trusting_ranked = rank_candidates(
+        let trusting_ranked = rank(
             &[goal],
             &trusting_view,
             agent,
@@ -1295,7 +1304,7 @@ mod tests {
             social_weight: pm(0),
             ..utility()
         };
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[
                 goal(GoalKind::ShareBelief {
                     listener,
@@ -1342,7 +1351,7 @@ mod tests {
             .demand_memory
             .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
 
-        let enterprise_first = rank_candidates(
+        let enterprise_first = rank(
             &[
                 goal(GoalKind::ShareBelief { listener, subject }),
                 goal(GoalKind::RestockCommodity {
@@ -1373,7 +1382,7 @@ mod tests {
             agent,
             HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
         );
-        let self_care_first = rank_candidates(
+        let self_care_first = rank(
             &[
                 goal(GoalKind::ShareBelief { listener, subject }),
                 goal(GoalKind::ConsumeOwnedCommodity {
@@ -1415,7 +1424,7 @@ mod tests {
         view.demand_memory
             .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[
                 goal(GoalKind::RestockCommodity {
                     commodity: CommodityKind::Bread,
@@ -1462,7 +1471,7 @@ mod tests {
             ],
         );
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[
                 goal(GoalKind::RestockCommodity {
                     commodity: CommodityKind::Water,
@@ -1516,7 +1525,7 @@ mod tests {
             },
         );
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
             })],
@@ -1543,7 +1552,7 @@ mod tests {
         view.wounds.insert(target, vec![wound(650)]);
         view.attackers.insert(agent, vec![attacker]);
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::Heal { target })],
             &view,
             agent,
@@ -1582,7 +1591,7 @@ mod tests {
             body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
         });
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::ProduceCommodity { recipe_id })],
             &view,
             agent,
@@ -1618,7 +1627,7 @@ mod tests {
             goal(GoalKind::Sleep),
         ];
 
-        let first = rank_candidates(
+        let first = rank(
             &candidates,
             &view,
             agent,
@@ -1627,7 +1636,7 @@ mod tests {
             &RecipeRegistry::new(),
         )
         .into_ranked();
-        let second = rank_candidates(
+        let second = rank(
             &candidates,
             &view,
             agent,
@@ -1662,7 +1671,7 @@ mod tests {
             ..UtilityProfile::default()
         };
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[
                 goal(GoalKind::Sleep),
                 goal(GoalKind::ConsumeOwnedCommodity {
@@ -1700,7 +1709,7 @@ mod tests {
         let agent = entity(1);
         let view = base_view(agent);
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::ClaimOffice { office: entity(7) })],
             &view,
             agent,
@@ -1725,7 +1734,7 @@ mod tests {
         let mut view = base_view(agent);
         view.loyalties.insert((agent, candidate), pm(600));
 
-        let ranked = rank_candidates(
+        let ranked = rank(
             &[goal(GoalKind::SupportCandidateForOffice {
                 office: entity(7),
                 candidate,

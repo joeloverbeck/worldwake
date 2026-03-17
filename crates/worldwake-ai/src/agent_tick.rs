@@ -705,6 +705,7 @@ fn refresh_runtime_for_read_phase(
         phase.travel_horizon,
     );
     let generated_keys = candidates.iter().map(|c| c.key).collect();
+    let dc = crate::build_decision_context(&view, agent);
     let outcome = rank_candidates(
         &candidates,
         &view,
@@ -712,6 +713,7 @@ fn refresh_runtime_for_read_phase(
         phase.tick,
         phase.utility,
         phase.recipe_registry,
+        &dc,
     );
 
     ReadPhaseResult {

@@ -63,7 +63,7 @@ pub use planning_state::{
     HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
 };
 pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
-pub use ranking::{rank_candidates, RankingOutcome};
+pub use ranking::{build_decision_context, rank_candidates, RankingOutcome};
 pub use search::{search_plan, PlanSearchResult};
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
 
