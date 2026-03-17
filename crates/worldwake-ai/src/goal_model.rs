@@ -5,7 +5,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, Permille, Quantity,
+    CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, Permille, PlaceTag, Quantity,
+    WorkstationTag,
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, CombatActionPayload, DeclareSupportActionPayload,
@@ -58,6 +59,14 @@ pub trait GoalKindPlannerExt {
     ) -> PlanningState<'snapshot>;
     fn is_progress_barrier(&self, step: &PlannedStep) -> bool;
     fn is_satisfied(&self, state: &PlanningState<'_>) -> bool;
+    /// Places where this goal can potentially be achieved.
+    /// Used by the A* heuristic to guide travel toward goal-relevant locations.
+    /// Returns empty if the goal has no spatial preference (heuristic defaults to h=0).
+    fn goal_relevant_places(
+        &self,
+        state: &PlanningState<'_>,
+        recipes: &RecipeRegistry,
+    ) -> Vec<EntityId>;
 }
 
 const CONSUME_OPS: &[PlannerOpKind] = &[
@@ -603,6 +612,140 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ClaimOffice { .. } => false,
         }
     }
+
+    fn goal_relevant_places(
+        &self,
+        state: &PlanningState<'_>,
+        recipes: &RecipeRegistry,
+    ) -> Vec<EntityId> {
+        let actor = state.snapshot().actor();
+        match self {
+            GoalKind::ConsumeOwnedCommodity { commodity } => {
+                if state.commodity_quantity(actor, *commodity) > Quantity(0) {
+                    state.effective_place(actor).into_iter().collect()
+                } else {
+                    places_with_resource_source(state, *commodity)
+                }
+            }
+            GoalKind::AcquireCommodity { commodity, .. } => {
+                let mut places = places_with_resource_source(state, *commodity);
+                places_with_sellers(state, *commodity, &mut places);
+                places
+            }
+            GoalKind::Relieve => places_with_place_tag(state, PlaceTag::Latrine),
+            GoalKind::EngageHostile { target } | GoalKind::Heal { target } => {
+                state.effective_place(*target).into_iter().collect()
+            }
+            GoalKind::Sleep | GoalKind::Wash | GoalKind::ReduceDanger => Vec::new(),
+            GoalKind::ProduceCommodity { recipe_id } => {
+                let required_tag = recipes
+                    .get(*recipe_id)
+                    .and_then(|recipe| recipe.required_workstation_tag);
+                match required_tag {
+                    Some(tag) => places_with_workstation(state, tag),
+                    None => Vec::new(),
+                }
+            }
+            GoalKind::SellCommodity { commodity } => {
+                demand_memory_places(state, actor, *commodity)
+            }
+            GoalKind::RestockCommodity { commodity } => {
+                if state.commodity_quantity(actor, *commodity) > Quantity(0) {
+                    demand_memory_places(state, actor, *commodity)
+                } else {
+                    places_with_resource_source(state, *commodity)
+                }
+            }
+            GoalKind::MoveCargo { destination, .. } => vec![*destination],
+            GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
+                state.effective_place(*corpse).into_iter().collect()
+            }
+            GoalKind::ShareBelief { listener, .. } => {
+                state.effective_place(*listener).into_iter().collect()
+            }
+            GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => {
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// Collect places containing entities with a `ResourceSource` for the given commodity.
+fn places_with_resource_source(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
+    let mut places = BTreeSet::new();
+    for &entity_id in state.snapshot().entities.keys() {
+        if state
+            .resource_source(entity_id)
+            .is_some_and(|s| s.commodity == commodity)
+        {
+            if let Some(place) = state.effective_place(entity_id) {
+                places.insert(place);
+            }
+        }
+    }
+    places.into_iter().collect()
+}
+
+/// Append places where merchants are selling the given commodity (deduplicating with `existing`).
+fn places_with_sellers(
+    state: &PlanningState<'_>,
+    commodity: CommodityKind,
+    existing: &mut Vec<EntityId>,
+) {
+    let already: BTreeSet<EntityId> = existing.iter().copied().collect();
+    for &entity_id in state.snapshot().entities.keys() {
+        if let Some(profile) = state.merchandise_profile(entity_id) {
+            if profile.sale_kinds.contains(&commodity) {
+                if let Some(place) = state.effective_place(entity_id) {
+                    if !already.contains(&place) && !existing.contains(&place) {
+                        existing.push(place);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Collect places with the given `PlaceTag`.
+fn places_with_place_tag(state: &PlanningState<'_>, tag: PlaceTag) -> Vec<EntityId> {
+    state
+        .snapshot()
+        .places
+        .iter()
+        .filter(|(_, place)| place.tags.contains(&tag))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// Collect places containing entities with the given `WorkstationTag`.
+fn places_with_workstation(state: &PlanningState<'_>, tag: WorkstationTag) -> Vec<EntityId> {
+    let mut places = BTreeSet::new();
+    for &entity_id in state.snapshot().entities.keys() {
+        if state.workstation_tag(entity_id) == Some(tag) {
+            if let Some(place) = state.effective_place(entity_id) {
+                places.insert(place);
+            }
+        }
+    }
+    places.into_iter().collect()
+}
+
+/// Collect places from the actor's demand memory for the given commodity,
+/// filtered to places present in the planning snapshot.
+fn demand_memory_places(
+    state: &PlanningState<'_>,
+    actor: EntityId,
+    commodity: CommodityKind,
+) -> Vec<EntityId> {
+    let snapshot_places = &state.snapshot().places;
+    let places: BTreeSet<EntityId> = state
+        .demand_memory(actor)
+        .into_iter()
+        .filter(|obs| obs.commodity == commodity)
+        .map(|obs| obs.place)
+        .filter(|place| snapshot_places.contains_key(place))
+        .collect();
+    places.into_iter().collect()
 }
 
 fn update_actor_needs(
@@ -1084,6 +1227,9 @@ mod tests {
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
+        resource_sources: BTreeMap<EntityId, ResourceSource>,
+        workstation_tags: BTreeMap<EntityId, WorkstationTag>,
+        place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -1178,12 +1324,12 @@ mod tests {
             None
         }
 
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
-            None
+        fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+            self.workstation_tags.get(&entity).copied()
         }
 
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
-            None
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
@@ -1307,12 +1453,25 @@ mod tests {
             Vec::new()
         }
 
+        fn place_has_tag(&self, place: EntityId, tag: worldwake_core::PlaceTag) -> bool {
+            self.place_tags
+                .get(&place)
+                .is_some_and(|tags| tags.contains(&tag))
+        }
+
         fn resource_sources_at(
             &self,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Vec<EntityId> {
-            Vec::new()
+            self.entities_at(place)
+                .into_iter()
+                .filter(|entity| {
+                    self.resource_sources
+                        .get(entity)
+                        .is_some_and(|s| s.commodity == commodity)
+                })
+                .collect()
         }
 
         fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
@@ -1870,5 +2029,393 @@ mod tests {
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
         }));
+    }
+
+    // ── goal_relevant_places tests ─────────────────────────────────────
+
+    fn spatial_view() -> (TestBeliefView, EntityId, EntityId, EntityId, EntityId) {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place_a, place_b, place_c]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place_a, EntityKind::Place);
+        view.kinds.insert(place_b, EntityKind::Place);
+        view.kinds.insert(place_c, EntityKind::Place);
+        view.effective_places.insert(actor, place_a);
+        view.entities_at
+            .insert(place_a, vec![actor]);
+        view.adjacent.insert(
+            place_a,
+            vec![
+                (place_b, NonZeroU32::new(2).unwrap()),
+            ],
+        );
+        view.adjacent.insert(
+            place_b,
+            vec![
+                (place_a, NonZeroU32::new(2).unwrap()),
+                (place_c, NonZeroU32::new(3).unwrap()),
+            ],
+        );
+        view.adjacent.insert(
+            place_c,
+            vec![(place_b, NonZeroU32::new(3).unwrap())],
+        );
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(500), pm(0), pm(500), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        (view, actor, place_a, place_b, place_c)
+    }
+
+    fn snapshot_and_state(
+        view: &TestBeliefView,
+        actor: EntityId,
+    ) -> crate::planning_snapshot::PlanningSnapshot {
+        build_planning_snapshot(view, actor, &BTreeSet::new(), &BTreeSet::new(), 3)
+    }
+
+    #[test]
+    fn move_cargo_returns_destination_place() {
+        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination: place_b,
+        };
+        assert_eq!(goal.goal_relevant_places(&state, &recipes), vec![place_b]);
+    }
+
+    #[test]
+    fn restock_without_commodity_returns_resource_source_places() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let resource_entity = entity(20);
+        view.alive.insert(resource_entity);
+        view.kinds.insert(resource_entity, EntityKind::ItemLot);
+        view.effective_places.insert(resource_entity, place_b);
+        view.entities_at
+            .entry(place_b)
+            .or_default()
+            .push(resource_entity);
+        view.resource_sources.insert(
+            resource_entity,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(5),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn restock_with_commodity_returns_demand_memory_places() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(3));
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(5),
+                place: place_b,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn consume_owned_with_possession_returns_actor_place() {
+        let (mut view, actor, place_a, _place_b, _place_c) = spatial_view();
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(1));
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_a]);
+    }
+
+    #[test]
+    fn acquire_returns_resource_source_and_merchant_places() {
+        let (mut view, actor, _place_a, place_b, place_c) = spatial_view();
+        // Resource source at place_b
+        let resource_entity = entity(20);
+        view.alive.insert(resource_entity);
+        view.kinds.insert(resource_entity, EntityKind::ItemLot);
+        view.effective_places.insert(resource_entity, place_b);
+        view.entities_at
+            .entry(place_b)
+            .or_default()
+            .push(resource_entity);
+        view.resource_sources.insert(
+            resource_entity,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        // Merchant at place_c
+        let merchant = entity(30);
+        view.alive.insert(merchant);
+        view.kinds.insert(merchant, EntityKind::Agent);
+        view.effective_places.insert(merchant, place_c);
+        view.entities_at
+            .entry(place_c)
+            .or_default()
+            .push(merchant);
+        view.merchandise_profiles.insert(
+            merchant,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(place_c),
+            },
+        );
+        view.trade_profiles
+            .insert(merchant, sample_trade_disposition_profile());
+        view.commodity_quantities
+            .insert((merchant, CommodityKind::Bread), Quantity(2));
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert!(places.contains(&place_b), "should contain resource source place");
+        assert!(places.contains(&place_c), "should contain merchant place");
+    }
+
+    #[test]
+    fn engage_hostile_returns_target_place() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let target = entity(25);
+        view.alive.insert(target);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(target, place_b);
+        view.entities_at
+            .entry(place_b)
+            .or_default()
+            .push(target);
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::EngageHostile { target };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn loot_corpse_returns_corpse_place() {
+        let (mut view, actor, _place_a, _place_b, place_c) = spatial_view();
+        let corpse = entity(26);
+        view.alive.remove(&corpse); // corpse is dead
+        view.kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(corpse, place_c);
+        view.entities_at
+            .entry(place_c)
+            .or_default()
+            .push(corpse);
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::LootCorpse { corpse };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_c]);
+    }
+
+    #[test]
+    fn reduce_danger_returns_empty() {
+        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::ReduceDanger.goal_relevant_places(&state, &recipes);
+        assert!(places.is_empty());
+    }
+
+    #[test]
+    fn sleep_returns_empty() {
+        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Sleep.goal_relevant_places(&state, &recipes);
+        assert!(places.is_empty());
+    }
+
+    #[test]
+    fn wash_returns_empty() {
+        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
+        assert!(places.is_empty());
+    }
+
+    #[test]
+    fn relieve_returns_latrine_places() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        view.place_tags.insert(
+            place_b,
+            BTreeSet::from([worldwake_core::PlaceTag::Latrine]),
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Relieve.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn produce_returns_places_with_specific_workstation() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let forge = entity(40);
+        view.alive.insert(forge);
+        view.kinds.insert(forge, EntityKind::UniqueItem);
+        view.effective_places.insert(forge, place_b);
+        view.entities_at
+            .entry(place_b)
+            .or_default()
+            .push(forge);
+        view.workstation_tags
+            .insert(forge, WorkstationTag::Forge);
+        let mut recipes = worldwake_sim::RecipeRegistry::new();
+        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Smelt Iron".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(5).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Forge),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ProduceCommodity { recipe_id };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn produce_without_workstation_requirement_returns_empty() {
+        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
+        let mut recipes = worldwake_sim::RecipeRegistry::new();
+        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
+            name: "HandCraft".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: None,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ProduceCommodity { recipe_id };
+        let places = goal.goal_relevant_places(&state, &recipes);
+        assert!(places.is_empty());
+    }
+
+    #[test]
+    fn all_goal_kind_variants_have_goal_relevant_places_impl() {
+        // This test ensures exhaustive coverage by creating all 17 variants
+        // and calling goal_relevant_places. If a new variant is added without
+        // an arm in the match, this will fail to compile.
+        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+
+        let goals: Vec<GoalKind> = vec![
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+            },
+            GoalKind::Sleep,
+            GoalKind::Relieve,
+            GoalKind::Wash,
+            GoalKind::EngageHostile {
+                target: entity(99),
+            },
+            GoalKind::ReduceDanger,
+            GoalKind::Heal {
+                target: entity(99),
+            },
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(0),
+            },
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination: place_b,
+            },
+            GoalKind::LootCorpse {
+                corpse: entity(99),
+            },
+            GoalKind::BuryCorpse {
+                corpse: entity(99),
+                burial_site: entity(98),
+            },
+            GoalKind::ShareBelief {
+                listener: entity(99),
+                subject: entity(98),
+            },
+            GoalKind::ClaimOffice {
+                office: entity(99),
+            },
+            GoalKind::SupportCandidateForOffice {
+                office: entity(99),
+                candidate: entity(98),
+            },
+        ];
+
+        // All 17 variants must be callable without panicking.
+        assert_eq!(goals.len(), 17);
+        for goal in &goals {
+            let _ = goal.goal_relevant_places(&state, &recipes);
+        }
     }
 }
