@@ -76,10 +76,25 @@ impl DecisionOutcome {
 #[derive(Clone, Debug)]
 pub struct PlanningPipelineTrace {
     pub dirty_reasons: Vec<DirtyReason>,
+    /// When true, the existing plan was revalidated instead of replanning from
+    /// scratch. This happens when `SnapshotChanged` is the only dirty reason
+    /// and the current plan's next step passes revalidation.
+    pub plan_continued: bool,
     pub candidates: CandidateTrace,
     pub planning: PlanSearchTrace,
     pub selection: SelectionTrace,
     pub execution: ExecutionTrace,
+    /// Action start failures from the previous tick's `BestEffort` inputs,
+    /// drained from the `Scheduler` for this agent.
+    pub action_start_failures: Vec<ActionStartFailureSummary>,
+}
+
+/// Summary of an action start failure for trace output.
+#[derive(Clone, Debug)]
+pub struct ActionStartFailureSummary {
+    pub tick: Tick,
+    pub def_id: ActionDefId,
+    pub reason: String,
 }
 
 // ── Stage 1: Candidate Generation + Ranking ─────────────────────
@@ -405,6 +420,7 @@ mod tests {
         use worldwake_core::GoalKind;
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
             dirty_reasons: vec![DirtyReason::NoPlan],
+            plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![],
                 ranked: vec![RankedGoalSummary {
@@ -426,6 +442,7 @@ mod tests {
                 revalidation_passed: None,
                 failure: None,
             },
+            action_start_failures: vec![],
         }));
         let summary = outcome.summary();
         assert!(summary.contains("PLAN"));

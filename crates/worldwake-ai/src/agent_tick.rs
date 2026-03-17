@@ -1,9 +1,9 @@
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::decision_trace::{
-    AgentDecisionTrace, CandidateTrace, DecisionOutcome, DecisionTraceSink, DirtyReason,
-    ExecutionFailureReason, ExecutionTrace, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome,
-    PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
-    GoalSwitchSummary,
+    ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
+    DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace, GoalSwitchSummary,
+    InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
+    PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
 };
 use crate::search::PlanSearchResult;
 use crate::{
@@ -322,7 +322,20 @@ fn process_agent(
         // ── Planning path ──
         let previous_goal = runtime.current_goal;
 
-        let (next_step, next_step_valid, plan_search_trace, selection_trace) =
+        // Drain action start failures for this agent from the scheduler.
+        let agent_failures: Vec<ActionStartFailureSummary> = ctx
+            .scheduler
+            .action_start_failures()
+            .iter()
+            .filter(|f| f.actor == agent)
+            .map(|f| ActionStartFailureSummary {
+                tick: f.tick,
+                def_id: f.def_id,
+                reason: f.reason.clone(),
+            })
+            .collect();
+
+        let (next_step, next_step_valid, plan_continued, plan_search_trace, selection_trace) =
             plan_and_validate_next_step_traced(
                 ctx.world,
                 ctx.scheduler,
@@ -339,6 +352,7 @@ fn process_agent(
                 action_handlers,
                 tracing,
                 previous_goal,
+                &read_result.dirty_reasons,
             );
 
         // ── Execution ──
@@ -399,6 +413,7 @@ fn process_agent(
 
             DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 dirty_reasons: read_result.dirty_reasons,
+                plan_continued,
                 candidates: candidate_trace,
                 planning: plan_search_trace.unwrap_or(PlanSearchTrace {
                     attempts: Vec::new(),
@@ -413,6 +428,7 @@ fn process_agent(
                     revalidation_passed: None,
                     failure: None,
                 }),
+                action_start_failures: agent_failures,
             }))
         })
     };
@@ -924,10 +940,41 @@ fn plan_and_validate_next_step(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
+    dirty_reasons: &[DirtyReason],
 ) -> (Option<PlannedStep>, Option<bool>) {
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     if runtime.dirty {
+        // Plan continuation: when SnapshotChanged is the only dirty reason,
+        // the agent has a current plan, AND the current goal is still the
+        // top-ranked candidate, revalidate the next step instead of running
+        // the full plan search. This prevents budget exhaustion at hub nodes
+        // in multi-agent scenarios while still allowing goal switches when a
+        // higher-priority goal emerges (e.g., critical thirst).
+        if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
+            let current_goal_still_top = ranked_candidates
+                .first()
+                .is_some_and(|top| Some(top.grounded.key) == runtime.current_goal);
+            if current_goal_still_top {
+                if let Some(step) = current_step(runtime).cloned() {
+                    let valid = revalidate_next_step(
+                        &view,
+                        agent,
+                        &step,
+                        &runtime.materialization_bindings,
+                        action_defs,
+                        action_handlers,
+                    );
+                    if valid {
+                        runtime.dirty = false;
+                        return (Some(step), Some(true));
+                    }
+                }
+            }
+            // Fall through to full replanning if goal changed, step invalid,
+            // or no current step.
+        }
+
         let plans = build_candidate_plans(
             world,
             scheduler,
@@ -987,7 +1034,17 @@ fn plan_and_validate_next_step(
     (next_step, next_step_valid)
 }
 
+/// Returns true when `SnapshotChanged` is the only dirty reason present.
+fn is_snapshot_changed_only(dirty_reasons: &[DirtyReason]) -> bool {
+    !dirty_reasons.is_empty()
+        && dirty_reasons
+            .iter()
+            .all(|r| *r == DirtyReason::SnapshotChanged)
+}
+
 /// Wrapper around `plan_and_validate_next_step` that also captures trace data.
+///
+/// Returns `(next_step, valid, plan_continued, plan_search_trace, selection_trace)`.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn plan_and_validate_next_step_traced(
     world: &worldwake_core::World,
@@ -1005,9 +1062,11 @@ fn plan_and_validate_next_step_traced(
     action_handlers: &ActionHandlerRegistry,
     tracing: bool,
     previous_goal: Option<worldwake_core::GoalKey>,
+    dirty_reasons: &[DirtyReason],
 ) -> (
     Option<PlannedStep>,
     Option<bool>,
+    bool,
     Option<PlanSearchTrace>,
     Option<SelectionTrace>,
 ) {
@@ -1026,8 +1085,11 @@ fn plan_and_validate_next_step_traced(
             semantics_table,
             action_defs,
             action_handlers,
+            dirty_reasons,
         );
-        return (step, valid, None, None);
+        // In the non-traced path we cannot distinguish plan continuation from
+        // non-dirty, but the boolean is only used for trace output.
+        return (step, valid, false, None, None);
     }
 
     // Traced path: inline the logic to capture intermediate results.
@@ -1040,8 +1102,45 @@ fn plan_and_validate_next_step_traced(
         goal_switch: None,
         previous_goal,
     };
+    let mut plan_continued = false;
 
     if runtime.dirty {
+        // Plan continuation: when SnapshotChanged is the only dirty reason,
+        // the agent has a current plan, AND the current goal is still the
+        // top-ranked candidate, revalidate the next step instead of running
+        // the full plan search.
+        if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
+            let current_goal_still_top = ranked_candidates
+                .first()
+                .is_some_and(|top| Some(top.grounded.key) == runtime.current_goal);
+            if current_goal_still_top {
+                if let Some(step) = current_step(runtime).cloned() {
+                    let valid = revalidate_next_step(
+                        &view,
+                        agent,
+                        &step,
+                        &runtime.materialization_bindings,
+                        action_defs,
+                        action_handlers,
+                    );
+                    if valid {
+                        runtime.dirty = false;
+                        plan_continued = true;
+                        selection_trace.selected = runtime.current_goal;
+                        return (
+                            Some(step),
+                            Some(true),
+                            plan_continued,
+                            Some(plan_search_trace),
+                            Some(selection_trace),
+                        );
+                    }
+                }
+            }
+            // Fall through to full replanning if goal changed, step invalid,
+            // or no current step.
+        }
+
         let plans = build_candidate_plans(
             world,
             scheduler,
@@ -1137,6 +1236,7 @@ fn plan_and_validate_next_step_traced(
     (
         next_step,
         next_step_valid,
+        plan_continued,
         Some(plan_search_trace),
         Some(selection_trace),
     )
@@ -1736,8 +1836,8 @@ mod tests {
     };
     use crate::PlanningBudget;
     use crate::{
-        build_semantics_table, CommodityPurpose, ExpectedMaterialization, GoalKey, GoalKind,
-        JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
+        build_semantics_table, CommodityPurpose, DirtyReason, ExpectedMaterialization, GoalKey,
+        GoalKind, JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlanningEntityRef, QueuedFacilityIntent, RankedGoal,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -3096,6 +3196,7 @@ mod tests {
             &semantics,
             &harness.defs,
             &harness.handlers,
+            &[DirtyReason::NoPlan],
         );
 
         assert_eq!(runtime.current_goal, Some(goal.grounded.key));
@@ -4095,6 +4196,7 @@ mod tests {
             &semantics,
             &harness.defs,
             &harness.handlers,
+            &[DirtyReason::NoPlan],
         );
         let pick_up = next_step.expect("cargo runtime should choose an initial pick_up step");
         assert_eq!(runtime.current_goal, Some(expected_goal));
@@ -4186,6 +4288,7 @@ mod tests {
             &semantics,
             &harness.defs,
             &harness.handlers,
+            &[DirtyReason::NoPlan],
         );
         let travel = next_step.expect("dirty cargo runtime should continue planning the same goal");
         assert_eq!(runtime.current_goal, Some(expected_goal));

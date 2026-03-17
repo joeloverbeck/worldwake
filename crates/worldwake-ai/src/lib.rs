@@ -28,9 +28,9 @@ pub use agent_tick::{AgentTickDriver, JourneyDebugSnapshot, JourneySwitchMarginS
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_trace::{
-    AgentDecisionTrace, CandidateTrace, DecisionOutcome, DecisionTraceSink, DirtyReason,
-    ExecutionFailureReason, ExecutionTrace, GoalSwitchSummary, InterruptTrace,
-    PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
+    ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
+    DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace, GoalSwitchSummary,
+    InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
     PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
 };
 pub use decision_runtime::{
