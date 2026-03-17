@@ -1,9 +1,10 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstanceId, ActionTraceSink, ControlError, ControllerState, DeterministicRng,
-    ExternalAbortReason, InputKind, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
-    TickInputContext, TickInputError, TickInputProducer, TickOutcome,
+    ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, ControlError,
+    ControllerState, DeterministicRng, ExternalAbortReason, InputKind, RecipeRegistry, Scheduler,
+    SystemDispatchTable, SystemError, TickInputContext, TickInputError, TickInputProducer,
+    TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -26,17 +27,20 @@ struct TickStepRuntime<'a> {
     event_log: &'a mut EventLog,
     scheduler: &'a mut Scheduler,
     rng: &'a mut DeterministicRng,
-    #[allow(dead_code)] // Used in ACTEXETRA-003 when recording trace events at hook points.
     action_trace: Option<&'a mut ActionTraceSink>,
 }
 
 impl TickStepRuntime<'_> {
-    #[allow(dead_code)] // Used in ACTEXETRA-003 when recording trace events at hook points.
-    fn record_action_trace(&mut self, event: crate::ActionTraceEvent) {
+    fn record_action_trace(&mut self, event: ActionTraceEvent) {
         if let Some(sink) = self.action_trace.as_mut() {
             sink.record(event);
         }
     }
+}
+
+fn lookup_action_name(defs: &ActionDefRegistry, def_id: ActionDefId) -> String {
+    defs.get(def_id)
+        .map_or_else(|| "unknown".to_owned(), |d| d.name.clone())
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -198,6 +202,7 @@ fn process_inputs(
     ))
 }
 
+#[allow(clippy::too_many_lines)]
 fn apply_input(
     runtime: &mut TickStepRuntime<'_>,
     controller: &mut ControllerState,
@@ -254,10 +259,30 @@ fn apply_input(
                             reason: format!("{err:?}"),
                         },
                     );
+                    let action_name = lookup_action_name(services.action_defs, def_id);
+                    runtime.record_action_trace(ActionTraceEvent {
+                        tick,
+                        actor,
+                        def_id,
+                        action_name,
+                        kind: ActionTraceKind::StartFailed {
+                            reason: format!("{err:?}"),
+                        },
+                    });
                     return Ok(InputOutcome::default());
                 }
                 return Err(TickStepError::Action(err));
             }
+            let action_name = lookup_action_name(services.action_defs, def_id);
+            runtime.record_action_trace(ActionTraceEvent {
+                tick,
+                actor,
+                def_id,
+                action_name,
+                kind: ActionTraceKind::Started {
+                    targets: targets.clone(),
+                },
+            });
             Ok(InputOutcome {
                 actions_started: 1,
                 actions_aborted: 0,
@@ -268,6 +293,12 @@ fn apply_input(
             action_instance_id,
         } => {
             validate_cancel_actor(runtime.scheduler, actor, action_instance_id)?;
+            // Capture instance info before abort removes it from the scheduler.
+            let cancel_def_id = runtime
+                .scheduler
+                .active_actions()
+                .get(&action_instance_id)
+                .map(|i| i.def_id);
             let replan = runtime
                 .scheduler
                 .abort_active_action(
@@ -287,6 +318,24 @@ fn apply_input(
                 )
                 .map_err(TickStepError::Action)?;
             runtime.scheduler.retain_replan(replan);
+            if let Some(def_id) = cancel_def_id {
+                let action_name = services
+                    .action_defs
+                    .get(def_id)
+                    .map_or_else(|| "unknown".to_owned(), |d| d.name.clone()) /* PLACEHOLDER_SHOULD_NOT_EXIST */;
+                runtime.record_action_trace(ActionTraceEvent {
+                    tick,
+                    actor,
+                    def_id,
+                    action_name,
+                    kind: ActionTraceKind::Aborted {
+                        instance_id: action_instance_id,
+                        reason: format!(
+                            "CancelledByInput {{ sequence_no: {sequence_no} }}"
+                        ),
+                    },
+                });
+            }
             Ok(InputOutcome {
                 actions_started: 0,
                 actions_aborted: 1,
@@ -420,13 +469,35 @@ fn progress_active_actions(
                         def_id: instance.def_id,
                         instance_id,
                         tick,
-                        outcome,
+                        outcome: outcome.clone(),
                     });
+                let action_name = lookup_action_name(services.action_defs, instance.def_id);
+                runtime.record_action_trace(ActionTraceEvent {
+                    tick,
+                    actor: instance.actor,
+                    def_id: instance.def_id,
+                    action_name,
+                    kind: ActionTraceKind::Committed {
+                        instance_id,
+                        outcome,
+                    },
+                });
                 actions_completed = actions_completed
                     .checked_add(1)
                     .expect("tick-step action-complete counter overflowed");
             }
-            TickOutcome::Aborted { replan, .. } => {
+            TickOutcome::Aborted { reason, replan } => {
+                let action_name = lookup_action_name(services.action_defs, instance.def_id);
+                runtime.record_action_trace(ActionTraceEvent {
+                    tick,
+                    actor: instance.actor,
+                    def_id: instance.def_id,
+                    action_name,
+                    kind: ActionTraceKind::Aborted {
+                        instance_id,
+                        reason: format!("{reason:?}"),
+                    },
+                });
                 runtime.scheduler.retain_replan(replan);
                 actions_aborted = actions_aborted
                     .checked_add(1)
@@ -458,6 +529,12 @@ fn abort_actions_for_dead_actors(
     let mut aborted = 0u32;
 
     for instance_id in action_ids {
+        // Capture instance info before abort removes it from the scheduler.
+        let dead_instance = runtime
+            .scheduler
+            .active_actions()
+            .get(&instance_id)
+            .cloned();
         let replan = runtime
             .scheduler
             .abort_active_action(
@@ -477,6 +554,19 @@ fn abort_actions_for_dead_actors(
             )
             .map_err(TickStepError::Action)?;
         runtime.scheduler.retain_replan(replan);
+        if let Some(inst) = dead_instance {
+            let action_name = lookup_action_name(services.action_defs, inst.def_id);
+            runtime.record_action_trace(ActionTraceEvent {
+                tick,
+                actor: inst.actor,
+                def_id: inst.def_id,
+                action_name,
+                kind: ActionTraceKind::Aborted {
+                    instance_id,
+                    reason: "ActorMarkedDead".to_string(),
+                },
+            });
+        }
         aborted = aborted
             .checked_add(1)
             .expect("tick-step action-abort counter overflowed");

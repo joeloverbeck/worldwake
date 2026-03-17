@@ -1,6 +1,6 @@
 # ACTEXETRA-003: Record trace events at lifecycle hook points in `tick_step.rs`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — adds trace recording calls at 6 hook points
@@ -91,3 +91,10 @@ Before each `abort_active_action()` call, clone the instance. After the abort, r
 1. `cargo build -p worldwake-sim`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added 6 `record_action_trace()` calls in `tick_step.rs` at all lifecycle hook points (Started, StartFailed, Committed, Aborted×3). Extracted `lookup_action_name()` helper to DRY the action name resolution. Removed `#[allow(dead_code)]` from ACTEXETRA-002 scaffolding. Added `#[allow(clippy::too_many_lines)]` to `apply_input()` (established codebase pattern).
+- **Deviations**: None. All 6 hook points match the spec table exactly.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.
