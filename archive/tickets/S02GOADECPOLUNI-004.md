@@ -1,6 +1,6 @@
 # S02GOADECPOLUNI-004: Migrate free interrupt evaluation to consume shared policy
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — interrupts.rs refactor (free interrupt path)
@@ -120,3 +120,10 @@ Pass the `DecisionContext` (already added to `evaluate_interrupt` signature in t
 1. `cargo test -p worldwake-ai interrupts`
 2. `cargo test -p worldwake-ai` (includes golden tests)
 3. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Replaced LootCorpse special-case with `FreeInterruptRole::Opportunistic` policy lookup, replaced `is_reactive_goal()` with `FreeInterruptRole::Reactive` policy lookup, replaced `no_medium_or_above_self_care_or_danger()` candidate scanning with `DecisionContext.is_stressed_at_or_above(Medium)`, threaded `DecisionContext` into `interrupt_freely()`, deleted both dead functions. Added 2 new tests (BuryCorpse not opportunistic, Heal reactive but no penalty).
+- **Deviations**: `DecisionContext` passed by value (not reference) into `interrupt_freely()` per clippy pedantic (`trivially_copy_pass_by_ref`). If-not-else flipped per clippy pedantic.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.

@@ -1,12 +1,12 @@
 use crate::{
-    goal_policy::{goal_family_policy, PenaltyInterruptEligibility},
+    goal_policy::{goal_family_policy, FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{compare_goal_switch, GoalSwitchKind},
     journey_switch_policy::compare_relation_aware_goal_switch,
     AgentDecisionRuntime, DecisionContext, GoalKey, GoalPriorityClass, JourneyPlanRelation,
     PlannedPlan, RankedGoal,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{CommodityPurpose, GoalKind, Permille};
+use worldwake_core::Permille;
 use worldwake_sim::Interruptibility;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -34,7 +34,7 @@ pub fn evaluate_interrupt(
     plan_valid: bool,
     default_switch_margin: Permille,
     journey_switch_margin: Permille,
-    _decision_context: &DecisionContext,
+    decision_context: &DecisionContext,
 ) -> InterruptDecision {
     if current_action_interruptibility == Interruptibility::NonInterruptible {
         return InterruptDecision::NoInterrupt;
@@ -60,6 +60,7 @@ pub fn evaluate_interrupt(
             planned_candidates,
             default_switch_margin,
             journey_switch_margin,
+            *decision_context,
         ),
     }
 }
@@ -84,14 +85,16 @@ fn interrupt_freely(
     planned_candidates: Option<&[(GoalKey, Option<PlannedPlan>)]>,
     default_switch_margin: Permille,
     journey_switch_margin: Permille,
+    decision_context: DecisionContext,
 ) -> InterruptDecision {
-    if matches!(challenger.grounded.key.kind, GoalKind::LootCorpse { .. }) {
-        return if no_medium_or_above_self_care_or_danger(ranked_candidates) {
+    let policy = goal_family_policy(&challenger.grounded.key.kind);
+    if policy.free_interrupt == FreeInterruptRole::Opportunistic {
+        return if decision_context.is_stressed_at_or_above(GoalPriorityClass::Medium) {
+            InterruptDecision::NoInterrupt
+        } else {
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::OpportunisticLoot,
             }
-        } else {
-            InterruptDecision::NoInterrupt
         };
     }
 
@@ -110,7 +113,8 @@ fn interrupt_freely(
     ) {
         return match switch_kind {
             GoalSwitchKind::HigherPriorityGoal
-                if is_reactive_goal(&challenger.grounded.key.kind) =>
+                if goal_family_policy(&challenger.grounded.key.kind).free_interrupt
+                    == FreeInterruptRole::Reactive =>
             {
                 InterruptDecision::InterruptForReplan {
                     trigger: InterruptTrigger::HigherPriorityGoal,
@@ -138,7 +142,9 @@ fn interrupt_freely(
     };
 
     match switch_kind {
-        GoalSwitchKind::HigherPriorityGoal if is_reactive_goal(&challenger.grounded.key.kind) => {
+        GoalSwitchKind::HigherPriorityGoal
+            if policy.free_interrupt == FreeInterruptRole::Reactive =>
+        {
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::HigherPriorityGoal,
             }
@@ -226,43 +232,6 @@ fn current_priority(
     }
 
     runtime.last_priority_class.map(|class| (class, None))
-}
-
-fn is_reactive_goal(kind: &GoalKind) -> bool {
-    matches!(
-        kind,
-        GoalKind::ConsumeOwnedCommodity { .. }
-            | GoalKind::AcquireCommodity {
-                purpose: CommodityPurpose::SelfConsume,
-                ..
-            }
-            | GoalKind::Sleep
-            | GoalKind::Relieve
-            | GoalKind::Wash
-            | GoalKind::ReduceDanger
-            | GoalKind::Heal { .. }
-    )
-}
-
-fn no_medium_or_above_self_care_or_danger(ranked_candidates: &[RankedGoal]) -> bool {
-    ranked_candidates.iter().all(|candidate| {
-        if candidate.priority_class < GoalPriorityClass::Medium {
-            return true;
-        }
-
-        !matches!(
-            candidate.grounded.key.kind,
-            GoalKind::ConsumeOwnedCommodity { .. }
-                | GoalKind::AcquireCommodity {
-                    purpose: CommodityPurpose::SelfConsume,
-                    ..
-                }
-                | GoalKind::Sleep
-                | GoalKind::Relieve
-                | GoalKind::Wash
-                | GoalKind::ReduceDanger
-        )
-    })
 }
 
 #[cfg(test)]
@@ -571,10 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn freely_interruptible_allows_loot_only_without_medium_self_care_or_danger() {
-        let current_goal = GoalKind::ConsumeOwnedCommodity {
-            commodity: CommodityKind::Bread,
-        };
+    fn freely_interruptible_allows_loot_only_without_medium_stress() {
         let no_pressure = vec![
             ranked(
                 GoalKind::RestockCommodity {
@@ -590,13 +556,23 @@ mod tests {
             ),
         ];
         let blocked_by_hunger = vec![
-            ranked(current_goal, GoalPriorityClass::Medium, 700),
+            ranked(
+                GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                GoalPriorityClass::Medium,
+                700,
+            ),
             ranked(
                 GoalKind::LootCorpse { corpse: entity(9) },
                 GoalPriorityClass::Low,
                 50,
             ),
         ];
+        let stressed_context = DecisionContext {
+            max_self_care_class: GoalPriorityClass::Medium,
+            danger_class: GoalPriorityClass::Background,
+        };
 
         assert_eq!(
             evaluate_interrupt(
@@ -620,14 +596,19 @@ mod tests {
         );
         assert_eq!(
             evaluate_interrupt(
-                &runtime(current_goal, GoalPriorityClass::Medium),
+                &runtime(
+                    GoalKind::ConsumeOwnedCommodity {
+                        commodity: CommodityKind::Bread,
+                    },
+                    GoalPriorityClass::Medium,
+                ),
                 Interruptibility::FreelyInterruptible,
                 &blocked_by_hunger,
                 None,
                 true,
                 default_switch_margin(),
                 default_switch_margin(),
-                &dummy_context(),
+                &stressed_context,
             ),
             InterruptDecision::NoInterrupt
         );
@@ -749,6 +730,89 @@ mod tests {
                 trigger: InterruptTrigger::SuperiorSameClassPlan,
             }
         );
+    }
+
+    #[test]
+    fn bury_corpse_does_not_get_opportunistic_interrupt() {
+        let current_goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let challengers = vec![
+            ranked(current_goal, GoalPriorityClass::Background, 100),
+            ranked(
+                GoalKind::BuryCorpse {
+                    corpse: entity(9),
+                    burial_site: entity(10),
+                },
+                GoalPriorityClass::Low,
+                50,
+            ),
+        ];
+
+        let decision = evaluate_interrupt(
+            &runtime(current_goal, GoalPriorityClass::Background),
+            Interruptibility::FreelyInterruptible,
+            &challengers,
+            None,
+            true,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+
+        // BuryCorpse has Normal free_interrupt role, not Opportunistic.
+        // Since it's a lower-priority goal, it cannot interrupt via HigherPriorityGoal
+        // (Normal goals are blocked) or SameClassMargin (same class, insufficient margin).
+        assert_eq!(decision, InterruptDecision::NoInterrupt);
+    }
+
+    #[test]
+    fn heal_interrupts_via_higher_priority_but_not_via_penalty() {
+        let current_goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let heal_goal = GoalKind::Heal {
+            target: entity(99),
+        };
+
+        // Heal at higher priority class can interrupt freely (Reactive role).
+        let challengers_higher = vec![
+            ranked(current_goal, GoalPriorityClass::Medium, 100),
+            ranked(heal_goal, GoalPriorityClass::High, 900),
+        ];
+        let decision_free = evaluate_interrupt(
+            &runtime(current_goal, GoalPriorityClass::Medium),
+            Interruptibility::FreelyInterruptible,
+            &challengers_higher,
+            None,
+            true,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+        assert_eq!(
+            decision_free,
+            InterruptDecision::InterruptForReplan {
+                trigger: InterruptTrigger::HigherPriorityGoal,
+            }
+        );
+
+        // Heal at Critical does NOT trigger penalty interrupt (PenaltyInterruptEligibility::Never).
+        let challengers_critical = vec![
+            ranked(current_goal, GoalPriorityClass::Medium, 100),
+            ranked(heal_goal, GoalPriorityClass::Critical, 1_000),
+        ];
+        let decision_penalty = evaluate_interrupt(
+            &runtime(current_goal, GoalPriorityClass::Medium),
+            Interruptibility::InterruptibleWithPenalty,
+            &challengers_critical,
+            None,
+            true,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+        assert_eq!(decision_penalty, InterruptDecision::NoInterrupt);
     }
 
     #[allow(clippy::too_many_lines)]
