@@ -1,6 +1,6 @@
 # S09TRAAWAPLASEA-005: Enable full supply chain golden tests with default budget
 
-**Status**: PENDING
+**Status**: NOT IMPLEMENTED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — test configuration changes only
@@ -78,3 +78,8 @@ Remove or update comments referencing budget exhaustion as a blocking issue (e.g
 1. `cargo test -p worldwake-ai golden_supply_chain`
 2. `cargo test -p worldwake-ai` (all golden tests)
 3. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+**Date**: 2026-03-17
+**Result**: Not implemented — investigation revealed the test failure is not caused by budget exhaustion (resolved by S09 tickets 001-004) but by a missing price negotiation mechanism in the trade system. The merchant correctly rejects the consumer's fixed 1-coin offer as `InsufficientPayment` given its `enterprise_weight: pm(900)` and scarce stock. Perception (E14) works correctly — the consumer observes the merchant's return. The plan search works correctly with default budget. The blocker is that `enumerate_trade_payloads` hardcodes all offers at `Quantity(1)` with no mechanism for bidding higher. A new spec `specs/S10-bilateral-trade-negotiation.md` was created to address this architectural gap. The `#[ignore]` comments on both tests were updated to reference S10 as the blocker.

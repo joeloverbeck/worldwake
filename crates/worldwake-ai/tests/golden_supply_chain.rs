@@ -11,9 +11,11 @@
 //!    decision trace assertions.
 //!
 //! The full end-to-end chain (restock → trade → consumption in one simulation)
-//! is blocked by production issues documented in `tickets/SUPPLYCHAINFIX-001.md`:
-//! plan search budget exhaustion at hub nodes, BestEffort silent failures, and
-//! merchant goal oscillation after restock return.
+//! is blocked on `specs/S10-bilateral-trade-negotiation.md`: the trade system
+//! lacks price negotiation, so the consumer's fixed 1-coin offer is rejected by
+//! the enterprise-focused merchant. S09 (A* heuristic + travel pruning) resolved
+//! the earlier plan search budget exhaustion; perception (E14) correctly updates
+//! beliefs. The remaining blocker is purely trade valuation mechanics.
 
 mod golden_harness;
 
@@ -726,11 +728,13 @@ fn test_consumer_trade_replay() {
 
 /// Full combined supply chain test (merchant restock → consumer trade in one sim).
 ///
-/// Currently ignored: the 3-agent scenario requires budget auto-scaling for
-/// return-trip planning from remote OrchardFarm through VillageSquare hub, and
-/// perception (E14) for the consumer to observe the merchant's arrival with
-/// stock. The two segment tests above validate the SUPPLYCHAINFIX-001 fixes
-/// (plan continuation + default budget) independently.
+/// Ignored: blocked on `specs/S10-bilateral-trade-negotiation.md`. The consumer
+/// correctly observes the merchant's return with apples (perception works) and
+/// generates a trade plan, but the merchant rejects the fixed 1-coin offer as
+/// `InsufficientPayment` given its enterprise weight and scarce stock. The trade
+/// system lacks price negotiation — every offer is hardcoded at 1:1. S10
+/// introduces multi-round bilateral negotiation with variable pricing derived
+/// from concrete agent state, which will unblock this test.
 #[test]
 #[ignore]
 fn test_full_supply_chain() {

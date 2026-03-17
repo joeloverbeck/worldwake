@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: COMPLETED
 
 # S09: Travel-Aware Plan Search
 
@@ -299,3 +299,8 @@ No derived value is stored as authoritative state.
 - Jeff Orkin, "Three States and a Plan: The A.I. of F.E.A.R." (GDC 2006) — canonical GOAP reference; demonstrates separation of movement from planning (pattern we deliberately do NOT follow).
 - Eric Jacopin, "Optimizing Practical Planning for Game AI" (Game AI Pro 2, 2014) — analysis of GOAP plan lengths and optimization patterns.
 - Existing worldwake infrastructure: `Topology::shortest_path` (Dijkstra, core/topology.rs), `PlanningSnapshot` adjacency data, `PlanningBudget` configuration.
+
+## Outcome
+
+**Date**: 2026-03-17
+**Result**: Completed via tickets S09TRAAWAPLASEA-001 through S09TRAAWAPLASEA-004. A* heuristic with shortest-path travel distances and goal-directed travel pruning were implemented. All existing golden tests pass with default budget (512 expansions). The remaining full supply chain test blocker (ticket -005) was found to be unrelated to search efficiency — it is a trade valuation issue documented in `specs/S10-bilateral-trade-negotiation.md`.

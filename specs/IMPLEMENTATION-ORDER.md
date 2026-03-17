@@ -60,7 +60,9 @@ S02, E16, E16b, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
 S04 ──→ S05 (stock storage needs selling + ownership)
 S04 ──→ S06 (opportunity valuation needs market presence)
-E14 provides the prerequisite belief boundary for E15, E16, E16c, S01, S02, S03, S04, and S07.
+S10 (no unmet deps — E11 trade + E14 perception both completed; can be scheduled anytime)
+S10 ──→ S06 (opportunity valuation benefits from variable pricing)
+E14 provides the prerequisite belief boundary for E15, E16, E16c, S01, S02, S03, S04, S07, and S10.
 E18, E19, E20 ──→ E22 (integration tests need everything)
 ```
 
@@ -140,7 +142,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 **Step 16** (parallel after E22):
 - **S04**: Merchant Selling Market Presence (needs E14)
 - **S05**: Merchant Stock Storage & Stalls (needs S04, S01, E16c)
-- **S06**: Commodity Opportunity Valuation (needs S04)
+- **S06**: Commodity Opportunity Valuation (needs S04, benefits from S10)
+- **S10**: Bilateral Trade Negotiation (all deps met — E11, E14 completed; can be scheduled earlier)
 
 #### Final Acceptance
 - All Phase 4 gate criteria plus:
@@ -170,6 +173,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | `S04-merchant-selling-market-presence.md` | 4+ | 16 | E14 |
 | `S05-merchant-stock-storage-and-stalls.md` | 4+ | 16 | S04, S01, E16c |
 | `S06-commodity-opportunity-valuation.md` | 4+ | 16 | S04 |
+| `S10-bilateral-trade-negotiation.md` | 4+ | 16 | E11, E14 (all met) |
 
 ## Crate Dependency Graph
 
