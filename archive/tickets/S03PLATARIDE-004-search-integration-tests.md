@@ -1,6 +1,6 @@
 # S03PLATARIDE-004: Search integration tests for exact target binding
 
-**Status**: PENDING
+**Status**: DONE
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — tests only
@@ -102,3 +102,10 @@ Verify that planner-only synthetic candidates (from `planner_only_candidates()`)
 
 1. `cargo test -p worldwake-ai -- test_binding`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added 5 search integration tests in `crates/worldwake-ai/src/search.rs` test module: `test_binding_two_corpses_same_place`, `test_binding_two_hostiles_same_place`, `test_binding_flexible_goal_unaffected`, `test_binding_rejection_trace_populated`, `test_binding_empty_targets_planner_only_bypass`.
+- **Deviations**: Tests placed in `search.rs` (alongside existing search tests and `TestBeliefView` infrastructure) instead of `agent_tick.rs` to avoid ~200 lines of boilerplate duplication. `BindingRejection` field names follow the actual struct (`rejected_targets: Vec<EntityId>`, `required_target: Option<EntityId>`) rather than the ticket's singular form.
+- **Verification**: All 5 new tests pass, all existing `worldwake-ai` golden tests pass, full `cargo test --workspace` and `cargo clippy --workspace` clean.

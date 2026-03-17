@@ -636,6 +636,7 @@ mod tests {
         search_plan, FrontierEntry, SearchCandidate, SearchNode,
     };
     use std::cmp::Ordering;
+    use crate::goal_model::GoalKindPlannerExt;
     use crate::planner_ops::planner_only_candidates;
     use crate::{
         build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
@@ -3893,5 +3894,334 @@ mod tests {
             3,
             "all travel candidates must survive when actor is at a goal-relevant place"
         );
+    }
+
+    // ── S03PLATARIDE-004: Search integration tests for exact target binding ──
+
+    #[test]
+    fn test_binding_two_corpses_same_place() {
+        let actor = entity(1);
+        let corpse_x = entity(2);
+        let corpse_y = entity(3);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town]);
+        // corpse_x and corpse_y are NOT in alive → is_dead returns true
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(corpse_x, EntityKind::Agent);
+        view.kinds.insert(corpse_y, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(corpse_x, town);
+        view.effective_places.insert(corpse_y, town);
+        view.entities_at
+            .insert(town, vec![actor, corpse_x, corpse_y]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        // Corpses must have commodities so LootCorpse is not immediately satisfied.
+        view.commodity_quantities
+            .insert((corpse_x, CommodityKind::Coin), Quantity(3));
+        view.commodity_quantities
+            .insert((corpse_y, CommodityKind::Coin), Quantity(2));
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::LootCorpse { corpse: corpse_x }),
+            evidence_entities: BTreeSet::from([corpse_x, corpse_y]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
+        let mut rejections = Vec::new();
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            Some(&mut rejections),
+        );
+
+        let plan = result.into_plan().expect("search should find a loot plan");
+        // LootCorpse is a progress barrier — the Loot step is the terminal step.
+        let loot_step = plan
+            .steps
+            .iter()
+            .find(|s| s.op_kind == PlannerOpKind::Loot)
+            .expect("plan should contain a Loot step");
+        assert!(
+            loot_step.targets.iter().any(
+                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_x)
+            ),
+            "Loot step must target corpse X"
+        );
+        assert!(
+            !loot_step.targets.iter().any(
+                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_y)
+            ),
+            "Loot step must NOT target corpse Y"
+        );
+        assert!(
+            !rejections.is_empty(),
+            "wrong-target loot affordance for corpse Y should be rejected"
+        );
+        assert!(
+            rejections.iter().any(|r| r.rejected_targets.contains(&corpse_y)),
+            "binding rejections must include corpse Y"
+        );
+    }
+
+    #[test]
+    fn test_binding_two_hostiles_same_place() {
+        let actor = entity(1);
+        let hostile_a = entity(2);
+        let hostile_b = entity(3);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, hostile_a, hostile_b, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(hostile_a, EntityKind::Agent);
+        view.kinds.insert(hostile_b, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(hostile_a, town);
+        view.effective_places.insert(hostile_b, town);
+        view.entities_at
+            .insert(town, vec![actor, hostile_a, hostile_b]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.hostiles.insert(actor, vec![hostile_a, hostile_b]);
+        view.attackers.insert(actor, vec![hostile_a, hostile_b]);
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::EngageHostile { target: hostile_a }),
+            evidence_entities: BTreeSet::from([hostile_a, hostile_b]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
+        let mut rejections = Vec::new();
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            Some(&mut rejections),
+        );
+
+        let plan = result.into_plan().expect("search should find an attack plan");
+        let attack_step = plan
+            .steps
+            .iter()
+            .find(|s| s.op_kind == PlannerOpKind::Attack)
+            .expect("plan should contain an Attack step");
+        assert!(
+            attack_step.targets.iter().any(
+                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_a)
+            ),
+            "Attack step must target hostile A"
+        );
+        assert!(
+            !attack_step.targets.iter().any(
+                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_b)
+            ),
+            "Attack step must NOT target hostile B"
+        );
+        assert!(
+            rejections
+                .iter()
+                .any(|r| r.rejected_targets.contains(&hostile_b)),
+            "binding rejections must include hostile B"
+        );
+    }
+
+    #[test]
+    fn test_binding_flexible_goal_unaffected() {
+        let actor = entity(1);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(800), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::Sleep),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot =
+            build_planning_snapshot(&view, actor, &goal.evidence_entities, &goal.evidence_places, 0);
+        let mut rejections = Vec::new();
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            Some(&mut rejections),
+        );
+
+        let plan = result.into_plan().expect("search should find a sleep plan");
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);
+        assert!(
+            rejections.is_empty(),
+            "flexible Sleep goal must not produce binding rejections, got: {rejections:?}"
+        );
+    }
+
+    #[test]
+    fn test_binding_rejection_trace_populated() {
+        let actor = entity(1);
+        let corpse_x = entity(2);
+        let corpse_y = entity(3);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(corpse_x, EntityKind::Agent);
+        view.kinds.insert(corpse_y, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(corpse_x, town);
+        view.effective_places.insert(corpse_y, town);
+        view.entities_at
+            .insert(town, vec![actor, corpse_x, corpse_y]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        // Corpses must have commodities so LootCorpse is not immediately satisfied.
+        view.commodity_quantities
+            .insert((corpse_x, CommodityKind::Coin), Quantity(3));
+        view.commodity_quantities
+            .insert((corpse_y, CommodityKind::Coin), Quantity(2));
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::LootCorpse { corpse: corpse_x }),
+            evidence_entities: BTreeSet::from([corpse_x, corpse_y]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
+        let mut rejections = Vec::new();
+        let _ = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            Some(&mut rejections),
+        );
+
+        // Verify BindingRejection fields are populated correctly.
+        let corpse_y_rejection = rejections
+            .iter()
+            .find(|r| r.rejected_targets.contains(&corpse_y))
+            .expect("should have a rejection for corpse Y");
+
+        // def_id should reference the loot action.
+        let loot_def = registry
+            .iter()
+            .find(|d| d.name == "loot")
+            .expect("loot action must be registered");
+        assert_eq!(
+            corpse_y_rejection.def_id, loot_def.id,
+            "rejected def_id should match the loot action"
+        );
+
+        // required_target should be corpse_x (the goal's canonical target).
+        assert_eq!(
+            corpse_y_rejection.required_target,
+            Some(corpse_x),
+            "required_target should be the goal's canonical corpse"
+        );
+    }
+
+    #[test]
+    fn test_binding_empty_targets_planner_only_bypass() {
+        let actor = entity(1);
+        let corpse_x = entity(2);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(corpse_x, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(corpse_x, town);
+        view.entities_at.insert(town, vec![actor, corpse_x]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, _handlers) = build_registry();
+        let semantics_table = build_semantics_table(&registry);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([corpse_x]),
+            &BTreeSet::from([town]),
+            0,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        // Generate planner-only synthetic candidates and convert to search candidates.
+        let planner_candidates: Vec<SearchCandidate> =
+            planner_only_candidates(&state, &semantics_table)
+                .into_iter()
+                .map(search_candidate_from_planner)
+                .collect();
+
+        // Every planner-only candidate has empty authoritative_targets after conversion.
+        for candidate in &planner_candidates {
+            assert!(
+                candidate.authoritative_targets.is_empty(),
+                "planner-only candidate should have empty authoritative_targets"
+            );
+        }
+
+        // Verify matches_binding returns true for all of them, even with
+        // an exact-bound goal like LootCorpse.
+        let goal = GoalKind::LootCorpse { corpse: corpse_x };
+        for candidate in &planner_candidates {
+            for (_, semantics) in &semantics_table {
+                assert!(
+                    goal.matches_binding(&candidate.authoritative_targets, semantics.op_kind),
+                    "empty authoritative_targets must bypass binding for any op kind"
+                );
+            }
+        }
     }
 }

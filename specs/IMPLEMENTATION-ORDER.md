@@ -36,6 +36,9 @@ Established explicit ownership for production output: `ProductionOutputOwnership
 ### S02: Goal Decision Policy Unification — COMPLETED
 Unified goal-family decision policy into a single `goal_policy.rs` module with `GoalFamilyPolicy`, `DecisionContext`, and `evaluate_suppression()`. Ranking and interrupts both consume the shared policy surface. Removed all four legacy functions (`is_suppressed`, `is_critical_survival_goal`, `is_reactive_goal`, `no_medium_or_above_self_care_or_danger`). All 16 goal families migrated.
 
+### S03: Planner Target Identity & Affordance Binding — COMPLETED
+Added `matches_binding()` to `GoalKindPlannerExt` with auxiliary-pass/terminal-check dispatch across all 17 `GoalKind` variants. Wired `.retain()` binding filter in search candidates. Added `BindingRejection` trace struct for debuggability. Exact-bound goals (`LootCorpse`, `EngageHostile`, `Heal`, `ShareBelief`, `BuryCorpse`) now reject wrong-target affordances before successor construction; flexible goals remain unaffected.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -43,7 +46,7 @@ All completed specs are archived under `archive/specs/`.
 ## Dependency Graph
 
 ```text
-Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b + S02: COMPLETED
+Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b + S02 + S03: COMPLETED
 
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
 S01 ──→ ✅ COMPLETED (production output ownership claims)
@@ -53,12 +56,12 @@ E16 ──→ E16c (institutional beliefs need offices/factions/support substrat
 E16c ──→ E16b (force legitimacy needs institutional records and belief propagation)
 E16c ──→ E17 (justice records and institutional knowledge should reuse one record/belief architecture)
 E16 ──→ E16b (explicit force legitimacy needs offices, factions, and succession substrate)
-E15 ──→ E17 (crime needs discovery + ownership claims + planner binding)
+E15, S03 ✅ ──→ E17 (crime needs discovery + ownership claims + planner binding)
 E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
 E16b ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
-S01 ✅, S03, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
+S01 ✅, S03 ✅, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
 S02 ✅, E16 ──→ E18, E20
 S02 ✅, E16, E16b, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
@@ -66,7 +69,7 @@ S04 ──→ S05 (stock storage needs selling + ownership)
 S04 ──→ S06 (opportunity valuation needs market presence)
 S10 (no unmet deps — E11 trade + E14 perception both completed; can be scheduled anytime)
 S10 ──→ S06 (opportunity valuation benefits from variable pricing)
-E14 provides the prerequisite belief boundary for E15, E16, E16c, S01, S02, S03, S04, S07, and S10.
+E14 provides the prerequisite belief boundary for E15, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, S07, and S10.
 E18, E19, E20 ──→ E22 (integration tests need everything)
 ```
 
@@ -87,7 +90,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **E16**: Offices, Succession & Factions — ✅ COMPLETED
 - **S01**: Production Output Ownership Claims — ✅ COMPLETED
 - **S02**: Goal Decision Policy Unification — ✅ COMPLETED
-- **S03**: Planner Target Identity & Affordance Binding
+- **S03**: Planner Target Identity & Affordance Binding — ✅ COMPLETED
 - **S07**: Care Intent & Treatment Targeting
 
 **Step 11**:
@@ -163,12 +166,11 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S03-planner-target-identity-and-affordance-binding.md` | 3 | 10 | E14 |
 | `S07-care-intent-and-treatment-targeting.md` | 3 | 10 | E14 |
 | `E16d-political-planning-and-golden-coverage.md` | 3 | 11 | E16, E13, E12 |
 | `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 12 | E14, E15, E16 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
-| `E17-crime-theft-justice.md` | 3 | 13 | E15, S01, S03, E16c |
+| `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, S02 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
@@ -197,6 +199,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16, S01, S02 complete) |
+| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16, S01, S02, S03 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

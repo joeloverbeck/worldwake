@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Planner Target Identity and Affordance Binding
 
@@ -361,3 +361,10 @@ When this spec is scheduled, it should be implemented before or alongside:
 - exact evidence targeting in E17 crime/theft/justice follow-on work
 
 Otherwise those efforts will likely reintroduce one-off exact-target hacks.
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Implemented across 4 tickets (S03PLATARIDE-001 through -004). Added `matches_binding()` to `GoalKindPlannerExt` in `goal_model.rs` with auxiliary-pass/terminal-check dispatch. Added `.retain()` binding filter in `search_candidates()` in `search.rs`. Added `BindingRejection` trace struct and `binding_rejections` field on `PlanAttemptTrace` in `decision_trace.rs`, wired through `search_plan` and `agent_tick.rs` trace propagation. Added unit tests for all 17 `GoalKind` variants' binding behavior and 5 search integration tests covering two-corpses, two-hostiles, flexible-goal, rejection-trace, and empty-targets-bypass scenarios.
+- **Deviations**: `BindingRejection` uses `rejected_targets: Vec<EntityId>` (plural) and `required_target: Option<EntityId>` rather than the spec's singular `rejected_target: EntityId`, to handle multi-target action defs uniformly. Search integration tests placed in `search.rs` test module (co-located with `TestBeliefView` infrastructure) rather than `agent_tick.rs`.
+- **Verification**: All unit and integration tests pass. `cargo test --workspace` and `cargo clippy --workspace` clean. Deliverables 1-3, 8 implemented; deliverables 4-7 verified as already correct (no changes needed).
