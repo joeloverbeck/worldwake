@@ -1,5 +1,7 @@
 # Action Execution Trace Implementation Plan
 
+**Status**: ✅ COMPLETED
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add an opt-in action execution trace layer to `worldwake-sim` that records action lifecycle events (started, committed, aborted, start-failed), closing the Principle 27 debuggability gap for the causal path.
@@ -872,3 +874,10 @@ cargo test -p worldwake-ai --test golden_combat
 cargo test --workspace
 cargo clippy --workspace
 ```
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: All 6 tasks implemented across ACTEXETRA-001 through ACTEXETRA-005. Created `action_trace.rs` module with `ActionTraceSink`/`ActionTraceEvent`/`ActionTraceKind` types. Threaded trace sink through `TickStepServices` → `TickStepRuntime` with recording at all 5 lifecycle hook points. Integrated into `GoldenHarness` with `enable_action_tracing()`/`action_trace_sink()`. Added golden test `golden_action_trace_records_loot_lifecycle`. Updated CLAUDE.md and AGENTS.md documentation.
+- **Deviations**: None — implemented as specified.
+- **Verification**: Full workspace tests pass, clippy clean.

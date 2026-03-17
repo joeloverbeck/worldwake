@@ -132,6 +132,7 @@ The simulation crate contains the action framework, scheduler, tick loop, and re
 | `system_dispatch` | `SystemDispatch` — routes tick execution to registered systems |
 | `tick_input_producer` | `TickInputContext` — context struct passed to input producers for autonomous AI tick integration |
 | `trade_valuation` | `TradeAcceptance`, `TradeRejectionReason` — trade decision enums with valuation snapshot utilities |
+| `action_trace` | `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` — opt-in action lifecycle recording for debugging |
 
 ### worldwake-systems modules
 
@@ -244,6 +245,61 @@ eprintln!("{}", trace.outcome.summary());
 - **Plan search failures**: Check `PlanSearchOutcome::BudgetExhausted` / `FrontierExhausted` / `Unsupported`.
 
 Tracing is opt-in and zero-cost when disabled. Existing tests without `enable_tracing()` are unaffected.
+
+## Debugging Action Execution with Action Traces
+
+When debugging action lifecycle issues (e.g., "Did this action start?", "When did it complete?", "Why was it aborted?"), use the **action execution trace system** in `worldwake-sim`. This complements the AI decision trace (which covers *why* an agent chose an action) by covering *what happened when the action ran*.
+
+### How to use in golden tests
+
+```rust
+// 1. Enable tracing on the harness before stepping.
+h.enable_action_tracing();
+
+// 2. Run ticks as normal.
+for _ in 0..20 { h.step_once(); }
+
+// 3. Query traces.
+let sink = h.action_trace_sink().unwrap();
+
+// Per-agent lookup:
+let agent_events = sink.events_for(agent);
+
+// Per-tick lookup:
+let tick_events = sink.events_at(Tick(5));
+
+// Combined:
+let agent_tick_events = sink.events_for_at(agent, Tick(5));
+
+// Last completed action for an agent:
+let last = sink.last_committed(agent);
+
+// Human-readable dump to stderr:
+sink.dump_agent(agent);
+
+// One-line summary per event:
+for event in sink.events() {
+    eprintln!("{}", event.summary());
+}
+```
+
+### When to use action traces vs decision traces
+
+| Question | Use |
+|----------|-----|
+| "Why did the agent choose to loot?" | Decision trace (`h.driver.enable_tracing()`) |
+| "Did the loot action actually execute?" | Action trace (`h.enable_action_tracing()`) |
+| "How long did the action take?" | Action trace — compare Started tick vs Committed tick |
+| "Why was the action aborted?" | Action trace — check `ActionTraceKind::Aborted { reason }` |
+| "What items were created?" | Action trace — check `CommitOutcome::materializations` |
+
+### Golden test observation strategy
+
+- **1-tick actions** (e.g., loot, eat): Complete within a single `step_once()` call. Use **state-delta observation** (check item ownership changes between ticks) or action traces. Do NOT rely on `agent_active_action_name()` — the action won't be visible between ticks.
+- **Multi-tick actions** (e.g., harvest, travel, craft): Visible as active between ticks. Use `agent_active_action_name()` or action traces.
+- **When in doubt**: Enable action tracing and check `events_for_at(agent, tick)` to see exactly what happened.
+
+Action tracing is opt-in and zero-cost when disabled. Do not leave `enable_action_tracing()` in committed test code unless the test explicitly asserts on trace data.
 
 ## Spec Drafting Rules
 

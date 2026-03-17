@@ -112,6 +112,16 @@ sink.dump_agent(agent, &h.defs);
 
 Tracing is opt-in and zero-cost when disabled. Do not leave `enable_tracing()` in committed test code unless the test explicitly asserts on trace data.
 
+## Debugging Action Execution with Action Traces
+
+For action lifecycle questions ("Did the action run?", "When did it complete?", "Why was it aborted?"), use the action execution trace system in `worldwake-sim`. Enable with `h.enable_action_tracing()` in golden tests. Query with `h.action_trace_sink().unwrap().events_for(agent)`.
+
+Key types: `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` (Started, Committed, Aborted, StartFailed).
+
+**Important**: Some actions (e.g., loot, eat) complete within a single tick. They are invisible to inter-tick `agent_active_action_name()` observation. Use action traces or state-delta checks for these.
+
+See CLAUDE.md for detailed usage examples and the decision-trace vs action-trace guidance table.
+
 ## Delivery Planning
 
 - The implementation plan spans 22 epics across 4 phases.

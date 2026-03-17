@@ -1,6 +1,6 @@
 # ACTEXETRA-005: Update CLAUDE.md and AGENTS.md documentation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — documentation only
@@ -78,3 +78,10 @@ Place after the decision traces section. Brief summary with key types and a poin
 
 1. `cargo test --workspace`
 2. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added `action_trace` row to worldwake-sim modules table in CLAUDE.md. Added "Debugging Action Execution with Action Traces" section to CLAUDE.md with code examples, decision-vs-action trace guidance table, and golden test observation strategy. Added brief summary section to AGENTS.md with key types and pointer to CLAUDE.md.
+- **Deviations**: None — implemented exactly as specified.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.
