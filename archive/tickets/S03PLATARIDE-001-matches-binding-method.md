@@ -1,6 +1,6 @@
 # S03PLATARIDE-001: Add `matches_binding()` to `GoalKindPlannerExt`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `GoalKindPlannerExt` trait gains a new method; `GoalKind` impl block extended
@@ -119,3 +119,10 @@ Per-variant tests in `goal_model.rs` (or a new `#[cfg(test)] mod matches_binding
 
 1. `cargo test -p worldwake-ai -- matches_binding`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added `matches_binding()` method to `GoalKindPlannerExt` trait and implemented it on `GoalKind` in `crates/worldwake-ai/src/goal_model.rs`. Three-layer dispatch: empty targets bypass, auxiliary ops bypass, terminal ops check goal-specific target identity. Added 22 unit tests covering all acceptance criteria.
+- **Deviations**: Clippy required merging `EngageHostile`/`Heal` arms (identical `contains(target)` bodies) and merging `ClaimOffice`/`SupportCandidateForOffice` with the flexible goals arm (all return `true`). Semantically identical to the ticket's specification. Ticket assumption #1 listed `is_terminal` as a trait method but the actual methods are `is_progress_barrier` and `is_satisfied` — no impact on implementation.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.

@@ -67,6 +67,19 @@ pub trait GoalKindPlannerExt {
         state: &PlanningState<'_>,
         recipes: &RecipeRegistry,
     ) -> Vec<EntityId>;
+    /// Whether the given `op_kind` acting on `authoritative_targets` satisfies
+    /// this goal's target-binding requirement.
+    ///
+    /// - Empty `authoritative_targets` → always `true` (planner-only synthetic candidates).
+    /// - Auxiliary ops → always `true` (they serve the goal indirectly).
+    /// - Terminal ops on exact-bound goals → `true` only if targets contain the
+    ///   goal's canonical entity.
+    /// - Flexible goals → always `true` regardless of op or targets.
+    fn matches_binding(
+        &self,
+        authoritative_targets: &[EntityId],
+        op_kind: PlannerOpKind,
+    ) -> bool;
 }
 
 const CONSUME_OPS: &[PlannerOpKind] = &[
@@ -665,6 +678,78 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => {
                 Vec::new()
+            }
+        }
+    }
+
+    fn matches_binding(
+        &self,
+        authoritative_targets: &[EntityId],
+        op_kind: PlannerOpKind,
+    ) -> bool {
+        // Planner-only synthetic candidates have empty targets — always pass.
+        if authoritative_targets.is_empty() {
+            return true;
+        }
+
+        // Auxiliary ops serve the goal indirectly — always pass.
+        match op_kind {
+            PlannerOpKind::Travel
+            | PlannerOpKind::Trade
+            | PlannerOpKind::Harvest
+            | PlannerOpKind::Craft
+            | PlannerOpKind::QueueForFacilityUse
+            | PlannerOpKind::MoveCargo
+            | PlannerOpKind::Consume
+            | PlannerOpKind::Sleep
+            | PlannerOpKind::Relieve
+            | PlannerOpKind::Wash
+            | PlannerOpKind::Defend
+            | PlannerOpKind::Bribe
+            | PlannerOpKind::Threaten => return true,
+            // Terminal ops — fall through to goal-specific binding check.
+            PlannerOpKind::Attack
+            | PlannerOpKind::Loot
+            | PlannerOpKind::Heal
+            | PlannerOpKind::Tell
+            | PlannerOpKind::DeclareSupport
+            | PlannerOpKind::Bury => {}
+        }
+
+        // Terminal ops on flexible goals — always pass.
+        // Terminal ops on exact-bound goals — verify target identity.
+        match self {
+            // Flexible goals and DeclareSupport edge case: no binding requirement.
+            // ClaimOffice/SupportCandidateForOffice have empty bound_targets in
+            // practice (handled by the empty-targets bypass above). If non-empty,
+            // payload override handles correctness.
+            GoalKind::ConsumeOwnedCommodity { .. }
+            | GoalKind::AcquireCommodity { .. }
+            | GoalKind::Sleep
+            | GoalKind::Relieve
+            | GoalKind::Wash
+            | GoalKind::ReduceDanger
+            | GoalKind::ProduceCommodity { .. }
+            | GoalKind::SellCommodity { .. }
+            | GoalKind::RestockCommodity { .. }
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. } => true,
+
+            // Exact-bound goals: target must match.
+            GoalKind::EngageHostile { target } | GoalKind::Heal { target } => {
+                authoritative_targets.contains(target)
+            }
+            GoalKind::LootCorpse { corpse } => authoritative_targets.contains(corpse),
+            GoalKind::BuryCorpse {
+                corpse,
+                burial_site,
+            } => {
+                authoritative_targets.contains(corpse)
+                    || authoritative_targets.contains(burial_site)
+            }
+            GoalKind::ShareBelief { listener, .. } => authoritative_targets.contains(listener),
+            GoalKind::MoveCargo { destination, .. } => {
+                authoritative_targets.contains(destination)
             }
         }
     }
@@ -2416,6 +2501,237 @@ mod tests {
         assert_eq!(goals.len(), 17);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
+        }
+    }
+
+    // ── matches_binding tests ──────────────────────────────────────────
+
+    mod matches_binding_tests {
+        use super::*;
+
+        fn id(slot: u32) -> EntityId {
+            entity_id(slot, 1)
+        }
+
+        // ── LootCorpse ────────────────────────────────────────────────
+
+        #[test]
+        fn loot_corpse_match() {
+            let corpse = id(1);
+            let goal = GoalKind::LootCorpse { corpse };
+            assert!(goal.matches_binding(&[corpse], PlannerOpKind::Loot));
+        }
+
+        #[test]
+        fn loot_corpse_mismatch() {
+            let goal = GoalKind::LootCorpse { corpse: id(1) };
+            assert!(!goal.matches_binding(&[id(2)], PlannerOpKind::Loot));
+        }
+
+        #[test]
+        fn auxiliary_bypass() {
+            let goal = GoalKind::LootCorpse { corpse: id(1) };
+            assert!(goal.matches_binding(&[id(99)], PlannerOpKind::Travel));
+        }
+
+        #[test]
+        fn empty_targets_bypass() {
+            let goal = GoalKind::LootCorpse { corpse: id(1) };
+            assert!(goal.matches_binding(&[], PlannerOpKind::Loot));
+        }
+
+        // ── Flexible goals ────────────────────────────────────────────
+
+        #[test]
+        fn flexible_goal_sleep() {
+            let goal = GoalKind::Sleep;
+            assert!(goal.matches_binding(&[id(99)], PlannerOpKind::Attack));
+            assert!(goal.matches_binding(&[id(99)], PlannerOpKind::Loot));
+            assert!(goal.matches_binding(&[], PlannerOpKind::Sleep));
+        }
+
+        #[test]
+        fn flexible_goal_consume_owned() {
+            let goal = GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Water,
+            };
+            assert!(goal.matches_binding(&[id(5)], PlannerOpKind::Loot));
+        }
+
+        #[test]
+        fn flexible_goal_reduce_danger() {
+            let goal = GoalKind::ReduceDanger;
+            assert!(goal.matches_binding(&[id(5)], PlannerOpKind::Attack));
+        }
+
+        // ── EngageHostile ─────────────────────────────────────────────
+
+        #[test]
+        fn engage_hostile_match() {
+            let target = id(10);
+            let goal = GoalKind::EngageHostile { target };
+            assert!(goal.matches_binding(&[target], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn engage_hostile_mismatch() {
+            let goal = GoalKind::EngageHostile { target: id(10) };
+            assert!(!goal.matches_binding(&[id(11)], PlannerOpKind::Attack));
+        }
+
+        // ── Heal ──────────────────────────────────────────────────────
+
+        #[test]
+        fn heal_match() {
+            let target = id(20);
+            let goal = GoalKind::Heal { target };
+            assert!(goal.matches_binding(&[target], PlannerOpKind::Heal));
+        }
+
+        #[test]
+        fn heal_mismatch() {
+            let goal = GoalKind::Heal { target: id(20) };
+            assert!(!goal.matches_binding(&[id(21)], PlannerOpKind::Heal));
+        }
+
+        // ── ShareBelief ───────────────────────────────────────────────
+
+        #[test]
+        fn share_belief_match() {
+            let listener = id(30);
+            let goal = GoalKind::ShareBelief {
+                listener,
+                subject: id(99),
+            };
+            assert!(goal.matches_binding(&[listener], PlannerOpKind::Tell));
+        }
+
+        #[test]
+        fn share_belief_mismatch() {
+            let goal = GoalKind::ShareBelief {
+                listener: id(30),
+                subject: id(99),
+            };
+            assert!(!goal.matches_binding(&[id(31)], PlannerOpKind::Tell));
+        }
+
+        // ── MoveCargo ─────────────────────────────────────────────────
+
+        #[test]
+        fn move_cargo_destination_match() {
+            let dest = id(40);
+            let goal = GoalKind::MoveCargo {
+                commodity: CommodityKind::Water,
+                destination: dest,
+            };
+            assert!(goal.matches_binding(&[dest], PlannerOpKind::Loot));
+        }
+
+        #[test]
+        fn move_cargo_destination_mismatch() {
+            let goal = GoalKind::MoveCargo {
+                commodity: CommodityKind::Water,
+                destination: id(40),
+            };
+            assert!(!goal.matches_binding(&[id(41)], PlannerOpKind::Loot));
+        }
+
+        // ── BuryCorpse ───────────────────────────────────────────────
+
+        #[test]
+        fn bury_corpse_matches_corpse() {
+            let corpse = id(50);
+            let goal = GoalKind::BuryCorpse {
+                corpse,
+                burial_site: id(51),
+            };
+            assert!(goal.matches_binding(&[corpse], PlannerOpKind::Bury));
+        }
+
+        #[test]
+        fn bury_corpse_matches_burial_site() {
+            let burial_site = id(51);
+            let goal = GoalKind::BuryCorpse {
+                corpse: id(50),
+                burial_site,
+            };
+            assert!(goal.matches_binding(&[burial_site], PlannerOpKind::Bury));
+        }
+
+        #[test]
+        fn bury_corpse_mismatch() {
+            let goal = GoalKind::BuryCorpse {
+                corpse: id(50),
+                burial_site: id(51),
+            };
+            assert!(!goal.matches_binding(&[id(52)], PlannerOpKind::Bury));
+        }
+
+        // ── DeclareSupport (always passes) ────────────────────────────
+
+        #[test]
+        fn claim_office_declare_support_passes() {
+            let goal = GoalKind::ClaimOffice { office: id(60) };
+            assert!(goal.matches_binding(&[id(99)], PlannerOpKind::DeclareSupport));
+        }
+
+        #[test]
+        fn support_candidate_declare_support_passes() {
+            let goal = GoalKind::SupportCandidateForOffice {
+                office: id(60),
+                candidate: id(61),
+            };
+            assert!(goal.matches_binding(&[id(99)], PlannerOpKind::DeclareSupport));
+        }
+
+        // ── All auxiliary ops bypass on exact-bound goal ──────────────
+
+        #[test]
+        fn all_auxiliary_ops_bypass() {
+            let goal = GoalKind::EngageHostile { target: id(10) };
+            let unrelated = &[id(99)];
+            let auxiliary_ops = [
+                PlannerOpKind::Travel,
+                PlannerOpKind::Trade,
+                PlannerOpKind::Harvest,
+                PlannerOpKind::Craft,
+                PlannerOpKind::QueueForFacilityUse,
+                PlannerOpKind::MoveCargo,
+                PlannerOpKind::Consume,
+                PlannerOpKind::Sleep,
+                PlannerOpKind::Relieve,
+                PlannerOpKind::Wash,
+                PlannerOpKind::Defend,
+                PlannerOpKind::Bribe,
+                PlannerOpKind::Threaten,
+            ];
+            for op in auxiliary_ops {
+                assert!(
+                    goal.matches_binding(unrelated, op),
+                    "auxiliary op {op:?} should bypass binding"
+                );
+            }
+        }
+
+        // ── Empty targets bypass on all terminal ops ──────────────────
+
+        #[test]
+        fn empty_targets_bypass_all_terminal_ops() {
+            let goal = GoalKind::EngageHostile { target: id(10) };
+            let terminal_ops = [
+                PlannerOpKind::Attack,
+                PlannerOpKind::Loot,
+                PlannerOpKind::Heal,
+                PlannerOpKind::Tell,
+                PlannerOpKind::DeclareSupport,
+                PlannerOpKind::Bury,
+            ];
+            for op in terminal_ops {
+                assert!(
+                    goal.matches_binding(&[], op),
+                    "empty targets should bypass terminal op {op:?}"
+                );
+            }
         }
     }
 }
