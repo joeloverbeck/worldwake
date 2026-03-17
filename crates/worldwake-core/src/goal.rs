@@ -8,7 +8,6 @@ pub enum CommodityPurpose {
     SelfConsume,
     Restock,
     RecipeInput(RecipeId),
-    Treatment,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -27,8 +26,8 @@ pub enum GoalKind {
         target: EntityId,
     },
     ReduceDanger,
-    Heal {
-        target: EntityId,
+    TreatWounds {
+        patient: EntityId,
     },
     ProduceCommodity {
         recipe_id: RecipeId,
@@ -85,7 +84,7 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::SellCommodity { commodity }
             | GoalKind::RestockCommodity { commodity } => (Some(commodity), None, None),
             GoalKind::EngageHostile { target }
-            | GoalKind::Heal { target }
+            | GoalKind::TreatWounds { patient: target }
             | GoalKind::LootCorpse { corpse: target }
             | GoalKind::ClaimOffice { office: target } => (None, Some(target), None),
             GoalKind::MoveCargo {
@@ -160,6 +159,27 @@ mod tests {
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, Some(corpse));
         assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn goal_key_extracts_patient_for_treat_wounds() {
+        let patient = entity_id(20, 0);
+        let key = GoalKey::from(GoalKind::TreatWounds { patient });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(patient));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn treat_wounds_goal_roundtrips_through_bincode() {
+        let patient = entity_id(21, 0);
+        let goal = GoalKind::TreatWounds { patient };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
     }
 
     #[test]

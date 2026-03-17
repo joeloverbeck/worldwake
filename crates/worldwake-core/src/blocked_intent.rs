@@ -159,7 +159,7 @@ mod tests {
         let key = sample_goal_key();
         let other = crate::GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
-            purpose: crate::CommodityPurpose::Treatment,
+            purpose: crate::CommodityPurpose::SelfConsume,
         });
         let mut memory = BlockedIntentMemory {
             intents: vec![

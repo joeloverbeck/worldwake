@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-001: Replace GoalKind::Heal with TreatWounds and remove CommodityPurpose::Treatment
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — goal identity types in worldwake-core
@@ -99,3 +99,13 @@ The test at line 162 uses `CommodityPurpose::Treatment` — switch to another pu
 2. `cargo clippy -p worldwake-core`
 
 Note: `cargo test --workspace` will NOT pass after this ticket alone — downstream crates have exhaustive matches on `GoalKind` that will fail to compile. This is intentional; subsequent tickets fix those.
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**:
+  - `goal.rs`: Renamed `GoalKind::Heal { target }` to `GoalKind::TreatWounds { patient }`, removed `CommodityPurpose::Treatment`, updated `GoalKey::from()` shared match arm
+  - `blocked_intent.rs`: Test switched from `CommodityPurpose::Treatment` to `SelfConsume`
+  - Added `goal_key_extracts_patient_for_treat_wounds` and `treat_wounds_goal_roundtrips_through_bincode` tests
+- **Deviations**: None — implemented exactly as specified
+- **Verification**: `cargo test -p worldwake-core` 683 passed / 0 failed; `cargo clippy -p worldwake-core` clean
