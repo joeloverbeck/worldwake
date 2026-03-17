@@ -12,6 +12,7 @@ mod enterprise;
 pub mod failure_handling;
 pub mod goal_explanation;
 pub mod goal_model;
+pub mod goal_policy;
 mod goal_switching;
 pub mod interrupts;
 mod journey_switch_policy;
@@ -38,6 +39,10 @@ pub use decision_runtime::{
     JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
+pub use goal_policy::{
+    evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole,
+    GoalFamilyPolicy, GoalPolicyOutcome,
+};
 pub use goal_switching::GoalSwitchKind;
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,

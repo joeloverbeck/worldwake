@@ -1,6 +1,6 @@
 # S02GOADECPOLUNI-001: Create goal_policy module with types, DecisionContext, and policy lookup
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new module in worldwake-ai
@@ -94,3 +94,13 @@ Add `pub mod goal_policy;` and re-export key types: `DecisionContext`, `GoalFami
 
 1. `cargo test -p worldwake-ai goal_policy`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**:
+  - Created `crates/worldwake-ai/src/goal_policy.rs` with `DecisionContext`, `SuppressionRule`, `PenaltyInterruptEligibility`, `FreeInterruptRole`, `GoalFamilyPolicy`, `GoalPolicyOutcome`, `goal_family_policy()`, and `evaluate_suppression()`.
+  - Registered `pub mod goal_policy` and re-exports in `crates/worldwake-ai/src/lib.rs`.
+  - 17 unit tests covering all acceptance criteria.
+- **Deviations**: Clippy's `match_same_arms` lint required merging `EngageHostile` with enterprise goals and `BuryCorpse` with social/political goals into combined match arms. No behavioral change.
+- **Verification**: `cargo test -p worldwake-ai` (484 passed), `cargo clippy --workspace` (clean).
