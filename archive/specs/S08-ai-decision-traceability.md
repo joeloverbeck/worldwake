@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: ✅ COMPLETED
 
 # AI Decision Traceability
 
@@ -443,3 +443,25 @@ N/A — no feedback loops to dampen.
 - **Derived**: All query results (`traces_for`, `trace_at`, `dump_agent`) are computed on the fly from stored traces
 
 No derived value is stored as authoritative state.
+
+
+## Outcome
+
+**Completion date**: 2026-03-17
+
+**What changed**:
+- `decision_trace.rs` module added to `worldwake-ai` with full trace data model (`AgentDecisionTrace`, `DecisionOutcome`, `PlanningPipelineTrace`, `CandidateTrace`, `PlanSearchTrace`, `SelectionTrace`, `ExecutionTrace`, `InterruptTrace`, `DecisionTraceSink`)
+- Trace collection threaded through `agent_tick.rs` pipeline with zero-cost `Option<&mut DecisionTraceSink>` pattern
+- `AgentTickDriver` gained `enable_tracing()` / `trace_sink()` API
+- `DecisionTraceSink` provides `traces_for()`, `trace_at()`, `dump_agent()`, `summary()` query methods
+- Golden test harness integrated with trace enable/query support
+- BestEffort action start failure recording added to `worldwake-sim` scheduler
+- Implemented across tickets S08AIDECTRA-001 through S08AIDECTRA-005
+
+**Deviations from original plan**:
+- None significant. All five tickets implemented as specified.
+
+**Verification results**:
+- `cargo test --workspace` passes
+- `cargo clippy --workspace` clean
+- Decision traces actively used to debug golden supply chain tests (SUPPLYCHAINFIX-001)
