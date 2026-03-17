@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Goal Decision Policy Unification
 
@@ -484,3 +484,10 @@ Derived transient state:
 1. **BuryCorpse interrupt**: BuryCorpse gets `Normal` free_interrupt, not `Opportunistic`. Different from LootCorpse.
 2. **Diagnostics**: Runtime-accessible (not test-only).
 3. **Non-corpse migration**: All 16 families in one pass.
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What actually changed**: Implemented across 6 tickets (S02GOADECPOLUNI-001 through 006). Created `goal_policy.rs` with `GoalFamilyPolicy`, `DecisionContext`, `evaluate_suppression()`, and `goal_family_policy()`. Migrated `ranking.rs` to embed `DecisionContext` in `RankingContext` and consume `evaluate_suppression()` for suppression decisions. Migrated `interrupts.rs` to consume `goal_family_policy()` for penalty interrupt eligibility and free interrupt role decisions. Updated `agent_tick.rs` to build `DecisionContext` once per agent tick and thread to both ranking and interrupts. Removed all four legacy functions: `is_suppressed()`, `is_critical_survival_goal()`, `is_reactive_goal()`, `no_medium_or_above_self_care_or_danger()`.
+- **Deviations from original plan**: None. All 8 deliverables implemented as specified. All 16 goal families migrated in one pass.
+- **Verification results**: All workspace tests, clippy, and build pass clean. All golden corpse-opportunism, suppression, and interrupt scenarios pass. Zero legacy function definitions remain in production code.

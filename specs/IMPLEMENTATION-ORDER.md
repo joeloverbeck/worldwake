@@ -33,6 +33,9 @@ Political follow-up work remains active in E16d (planner semantics + golden cove
 ### S01: Production Output Ownership Claims — COMPLETED
 Established explicit ownership for production output: `ProductionOutputOwnershipPolicy` component with Actor/ProducerOwner/Unowned variants, `create_item_lot_with_owner()` atomic helper, `can_exercise_control()` extended with faction/office delegation, harvest and craft commit ownership resolution, `believed_owner_of()` belief query, ownership-gated pickup validation, and GOAP planner adaptations for actor-owned output.
 
+### S02: Goal Decision Policy Unification — COMPLETED
+Unified goal-family decision policy into a single `goal_policy.rs` module with `GoalFamilyPolicy`, `DecisionContext`, and `evaluate_suppression()`. Ranking and interrupts both consume the shared policy surface. Removed all four legacy functions (`is_suppressed`, `is_critical_survival_goal`, `is_reactive_goal`, `no_medium_or_above_self_care_or_danger`). All 16 goal families migrated.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -40,10 +43,11 @@ All completed specs are archived under `archive/specs/`.
 ## Dependency Graph
 
 ```text
-Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b: COMPLETED
+Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b + S02: COMPLETED
 
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
 S01 ──→ ✅ COMPLETED (production output ownership claims)
+S02 ──→ ✅ COMPLETED (goal decision policy unification)
 E16 ──→ E16d (political planning fix and E16 golden coverage build on office/faction actions)
 E16 ──→ E16c (institutional beliefs need offices/factions/support substrate)
 E16c ──→ E16b (force legitimacy needs institutional records and belief propagation)
@@ -55,8 +59,8 @@ E16 ──→ E19 (guards need public order)
 E16b ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
 S01 ✅, S03, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
-S02, E16 ──→ E18, E20
-S02, E16, E16b, E16c ──→ E19
+S02 ✅, E16 ──→ E18, E20
+S02 ✅, E16, E16b, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
 S04 ──→ S05 (stock storage needs selling + ownership)
 S04 ──→ S06 (opportunity valuation needs market presence)
@@ -82,7 +86,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **E15b**: Social AI Goals — ✅ COMPLETED
 - **E16**: Offices, Succession & Factions — ✅ COMPLETED
 - **S01**: Production Output Ownership Claims — ✅ COMPLETED
-- **S02**: Goal Decision Policy Unification
+- **S02**: Goal Decision Policy Unification — ✅ COMPLETED
 - **S03**: Planner Target Identity & Affordance Binding
 - **S07**: Care Intent & Treatment Targeting
 
@@ -120,11 +124,11 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 
 **Step 14** (parallel):
 - **E18**: Bandit Camp Dynamics
-  - needs S02, E16
+  - needs ~~S02~~, E16
 - **E19**: Guard & Patrol Adaptation
-  - needs S02, E16, E16b, E16c
+  - needs ~~S02~~, E16, E16b, E16c
 - **E20**: Companion Behaviors
-  - needs S02
+  - needs ~~S02~~ (all deps met)
 
 **Step 15** (needs E18–E20):
 - **E22**: Scenario Integration & Soak Tests
@@ -159,7 +163,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S02-goal-decision-policy-unification.md` | 3 | 10 | E14 |
 | `S03-planner-target-identity-and-affordance-binding.md` | 3 | 10 | E14 |
 | `S07-care-intent-and-treatment-targeting.md` | 3 | 10 | E14 |
 | `E16d-political-planning-and-golden-coverage.md` | 3 | 11 | E16, E13, E12 |
@@ -194,6 +197,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16, S01 complete) |
+| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16, S01, S02 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

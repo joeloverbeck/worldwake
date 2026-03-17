@@ -1,6 +1,6 @@
 # S02GOADECPOLUNI-006: Final verification — remove all legacy policy functions, full golden + clippy pass
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — cleanup and verification only
@@ -43,12 +43,12 @@ After all deletions, remove unused `use` statements in ranking.rs, interrupts.rs
 ### 3. Verify spec acceptance criteria checklist
 
 Confirm each item from the spec's "Acceptance Criteria" section:
-- [ ] The active corpse-opportunism split between `ranking.rs` and `interrupts.rs` is removed
-- [ ] One shared goal-family policy declaration surface exists in `goal_policy.rs`
-- [ ] Ranking and interrupts both consume that surface
-- [ ] `is_suppressed()`, `is_critical_survival_goal()`, `is_reactive_goal()`, `no_medium_or_above_self_care_or_danger()` are completely removed
-- [ ] No new world components or compatibility shims are introduced
-- [ ] All 16 goal families are migrated (17 GoalKind variants, but AcquireCommodity with different purposes counts as multiple families sharing the same variant)
+- [x] The active corpse-opportunism split between `ranking.rs` and `interrupts.rs` is removed
+- [x] One shared goal-family policy declaration surface exists in `goal_policy.rs`
+- [x] Ranking and interrupts both consume that surface
+- [x] `is_suppressed()`, `is_critical_survival_goal()`, `is_reactive_goal()`, `no_medium_or_above_self_care_or_danger()` are completely removed
+- [x] No new world components or compatibility shims are introduced
+- [x] All 16 goal families are migrated (17 GoalKind variants, but AcquireCommodity with different purposes counts as multiple families sharing the same variant)
 
 ### 4. Run full test suite
 
@@ -98,3 +98,10 @@ Confirm all tests pass across the entire workspace.
 1. `cargo test --workspace`
 2. `cargo clippy --workspace`
 3. `grep -rn 'fn is_suppressed\|fn is_critical_survival_goal\|fn is_reactive_goal\|fn no_medium_or_above_self_care_or_danger' crates/worldwake-ai/src/ranking.rs crates/worldwake-ai/src/interrupts.rs`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What actually changed**: Pure verification pass — no code changes needed. All four legacy functions were already removed by tickets 001–005. `cargo test --workspace`, `cargo clippy --workspace`, and `cargo build --workspace` all pass clean. Grep confirms zero matches for legacy functions in production code.
+- **Deviations from original plan**: None. No dead imports or surviving legacy code found.
+- **Verification results**: All 6 spec acceptance criteria confirmed met. `goal_policy.rs` is the single authoritative policy surface. Both `ranking.rs` (via `evaluate_suppression()` + `DecisionContext`) and `interrupts.rs` (via `goal_family_policy()`) consume the shared policy.
