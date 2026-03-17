@@ -1070,3 +1070,577 @@ fn golden_combat_between_living_agents_replays_deterministically() {
         "living-combat scenario should replay deterministically"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario S03a: Multi-Corpse Loot Binding (S03 — matches_binding)
+// ---------------------------------------------------------------------------
+
+fn build_multi_corpse_loot_binding_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    u64,
+    u64,
+) {
+    let mut h = GoldenHarness::new(seed);
+
+    let corpse_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "CorpseA",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse_a,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+
+    let corpse_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "CorpseB",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse_b,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(corpse_a, DeadAt(Tick(0)))
+            .unwrap();
+        txn.set_component_dead_at(corpse_b, DeadAt(Tick(0)))
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let looter = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Looter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        looter,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+    let initial_bread_total = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+
+    (
+        h,
+        corpse_a,
+        corpse_b,
+        looter,
+        initial_coin_total,
+        initial_bread_total,
+    )
+}
+
+fn run_multi_corpse_loot_binding_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, corpse_a, corpse_b, looter, initial_coin_total, initial_bread_total) =
+        build_multi_corpse_loot_binding_scenario(seed);
+
+    // Loot completes within a single tick, so we observe sequential acquisition
+    // between ticks rather than active loot targets mid-tick.
+    let mut first_coin_tick = None;
+    let mut first_bread_tick = None;
+    let mut sequential_looting_verified = true;
+
+    for tick in 0..30 {
+        h.step_once();
+
+        // Conservation every tick.
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
+        );
+        let bread_total = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+        assert_eq!(
+            bread_total, initial_bread_total,
+            "Bread lot conservation violated: expected {initial_bread_total}, got {bread_total}"
+        );
+
+        let looter_coin = h.agent_commodity_qty(looter, CommodityKind::Coin);
+        let looter_bread = h.agent_commodity_qty(looter, CommodityKind::Bread);
+
+        if first_coin_tick.is_none() && looter_coin > Quantity(0) {
+            first_coin_tick = Some(tick);
+        }
+        if first_bread_tick.is_none() && looter_bread > Quantity(0) {
+            first_bread_tick = Some(tick);
+        }
+
+        // While only one corpse has been looted, the other must retain its items.
+        if looter_coin > Quantity(0) && looter_bread == Quantity(0) {
+            // Coin gained but not bread — corpse_b must still have its bread.
+            let corpse_b_bread = h.agent_commodity_qty(corpse_b, CommodityKind::Bread);
+            if corpse_b_bread == Quantity(0) {
+                sequential_looting_verified = false;
+            }
+        }
+        if looter_bread > Quantity(0) && looter_coin == Quantity(0) {
+            // Bread gained but not coin — corpse_a must still have its coin.
+            let corpse_a_coin = h.agent_commodity_qty(corpse_a, CommodityKind::Coin);
+            if corpse_a_coin == Quantity(0) {
+                sequential_looting_verified = false;
+            }
+        }
+
+        if looter_coin > Quantity(0) && looter_bread > Quantity(0) {
+            break;
+        }
+    }
+
+    assert!(
+        first_coin_tick.is_some() || first_bread_tick.is_some(),
+        "Looter should have looted at least one corpse"
+    );
+    assert!(
+        first_coin_tick.is_some() && first_bread_tick.is_some(),
+        "Looter should eventually loot both corpses (gaining both Coin and Bread)"
+    );
+    assert!(
+        sequential_looting_verified,
+        "While looting the first corpse, the other corpse's inventory should remain untouched (binding targets one corpse at a time)"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_multi_corpse_loot_binding() {
+    let _ = run_multi_corpse_loot_binding_scenario(Seed([30; 32]));
+}
+
+#[test]
+fn golden_multi_corpse_loot_binding_replays_deterministically() {
+    let first = run_multi_corpse_loot_binding_scenario(Seed([30; 32]));
+    let second = run_multi_corpse_loot_binding_scenario(Seed([30; 32]));
+
+    assert_eq!(
+        first, second,
+        "multi-corpse loot binding scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario S03b: Bury Suppressed Under Stress (S02 — evaluate_suppression)
+// ---------------------------------------------------------------------------
+
+fn build_bury_suppressed_under_stress_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::Permille,
+) {
+    let mut h = GoldenHarness::new(seed);
+
+    // Corpse with NO loot — prevents LootCorpse goals from interfering.
+    let corpse = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Corpse",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let _grave_plot = place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::GravePlot,
+        ProductionOutputOwner::Actor,
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Burier with hunger above High threshold, plus bread to eat.
+    let burier = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Burier",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        burier,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    let hunger_high = h
+        .world
+        .get_component_drive_thresholds(burier)
+        .expect("burier should have drive thresholds")
+        .hunger
+        .high();
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        burier,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    (h, corpse, burier, hunger_high)
+}
+
+fn run_bury_suppressed_under_stress_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, corpse, burier, hunger_high) =
+        build_bury_suppressed_under_stress_scenario(seed);
+
+    let mut first_eat_tick = None;
+    let mut first_hunger_below_high_tick = None;
+    let mut first_bury_tick = None;
+
+    for tick in 0..50 {
+        h.step_once();
+
+        if first_eat_tick.is_none() && h.agent_active_action_name(burier) == Some("eat") {
+            first_eat_tick = Some(tick);
+        }
+
+        let hunger = h.agent_hunger(burier);
+        if first_hunger_below_high_tick.is_none() && hunger < hunger_high {
+            first_hunger_below_high_tick = Some(tick);
+        }
+
+        if first_bury_tick.is_none() && h.world.direct_container(corpse).is_some() {
+            first_bury_tick = Some(tick);
+        }
+
+        // While hunger remains high-or-above, corpse must NOT be buried.
+        if hunger >= hunger_high {
+            assert!(
+                h.world.direct_container(corpse).is_none(),
+                "Corpse should not be buried while burier hunger remains at or above the high threshold (burial suppressed)"
+            );
+        }
+
+        if first_eat_tick.is_some()
+            && first_hunger_below_high_tick.is_some()
+            && first_bury_tick.is_some()
+        {
+            break;
+        }
+    }
+
+    let eat_tick = first_eat_tick.expect("Burier should eat bread before burying");
+    let hunger_relief_tick = first_hunger_below_high_tick
+        .expect("Burier hunger should fall below the high threshold after eating");
+    let bury_tick =
+        first_bury_tick.expect("Burier should bury the corpse after self-care pressure lifts");
+
+    assert!(
+        eat_tick < bury_tick,
+        "Burier should start eating before corpse burial completes"
+    );
+    assert!(
+        hunger_relief_tick < bury_tick,
+        "Corpse burial should only complete after hunger falls below the high threshold"
+    );
+
+    // Final state: corpse is in a grave container at VILLAGE_SQUARE.
+    let grave = h
+        .world
+        .direct_container(corpse)
+        .expect("corpse should be buried into a grave container");
+    assert_eq!(h.world.effective_place(grave), Some(VILLAGE_SQUARE));
+    assert_eq!(h.world.effective_place(corpse), Some(VILLAGE_SQUARE));
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_bury_suppressed_under_stress() {
+    let _ = run_bury_suppressed_under_stress_scenario(Seed([31; 32]));
+}
+
+#[test]
+fn golden_bury_suppressed_under_stress_replays_deterministically() {
+    let first = run_bury_suppressed_under_stress_scenario(Seed([31; 32]));
+    let second = run_bury_suppressed_under_stress_scenario(Seed([31; 32]));
+
+    assert_eq!(
+        first, second,
+        "bury suppressed under stress scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario S03c: Suppression Then Binding Combined (S02 + S03)
+// ---------------------------------------------------------------------------
+
+fn build_suppression_then_binding_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    u64,
+    worldwake_core::Permille,
+) {
+    let mut h = GoldenHarness::new(seed);
+
+    let corpse_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "CorpseA",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse_a,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+
+    let corpse_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "CorpseB",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse_b,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(3),
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(corpse_a, DeadAt(Tick(0)))
+            .unwrap();
+        txn.set_component_dead_at(corpse_b, DeadAt(Tick(0)))
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Scavenger with hunger above High threshold, plus bread.
+    let scavenger = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Scavenger",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        scavenger,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    let hunger_high = h
+        .world
+        .get_component_drive_thresholds(scavenger)
+        .expect("scavenger should have drive thresholds")
+        .hunger
+        .high();
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        scavenger,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+
+    (h, corpse_a, corpse_b, scavenger, initial_coin_total, hunger_high)
+}
+
+fn run_suppression_then_binding_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, corpse_a, corpse_b, scavenger, initial_coin_total, hunger_high) =
+        build_suppression_then_binding_scenario(seed);
+
+    let mut first_eat_tick = None;
+    let mut first_hunger_below_high_tick = None;
+    let mut first_loot_tick = None;
+    let mut sequential_looting_verified = true;
+    let mut both_looted = false;
+
+    // Track which corpse lost coins first to verify sequential binding.
+    let mut first_looted_corpse: Option<worldwake_core::EntityId> = None;
+
+    for tick in 0..50 {
+        h.step_once();
+
+        // Conservation every tick.
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
+        );
+
+        if first_eat_tick.is_none() && h.agent_active_action_name(scavenger) == Some("eat") {
+            first_eat_tick = Some(tick);
+        }
+
+        let hunger = h.agent_hunger(scavenger);
+        if first_hunger_below_high_tick.is_none() && hunger < hunger_high {
+            first_hunger_below_high_tick = Some(tick);
+        }
+
+        let scavenger_coin = h.agent_commodity_qty(scavenger, CommodityKind::Coin);
+
+        // While hunger >= high, scavenger must not gain any coins (suppression).
+        if hunger >= hunger_high {
+            assert_eq!(
+                scavenger_coin,
+                Quantity(0),
+                "Scavenger should not gain corpse coins while hunger remains high-or-above (suppression active)"
+            );
+        }
+
+        if first_loot_tick.is_none() && scavenger_coin > Quantity(0) {
+            first_loot_tick = Some(tick);
+        }
+
+        // Track binding correctness via item observation between ticks.
+        let corpse_a_coin = h.agent_commodity_qty(corpse_a, CommodityKind::Coin);
+        let corpse_b_coin = h.agent_commodity_qty(corpse_b, CommodityKind::Coin);
+
+        if first_looted_corpse.is_none() {
+            if corpse_a_coin < Quantity(5) {
+                first_looted_corpse = Some(corpse_a);
+            } else if corpse_b_coin < Quantity(3) {
+                first_looted_corpse = Some(corpse_b);
+            }
+        }
+
+        // While the first corpse is being looted, the other must retain its full coin count.
+        if let Some(first) = first_looted_corpse {
+            if first == corpse_a && corpse_a_coin > Quantity(0) {
+                // corpse_a partially looted — corpse_b must still be full.
+                if corpse_b_coin < Quantity(3) {
+                    sequential_looting_verified = false;
+                }
+            } else if first == corpse_b && corpse_b_coin > Quantity(0) {
+                // corpse_b partially looted — corpse_a must still be full.
+                if corpse_a_coin < Quantity(5) {
+                    sequential_looting_verified = false;
+                }
+            }
+        }
+
+        // Check if both corpses have been fully looted (total of 8 coins transferred).
+        if scavenger_coin == Quantity(8) {
+            both_looted = true;
+            break;
+        }
+    }
+
+    let eat_tick = first_eat_tick.expect("Scavenger should eat bread before looting");
+    let hunger_relief_tick = first_hunger_below_high_tick
+        .expect("Scavenger hunger should fall below the high threshold after eating");
+    let loot_tick =
+        first_loot_tick.expect("Scavenger should loot corpse coins after suppression lifts");
+
+    assert!(
+        eat_tick < loot_tick,
+        "Scavenger should start eating before gaining any corpse loot (suppression)"
+    );
+    assert!(
+        hunger_relief_tick < loot_tick,
+        "Corpse loot should only resolve after hunger falls below the high threshold"
+    );
+    assert!(
+        first_looted_corpse.is_some(),
+        "At least one corpse should have been looted"
+    );
+    assert!(
+        sequential_looting_verified,
+        "While looting one corpse, the other corpse's coins should remain intact (binding targets one corpse at a time)"
+    );
+    assert!(
+        both_looted,
+        "Scavenger should eventually loot all 8 coins from both corpses"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_suppression_then_binding_combined() {
+    let _ = run_suppression_then_binding_scenario(Seed([32; 32]));
+}
+
+#[test]
+fn golden_suppression_then_binding_combined_replays_deterministically() {
+    let first = run_suppression_then_binding_scenario(Seed([32; 32]));
+    let second = run_suppression_then_binding_scenario(Seed([32; 32]));
+
+    assert_eq!(
+        first, second,
+        "suppression-then-binding combined scenario should replay deterministically"
+    );
+}

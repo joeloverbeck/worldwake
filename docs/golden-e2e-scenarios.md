@@ -6,7 +6,7 @@
 
 ---
 
-The golden suite contains 64 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). All behavior is emergent.
+The golden suite contains 70 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). All behavior is emergent.
 
 ---
 
@@ -452,3 +452,44 @@ The golden suite contains 64 tests across 7 domain files. Every test uses the re
 - EnterpriseDriven leaves Village Square to pursue the enterprise restock goal despite having no survival pressure.
 - The two agents make observably different first choices — one stays to eat, one travels to restock — proving that UtilityProfile weight divergence produces distinct goal selection.
 **Cross-system chain**: UtilityProfile weights → divergent candidate ranking → HungerDriven selects ConsumeOwnedCommodity path while EnterpriseDriven selects RestockCommodity path → different first actions under different weight profiles. Proves Principle 20 (agent diversity through concrete variation) in the survival-vs-enterprise domain.
+
+### Scenario S03a: Multi-Corpse Loot Binding (S03 — matches_binding)
+**File**: `golden_combat.rs` | **Tests**: `golden_multi_corpse_loot_binding`, `golden_multi_corpse_loot_binding_replays_deterministically`
+**Systems exercised**: AI (candidate generation for LootCorpse, ranking, plan search with matches_binding, execution), Corpse (loot action), Conservation, deterministic replay
+**Setup**: Two dead agents (CorpseA with Coin(5), CorpseB with Bread(3)) and a sated Looter at Village Square. Looter has local beliefs seeded at Tick(0).
+**Emergent behavior proven**:
+- Candidate generation produces LootCorpse goals for both corpses.
+- Ranking picks one deterministically. Plan search uses `matches_binding()` — only affordances targeting the selected corpse pass.
+- Agent loots one corpse first. While the first corpse's items are being transferred, the other corpse's inventory remains untouched (sequential binding).
+- Agent then loots the second corpse, gaining both Coin and Bread.
+- Coin and Bread conservation holds every tick.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Cross-system chain**: LootCorpse candidate generation → ranking selects one target → matches_binding filters to correct corpse → sequential loot execution → second corpse looted after first completes → conservation throughout.
+
+### Scenario S03b: Bury Suppressed Under Stress (S02 — evaluate_suppression for BuryCorpse)
+**File**: `golden_combat.rs` | **Tests**: `golden_bury_suppressed_under_stress`, `golden_bury_suppressed_under_stress_replays_deterministically`
+**Systems exercised**: Needs (hunger metabolism), AI (candidate generation, suppression evaluation, goal switching), Corpse (bury action), Production (GravePlot workstation), deterministic replay
+**Setup**: Dead agent (no loot) at Village Square with GravePlot workstation. Burier at Village Square with hunger=pm(800) (above High threshold of pm(750)) and Bread(1). Local beliefs seeded at Tick(0).
+**Emergent behavior proven**:
+- Hunger(800) >= High(750) → `evaluate_suppression()` suppresses BuryCorpse.
+- ConsumeOwnedCommodity(Bread) goal fires — agent eats bread.
+- Hunger drops below 750 → suppression lifts.
+- Agent plans and executes BuryCorpse → corpse gets placed into a grave container at Village Square.
+- While hunger remains at or above the high threshold, the corpse has no container (burial actively suppressed).
+- Agent eats before burying, and hunger relief precedes burial completion.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Cross-system chain**: Hunger pressure above High → BuryCorpse suppression → ConsumeOwnedCommodity goal → eat bread → hunger relief → suppression lift → BuryCorpse execution → corpse in grave container.
+
+### Scenario S03c: Suppression Then Binding Combined (S02 + S03 interaction)
+**File**: `golden_combat.rs` | **Tests**: `golden_suppression_then_binding_combined`, `golden_suppression_then_binding_combined_replays_deterministically`
+**Systems exercised**: Needs (hunger metabolism), AI (candidate generation, suppression evaluation, ranking, plan search with matches_binding, goal switching), Corpse (loot action), Conservation, deterministic replay
+**Setup**: Two dead agents (CorpseA with Coin(5), CorpseB with Coin(3)) and a Scavenger with hunger=pm(800) (above High threshold) and Bread(1) at Village Square. Local beliefs seeded at Tick(0).
+**Emergent behavior proven**:
+- Hunger High → both LootCorpse goals suppressed (scavenger gains no coins while hunger >= high).
+- Agent eats bread → hunger drops → suppression lifts.
+- Ranking picks one loot goal → `matches_binding()` ensures correct target selection.
+- Agent loots the first corpse. While the first corpse still has remaining coins, the other corpse's coins remain intact (sequential binding correctness).
+- Agent then loots the second corpse, gaining all 8 coins total.
+- Coin conservation holds every tick.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Cross-system chain**: Hunger pressure above High → LootCorpse suppression on both targets → ConsumeOwnedCommodity goal → eat bread → hunger relief → suppression lift → matches_binding selects correct corpse → sequential loot → both corpses looted → conservation throughout.

@@ -613,6 +613,15 @@ impl GoldenHarness {
     pub fn agent_commodity_qty(&self, agent: EntityId, kind: CommodityKind) -> Quantity {
         self.world.controlled_commodity_quantity(agent, kind)
     }
+
+    pub fn agent_active_loot_target(&self, agent: EntityId) -> Option<EntityId> {
+        self.scheduler
+            .active_actions()
+            .values()
+            .find(|instance| instance.actor == agent)
+            .and_then(|instance| instance.payload.as_loot())
+            .map(|loot| loot.target)
+    }
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_ai_decisions.rs      — 11 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b)
   golden_care.rs              — 4 tests (same-place healing + treatment acquisition companion + replays)
   golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
-  golden_combat.rs            — 13 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression scenarios + replays)
+  golden_combat.rs            — 19 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays)
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
@@ -130,6 +130,9 @@ crates/worldwake-ai/tests/
 | Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
 | Wound bleed → clotting → natural recovery | Yes |
 | Loot/bury suppression under self-care pressure → relief → suppression lift | Yes |
+| Multi-corpse loot binding → sequential target selection via matches_binding | Yes |
+| Bury suppression under hunger stress → eat → suppression lift → burial | Yes |
+| Suppression prevents loot on multiple targets → eat → binding selects correct target → sequential loot | Yes |
 | Bystander witnesses telling without receiving belief payload | Yes |
 | Entity-missing discovery from violated local expectation | Yes |
 | Stale belief → travel to depleted source → passive re-observation → replan | Yes |
@@ -148,12 +151,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 64 | 67 |
+| Proven tests | 70 | 73 |
 | GoalKind coverage | 17/18 (94.4%) | 17/18 (94.4%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 37 | 40 |
+| Cross-system chains | 40 | 43 |
 
 ### Pending Backlog Summary
 
