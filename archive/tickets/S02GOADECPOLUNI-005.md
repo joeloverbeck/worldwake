@@ -1,6 +1,6 @@
 # S02GOADECPOLUNI-005: Wire DecisionContext construction in agent_tick and thread to ranking + interrupts
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — agent_tick.rs wiring
@@ -89,3 +89,10 @@ If tickets 002/003 introduced temporary `DecisionContext` construction at call s
 
 1. `cargo test -p worldwake-ai`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: `crates/worldwake-ai/src/agent_tick.rs` — added `decision_context` field to `ReadPhaseResult`, added `decision_context` parameter to `handle_active_action_phase()`, removed placeholder `DecisionContext` construction, cleaned up unused `GoalPriorityClass` import.
+- **Deviations**: No `DecisionContext::from_beliefs()` constructor added in `goal_policy.rs` — `build_decision_context()` in `ranking.rs` already served this purpose. Parameter passed by value (not reference) per clippy pedantic since `DecisionContext` is `Copy` (2 bytes).
+- **Verification**: All 1,827 workspace tests pass, `cargo clippy --workspace` clean.

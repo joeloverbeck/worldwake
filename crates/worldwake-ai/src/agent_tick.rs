@@ -10,8 +10,7 @@ use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
     build_semantics_table, clear_resolved_blockers, evaluate_interrupt, handle_plan_failure,
     rank_candidates, resolve_planning_targets_with, revalidate_next_step, search_plan,
-    select_best_plan, AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt,
-    GoalPriorityClass, InterruptDecision,
+    select_best_plan, AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, InterruptDecision,
     JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot, PlanFailureContext,
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget,
     QueuedFacilityIntent, RankedGoal,
@@ -299,6 +298,7 @@ fn process_agent(
             tick,
             action_defs,
             action_handlers,
+            read_result.decision_context,
         )?;
 
         tracing.then(|| {
@@ -646,6 +646,8 @@ struct ReadPhaseResult {
     suppressed: Vec<worldwake_core::GoalKey>,
     /// Goals with zero motive score.
     zero_motive: Vec<worldwake_core::GoalKey>,
+    /// Shared decision context built once from beliefs for ranking + interrupts.
+    decision_context: DecisionContext,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -723,6 +725,7 @@ fn refresh_runtime_for_read_phase(
         generated_keys,
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
+        decision_context: dc,
     }
 }
 
@@ -789,6 +792,7 @@ fn handle_active_action_phase(
     tick: Tick,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
+    decision_context: DecisionContext,
 ) -> Result<InterruptDecision, TickInputError> {
     let interruptibility = action_defs
         .get(active_action.def_id)
@@ -815,11 +819,6 @@ fn handle_active_action_phase(
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
-    // Placeholder DecisionContext — ticket 005 will build this from ranked candidates.
-    let placeholder_context = DecisionContext {
-        max_self_care_class: GoalPriorityClass::Background,
-        danger_class: GoalPriorityClass::Background,
-    };
     let decision = evaluate_interrupt(
         runtime,
         interruptibility,
@@ -828,7 +827,7 @@ fn handle_active_action_phase(
         plan_valid,
         default_switch_margin,
         journey_switch_margin,
-        &placeholder_context,
+        &decision_context,
     );
     if let InterruptDecision::InterruptForReplan { trigger: _ } = decision {
         let replan = ctx
