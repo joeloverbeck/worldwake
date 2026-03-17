@@ -19,6 +19,7 @@ pub mod action_payload;
 pub mod action_semantics;
 pub mod action_state;
 pub mod action_status;
+pub mod action_trace;
 pub mod affordance;
 pub mod affordance_query;
 pub mod autonomous_controller;
@@ -72,6 +73,7 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
+pub use action_trace::{ActionTraceEvent, ActionTraceKind, ActionTraceSink};
 pub use action_validation::validate_action_def_authoritatively;
 pub use affordance::Affordance;
 pub use affordance_query::{

@@ -1,6 +1,6 @@
 # ACTEXETRA-001: Create `action_trace.rs` module with types and sink
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new module in worldwake-sim
@@ -85,3 +85,10 @@ All derives: `Clone, Debug, Eq, PartialEq` on `ActionTraceEvent` and `ActionTrac
 1. `cargo test -p worldwake-sim action_trace`
 2. `cargo clippy -p worldwake-sim`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Created `crates/worldwake-sim/src/action_trace.rs` with `ActionTraceEvent`, `ActionTraceKind` (4 variants), `ActionTraceSink` (query API + `dump_agent`). Registered module and re-exports in `lib.rs`.
+- **Deviations**: One clippy fix — backtick-escaped `BestEffort` in doc comment to satisfy `clippy::doc_markdown`.
+- **Verification**: 6/6 unit tests pass, `cargo clippy --workspace` clean, `cargo test --workspace` all pass (no regressions).
