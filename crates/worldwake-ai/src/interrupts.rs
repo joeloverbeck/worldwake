@@ -1,7 +1,9 @@
 use crate::{
+    goal_policy::{goal_family_policy, PenaltyInterruptEligibility},
     goal_switching::{compare_goal_switch, GoalSwitchKind},
     journey_switch_policy::compare_relation_aware_goal_switch,
-    AgentDecisionRuntime, GoalKey, GoalPriorityClass, JourneyPlanRelation, PlannedPlan, RankedGoal,
+    AgentDecisionRuntime, DecisionContext, GoalKey, GoalPriorityClass, JourneyPlanRelation,
+    PlannedPlan, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{CommodityPurpose, GoalKind, Permille};
@@ -23,6 +25,7 @@ pub enum InterruptTrigger {
     OpportunisticLoot,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn evaluate_interrupt(
     runtime: &AgentDecisionRuntime,
     current_action_interruptibility: Interruptibility,
@@ -31,6 +34,7 @@ pub fn evaluate_interrupt(
     plan_valid: bool,
     default_switch_margin: Permille,
     journey_switch_margin: Permille,
+    _decision_context: &DecisionContext,
 ) -> InterruptDecision {
     if current_action_interruptibility == Interruptibility::NonInterruptible {
         return InterruptDecision::NoInterrupt;
@@ -64,17 +68,12 @@ fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
     if challenger.priority_class != GoalPriorityClass::Critical {
         return InterruptDecision::NoInterrupt;
     }
-
-    if is_critical_survival_goal(&challenger.grounded.key.kind) {
-        InterruptDecision::InterruptForReplan {
-            trigger: InterruptTrigger::CriticalSurvival,
+    let policy = goal_family_policy(&challenger.grounded.key.kind);
+    match policy.penalty_interrupt {
+        PenaltyInterruptEligibility::WhenCritical { trigger } => {
+            InterruptDecision::InterruptForReplan { trigger }
         }
-    } else if matches!(challenger.grounded.key.kind, GoalKind::ReduceDanger) {
-        InterruptDecision::InterruptForReplan {
-            trigger: InterruptTrigger::CriticalDanger,
-        }
-    } else {
-        InterruptDecision::NoInterrupt
+        PenaltyInterruptEligibility::Never => InterruptDecision::NoInterrupt,
     }
 }
 
@@ -229,7 +228,7 @@ fn current_priority(
     runtime.last_priority_class.map(|class| (class, None))
 }
 
-fn is_critical_survival_goal(kind: &GoalKind) -> bool {
+fn is_reactive_goal(kind: &GoalKind) -> bool {
     matches!(
         kind,
         GoalKind::ConsumeOwnedCommodity { .. }
@@ -240,12 +239,9 @@ fn is_critical_survival_goal(kind: &GoalKind) -> bool {
             | GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
+            | GoalKind::ReduceDanger
+            | GoalKind::Heal { .. }
     )
-}
-
-fn is_reactive_goal(kind: &GoalKind) -> bool {
-    is_critical_survival_goal(kind)
-        || matches!(kind, GoalKind::ReduceDanger | GoalKind::Heal { .. })
 }
 
 fn no_medium_or_above_self_care_or_danger(ranked_candidates: &[RankedGoal]) -> bool {
@@ -273,8 +269,8 @@ fn no_medium_or_above_self_care_or_danger(ranked_candidates: &[RankedGoal]) -> b
 mod tests {
     use super::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal,
-        PlannedPlan, RankedGoal,
+        AgentDecisionRuntime, CommodityPurpose, DecisionContext, GoalKey, GoalPriorityClass,
+        GroundedGoal, PlannedPlan, RankedGoal,
     };
     use std::collections::BTreeSet;
     use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKind, Permille};
@@ -320,6 +316,13 @@ mod tests {
         Permille::new(300).unwrap()
     }
 
+    fn dummy_context() -> DecisionContext {
+        DecisionContext {
+            max_self_care_class: GoalPriorityClass::Background,
+            danger_class: GoalPriorityClass::Background,
+        }
+    }
+
     #[test]
     fn non_interruptible_actions_ignore_even_critical_challengers() {
         let current_goal = GoalKind::RestockCommodity {
@@ -338,6 +341,7 @@ mod tests {
             true,
             default_switch_margin(),
             default_switch_margin(),
+            &dummy_context(),
         );
 
         assert_eq!(decision, InterruptDecision::NoInterrupt);
@@ -361,6 +365,7 @@ mod tests {
             true,
             default_switch_margin(),
             default_switch_margin(),
+            &dummy_context(),
         );
 
         assert_eq!(
@@ -389,6 +394,7 @@ mod tests {
             true,
             default_switch_margin(),
             default_switch_margin(),
+            &dummy_context(),
         );
 
         assert_eq!(decision, InterruptDecision::NoInterrupt);
@@ -407,6 +413,7 @@ mod tests {
             false,
             default_switch_margin(),
             default_switch_margin(),
+            &dummy_context(),
         );
 
         assert_eq!(
@@ -415,6 +422,36 @@ mod tests {
                 trigger: InterruptTrigger::PlanInvalid,
             }
         );
+    }
+
+    #[test]
+    fn interruptible_with_penalty_does_not_interrupt_for_critical_heal() {
+        let current_goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let challengers = vec![
+            ranked(current_goal, GoalPriorityClass::Medium, 100),
+            ranked(
+                GoalKind::Heal {
+                    target: entity(99),
+                },
+                GoalPriorityClass::Critical,
+                1_000,
+            ),
+        ];
+
+        let decision = evaluate_interrupt(
+            &runtime(current_goal, GoalPriorityClass::Medium),
+            Interruptibility::InterruptibleWithPenalty,
+            &challengers,
+            None,
+            true,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+
+        assert_eq!(decision, InterruptDecision::NoInterrupt);
     }
 
     #[test]
@@ -442,6 +479,7 @@ mod tests {
             true,
             default_switch_margin(),
             default_switch_margin(),
+            &dummy_context(),
         );
 
         assert_eq!(
@@ -511,6 +549,7 @@ mod tests {
                 true,
                 default_switch_margin(),
                 default_switch_margin(),
+                &dummy_context(),
             ),
             InterruptDecision::NoInterrupt
         );
@@ -523,6 +562,7 @@ mod tests {
                 true,
                 default_switch_margin(),
                 default_switch_margin(),
+                &dummy_context(),
             ),
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::SuperiorSameClassPlan,
@@ -572,6 +612,7 @@ mod tests {
                 true,
                 default_switch_margin(),
                 default_switch_margin(),
+                &dummy_context(),
             ),
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::OpportunisticLoot,
@@ -586,6 +627,7 @@ mod tests {
                 true,
                 default_switch_margin(),
                 default_switch_margin(),
+                &dummy_context(),
             ),
             InterruptDecision::NoInterrupt
         );
@@ -613,6 +655,7 @@ mod tests {
             true,
             default_switch_margin(),
             default_switch_margin(),
+            &dummy_context(),
         );
 
         assert_eq!(decision, InterruptDecision::NoInterrupt);
@@ -686,6 +729,7 @@ mod tests {
             true,
             default_switch_margin(),
             Permille::new(400).unwrap(),
+            &dummy_context(),
         );
         let permissive = evaluate_interrupt(
             &runtime,
@@ -695,6 +739,7 @@ mod tests {
             true,
             default_switch_margin(),
             Permille::new(300).unwrap(),
+            &dummy_context(),
         );
 
         assert_eq!(conservative, InterruptDecision::NoInterrupt);
@@ -809,6 +854,7 @@ mod tests {
             true,
             default_switch_margin(),
             route_switch_margin(),
+            &dummy_context(),
         );
 
         assert_eq!(

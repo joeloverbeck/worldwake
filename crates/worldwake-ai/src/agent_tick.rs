@@ -10,7 +10,8 @@ use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
     build_semantics_table, clear_resolved_blockers, evaluate_interrupt, handle_plan_failure,
     rank_candidates, resolve_planning_targets_with, revalidate_next_step, search_plan,
-    select_best_plan, AgentDecisionRuntime, GoalKindPlannerExt, InterruptDecision,
+    select_best_plan, AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt,
+    GoalPriorityClass, InterruptDecision,
     JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot, PlanFailureContext,
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget,
     QueuedFacilityIntent, RankedGoal,
@@ -814,6 +815,11 @@ fn handle_active_action_phase(
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
+    // Placeholder DecisionContext — ticket 005 will build this from ranked candidates.
+    let placeholder_context = DecisionContext {
+        max_self_care_class: GoalPriorityClass::Background,
+        danger_class: GoalPriorityClass::Background,
+    };
     let decision = evaluate_interrupt(
         runtime,
         interruptibility,
@@ -822,6 +828,7 @@ fn handle_active_action_phase(
         plan_valid,
         default_switch_margin,
         journey_switch_margin,
+        &placeholder_context,
     );
     if let InterruptDecision::InterruptForReplan { trigger: _ } = decision {
         let replan = ctx

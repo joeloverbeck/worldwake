@@ -1,6 +1,6 @@
 # S02GOADECPOLUNI-003: Migrate penalty interrupt evaluation to consume shared policy
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — interrupts.rs refactor (penalty path)
@@ -108,3 +108,13 @@ Remove the function entirely from `interrupts.rs`.
 1. `cargo test -p worldwake-ai interrupts`
 2. `cargo test -p worldwake-ai` (includes golden tests)
 3. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**:
+  - `interrupts.rs`: Replaced `interrupt_with_penalty()` body with `goal_family_policy()` + `PenaltyInterruptEligibility` match; deleted `is_critical_survival_goal()` (inlined into `is_reactive_goal()`); added `_decision_context: &DecisionContext` param to `evaluate_interrupt()`
+  - `agent_tick.rs`: Threads placeholder `DecisionContext` (Background/Background) to `evaluate_interrupt` call site; added `DecisionContext` and `GoalPriorityClass` imports
+  - Added new test `interruptible_with_penalty_does_not_interrupt_for_critical_heal`
+- **Deviations from plan**: `is_critical_survival_goal()` body was inlined into `is_reactive_goal()` rather than just deleted, because `is_reactive_goal()` (out of scope, ticket 004) depended on it
+- **Verification**: `cargo test -p worldwake-ai` (all 11 interrupt tests + all golden tests pass), `cargo test --workspace` clean, `cargo clippy --workspace` clean
