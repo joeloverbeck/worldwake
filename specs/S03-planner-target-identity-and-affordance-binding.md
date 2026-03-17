@@ -3,20 +3,16 @@
 # Planner Target Identity and Affordance Binding
 
 ## Summary
-Design exact target-aware planner matching for Worldwake so a grounded goal can require the planner to act on the specific corpse, sale lot, facility, report, or evidence object that caused the goal to exist, rather than matching any affordance from the same broad action family.
+Design exact target-aware planner matching for Worldwake so a grounded goal can require the planner to act on the specific corpse, hostile, listener, office, or evidence object that caused the goal to exist, rather than matching any affordance from the same broad action family.
 
-This spec introduces goal-aware affordance binding rules in the planning stack. It keeps the current canonical goal identity model, but adds explicit matching semantics so:
-- `LootCorpse { corpse }` plans against that corpse
-- `BuryCorpse { corpse, burial_site }` plans against that corpse and that grave plot
-- future sale-lot trade plans bind to the exact listed lot
-- future audit / investigation plans bind to the exact facility, record, or evidence target that motivated them
+This spec adds a `matches_binding` method to `GoalKindPlannerExt` that dispatches on `PlannerOpKind` to distinguish auxiliary ops (Travel, Trade, Harvest, Craft, etc.) from terminal ops (Attack, Loot, Heal, Tell, DeclareSupport, Bury) — only terminal ops check target identity against the goal's canonical fields.
 
 This is intentionally forward-looking and must not be scheduled ahead of the active phase gates in [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md) without explicit reprioritization.
 
 ## Why This Exists
 Current planning is mostly clean, but one architectural weakness remains:
 - candidate generation produces grounded goals from concrete local evidence
-- goal identity stores canonical commodity/entity/place fields
+- goal identity stores canonical commodity/entity/place fields via `GoalKey`
 - search classifies actions by planner-op family
 - but affordance matching can still accept the right action family without proving it is targeting the same concrete object that motivated the goal
 
@@ -38,9 +34,10 @@ If this is not fixed as shared architecture, every new system will be tempted to
 
 The clean architecture is:
 - candidate generation creates a grounded goal from concrete evidence
-- goal semantics declare whether the goal is flexible or exact about each target slot
-- search filters affordances through those binding semantics before successor construction
-- hypothetical transitions preserve or transform bindings explicitly
+- `GoalKind` variant fields already encode the canonical target identity (extracted into `GoalKey`)
+- `matches_binding()` on `GoalKindPlannerExt` tells search whether a candidate's authoritative targets satisfy the goal's target requirement for a given op kind
+- search filters candidates through binding before successor construction
+- hypothetical transitions preserve bindings by reading target identity from `GoalKind`, not from candidate targets
 - blocker handling and debugging can report exactly which concrete target failed
 
 ## Phase
@@ -48,9 +45,6 @@ Phase 3: Information & Politics, Step 10 (parallel after E14)
 
 ## Crates
 - `worldwake-ai`
-- `worldwake-sim`
-- `worldwake-systems`
-- `worldwake-core`
 
 ## Dependencies
 - E14
@@ -68,139 +62,149 @@ Phase 3: Information & Politics, Step 10 (parallel after E14)
 - Replacing the planner with valuation-only logic
 - Expanding goal identity into a full action-instance identity
 - Adding backward-compatibility shims for loose matching once exact matching is implemented
-- Introducing a global query service that resolves “best target” outside candidate generation
+- Introducing a global query service that resolves "best target" outside candidate generation
+- Adding a separate `GoalBindingPolicy` enum — `GoalKey` already encodes whether targets exist; a parallel enum adds sync burden without value
 
 ## Deliverables
 
-### 1. Explicit Goal Binding Policy
-Each goal family must declare how strictly it binds planner targets.
+### 1. Add `matches_binding()` to `GoalKindPlannerExt`
 
-Add shared planning semantics equivalent to:
-
-```rust
-enum GoalBindingPolicy {
-    Flexible,
-    ExactEntity {
-        entity: EntityId,
-    },
-    ExactPlace {
-        place: EntityId,
-    },
-    ExactEntityAndPlace {
-        entity: EntityId,
-        place: EntityId,
-    },
-    ExactTargetTuple,
-}
-```
-
-The implementation does not need to use this exact type name, but the semantics must exist explicitly in code.
-
-Interpretation:
-- `Flexible`: any affordance in the legal action family may satisfy the goal if the resulting state satisfies goal semantics
-- `ExactEntity`: the acted-on authoritative entity must be the canonical entity from the goal
-- `ExactPlace`: the acted-on authoritative place/facility must be the canonical place from the goal
-- `ExactEntityAndPlace` / `ExactTargetTuple`: both bindings must match together
-
-This policy belongs in goal semantics, not in one-off search branches.
-
-### 2. Goal Families Must Declare Binding Intent
-Goal semantics must classify current and future goals intentionally.
-
-Initial target-binding expectations:
-- `ConsumeOwnedCommodity`: `Flexible`
-- `AcquireCommodity { SelfConsume | Restock | RecipeInput | Treatment }`: `Flexible`
-- `Sleep`: `Flexible`
-- `Relieve`: `Flexible`
-- `Wash`: `Flexible`
-- `EngageHostile { target }`: exact hostile target
-- `ReduceDanger`: `Flexible`
-- `Heal { target }`: exact target
-- `ProduceCommodity { recipe_id }`: `Flexible`
-- `SellCommodity`: currently flexible by commodity, but this spec must allow later evolution to exact facility or listed lot
-- `RestockCommodity`: flexible today, but must support later exact facility binding
-- `MoveCargo { commodity, destination }`: exact destination, flexible lot identity
-- `LootCorpse { corpse }`: exact corpse
-- `BuryCorpse { corpse, burial_site }`: exact corpse plus exact burial site
-
-Future drafts must be able to tighten binding policy without redesigning search.
-
-### 3. Search Must Filter Affordances Before Successor Construction
-Search currently filters mostly by planner-op family and only later relies on payload/transition semantics. That is too late for exact-object goals.
-
-New rule:
-- after planner-op family filtering
-- before successor construction
-- the planner must ask goal semantics whether the affordance targets and payload are a legal binding for the current grounded goal
-
-Equivalent interface:
+Add a method to the existing `GoalKindPlannerExt` trait implementation:
 
 ```rust
-trait GoalKindPlannerExt {
-    fn matches_affordance_binding(
+impl GoalKindPlannerExt for GoalKind {
+    fn matches_binding(
         &self,
         authoritative_targets: &[EntityId],
-        payload: Option<&ActionPayload>,
+        op_kind: PlannerOpKind,
     ) -> bool;
 }
 ```
 
-Requirements:
-- matching must use authoritative entity ids when available
-- payload-derived identities may refine matching, but must not replace authoritative target checks when the targets exist
-- wrong-target affordances must be discarded, not explored and rejected later
+**Dispatch logic**:
 
-### 4. Candidate Generation Must Keep Exact Evidence Separate From Incidental Evidence
-`GroundedGoal` currently carries evidence entity/place sets. That remains useful for ranking and debugging, but exact bindings must not be inferred from arbitrary evidence membership.
+1. **Auxiliary ops always pass** — `Travel`, `Trade`, `Harvest`, `Craft`, `QueueForFacilityUse`, `MoveCargo`, `Consume`, `Sleep`, `Relieve`, `Wash`, `Defend`, `Bribe`, `Threaten` return `true` unconditionally. These ops serve the goal but do not act on the goal's canonical target entity.
 
-New rule:
-- canonical target fields in `GoalKey` define the exact target identity
-- extra evidence entities/places remain supporting evidence only
-- search binding must read canonical target identity, not “any evidence entity”
+2. **Terminal ops check goal-specific target identity** — `Attack`, `Loot`, `Heal`, `Tell`, `DeclareSupport`, `Bury` must verify that `authoritative_targets` contains the entity required by the goal's variant fields.
 
-This keeps ranking/debug evidence broad while keeping planner bindings precise.
+3. **Empty `authoritative_targets` skip binding** — planner-only synthetic candidates (e.g., hypothetical put-down of materialized items) have empty `authoritative_targets` and bypass binding checks.
 
-### 5. Planner-Only Candidates and Hypothetical Transitions Must Preserve Binding Semantics
-Any planner-only candidate or hypothetical transition must preserve exact target meaning.
+**Rationale**: A separate `GoalBindingPolicy` enum is not needed. `GoalKey` already extracts canonical `entity: Option<EntityId>` and `place: Option<EntityId>` from every `GoalKind` variant. The `matches_binding` method reads those same variant fields directly, avoiding a parallel enum that must stay in sync.
 
-Examples:
-- `BuryCorpse` may not opportunistically retarget from one corpse to another just because both are valid local corpses
-- future sale-lot trade may not retarget from one listed lot to another during search expansion
-- `MoveCargo` may remain lot-flexible but destination-exact
+### 2. Goal Families — Binding Classification
 
-If a transition legitimately changes the target identity, that must happen by:
+All 17 `GoalKind` variants classified by binding behavior:
+
+| GoalKind | Binding | Terminal Op | Target Field(s) |
+|---|---|---|---|
+| `ConsumeOwnedCommodity { commodity }` | Flexible | `Consume` | — |
+| `AcquireCommodity { commodity, purpose }` | Flexible | varies | — |
+| `Sleep` | Flexible | `Sleep` | — |
+| `Relieve` | Flexible | `Relieve` | — |
+| `Wash` | Flexible | `Wash` | — |
+| `EngageHostile { target }` | Exact entity | `Attack` | `target` |
+| `ReduceDanger` | Flexible | `Defend` | — |
+| `Heal { target }` | Exact entity | `Heal` | `target` |
+| `ProduceCommodity { recipe_id }` | Flexible | `Craft` | — |
+| `SellCommodity { commodity }` | Flexible | `Trade` | — |
+| `RestockCommodity { commodity }` | Flexible | `Trade` | — |
+| `MoveCargo { commodity, destination }` | Exact destination | `MoveCargo` | `destination` (place only) |
+| `LootCorpse { corpse }` | Exact entity | `Loot` | `corpse` |
+| `BuryCorpse { corpse, burial_site }` | Exact entity+place | `Bury` | `corpse`, `burial_site` |
+| `ShareBelief { listener, subject }` | Exact entity | `Tell` | `listener` |
+| `ClaimOffice { office }` | Exact entity | `DeclareSupport` | `office` (via payload) |
+| `SupportCandidateForOffice { office, candidate }` | Exact entity | `DeclareSupport` | `office` (via payload) |
+
+**Notes on specific variants**:
+
+- **`BuryCorpse`**: The `GoalKind` variant exists but no action def or handler exists yet. Binding semantics are documented here for future implementation. Tests cannot cover this variant until the action def is registered.
+
+- **`ClaimOffice` / `SupportCandidateForOffice`**: The `declare_support` action def has `targets: Vec::new()`, so affordances have empty `bound_targets`. The payload is built entirely from the goal's fields via `build_declare_support_payload_override()`. Because `authoritative_targets` is empty, the binding check falls through to the "empty targets skip binding" rule. This is correct: the payload override validator already ensures the payload references the right office and candidate. Document this edge case explicitly.
+
+- **`MoveCargo`**: Binding is on the destination place, not on lot identity. Lots are flexible.
+
+Future drafts must be able to tighten binding policy (e.g., exact facility for `SellCommodity`) without redesigning search.
+
+### 3. Search Must Filter Candidates via `matches_binding()` Before Successor Construction
+
+In `search_candidates()` (search.rs), insert a `.retain()` call **after** the existing facility-use blocked filter:
+
+```rust
+candidates.retain(|candidate| !candidate_uses_blocked_facility_use(candidate, &node.state, registry));
+
+// NEW: reject candidates whose authoritative targets violate goal binding
+candidates.retain(|candidate| {
+    let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+        return true;
+    };
+    goal.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind)
+});
+```
+
+**Requirements**:
+- Matching must use `authoritative_targets` (from `Affordance.bound_targets`)
+- Wrong-target affordances must be discarded before successor construction, not explored and rejected later
+- Candidates with empty `authoritative_targets` (planner-only synthetic candidates) skip binding checks — this is handled inside `matches_binding()` returning `true` for empty targets
+
+**Op-kind dispatch rationale**: The same goal may involve multiple relevant ops across a multi-step plan. For example, `LootCorpse { corpse: X }` may require Travel → Loot. The Travel step targets a destination place, not the corpse — so Travel is auxiliary and must not be checked against the corpse entity. Only the terminal Loot op checks that its target matches `corpse: X`.
+
+### 4. Candidate Generation Keeps Exact Evidence Separate From Incidental Evidence (Verified)
+
+Verified correct in current implementation. `GoalKey` extracts canonical `entity`/`place` from `GoalKind` variant fields. `evidence_entities`/`evidence_places` in `GroundedGoal` remain separate supporting data used for ranking and debugging only.
+
+Search binding reads canonical target identity from `GoalKind` variant fields, not from "any evidence entity". No changes needed.
+
+### 5. Hypothetical Transitions Already Preserve Binding (Verified)
+
+`apply_planner_step` reads target identity from `GoalKind` variant fields, not from candidate targets. Binding is preserved by construction. No code changes needed.
+
+For example, `BuryCorpse` may not opportunistically retarget from one corpse to another just because both are valid local corpses. If a transition legitimately changes the target identity, that must happen by:
 - completing a materialization barrier
 - invalidating the current plan
 - replanning from fresh grounded evidence
 
 Not by silently changing targets mid-plan.
 
-### 6. Failure Handling Must Report Exact Binding Failures
-When an exact-bound plan step fails, blocker reporting must preserve the exact failed target relation.
+### 6. Failure Handling Already Target-Specific (Verified)
 
-Requirements:
-- distinguish “the target entity disappeared” from “an alternative object exists”
-- distinguish “wrong facility” from “facility unavailable”
-- keep blocked-intent memory keyed by the grounded goal’s canonical identity, not by the looser action family
+`BlockedIntent` records `goal_key: GoalKey` which includes `entity` and `place` extracted from `GoalKind`. For example, `LootCorpse { corpse: X }` and `LootCorpse { corpse: Y }` produce different `GoalKey` values. Already correct; no changes needed.
 
-This is essential for:
-- debuggability
-- stable blocker expiry
-- later investigative systems that reason from exact failed targets
+This means:
+- "the target entity disappeared" is distinguishable from "an alternative object exists" (different `GoalKey`)
+- blocked-intent memory is keyed by the grounded goal's canonical identity, not by the looser action family
+- blocker expiry operates on the correct concrete target
 
 ### 7. Affordance Enumeration Must Stay Deterministic and Concrete
-Exact binding must not introduce nondeterministic “best match” selection inside affordance enumeration.
+
+Exact binding must not introduce nondeterministic "best match" selection inside affordance enumeration.
 
 Rules:
 - affordance enumeration still returns all legal local affordances in deterministic order
-- goal-aware binding selects from those affordances deterministically
-- no heuristic “closest good enough corpse/facility/lot” selector should exist outside candidate generation
+- goal-aware binding selects from those affordances deterministically via `.retain()`
+- no heuristic "closest good enough corpse/facility/lot" selector should exist outside candidate generation
 
-This prevents hidden retargeting logic from moving into another layer.
+This prevents hidden retargeting logic from moving into another layer. No changes needed; this deliverable documents an invariant.
 
-### 8. Debug Surface Must Expose Binding Decisions
-Planner/debug output for exact-bound goals must answer:
-- what exact target was required
+### 8. BindingRejection Trace Struct
+
+Add a concrete trace type for binding rejections:
+
+```rust
+pub struct BindingRejection {
+    pub def_id: ActionDefId,
+    pub rejected_target: EntityId,
+    pub required_target: EntityId,
+}
+```
+
+Integration with the decision trace system:
+
+- Add `binding_rejections: Vec<BindingRejection>` to `PlanAttemptTrace`
+- Populate from the `.retain()` filter: when `matches_binding()` returns `false`, record the rejection
+- Propagate through `plan_search_result_to_trace()` in agent_tick.rs
+
+The debug surface must answer:
+- what exact target was required by the goal
 - which affordances were rejected for wrong binding
 - which affordance matched
 - whether failure came from target disappearance, wrong target, or resource absence
@@ -217,22 +221,25 @@ Because some goals are intentionally open-ended:
 
 Forcing exact binding everywhere would overfit the planner to candidate-generation contingencies and make the system less extensible.
 
-### Why Not Encode Full Target Tuples Into GoalKey?
-Because `GoalKey` is serving two jobs already:
-- stable goal identity for blocked memory / selection
-- canonical target summary
-
-Inflating it into full action-instance identity would overcouple planning to one action path and make flexible goals harder to express. The cleaner split is:
-- `GoalKey`: canonical identity
-- binding policy: tells search how strict canonical identity is
+### Why Not a Separate `GoalBindingPolicy` Enum?
+`GoalKey` already encodes canonical `entity` and `place` from every `GoalKind` variant. Adding a parallel `GoalBindingPolicy` enum that re-declares "this goal has an entity target" duplicates information that `GoalKind` variant fields already express. The `matches_binding()` method reads those fields directly, keeping the source of truth in one place.
 
 ### Why Not Leave This to Payload Validation?
 Because payload validation happens too late and is action-specific. The planner should not explore wrong-object affordances in the first place. Shared target binding belongs in planner semantics, not in scattered payload validators.
 
+### Op-Kind Dispatch Rationale
+`matches_binding` takes `op_kind` because the same goal involves multiple action types across a multi-step plan. A `LootCorpse { corpse: X }` plan may include Travel → Loot steps. Travel's targets are destination places, not corpse entities. Only terminal/core ops that directly act on the goal's target entity need binding verification. Auxiliary ops that serve the goal indirectly (navigation, resource gathering, facility queuing) always pass.
+
+### DeclareSupport Edge Case
+The `declare_support` action def has `targets: Vec::new()`, so affordances produced for it have empty `bound_targets`. The payload is constructed entirely from the goal's fields via `build_declare_support_payload_override()`. Because `authoritative_targets` is empty for these candidates, `matches_binding()` returns `true` (empty targets bypass). This is correct behavior: the payload override validator (`validate_declare_support_payload_override`) already ensures the payload references the correct office and candidate. The binding check would be redundant and would require special-casing to extract targets from payloads instead of from `bound_targets`.
+
+### Planner-Only Candidate Bypass
+Synthetic candidates generated by `planner_only_candidates()` (e.g., hypothetical put-down of items that haven't been picked up yet) have empty `authoritative_targets` (see `SearchCandidate` construction in `search_candidate_from_planner`). These skip binding checks because they represent hypothetical future actions, not concrete affordances bound to specific entities.
+
 ## Component Registration
 No new authoritative world components are required by this spec.
 
-If implementation introduces helper enums/structs such as goal-binding policy or affordance-match diagnostics, they should live in planning/AI layers and must not become authoritative world state.
+`BindingRejection` and `matches_binding()` logic live in the `worldwake-ai` planning layer and must not become authoritative world state.
 
 ## SystemFn Integration
 
@@ -249,52 +256,76 @@ If implementation introduces helper enums/structs such as goal-binding policy or
 ### `worldwake-systems`
 - continue emitting concrete affordances and payloads
 - object-specific actions (`loot`, `bury`, future `staff_market`, future `audit_stock`, future `collect_evidence`) must expose authoritative targets explicitly
-- do not add system-local “nearest valid target” fallback behavior to compensate for loose planner matching
+- do not add system-local "nearest valid target" fallback behavior to compensate for loose planner matching
 
 ### `worldwake-ai`
-- extend goal semantics to declare binding policy per goal family
-- add goal-aware affordance binding checks in search before successor construction
-- keep hypothetical transition semantics exact-target preserving
-- update failure handling/debug surfaces to report exact binding failures
-- ensure blocked-intent memory continues to operate on canonical goal identity
+- add `matches_binding()` to `GoalKindPlannerExt` with `PlannerOpKind` dispatch
+- add `.retain()` binding filter in `search_candidates()` after the facility-use blocked filter
+- add `BindingRejection` trace struct to `PlanAttemptTrace`
+- hypothetical transitions already correct (verified)
+- failure handling already correct (verified)
+- blocked-intent memory already operates on canonical goal identity (verified)
 
 ## Cross-System Interactions (Principle 12)
 - E10 transport supplies exact facility/container targets for cargo and stock handling
 - E11 trade drafts supply exact listed-lot targets for commodity exchange
-- E12 corpse actions supply exact corpse and burial-site targets
+- E12 corpse actions supply exact corpse targets (burial-site action def pending)
 - E14 beliefs limit which concrete objects are even known to the planner
+- E15b social actions supply listener targets for belief sharing
+- E16 office actions supply office/candidate targets via payload (empty `bound_targets`)
 - E17 crime/investigation will depend on exact evidence/report/facility targets
 
 All of these remain state-mediated:
 - goal grounding reads concrete believed entities/places
-- affordances expose concrete authoritative targets
+- affordances expose concrete authoritative targets (or payloads for targetless action defs)
 - search matches those targets deterministically
 - systems commit ordinary world-state changes
 
 No system-to-system command path is introduced.
 
 ## Testing Requirements
-- goal semantics tests for binding policy per exact-bound goal family
-- search tests proving wrong-target affordances are rejected before successor construction
-- regression test for `BuryCorpse` exact corpse + exact burial-site binding
-- regression test for `LootCorpse` exact corpse binding
-- future trade tests proving exact listed-lot targeting once merchant-selling draft lands
-- blocker/debug tests proving exact target failure is surfaced distinctly from generic no-path/no-input failure
+
+### Unit Tests for `matches_binding()`
+Per-variant tests covering:
+- **Match**: `LootCorpse { corpse: X }` with `authoritative_targets: [X]` and `op_kind: Loot` → `true`
+- **Mismatch**: `LootCorpse { corpse: X }` with `authoritative_targets: [Y]` and `op_kind: Loot` → `false`
+- **Auxiliary bypass**: `LootCorpse { corpse: X }` with `authoritative_targets: [destination]` and `op_kind: Travel` → `true`
+- **Empty targets bypass**: `LootCorpse { corpse: X }` with `authoritative_targets: []` and `op_kind: Loot` → `true`
+- **Flexible goal**: `Sleep` with any `authoritative_targets` and any `op_kind` → `true`
+
+Repeat for each exact-bound variant: `EngageHostile`, `Heal`, `ShareBelief`, `ClaimOffice`, `SupportCandidateForOffice`.
+
+### Search Integration Tests
+- **Two corpses at same place**: Agent with `LootCorpse { corpse: X }` goal at a place with corpses X and Y. Search must only produce Loot candidates targeting X, not Y.
+- **Two hostiles at same place**: Agent with `EngageHostile { target: A }` must only produce Attack candidates targeting A.
+- **Flexible goal unaffected**: Agent with `Sleep` goal must accept any available sleep affordance regardless of targets.
+
+### Binding Rejection Trace Tests
+- Verify `BindingRejection` entries appear in `PlanAttemptTrace` when wrong-target candidates are filtered
+- Verify trace includes `def_id`, `rejected_target`, and `required_target`
+- Verify `dump_agent()` output includes binding rejection information
+
+### Not Tested (Documented for Future)
+- `BuryCorpse` regression test — no action def or handler exists yet. When the `bury` action is implemented, add exact corpse + exact burial-site binding tests.
 
 ## Acceptance Criteria
 - exact-bound goals cannot silently retarget to a sibling affordance of the same family
 - flexible goals remain flexible
 - planner determinism is preserved
 - blocker memory and debugging refer to the correct concrete target
-- future drafts for listed-lot trade, stock storage, and audits can reuse the same planner-binding architecture without introducing new special cases
+- binding rejection traces expose which candidates were rejected and why
+- `DeclareSupport` with empty `bound_targets` continues to work via payload override
+- planner-only synthetic candidates with empty `authoritative_targets` bypass binding
+- future drafts for listed-lot trade, stock storage, and audits can reuse the same `matches_binding` architecture without introducing new special cases
 
 ## FND-01 Section H
 
 ### Information-Path Analysis
-- Exact target binding only applies to objects already present in the agent’s grounded goal evidence.
-- The planner still cannot query raw world state for “better” unseen alternatives.
+- Exact target binding only applies to objects already present in the agent's grounded goal evidence.
+- The planner still cannot query raw world state for "better" unseen alternatives.
 - Future sale-lot, corpse, audit, and evidence interactions remain local because affordances expose only locally knowable concrete objects.
 - No information path is added that would let agents know about hidden objects merely because the action family exists.
+- `DeclareSupport` targets flow through payload overrides built from goal fields, not through affordance `bound_targets`. This is consistent with information locality because the goal fields were derived from local observations during candidate generation.
 
 ### Positive-Feedback Analysis
 - Loose target matching can create planner thrash and accidental success loops by allowing a goal for one object to be satisfied by another.
@@ -312,13 +343,13 @@ Stored authoritative state:
 - entities
 - places
 - ownership/custody/containment relations
-- action affordances derived from authoritative state at tick time
-- goal canonical identity fields
+- goal canonical identity fields (`GoalKind` variant fields → `GoalKey`)
 
-Derived / cached state:
+Derived / transient state:
 - grounded goal evidence sets
-- goal binding policy
-- affordance-binding match decisions
+- `matches_binding()` decisions (computed per candidate per tick)
+- `BindingRejection` trace entries (opt-in diagnostic, never authoritative)
+- affordance-binding match results
 - blocker classifications for failed exact-bound steps
 
 No derived binding result may become authoritative truth.
