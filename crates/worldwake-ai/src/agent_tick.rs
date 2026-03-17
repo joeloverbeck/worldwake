@@ -1,9 +1,9 @@
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::decision_trace::{
-    ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
-    DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace, GoalSwitchSummary,
-    InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
-    PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
+    ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
+    DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
+    GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
+    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
 };
 use crate::search::PlanSearchResult;
 use crate::{
@@ -816,6 +816,7 @@ fn handle_active_action_phase(
             action_defs,
             action_handlers,
             ctx.recipe_registry,
+            false,
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
@@ -897,7 +898,8 @@ fn build_candidate_plans(
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
     recipe_registry: &RecipeRegistry,
-) -> Vec<(crate::GoalKey, PlanSearchResult)> {
+    collect_rejections: bool,
+) -> Vec<(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>)> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     ranked_candidates
         .iter()
@@ -916,6 +918,7 @@ fn build_candidate_plans(
                 &crate::PlanningState::new(&snapshot),
                 recipe_registry,
             );
+            let mut rejections = Vec::new();
             let result = search_plan(
                 &snapshot,
                 &ranked.grounded,
@@ -924,8 +927,9 @@ fn build_candidate_plans(
                 action_handlers,
                 budget,
                 &goal_relevant_places,
+                if collect_rejections { Some(&mut rejections) } else { None },
             );
-            (ranked.grounded.key, result)
+            (ranked.grounded.key, result, rejections)
         })
         .collect()
 }
@@ -933,11 +937,11 @@ fn build_candidate_plans(
 /// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
 /// only care about found plans (selection, interrupt evaluation).
 fn plans_as_options(
-    plans: &[(crate::GoalKey, PlanSearchResult)],
+    plans: &[(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>)],
 ) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
     plans
         .iter()
-        .map(|(key, result)| (*key, result.clone().into_plan()))
+        .map(|(key, result, _)| (*key, result.clone().into_plan()))
         .collect()
 }
 
@@ -1004,6 +1008,7 @@ fn plan_and_validate_next_step(
             action_defs,
             action_handlers,
             recipe_registry,
+            false,
         );
         let plans_options = plans_as_options(&plans);
 
@@ -1173,13 +1178,17 @@ fn plan_and_validate_next_step_traced(
             action_defs,
             action_handlers,
             recipe_registry,
+            true,
         );
 
         // Populate PlanSearchTrace from search results.
-        for (goal_key, result) in &plans {
-            plan_search_trace
-                .attempts
-                .push(plan_search_result_to_trace(*goal_key, result, action_defs));
+        for (goal_key, result, rejections) in &plans {
+            plan_search_trace.attempts.push(plan_search_result_to_trace(
+                *goal_key,
+                result,
+                action_defs,
+                rejections.clone(),
+            ));
         }
 
         let plans_options = plans_as_options(&plans);
@@ -1268,6 +1277,7 @@ fn plan_search_result_to_trace(
     goal: worldwake_core::GoalKey,
     result: &PlanSearchResult,
     action_defs: &worldwake_sim::ActionDefRegistry,
+    binding_rejections: Vec<BindingRejection>,
 ) -> PlanAttemptTrace {
     let outcome = match result {
         PlanSearchResult::Found(plan) => PlanSearchOutcome::Found {
@@ -1290,7 +1300,11 @@ fn plan_search_result_to_trace(
             }
         }
     };
-    PlanAttemptTrace { goal, outcome }
+    PlanAttemptTrace {
+        goal,
+        outcome,
+        binding_rejections,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4171,6 +4185,7 @@ mod tests {
             &harness.handlers,
             &budget,
             &[],
+            None,
         );
         assert!(
             plan.is_found(),

@@ -99,6 +99,7 @@ impl PlanSearchResult {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn search_plan(
     snapshot: &PlanningSnapshot,
     goal: &GroundedGoal,
@@ -107,6 +108,7 @@ pub fn search_plan(
     handlers: &ActionHandlerRegistry,
     budget: &PlanningBudget,
     goal_relevant_places: &[EntityId],
+    mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
@@ -132,7 +134,14 @@ pub fn search_plan(
         }
         expansions = expansions.saturating_add(1);
 
-        let mut candidates = search_candidates(goal, &node, semantics_table, registry, handlers);
+        let mut candidates = search_candidates(
+            goal,
+            &node,
+            semantics_table,
+            registry,
+            handlers,
+            binding_rejections.as_deref_mut(),
+        );
         if let Some(current_place) = node
             .state
             .effective_place_ref(PlanningEntityRef::Authoritative(node.state.snapshot().actor()))
@@ -375,6 +384,7 @@ fn search_candidates(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
 ) -> Vec<SearchCandidate> {
     let relevant_defs = relevant_action_defs(goal, semantics_table);
     let mut candidates = get_affordances_for_defs(
@@ -397,12 +407,32 @@ fn search_candidates(
     candidates
         .retain(|candidate| !candidate_uses_blocked_facility_use(candidate, &node.state, registry));
     // Reject candidates whose authoritative targets violate goal binding.
-    candidates.retain(|candidate| {
-        let Some(semantics) = semantics_table.get(&candidate.def_id) else {
-            return true;
-        };
-        goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind)
-    });
+    // When a rejection collector is provided, record rejected candidates for traces.
+    if let Some(rejections) = binding_rejections {
+        candidates.retain(|candidate| {
+            let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+                return true;
+            };
+            let passes =
+                goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind);
+            if !passes {
+                let required_target = goal.key.entity.or(goal.key.place);
+                rejections.push(crate::decision_trace::BindingRejection {
+                    def_id: candidate.def_id,
+                    rejected_targets: candidate.authoritative_targets.clone(),
+                    required_target,
+                });
+            }
+            passes
+        });
+    } else {
+        candidates.retain(|candidate| {
+            let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+                return true;
+            };
+            goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind)
+        });
+    }
     candidates
 }
 
@@ -1173,6 +1203,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1281,6 +1312,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1326,6 +1358,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         );
 
         assert!(!plan.is_found());
@@ -1393,6 +1426,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1477,6 +1511,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .expect("local trade barrier should not be pruned by cheaper travel branches");
@@ -1546,6 +1581,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .expect("local recipe-input acquire goal should plan through trade");
@@ -1604,6 +1640,7 @@ mod tests {
             &handlers,
             &budget,
             &[],
+            None,
         );
 
         assert!(!plan.is_found());
@@ -1654,6 +1691,7 @@ mod tests {
             &handlers,
             &budget,
             &[],
+            None,
         );
 
         assert!(!plan.is_found());
@@ -1700,6 +1738,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
         );
         let wide_beam_plan = search_plan(
             &snapshot,
@@ -1712,6 +1751,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1776,6 +1816,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
         );
         let beam_three_plan = search_plan(
             &snapshot,
@@ -1788,6 +1829,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1851,6 +1893,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
         );
         let sufficient_budget_plan = search_plan(
             &snapshot,
@@ -1864,6 +1907,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1906,6 +1950,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
         );
 
         assert!(!plan.is_found());
@@ -1971,6 +2016,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         );
 
         assert!(!plan.is_found());
@@ -2026,6 +2072,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2077,6 +2124,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2136,6 +2184,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2221,6 +2270,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2308,6 +2358,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2444,7 +2495,7 @@ mod tests {
             heuristic_ticks: 0,
         };
 
-        let initial_candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers);
+        let initial_candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
         let pick_up = initial_candidates
             .iter()
             .find(|candidate| {
@@ -2463,7 +2514,7 @@ mod tests {
         assert!(!after_pick_up.steps[0].expected_materializations.is_empty());
 
         let follow_up_candidates =
-            search_candidates(&goal, &after_pick_up, &semantics, &registry, &handlers);
+            search_candidates(&goal, &after_pick_up, &semantics, &registry, &handlers, None);
         let travel = follow_up_candidates
             .iter()
             .find(|candidate| {
@@ -2523,6 +2574,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2573,6 +2625,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2724,6 +2777,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .expect("default search budget should find the branchy market-hub restock route");
@@ -2893,6 +2947,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .expect("exclusive orchard should yield a queue barrier plan");
@@ -2942,6 +2997,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .expect("matching grant should allow direct harvest plan");
@@ -2998,6 +3054,7 @@ mod tests {
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
+            None,
         );
 
         assert!(!candidates.iter().any(|candidate| {
@@ -3050,6 +3107,7 @@ mod tests {
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
+            None,
         );
 
         assert!(!candidates.iter().any(|candidate| {
@@ -3141,6 +3199,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
             &[],
+            None,
         )
         .into_plan()
         .expect("second facility should still yield a queue-backed plan");

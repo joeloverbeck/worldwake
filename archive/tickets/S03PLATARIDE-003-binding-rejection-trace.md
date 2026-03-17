@@ -1,6 +1,6 @@
 # S03PLATARIDE-003: Add `BindingRejection` trace struct and wire into decision traces
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — new trace struct, `PlanAttemptTrace` extended, `search_plan` signature gains optional trace output, `dump_agent` updated
@@ -124,3 +124,14 @@ When `PlanAttemptTrace` has non-empty `binding_rejections`, include them in the 
 
 1. `cargo test -p worldwake-ai -- binding_rejection`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**:
+  - `decision_trace.rs`: Added `BindingRejection` struct, extended `PlanAttemptTrace` with `binding_rejections` field, updated `format_outcome()` to print rejections via `dump_agent()`.
+  - `search.rs`: `search_plan()` and `search_candidates()` gained `Option<&mut Vec<BindingRejection>>` parameter. When `Some`, the `.retain()` binding filter records rejected candidates. When `None`, zero-cost.
+  - `agent_tick.rs`: `build_candidate_plans()` gained `collect_rejections: bool`, returns per-candidate rejections. Tracing path passes `true` and feeds rejections into `plan_search_result_to_trace()`.
+  - `lib.rs`: Exported `BindingRejection`.
+- **Deviations from plan**: None. All deliverables implemented as specified.
+- **Verification**: `cargo test --workspace` (1,862 passed, 0 failed), `cargo clippy --workspace` clean. 3 new unit tests pass.

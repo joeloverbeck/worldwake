@@ -3,6 +3,7 @@
 //! Records per-agent per-tick decision reasoning for diagnostic
 //! and test query purposes. See spec S08 for design rationale.
 
+use std::fmt::Write as _;
 use worldwake_core::{ActionDefId, EntityId, GoalKey, Tick};
 use worldwake_sim::ActionDefRegistry;
 
@@ -129,11 +130,20 @@ pub struct PlanSearchTrace {
     pub attempts: Vec<PlanAttemptTrace>,
 }
 
+/// Diagnostic record of a candidate rejected by goal target binding.
+#[derive(Clone, Debug)]
+pub struct BindingRejection {
+    pub def_id: ActionDefId,
+    pub rejected_targets: Vec<EntityId>,
+    pub required_target: Option<EntityId>,
+}
+
 /// Trace of a single plan search attempt for one goal.
 #[derive(Clone, Debug)]
 pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub outcome: PlanSearchOutcome,
+    pub binding_rejections: Vec<BindingRejection>,
 }
 
 /// Outcome of a plan search for one goal.
@@ -311,7 +321,22 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .iter()
                 .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                 .count();
-            format!("PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}")
+            let mut out = format!(
+                "PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}"
+            );
+            for attempt in &planning.planning.attempts {
+                for rej in &attempt.binding_rejections {
+                    let def_name = action_defs
+                        .get(rej.def_id)
+                        .map_or("unknown", |d| d.name.as_str());
+                    let _ = write!(
+                        out,
+                        "\n  binding rejected: {def_name} targets={:?} required={:?}",
+                        rej.rejected_targets, rej.required_target
+                    );
+                }
+            }
+            out
         }
     }
 }
@@ -449,5 +474,54 @@ mod tests {
         assert!(summary.contains("candidates=1"));
         assert!(summary.contains("plans_found=0"));
         assert!(summary.contains("Sleep"));
+    }
+
+    #[test]
+    fn binding_rejection_struct_holds_data() {
+        let rej = BindingRejection {
+            def_id: ActionDefId(42),
+            rejected_targets: vec![entity(10), entity(11)],
+            required_target: Some(entity(5)),
+        };
+        assert_eq!(rej.def_id, ActionDefId(42));
+        assert_eq!(rej.rejected_targets.len(), 2);
+        assert_eq!(rej.rejected_targets[0], entity(10));
+        assert_eq!(rej.rejected_targets[1], entity(11));
+        assert_eq!(rej.required_target, Some(entity(5)));
+    }
+
+    #[test]
+    fn binding_rejection_with_no_required_target() {
+        let rej = BindingRejection {
+            def_id: ActionDefId(7),
+            rejected_targets: vec![entity(3)],
+            required_target: None,
+        };
+        assert_eq!(rej.required_target, None);
+    }
+
+    #[test]
+    fn plan_attempt_trace_includes_binding_rejections() {
+        use worldwake_core::GoalKind;
+        let rejections = vec![
+            BindingRejection {
+                def_id: ActionDefId(1),
+                rejected_targets: vec![entity(20)],
+                required_target: Some(entity(10)),
+            },
+            BindingRejection {
+                def_id: ActionDefId(2),
+                rejected_targets: vec![entity(30)],
+                required_target: Some(entity(10)),
+            },
+        ];
+        let trace = PlanAttemptTrace {
+            goal: GoalKey::new(GoalKind::Sleep),
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
+            binding_rejections: rejections,
+        };
+        assert_eq!(trace.binding_rejections.len(), 2);
+        assert_eq!(trace.binding_rejections[0].def_id, ActionDefId(1));
+        assert_eq!(trace.binding_rejections[1].rejected_targets[0], entity(30));
     }
 }
