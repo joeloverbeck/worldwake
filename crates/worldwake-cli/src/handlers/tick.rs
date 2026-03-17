@@ -60,6 +60,7 @@ pub fn handle_tick(
                 recipe_registry,
                 systems: dispatch_table,
                 input_producer: Some(&mut controllers),
+                action_trace: None,
             },
         )
         .map_err(|e| CommandError::new(format!("tick error: {e:?}")))?;

@@ -235,6 +235,7 @@ impl Harness {
                 recipe_registry: &self.recipes,
                 systems: &self.systems,
                 input_producer: None,
+                action_trace: None,
             },
         )
     }

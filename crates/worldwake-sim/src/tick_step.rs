@@ -1,9 +1,9 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstanceId, ControlError, ControllerState, DeterministicRng, ExternalAbortReason,
-    InputKind, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
-    TickInputError, TickInputProducer, TickOutcome,
+    ActionInstanceId, ActionTraceSink, ControlError, ControllerState, DeterministicRng,
+    ExternalAbortReason, InputKind, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
+    TickInputContext, TickInputError, TickInputProducer, TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -18,6 +18,7 @@ pub struct TickStepServices<'a> {
     pub recipe_registry: &'a RecipeRegistry,
     pub systems: &'a SystemDispatchTable,
     pub input_producer: Option<&'a mut dyn TickInputProducer>,
+    pub action_trace: Option<&'a mut ActionTraceSink>,
 }
 
 struct TickStepRuntime<'a> {
@@ -25,6 +26,17 @@ struct TickStepRuntime<'a> {
     event_log: &'a mut EventLog,
     scheduler: &'a mut Scheduler,
     rng: &'a mut DeterministicRng,
+    #[allow(dead_code)] // Used in ACTEXETRA-003 when recording trace events at hook points.
+    action_trace: Option<&'a mut ActionTraceSink>,
+}
+
+impl TickStepRuntime<'_> {
+    #[allow(dead_code)] // Used in ACTEXETRA-003 when recording trace events at hook points.
+    fn record_action_trace(&mut self, event: crate::ActionTraceEvent) {
+        if let Some(sink) = self.action_trace.as_mut() {
+            sink.record(event);
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -108,11 +120,13 @@ pub fn step_tick(
     rng: &mut DeterministicRng,
     mut services: TickStepServices<'_>,
 ) -> Result<TickStepResult, TickStepError> {
+    let action_trace = services.action_trace.take();
     let mut runtime = TickStepRuntime {
         world,
         event_log,
         scheduler,
         rng,
+        action_trace,
     };
     let tick = runtime.scheduler.current_tick();
     let events_before = runtime.event_log.len();
@@ -826,6 +840,7 @@ mod tests {
             recipe_registry: recipes,
             systems,
             input_producer: None,
+            action_trace: None,
         }
     }
 
@@ -952,6 +967,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1002,6 +1018,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1054,6 +1071,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap_err();
@@ -1122,6 +1140,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1224,6 +1243,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1249,6 +1269,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1295,6 +1316,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap_err();
@@ -1349,6 +1371,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1402,6 +1425,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1457,6 +1481,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1536,6 +1561,7 @@ mod tests {
                     [kill_actor_system; crate::SystemId::ALL.len()],
                 ),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1572,6 +1598,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &ordered_systems(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1618,6 +1645,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &ordered_systems(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1668,6 +1696,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &systems,
                 input_producer: Some(&mut producer),
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1726,6 +1755,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &systems,
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1748,6 +1778,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &systems,
                 input_producer: Some(&mut producer),
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1800,6 +1831,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();
@@ -1815,6 +1847,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap();

@@ -1982,6 +1982,7 @@ mod tests {
                     recipe_registry: &self.recipes,
                     systems: &SystemDispatchTable::canonical_noop(),
                     input_producer: Some(&mut controllers),
+                    action_trace: None,
                 },
             )
             .unwrap()

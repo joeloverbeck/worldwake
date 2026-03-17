@@ -330,6 +330,7 @@ mod tests {
             recipe_registry,
             systems,
             input_producer: None,
+            action_trace: None,
         }
     }
 

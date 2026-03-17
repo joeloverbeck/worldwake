@@ -84,6 +84,7 @@ impl Harness {
                 recipe_registry: &self.recipes,
                 systems: &dispatch_table(),
                 input_producer: None,
+                action_trace: None,
             },
         )
     }

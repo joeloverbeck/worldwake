@@ -1,6 +1,6 @@
 # ACTEXETRA-002: Thread trace sink through `TickStepServices` and `TickStepRuntime`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — API change to `TickStepServices`
@@ -108,3 +108,10 @@ Every site that constructs `TickStepServices { ... }` must add `action_trace: No
 1. `cargo build --workspace`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added `action_trace: Option<&'a mut ActionTraceSink>` to `TickStepServices` and `TickStepRuntime`. Added `record_action_trace()` helper on `TickStepRuntime`. Threaded via `take()` in `step_tick()`. Added `action_trace: None` to all 28 caller sites across 10 files. Added `#[allow(dead_code)]` annotations for the field and helper (used in ACTEXETRA-003).
+- **Deviations**: `replay_execution.rs` destructuring pattern required `action_trace: _` instead of just a construction fix. No other deviations.
+- **Verification**: `cargo build --workspace` clean, `cargo test --workspace` all pass, `cargo clippy --workspace` no warnings.

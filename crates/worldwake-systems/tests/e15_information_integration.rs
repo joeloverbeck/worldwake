@@ -251,6 +251,7 @@ impl TellHarness {
                 recipe_registry: &self.recipes,
                 systems: &self.systems,
                 input_producer: None,
+                action_trace: None,
             },
         )
         .unwrap()
@@ -403,6 +404,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     recipe_registry,
                     systems: &systems,
                     input_producer: None,
+                    action_trace: None,
                 },
             )
         }
@@ -478,6 +480,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     recipe_registry,
                     systems: &systems,
                     input_producer: None,
+                    action_trace: None,
                 },
             )
         }
@@ -621,6 +624,7 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
             recipe_registry: &recipes,
             systems: &dispatch_table(),
             input_producer: None,
+            action_trace: None,
         },
     )
     .unwrap();
@@ -680,6 +684,7 @@ fn replay_verification_accepts_recorded_tell_and_discovery_scenario() {
             recipe_registry: &recipes,
             systems: &systems,
             input_producer: None,
+            action_trace: None,
         },
     )
     .unwrap();

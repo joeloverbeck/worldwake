@@ -103,6 +103,7 @@ pub fn replay_and_verify(
         recipe_registry,
         systems,
         input_producer,
+        action_trace: _,
     } = services;
     assert!(
         input_producer.is_none(),
@@ -149,6 +150,7 @@ pub fn replay_and_verify(
                     recipe_registry,
                     systems,
                     input_producer: None,
+                    action_trace: None,
                 },
             )
         }
@@ -399,6 +401,7 @@ mod tests {
             recipe_registry,
             systems,
             input_producer: None,
+            action_trace: None,
         }
     }
 

@@ -499,6 +499,7 @@ impl GoldenHarness {
                 recipe_registry: &self.recipes,
                 systems: &dispatch_table(),
                 input_producer: Some(&mut controllers),
+                action_trace: None,
             },
         )
         .unwrap()
