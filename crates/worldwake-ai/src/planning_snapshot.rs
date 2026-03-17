@@ -119,6 +119,10 @@ pub struct PlanningSnapshot {
     pub(crate) actor_support_declarations: BTreeMap<EntityId, EntityId>,
     pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
     pub(crate) actor_tell_profile: Option<TellProfile>,
+    /// All-pairs shortest travel times between snapshot places.
+    /// Computed via Floyd-Warshall during construction. O(n^3) where n is
+    /// the number of places in the snapshot (typically 10-20, so < 8000 ops).
+    shortest_travel_ticks: BTreeMap<(EntityId, EntityId), u32>,
 }
 
 impl PlanningSnapshot {
@@ -169,6 +173,8 @@ impl PlanningSnapshot {
             })
             .collect();
 
+        let shortest_travel_ticks = compute_shortest_travel_ticks(&places);
+
         Self {
             actor,
             entities,
@@ -183,12 +189,42 @@ impl PlanningSnapshot {
                 .collect(),
             actor_confidence_policy: view.belief_confidence_policy(actor),
             actor_tell_profile: view.tell_profile(actor),
+            shortest_travel_ticks,
         }
     }
 
     #[must_use]
     pub fn actor(&self) -> EntityId {
         self.actor
+    }
+
+    /// Minimum travel ticks from `from` to `to`, or `None` if unreachable.
+    /// Returns `Some(0)` if `from == to`.
+    #[must_use]
+    pub fn min_travel_ticks(&self, from: EntityId, to: EntityId) -> Option<u32> {
+        if from == to {
+            return Some(0);
+        }
+        self.shortest_travel_ticks.get(&(from, to)).copied()
+    }
+
+    /// Minimum travel ticks from `from` to the nearest place in `destinations`.
+    /// Returns `Some(0)` if `from` is in `destinations`.
+    /// Returns `None` if `destinations` is empty or all destinations are unreachable.
+    #[must_use]
+    pub fn min_travel_ticks_to_any(
+        &self,
+        from: EntityId,
+        destinations: &[EntityId],
+    ) -> Option<u32> {
+        if destinations.contains(&from) {
+            return Some(0);
+        }
+        destinations
+            .iter()
+            .filter_map(|dest| self.shortest_travel_ticks.get(&(from, *dest)))
+            .copied()
+            .min()
     }
 }
 
@@ -225,6 +261,45 @@ fn build_snapshot_places(
             )
         })
         .collect()
+}
+
+/// Compute all-pairs shortest travel times via Floyd-Warshall.
+/// Uses `BTreeMap` for deterministic iteration order.
+fn compute_shortest_travel_ticks(
+    places: &BTreeMap<EntityId, SnapshotPlace>,
+) -> BTreeMap<(EntityId, EntityId), u32> {
+    let place_ids: Vec<EntityId> = places.keys().copied().collect();
+    let mut dist: BTreeMap<(EntityId, EntityId), u32> = BTreeMap::new();
+
+    // Initialize from direct adjacency edges.
+    for (&place, snapshot_place) in places {
+        for &(adjacent, ticks) in &snapshot_place.adjacent_places_with_travel_ticks {
+            let weight = ticks.get();
+            dist.entry((place, adjacent))
+                .and_modify(|existing| *existing = (*existing).min(weight))
+                .or_insert(weight);
+        }
+    }
+
+    // Floyd-Warshall relaxation.
+    for &k in &place_ids {
+        for &i in &place_ids {
+            let Some(&dist_ik) = dist.get(&(i, k)) else {
+                continue;
+            };
+            for &j in &place_ids {
+                let Some(&dist_kj) = dist.get(&(k, j)) else {
+                    continue;
+                };
+                let candidate = dist_ik.saturating_add(dist_kj);
+                dist.entry((i, j))
+                    .and_modify(|existing| *existing = (*existing).min(candidate))
+                    .or_insert(candidate);
+            }
+        }
+    }
+
+    dist
 }
 
 fn build_snapshot_entity(
@@ -1032,6 +1107,122 @@ mod tests {
                 .and_then(|entity| entity.facility_queue.as_ref()),
             None
         );
+    }
+
+    // ---- Floyd-Warshall distance matrix tests ----
+
+    /// Helper: build a snapshot with a given topology for distance matrix tests.
+    fn build_chain_snapshot() -> super::PlanningSnapshot {
+        // Topology: A --3--> B --5--> C (directed chain)
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place_a);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.entities_at.insert(place_b, vec![]);
+        view.entities_at.insert(place_c, vec![]);
+        // Bidirectional edges: A<->B(3), B<->C(5)
+        view.adjacent.insert(
+            place_a,
+            vec![(place_b, NonZeroU32::new(3).unwrap())],
+        );
+        view.adjacent.insert(
+            place_b,
+            vec![
+                (place_a, NonZeroU32::new(3).unwrap()),
+                (place_c, NonZeroU32::new(5).unwrap()),
+            ],
+        );
+        view.adjacent.insert(
+            place_c,
+            vec![(place_b, NonZeroU32::new(5).unwrap())],
+        );
+
+        // travel_horizon=3 to include all places
+        build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            3,
+        )
+    }
+
+    #[test]
+    fn min_travel_ticks_self_is_zero() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        assert_eq!(snapshot.min_travel_ticks(place_a, place_a), Some(0));
+    }
+
+    #[test]
+    fn min_travel_ticks_direct_adjacent() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        let place_b = entity(11);
+        assert_eq!(snapshot.min_travel_ticks(place_a, place_b), Some(3));
+        assert_eq!(snapshot.min_travel_ticks(place_b, place_a), Some(3));
+    }
+
+    #[test]
+    fn min_travel_ticks_multi_hop() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        let place_c = entity(12);
+        // A -> B -> C = 3 + 5 = 8
+        assert_eq!(snapshot.min_travel_ticks(place_a, place_c), Some(8));
+        assert_eq!(snapshot.min_travel_ticks(place_c, place_a), Some(8));
+    }
+
+    #[test]
+    fn min_travel_ticks_unreachable_place() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        let unknown = entity(99);
+        assert_eq!(snapshot.min_travel_ticks(place_a, unknown), None);
+    }
+
+    #[test]
+    fn min_travel_ticks_to_any_returns_minimum() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+        // A->B=3, A->C=8 → min=3
+        assert_eq!(
+            snapshot.min_travel_ticks_to_any(place_a, &[place_b, place_c]),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn min_travel_ticks_to_any_self_in_destinations() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        let place_c = entity(12);
+        assert_eq!(
+            snapshot.min_travel_ticks_to_any(place_a, &[place_a, place_c]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn min_travel_ticks_to_any_empty_destinations() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        assert_eq!(snapshot.min_travel_ticks_to_any(place_a, &[]), None);
+    }
+
+    #[test]
+    fn distance_matrix_is_deterministic() {
+        let s1 = build_chain_snapshot();
+        let s2 = build_chain_snapshot();
+        assert_eq!(s1.shortest_travel_ticks, s2.shortest_travel_ticks);
     }
 
     #[test]

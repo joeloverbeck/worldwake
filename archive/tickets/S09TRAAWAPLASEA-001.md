@@ -1,6 +1,6 @@
 # S09TRAAWAPLASEA-001: Add Floyd-Warshall distance matrix to PlanningSnapshot
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new field and methods on `PlanningSnapshot`
@@ -91,3 +91,11 @@ Add two public methods to `PlanningSnapshot`:
 
 1. `cargo test -p worldwake-ai planning_snapshot`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added `shortest_travel_ticks: BTreeMap<(EntityId, EntityId), u32>` field to `PlanningSnapshot`, computed via Floyd-Warshall in `build_with_blocked_facility_uses()`. Added `min_travel_ticks()` and `min_travel_ticks_to_any()` query methods. Added private helper `compute_shortest_travel_ticks()`.
+- **Files modified**: `crates/worldwake-ai/src/planning_snapshot.rs`
+- **Deviations**: None — implemented exactly as specified.
+- **Verification**: 8 new unit tests pass (self-distance, direct adjacent, multi-hop, unreachable, min-of-destinations, self-in-destinations, empty destinations, determinism). Full workspace tests (323+ tests) pass. Clippy clean.
