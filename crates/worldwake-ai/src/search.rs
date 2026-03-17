@@ -396,6 +396,13 @@ fn search_candidates(
     );
     candidates
         .retain(|candidate| !candidate_uses_blocked_facility_use(candidate, &node.state, registry));
+    // Reject candidates whose authoritative targets violate goal binding.
+    candidates.retain(|candidate| {
+        let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+            return true;
+        };
+        goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind)
+    });
     candidates
 }
 

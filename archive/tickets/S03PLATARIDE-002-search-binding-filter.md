@@ -1,6 +1,6 @@
 # S03PLATARIDE-002: Wire binding filter into `search_candidates()`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `search_candidates()` gains a `.retain()` call after the facility-use blocked filter
@@ -89,3 +89,10 @@ None in this ticket. The filter is tested indirectly by:
 
 1. `cargo test -p worldwake-ai`
 2. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-17
+- **What changed**: Added 6-line `.retain()` call in `search_candidates()` at `crates/worldwake-ai/src/search.rs:399-404`, immediately after the existing facility-use blocked filter. The filter calls `goal.key.kind.matches_binding()` to reject candidates whose authoritative targets violate goal binding.
+- **Deviations from plan**: None. Implementation matched the ticket exactly.
+- **Verification**: `cargo clippy --workspace` clean. `cargo test --workspace` — all 2349 tests pass, 0 failures, including all golden tests.
