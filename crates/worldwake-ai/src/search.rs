@@ -17,6 +17,11 @@ struct SearchNode<'snapshot> {
     state: PlanningState<'snapshot>,
     steps: Vec<PlannedStep>,
     total_estimated_ticks: u32,
+    /// A* heuristic: minimum travel ticks from the actor's current simulated
+    /// position to the nearest goal-relevant place.  Zero when already at a
+    /// goal-relevant place, when no spatial guidance is available, or when the
+    /// actor's place cannot be resolved.
+    heuristic_ticks: u32,
 }
 
 struct FrontierEntry<'snapshot> {
@@ -101,13 +106,14 @@ pub fn search_plan(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
     budget: &PlanningBudget,
+    goal_relevant_places: &[EntityId],
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
     }
 
     let mut frontier = BinaryHeap::new();
-    frontier.push(FrontierEntry::new(root_node(snapshot)));
+    frontier.push(FrontierEntry::new(root_node(snapshot, goal_relevant_places)));
     let mut expansions = 0u16;
 
     while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
@@ -130,7 +136,7 @@ pub fn search_plan(
         let mut successors = Vec::new();
         for candidate in search_candidates(goal, &node, semantics_table, registry, handlers) {
             let Some((terminal, successor)) =
-                build_successor(goal, semantics_table, registry, &node, &candidate)
+                build_successor(goal, semantics_table, registry, &node, &candidate, goal_relevant_places)
             else {
                 continue;
             };
@@ -175,11 +181,37 @@ pub fn search_plan(
     PlanSearchResult::FrontierExhausted { expansions_used: expansions }
 }
 
-fn root_node(snapshot: &PlanningSnapshot) -> SearchNode<'_> {
+/// Compute the A* heuristic: minimum travel ticks from the actor's current
+/// simulated position to the nearest goal-relevant place.  Returns 0 when
+/// the actor is already at a goal-relevant place, when no spatial guidance
+/// is available (empty `goal_relevant_places`), or when the actor's place
+/// cannot be resolved.
+fn compute_heuristic(
+    snapshot: &PlanningSnapshot,
+    state: &PlanningState<'_>,
+    goal_relevant_places: &[EntityId],
+) -> u32 {
+    if goal_relevant_places.is_empty() {
+        return 0;
+    }
+    let actor = state.snapshot().actor();
+    state
+        .effective_place_ref(PlanningEntityRef::Authoritative(actor))
+        .and_then(|place| snapshot.min_travel_ticks_to_any(place, goal_relevant_places))
+        .unwrap_or(0)
+}
+
+fn root_node<'snapshot>(
+    snapshot: &'snapshot PlanningSnapshot,
+    goal_relevant_places: &[EntityId],
+) -> SearchNode<'snapshot> {
+    let state = PlanningState::new(snapshot);
+    let heuristic_ticks = compute_heuristic(snapshot, &state, goal_relevant_places);
     SearchNode {
-        state: PlanningState::new(snapshot),
+        state,
         steps: Vec::new(),
         total_estimated_ticks: 0,
+        heuristic_ticks,
     }
 }
 
@@ -189,6 +221,7 @@ fn build_successor<'snapshot>(
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
+    goal_relevant_places: &[EntityId],
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     let def = registry.get(candidate.def_id)?;
     let semantics = semantics_table.get(&candidate.def_id)?;
@@ -247,6 +280,11 @@ fn build_successor<'snapshot>(
         return None;
     }
     let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
+    let heuristic_ticks = compute_heuristic(
+        node.state.snapshot(),
+        &transition.state,
+        goal_relevant_places,
+    );
     let mut steps = node.steps.clone();
     steps.push(step);
 
@@ -256,6 +294,7 @@ fn build_successor<'snapshot>(
             state: transition.state,
             steps,
             total_estimated_ticks,
+            heuristic_ticks,
         },
     ))
 }
@@ -464,8 +503,15 @@ fn unsupported_goal(goal: &GoalKind) -> bool {
 }
 
 fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
-    left.total_estimated_ticks
-        .cmp(&right.total_estimated_ticks)
+    let left_f = left
+        .total_estimated_ticks
+        .saturating_add(left.heuristic_ticks);
+    let right_f = right
+        .total_estimated_ticks
+        .saturating_add(right.heuristic_ticks);
+    left_f
+        .cmp(&right_f)
+        .then_with(|| left.total_estimated_ticks.cmp(&right.total_estimated_ticks))
         .then_with(|| left.steps.len().cmp(&right.steps.len()))
         .then_with(|| left.steps.cmp(&right.steps))
 }
@@ -490,9 +536,11 @@ fn terminal_kind(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_successor, root_node, search_candidate_from_planner, search_candidates,
-        search_candidates_from_affordance, search_plan, FrontierEntry, SearchCandidate, SearchNode,
+        build_successor, compare_search_nodes, root_node, search_candidate_from_planner,
+        search_candidates, search_candidates_from_affordance, search_plan, FrontierEntry,
+        SearchCandidate, SearchNode,
     };
+    use std::cmp::Ordering;
     use crate::planner_ops::planner_only_candidates;
     use crate::{
         build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
@@ -959,6 +1007,7 @@ mod tests {
             state: PlanningState::new(snapshot),
             steps,
             total_estimated_ticks,
+            heuristic_ticks: 0,
         }
     }
 
@@ -1012,6 +1061,7 @@ mod tests {
                 state: PlanningState::new(snapshot),
                 steps: Vec::new(),
                 total_estimated_ticks: 0,
+                heuristic_ticks: 0,
             },
             actor,
             place,
@@ -1057,6 +1107,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -1164,6 +1215,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -1208,6 +1260,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         );
 
         assert!(!plan.is_found());
@@ -1274,6 +1327,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -1357,6 +1411,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .expect("local trade barrier should not be pruned by cheaper travel branches");
@@ -1425,6 +1480,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .expect("local recipe-input acquire goal should plan through trade");
@@ -1482,6 +1538,7 @@ mod tests {
             &registry,
             &handlers,
             &budget,
+            &[],
         );
 
         assert!(!plan.is_found());
@@ -1531,6 +1588,7 @@ mod tests {
             &registry,
             &handlers,
             &budget,
+            &[],
         );
 
         assert!(!plan.is_found());
@@ -1576,6 +1634,7 @@ mod tests {
                 beam_width: 1,
                 ..PlanningBudget::default()
             },
+            &[],
         );
         let wide_beam_plan = search_plan(
             &snapshot,
@@ -1587,6 +1646,7 @@ mod tests {
                 beam_width: 2,
                 ..PlanningBudget::default()
             },
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -1650,6 +1710,7 @@ mod tests {
                 beam_width: 2,
                 ..PlanningBudget::default()
             },
+            &[],
         );
         let beam_three_plan = search_plan(
             &snapshot,
@@ -1661,6 +1722,7 @@ mod tests {
                 beam_width: 3,
                 ..PlanningBudget::default()
             },
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -1723,6 +1785,7 @@ mod tests {
                 max_node_expansions: 2,
                 ..PlanningBudget::default()
             },
+            &[],
         );
         let sufficient_budget_plan = search_plan(
             &snapshot,
@@ -1735,6 +1798,7 @@ mod tests {
                 max_node_expansions: 6,
                 ..PlanningBudget::default()
             },
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -1776,6 +1840,7 @@ mod tests {
                 max_plan_depth: 0,
                 ..PlanningBudget::default()
             },
+            &[],
         );
 
         assert!(!plan.is_found());
@@ -1840,6 +1905,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         );
 
         assert!(!plan.is_found());
@@ -1894,6 +1960,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -1944,6 +2011,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -2002,6 +2070,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -2086,6 +2155,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -2172,6 +2242,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -2305,6 +2376,7 @@ mod tests {
             state: PlanningState::new(&snapshot),
             steps: Vec::new(),
             total_estimated_ticks: 0,
+            heuristic_ticks: 0,
         };
 
         let initial_candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers);
@@ -2317,7 +2389,7 @@ mod tests {
             })
             .expect("authoritative snapshot should expose cargo pick_up");
         let (terminal, after_pick_up) =
-            build_successor(&goal, &semantics, &registry, &node, pick_up).unwrap();
+            build_successor(&goal, &semantics, &registry, &node, pick_up, &[]).unwrap();
         assert_eq!(terminal, None);
         assert_eq!(
             after_pick_up.steps[0].targets,
@@ -2337,7 +2409,7 @@ mod tests {
             })
             .expect("partial cargo successor should expose travel to destination");
         let (terminal, _) =
-            build_successor(&goal, &semantics, &registry, &after_pick_up, travel).unwrap();
+            build_successor(&goal, &semantics, &registry, &after_pick_up, travel, &[]).unwrap();
 
         assert_eq!(terminal, Some(PlanTerminalKind::GoalSatisfied));
     }
@@ -2385,6 +2457,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -2434,6 +2507,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .unwrap();
@@ -2460,7 +2534,7 @@ mod tests {
             payload_override: None,
         };
         let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate).unwrap();
+            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
 
         let step = &successor.steps[0];
         assert_eq!(step.targets, vec![PlanningEntityRef::Authoritative(lot)]);
@@ -2486,7 +2560,7 @@ mod tests {
             payload_override: None,
         };
         let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate).unwrap();
+            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
 
         let candidates = planner_only_candidates(&successor.state, &semantics_table)
             .into_iter()
@@ -2584,6 +2658,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .expect("default search budget should find the branchy market-hub restock route");
@@ -2752,6 +2827,7 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .expect("exclusive orchard should yield a queue barrier plan");
@@ -2800,6 +2876,7 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .expect("matching grant should allow direct harvest plan");
@@ -2852,7 +2929,7 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot),
+            &root_node(&snapshot, &[]),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -2904,7 +2981,7 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot),
+            &root_node(&snapshot, &[]),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -2998,6 +3075,7 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
+            &[],
         )
         .into_plan()
         .expect("second facility should still yield a queue-backed plan");
@@ -3159,5 +3237,182 @@ mod tests {
             .map(|def| def.id)
             .collect::<BTreeSet<_>>();
         assert_eq!(intended_actions, expected_actions);
+    }
+
+    // ── A* heuristic tests ──────────────────────────────────────────────
+
+    /// Build a 3-place chain: place_a --3--> place_b --5--> place_c
+    /// Actor starts at place_a.
+    fn build_chain_heuristic_view() -> (TestBeliefView, EntityId, EntityId, EntityId, EntityId) {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place_a, place_b, place_c]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place_a, EntityKind::Place);
+        view.kinds.insert(place_b, EntityKind::Place);
+        view.kinds.insert(place_c, EntityKind::Place);
+        view.effective_places.insert(actor, place_a);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.entities_at.insert(place_b, Vec::new());
+        view.entities_at.insert(place_c, Vec::new());
+        // A --3--> B --5--> C (bidirectional)
+        view.adjacent.insert(
+            place_a,
+            vec![(place_b, NonZeroU32::new(3).unwrap())],
+        );
+        view.adjacent.insert(
+            place_b,
+            vec![
+                (place_a, NonZeroU32::new(3).unwrap()),
+                (place_c, NonZeroU32::new(5).unwrap()),
+            ],
+        );
+        view.adjacent.insert(
+            place_c,
+            vec![(place_b, NonZeroU32::new(5).unwrap())],
+        );
+        (view, actor, place_a, place_b, place_c)
+    }
+
+    #[test]
+    fn heuristic_is_zero_when_actor_at_goal_relevant_place() {
+        let (view, actor, place_a, _place_b, _place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_a]),
+            3,
+        );
+        let node = root_node(&snapshot, &[place_a]);
+        assert_eq!(node.heuristic_ticks, 0);
+    }
+
+    #[test]
+    fn heuristic_equals_shortest_path_distance_to_goal_place() {
+        let (view, actor, _place_a, _place_b, place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_c]),
+            3,
+        );
+        // Actor at place_a, goal at place_c: shortest path is A->B(3)+B->C(5)=8
+        let node = root_node(&snapshot, &[place_c]);
+        assert_eq!(node.heuristic_ticks, 8);
+    }
+
+    #[test]
+    fn heuristic_picks_nearest_among_multiple_goal_places() {
+        let (view, actor, _place_a, place_b, place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_b, place_c]),
+            3,
+        );
+        // Actor at place_a: B is 3 ticks, C is 8 ticks → min is 3
+        let node = root_node(&snapshot, &[place_b, place_c]);
+        assert_eq!(node.heuristic_ticks, 3);
+    }
+
+    #[test]
+    fn heuristic_is_zero_when_goal_relevant_places_empty() {
+        let (view, actor, _place_a, _place_b, _place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            3,
+        );
+        let node = root_node(&snapshot, &[]);
+        assert_eq!(node.heuristic_ticks, 0);
+    }
+
+    #[test]
+    fn compare_search_nodes_orders_by_f_cost() {
+        let (view, actor, place_a, _place_b, _place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_a]),
+            3,
+        );
+        // Node with lower f = g + h should come first.
+        let low_f = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 2,
+            heuristic_ticks: 1, // f = 3
+        };
+        let high_f = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 3,
+            heuristic_ticks: 2, // f = 5
+        };
+        assert_eq!(compare_search_nodes(&low_f, &high_f), Ordering::Less);
+        assert_eq!(compare_search_nodes(&high_f, &low_f), Ordering::Greater);
+    }
+
+    #[test]
+    fn compare_search_nodes_equal_f_prefers_lower_g() {
+        let (view, actor, place_a, _place_b, _place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_a]),
+            3,
+        );
+        // Both f = 5, but different g. Prefer lower g (less committed cost).
+        let low_g = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 2,
+            heuristic_ticks: 3, // f = 5, g = 2
+        };
+        let high_g = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 3,
+            heuristic_ticks: 2, // f = 5, g = 3
+        };
+        assert_eq!(compare_search_nodes(&low_g, &high_g), Ordering::Less);
+    }
+
+    #[test]
+    fn search_with_empty_goal_places_degrades_to_uniform_cost() {
+        // When goal_relevant_places is empty, all heuristic_ticks are 0,
+        // so ordering matches pure g-cost (the pre-A* behavior).
+        let (view, actor, place_a, _place_b, _place_c) = build_chain_heuristic_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place_a]),
+            3,
+        );
+        let node_a = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 5,
+            heuristic_ticks: 0,
+        };
+        let node_b = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 3,
+            heuristic_ticks: 0,
+        };
+        // Pure g-cost: node_b (3) < node_a (5)
+        assert_eq!(compare_search_nodes(&node_b, &node_a), Ordering::Less);
     }
 }

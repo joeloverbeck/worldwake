@@ -353,6 +353,7 @@ fn process_agent(
                 tracing,
                 previous_goal,
                 &read_result.dirty_reasons,
+                ctx.recipe_registry,
             );
 
         // ── Execution ──
@@ -807,6 +808,7 @@ fn handle_active_action_phase(
             ctx.semantics_table,
             action_defs,
             action_handlers,
+            ctx.recipe_registry,
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
@@ -886,6 +888,7 @@ fn build_candidate_plans(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
+    recipe_registry: &RecipeRegistry,
 ) -> Vec<(crate::GoalKey, PlanSearchResult)> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     ranked_candidates
@@ -901,6 +904,10 @@ fn build_candidate_plans(
                 blocked_memory,
                 current_tick,
             );
+            let goal_relevant_places = ranked.grounded.key.kind.goal_relevant_places(
+                &crate::PlanningState::new(&snapshot),
+                recipe_registry,
+            );
             let result = search_plan(
                 &snapshot,
                 &ranked.grounded,
@@ -908,6 +915,7 @@ fn build_candidate_plans(
                 action_defs,
                 action_handlers,
                 budget,
+                &goal_relevant_places,
             );
             (ranked.grounded.key, result)
         })
@@ -941,6 +949,7 @@ fn plan_and_validate_next_step(
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
     dirty_reasons: &[DirtyReason],
+    recipe_registry: &RecipeRegistry,
 ) -> (Option<PlannedStep>, Option<bool>) {
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
@@ -986,6 +995,7 @@ fn plan_and_validate_next_step(
             semantics_table,
             action_defs,
             action_handlers,
+            recipe_registry,
         );
         let plans_options = plans_as_options(&plans);
 
@@ -1063,6 +1073,7 @@ fn plan_and_validate_next_step_traced(
     tracing: bool,
     previous_goal: Option<worldwake_core::GoalKey>,
     dirty_reasons: &[DirtyReason],
+    recipe_registry: &RecipeRegistry,
 ) -> (
     Option<PlannedStep>,
     Option<bool>,
@@ -1086,6 +1097,7 @@ fn plan_and_validate_next_step_traced(
             action_defs,
             action_handlers,
             dirty_reasons,
+            recipe_registry,
         );
         // In the non-traced path we cannot distinguish plan continuation from
         // non-dirty, but the boolean is only used for trace output.
@@ -1152,6 +1164,7 @@ fn plan_and_validate_next_step_traced(
             semantics_table,
             action_defs,
             action_handlers,
+            recipe_registry,
         );
 
         // Populate PlanSearchTrace from search results.
@@ -3197,6 +3210,7 @@ mod tests {
             &harness.defs,
             &harness.handlers,
             &[DirtyReason::NoPlan],
+            &harness.recipes,
         );
 
         assert_eq!(runtime.current_goal, Some(goal.grounded.key));
@@ -4148,6 +4162,7 @@ mod tests {
             &harness.defs,
             &harness.handlers,
             &budget,
+            &[],
         );
         assert!(
             plan.is_found(),
@@ -4197,6 +4212,7 @@ mod tests {
             &harness.defs,
             &harness.handlers,
             &[DirtyReason::NoPlan],
+            &harness.recipes,
         );
         let pick_up = next_step.expect("cargo runtime should choose an initial pick_up step");
         assert_eq!(runtime.current_goal, Some(expected_goal));
@@ -4289,6 +4305,7 @@ mod tests {
             &harness.defs,
             &harness.handlers,
             &[DirtyReason::NoPlan],
+            &harness.recipes,
         );
         let travel = next_step.expect("dirty cargo runtime should continue planning the same goal");
         assert_eq!(runtime.current_goal, Some(expected_goal));

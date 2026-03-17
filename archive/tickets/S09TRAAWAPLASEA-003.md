@@ -1,6 +1,6 @@
 # S09TRAAWAPLASEA-003: Add A* heuristic to plan search ordering
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — modified search node ordering in `search.rs`
@@ -10,15 +10,17 @@
 
 The GOAP plan search orders frontier nodes by g-cost only (`total_estimated_ticks`), making it a uniform-cost/Dijkstra search. At hub nodes with 7+ outgoing travel edges, this causes combinatorial explosion — the search expands all travel directions equally. This ticket adds an A* heuristic (h = minimum travel distance to nearest goal-relevant place) so the search prioritizes directions toward the goal.
 
-## Assumption Reassessment (2026-03-17)
+## Assumption Reassessment (2026-03-17, corrected)
 
-1. `SearchNode` struct at `search.rs:15-20` has fields `state: PlanningState<'snapshot>`, `steps: Vec<PlannedStep>`, `total_estimated_ticks: u32` — confirmed. No `heuristic_ticks` field exists yet.
+1. `SearchNode` struct at `search.rs:16-20` has fields `state: PlanningState<'snapshot>`, `steps: Vec<PlannedStep>`, `total_estimated_ticks: u32` — confirmed. No `heuristic_ticks` field exists yet.
 2. `compare_search_nodes` at `search.rs:466-471` orders by `total_estimated_ticks` then `steps.len()` then `steps` — confirmed. Pure g-cost ordering.
 3. `search_plan` signature at `search.rs:97-104` takes `snapshot`, `goal`, `semantics_table`, `registry`, `handlers`, `budget` — confirmed. Does not currently receive goal-relevant places.
-4. `PlanningSnapshot::min_travel_ticks_to_any` will exist after ticket 001 — dependency.
-5. `GoalKindPlannerExt::goal_relevant_places` will exist after ticket 002 — dependency.
-6. Successor nodes are built in `build_successor` (or equivalent expansion logic) within the search loop — confirmed.
-7. The `GroundedGoal` struct wraps a `GoalKind` — confirmed, accessible via `goal.kind`.
+4. `PlanningSnapshot::min_travel_ticks_to_any` exists (ticket 001 complete) — confirmed at `planning_snapshot.rs:215`.
+5. `GoalKindPlannerExt::goal_relevant_places` exists (ticket 002 complete) — confirmed at `goal_model.rs:65`. **Note**: signature is `fn goal_relevant_places(&self, state: &PlanningState<'_>, recipes: &RecipeRegistry) -> Vec<EntityId>` — takes `&RecipeRegistry` as an additional parameter.
+6. Successor nodes are built in `build_successor` at `search.rs:186` within the search loop — confirmed.
+7. The `GroundedGoal` struct wraps a `GoalKind` — confirmed, accessible via `goal.key.kind`.
+8. `build_candidate_plans` at `agent_tick.rs:878` calls `search_plan` — `ctx.recipe_registry` is available via `AgentTickContext`.
+9. `PlanningState::effective_place_ref(PlanningEntityRef::Authoritative(actor))` resolves actor place — confirmed at `planning_state.rs:216`.
 
 ## Architecture Check
 
@@ -32,9 +34,9 @@ The GOAP plan search orders frontier nodes by g-cost only (`total_estimated_tick
 
 New field on the `SearchNode` struct. Initialized to 0 for the root node if the actor is already at a goal-relevant place, or to the minimum travel distance otherwise.
 
-### 2. Compute goal-relevant places once at search start
+### 2. Accept precomputed goal-relevant places as a parameter
 
-At the top of `search_plan`, call `goal.kind.goal_relevant_places(&initial_state)` to get the list of goal-relevant places. Store as a local `Vec<EntityId>`.
+Add `goal_relevant_places: &[EntityId]` to `search_plan`'s signature. Callers (in `agent_tick.rs`) compute the places before calling search via `goal.kind.goal_relevant_places(&PlanningState::new(&snapshot), recipes)`. This keeps the search algorithm domain-agnostic — it receives a spatial hint without needing to know about recipes, workstations, or production (Principle 24: systems interact through state, not through each other).
 
 ### 3. Compute heuristic in successor construction
 
@@ -71,7 +73,8 @@ Extract this into a small helper if it's used in multiple places within `search.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/search.rs` (modify — add heuristic field, modify comparator, compute heuristic in expansion)
+- `crates/worldwake-ai/src/search.rs` (modify — add heuristic field, add `goal_relevant_places` param, modify comparator, compute heuristic in expansion)
+- `crates/worldwake-ai/src/agent_tick.rs` (modify — thread `recipe_registry` into `build_candidate_plans`, compute goal-relevant places at call site before `search_plan`)
 
 ## Out of Scope
 
@@ -113,3 +116,21 @@ Extract this into a small helper if it's used in multiple places within `search.
 1. `cargo test -p worldwake-ai search`
 2. `cargo test -p worldwake-ai` (all golden tests)
 3. `cargo test --workspace && cargo clippy --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-17
+
+**What changed**:
+- `search.rs`: Added `heuristic_ticks: u32` to `SearchNode`, `compute_heuristic()` helper, `goal_relevant_places: &[EntityId]` param to `search_plan`, `root_node`, and `build_successor`. Updated `compare_search_nodes` to order by f = g + h with g-cost tie-breaking.
+- `agent_tick.rs`: Threaded `recipe_registry` through `build_candidate_plans`, `plan_and_validate_next_step`, and `plan_and_validate_next_step_traced`. Goal-relevant places precomputed at call site before `search_plan`.
+- 7 new unit tests: heuristic at goal place (0), heuristic two hops away (8), nearest of multiple (3), empty places (0), f-cost ordering, g-cost tie-breaking, uniform-cost degradation.
+
+**Deviations from original plan**:
+- Ticket originally called `goal_relevant_places` inside `search_plan`. Corrected to precompute at caller and pass `&[EntityId]` into search, per Principle 24 (systems interact through state, not through each other). `search_plan` stays domain-agnostic.
+- `goal_relevant_places` takes `&RecipeRegistry` (not documented in original ticket). Threading `recipe_registry` through the agent_tick call chain was required.
+
+**Verification**:
+- `cargo test --workspace` — all pass (473 AI tests, 0 failures, 2 ignored supply chain tests per ticket 005)
+- `cargo clippy --workspace` — clean
+- All existing golden tests pass unchanged (heuristic is 0 with empty goal_relevant_places)
