@@ -6,7 +6,7 @@
 
 ---
 
-The golden suite contains 91 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
+The golden suite contains 92 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
 
 ---
 
@@ -613,3 +613,15 @@ The golden suite contains 91 tests across 9 domain files. Every test uses the re
 - Commodity conservation holds: A's bread drops 5→0, B's bread rises 0→5, total unchanged.
 **Foundation alignment**: Principle 10 (belief-only planning), Principle 1 (maximal emergence — bribe → loyalty → support is emergent, not scripted), conservation invariant.
 **Cross-system chain**: AI goal → coalition-aware planner Bribe op → commodity transfer → conservation → loyalty increase → target AI SupportCandidateForOffice → DeclareSupport → support counting → decisive installation.
+
+### Scenario 14: Threaten with Courage Diversity (Principle 20)
+**File**: `golden_offices.rs` | **Test**: `golden_threaten_with_courage_diversity`
+**Systems exercised**: Threaten (courage comparison → yield/resist), Succession (support counting, coalition majority, installation), AI (candidate generation for ClaimOffice, coalition-aware GOAP planning with Threaten + DeclareSupport, SupportCandidateForOffice from threat-induced loyalty), Agent diversity (Principle 20)
+**Setup**: Vacant office (Support law, period=5). Agent A (attack_skill=pm(800), enterprise_weight=pm(900)) at VillageSquare. Agent B (courage=pm(200), social_weight=pm(600)) at VillageSquare — should yield. Agent C (courage=pm(900), social_weight=pm(600)) at VillageSquare — should resist. Agent D (competitor, enterprise_weight=pm(800)) at OrchardFarm — already self-declared support, creates contested scenario. D placed at different location so planner cannot target D with Threaten.
+**Emergent behavior proven**:
+- A generates ClaimOffice goal. DeclareSupport alone would tie with D (ProgressBarrier). Coalition-aware planner finds Threaten(B) viable (800 > 200) but not Threaten(C) (800 < 900).
+- A threatens B → B yields → loyalty increase. B autonomously generates SupportCandidateForOffice(A).
+- A's coalition (self + B = 2) exceeds D's (self = 1). Succession system installs A.
+- C does not gain loyalty to A (high courage prevents yield). Agent diversity: same Threaten action, different courage → divergent outcomes.
+**Foundation alignment**: Principle 20 (agent diversity — per-agent courage produces divergent behavioral outcomes), Principle 10 (belief-only planning), Principle 1 (maximal emergence — threat → yield → loyalty → support is emergent, not scripted).
+**Cross-system chain**: AI goal → coalition-aware planner Threaten op → courage comparison → yield/resist divergence → loyalty increase → target AI SupportCandidateForOffice → DeclareSupport → support counting → decisive installation.

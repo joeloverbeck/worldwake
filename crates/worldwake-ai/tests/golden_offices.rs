@@ -481,10 +481,12 @@ fn golden_bribe_support_coalition() {
 // enterprise_weight and attack_skill=pm(800). Agent B at jurisdiction with
 // courage=pm(200) (should yield — 800 > 200). Agent C at jurisdiction with
 // courage=pm(900) (should resist — 800 < 900). Agent D (competitor) at
-// jurisdiction, has already self-declared support for own office claim.
+// ORCHARD_FARM (not co-located), has already self-declared support for own
+// office claim.
 //
-// The competitor ensures DeclareSupport alone from A would produce a tie,
-// motivating the planner to select Threaten to build a winning coalition.
+// D is placed at a different location so the planner cannot target D with
+// Threaten (not co-located), forcing the planner to consider B and C only.
+// D's pre-declared support still counts (declarations are relation-based).
 //
 // Expected: A generates ClaimOffice. Planner finds Threaten(B) viable
 // (800 > 200) but not Threaten(C) (800 < 900). A threatens B -> B yields ->
@@ -508,7 +510,6 @@ fn combat_profile_with_attack_skill(attack_skill: Permille) -> CombatProfile {
 }
 
 #[test]
-#[ignore = "blocked on E16DPOLPLAN-028: courage not yet in belief pipeline"]
 fn golden_threaten_with_courage_diversity() {
     // Wider beam — same rationale as bribe scenario: many equal-cost travel
     // candidates can push Threaten nodes past the default beam cutoff.
@@ -582,14 +583,16 @@ fn golden_threaten_with_courage_diversity() {
     );
     set_courage(&mut h.world, &mut h.event_log, agent_c, pm(900));
 
-    // Agent D — competitor at jurisdiction. High enterprise weight, already
-    // self-declared support. Creates the contested scenario where Threaten
-    // is rational for building a winning coalition.
+    // Agent D — competitor at a DIFFERENT place. High enterprise weight,
+    // already self-declared support. Placed at ORCHARD_FARM so the planner
+    // cannot target D with Threaten (not co-located), forcing the planner to
+    // select B as the threat target. D's pre-declared support still counts
+    // for succession (declarations are relation-based, not positional).
     let agent_d = seed_agent(
         &mut h.world,
         &mut h.event_log,
         "Competitor",
-        VILLAGE_SQUARE,
+        ORCHARD_FARM,
         HomeostaticNeeds::default(),
         MetabolismProfile::default(),
         enterprise_weighted_utility(pm(800)),

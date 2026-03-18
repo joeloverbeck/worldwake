@@ -1,6 +1,6 @@
 # E16DPOLPLAN-011: Golden Scenario 14 — Threaten with courage diversity
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None (but depends on E16DPOLPLAN-028 which has engine changes)
@@ -27,7 +27,7 @@ No golden test covers the threaten political path with diverse courage values pr
 
 ### 1. Add to `golden_offices.rs`
 
-- **Setup**: Vacant office. Agent A (high `attack_skill=pm(800)`, `enterprise_weight=pm(900)`). Agent B (`courage=pm(200)`, should yield). Agent C (`courage=pm(900)`, should resist). **Agent D (competitor)** at jurisdiction, has already self-declared support for own office claim. All at jurisdiction, sated. The competitor ensures DeclareSupport alone from A would produce a tie, motivating the planner to select Threaten to build a winning coalition.
+- **Setup**: Vacant office. Agent A (high `attack_skill=pm(800)`, `enterprise_weight=pm(900)`). Agent B (`courage=pm(200)`, should yield). Agent C (`courage=pm(900)`, should resist). **Agent D (competitor)** at ORCHARD_FARM (not co-located — prevents planner from targeting D with Threaten since D's default courage=pm(500) < 800 would make D a viable target, diverting from the intended B/C courage diversity test). D has already self-declared support for own office claim. A, B, C at jurisdiction, sated. The competitor ensures DeclareSupport alone from A would produce a tie, motivating the planner to select Threaten to build a winning coalition.
 - **Expected**: A generates `ClaimOffice`. Planner finds `Threaten(B)` viable (800 > 200) but not `Threaten(C)` (800 < 900) because DeclareSupport alone ties with competitor D. A threatens B -> B yields -> loyalty increase. A declares for self. B may support A. C does not. A's coalition exceeds D's.
 - **Assertions**: B has increased loyalty to A. C has hostility or is unaffected. A becomes holder if sufficient support.
 
@@ -72,3 +72,16 @@ No golden test covers the threaten political path with diverse courage values pr
 ## Dependency Chain Note
 
 This ticket depends on the coalition-aware planner changes from E16DPOLPLAN-022 through E16DPOLPLAN-025. The competitor agent setup is required because the coalition-aware planner (E16DPOLPLAN-024) now produces `GoalSatisfied` for uncontested DeclareSupport. Without a competitor, the planner would never select Threaten — it would just DeclareSupport and succeed immediately. The competitor creates the contested scenario where Threaten is the rational choice for building a winning coalition.
+
+## Outcome
+
+**Completion date**: 2026-03-18
+
+**What changed**:
+- `crates/worldwake-ai/tests/golden_offices.rs`: Removed `#[ignore]` from `golden_threaten_with_courage_diversity`. Moved Agent D from `VILLAGE_SQUARE` to `ORCHARD_FARM`.
+- `docs/golden-e2e-coverage.md`: Added Scenario 14 to file layout, cross-system chains, and summary statistics (91→92 tests, 51→52 chains).
+- `docs/golden-e2e-scenarios.md`: Added Scenario 14 catalog entry (92 tests).
+
+**Deviations from original plan**: Agent D moved from `VILLAGE_SQUARE` to `ORCHARD_FARM` (same pattern as Scenario 13's bribe test). D's default `courage=pm(500)` was below A's `attack_skill=pm(800)`, making D a viable and preferred threaten target over B. Placing D at a different location prevents co-location-based Threaten targeting while D's self-support declaration still counts for succession (relation-based, not positional).
+
+**Verification**: `cargo test -p worldwake-ai` all pass, `cargo clippy --workspace` clean, `cargo test --workspace` all pass.
