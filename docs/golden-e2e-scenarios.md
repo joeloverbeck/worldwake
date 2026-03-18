@@ -6,7 +6,7 @@
 
 ---
 
-The golden suite contains 89 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
+The golden suite contains 90 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
 
 ---
 
@@ -586,3 +586,17 @@ The golden suite contains 89 tests across 9 domain files. Every test uses the re
 **Emergent behavior proven**:
 - Two runs with the same seed produce identical world and event log hashes.
 - World state differs from initial (non-trivial simulation occurred).
+
+### Scenario 12: Competing Claims with Loyal Supporter
+**File**: `golden_offices.rs` | **Test**: `golden_competing_claims_with_loyal_supporter`
+**Systems exercised**: Succession (support counting, tie rejection, installation), AI (candidate generation for ClaimOffice and SupportCandidateForOffice, GOAP planning, zero-motive filtering), Political actions (declare_support)
+**Setup**: Three agents at Village Square. Agent A ("Claimant Alpha") and Agent B ("Claimant Beta") both with enterprise_weight=pm(800). Agent C ("Loyal Supporter") with enterprise_weight=0, social_weight=pm(600), loyalty to A at pm(650). Vacant office ("Village Elder") with SuccessionLaw::Support, succession_period_ticks=5, no eligibility rules. All agents have PerceptionProfile and beliefs about the office. C also has beliefs about A.
+**Emergent behavior proven**:
+- A and B autonomously generate ClaimOffice goals (enterprise_weight drives motive).
+- C generates both ClaimOffice (zero-motive filtered due to enterprise_weight=0) and SupportCandidateForOffice(A) (driven by loyalty + social_weight).
+- C's SupportCandidateForOffice(A) wins ranking since ClaimOffice is filtered.
+- All three agents independently execute DeclareSupport actions.
+- A gets 2 declarations (self + C), B gets 1 (self). Succession system rejects ties, so without C's support the office would remain vacant.
+- succession_system installs A as unique winner, then clears all declarations.
+**Foundation alignment**: Principle 10 (agents plan from beliefs), Principle 20 (enterprise_weight vs social_weight drives divergent political behavior — claimants vs supporters).
+**Cross-system chain**: Loyalty → SupportCandidateForOffice candidate → zero-motive ClaimOffice filtering → DeclareSupport plan → multi-agent concurrent declarations → support counting → decisive installation.

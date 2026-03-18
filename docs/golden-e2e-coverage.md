@@ -20,7 +20,7 @@ crates/worldwake-ai/tests/
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
   golden_emergent.rs          — 9 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e + replays)
-  golden_offices.rs           — 2 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay)
+  golden_offices.rs           — 3 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter)
 ```
 
 ---
@@ -49,9 +49,10 @@ crates/worldwake-ai/tests/
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 | ShareBelief | Yes | 2e |
-| ClaimOffice | Yes | 11 |
+| ClaimOffice | Yes | 11, 12 |
+| SupportCandidateForOffice | Yes | 12 |
 
-**Coverage: 18/19 GoalKinds tested (94.7%).**
+**Coverage: 19/19 GoalKinds tested (100%).**
 
 ### ActionDomain Coverage
 
@@ -150,6 +151,7 @@ crates/worldwake-ai/tests/
 | Zero-motive filter prevents execution of unmotivated goals | Yes |
 | Rumor → travel → passive observation → discovery → belief source upgrade → replan | Yes |
 | Enterprise weight → ClaimOffice → DeclareSupport → succession resolution → office installation | Yes |
+| Loyalty → SupportCandidateForOffice → DeclareSupport(other) → multi-agent support competition → decisive installation | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
 | UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
 | Wound vs hunger priority resolved by concrete utility weights (Principle 3, 20) | Yes |
@@ -163,12 +165,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 89 | 92 |
-| GoalKind coverage | 18/19 (94.7%) | 18/19 (94.7%) |
+| Proven tests | 90 | 93 |
+| GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 49 | 52 |
+| Cross-system chains | 50 | 53 |
 
 ### Pending Backlog Summary
 

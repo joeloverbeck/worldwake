@@ -1,6 +1,6 @@
 # E16DPOLPLAN-009: Golden Scenario 12 — Competing claims with loyal supporter
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -68,3 +68,19 @@ No golden test covers multi-agent political competition where loyalty-driven sup
 
 1. `cargo test -p worldwake-ai golden_offices`
 2. `cargo test --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-18
+
+**What changed**:
+- Added `golden_competing_claims_with_loyal_supporter` test to `golden_offices.rs`
+- Added `social_supporter_utility()` and `default_perception_profile()` helpers
+- Updated `docs/golden-e2e-coverage.md`: SupportCandidateForOffice now tested (19/19 GoalKinds, 100%), added loyalty→support cross-system chain
+- Updated `docs/golden-e2e-scenarios.md`: Full Scenario 12 entry
+
+**Deviations from original plan**:
+1. Agent C uses `enterprise_weight=0` (not mentioned in ticket) so ClaimOffice gets zero-motive filtered — otherwise ClaimOffice (Medium priority) would always beat SupportCandidateForOffice (Low priority).
+2. Assertion changed from `support_declaration(C, office) == A` to event log count >= 3, because `succession_system` calls `clear_support_declarations_for_office()` after installing the holder. The decisive assertion is `office_holder == A` (proves C's support broke the 1-1 tie).
+
+**Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.
