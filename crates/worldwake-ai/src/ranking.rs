@@ -1773,6 +1773,105 @@ mod tests {
     }
 
     #[test]
+    fn critical_self_treat_outranks_claim_office_even_with_lower_motive() {
+        let agent = entity(1);
+        let office = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(850)]);
+        let profile = UtilityProfile {
+            pain_weight: pm(1),
+            enterprise_weight: pm(1000),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::ClaimOffice { office }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(ranked[0].motive_score, 850);
+        assert_eq!(ranked[1].grounded.key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[1].motive_score, 1000);
+    }
+
+    #[test]
+    fn medium_self_treat_and_claim_office_tie_break_on_motive() {
+        let agent = entity(1);
+        let office = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(350)]);
+        let profile = UtilityProfile {
+            pain_weight: pm(3),
+            enterprise_weight: pm(1000),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::ClaimOffice { office }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].motive_score, 1050);
+        assert_eq!(ranked[1].grounded.key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[1].motive_score, 1000);
+    }
+
+    #[test]
+    fn low_self_treat_ranks_below_claim_office() {
+        let agent = entity(1);
+        let office = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(200)]);
+        let profile = UtilityProfile {
+            pain_weight: pm(1000),
+            enterprise_weight: pm(1),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::ClaimOffice { office }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].grounded.key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].motive_score, 1);
+        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::Low);
+        assert_eq!(ranked[1].motive_score, 200_000);
+    }
+
+    #[test]
     fn support_candidate_uses_social_weight_times_loyalty() {
         let agent = entity(1);
         let candidate = entity(2);
