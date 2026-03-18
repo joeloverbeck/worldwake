@@ -10,10 +10,12 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BeliefConfidencePolicy, BodyPart,
-    CombatProfile, CommodityKind, DeadAt, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
-    PerceptionProfile, PerceptionSource, Quantity, Seed, StateHash, Tick, UtilityProfile, Wound,
-    WoundCause, WoundId, WoundList,
+    CombatProfile, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, DeadAt, EventId,
+    EventRecord, EventTag, EventView, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, Quantity, RelationDelta, RelationValue, Seed, StateDelta,
+    StateHash, SuccessionLaw, Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
+use worldwake_sim::ActionTraceKind;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -58,6 +60,99 @@ fn stable_wound_list(severity: u16) -> WoundList {
             bleed_rate_per_tick: pm(0), // clotted — won't escalate
         }],
     }
+}
+
+fn lethal_combat_attacker_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(1000), // wound_capacity
+        pm(700),  // incapacitation_threshold
+        pm(950),  // attack_skill
+        pm(750),  // guard_skill
+        pm(150),  // defend_bonus
+        pm(0),    // natural_clot_resistance
+        pm(0),    // natural_recovery_rate
+        pm(700),  // unarmed_wound_severity
+        pm(300),  // unarmed_bleed_rate
+        nz(2),    // unarmed_attack_ticks
+    )
+}
+
+fn fragile_office_holder_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(350), // wound_capacity
+        pm(150), // incapacitation_threshold
+        pm(150), // attack_skill
+        pm(100), // guard_skill
+        pm(0),   // defend_bonus
+        pm(0),   // natural_clot_resistance
+        pm(0),   // natural_recovery_rate
+        pm(80),  // unarmed_wound_severity
+        pm(50),  // unarmed_bleed_rate
+        nz(6),   // unarmed_attack_ticks
+    )
+}
+
+fn event_sets_dead_at(record: &EventRecord, entity: worldwake_core::EntityId) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Component(ComponentDelta::Set {
+                entity: changed,
+                component_kind: ComponentKind::DeadAt,
+                after: ComponentValue::DeadAt(_),
+                ..
+            }) if *changed == entity
+        )
+    })
+}
+
+fn event_removes_office_holder(
+    record: &EventRecord,
+    office: worldwake_core::EntityId,
+    holder: worldwake_core::EntityId,
+) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Removed {
+                relation:
+                    RelationValue::OfficeHolder {
+                        office: changed_office,
+                        holder: changed_holder,
+                    },
+                ..
+            }) if *changed_office == office && *changed_holder == holder
+        )
+    })
+}
+
+fn event_adds_office_holder(
+    record: &EventRecord,
+    office: worldwake_core::EntityId,
+    holder: worldwake_core::EntityId,
+) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation:
+                    RelationValue::OfficeHolder {
+                        office: changed_office,
+                        holder: changed_holder,
+                    },
+                ..
+            }) if *changed_office == office && *changed_holder == holder
+        )
+    })
+}
+
+fn first_matching_event_id(
+    log: &worldwake_core::EventLog,
+    predicate: impl Fn(&EventRecord) -> bool,
+) -> Option<EventId> {
+    (0..log.len())
+        .map(|index| EventId(index as u64))
+        .find(|event_id| log.get(*event_id).is_some_and(&predicate))
 }
 
 // ===========================================================================
@@ -726,5 +821,228 @@ fn golden_loot_corpse_self_care_chain_replays_deterministically() {
     assert_eq!(
         first, second,
         "loot-corpse-self-care chain should replay deterministically"
+    );
+}
+
+// ===========================================================================
+// Suite 5: combat_death_triggers_force_succession
+//
+// Proves: combat, death, and political succession interact only through
+// authoritative world state and event history. No combat-specific political
+// hook or political action alias is involved.
+// Foundation: Principle 1, Principle 9, Principle 24.
+// Cross-systems: Combat + Politics + AI combat goal generation.
+// ===========================================================================
+
+#[allow(clippy::too_many_lines)]
+fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+
+    let challenger = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Challenger",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let incumbent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Incumbent",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        challenger,
+        default_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        incumbent,
+        default_perception_profile(),
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_combat_profile(challenger, lethal_combat_attacker_profile())
+            .unwrap();
+        txn.set_component_combat_profile(incumbent, fragile_office_holder_profile())
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        challenger,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(3),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        incumbent,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(2),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "War Chief",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Force,
+        5,
+        vec![],
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.assign_office(office, incumbent).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        challenger,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        incumbent,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    add_hostility(&mut h.world, &mut h.event_log, challenger, incumbent);
+
+    let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+
+    for _ in 0..80 {
+        h.step_once();
+
+        let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+        assert_eq!(
+            coin_total, initial_coin_total,
+            "coin lots must remain conserved across combat-death succession"
+        );
+
+        if h.agent_is_dead(incumbent) && h.world.office_holder(office) == Some(challenger) {
+            break;
+        }
+    }
+
+    assert!(h.agent_is_dead(incumbent), "incumbent should die from combat");
+    assert!(
+        !h.agent_is_dead(challenger),
+        "challenger should survive the succession scenario"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(challenger),
+        "force-law succession should install the surviving challenger"
+    );
+
+    let dead_at_tick = h
+        .world
+        .get_component_dead_at(incumbent)
+        .copied()
+        .expect("incumbent death should be authoritative")
+        .0;
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for combat succession scenario");
+    let challenger_events = action_sink.events_for(challenger);
+    assert!(
+        challenger_events.iter().any(|event| {
+            event.action_name == "attack"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && event.tick <= dead_at_tick
+        }),
+        "challenger should commit a real attack before or at the incumbent's death tick"
+    );
+    let declare_support_commits = challenger_events
+        .iter()
+        .chain(action_sink.events_for(incumbent).iter())
+        .filter(|event| {
+            event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .count();
+    assert_eq!(
+        declare_support_commits, 0,
+        "force-law succession must not rely on declare_support actions"
+    );
+
+    let death_event_id = first_matching_event_id(&h.event_log, |record| {
+        record.tags().contains(&EventTag::Combat) && event_sets_dead_at(record, incumbent)
+    })
+    .expect("combat should emit a death event for the incumbent");
+    let vacancy_event_id = first_matching_event_id(&h.event_log, |record| {
+        record.tags().contains(&EventTag::Political)
+            && event_removes_office_holder(record, office, incumbent)
+    })
+    .expect("politics should vacate the office after the incumbent dies");
+    let install_event_id = first_matching_event_id(&h.event_log, |record| {
+        record.tags().contains(&EventTag::Political)
+            && event_adds_office_holder(record, office, challenger)
+    })
+    .expect("politics should later install the challenger as office holder");
+
+    assert!(
+        death_event_id < vacancy_event_id,
+        "death event must precede the vacancy mutation"
+    );
+    assert!(
+        vacancy_event_id < install_event_id,
+        "vacancy mutation must precede office installation"
+    );
+
+    let vacancy_tick = h
+        .event_log
+        .get(vacancy_event_id)
+        .expect("vacancy event should exist")
+        .tick();
+    let install_tick = h
+        .event_log
+        .get(install_event_id)
+        .expect("install event should exist")
+        .tick();
+    assert!(
+        install_tick.0.saturating_sub(vacancy_tick.0) >= 5,
+        "force-law installation should respect the configured succession delay"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_combat_death_triggers_force_succession() {
+    let _ = run_combat_death_force_succession(Seed([39; 32]));
+}
+
+#[test]
+fn golden_combat_death_triggers_force_succession_replays_deterministically() {
+    let first = run_combat_death_force_succession(Seed([40; 32]));
+    let second = run_combat_death_force_succession(Seed([40; 32]));
+    assert_eq!(
+        first, second,
+        "combat-death force-succession chain should replay deterministically"
     );
 }

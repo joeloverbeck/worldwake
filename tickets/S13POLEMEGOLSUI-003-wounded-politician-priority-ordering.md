@@ -1,0 +1,98 @@
+# S13POLEMEGOLSUI-003: Wounded Politician Priority Ordering Between Care And Office Claim
+
+**Status**: PENDING
+**Priority**: HIGH
+**Effort**: Small
+**Engine Changes**: None
+**Deps**: `specs/S13-political-emergence-golden-suites.md`, existing S07 emergent care coverage and office suppression coverage
+
+## Problem
+
+The suite already proves political ambition can be suppressed by survival pressure and that wound-vs-hunger ordering varies by utility weights, but it does not yet prove that the same generic ranking machinery resolves ordering between self-care and political ambition without any office-specific priority code.
+
+## Assumption Reassessment (2026-03-18)
+
+1. Existing emergent care ordering coverage in `crates/worldwake-ai/tests/golden_emergent.rs` is `golden_wound_vs_hunger_pain_first`, `golden_wound_vs_hunger_hunger_first`, and `golden_wound_vs_hunger_replays_deterministically`. Those tests prove cross-domain ordering for care vs hunger, not care vs politics.
+2. Existing political suppression coverage is `golden_survival_pressure_suppresses_political_goals` and `golden_survival_pressure_suppresses_political_goals_replays_deterministically` in `crates/worldwake-ai/tests/golden_offices.rs`. That scenario proves a binary suppression gate under survival stress, not ordering between two lawful non-suppressed paths.
+3. Focused/unit support already exists in ranking and goal-model coverage, including `ranking::tests::claim_office_uses_enterprise_weight_and_medium_priority`, `ranking::tests::self_treat_wounds_uses_pain_weight_for_motive`, and political goal-model tests around `DeclareSupport`. The missing layer is a golden E2E ordering proof across care and politics.
+4. The current golden harness already supports the needed setup: medicine seeding, office seeding, direct local belief seeding, utility-profile customization, and stable no-natural-recovery wound setup patterns already used in `golden_emergent.rs`. This should stay test-and-doc scoped.
+
+## Architecture Check
+
+1. The clean design is to extend `golden_emergent.rs` with two mirrored variants and one replay test, because the scenario is about generic cross-domain ranking behavior rather than a new political rule.
+2. The test must assert ordering via concrete state transitions and traces, not by introducing or documenting a hardcoded domain tier. That keeps Principle 3 and Principle 20 intact and avoids backsliding into special-case political priority logic.
+
+## What to Change
+
+### 1. Add the care-vs-politics ordering golden scenarios
+
+Add the following tests to `crates/worldwake-ai/tests/golden_emergent.rs`:
+- `golden_wounded_politician_pain_first`
+- `golden_wounded_politician_enterprise_first`
+- `golden_wounded_politician_replays_deterministically`
+
+The scenario pair should:
+- Reuse the same world and office setup for both variants.
+- Give the actor both medicine and direct office knowledge.
+- Keep the wound stable so healing order is controlled by AI choice, not natural recovery.
+- Prove one variant heals before office installation and the other claims office before healing, purely because `pain_weight` and `enterprise_weight` differ.
+- Assert both variants still converge to the same lawful end state: wound load reduced and office held.
+
+### 2. Update golden E2E documentation in the same ticket
+
+Review and update the relevant `docs/golden-e2e*` docs after the scenario pair is implemented.
+
+At minimum:
+- `docs/golden-e2e-coverage.md`
+- `docs/golden-e2e-scenarios.md`
+
+Update counts and scenario summaries to reflect the suite after this ticket only. Do not batch future-ticket docs changes into this diff.
+
+## Files to Touch
+
+- `crates/worldwake-ai/tests/golden_emergent.rs` (modify)
+- `docs/golden-e2e-coverage.md` (modify)
+- `docs/golden-e2e-scenarios.md` (modify)
+
+## Out of Scope
+
+- Changing ranking policy or goal-policy semantics for unrelated domains
+- Adding office-specific suppression or priority exceptions
+- Refactoring existing S07 care scenarios except for minimal shared test helpers inside `golden_emergent.rs`
+- Engine changes to care, political actions, or succession mechanics unless current behavior contradicts the ticket assumptions and the ticket is first revised
+
+## Acceptance Criteria
+
+### Tests That Must Pass
+
+1. `cargo test -p worldwake-ai --test golden_emergent golden_wounded_politician_pain_first`
+2. `cargo test -p worldwake-ai --test golden_emergent golden_wounded_politician_enterprise_first`
+3. `cargo test -p worldwake-ai --test golden_emergent golden_wounded_politician_replays_deterministically`
+4. `cargo test -p worldwake-ai --test golden_emergent golden_wound_vs_hunger_pain_first`
+5. `cargo test -p worldwake-ai --test golden_offices golden_survival_pressure_suppresses_political_goals`
+6. Existing suite: `cargo test -p worldwake-ai --test golden_emergent`
+
+### Invariants
+
+1. Ordering is still driven by concrete utility weights and state, not by new hardcoded domain precedence or political special cases.
+2. Both variants must end with the same authoritative facts: the agent is office holder and wound load has decreased through lawful care actions.
+3. Medicine and support declarations remain explicitly conserved/accounted for; the scenario must not create extra medicine, office support, or duplicate office holders.
+4. Same-seed replay remains deterministic at both world-hash and event-log-hash level.
+
+## Test Plan
+
+### New/Modified Tests
+
+1. `crates/worldwake-ai/tests/golden_emergent.rs` — add the pain-first and enterprise-first political emergence variants plus deterministic replay coverage.
+2. `docs/golden-e2e-coverage.md` — record the new cross-domain ordering coverage and revised suite totals.
+3. `docs/golden-e2e-scenarios.md` — add the scenario catalog entry describing the two mirrored variants and shared end-state invariant.
+
+### Commands
+
+1. `cargo test -p worldwake-ai --test golden_emergent golden_wounded_politician_pain_first`
+2. `cargo test -p worldwake-ai --test golden_emergent golden_wounded_politician_enterprise_first`
+3. `cargo test -p worldwake-ai --test golden_emergent golden_wounded_politician_replays_deterministically`
+4. `cargo test -p worldwake-ai --test golden_emergent`
+5. `cargo test -p worldwake-ai --test golden_offices golden_survival_pressure_suppresses_political_goals`
+6. `cargo test -p worldwake-ai`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
