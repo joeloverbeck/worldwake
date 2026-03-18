@@ -12,9 +12,10 @@
 
 ## Assumption Reassessment (<YYYY-MM-DD>)
 
-1. <Assumption checked against current code/test state, with exact file/symbol reference>
+1. <Assumption checked against current code/test state, including exact existing focused/unit, runtime trace/integration, and golden/E2E coverage where relevant>
 2. <Assumption checked against current specs/docs, with exact file reference>
-3. <Mismatch + correction (if any)>
+3. <If this is an AI regression: intended layer is candidate generation, runtime `agent_tick`, or golden E2E; if `agent_tick`, state whether local needs-only harness is sufficient or full action registries are required>
+4. <Mismatch + correction (if any)>
 
 ## Architecture Check
 
