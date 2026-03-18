@@ -8,11 +8,13 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, BeliefConfidencePolicy, BodyPart,
-    CombatProfile, CommodityKind, ComponentKind, ComponentValue, DeadAt, EventTag, EventView,
-    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource,
-    Quantity, RelationValue, Seed, StateHash, SuccessionLaw, Tick, UtilityProfile, Wound,
+    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
+    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind,
+    ComponentValue, DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    RelationValue, Seed, StateHash, SuccessionLaw, TellProfile, Tick, UtilityProfile, Wound,
     WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{ActionTraceKind, OfficeSuccessionOutcome};
@@ -27,6 +29,52 @@ fn default_perception_profile() -> PerceptionProfile {
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
+    }
+}
+
+fn blind_perception_profile() -> PerceptionProfile {
+    PerceptionProfile {
+        memory_capacity: 16,
+        memory_retention_ticks: 240,
+        observation_fidelity: pm(0),
+        confidence_policy: BeliefConfidencePolicy::default(),
+    }
+}
+
+fn accepting_tell_profile() -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 3,
+        max_relay_chain_len: 3,
+        acceptance_fidelity: pm(1000),
+    }
+}
+
+fn focused_accepting_tell_profile() -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 1,
+        ..accepting_tell_profile()
+    }
+}
+
+fn social_weighted_utility(weight: u16) -> UtilityProfile {
+    UtilityProfile {
+        social_weight: pm(weight),
+        enterprise_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+fn trace_generates_claim_office(
+    trace: &worldwake_ai::AgentDecisionTrace,
+    office: worldwake_core::EntityId,
+) -> bool {
+    match &trace.outcome {
+        DecisionOutcome::Planning(planning) => planning
+            .candidates
+            .generated
+            .iter()
+            .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+        _ => false,
     }
 }
 
@@ -1072,5 +1120,229 @@ fn golden_combat_death_triggers_force_succession_replays_deterministically() {
     assert_eq!(
         first, second,
         "combat-death force-succession chain should replay deterministically"
+    );
+}
+
+// ===========================================================================
+// Suite 6: social_tell_propagates_political_knowledge
+//
+// Proves: the social Tell system can lawfully move office knowledge into the
+// political planning layer, unlocking the ordinary office-claim path without
+// belief injection shortcuts or political/social coupling.
+// Foundation: Principle 1, Principle 7, Principle 13, Principle 24.
+// Cross-systems: Social + Beliefs + Travel + AI political planning + Politics.
+// ===========================================================================
+
+#[allow(clippy::too_many_lines)]
+fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+
+    let informant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Informant",
+        bandit_camp,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Ambitious Listener",
+        bandit_camp,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            enterprise_weight: pm(800),
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        informant,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        informant,
+        blind_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        blind_perception_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        informant,
+        &[listener],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    assert!(
+        agent_belief_about(&h.world, listener, office).is_none(),
+        "listener should start without office knowledge"
+    );
+    assert_eq!(
+        h.world.effective_place(listener),
+        Some(bandit_camp),
+        "listener should start away from the office jurisdiction"
+    );
+
+    for _ in 0..8 {
+        h.step_once();
+    }
+
+    let informant_update_tick = h.scheduler.current_tick();
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        informant,
+        &[office],
+        informant_update_tick,
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut tell_commit_tick = None;
+    for _ in 0..40 {
+        h.step_once();
+
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for social-political emergence");
+        tell_commit_tick = action_sink.events_for(informant).iter().find_map(|event| {
+            (event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some(event.tick)
+        });
+
+        if tell_commit_tick.is_some() {
+            break;
+        }
+    }
+
+    let tell_commit_tick = tell_commit_tick.expect("informant should commit a real tell action");
+    let phase_one_end = tell_commit_tick.0.saturating_sub(1);
+    let generated_before_tell = (0..=phase_one_end).any(|tick| {
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for social-political emergence")
+            .trace_at(listener, Tick(tick))
+            .is_some_and(|trace| trace_generates_claim_office(trace, office))
+    });
+    assert!(
+        !generated_before_tell,
+        "listener must not generate ClaimOffice before learning the office via Tell"
+    );
+    assert_eq!(
+        h.world.effective_place(listener),
+        Some(bandit_camp),
+        "listener should remain at Bandit Camp before learning about the remote office"
+    );
+
+    let told_belief = agent_belief_about(&h.world, listener, office)
+        .expect("listener should receive the office belief through the tell action");
+    assert!(
+        matches!(
+            told_belief.source,
+            PerceptionSource::Report {
+                from,
+                chain_len: 1
+            } if from == informant
+        ),
+        "office belief should arrive as a first-hand report from the informant"
+    );
+
+    for _ in 0..80 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(listener) {
+            break;
+        }
+    }
+
+    let final_tick = h.scheduler.current_tick();
+    let generated_after_tell = ((tell_commit_tick.0 + 1)..=final_tick.0).any(|tick| {
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for social-political emergence")
+            .trace_at(listener, Tick(tick))
+            .is_some_and(|trace| trace_generates_claim_office(trace, office))
+    });
+    assert!(
+        generated_after_tell,
+        "listener should generate ClaimOffice after receiving the told office belief"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for social-political emergence");
+    let declare_support_tick = action_sink.events_for(listener).iter().find_map(|event| {
+        (event.action_name == "declare_support"
+            && matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .then_some(event.tick)
+    });
+    let declare_support_tick =
+        declare_support_tick.expect("listener should commit declare_support after Tell");
+    assert!(
+        tell_commit_tick < declare_support_tick,
+        "tell must commit before declare_support enters the political action path"
+    );
+    assert_eq!(
+        h.world.effective_place(listener),
+        Some(VILLAGE_SQUARE),
+        "listener should travel to the office jurisdiction after the told belief arrives"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(listener),
+        "listener should become office holder through the ordinary support-law path"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_tell_propagates_political_knowledge() {
+    let _ = run_tell_propagates_political_knowledge(Seed([41; 32]));
+}
+
+#[test]
+fn golden_tell_propagates_political_knowledge_replays_deterministically() {
+    let first = run_tell_propagates_political_knowledge(Seed([42; 32]));
+    let second = run_tell_propagates_political_knowledge(Seed([42; 32]));
+    assert_eq!(
+        first, second,
+        "social-to-political knowledge propagation should replay deterministically"
     );
 }
