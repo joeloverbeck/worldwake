@@ -787,14 +787,6 @@ fn validate_heal_context(
         .targets
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    if target == instance.actor {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::SelfTargetForbidden {
-                actor: instance.actor,
-                action: SelfTargetActionKind::Heal,
-            },
-        ));
-    }
     if txn.entity_kind(target) != Some(EntityKind::Agent) {
         return Err(ActionError::InvalidTarget(target));
     }
@@ -1972,6 +1964,120 @@ mod tests {
         assert!(!affordances
             .iter()
             .any(|affordance| affordance.def_id == heal_id));
+    }
+
+    #[test]
+    fn self_treatment_succeeds_when_actor_has_wounds_and_medicine() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_guard(&mut world, 1, ControlSource::Ai);
+        arm_actor(&mut world, agent, 2, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_wound_list(
+                agent,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 360, 90, 3)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+
+        // Self-treatment affordance should exist.
+        let affordances = affordances_for(&world, agent, &defs, &handlers);
+        let self_heal = affordances
+            .iter()
+            .find(|a| a.def_id == heal_id && a.bound_targets == vec![agent])
+            .expect("self-treatment affordance must exist");
+
+        // Starting the action should succeed.
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x50);
+
+        let action_id = start_action(
+            self_heal,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        // Medicine consumed on start.
+        assert_eq!(
+            world.controlled_commodity_quantity(agent, CommodityKind::Medicine),
+            Quantity(0)
+        );
+
+        // Tick until committed.
+        let mut outcome = TickOutcome::Continuing;
+        for tick in 11..20 {
+            outcome = tick_action(
+                action_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
+            if matches!(outcome, TickOutcome::Committed { .. }) {
+                break;
+            }
+        }
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+    }
+
+    #[test]
+    fn self_treatment_fails_without_medicine() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_guard(&mut world, 1, ControlSource::Ai);
+        // No medicine given.
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_wound_list(
+                agent,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 180, 20, 2)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+
+        // No heal affordance should appear without medicine.
+        let affordances = affordances_for(&world, agent, &defs, &handlers);
+        assert!(
+            !affordances.iter().any(|a| a.def_id == heal_id),
+            "self-treatment affordance must not appear without medicine"
+        );
     }
 
     #[test]

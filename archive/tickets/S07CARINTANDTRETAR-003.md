@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-003: Remove SelfTargetActionKind::Heal and self-target prohibition in combat
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — action validation in worldwake-sim and worldwake-systems
@@ -97,3 +97,12 @@ The test `abort_reason_helpers_preserve_structured_semantics_and_optional_detail
 1. `cargo test -p worldwake-systems`
 2. `cargo test -p worldwake-sim`
 3. `cargo clippy -p worldwake-systems -p worldwake-sim`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - `crates/worldwake-systems/src/combat.rs`: Removed self-target prohibition (lines 790-796) from `validate_heal_context()`. Added two new tests: `self_treatment_succeeds_when_actor_has_wounds_and_medicine` and `self_treatment_fails_without_medicine`.
+  - `crates/worldwake-sim/src/action_handler.rs`: Removed `Heal` variant from `SelfTargetActionKind` (now single-variant `Attack`). Updated test assertion from `SelfTargetActionKind::Heal` to `SelfTargetActionKind::Attack`.
+- **Deviations from plan**: None.
+- **Verification**: `cargo test -p worldwake-systems` (238 passed), `cargo test -p worldwake-sim` (303 passed), `cargo clippy` clean.

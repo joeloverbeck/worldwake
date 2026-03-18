@@ -249,7 +249,6 @@ pub enum PayloadEntityRole {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum SelfTargetActionKind {
     Attack,
-    Heal,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
@@ -559,14 +558,14 @@ mod tests {
                     slot: 9,
                     generation: 0,
                 },
-                action: SelfTargetActionKind::Heal,
+                action: SelfTargetActionKind::Attack,
             }),
             ActionError::AbortRequested(ActionAbortRequestReason::SelfTargetForbidden {
                 actor: EntityId {
                     slot: 9,
                     generation: 0,
                 },
-                action: SelfTargetActionKind::Heal,
+                action: SelfTargetActionKind::Attack,
             })
         );
     }
