@@ -30,6 +30,7 @@ When a test needs ordering, state explicitly which ordering is the contract:
 - authoritative state transition ordering
 
 Do not treat incidental tick-boundary details as the contract unless the system is intentionally specified that way.
+If the scenario spans multiple layers, state which earlier layer drives the divergence and which later layer is only a downstream consequence.
 
 Good:
 - no `declare_support` commit while hunger remains `High-or-above`
@@ -39,6 +40,10 @@ Bad:
 - hunger relief must appear on a strictly earlier tick number than all later political commits
 
 The first pair encodes the architectural rule. The second overfits to scheduler timing.
+
+Do not use delayed authoritative installation as a proxy for earlier political-action ordering when succession or another lawful system can add delay between the action commit and the final office-holder mutation. In that case, prove the earlier ordering with action traces and prove the later durable consequence with authoritative world state.
+
+Do not claim a "same-state, weight-only divergence" unless both compared branches are driven by comparable ranking substrates in the current architecture. If one branch depends on a pressure-scaled or priority-derived substrate and the other uses a flat motive or later system resolution, name that asymmetry explicitly in the ticket and in the test rationale.
 
 ## Trace Guidance
 
@@ -100,6 +105,7 @@ Golden-related tickets should:
 5. distinguish candidate generation, ranking/suppression, execution, and authoritative outcome
 6. name the exact layer when similar helpers exist in both AI/planning code and authoritative/system code
 7. document scenario-isolation choices when lawful competing affordances exist and the golden is intended to prove one branch
+8. if the ticket depends on ordering, state whether the compared branches are symmetric in the current architecture or whether the divergence depends on priority class, motive score, suppression, delayed system resolution, or a mixed-layer combination
 
 ## Verification Commands
 
