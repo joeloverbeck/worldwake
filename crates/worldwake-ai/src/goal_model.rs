@@ -414,6 +414,7 @@ impl GoalKindPlannerExt for GoalKind {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn apply_planner_step<'snapshot>(
         &self,
         state: PlanningState<'snapshot>,
@@ -511,7 +512,19 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => state,
             },
-            _ => state,
+            PlannerOpKind::Threaten => match self {
+                GoalKind::ClaimOffice { office } => {
+                    apply_threaten_for_office(state, actor, *office, payload_override)
+                }
+                _ => state,
+            },
+            PlannerOpKind::Trade
+            | PlannerOpKind::Harvest
+            | PlannerOpKind::Craft
+            | PlannerOpKind::Attack
+            | PlannerOpKind::Defend
+            | PlannerOpKind::Tell
+            | PlannerOpKind::MoveCargo => state,
         }
     }
 
@@ -873,6 +886,28 @@ fn apply_bribe_for_office<'s>(
         state
             .with_commodity_quantity(actor, bribe.offered_commodity, remaining)
             .with_support_declaration(bribe.target, office, actor)
+    } else {
+        state
+    }
+}
+
+fn apply_threaten_for_office<'s>(
+    state: PlanningState<'s>,
+    actor: EntityId,
+    office: EntityId,
+    payload_override: Option<&ActionPayload>,
+) -> PlanningState<'s> {
+    let Some(threaten) = payload_override.and_then(ActionPayload::as_threaten) else {
+        return state;
+    };
+    let attack_skill = state
+        .combat_profile(actor)
+        .map_or(Permille::new_unchecked(0), |p| p.attack_skill);
+    let target_courage = state
+        .courage(threaten.target)
+        .unwrap_or(Permille::new_unchecked(1000));
+    if attack_skill > target_courage {
+        state.with_support_declaration(threaten.target, office, actor)
     } else {
         state
     }
