@@ -6,7 +6,7 @@
 
 ---
 
-The golden suite contains 78 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). All behavior is emergent.
+The golden suite contains 87 tests across 8 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
 
 ---
 
@@ -503,3 +503,65 @@ The golden suite contains 78 tests across 7 domain files. Every test uses the re
 - Coin conservation holds every tick.
 - Two runs with the same seed produce identical world and event-log hashes.
 **Cross-system chain**: Hunger pressure above High → LootCorpse suppression on both targets → ConsumeOwnedCommodity goal → eat bread → hunger relief → suppression lift → matches_binding selects correct corpse → sequential loot → both corpses looted → conservation throughout.
+
+---
+
+### Scenario S07a: Wound vs Hunger Priority Resolution (Pain First)
+**File**: `golden_emergent.rs` | **Test**: `golden_wound_vs_hunger_pain_first`
+**Systems exercised**: Needs (hunger metabolism), Care (self-treatment), AI (candidate generation, ranking with UtilityProfile weights)
+**Setup**: Single agent at Village Square, wounded (severity pm(400), clotted, zero natural recovery), hungry (pm(700)). Has both Apple(2) and Medicine(1). pain_weight=pm(800), hunger_weight=pm(400). DirectObservation beliefs seeded.
+**Emergent behavior proven**:
+- Agent heals before eating (first state-delta is wound_load decrease, not hunger decrease).
+- Both needs eventually addressed (wound_load decreases AND hunger decreases).
+- Conservation: apple + medicine lots non-increasing.
+**Foundation alignment**: Principle 3 (concrete utility weights drive priority, not abstract tiers), Principle 20 (agent diversity via profile weights).
+**Cross-system chain**: Pain pressure (weighted 800) outranks hunger pressure (weighted 400) → TreatWounds{self} selected → medicine consumed → wound reduced → then eat.
+
+### Scenario S07b: Wound vs Hunger Priority Resolution (Hunger First)
+**File**: `golden_emergent.rs` | **Test**: `golden_wound_vs_hunger_hunger_first`
+**Systems exercised**: Needs (hunger metabolism), Care (self-treatment), AI (candidate generation, ranking with UtilityProfile weights)
+**Setup**: Identical to S07a but pain_weight=pm(300), hunger_weight=pm(800).
+**Emergent behavior proven**:
+- Agent eats before healing (first state-delta is hunger decrease, not wound_load decrease).
+- Both needs eventually addressed.
+- Conservation: apple + medicine lots non-increasing.
+**Foundation alignment**: Principle 3, Principle 20. Same concrete-weight mechanism as S07a but reversed outcome proves weights, not hardcoded tiers, determine priority.
+**Cross-system chain**: Hunger pressure (weighted 800) outranks pain pressure (weighted 300) → ConsumeOwnedCommodity selected → eat → hunger reduced → then self-heal.
+
+### Scenario S07c: Care Weight Divergence Under Observation
+**File**: `golden_emergent.rs` | **Tests**: `golden_care_weight_divergence_under_observation`, `golden_care_weight_divergence_replays_deterministically`
+**Systems exercised**: Needs (hunger metabolism), Care (third-party healing), AI (candidate generation, ranking with care_weight), Perception (DirectObservation belief seeding)
+**Setup**: Patient at Village Square wounded (severity pm(500), zero natural recovery). Altruist (care_weight=pm(800), low hunger, Medicine(1)). Selfish agent (care_weight=pm(100), hunger_weight=pm(800), hunger=pm(500), Medicine(1), Apple(2)). Both agents have DirectObservation beliefs about the patient.
+**Emergent behavior proven**:
+- Altruist's first action is healing the patient (medicine consumed).
+- Selfish agent's first action is eating (hunger decreases before medicine is consumed).
+- Patient wound_load decreases (healed by altruist).
+- Same stimulus (observing wounded patient), different response, driven by concrete profile weights.
+- Two runs with the same seed produce identical hashes.
+**Foundation alignment**: Principle 20 (agent diversity), Principle 3 (concrete weights, not abstract altruism tiers), Principle 7 (both agents observe via DirectObservation).
+**Cross-system chain**: DirectObservation of wounded patient + divergent care_weight → Altruist: TreatWounds{patient} → heal; Selfish: ConsumeOwnedCommodity → eat → (may heal later).
+
+### Scenario S07d: Care Travel to Remote Patient
+**File**: `golden_emergent.rs` | **Tests**: `golden_care_travel_to_remote_patient`, `golden_care_travel_to_remote_patient_replays_deterministically`
+**Systems exercised**: Care (third-party healing), Travel, AI (GOAP plan decomposition: Travel + Heal), Perception (remote belief seeding)
+**Setup**: Patient at Orchard Farm wounded (severity pm(500), zero natural recovery). Healer at Village Square with Medicine(1), care_weight=pm(800), PerceptionProfile. Healer has DirectObservation belief about patient (artificially seeded for remote patient).
+**Emergent behavior proven**:
+- Healer travels from Village Square (effective_place changes).
+- Healer consumes medicine to heal the patient.
+- Patient wound_load decreases after healer arrives.
+- Healing takes >3 ticks (travel time as natural dampener — Principle 10).
+- Two runs with the same seed produce identical hashes.
+**Foundation alignment**: Principle 1 (causal chain: belief → travel → heal), Principle 7 (belief-seeded, not omniscient), Principle 10 (travel time naturally dampens healing throughput).
+**Cross-system chain**: DirectObservation of remote wounded patient → TreatWounds{patient} goal → GOAP decomposes to Travel(Orchard Farm) + Heal → travel time elapses → healer arrives → medicine consumed → wound reduced.
+
+### Scenario S07e: Loot Corpse Self-Care Chain
+**File**: `golden_emergent.rs` | **Tests**: `golden_loot_corpse_self_care_chain`, `golden_loot_corpse_self_care_chain_replays_deterministically`
+**Systems exercised**: Corpse (loot action), Transport (item transfer), Care (self-treatment), AI (goal sequencing: LootCorpse → TreatWounds{self})
+**Setup**: Wounded scavenger at Village Square (severity pm(400), zero natural recovery, no medicine). Pre-killed corpse at Village Square carrying Medicine(2). Scavenger has pain_weight=pm(700), care_weight=pm(600), PerceptionProfile. DirectObservation beliefs seeded.
+**Emergent behavior proven**:
+- Scavenger acquires medicine from looting the corpse (commodity qty > 0).
+- Scavenger wound_load decreases after acquiring medicine (self-care).
+- Medicine conservation holds every tick.
+- Two runs with the same seed produce identical hashes.
+**Foundation alignment**: Principle 1 (maximal emergence — no quest logic drives the loot→heal chain), Principle 3 (concrete wounds, concrete medicine), Principle 24 (systems interact only through state mutation).
+**Cross-system chain**: Observe corpse → LootCorpse goal → loot action transfers medicine → TreatWounds{self} goal emerges → medicine consumed → wound reduced.

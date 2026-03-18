@@ -19,6 +19,7 @@ crates/worldwake-ai/tests/
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
+  golden_emergent.rs          — 9 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e + replays)
 ```
 
 ---
@@ -148,6 +149,10 @@ crates/worldwake-ai/tests/
 | Rumor → travel → passive observation → discovery → belief source upgrade → replan | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
 | UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
+| Wound vs hunger priority resolved by concrete utility weights (Principle 3, 20) | Yes |
+| care_weight divergence → different agents make different care decisions for same patient | Yes |
+| Care + Travel: healer travels to remote patient, travel time dampens healing (Principle 10) | Yes |
+| Loot corpse → acquire medicine → self-care chain (Principle 1 maximal emergence) | Yes |
 
 ---
 
@@ -155,12 +160,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 78 | 81 |
+| Proven tests | 87 | 90 |
 | GoalKind coverage | 17/18 (94.4%) | 17/18 (94.4%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 44 | 47 |
+| Cross-system chains | 48 | 51 |
 
 ### Pending Backlog Summary
 
