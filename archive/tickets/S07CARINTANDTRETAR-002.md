@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-002: Add care_weight to UtilityProfile
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — component schema in worldwake-core
@@ -78,3 +78,10 @@ Set `care_weight: Permille::new_unchecked(200)` (low baseline per spec D06).
 
 1. `cargo test -p worldwake-core`
 2. `cargo clippy -p worldwake-core`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**: Added `care_weight: Permille` field to `UtilityProfile` (now 11 fields) with default `Permille(200)`. Updated all explicit struct-literal construction sites across `utility_profile.rs`, `test_utils.rs`, `ranking.rs`, and `goal_explanation.rs`.
+- **Deviations**: Ticket marked golden tests/harness helpers as out of scope, but `test_utils::sample_utility_profile()` and two test `utility()` helpers in `worldwake-ai` required updating to compile. No behavioral deviations.
+- **Verification**: All 8 utility_profile tests pass, clippy clean on worldwake-core.

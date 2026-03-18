@@ -16,6 +16,7 @@ pub struct UtilityProfile {
     pub enterprise_weight: Permille,
     pub social_weight: Permille,
     pub courage: Permille,
+    pub care_weight: Permille,
 }
 
 impl Default for UtilityProfile {
@@ -33,6 +34,7 @@ impl Default for UtilityProfile {
             enterprise_weight: balanced,
             social_weight: social,
             courage: balanced,
+            care_weight: social,
         }
     }
 }
@@ -70,6 +72,7 @@ mod tests {
         assert_eq!(profile.enterprise_weight.value(), 500);
         assert_eq!(profile.social_weight.value(), 200);
         assert_eq!(profile.courage.value(), 500);
+        assert_eq!(profile.care_weight.value(), 200);
         assert!(profile.social_weight < profile.enterprise_weight);
     }
 
@@ -78,6 +81,7 @@ mod tests {
         let profile = UtilityProfile {
             social_weight: crate::Permille::new(875).unwrap(),
             courage: crate::Permille::new(125).unwrap(),
+            care_weight: crate::Permille::new(750).unwrap(),
             ..UtilityProfile::default()
         };
 

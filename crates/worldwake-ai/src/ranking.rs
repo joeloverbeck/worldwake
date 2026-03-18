@@ -869,6 +869,7 @@ mod tests {
             enterprise_weight: pm(200),
             social_weight: pm(150),
             courage: pm(500),
+            care_weight: pm(200),
         }
     }
 
