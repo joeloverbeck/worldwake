@@ -1,7 +1,7 @@
 # Golden E2E Suite: Coverage Dashboard
 
 **Date**: 2026-03-12 (updated 2026-03-18, offices added 2026-03-18)
-**Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
+**Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
 
@@ -13,15 +13,16 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 11 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b)
+  golden_ai_decisions.rs      — 12 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b + trace-enabled smoke coverage)
   golden_care.rs              — 12 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + replays)
   golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
-  golden_combat.rs            — 19 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays)
+  golden_combat.rs            — 20 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays + action-trace integration)
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
   golden_emergent.rs          — 9 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e + replays)
   golden_offices.rs           — 11 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: survival pressure suppresses political goals + deterministic replay, scenario 17: faction eligibility filters office claim, scenario 18: force succession sole eligible + deterministic replay)
+  golden_supply_chain.rs      — 0 `golden_*` tests (contains trace-segment supply-chain tests plus 2 ignored blocked full-chain tests)
 ```
 
 ---
@@ -171,7 +172,7 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 96 | 96 |
+| Proven tests | 99 | 99 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |

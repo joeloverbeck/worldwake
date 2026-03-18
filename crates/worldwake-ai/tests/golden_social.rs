@@ -419,6 +419,7 @@ fn run_rumor_chain_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_stale_belief_replan_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
@@ -536,6 +537,7 @@ fn run_stale_belief_replan_scenario(
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_skeptical_listener_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {

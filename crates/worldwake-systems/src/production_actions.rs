@@ -2350,6 +2350,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn harvest_missing_policy_fails_commit() {
         // Build world manually without setting ProductionOutputOwnershipPolicy.
         let mut world = World::new(build_prototype_world()).unwrap();

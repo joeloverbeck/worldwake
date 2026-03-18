@@ -4942,6 +4942,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn trace_force_law_office_skips_political_candidates_and_planning() {
         let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
 
