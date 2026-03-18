@@ -13,11 +13,12 @@ use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
     AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, BodyCostPerTick, CarryCapacity,
     CauseRef, CombatProfile, CombatStance, CommodityKind, ControlSource, DeprivationExposure,
-    DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-    RecipeId, ResourceSource, Seed, TellProfile, Tick, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    DriveThresholds, EligibilityRule, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
+    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, PerceptionProfile,
+    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed,
+    SuccessionLaw, TellProfile, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -445,6 +446,110 @@ pub fn add_hostility(
     let mut txn = new_txn(world, 0);
     txn.add_hostility(subject, target).unwrap();
     commit_txn(txn, event_log);
+}
+
+// ---------------------------------------------------------------------------
+// Office / Faction / Political helpers
+// ---------------------------------------------------------------------------
+
+/// Create a vacant Office entity with `OfficeData` at a jurisdiction.
+pub fn seed_office(
+    world: &mut World,
+    event_log: &mut EventLog,
+    title: &str,
+    jurisdiction: EntityId,
+    succession_law: SuccessionLaw,
+    succession_period_ticks: u64,
+    eligibility_rules: Vec<EligibilityRule>,
+) -> EntityId {
+    let mut txn = new_txn(world, 0);
+    let office = txn.create_office(title).unwrap();
+    txn.set_component_office_data(
+        office,
+        OfficeData {
+            title: title.to_string(),
+            jurisdiction,
+            succession_law,
+            eligibility_rules,
+            succession_period_ticks,
+            vacancy_since: Some(Tick(0)),
+        },
+    )
+    .unwrap();
+    commit_txn(txn, event_log);
+    office
+}
+
+/// Create a Faction entity with `FactionData`.
+pub fn seed_faction(
+    world: &mut World,
+    event_log: &mut EventLog,
+    name: &str,
+    purpose: FactionPurpose,
+) -> EntityId {
+    let mut txn = new_txn(world, 0);
+    let faction = txn.create_faction(name).unwrap();
+    txn.set_component_faction_data(
+        faction,
+        FactionData {
+            name: name.to_string(),
+            purpose,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, event_log);
+    faction
+}
+
+/// Add `member_of` relation between an agent and a faction.
+pub fn add_faction_membership(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    faction: EntityId,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.add_member(agent, faction).unwrap();
+    commit_txn(txn, event_log);
+}
+
+/// Seed loyalty relation between two agents.
+pub fn set_loyalty(
+    world: &mut World,
+    event_log: &mut EventLog,
+    subject: EntityId,
+    target: EntityId,
+    value: Permille,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_loyalty(subject, target, value).unwrap();
+    commit_txn(txn, event_log);
+}
+
+/// Update an agent's `UtilityProfile.courage` field.
+pub fn set_courage(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    value: Permille,
+) {
+    let mut profile = world
+        .get_component_utility_profile(agent)
+        .cloned()
+        .expect("agent should have a UtilityProfile");
+    profile.courage = value;
+    let mut txn = new_txn(world, 0);
+    txn.set_component_utility_profile(agent, profile).unwrap();
+    commit_txn(txn, event_log);
+}
+
+/// Create a `UtilityProfile` with a high enterprise weight for political goal
+/// generation. All other weights use defaults.
+pub fn enterprise_weighted_utility(enterprise: Permille) -> worldwake_core::UtilityProfile {
+    worldwake_core::UtilityProfile {
+        enterprise_weight: enterprise,
+        ..worldwake_core::UtilityProfile::default()
+    }
 }
 
 // ---------------------------------------------------------------------------
