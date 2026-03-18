@@ -15,7 +15,7 @@ use crate::{
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget,
     QueuedFacilityIntent, RankedGoal,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CauseRef, CommodityKind,
     ControlSource, EntityId, Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
@@ -901,19 +901,33 @@ fn build_candidate_plans(
     collect_rejections: bool,
 ) -> Vec<(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>)> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
-    ranked_candidates
+    let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
         .take(usize::from(budget.max_candidates_to_plan))
+        .collect();
+
+    // Build a single merged snapshot with the union of all candidates' evidence
+    // sets. This avoids N separate snapshot constructions (each with BFS +
+    // Floyd-Warshall + entity queries) when N candidates share similar evidence.
+    let mut merged_evidence_entities = BTreeSet::new();
+    let mut merged_evidence_places = BTreeSet::new();
+    for ranked in &candidates_to_plan {
+        merged_evidence_entities.extend(ranked.grounded.evidence_entities.iter().copied());
+        merged_evidence_places.extend(ranked.grounded.evidence_places.iter().copied());
+    }
+    let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+        &view,
+        agent,
+        &merged_evidence_entities,
+        &merged_evidence_places,
+        budget.snapshot_travel_horizon,
+        blocked_memory,
+        current_tick,
+    );
+
+    candidates_to_plan
+        .into_iter()
         .map(|ranked| {
-            let snapshot = build_planning_snapshot_with_blocked_facility_uses(
-                &view,
-                agent,
-                &ranked.grounded.evidence_entities,
-                &ranked.grounded.evidence_places,
-                budget.snapshot_travel_horizon,
-                blocked_memory,
-                current_tick,
-            );
             let goal_relevant_places = ranked.grounded.key.kind.goal_relevant_places(
                 &crate::PlanningState::new(&snapshot),
                 recipe_registry,
