@@ -1,13 +1,13 @@
 # Golden E2E Suite: Scenario Catalog
 
-**Date**: 2026-03-12 (updated 2026-03-18)
+**Date**: 2026-03-12 (updated 2026-03-18, locality offices added 2026-03-18)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
 **Purpose**: Detailed reference for what each golden test proves. Consult when you need to understand a specific scenario or verify whether a behavior is already tested. For coverage gaps and matrices, see [golden-e2e-coverage.md](golden-e2e-coverage.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
 
 ---
 
-The golden suite currently contains 99 `golden_*` tests across 10 `golden_*.rs` files, with 9 files contributing `golden_*` tests and `golden_supply_chain.rs` currently contributing only non-`golden_*` trace-segment tests plus ignored blocked full-chain cases. Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise) plus trace-enabled smoke coverage. The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. The offices slice now also proves that shared self-care suppression rules can defer political ambition without any office-specific suppression code. The combat slice also includes action-trace integration coverage for the loot lifecycle. All behavior is emergent.
+The golden suite currently contains 101 `golden_*` tests across 10 `golden_*.rs` files, with 9 files contributing `golden_*` tests and `golden_supply_chain.rs` currently contributing only non-`golden_*` trace-segment tests plus ignored blocked full-chain cases. Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise) plus trace-enabled smoke coverage. The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. The offices slice now also proves both halves of political locality: remote office claims stay inert without office knowledge, and shared self-care suppression can defer political ambition without any office-specific suppression code. The combat slice also includes action-trace integration coverage for the loot lifecycle. All behavior is emergent.
 
 ---
 
@@ -639,7 +639,20 @@ The golden suite currently contains 99 `golden_*` tests across 10 `golden_*.rs` 
 **Foundation alignment**: Principle 7 (locality — political actions require co-location at jurisdiction), Principle 8 (preconditions — travel has duration and occupancy), Principle 10 (belief-only planning), Principle 1 (maximal emergence — travel + office claim is emergent, not scripted).
 **Cross-system chain**: AI goal from remote belief → multi-hop travel planning → sequential travel execution → arrival at jurisdiction → DeclareSupport → succession resolution → office installation.
 
-### Scenario 16: Survival Pressure Suppresses Political Goals
+### Scenario 16: Political Office Facts Remain Local Until Belief Update
+**File**: `golden_offices.rs` | **Tests**: `golden_information_locality_for_political_facts`, `golden_information_locality_for_political_facts_replays_deterministically`
+**Systems exercised**: AI political candidate generation, decision tracing, belief acquisition via explicit report seeding, travel, political actions (`declare_support`), succession, deterministic replay
+**Setup**: Vacant office ("Village Elder") at Village Square with `SuccessionLaw::Support`. A politically ambitious agent starts at Bandit Camp with no belief about the office. After an initial phase proving political inactivity, the test injects an explicit `PerceptionSource::Report` office belief from an informant at Village Square.
+**Emergent behavior proven**:
+- Before the office belief exists, the remote agent never generates `ClaimOffice` or office-specific political goals in decision traces.
+- Before the office belief exists, the remote agent stays at Bandit Camp and does not begin the office-claim travel chain.
+- The belief update enters as an explicit report rather than an impossible remote direct observation.
+- After the office belief arrives, ordinary office-planning behavior appears: `ClaimOffice` is generated, travel to Village Square occurs, `declare_support` executes, and succession installs the claimant.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Foundation alignment**: Principle 7 (information locality), Principle 10 (belief-only planning), Principle 13 (knowledge acquisition path matters), Principle 27 (decision traces make the negative AI contract inspectable).
+**Cross-system chain**: No office belief → no political candidate generation → explicit reported office belief update → `ClaimOffice` candidate → travel to jurisdiction → `declare_support` → succession resolution.
+
+### Scenario 17: Survival Pressure Suppresses Political Goals
 **File**: `golden_offices.rs` | **Tests**: `golden_survival_pressure_suppresses_political_goals`, `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 **Systems exercised**: Needs/self-care (`eat`), AI (ClaimOffice candidate generation, shared goal-policy suppression, ranking, action sequencing), Political actions (`declare_support`), Succession (installation), action tracing, deterministic replay
 **Setup**: Vacant office (Support law, period=5, no eligibility) at VillageSquare. Single agent ("Hungry Claimant") at VillageSquare with enterprise_weight=pm(800), one owned bread, and DirectObservation belief about the office. Hunger starts exactly at the agent's `High` threshold so the shared self-care suppression rule applies immediately.
@@ -652,7 +665,7 @@ The golden suite currently contains 99 `golden_*` tests across 10 `golden_*.rs` 
 **Foundation alignment**: Principle 10 (belief-only planning), Principle 20 (enterprise ambition remains real but is subordinated to concrete self-care pressure), Principle 24 (no office system special-case; shared goal-policy suppression coordinates the behavior through state).
 **Cross-system chain**: Believed vacant office + enterprise motive → ClaimOffice candidate → shared self-care suppression in ranking → eat commit → suppression lift → DeclareSupport → succession resolution → office installation.
 
-### Scenario 17: Faction Eligibility Filters Office Claim
+### Scenario 18: Faction Eligibility Filters Office Claim
 **File**: `golden_offices.rs` | **Test**: `golden_faction_eligibility_filters_office_claim`
 **Systems exercised**: Factions (`member_of` relation), Succession (support-law installation), AI (belief-driven ClaimOffice candidate generation, decision tracing), Political actions (`declare_support`), action tracing
 **Setup**: Vacant office ("Village Elder") at Village Square with `EligibilityRule::FactionMember(faction)`. Agent A ("Faction Claimant") and Agent B ("Unaffiliated Rival") are both sated, colocated, politically ambitious, and have DirectObservation beliefs about the office. Only A belongs to the required faction.
@@ -664,7 +677,7 @@ The golden suite currently contains 99 `golden_*` tests across 10 `golden_*.rs` 
 **Foundation alignment**: Principle 10 (agents plan from beliefs, not omniscient world shortcuts), Principle 20 (shared ambition still respects concrete eligibility constraints), Principle 24 (AI filtering and authoritative validation coordinate through state rather than special-case cross-calls).
 **Cross-system chain**: Faction membership state + believed vacant office → AI eligibility gate on `ClaimOffice` candidate generation → only lawful claimant plans `DeclareSupport` → succession resolves to eligible office holder.
 
-### Scenario 18: Force Succession Installs Sole Living Eligible Contender
+### Scenario 19: Force Succession Installs Sole Living Eligible Contender
 **File**: `golden_offices.rs` | **Test**: `golden_force_succession_sole_eligible`
 **Systems exercised**: Succession (force-law installation), death-state filtering via `DeadAt`, AI/action suppression for support-law political paths, action tracing
 **Setup**: Vacant office ("War Chief") at Village Square with `SuccessionLaw::Force`. Agent A ("Force Claimant") is sated, politically ambitious, and has a direct belief about the office. Agent B ("Dead Rival") is colocated and otherwise similar but already has `DeadAt(Tick(0))`.
@@ -675,8 +688,8 @@ The golden suite currently contains 99 `golden_*` tests across 10 `golden_*.rs` 
 **Foundation alignment**: Principle 3 (office succession follows concrete alive/dead state rather than abstract weighting), Principle 8 (office resolution still follows explicit preconditions and timing), Principle 24 (AI/political behavior is constrained by office state rather than cross-system special cases).
 **Cross-system chain**: visible vacant Force-law office + colocated contenders + one contender marked dead → AI suppresses support-law office goals → succession system resolves sole living eligible contender → office holder relation updates deterministically.
 
-### Scenario 18b: Force Succession Deterministic Replay
+### Scenario 19b: Force Succession Deterministic Replay
 **File**: `golden_offices.rs` | **Test**: `golden_force_succession_deterministic_replay`
 **Systems exercised**: Same as Scenario 18 + deterministic replay verification.
-**Setup**: Same as Scenario 18, run twice with identical seed.
+**Setup**: Same as Scenario 19, run twice with identical seed.
 **Assertion focus**: Both runs produce identical world and event-log hashes while still yielding a non-trivial office-holder transition.

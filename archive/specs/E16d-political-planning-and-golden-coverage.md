@@ -1,5 +1,7 @@
 # E16d: Political Planning Fix & Golden E2E Coverage
 
+**Status**: COMPLETED
+
 ## Epic Summary
 
 Fix the architectural gap where `apply_planner_step` in `goal_model.rs` falls through to `_ => state` for `PlannerOpKind::Bribe` and `PlannerOpKind::Threaten`, meaning the GOAP planner never selects them despite their inclusion in `CLAIM_OFFICE_OPS`. Deliver outcome-based planning semantics for both operations and a comprehensive golden E2E test suite covering all political scenarios introduced by E16.
@@ -706,3 +708,20 @@ After full implementation:
 10. New tickets (E16d-017..E16d-021) have clear dependencies and file targets
 11. Section H (Foundation Analysis) covers new features (F1 blocked intent, F3 info locality)
 12. Review `reports/golden-e2e-coverage-analysis.md` for completeness
+
+## Outcome
+
+- Completion date: 2026-03-18
+- What actually changed:
+  - implemented the planner/runtime support needed for `Bribe` and `Threaten` planning semantics, snapshot `courage`, and the associated focused planner-state/integration coverage
+  - delivered the office golden suite covering simple claim, coalition support, bribe, threaten, remote travel, survival-pressure suppression, faction eligibility, force succession, and political information locality
+  - updated the golden scenario inventory and coverage dashboard to reflect the implemented office scenarios
+- Deviations from original plan:
+  - the spec's planned “Scenario 19: incumbent defense” did not ship as originally written because support-law office politics does not replace a living incumbent; that architectural mismatch was corrected separately and the real invariant was captured in archived ticket `E16DPOLPLAN-020`
+  - the information-locality scenario shipped as the new office golden proving remote political inactivity before belief update, then normal claim behavior after an explicit reported belief update
+  - the coverage/report update landed in the canonical docs (`docs/golden-e2e-coverage.md`, `docs/golden-e2e-scenarios.md`) rather than a standalone report file
+- Verification results:
+  - `cargo test -p worldwake-ai` ✅
+  - `cargo test --workspace` ✅
+  - `cargo clippy --workspace --all-targets -- -D warnings` ✅
+  - `scripts/verify.sh` ✅

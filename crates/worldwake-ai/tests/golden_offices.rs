@@ -820,7 +820,204 @@ fn golden_travel_to_distant_jurisdiction_for_claim() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 16: Survival Pressure Suppresses Political Goals
+// Scenario 16: Political Office Facts Remain Local Until Belief Update
+// ---------------------------------------------------------------------------
+//
+// Setup: Vacant office at VillageSquare (Support law, period=5, no eligibility).
+// Single politically ambitious agent starts at BanditCamp with no belief about
+// the office. After an explicit reported belief update, the agent should begin
+// the normal ClaimOffice -> travel -> declare_support -> succession path.
+
+#[allow(clippy::too_many_lines)]
+fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, StateHash) {
+    let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+
+    let informant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Informant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        informant,
+        default_perception_profile(),
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Claimant",
+        bandit_camp,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        default_perception_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    assert!(
+        agent_belief_about(&h.world, agent, office).is_none(),
+        "agent should start without an office belief"
+    );
+    assert_eq!(
+        h.world.effective_place(agent),
+        Some(bandit_camp),
+        "agent should start at Bandit Camp"
+    );
+
+    for _ in 0..8 {
+        h.step_once();
+    }
+
+    let phase_one_end = h.scheduler.current_tick().0;
+    let generated_before_update = (0..=phase_one_end).any(|tick| {
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .trace_at(agent, Tick(tick))
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => planning.candidates.generated.iter().any(
+                    |goal| {
+                        matches!(
+                            goal.kind,
+                            GoalKind::ClaimOffice { office: goal_office }
+                                if goal_office == office
+                        ) || matches!(
+                            goal.kind,
+                            GoalKind::SupportCandidateForOffice { office: goal_office, .. }
+                                if goal_office == office
+                        )
+                    },
+                ),
+                _ => false,
+            })
+    });
+    assert!(
+        !generated_before_update,
+        "agent must not generate political goals for an unknown remote office"
+    );
+    assert_eq!(
+        h.world.effective_place(agent),
+        Some(bandit_camp),
+        "agent should remain at Bandit Camp before learning about the office"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        None,
+        "office should remain vacant before the remote claimant learns about it"
+    );
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        &[office],
+        Tick(phase_one_end),
+        PerceptionSource::Report {
+            from: informant,
+            chain_len: 1,
+        },
+    );
+    let seeded_belief = agent_belief_about(&h.world, agent, office)
+        .expect("agent should immediately receive the explicit office belief update");
+    assert!(
+        matches!(
+            seeded_belief.source,
+            PerceptionSource::Report {
+                from,
+                chain_len: 1
+            } if from == informant
+        ),
+        "office belief update should enter as an explicit report"
+    );
+
+    for _ in 0..40 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(agent) {
+            break;
+        }
+    }
+
+    let generated_after_update = ((phase_one_end + 1)..=h.scheduler.current_tick().0).any(|tick| {
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .trace_at(agent, Tick(tick))
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+                _ => false,
+            })
+    });
+
+    assert!(
+        agent_belief_about(&h.world, agent, office).is_some(),
+        "agent should retain some belief about the office after acting on it"
+    );
+    assert!(
+        generated_after_update,
+        "agent should generate ClaimOffice after receiving the office belief"
+    );
+    assert_eq!(
+        h.world.effective_place(agent),
+        Some(VILLAGE_SQUARE),
+        "agent should travel to the office jurisdiction only after the belief update"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(agent),
+        "agent should become office holder after learning about the remote office"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_information_locality_for_political_facts() {
+    let _ = run_information_locality_for_political_facts(Seed([117; 32]));
+}
+
+#[test]
+fn golden_information_locality_for_political_facts_replays_deterministically() {
+    let seed = Seed([118; 32]);
+    let first = run_information_locality_for_political_facts(seed);
+    let second = run_information_locality_for_political_facts(seed);
+
+    assert_eq!(
+        first, second,
+        "political locality scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 17: Survival Pressure Suppresses Political Goals
 // ---------------------------------------------------------------------------
 //
 // Setup: Vacant office at VillageSquare (Support law, period=5). Single agent
@@ -989,12 +1186,12 @@ fn run_survival_pressure_suppresses_political_goals(seed: Seed) -> (StateHash, S
 
 #[test]
 fn golden_survival_pressure_suppresses_political_goals() {
-    let _ = run_survival_pressure_suppresses_political_goals(Seed([117; 32]));
+    let _ = run_survival_pressure_suppresses_political_goals(Seed([119; 32]));
 }
 
 #[test]
 fn golden_survival_pressure_suppresses_political_goals_replays_deterministically() {
-    let seed = Seed([118; 32]);
+    let seed = Seed([120; 32]);
     let first = run_survival_pressure_suppresses_political_goals(seed);
     let second = run_survival_pressure_suppresses_political_goals(seed);
 
@@ -1005,7 +1202,7 @@ fn golden_survival_pressure_suppresses_political_goals_replays_deterministically
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 17: Faction Eligibility Filters Office Claim
+// Scenario 18: Faction Eligibility Filters Office Claim
 // ---------------------------------------------------------------------------
 //
 // Setup: Vacant office at VillageSquare (Support law, period=5) restricted by
@@ -1019,7 +1216,7 @@ fn golden_survival_pressure_suppresses_political_goals_replays_deterministically
 #[test]
 #[allow(clippy::too_many_lines)]
 fn golden_faction_eligibility_filters_office_claim() {
-    let mut h = GoldenHarness::new(Seed([119; 32]));
+    let mut h = GoldenHarness::new(Seed([121; 32]));
     h.driver.enable_tracing();
     h.enable_action_tracing();
 
@@ -1150,7 +1347,7 @@ fn golden_faction_eligibility_filters_office_claim() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 18: Force Succession Installs Sole Living Eligible Contender
+// Scenario 19: Force Succession Installs Sole Living Eligible Contender
 // ---------------------------------------------------------------------------
 //
 // Setup: Vacant office at VillageSquare using SuccessionLaw::Force. Agent A is
@@ -1276,12 +1473,12 @@ fn run_force_succession(seed: Seed) -> (StateHash, StateHash) {
 
 #[test]
 fn golden_force_succession_sole_eligible() {
-    let _ = run_force_succession(Seed([120; 32]));
+    let _ = run_force_succession(Seed([122; 32]));
 }
 
 #[test]
 fn golden_force_succession_deterministic_replay() {
-    let seed = Seed([121; 32]);
+    let seed = Seed([123; 32]);
 
     let first = run_force_succession(seed);
     let second = run_force_succession(seed);

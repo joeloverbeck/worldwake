@@ -3662,6 +3662,72 @@ mod tests {
     }
 
     #[test]
+    fn political_candidates_require_known_office_belief_for_generation() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs
+            .insert(agent, vec![known_entity(candidate, town)]);
+
+        let without_office_belief = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+        );
+
+        assert!(
+            !contains_goal(&without_office_belief, GoalKind::ClaimOffice { office }),
+            "unknown offices must not emit ClaimOffice candidates"
+        );
+        assert!(
+            !contains_goal(
+                &without_office_belief,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "unknown offices must not emit support candidates even when a loyal candidate is known"
+        );
+
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+
+        let with_office_belief = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+        );
+
+        assert!(contains_goal(
+            &with_office_belief,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_goal(
+            &with_office_belief,
+            GoalKind::SupportCandidateForOffice { office, candidate }
+        ));
+    }
+
+    #[test]
     fn political_candidates_require_visible_vacancy_and_skip_existing_declaration() {
         let agent = entity(1);
         let office = entity(2);
