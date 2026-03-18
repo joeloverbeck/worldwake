@@ -94,6 +94,6 @@ They do not expose why a candidate was omitted before `generated`. That makes â€
 
 ### Commands
 
-1. `cargo test -p worldwake-ai omitted_political_candidate`
+1. `cargo test -p worldwake-ai candidate_generation::tests::political_candidates_skip_force_law_offices`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace`

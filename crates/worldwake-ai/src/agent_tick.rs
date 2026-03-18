@@ -1926,10 +1926,10 @@ mod tests {
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
         HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId,
-        ResourceSource, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
-        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn,
+        OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+        RecipeId, ResourceSource, Seed, SuccessionLaw, Tick, Topology,
+        TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -4924,6 +4924,118 @@ mod tests {
                 assert!(
                     !planning.candidates.ranked.is_empty(),
                     "hungry agent should have at least one ranked goal"
+                );
+            }
+            other => panic!("expected Planning outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trace_force_law_office_skips_political_candidates_and_planning() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let registries = build_full_action_registries(&harness.recipes).unwrap();
+        harness.defs = registries.defs;
+        harness.handlers = registries.handlers;
+
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("harness actor should start at a place");
+        let enterprise = Permille::new(800).unwrap();
+        let social = Permille::new(700).unwrap();
+        let (office, rival) = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_utility_profile(
+                harness.actor,
+                UtilityProfile {
+                    enterprise_weight: enterprise,
+                    social_weight: social,
+                    ..UtilityProfile::default()
+                },
+            )
+            .unwrap();
+
+            let rival = txn.create_agent("Rival", ControlSource::Ai).unwrap();
+            txn.set_ground_location(rival, place).unwrap();
+            txn.set_component_homeostatic_needs(rival, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(rival, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(rival, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(rival, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_utility_profile(rival, UtilityProfile::default())
+                .unwrap();
+
+            let office = txn.create_office("War Chief").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "War Chief".to_string(),
+                    jurisdiction: place,
+                    succession_law: SuccessionLaw::Force,
+                    succession_period_ticks: 5,
+                    eligibility_rules: Vec::new(),
+                    vacancy_since: Some(Tick(1)),
+                },
+            )
+            .unwrap();
+            txn.set_loyalty(harness.actor, rival, Permille::new(650).unwrap())
+                .unwrap();
+            commit_txn(txn);
+            (office, rival)
+        };
+
+        sync_selected_beliefs(
+            &mut harness.world,
+            harness.actor,
+            &[office, rival],
+            Tick(2),
+            PerceptionSource::DirectObservation,
+        );
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let sink = harness.driver.trace_sink().unwrap();
+        let traces = sink.traces_for(harness.actor);
+        assert_eq!(traces.len(), 1, "expected one decision trace for the tick");
+
+        match &traces[0].outcome {
+            crate::DecisionOutcome::Planning(planning) => {
+                assert!(
+                    !planning.candidates.generated.iter().any(
+                        |goal| goal.kind == GoalKind::ClaimOffice { office }
+                    ),
+                    "Force-law offices must not emit ClaimOffice candidates in agent_tick"
+                );
+                assert!(
+                    !planning.candidates.generated.iter().any(|goal| {
+                        goal.kind
+                            == GoalKind::SupportCandidateForOffice {
+                                office,
+                                candidate: rival,
+                            }
+                    }),
+                    "Force-law offices must not emit SupportCandidateForOffice candidates in agent_tick"
+                );
+                assert!(
+                    !planning.planning.attempts.iter().any(|attempt| {
+                        matches!(
+                            attempt.goal.kind,
+                            GoalKind::ClaimOffice { office: goal_office } if goal_office == office
+                        ) || matches!(
+                            attempt.goal.kind,
+                            GoalKind::SupportCandidateForOffice {
+                                office: goal_office,
+                                candidate
+                            } if goal_office == office && candidate == rival
+                        )
+                    }),
+                    "Force-law offices must not enter political plan search in agent_tick"
                 );
             }
             other => panic!("expected Planning outcome, got {other:?}"),
