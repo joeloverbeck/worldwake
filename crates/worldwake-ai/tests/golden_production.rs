@@ -262,6 +262,7 @@ fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash
     )
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Default)]
 struct CapacityConstrainedPickupOutcome {
     saw_apple_materialize: bool,
@@ -396,6 +397,7 @@ struct MaterializedOutputTheftScenario {
     initial_orchard_quantity: Quantity,
 }
 
+#[allow(clippy::too_many_lines)]
 fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputTheftScenario {
     let mut harness = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
     let apple_recipe = harness
@@ -612,6 +614,7 @@ struct ResourceExhaustionRaceOutcome {
     final_source_quantity: Quantity,
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOutcome {
     let mut h = GoldenHarness::new(seed);
     let agents = [

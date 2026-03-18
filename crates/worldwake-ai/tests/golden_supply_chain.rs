@@ -244,7 +244,7 @@ fn run_merchant_restock_with_traces(
     let sink = h.driver.trace_sink().expect("tracing should be enabled");
     let merchant_early_restock = (0u64..=20).any(|t| {
         sink.trace_at(merchant, Tick(t))
-            .map_or(false, |trace| match &trace.outcome {
+            .is_some_and(|trace| match &trace.outcome {
                 DecisionOutcome::Planning(planning) => {
                     planning.candidates.generated.iter().any(|g| {
                         matches!(
@@ -382,7 +382,7 @@ fn run_consumer_trade_with_traces(seed: Seed) -> (StateHash, StateHash) {
     let sink = h.driver.trace_sink().expect("tracing should be enabled");
     let consumer_acquire_goal = (0u64..=10).any(|t| {
         sink.trace_at(consumer, Tick(t))
-            .map_or(false, |trace| match &trace.outcome {
+            .is_some_and(|trace| match &trace.outcome {
                 DecisionOutcome::Planning(planning) => {
                     planning.candidates.generated.iter().any(|g| {
                         matches!(
@@ -736,13 +736,13 @@ fn test_consumer_trade_replay() {
 /// introduces multi-round bilateral negotiation with variable pricing derived
 /// from concrete agent state, which will unblock this test.
 #[test]
-#[ignore]
+#[ignore = "blocked on S10 bilateral trade negotiation pricing"]
 fn test_full_supply_chain() {
     let _ = run_full_supply_chain(Seed([104; 32]));
 }
 
 #[test]
-#[ignore]
+#[ignore = "blocked on S10 bilateral trade negotiation pricing"]
 fn test_full_supply_chain_replay() {
     let first = run_full_supply_chain(Seed([105; 32]));
     let second = run_full_supply_chain(Seed([105; 32]));

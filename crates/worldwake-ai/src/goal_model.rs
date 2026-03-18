@@ -3290,7 +3290,8 @@ mod tests {
 
     // ── ClaimOffice is_satisfied tests (E16DPOLPLAN-024) ─────────────
 
-    /// Helper: builds a minimal TestBeliefView + PlanningState for ClaimOffice tests.
+    /// Helper: builds a minimal `TestBeliefView` + `PlanningState` for
+    /// `ClaimOffice` tests.
     fn claim_office_state(
         support_declarations: Vec<(EntityId, EntityId)>,
     ) -> (PlanningState<'static>, EntityId, EntityId) {
@@ -3336,7 +3337,7 @@ mod tests {
         let mut evidence = BTreeSet::new();
         evidence.insert(office);
         // Add all entities as evidence so the snapshot includes them
-        for &e in view.alive.iter() {
+        for &e in &view.alive {
             evidence.insert(e);
         }
 
@@ -3545,9 +3546,9 @@ mod tests {
     ///
     /// Setup: actor at jurisdiction with coins, bribable target, vacant office.
     /// A competitor (rival) is at a DIFFERENT place but has self-declared support,
-    /// so DeclareSupport alone would produce a tie (ProgressBarrier). The rival
-    /// cannot be bribed directly (not co-located). Bribe(target) + DeclareSupport
-    /// gives a winning coalition (GoalSatisfied).
+    /// so `DeclareSupport` alone would produce a tie (`ProgressBarrier`). The rival
+    /// cannot be bribed directly (not co-located). `Bribe(target)` + `DeclareSupport`
+    /// gives a winning coalition (`GoalSatisfied`).
     #[test]
     fn planner_selects_bribe_plan() {
         let actor = entity(1);
@@ -3621,12 +3622,12 @@ mod tests {
         );
     }
 
-    /// Test 2: Planner selects Threaten plan when attack_skill > target courage.
+    /// Test 2: Planner selects `Threaten` plan when `attack_skill` > target courage.
     ///
-    /// Setup: actor at jurisdiction with high attack_skill, low-courage target.
+    /// Setup: actor at jurisdiction with high `attack_skill`, low-courage target.
     /// A competitor (rival) is at a DIFFERENT place but has self-declared support,
-    /// motivating the planner to select Threaten rather than relying on
-    /// DeclareSupport alone.
+    /// motivating the planner to select `Threaten` rather than relying on
+    /// `DeclareSupport` alone.
     #[test]
     fn planner_selects_threaten_plan() {
         let actor = entity(1);
@@ -3697,7 +3698,7 @@ mod tests {
     ///
     /// Setup: actor at a remote place, has coins. Target and rival at the
     /// jurisdiction. Rival has self-declared support. Plan should start with
-    /// Travel then include Bribe + DeclareSupport.
+    /// `Travel` then include `Bribe` + `DeclareSupport`.
     #[test]
     fn planner_selects_travel_then_bribe() {
         let actor = entity(1);
@@ -3792,12 +3793,12 @@ mod tests {
         );
     }
 
-    /// Test 4: Planner rejects Threaten when target courage exceeds attack_skill.
+    /// Test 4: Planner rejects `Threaten` when target courage exceeds `attack_skill`.
     ///
     /// Setup: actor at jurisdiction, target with high courage (exceeds actor's
-    /// attack_skill). Rival is at a DIFFERENT place but has self-declared support.
-    /// Threaten would fail, so the planner falls back to Bribe (actor has coins)
-    /// + DeclareSupport. Plan must NOT contain Threaten.
+    /// `attack_skill`). Rival is at a DIFFERENT place but has self-declared support.
+    /// `Threaten` would fail, so the planner falls back to `Bribe` (actor has coins)
+    /// + `DeclareSupport`. Plan must NOT contain `Threaten`.
     #[test]
     fn planner_rejects_threaten_against_high_courage() {
         let actor = entity(1);

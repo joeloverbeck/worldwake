@@ -29,7 +29,7 @@ fn default_perception_profile() -> PerceptionProfile {
 }
 
 /// Combat profile with zero natural recovery — wounds only decrease through
-/// medicine.  Prevents TargetHasNoWounds race between natural recovery and
+/// medicine. Prevents `TargetHasNoWounds` race between natural recovery and
 /// the heal action.
 fn no_recovery_combat_profile() -> CombatProfile {
     CombatProfile::new(
@@ -233,6 +233,7 @@ fn golden_wound_vs_hunger_replays_deterministically() {
 // Cross-systems: Care + Needs + AI ranking + Perception.
 // ===========================================================================
 
+#[allow(clippy::too_many_lines)]
 fn run_care_weight_divergence(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
 
@@ -426,6 +427,7 @@ fn golden_care_weight_divergence_replays_deterministically() {
 // Cross-systems: Care + Travel + AI planning.
 // ===========================================================================
 
+#[allow(clippy::too_many_lines)]
 fn run_care_travel_to_remote_patient(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
 

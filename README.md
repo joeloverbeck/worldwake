@@ -5,5 +5,5 @@ Fully emergent gameplay
 
 Canonical local verification lives in `scripts/verify.sh`.
 
-- Default repo baseline: `scripts/verify.sh`
-- Strict lint gate target: `scripts/verify.sh --strict`
+- Canonical repo verification: `scripts/verify.sh`
+- This includes `cargo test --workspace`, `cargo clippy --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`

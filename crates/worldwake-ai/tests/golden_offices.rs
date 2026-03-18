@@ -304,6 +304,7 @@ fn golden_competing_claims_with_loyal_supporter() {
 // (self + B = 2) exceeds C's (self = 1). Politics system installs A.
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn golden_bribe_support_coalition() {
     // The bribe scenario requires a wider beam than the default (8) because
     // the prototype world's adjacency graph creates many travel candidates
@@ -512,6 +513,7 @@ fn combat_profile_with_attack_skill(attack_skill: Permille) -> CombatProfile {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn golden_threaten_with_courage_diversity() {
     // Wider beam — same rationale as bribe scenario: many equal-cost travel
     // candidates can push Threaten nodes past the default beam cutoff.
@@ -668,8 +670,7 @@ fn golden_threaten_with_courage_diversity() {
     assert!(
         final_b_loyalty.is_some() && final_b_loyalty.unwrap() > pm(0),
         "Agent B (low courage) should have gained loyalty to A after yielding to threat, \
-         got {:?}",
-        final_b_loyalty
+         got {final_b_loyalty:?}"
     );
 
     // Assertion 2: C has hostility toward A (resist outcome) or is unaffected.
@@ -682,8 +683,7 @@ fn golden_threaten_with_courage_diversity() {
     // the courage check).
     assert!(
         c_loyalty_to_a.is_none() || c_loyalty_to_a == Some(pm(0)),
-        "Agent C (high courage) must not gain loyalty to A from threat, got {:?}",
-        c_loyalty_to_a
+        "Agent C (high courage) must not gain loyalty to A from threat, got {c_loyalty_to_a:?}"
     );
     // If threatened, C should be hostile. If not threatened, that's fine too
     // (planner correctly filtered it out).

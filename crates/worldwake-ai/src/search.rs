@@ -3447,8 +3447,8 @@ mod tests {
 
     // ── A* heuristic tests ──────────────────────────────────────────────
 
-    /// Build a 3-place chain: place_a --3--> place_b --5--> place_c
-    /// Actor starts at place_a.
+    /// Build a 3-place chain: `place_a` --3--> `place_b` --5--> `place_c`
+    /// Actor starts at `place_a`.
     fn build_chain_heuristic_view() -> (TestBeliefView, EntityId, EntityId, EntityId, EntityId) {
         let actor = entity(1);
         let place_a = entity(10);
@@ -3632,7 +3632,7 @@ mod tests {
     ///                     |
     ///                   south(12)
     ///
-    /// Actor starts at hub.  goal_store(14) is adjacent to east(11) at cost 2.
+    /// Actor starts at hub. `goal_store(14)` is adjacent to east(11) at cost 2.
     fn build_hub_pruning_view() -> (
         TestBeliefView,
         EntityId,
@@ -3873,16 +3873,16 @@ mod tests {
             3,
         );
 
-        let travel_a_id = ActionDefId(100);
-        let travel_c_id = ActionDefId(101);
+        let retreat_travel_id = ActionDefId(100);
+        let goalward_travel_id = ActionDefId(101);
 
         let mut semantics_table = BTreeMap::new();
-        semantics_table.insert(travel_a_id, travel_semantics());
-        semantics_table.insert(travel_c_id, travel_semantics());
+        semantics_table.insert(retreat_travel_id, travel_semantics());
+        semantics_table.insert(goalward_travel_id, travel_semantics());
 
         let mut candidates = vec![
-            make_travel_candidate(travel_a_id, place_a),
-            make_travel_candidate(travel_c_id, place_c),
+            make_travel_candidate(retreat_travel_id, place_a),
+            make_travel_candidate(goalward_travel_id, place_c),
         ];
 
         prune_travel_away_from_goal(
@@ -3895,7 +3895,7 @@ mod tests {
 
         // Travel to C is retained (closer), travel to A is pruned (farther).
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].def_id, travel_c_id);
+        assert_eq!(candidates[0].def_id, goalward_travel_id);
     }
 
     #[test]
@@ -4255,10 +4255,10 @@ mod tests {
         );
     }
 
-    /// With the deferred ProgressBarrier mechanism, a GoalSatisfied plan at
-    /// depth 2 (Travel + pick_up) is preferred over a ProgressBarrier (Trade)
+    /// With the deferred `ProgressBarrier` mechanism, a `GoalSatisfied` plan at
+    /// depth 2 (`Travel` + `pick_up`) is preferred over a `ProgressBarrier` (`Trade`)
     /// at depth 1.  Before the deferral change, the search would greedily
-    /// return the Trade ProgressBarrier without exploring deeper.
+    /// return the `Trade` `ProgressBarrier` without exploring deeper.
     #[test]
     fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
         let actor = entity(1);
@@ -4352,7 +4352,7 @@ mod tests {
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
     }
 
-    /// When only a ProgressBarrier exists and no GoalSatisfied is reachable,
+    /// When only a `ProgressBarrier` exists and no `GoalSatisfied` is reachable,
     /// the deferred barrier is returned as a fallback after the frontier is
     /// exhausted.
     #[test]
@@ -4427,8 +4427,8 @@ mod tests {
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
     }
 
-    /// When the node expansion budget is exhausted but a ProgressBarrier was
-    /// found earlier, the barrier plan is returned instead of BudgetExhausted.
+    /// When the node expansion budget is exhausted but a `ProgressBarrier` was
+    /// found earlier, the barrier plan is returned instead of `BudgetExhausted`.
     #[test]
     fn search_returns_deferred_barrier_on_budget_exhaustion() {
         let actor = entity(1);
@@ -4562,7 +4562,7 @@ mod tests {
         // an exact-bound goal like LootCorpse.
         let goal = GoalKind::LootCorpse { corpse: corpse_x };
         for candidate in &planner_candidates {
-            for (_, semantics) in &semantics_table {
+            for semantics in semantics_table.values() {
                 assert!(
                     goal.matches_binding(&candidate.authoritative_targets, semantics.op_kind),
                     "empty authoritative_targets must bypass binding for any op kind"

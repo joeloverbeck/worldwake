@@ -1563,27 +1563,27 @@ fn run_suppression_then_binding_scenario(seed: Seed) -> (StateHash, StateHash) {
         }
 
         // Track binding correctness via item observation between ticks.
-        let corpse_a_coin = h.agent_commodity_qty(corpse_a, CommodityKind::Coin);
-        let corpse_b_coin = h.agent_commodity_qty(corpse_b, CommodityKind::Coin);
+        let first_corpse_remaining = h.agent_commodity_qty(corpse_a, CommodityKind::Coin);
+        let second_corpse_remaining = h.agent_commodity_qty(corpse_b, CommodityKind::Coin);
 
         if first_looted_corpse.is_none() {
-            if corpse_a_coin < Quantity(5) {
+            if first_corpse_remaining < Quantity(5) {
                 first_looted_corpse = Some(corpse_a);
-            } else if corpse_b_coin < Quantity(3) {
+            } else if second_corpse_remaining < Quantity(3) {
                 first_looted_corpse = Some(corpse_b);
             }
         }
 
         // While the first corpse is being looted, the other must retain its full coin count.
         if let Some(first) = first_looted_corpse {
-            if first == corpse_a && corpse_a_coin > Quantity(0) {
+            if first == corpse_a && first_corpse_remaining > Quantity(0) {
                 // corpse_a partially looted — corpse_b must still be full.
-                if corpse_b_coin < Quantity(3) {
+                if second_corpse_remaining < Quantity(3) {
                     sequential_looting_verified = false;
                 }
-            } else if first == corpse_b && corpse_b_coin > Quantity(0) {
+            } else if first == corpse_b && second_corpse_remaining > Quantity(0) {
                 // corpse_b partially looted — corpse_a must still be full.
-                if corpse_a_coin < Quantity(5) {
+                if first_corpse_remaining < Quantity(5) {
                     sequential_looting_verified = false;
                 }
             }

@@ -2125,7 +2125,7 @@ mod tests {
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0xA0);
         let mut next_id = ActionInstanceId(0);
-        let _instance_id = start_action(
+        let instance_id = start_action(
             &affordance,
             &defs,
             &handlers,
@@ -2148,7 +2148,7 @@ mod tests {
             &mut rng,
             &defs,
             &handlers,
-            _instance_id,
+            instance_id,
             &mut active,
             11,
         );

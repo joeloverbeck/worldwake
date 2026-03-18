@@ -183,6 +183,7 @@ fn golden_save_load_round_trip_under_ai() {
 // Scenario S02: World Runs Without Observers (Principle 6)
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_lines)]
 fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     let mut h = GoldenHarness::new(seed);
     let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
@@ -339,7 +340,7 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     );
 
     // Wanderer at Village Square — thirsty + fatigued, has water.
-    let _wanderer = seed_agent(
+    let wanderer = seed_agent(
         &mut h.world,
         &mut h.event_log,
         "Wanderer",
@@ -355,7 +356,7 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     give_commodity(
         &mut h.world,
         &mut h.event_log,
-        _wanderer,
+        wanderer,
         VILLAGE_SQUARE,
         CommodityKind::Water,
         Quantity(1),

@@ -1226,6 +1226,7 @@ fn orchard_has_apple_lot(h: &GoldenHarness) -> bool {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn golden_utility_weight_diversity_in_need_selection() {
     let mut h = GoldenHarness::new(Seed([200; 32]));
 
