@@ -20,7 +20,7 @@ crates/worldwake-ai/tests/
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
   golden_emergent.rs          — 9 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e + replays)
-  golden_offices.rs           — 3 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter)
+  golden_offices.rs           — 4 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer)
 ```
 
 ---
@@ -152,6 +152,7 @@ crates/worldwake-ai/tests/
 | Rumor → travel → passive observation → discovery → belief source upgrade → replan | Yes |
 | Enterprise weight → ClaimOffice → DeclareSupport → succession resolution → office installation | Yes |
 | Loyalty → SupportCandidateForOffice → DeclareSupport(other) → multi-agent support competition → decisive installation | Yes |
+| Bribe → commodity transfer → loyalty → SupportCandidateForOffice → coalition majority → office installation | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
 | UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
 | Wound vs hunger priority resolved by concrete utility weights (Principle 3, 20) | Yes |
@@ -165,12 +166,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 90 | 93 |
+| Proven tests | 91 | 94 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 50 | 53 |
+| Cross-system chains | 51 | 54 |
 
 ### Pending Backlog Summary
 

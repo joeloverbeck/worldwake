@@ -6,7 +6,7 @@
 
 ---
 
-The golden suite contains 90 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
+The golden suite contains 91 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
 
 ---
 
@@ -600,3 +600,16 @@ The golden suite contains 90 tests across 9 domain files. Every test uses the re
 - succession_system installs A as unique winner, then clears all declarations.
 **Foundation alignment**: Principle 10 (agents plan from beliefs), Principle 20 (enterprise_weight vs social_weight drives divergent political behavior — claimants vs supporters).
 **Cross-system chain**: Loyalty → SupportCandidateForOffice candidate → zero-motive ClaimOffice filtering → DeclareSupport plan → multi-agent concurrent declarations → support counting → decisive installation.
+
+### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
+**File**: `golden_offices.rs` | **Test**: `golden_bribe_support_coalition`
+**Systems exercised**: Bribe (commodity transfer + loyalty increase), Succession (support counting, coalition majority, installation), AI (candidate generation for ClaimOffice, coalition-aware GOAP planning with Bribe + DeclareSupport multi-step plan, SupportCandidateForOffice from bribe-induced loyalty), Conservation
+**Setup**: Agent A ("Briber Alpha") at Village Square with enterprise_weight=pm(900), holds 5 bread. Agent B ("Bribe Target") at Village Square with social_weight=pm(600), enterprise_weight=0 (won't claim office). Agent C ("Competitor") at Orchard Farm (different place, not bribable) with enterprise_weight=pm(800), has pre-declared self-support. Vacant office ("Village Elder") with SuccessionLaw::Support, succession_period_ticks=5. Wider beam_width=16 on the planning budget since the prototype world's adjacency graph creates many equal-cost travel candidates that can push Bribe nodes past the default beam cutoff.
+**Emergent behavior proven**:
+- A generates ClaimOffice goal. DeclareSupport alone would tie with C (ProgressBarrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self) as GoalSatisfied.
+- A bribes B — all 5 bread transferred (full-stock). B's loyalty to A increases.
+- B autonomously generates SupportCandidateForOffice(A) from bribe-induced loyalty.
+- A's coalition (self + B = 2) exceeds C's (self = 1). Succession system installs A.
+- Commodity conservation holds: A's bread drops 5→0, B's bread rises 0→5, total unchanged.
+**Foundation alignment**: Principle 10 (belief-only planning), Principle 1 (maximal emergence — bribe → loyalty → support is emergent, not scripted), conservation invariant.
+**Cross-system chain**: AI goal → coalition-aware planner Bribe op → commodity transfer → conservation → loyalty increase → target AI SupportCandidateForOffice → DeclareSupport → support counting → decisive installation.

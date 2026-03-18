@@ -526,6 +526,19 @@ pub fn set_loyalty(
     commit_txn(txn, event_log);
 }
 
+/// Pre-declare support for a candidate at an office.
+pub fn declare_support(
+    world: &mut World,
+    event_log: &mut EventLog,
+    supporter: EntityId,
+    office: EntityId,
+    candidate: EntityId,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.declare_support(supporter, office, candidate).unwrap();
+    commit_txn(txn, event_log);
+}
+
 /// Update an agent's `UtilityProfile.courage` field.
 pub fn set_courage(
     world: &mut World,

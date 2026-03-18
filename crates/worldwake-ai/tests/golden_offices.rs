@@ -4,8 +4,8 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, BeliefConfidencePolicy, EventTag, HomeostaticNeeds,
-    MetabolismProfile, Permille, PerceptionProfile, PerceptionSource, Seed, StateHash,
+    hash_event_log, hash_world, BeliefConfidencePolicy, CommodityKind, EventTag, HomeostaticNeeds,
+    MetabolismProfile, Permille, PerceptionProfile, PerceptionSource, Quantity, Seed, StateHash,
     SuccessionLaw, Tick, UtilityProfile,
 };
 
@@ -279,5 +279,196 @@ fn golden_competing_claims_with_loyal_supporter() {
         "Expected at least 3 Political events (A declares for self, B declares for self, \
          C declares for A, installation), got {}",
         political_events.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
+// ---------------------------------------------------------------------------
+//
+// Setup: Vacant office (Support law, period=5). Agent A eligible with high
+// enterprise_weight, holds 5 bread. Agent B at jurisdiction, no initial
+// loyalty to A. Agent C (competitor) at jurisdiction has already self-declared
+// support for own office claim.
+//
+// The competitor ensures that DeclareSupport alone from A would produce a tie
+// (ProgressBarrier), motivating the planner to select Bribe to build a
+// winning coalition (GoalSatisfied).
+//
+// Expected: A generates ClaimOffice. Planner finds Bribe(B, bread) +
+// DeclareSupport(self) because DeclareSupport alone ties with competitor C.
+// A bribes B (all 5 bread transfer). B's loyalty increases. B generates
+// SupportCandidateForOffice(A) and declares support. A's coalition
+// (self + B = 2) exceeds C's (self = 1). Politics system installs A.
+
+#[test]
+fn golden_bribe_support_coalition() {
+    // The bribe scenario requires a wider beam than the default (8) because
+    // the prototype world's adjacency graph creates many travel candidates
+    // at equal cost that can push Bribe nodes past the beam cutoff.
+    let mut h = GoldenHarness::new(Seed([114; 32]));
+    h.driver = worldwake_ai::AgentTickDriver::new(worldwake_ai::PlanningBudget {
+        beam_width: 16,
+        ..worldwake_ai::PlanningBudget::default()
+    });
+
+    // Agent A — claimant with high enterprise weight, holds 5 bread.
+    let agent_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Briber Alpha",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(900)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        default_perception_profile(),
+    );
+    let _bread_lot = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(5),
+    );
+
+    // Agent B — bribe target. social_weight > 0 so SupportCandidateForOffice
+    // is viable after loyalty increases from the bribe. enterprise_weight=0
+    // so B won't try to ClaimOffice itself.
+    let agent_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bribe Target",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_supporter_utility(pm(600)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_b,
+        default_perception_profile(),
+    );
+
+    // Agent C — competitor at a DIFFERENT place. High enterprise weight,
+    // already self-declared support. Placed at ORCHARD_FARM so the planner
+    // cannot target C with Bribe (not co-located), forcing the planner to
+    // select B as the bribe target. C's pre-declared support still counts
+    // for succession (declarations are relation-based, not positional).
+    let agent_c = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Competitor",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_c,
+        default_perception_profile(),
+    );
+
+    // Vacant office at VillageSquare — Support law, 5-tick succession period.
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    // Pre-declare C's self-support — this creates the tie scenario.
+    declare_support(&mut h.world, &mut h.event_log, agent_c, office, agent_c);
+
+    // All agents need beliefs about the office and each other for political
+    // goal generation and bribe targeting.
+    for agent in [agent_a, agent_b, agent_c] {
+        seed_actor_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            &[office],
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+    }
+    // A needs to know about B (bribe target) and C (competitor).
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        &[agent_b, agent_c],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    // B needs to know about A (to generate SupportCandidateForOffice(A)
+    // after loyalty increases from the bribe).
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent_b,
+        &[agent_a],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    // Record initial total bread for conservation check.
+    let initial_bread_a = h.agent_commodity_qty(agent_a, CommodityKind::Bread);
+    let initial_bread_b = h.agent_commodity_qty(agent_b, CommodityKind::Bread);
+    let initial_total_bread = initial_bread_a.0 + initial_bread_b.0;
+    assert_eq!(initial_bread_a, Quantity(5), "A starts with 5 bread");
+    assert_eq!(initial_bread_b, Quantity(0), "B starts with 0 bread");
+
+    // Run simulation — enough ticks for bribe, support declaration, and succession.
+    for _ in 0..40 {
+        h.step_once();
+    }
+
+    // Assertion 1: A is installed as office holder.
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(agent_a),
+        "Agent A should be installed as office holder after bribe coalition"
+    );
+
+    // Assertion 2: Full commodity transfer — A's bread is 0 after bribe.
+    let final_bread_a = h.agent_commodity_qty(agent_a, CommodityKind::Bread);
+    assert_eq!(
+        final_bread_a,
+        Quantity(0),
+        "Agent A should have 0 bread after full-stock bribe transfer"
+    );
+
+    // Assertion 3: B received all of A's former bread.
+    let final_bread_b = h.agent_commodity_qty(agent_b, CommodityKind::Bread);
+    assert_eq!(
+        final_bread_b,
+        Quantity(5),
+        "Agent B should have received all 5 bread from the bribe"
+    );
+
+    // Assertion 4: Conservation — total bread unchanged.
+    let final_total_bread = final_bread_a.0 + final_bread_b.0;
+    assert_eq!(
+        initial_total_bread, final_total_bread,
+        "Bread conservation violated: initial={initial_total_bread}, final={final_total_bread}"
+    );
+
+    // Assertion 5: Event log contains Political events.
+    let political_events = h.event_log.events_by_tag(EventTag::Political);
+    assert!(
+        !political_events.is_empty(),
+        "Event log should contain Political events from bribe, support, and installation"
     );
 }

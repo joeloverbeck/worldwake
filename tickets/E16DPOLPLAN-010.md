@@ -1,9 +1,9 @@
 # E16DPOLPLAN-010: Golden Scenario 13 — Bribe -> support coalition (full-quantity transfer)
 
-**Status**: PENDING
+**Status**: DONE
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: None
+**Engine Changes**: None (wider beam_width=16 on test's PlanningBudget only)
 **Deps**: E16DPOLPLAN-003, E16DPOLPLAN-007, E16DPOLPLAN-022, E16DPOLPLAN-023, E16DPOLPLAN-024, E16DPOLPLAN-025
 
 ## Problem
@@ -26,7 +26,7 @@ No golden test covers the full bribe political loop: planner selects Bribe -> co
 
 ### 1. Add to `golden_offices.rs`
 
-- **Setup**: Vacant office. Agent A eligible, `enterprise_weight=pm(900)`, holds 5 bread. Agent B at jurisdiction, no initial loyalty to A. **Agent C (competitor)** at jurisdiction, has already self-declared support for own office claim. Both A and B sated. The competitor ensures that DeclareSupport alone from A would produce a tie (ProgressBarrier), motivating the planner to select Bribe to build a winning coalition (GoalSatisfied).
+- **Setup**: Vacant office. Agent A eligible, `enterprise_weight=pm(900)`, holds 5 bread. Agent B at jurisdiction, no initial loyalty to A. **Agent C (competitor)** at a DIFFERENT place (ORCHARD_FARM), has already self-declared support for own office claim. Both A and B sated. C must be at a different place to prevent the planner from targeting C with Bribe instead of B (matches `planner_selects_bribe_plan` unit test pattern). The competitor ensures that DeclareSupport alone from A would produce a tie (ProgressBarrier), motivating the planner to select Bribe to build a winning coalition (GoalSatisfied). Test uses `beam_width=16` because the prototype world's adjacency graph creates many equal-cost travel candidates that push Bribe nodes past the default beam_width=8 cutoff.
 - **Expected**: A generates `ClaimOffice`. Planner finds `Bribe(B, bread)` -> `DeclareSupport(self)` because DeclareSupport alone ties with competitor C. A bribes B (all 5 bread transfer). B's loyalty increases. B generates `SupportCandidateForOffice(A)` and declares support. A's coalition (self + B = 2) exceeds C's (self = 1). Politics system installs A.
 - **Assertions**: A is office holder. A's bread == 0. B has A's former bread. Conservation holds. A has support from self + B.
 
