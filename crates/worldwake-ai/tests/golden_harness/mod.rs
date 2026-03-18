@@ -6,6 +6,8 @@
 // Each test binary uses a different subset of harness items.
 #![allow(dead_code)]
 
+mod timeline;
+
 use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
@@ -31,6 +33,8 @@ use worldwake_systems::{build_full_action_registries, dispatch_table};
 
 // Re-export so test files using `use golden_harness::*` get the ownership types.
 pub use worldwake_core::{ProductionOutputOwner, ProductionOutputOwnershipPolicy};
+#[allow(unused_imports)]
+pub use timeline::{CrossLayerTimelineBuilder, TimelineLayer};
 
 // ---------------------------------------------------------------------------
 // Helpers

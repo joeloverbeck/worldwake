@@ -774,6 +774,7 @@ fn golden_loot_corpse_self_care_chain_replays_deterministically() {
 #[allow(clippy::too_many_lines)]
 fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
     h.enable_action_tracing();
     h.enable_politics_tracing();
 
@@ -1020,6 +1021,37 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
     assert!(
         install_tick.0.saturating_sub(vacancy_tick.0) >= 5,
         "force-law installation should respect the configured succession delay"
+    );
+
+    let timeline = CrossLayerTimelineBuilder::new(&h.event_log)
+        .decision_trace(
+            h.driver
+                .trace_sink()
+                .expect("decision tracing should be enabled for combat succession scenario"),
+        )
+        .action_trace(action_sink)
+        .politics_trace(politics_sink)
+        .for_agent(challenger)
+        .for_office(office)
+        .tick_window(Tick(dead_at_tick.0.saturating_sub(1)), install_tick)
+        .build_with_event_filter(|event_id, _| {
+            event_id == death_event_id || event_id == vacancy_event_id || event_id == install_event_id
+        });
+    let rendered_timeline = timeline.render();
+    assert!(
+        timeline
+            .entries()
+            .iter()
+            .any(|entry| entry.layer == TimelineLayer::Decision),
+        "timeline should include decision entries for the acting agent"
+    );
+    assert!(
+        rendered_timeline.contains("action: tick")
+            && rendered_timeline.contains("attack")
+            && rendered_timeline.contains("event: EventId")
+            && rendered_timeline.contains("set DeadAt")
+            && rendered_timeline.contains("politics: tick"),
+        "timeline should render action, authoritative, and political layers in one view"
     );
 
     (

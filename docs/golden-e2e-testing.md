@@ -61,6 +61,13 @@ When the contract is about candidate generation, ranking, suppression, or plan s
 
 - the AI reasoning contract and the execution contract are both under test
 
+### Use a cross-layer timeline when:
+
+- you are debugging or asserting a mixed-layer chain and need one derived per-tick view across decision, action, politics, and explicitly selected event-log records
+- you want a readable merged timeline without weakening the underlying assertions
+
+Keep authoritative event-log selection explicit. Do not rely on helper heuristics to infer which authoritative records belong in the timeline.
+
 ## Determinism Pattern
 
 New golden scenarios should usually add a deterministic replay companion test unless one of these is true:
