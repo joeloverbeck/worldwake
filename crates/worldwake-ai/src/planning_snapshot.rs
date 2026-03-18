@@ -103,6 +103,81 @@ pub(crate) struct SnapshotLifecycle {
     pub(crate) incapacitated: bool,
 }
 
+/// Compact all-pairs shortest distance matrix using a flat `Vec<u32>`.
+/// Place IDs are mapped to dense indices for O(1) lookups instead of
+/// `BTreeMap<(EntityId, EntityId), u32>` which has O(log n) per lookup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DistanceMatrix {
+    /// Ordered place IDs — index in this vec is the dense index.
+    place_ids: Vec<EntityId>,
+    /// Flat row-major matrix of size `n * n`. `u32::MAX` means unreachable.
+    data: Vec<u32>,
+}
+
+impl DistanceMatrix {
+    fn new(places: &BTreeMap<EntityId, SnapshotPlace>) -> Self {
+        let place_ids: Vec<EntityId> = places.keys().copied().collect();
+        let n = place_ids.len();
+        let idx: BTreeMap<EntityId, usize> = place_ids
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(i, id)| (id, i))
+            .collect();
+        let mut data = vec![u32::MAX; n * n];
+
+        // Initialize from direct adjacency edges.
+        for (&place, snapshot_place) in places {
+            let Some(&i) = idx.get(&place) else {
+                continue;
+            };
+            for &(adjacent, ticks) in &snapshot_place.adjacent_places_with_travel_ticks {
+                let Some(&j) = idx.get(&adjacent) else {
+                    continue;
+                };
+                let weight = ticks.get();
+                let cell = &mut data[i * n + j];
+                *cell = (*cell).min(weight);
+            }
+        }
+
+        // Floyd-Warshall relaxation.
+        for k in 0..n {
+            for i in 0..n {
+                let dist_ik = data[i * n + k];
+                if dist_ik == u32::MAX {
+                    continue;
+                }
+                for j in 0..n {
+                    let dist_kj = data[k * n + j];
+                    if dist_kj == u32::MAX {
+                        continue;
+                    }
+                    let candidate = dist_ik.saturating_add(dist_kj);
+                    let cell = &mut data[i * n + j];
+                    if candidate < *cell {
+                        *cell = candidate;
+                    }
+                }
+            }
+        }
+
+        Self { place_ids, data }
+    }
+
+    fn get(&self, from: EntityId, to: EntityId) -> Option<u32> {
+        let n = self.place_ids.len();
+        let i = self.place_ids.binary_search(&from).ok()?;
+        let j = self.place_ids.binary_search(&to).ok()?;
+        let val = self.data[i * n + j];
+        if val == u32::MAX {
+            None
+        } else {
+            Some(val)
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SnapshotPlace {
     pub(crate) entities: BTreeSet<EntityId>,
@@ -122,7 +197,7 @@ pub struct PlanningSnapshot {
     /// All-pairs shortest travel times between snapshot places.
     /// Computed via Floyd-Warshall during construction. O(n^3) where n is
     /// the number of places in the snapshot (typically 10-20, so < 8000 ops).
-    shortest_travel_ticks: BTreeMap<(EntityId, EntityId), u32>,
+    shortest_travel_ticks: DistanceMatrix,
 }
 
 impl PlanningSnapshot {
@@ -173,7 +248,7 @@ impl PlanningSnapshot {
             })
             .collect();
 
-        let shortest_travel_ticks = compute_shortest_travel_ticks(&places);
+        let shortest_travel_ticks = DistanceMatrix::new(&places);
 
         Self {
             actor,
@@ -205,7 +280,7 @@ impl PlanningSnapshot {
         if from == to {
             return Some(0);
         }
-        self.shortest_travel_ticks.get(&(from, to)).copied()
+        self.shortest_travel_ticks.get(from, to)
     }
 
     /// Minimum travel ticks from `from` to the nearest place in `destinations`.
@@ -222,8 +297,7 @@ impl PlanningSnapshot {
         }
         destinations
             .iter()
-            .filter_map(|dest| self.shortest_travel_ticks.get(&(from, *dest)))
-            .copied()
+            .filter_map(|dest| self.shortest_travel_ticks.get(from, *dest))
             .min()
     }
 }
@@ -261,45 +335,6 @@ fn build_snapshot_places(
             )
         })
         .collect()
-}
-
-/// Compute all-pairs shortest travel times via Floyd-Warshall.
-/// Uses `BTreeMap` for deterministic iteration order.
-fn compute_shortest_travel_ticks(
-    places: &BTreeMap<EntityId, SnapshotPlace>,
-) -> BTreeMap<(EntityId, EntityId), u32> {
-    let place_ids: Vec<EntityId> = places.keys().copied().collect();
-    let mut dist: BTreeMap<(EntityId, EntityId), u32> = BTreeMap::new();
-
-    // Initialize from direct adjacency edges.
-    for (&place, snapshot_place) in places {
-        for &(adjacent, ticks) in &snapshot_place.adjacent_places_with_travel_ticks {
-            let weight = ticks.get();
-            dist.entry((place, adjacent))
-                .and_modify(|existing| *existing = (*existing).min(weight))
-                .or_insert(weight);
-        }
-    }
-
-    // Floyd-Warshall relaxation.
-    for &k in &place_ids {
-        for &i in &place_ids {
-            let Some(&dist_ik) = dist.get(&(i, k)) else {
-                continue;
-            };
-            for &j in &place_ids {
-                let Some(&dist_kj) = dist.get(&(k, j)) else {
-                    continue;
-                };
-                let candidate = dist_ik.saturating_add(dist_kj);
-                dist.entry((i, j))
-                    .and_modify(|existing| *existing = (*existing).min(candidate))
-                    .or_insert(candidate);
-            }
-        }
-    }
-
-    dist
 }
 
 fn build_snapshot_entity(

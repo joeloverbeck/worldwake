@@ -31,7 +31,7 @@ cargo clippy --workspace
 
 If either fails, the experiment is rejected without running the harness.
 
-## Mutable Files (14)
+## Mutable Files (20)
 
 ### AI crate (`crates/worldwake-ai/src/`)
 
@@ -49,13 +49,39 @@ If either fails, the experiment is rejected without running the harness.
 | 10 | `interrupts.rs` | Action interrupt evaluation |
 | 11 | `affordance_query.rs` | Available action queries — NOTE: lives in `crates/worldwake-sim/src/` |
 
+### Sim crate (`crates/worldwake-sim/src/`)
+
+| # | File | Domain |
+|---|------|--------|
+| 12 | `per_agent_belief_view.rs` | Per-agent belief view (entities_at, commodity queries) |
+| 13 | `belief_view.rs` | RuntimeBeliefView trait definition |
+
 ### Core crate (`crates/worldwake-core/src/`)
 
 | # | File | Domain |
 |---|------|--------|
-| 12 | `topology.rs` | Place graph, Dijkstra pathfinding, travel edges |
-| 13 | `relations.rs` | Relation tables, placement/ownership/reservation APIs |
-| 14 | `component_tables.rs` | Macro-generated typed component storage |
+| 14 | `topology.rs` | Place graph, Dijkstra pathfinding, travel edges |
+| 15 | `relations.rs` | Relation tables, placement/ownership/reservation APIs |
+| 16 | `component_tables.rs` | Macro-generated typed component storage |
+
+### Core crate — world submodule (`crates/worldwake-core/src/world/`)
+
+| # | File | Domain |
+|---|------|--------|
+| 17 | `ownership.rs` | Possession hierarchy, controlled_commodity_quantity BFS |
+| 18 | `placement.rs` | Container/placement queries, direct_contents_of |
+
+### Core crate — belief submodule (`crates/worldwake-core/src/belief/`)
+
+| # | File | Domain |
+|---|------|--------|
+| 19 | `mod.rs` (or relevant belief file) | AgentBeliefStore structure |
+
+### Core crate — items module
+
+| # | File | Domain |
+|---|------|--------|
+| 20 | `items.rs` | CommodityKind, ItemLot definitions |
 
 ## Immutable Files
 
@@ -76,6 +102,8 @@ If either fails, the experiment is rejected without running the harness.
 | `candidate-reduction` | Reducing redundant goal candidate generation |
 | `replan-reduction` | Avoiding unnecessary replanning cycles |
 | `reservation-optimization` | Reservation lookup and reverse-index improvements |
+| `belief-view` | Belief view query optimization, reverse indices |
+| `ownership-query` | Possession/container BFS and commodity query batching |
 | `other` | Anything not fitting above categories |
 
 ## Root Cause Hypotheses

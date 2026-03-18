@@ -728,6 +728,24 @@ impl RuntimeBeliefView for PlanningState<'_> {
     }
 
     fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        // Fast path: when no overrides exist, use the snapshot's pre-indexed
+        // place→entities set directly.  This avoids O(all_entities) scans with
+        // expensive effective_place resolution on the root node and unmodified
+        // states during early search.
+        if self.entity_place_overrides.is_empty()
+            && self.direct_container_overrides.is_empty()
+            && self.direct_possessor_overrides.is_empty()
+            && self.removed_entities.is_empty()
+        {
+            return self
+                .snapshot
+                .places
+                .get(&place)
+                .map(|p| p.entities.iter().copied().collect())
+                .unwrap_or_default();
+        }
+
+        // Slow path: full scan with override resolution.
         let mut entities = self
             .snapshot
             .entities
