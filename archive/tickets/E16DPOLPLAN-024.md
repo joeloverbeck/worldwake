@@ -1,6 +1,6 @@
 # E16DPOLPLAN-024: Support-aware `is_satisfied` for `ClaimOffice` and conditional `ProgressBarrier`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — goal_model.rs
@@ -97,3 +97,10 @@ The `is_progress_barrier` block at line 547-553 covers both `ClaimOffice` and `S
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**: `goal_model.rs` — moved `ClaimOffice` out of the catch-all `false` arm in `is_satisfied` and gave it `state.has_support_majority(*office, actor)`. Added `support_declarations` field and overrides to `TestBeliefView`. Added 7 new tests covering all acceptance criteria.
+- **Deviations from original plan**: None. Implementation matched the ticket exactly.
+- **Verification**: `cargo test -p worldwake-ai` all pass (428 tests), `cargo clippy --workspace` clean.

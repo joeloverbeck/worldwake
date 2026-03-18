@@ -638,11 +638,11 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 state.support_declaration(actor, *office) == Some(*candidate)
             }
+            GoalKind::ClaimOffice { office } => state.has_support_majority(*office, actor),
             GoalKind::ProduceCommodity { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
-            | GoalKind::SellCommodity { .. }
-            | GoalKind::ClaimOffice { .. } => false,
+            | GoalKind::SellCommodity { .. } => false,
         }
     }
 
@@ -1383,6 +1383,7 @@ mod tests {
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
         courage_values: BTreeMap<EntityId, Permille>,
         combat_profiles: BTreeMap<EntityId, Option<CombatProfile>>,
+        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -1665,6 +1666,31 @@ mod tests {
             payload: &ActionPayload,
         ) -> Option<ActionDuration> {
             estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+        }
+
+        fn support_declaration(
+            &self,
+            supporter: EntityId,
+            office: EntityId,
+        ) -> Option<EntityId> {
+            self.support_declarations
+                .get(&office)
+                .and_then(|decls| {
+                    decls
+                        .iter()
+                        .find(|(s, _)| *s == supporter)
+                        .map(|(_, candidate)| *candidate)
+                })
+        }
+
+        fn support_declarations_for_office(
+            &self,
+            office: EntityId,
+        ) -> Vec<(EntityId, EntityId)> {
+            self.support_declarations
+                .get(&office)
+                .cloned()
+                .unwrap_or_default()
         }
     }
 
@@ -3221,6 +3247,225 @@ mod tests {
             advanced.test_support_override(target, office),
             None,
             "no support for non-ClaimOffice goal even when attack > courage"
+        );
+    }
+
+    // ── ClaimOffice is_satisfied tests (E16DPOLPLAN-024) ─────────────
+
+    /// Helper: builds a minimal TestBeliefView + PlanningState for ClaimOffice tests.
+    fn claim_office_state(
+        support_declarations: Vec<(EntityId, EntityId)>,
+    ) -> (PlanningState<'static>, EntityId, EntityId) {
+        let actor = entity(1);
+        let office = entity(40);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, office, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, office]);
+
+        if !support_declarations.is_empty() {
+            // Ensure all supporters/candidates are alive and placed
+            for &(supporter, candidate) in &support_declarations {
+                if !view.alive.contains(&supporter) {
+                    view.alive.insert(supporter);
+                    view.kinds.insert(supporter, EntityKind::Agent);
+                    view.effective_places.insert(supporter, town);
+                    view.entities_at
+                        .get_mut(&town)
+                        .unwrap()
+                        .push(supporter);
+                }
+                if !view.alive.contains(&candidate) {
+                    view.alive.insert(candidate);
+                    view.kinds.insert(candidate, EntityKind::Agent);
+                    view.effective_places.insert(candidate, town);
+                    view.entities_at
+                        .get_mut(&town)
+                        .unwrap()
+                        .push(candidate);
+                }
+            }
+            view.support_declarations
+                .insert(office, support_declarations);
+        }
+
+        let mut evidence = BTreeSet::new();
+        evidence.insert(office);
+        // Add all entities as evidence so the snapshot includes them
+        for &e in view.alive.iter() {
+            evidence.insert(e);
+        }
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &evidence,
+            &BTreeSet::from([town]),
+            1,
+        );
+        // Leak to get 'static lifetime for convenience in tests
+        let leaked = Box::leak(Box::new(snapshot));
+        let state = PlanningState::new(leaked);
+        (state, actor, office)
+    }
+
+    #[test]
+    fn claim_office_satisfied_when_uncontested_self_declaration() {
+        let actor = entity(1);
+        let office = entity(40);
+        // Actor has 1 self-declaration, no competitors
+        let (state, _, _) = claim_office_state(vec![(actor, actor)]);
+        let goal = GoalKind::ClaimOffice { office };
+        assert!(
+            goal.is_satisfied(&state),
+            "uncontested 1 self-declaration should satisfy ClaimOffice"
+        );
+    }
+
+    #[test]
+    fn claim_office_not_satisfied_when_tied() {
+        let actor = entity(1);
+        let rival = entity(2);
+        let office = entity(40);
+        // Actor has 1, rival has 1 → tie → not satisfied
+        let (state, _, _) = claim_office_state(vec![(actor, actor), (rival, rival)]);
+        let goal = GoalKind::ClaimOffice { office };
+        assert!(
+            !goal.is_satisfied(&state),
+            "tied support should NOT satisfy ClaimOffice"
+        );
+    }
+
+    #[test]
+    fn claim_office_not_satisfied_when_trailing() {
+        let actor = entity(1);
+        let rival = entity(2);
+        let supporter = entity(3);
+        let office = entity(40);
+        // Actor has 1, rival has 2 → trailing
+        let (state, _, _) =
+            claim_office_state(vec![(actor, actor), (rival, rival), (supporter, rival)]);
+        let goal = GoalKind::ClaimOffice { office };
+        assert!(
+            !goal.is_satisfied(&state),
+            "trailing support should NOT satisfy ClaimOffice"
+        );
+    }
+
+    #[test]
+    fn claim_office_satisfied_after_bribe_gives_majority() {
+        let actor = entity(1);
+        let rival = entity(2);
+        let bribed = entity(3);
+        let office = entity(40);
+        // Actor has 2 (self + bribed), rival has 1 → actor leads
+        let (state, _, _) =
+            claim_office_state(vec![(actor, actor), (bribed, actor), (rival, rival)]);
+        let goal = GoalKind::ClaimOffice { office };
+        assert!(
+            goal.is_satisfied(&state),
+            "actor with majority after bribe should satisfy ClaimOffice"
+        );
+    }
+
+    #[test]
+    fn claim_office_not_satisfied_with_zero_support() {
+        let office = entity(40);
+        // No declarations at all
+        let (state, _, _) = claim_office_state(vec![]);
+        let goal = GoalKind::ClaimOffice { office };
+        assert!(
+            !goal.is_satisfied(&state),
+            "zero support should NOT satisfy ClaimOffice"
+        );
+    }
+
+    #[test]
+    fn claim_office_progress_barrier_still_active() {
+        let office = entity(40);
+        let goal = GoalKind::ClaimOffice { office };
+        let step = PlannedStep {
+            def_id: ActionDefId(77),
+            targets: Vec::new(),
+            payload_override: None,
+            op_kind: PlannerOpKind::DeclareSupport,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+        assert!(
+            goal.is_progress_barrier(&step),
+            "ClaimOffice + DeclareSupport should still be a ProgressBarrier"
+        );
+    }
+
+    #[test]
+    fn support_candidate_is_satisfied_unchanged_regression() {
+        let actor = entity(1);
+        let office = entity(40);
+        let candidate = entity(41);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, candidate, office, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(candidate, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(candidate, town);
+        view.effective_places.insert(office, town);
+        view.entities_at
+            .insert(town, vec![actor, candidate, office]);
+        // Actor already declared support for candidate
+        view.support_declarations
+            .insert(office, vec![(actor, candidate)]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, candidate]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SupportCandidateForOffice { office, candidate };
+        assert!(
+            goal.is_satisfied(&state),
+            "SupportCandidateForOffice should still work when actor already declared"
+        );
+
+        // And not satisfied when no declaration
+        let mut view2 = TestBeliefView::default();
+        view2.alive.extend([actor, candidate, office, town]);
+        view2.kinds.insert(actor, EntityKind::Agent);
+        view2.kinds.insert(candidate, EntityKind::Agent);
+        view2.kinds.insert(office, EntityKind::Office);
+        view2.kinds.insert(town, EntityKind::Place);
+        view2.effective_places.insert(actor, town);
+        view2.effective_places.insert(candidate, town);
+        view2.effective_places.insert(office, town);
+        view2
+            .entities_at
+            .insert(town, vec![actor, candidate, office]);
+
+        let snapshot2 = build_planning_snapshot(
+            &view2,
+            actor,
+            &BTreeSet::from([office, candidate]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state2 = PlanningState::new(&snapshot2);
+        assert!(
+            !goal.is_satisfied(&state2),
+            "SupportCandidateForOffice should NOT be satisfied without declaration"
         );
     }
 }
