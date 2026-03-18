@@ -411,6 +411,7 @@ fn process_agent(
                     .collect(),
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
+                omitted_political: read_result.omitted_political,
             };
 
             DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -646,6 +647,8 @@ struct ReadPhaseResult {
     suppressed: Vec<worldwake_core::GoalKey>,
     /// Goals with zero motive score.
     zero_motive: Vec<worldwake_core::GoalKey>,
+    /// Political goals omitted before emission due to hard gates.
+    omitted_political: Vec<crate::PoliticalCandidateOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
     decision_context: DecisionContext,
 }
@@ -707,10 +710,10 @@ fn refresh_runtime_for_read_phase(
         phase.tick,
         phase.travel_horizon,
     );
-    let generated_keys = candidates.iter().map(|c| c.key).collect();
+    let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
     let dc = crate::build_decision_context(&view, agent);
     let outcome = rank_candidates(
-        &candidates,
+        &candidates.candidates,
         &view,
         agent,
         phase.tick,
@@ -725,6 +728,7 @@ fn refresh_runtime_for_read_phase(
         generated_keys,
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
+        omitted_political: candidates.diagnostics.omitted_political,
         decision_context: dc,
     }
 }
@@ -1927,9 +1931,9 @@ mod tests {
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
         HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
         OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-        RecipeId, ResourceSource, Seed, SuccessionLaw, Tick, Topology,
-        TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        RecipeId, ResourceSource, Seed, SuccessionLaw, Tick, Topology, TravelDispositionProfile,
+        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -5007,9 +5011,11 @@ mod tests {
         match &traces[0].outcome {
             crate::DecisionOutcome::Planning(planning) => {
                 assert!(
-                    !planning.candidates.generated.iter().any(
-                        |goal| goal.kind == GoalKind::ClaimOffice { office }
-                    ),
+                    !planning
+                        .candidates
+                        .generated
+                        .iter()
+                        .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
                     "Force-law offices must not emit ClaimOffice candidates in agent_tick"
                 );
                 assert!(
@@ -5036,6 +5042,31 @@ mod tests {
                         )
                     }),
                     "Force-law offices must not enter political plan search in agent_tick"
+                );
+                assert!(
+                    planning
+                        .candidates
+                        .omitted_political
+                        .iter()
+                        .any(|omission| {
+                            omission.family == crate::PoliticalGoalFamily::ClaimOffice
+                                && omission.office == office
+                                && omission.candidate.is_none()
+                                && omission.reason
+                                    == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
+                        }),
+                    "Force-law omission should be preserved in the decision trace for ClaimOffice"
+                );
+                assert!(
+                    planning.candidates.omitted_political.iter().any(|omission| {
+                        omission.family
+                            == crate::PoliticalGoalFamily::SupportCandidateForOffice
+                            && omission.office == office
+                            && omission.candidate.is_none()
+                            && omission.reason
+                                == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
+                    }),
+                    "Force-law omission should be preserved in the decision trace for SupportCandidateForOffice"
                 );
             }
             other => panic!("expected Planning outcome, got {other:?}"),

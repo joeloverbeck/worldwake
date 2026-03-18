@@ -109,10 +109,38 @@ pub struct CandidateTrace {
     pub generated: Vec<GoalKey>,
     /// Ranked goals after all filters (sorted by ranking order).
     pub ranked: Vec<RankedGoalSummary>,
-    /// Goals that were suppressed and why.
+    /// Goals suppressed by situational conditions.
     pub suppressed: Vec<GoalKey>,
     /// Goals filtered by zero motive score.
     pub zero_motive: Vec<GoalKey>,
+    /// Political goals omitted before generation due to hard gates.
+    pub omitted_political: Vec<PoliticalCandidateOmission>,
+}
+
+/// Political goal families that can be omitted before candidate emission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PoliticalGoalFamily {
+    ClaimOffice,
+    SupportCandidateForOffice,
+}
+
+/// Hard pre-emission reason for a political goal omission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PoliticalCandidateOmissionReason {
+    ForceSuccessionLaw,
+    OfficeNotVisiblyVacant,
+    ActorNotEligible,
+    CandidateNotEligible,
+    AlreadyDeclaredSupport,
+}
+
+/// Diagnostic record for a political goal omitted before generation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoliticalCandidateOmission {
+    pub family: PoliticalGoalFamily,
+    pub office: EntityId,
+    pub candidate: Option<EntityId>,
+    pub reason: PoliticalCandidateOmissionReason,
 }
 
 /// Summary of a ranked goal for trace output.
@@ -497,6 +525,7 @@ mod tests {
                 }],
                 suppressed: vec![],
                 zero_motive: vec![],
+                omitted_political: vec![],
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {

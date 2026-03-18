@@ -1,4 +1,7 @@
 use crate::{
+    decision_trace::{
+        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+    },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
     GroundedGoal,
@@ -53,6 +56,16 @@ struct GenerationContext<'a> {
     current_tick: Tick,
 }
 
+#[derive(Default)]
+pub(crate) struct CandidateGenerationDiagnostics {
+    pub omitted_political: Vec<PoliticalCandidateOmission>,
+}
+
+pub(crate) struct CandidateGenerationResult {
+    pub candidates: Vec<GroundedGoal>,
+    pub diagnostics: CandidateGenerationDiagnostics,
+}
+
 #[must_use]
 pub fn generate_candidates(
     view: &dyn GoalBeliefView,
@@ -62,22 +75,27 @@ pub fn generate_candidates(
     current_tick: Tick,
 ) -> Vec<GroundedGoal> {
     generate_candidates_with_travel_horizon(view, agent, blocked, recipes, current_tick, 6)
+        .candidates
 }
 
 #[must_use]
-pub fn generate_candidates_with_travel_horizon(
+pub(crate) fn generate_candidates_with_travel_horizon(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     blocked: &BlockedIntentMemory,
     recipes: &RecipeRegistry,
     current_tick: Tick,
     travel_horizon: u8,
-) -> Vec<GroundedGoal> {
+) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
-        return Vec::new();
+        return CandidateGenerationResult {
+            candidates: Vec::new(),
+            diagnostics: CandidateGenerationDiagnostics::default(),
+        };
     }
 
     let mut candidates = BTreeMap::new();
+    let mut diagnostics = CandidateGenerationDiagnostics::default();
     let needs = view.homeostatic_needs(agent);
     let thresholds = view.drive_thresholds(agent);
     let place = view.effective_place(agent);
@@ -97,9 +115,12 @@ pub fn generate_candidates_with_travel_horizon(
     emit_enterprise_candidates(&mut candidates, &ctx);
     emit_combat_candidates(&mut candidates, &ctx);
     emit_social_candidates(&mut candidates, &ctx);
-    emit_political_candidates(&mut candidates, &ctx);
+    emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
 
-    candidates.into_values().collect()
+    CandidateGenerationResult {
+        candidates: candidates.into_values().collect(),
+        diagnostics,
+    }
 }
 
 fn emit_need_candidates(
@@ -190,6 +211,7 @@ fn emit_social_candidates(
 
 fn emit_political_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let known_entities = ctx.view.known_entity_beliefs(ctx.agent);
@@ -201,30 +223,57 @@ fn emit_political_candidates(
             continue;
         };
         if office_data.succession_law != worldwake_core::SuccessionLaw::Support {
+            record_office_wide_political_omission(
+                diagnostics,
+                office,
+                PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+            );
             continue;
         }
         if !office_is_visibly_vacant(ctx.view, office, &office_data) {
+            record_office_wide_political_omission(
+                diagnostics,
+                office,
+                PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+            );
             continue;
         }
 
-        emit_claim_office_candidate(candidates, ctx, office, &office_data);
-        emit_support_candidate_goals(candidates, ctx, office, &office_data);
+        emit_claim_office_candidate(candidates, diagnostics, ctx, office, &office_data);
+        emit_support_candidate_goals(candidates, diagnostics, ctx, office, &office_data);
     }
 }
 
 fn emit_claim_office_candidate(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
     office_data: &OfficeData,
 ) {
     if !candidate_is_eligible(ctx.view, office_data, ctx.agent) {
+        diagnostics
+            .omitted_political
+            .push(PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::ActorNotEligible,
+            });
         return;
     }
     if ctx.view.office_holder(office) == Some(ctx.agent) {
         return;
     }
     if ctx.view.support_declaration(ctx.agent, office) == Some(ctx.agent) {
+        diagnostics
+            .omitted_political
+            .push(PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::AlreadyDeclaredSupport,
+            });
         return;
     }
 
@@ -242,6 +291,7 @@ fn emit_claim_office_candidate(
 
 fn emit_support_candidate_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
     office_data: &OfficeData,
@@ -258,9 +308,25 @@ fn emit_support_candidate_goals(
             continue;
         }
         if !candidate_is_eligible(ctx.view, office_data, candidate) {
+            diagnostics
+                .omitted_political
+                .push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::SupportCandidateForOffice,
+                    office,
+                    candidate: Some(candidate),
+                    reason: PoliticalCandidateOmissionReason::CandidateNotEligible,
+                });
             continue;
         }
         if current_declaration == Some(candidate) {
+            diagnostics
+                .omitted_political
+                .push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::SupportCandidateForOffice,
+                    office,
+                    candidate: Some(candidate),
+                    reason: PoliticalCandidateOmissionReason::AlreadyDeclaredSupport,
+                });
             continue;
         }
 
@@ -275,6 +341,29 @@ fn emit_support_candidate_goals(
             ctx.current_tick,
         );
     }
+}
+
+fn record_office_wide_political_omission(
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    office: EntityId,
+    reason: PoliticalCandidateOmissionReason,
+) {
+    diagnostics
+        .omitted_political
+        .push(PoliticalCandidateOmission {
+            family: PoliticalGoalFamily::ClaimOffice,
+            office,
+            candidate: None,
+            reason,
+        });
+    diagnostics
+        .omitted_political
+        .push(PoliticalCandidateOmission {
+            family: PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            candidate: None,
+            reason,
+        });
 }
 
 fn office_is_visibly_vacant(
@@ -1180,9 +1269,13 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
 mod tests {
     use super::{
         deliverable_quantity, emit_produce_goals, emit_restock_goals, generate_candidates,
+        generate_candidates_with_travel_horizon, CandidateGenerationDiagnostics,
         GenerationContext,
     };
-    use crate::enterprise::{analyze_candidate_enterprise, EnterpriseSignals};
+    use crate::{
+        enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
+        PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1613,6 +1706,21 @@ mod tests {
             .any(|candidate| candidate.key.kind == goal)
     }
 
+    fn contains_political_omission(
+        diagnostics: &CandidateGenerationDiagnostics,
+        family: PoliticalGoalFamily,
+        office: EntityId,
+        candidate: Option<EntityId>,
+        reason: PoliticalCandidateOmissionReason,
+    ) -> bool {
+        diagnostics.omitted_political.iter().any(|omission| {
+            omission.family == family
+                && omission.office == office
+                && omission.candidate == candidate
+                && omission.reason == reason
+        })
+    }
+
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
             last_known_place: None,
@@ -1889,6 +1997,7 @@ mod tests {
             2,
         );
         let goal = candidates
+            .candidates
             .iter()
             .find(|candidate| {
                 candidate.key.kind
@@ -3570,26 +3679,55 @@ mod tests {
         let mut office_data = vacant_office("Captain", town, faction);
         office_data.vacancy_since = None;
         view.office_data.insert(office, office_data.clone());
-        let filled = generate_candidates(
+        let filled = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
+            6,
         );
-        assert!(!contains_goal(&filled, GoalKind::ClaimOffice { office }));
+        assert!(!contains_goal(
+            &filled.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_political_omission(
+            &filled.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
+        assert!(contains_political_omission(
+            &filled.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
 
         office_data.vacancy_since = Some(Tick(2));
         view.office_data.insert(office, office_data);
         view.support_declarations.insert((agent, office), agent);
-        let declared = generate_candidates(
+        let declared = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
+            6,
         );
-        assert!(!contains_goal(&declared, GoalKind::ClaimOffice { office }));
+        assert!(!contains_goal(
+            &declared.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_political_omission(
+            &declared.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::AlreadyDeclaredSupport,
+        ));
     }
 
     #[test]
@@ -3620,24 +3758,111 @@ mod tests {
             vec![known_entity(office, town), known_entity(candidate, town)],
         );
 
-        let candidates = generate_candidates(
+        let candidates = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
+            6,
         );
 
         assert!(
-            !contains_goal(&candidates, GoalKind::ClaimOffice { office }),
+            !contains_goal(&candidates.candidates, GoalKind::ClaimOffice { office }),
             "Force-law offices should not emit support-based ClaimOffice goals"
         );
         assert!(
             !contains_goal(
-                &candidates,
+                &candidates.candidates,
                 GoalKind::SupportCandidateForOffice { office, candidate }
             ),
             "Force-law offices should not emit support-based support-candidate goals"
         );
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+        ));
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_record_ineligible_actor_and_support_target_omissions() {
+        let agent = entity(1);
+        let office = entity(2);
+        let ineligible_candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let other_faction = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, ineligible_candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds
+            .insert(ineligible_candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(ineligible_candidate, town);
+        view.entities_at
+            .insert(town, vec![agent, ineligible_candidate]);
+        view.office_data
+            .insert(office, vacant_office("Captain", town, faction));
+        view.factions_by_member.insert(agent, vec![other_faction]);
+        view.factions_by_member
+            .insert(ineligible_candidate, vec![other_faction]);
+        view.loyalties
+            .insert((agent, ineligible_candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![
+                known_entity(office, town),
+                known_entity(ineligible_candidate, town),
+            ],
+        );
+
+        let candidates = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            !contains_goal(&candidates.candidates, GoalKind::ClaimOffice { office }),
+            "ineligible actors must not emit ClaimOffice candidates"
+        );
+        assert!(
+            !contains_goal(
+                &candidates.candidates,
+                GoalKind::SupportCandidateForOffice {
+                    office,
+                    candidate: ineligible_candidate,
+                }
+            ),
+            "ineligible support targets must not emit support candidates"
+        );
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::ActorNotEligible,
+        ));
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            Some(ineligible_candidate),
+            PoliticalCandidateOmissionReason::CandidateNotEligible,
+        ));
     }
 }
