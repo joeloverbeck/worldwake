@@ -692,6 +692,12 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.world.support_declaration(supporter, office)
     }
 
+    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+        // Pre-E14: delegate to world directly, matching support_declaration() pattern.
+        // Post-E14: gate by observation (agent must have perceived each declaration).
+        self.world.support_declarations_for_office(office)
+    }
+
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
         if entity == self.agent {
             return self.world.get_component_in_transit_on_edge(entity).cloned();
@@ -1498,5 +1504,89 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(RuntimeBeliefView::courage(&view, agent), None);
+    }
+
+    #[test]
+    fn support_declarations_for_office_returns_all_declarations() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, holder, other, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Cora", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            let faction = txn.create_faction("River Pact").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            txn.add_member(agent, faction).unwrap();
+            txn.add_member(holder, faction).unwrap();
+            txn.add_member(other, faction).unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Steward".to_string(),
+                    jurisdiction: place,
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+                    succession_period_ticks: 6,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+            txn.declare_support(agent, office, holder).unwrap();
+            txn.declare_support(other, office, holder).unwrap();
+            commit_txn(txn);
+            (agent, holder, other, office)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        let declarations =
+            RuntimeBeliefView::support_declarations_for_office(&view, office);
+        assert_eq!(declarations.len(), 2);
+        assert!(declarations.contains(&(agent, holder)));
+        assert!(declarations.contains(&(other, holder)));
+    }
+
+    #[test]
+    fn support_declarations_for_office_returns_empty_when_no_declarations() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            (agent, office)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        let declarations =
+            RuntimeBeliefView::support_declarations_for_office(&view, office);
+        assert!(declarations.is_empty());
+    }
+
+    #[test]
+    fn support_declarations_for_office_returns_empty_for_non_office_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        // Query using the agent ID as if it were an office — should return empty.
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        let declarations =
+            RuntimeBeliefView::support_declarations_for_office(&view, agent);
+        assert!(declarations.is_empty());
     }
 }

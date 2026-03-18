@@ -103,6 +103,10 @@ pub trait GoalBeliefView {
         let _ = (supporter, office);
         None
     }
+    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+        let _ = office;
+        Vec::new()
+    }
 }
 
 /// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
@@ -226,6 +230,10 @@ pub trait RuntimeBeliefView {
     fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
         let _ = (supporter, office);
         None
+    }
+    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+        let _ = office;
+        Vec::new()
     }
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
@@ -560,6 +568,13 @@ macro_rules! impl_goal_belief_view {
                 office: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::support_declaration(self, supporter, office)
+            }
+
+            fn support_declarations_for_office(
+                &self,
+                office: worldwake_core::EntityId,
+            ) -> Vec<(worldwake_core::EntityId, worldwake_core::EntityId)> {
+                $crate::RuntimeBeliefView::support_declarations_for_office(self, office)
             }
         }
     };
