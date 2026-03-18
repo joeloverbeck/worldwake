@@ -499,10 +499,19 @@ impl GoalKindPlannerExt for GoalKind {
             }
             PlannerOpKind::DeclareSupport => match self {
                 GoalKind::ClaimOffice { office } => {
-                    state.with_support_declaration(actor, *office, actor)
+                    // Principle 7 (Locality): DeclareSupport requires actor at office jurisdiction.
+                    if actor_at_jurisdiction(&state, actor, *office) {
+                        state.with_support_declaration(actor, *office, actor)
+                    } else {
+                        state
+                    }
                 }
                 GoalKind::SupportCandidateForOffice { office, candidate } => {
-                    state.with_support_declaration(actor, *office, *candidate)
+                    if actor_at_jurisdiction(&state, actor, *office) {
+                        state.with_support_declaration(actor, *office, *candidate)
+                    } else {
+                        state
+                    }
                 }
                 _ => state,
             },
@@ -871,6 +880,16 @@ fn update_actor_needs(
 }
 
 /// Hypothetical bribe outcome: actor pays commodity, target declares support.
+/// Principle 7 (Locality): Check if the actor's planned position matches the
+/// office's jurisdiction. Used by all political social actions (`DeclareSupport`,
+/// `Bribe`, `Threaten`) to prevent the planner from simulating remote political
+/// actions without a preceding `Travel` step.
+fn actor_at_jurisdiction(state: &PlanningState<'_>, actor: EntityId, office: EntityId) -> bool {
+    let actor_place = state.effective_place(actor);
+    let jurisdiction = state.snapshot().jurisdiction(office);
+    actor_place.is_some() && actor_place == jurisdiction
+}
+
 fn apply_bribe_for_office<'s>(
     state: PlanningState<'s>,
     actor: EntityId,
@@ -880,6 +899,11 @@ fn apply_bribe_for_office<'s>(
     let Some(bribe) = payload_override.and_then(ActionPayload::as_bribe) else {
         return state;
     };
+    // Principle 7 (Locality): Bribe requires actor at the office jurisdiction.
+    // Bribe targets are co-located at the jurisdiction (enforced by affordance generation).
+    if !actor_at_jurisdiction(&state, actor, office) {
+        return state;
+    }
     let current_qty = state.commodity_quantity(actor, bribe.offered_commodity);
     if current_qty >= bribe.offered_quantity {
         let remaining = Quantity(current_qty.0.saturating_sub(bribe.offered_quantity.0));
@@ -900,6 +924,11 @@ fn apply_threaten_for_office<'s>(
     let Some(threaten) = payload_override.and_then(ActionPayload::as_threaten) else {
         return state;
     };
+    // Principle 7 (Locality): Threaten requires actor at the office jurisdiction.
+    // Threaten targets are co-located at the jurisdiction (enforced by affordance generation).
+    if !actor_at_jurisdiction(&state, actor, office) {
+        return state;
+    }
     let attack_skill = state
         .combat_profile(actor)
         .map_or(Permille::new_unchecked(0), |p| p.attack_skill);
@@ -957,8 +986,8 @@ mod tests {
         ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
         HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        OfficeData, Permille, Quantity, RecipeId, ResourceSource, SuccessionLaw, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,
@@ -1386,6 +1415,7 @@ mod tests {
         courage_values: BTreeMap<EntityId, Permille>,
         combat_profiles: BTreeMap<EntityId, Option<CombatProfile>>,
         support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
+        office_data_map: BTreeMap<EntityId, OfficeData>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -1693,6 +1723,10 @@ mod tests {
                 .get(&office)
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+            self.office_data_map.get(&office).cloned()
         }
     }
 
@@ -2161,6 +2195,7 @@ mod tests {
         view.effective_places.insert(candidate, town);
         view.effective_places.insert(office, town);
         view.entities_at.insert(town, vec![actor, candidate, office]);
+        set_office_jurisdiction(&mut view, office, town);
 
         let snapshot = build_planning_snapshot(
             &view,
@@ -2870,6 +2905,7 @@ mod tests {
         if let Some(courage) = target_courage {
             view.courage_values.insert(target, courage);
         }
+        set_office_jurisdiction(&mut view, office, town);
         view
     }
 
@@ -3479,6 +3515,24 @@ mod tests {
         (registries.defs, registries.handlers)
     }
 
+    fn set_office_jurisdiction(
+        view: &mut TestBeliefView,
+        office: EntityId,
+        jurisdiction: EntityId,
+    ) {
+        view.office_data_map.insert(
+            office,
+            OfficeData {
+                title: String::new(),
+                jurisdiction,
+                succession_law: SuccessionLaw::Support,
+                eligibility_rules: vec![],
+                succession_period_ticks: 5,
+                vacancy_since: Some(Tick(0)),
+            },
+        );
+    }
+
     fn claim_office_goal(office: EntityId) -> GroundedGoal {
         GroundedGoal {
             key: GoalKey::from(GoalKind::ClaimOffice { office }),
@@ -3530,6 +3584,8 @@ mod tests {
         // Target has high courage — Threaten won't work (default attack_skill=620)
         view.courage_values
             .insert(target, Permille::new(900).unwrap());
+
+        set_office_jurisdiction(&mut view, office, town);
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -3604,6 +3660,8 @@ mod tests {
         // Rival has self-declared support — creates competition
         view.support_declarations
             .insert(office, vec![(rival, rival)]);
+
+        set_office_jurisdiction(&mut view, office, town);
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -3683,6 +3741,8 @@ mod tests {
         // Rival has self-declared support — creates competition
         view.support_declarations
             .insert(office, vec![(rival, rival)]);
+
+        set_office_jurisdiction(&mut view, office, town);
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -3774,6 +3834,8 @@ mod tests {
         // Rival has self-declared support — creates competition
         view.support_declarations
             .insert(office, vec![(rival, rival)]);
+
+        set_office_jurisdiction(&mut view, office, town);
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(

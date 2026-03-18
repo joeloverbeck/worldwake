@@ -6,7 +6,7 @@
 
 ---
 
-The golden suite contains 92 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
+The golden suite contains 93 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
 
 ---
 
@@ -625,3 +625,15 @@ The golden suite contains 92 tests across 9 domain files. Every test uses the re
 - C does not gain loyalty to A (high courage prevents yield). Agent diversity: same Threaten action, different courage → divergent outcomes.
 **Foundation alignment**: Principle 20 (agent diversity — per-agent courage produces divergent behavioral outcomes), Principle 10 (belief-only planning), Principle 1 (maximal emergence — threat → yield → loyalty → support is emergent, not scripted).
 **Cross-system chain**: AI goal → coalition-aware planner Threaten op → courage comparison → yield/resist divergence → loyalty increase → target AI SupportCandidateForOffice → DeclareSupport → support counting → decisive installation.
+
+### Scenario 15: Travel to Distant Jurisdiction for Office Claim
+**File**: `golden_offices.rs` | **Test**: `golden_travel_to_distant_jurisdiction_for_claim`
+**Systems exercised**: Travel (multi-hop pathfinding), DeclareSupport, Succession (installation), AI (ClaimOffice goal generation, multi-step Travel + DeclareSupport planning)
+**Setup**: Vacant office (Support law, period=5, no eligibility) at VillageSquare. Single sated agent at BanditCamp (3 hops / 12 travel ticks away via BanditCamp → ForestPath → NorthCrossroads → VillageSquare). enterprise_weight=pm(800). Agent has beliefs about the remote office.
+**Emergent behavior proven**:
+- Agent generates ClaimOffice goal from beliefs about a remote vacant office.
+- Planner correctly identifies that DeclareSupport requires co-location at the jurisdiction (Principle 7 locality guard). Plans multi-hop Travel + DeclareSupport.
+- Agent traverses the 3-hop route to VillageSquare, then declares support for self.
+- Succession system installs agent as holder after succession period.
+**Foundation alignment**: Principle 7 (locality — political actions require co-location at jurisdiction), Principle 8 (preconditions — travel has duration and occupancy), Principle 10 (belief-only planning), Principle 1 (maximal emergence — travel + office claim is emergent, not scripted).
+**Cross-system chain**: AI goal from remote belief → multi-hop travel planning → sequential travel execution → arrival at jurisdiction → DeclareSupport → succession resolution → office installation.

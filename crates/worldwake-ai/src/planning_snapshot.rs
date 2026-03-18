@@ -50,6 +50,8 @@ pub(crate) struct SnapshotEntity {
     pub(crate) merchandise_profile: Option<MerchandiseProfile>,
     pub(crate) reservation_ranges: Vec<TickRange>,
     pub(crate) facility_queue: Option<SnapshotFacilityQueue>,
+    /// For Office entities: the jurisdiction place. Captured from `OfficeData.jurisdiction`.
+    pub(crate) jurisdiction: Option<EntityId>,
 }
 
 impl Default for SnapshotEntity {
@@ -87,6 +89,7 @@ impl Default for SnapshotEntity {
             merchandise_profile: None,
             reservation_ranges: Vec::new(),
             facility_queue: None,
+            jurisdiction: None,
         }
     }
 }
@@ -284,6 +287,14 @@ impl PlanningSnapshot {
         self.actor
     }
 
+    /// Jurisdiction place for an Office entity, captured from `OfficeData.jurisdiction`.
+    #[must_use]
+    pub(crate) fn jurisdiction(&self, office: EntityId) -> Option<EntityId> {
+        self.entities
+            .get(&office)
+            .and_then(|snapshot| snapshot.jurisdiction)
+    }
+
     /// Base support declarations for an office, captured at snapshot build time.
     /// Returns `(supporter, candidate)` pairs.
     #[must_use]
@@ -420,6 +431,7 @@ fn build_snapshot_entity(
         merchandise_profile: view.merchandise_profile(entity),
         reservation_ranges: view.reservation_ranges(entity),
         facility_queue: snapshot_facility_queue(view, actor, entity),
+        jurisdiction: view.office_data(entity).map(|d| d.jurisdiction),
     }
 }
 

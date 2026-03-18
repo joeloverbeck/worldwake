@@ -4,9 +4,10 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, BeliefConfidencePolicy, CombatProfile, CommodityKind, EventTag,
-    HomeostaticNeeds, MetabolismProfile, Permille, PerceptionProfile, PerceptionSource, Quantity,
-    Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
+    hash_event_log, hash_world, prototype_place_entity, BeliefConfidencePolicy, CombatProfile,
+    CommodityKind, EventTag, HomeostaticNeeds, MetabolismProfile, Permille, PerceptionProfile,
+    PerceptionSource, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, Tick,
+    UtilityProfile,
 };
 
 // ---------------------------------------------------------------------------
@@ -712,5 +713,100 @@ fn golden_threaten_with_courage_diversity() {
     assert!(
         !political_events.is_empty(),
         "Event log should contain Political events from threat, support, and installation"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 15: Travel to Distant Jurisdiction for Office Claim
+// ---------------------------------------------------------------------------
+//
+// Setup: Vacant office at VillageSquare (Support law, period=5, no eligibility).
+// Single sated agent starts at BanditCamp (3 hops away: BanditCamp → ForestPath
+// → NorthCrossroads → VillageSquare, 12 travel ticks total).
+// Agent has beliefs about the vacant office. enterprise_weight=pm(800).
+//
+// Expected: Agent generates ClaimOffice → plans multi-hop Travel + DeclareSupport
+// → traverses the 3-hop route → arrives at VillageSquare → declares support →
+// installed as holder after succession period.
+
+#[test]
+fn golden_travel_to_distant_jurisdiction_for_claim() {
+    let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+    let mut h = GoldenHarness::new(Seed([116; 32]));
+
+    // Sated agent at BanditCamp with high enterprise weight — political goals dominate.
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Distant Claimant",
+        bandit_camp,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+
+    // Perception profile so the agent can observe post-action results.
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        default_perception_profile(),
+    );
+
+    // Vacant office at VillageSquare — Support law, 5-tick succession period,
+    // no eligibility rules (any agent can claim).
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    // Seed the agent's beliefs about the office so candidate generation sees it.
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        &[office],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    // Verify starting position.
+    assert_eq!(
+        h.world.effective_place(agent),
+        Some(bandit_camp),
+        "Agent should start at Bandit Camp"
+    );
+
+    // Run simulation — 12 travel ticks + planning + DeclareSupport + 5-tick
+    // succession period + margin. 40 ticks is generous.
+    for _ in 0..40 {
+        h.step_once();
+    }
+
+    // Assertion 1: Agent arrived at VillageSquare (the office jurisdiction).
+    assert_eq!(
+        h.world.effective_place(agent),
+        Some(VILLAGE_SQUARE),
+        "Agent should have traveled from Bandit Camp to Village Square"
+    );
+
+    // Assertion 2: Agent is installed as office holder.
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(agent),
+        "Agent should be installed as office holder after traveling to jurisdiction and declaring support"
+    );
+
+    // Assertion 3: Event log contains Political events from DeclareSupport
+    // and succession installation.
+    let political_events = h.event_log.events_by_tag(EventTag::Political);
+    assert!(
+        !political_events.is_empty(),
+        "Event log should contain Political events from support declaration and installation"
     );
 }
