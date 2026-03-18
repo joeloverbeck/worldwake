@@ -1,10 +1,10 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
-**Inventory source**: The `golden_*` function inventory below was cross-checked against `cargo test -p worldwake-ai -- --list` and the current `golden_*.rs` declarations on 2026-03-18.
+**Inventory source**: The `golden_*` function inventory below was cross-checked against `cargo test -p worldwake-ai -- --list` and the current `golden_*.rs` declarations on 2026-03-19.
 
 ---
 
@@ -21,7 +21,7 @@ crates/worldwake-ai/tests/
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
-  golden_emergent.rs          — 13 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e, combat-death-to-force-succession S13-001, social-tell-to-political-claim S13-002 + replays)
+  golden_emergent.rs          — 16 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, wounded-politician care-vs-politics ordering S13-003, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e, combat-death-to-force-succession S13-001, social-tell-to-political-claim S13-002 + replays)
   golden_offices.rs           — 13 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: political office facts remain local until belief update + deterministic replay, scenario 17: survival pressure suppresses political goals + deterministic replay, scenario 18: faction eligibility filters office claim, scenario 19: force succession sole eligible + deterministic replay)
   golden_supply_chain.rs      — 0 `golden_*` tests (contains trace-segment supply-chain tests plus 2 ignored blocked full-chain tests)
 ```
@@ -38,7 +38,7 @@ crates/worldwake-ai/tests/
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | Yes | 2d |
 | AcquireCommodity (RecipeInput) | Yes | 6a |
-| TreatWounds (self) | Yes | 2c |
+| TreatWounds (self) | Yes | 2c, 23 |
 | TreatWounds (other) | Yes | 2c |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
@@ -52,7 +52,7 @@ crates/worldwake-ai/tests/
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 | ShareBelief | Yes | 2e, 22 |
-| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22 |
+| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23 |
 | SupportCandidateForOffice | Yes | 12, 13, 14 |
 
 **Coverage: 19/19 GoalKinds tested (100%).**
@@ -163,6 +163,7 @@ crates/worldwake-ai/tests/
 | Faction membership eligibility gate → ClaimOffice candidate generation allowed for member and denied for non-member → only eligible claimant installs | Yes |
 | Combat death → authoritative vacancy mutation → delayed force-law succession installation | Yes |
 | Remote office Tell → reported office belief update → ClaimOffice emerges → travel → DeclareSupport → succession installation | Yes |
+| Wounded politician ordering: medium pain commits `heal` before `declare_support`, low pain commits `declare_support` before `heal`, and both converge to office-holder + reduced wounds | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
 | UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
 | Wound vs hunger priority resolved by concrete utility weights (Principle 3, 20) | Yes |
@@ -176,12 +177,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 105 | 105 |
+| Proven tests | 108 | 108 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 57 | 57 |
+| Cross-system chains | 58 | 58 |
 
 ### Pending Backlog Summary
 

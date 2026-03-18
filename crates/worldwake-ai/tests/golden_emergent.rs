@@ -78,6 +78,20 @@ fn trace_generates_claim_office(
     }
 }
 
+fn trace_generates_self_treat(
+    trace: &worldwake_ai::AgentDecisionTrace,
+    agent: worldwake_core::EntityId,
+) -> bool {
+    match &trace.outcome {
+        DecisionOutcome::Planning(planning) => planning
+            .candidates
+            .generated
+            .iter()
+            .any(|goal| goal.kind == GoalKind::TreatWounds { patient: agent }),
+        _ => false,
+    }
+}
+
 /// Combat profile with zero natural recovery — wounds only decrease through
 /// medicine. Prevents `TargetHasNoWounds` race between natural recovery and
 /// the heal action.
@@ -299,6 +313,204 @@ fn golden_wound_vs_hunger_replays_deterministically() {
         (first.0, first.1),
         (second.0, second.1),
         "wound-vs-hunger scenario should replay deterministically"
+    );
+}
+
+// ===========================================================================
+// Suite 2: wounded_politician_priority_resolution
+//
+// Proves: care and political ambition follow the shared ranking pipeline.
+// Medium pain can outrank office ambition, while low pain can leave the office
+// claim path ahead, all without office-specific priority exceptions.
+// Foundation: Principle 3, Principle 20, Principle 24.
+// Cross-systems: Care + AI ranking + Political planning + Succession.
+// ===========================================================================
+
+#[allow(clippy::too_many_lines)]
+fn run_wounded_politician(
+    seed: Seed,
+    wound_severity: u16,
+    pain_weight: u16,
+    enterprise_weight: u16,
+) -> (StateHash, StateHash, Tick, Tick) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Wounded Politician",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            pain_weight: pm(pain_weight),
+            enterprise_weight: pm(enterprise_weight),
+            ..UtilityProfile::default()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        default_perception_profile(),
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_combat_profile(agent, no_recovery_combat_profile())
+            .unwrap();
+        txn.set_component_wound_list(agent, stable_wound_list(wound_severity))
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Medicine,
+        Quantity(1),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        &[office],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let initial_medicine_total = total_live_lot_quantity(&h.world, CommodityKind::Medicine);
+    let initial_wound_load = h.agent_wound_load(agent);
+    let mut heal_commit_tick = None;
+    let mut declare_support_commit_tick = None;
+
+    for _ in 0..40 {
+        h.step_once();
+
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for wounded-politician scenario");
+        if heal_commit_tick.is_none() {
+            heal_commit_tick = action_sink.events_for(agent).iter().find_map(|event| {
+                (event.action_name == "heal" && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                    .then_some(event.tick)
+            });
+        }
+        if declare_support_commit_tick.is_none() {
+            declare_support_commit_tick = action_sink.events_for(agent).iter().find_map(|event| {
+                (event.action_name == "declare_support"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some(event.tick)
+            });
+        }
+
+        let medicine_total = total_live_lot_quantity(&h.world, CommodityKind::Medicine);
+        assert!(
+            medicine_total <= initial_medicine_total,
+            "medicine lots must not increase"
+        );
+
+        if heal_commit_tick.is_some()
+            && declare_support_commit_tick.is_some()
+            && h.world.office_holder(office) == Some(agent)
+            && h.agent_wound_load(agent) < initial_wound_load
+        {
+            break;
+        }
+    }
+
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for wounded-politician scenario");
+    let generated_self_treat = decision_sink
+        .traces_for(agent)
+        .into_iter()
+        .any(|trace| trace_generates_self_treat(trace, agent));
+    let generated_claim_office = decision_sink
+        .traces_for(agent)
+        .into_iter()
+        .any(|trace| trace_generates_claim_office(trace, office));
+
+    assert!(
+        generated_self_treat,
+        "agent should generate TreatWounds for self in the wounded-politician scenario"
+    );
+    assert!(
+        generated_claim_office,
+        "agent should generate ClaimOffice while the office remains visibly vacant"
+    );
+
+    let heal_commit_tick =
+        heal_commit_tick.expect("agent should commit heal in the wounded-politician scenario");
+    let declare_support_commit_tick = declare_support_commit_tick
+        .expect("agent should commit declare_support in the wounded-politician scenario");
+
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(agent),
+        "agent should eventually become office holder after declaring support"
+    );
+    assert!(
+        h.agent_wound_load(agent) < initial_wound_load,
+        "agent wound load should decrease through lawful care"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(agent, CommodityKind::Medicine),
+        Quantity(0),
+        "owned medicine should be consumed by the heal action"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+        heal_commit_tick,
+        declare_support_commit_tick,
+    )
+}
+
+#[test]
+fn golden_wounded_politician_pain_first() {
+    let (_, _, heal_commit_tick, declare_support_commit_tick) =
+        run_wounded_politician(Seed([33; 32]), 400, 800, 400);
+    assert!(
+        heal_commit_tick < declare_support_commit_tick,
+        "medium pain should drive heal before declare_support"
+    );
+}
+
+#[test]
+fn golden_wounded_politician_enterprise_first() {
+    let (_, _, heal_commit_tick, declare_support_commit_tick) =
+        run_wounded_politician(Seed([34; 32]), 200, 300, 800);
+    assert!(
+        declare_support_commit_tick < heal_commit_tick,
+        "low pain should leave declare_support ahead of heal"
+    );
+}
+
+#[test]
+fn golden_wounded_politician_replays_deterministically() {
+    let first = run_wounded_politician(Seed([35; 32]), 400, 800, 400);
+    let second = run_wounded_politician(Seed([35; 32]), 400, 800, 400);
+    assert_eq!(
+        (first.0, first.1),
+        (second.0, second.1),
+        "wounded-politician scenario should replay deterministically"
     );
 }
 
