@@ -22,6 +22,12 @@
 1. <Why this approach is cleaner/more robust than alternatives>
 2. <No backwards-compatibility aliasing/shims introduced>
 
+## Verification Layers
+
+1. <Invariant> -> <decision trace | action trace | event-log delta | authoritative world state | focused unit/runtime test>
+2. <Invariant> -> <verification layer>
+3. <If single-layer ticket, state why additional layer mapping is not applicable>
+
 ## What to Change
 
 ### 1. <Change area>

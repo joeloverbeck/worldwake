@@ -1,9 +1,10 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
+**Inventory source**: The `golden_*` function inventory below was cross-checked against `cargo test -p worldwake-ai -- --list` and the current `golden_*.rs` declarations on 2026-03-18.
 
 ---
 

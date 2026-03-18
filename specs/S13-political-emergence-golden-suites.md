@@ -26,26 +26,26 @@ Phase 3: Information & Politics (post-E16d)
 ### Scenario 21: Combat Death Triggers Office Vacancy and Autonomous Succession
 
 **File**: `golden_emergent.rs`
-**Systems exercised**: Combat (attack, wound infliction, death), Politics (vacancy detection via `DeadAt`, succession resolution), AI (ClaimOffice candidate generation, DeclareSupport planning), Conservation
+**Systems exercised**: Combat (attack, wound infliction, death), Politics (vacancy detection via `DeadAt`, succession resolution), action tracing, event-log delta inspection, deterministic replay
 **Principles proven**: P1 (maximal emergence — combat consequence cascades into political domain), P24 (systems interact only through state — no combat-politics coupling), P9 (combat aftermath triggers downstream emergence)
 
 **Setup**:
-- Vacant office ("War Chief") at VillageSquare with `SuccessionLaw::Force`, succession_period=5
-- Agent A ("Challenger"): sated, armed (high attack_skill), enterprise_weight=pm(800), perception profile, believes in office. No eligibility rules on office.
+- Occupied office ("War Chief") at VillageSquare with `SuccessionLaw::Force`, succession_period=5
+- Agent A ("Challenger"): sated, armed (high attack_skill), perception profile. No eligibility rules on office.
 - Agent B ("Incumbent"): office holder, armed (moderate guard_skill, lower attack_skill). Also has perception profile.
 - A and B co-located at VillageSquare. A has hostility toward B (triggers EngageHostile).
 
 **Emergent behavior proven**:
 - A attacks B through the real combat system (EngageHostile goal → attack action).
 - B suffers wounds → bleed → death (`DeadAt` component set by wound system).
-- Politics system detects vacancy (holder is dead) during its tick.
-- With Force law: A is the sole living eligible contender → succession system installs A.
+- Politics system later detects that the living holder is gone, clears the office-holder relation, and after the succession delay installs A as the sole living eligible contender.
+- No `ClaimOffice` / `DeclareSupport` path participates in the installation.
 - No orchestrator connects combat to politics — the chain emerges from `DeadAt` state.
 
 **Assertion surface**:
-1. Authoritative: B is dead (`agent_is_dead`), A is office holder
-2. Action traces: attack committed before office installation
-3. Conservation: commodity totals unchanged
+1. Action trace: `attack` commits before any political installation result
+2. Event-log delta / authoritative state: B is dead (`DeadAt`), vacancy mutation occurs, and A later becomes office holder
+3. Negative action-path check: no `declare_support` commit occurs anywhere in the chain
 4. Determinism: replay companion
 
 **Why this is distinct from Scenario 19** (force succession):
@@ -123,15 +123,15 @@ Phase 3: Information & Politics (post-E16d)
 
 ### S13-001: Scenario 21 — Combat Death → Vacancy → Succession
 
-**Deliverable**: `golden_combat_death_triggers_succession` + `golden_combat_death_triggers_succession_replays_deterministically` in `golden_emergent.rs`
+**Deliverable**: `golden_combat_death_triggers_force_succession` + `golden_combat_death_triggers_force_succession_replays_deterministically` in `golden_emergent.rs`
 
 **Assertion surface**:
-- B is dead, A is office holder
-- Action traces: attack committed before office installation
-- Conservation: commodity totals unchanged
+- Action trace: attack committed before office installation
+- Event-log delta / authoritative state: B dies, vacancy mutation occurs, and A becomes office holder after the force-law delay
+- No `declare_support` commit occurs
 - Determinism: replay companion
 
-**Verification**: `cargo test -p worldwake-ai golden_combat_death`, then `cargo test --workspace`, then `cargo clippy --workspace`
+**Verification**: `cargo test -p worldwake-ai --test golden_emergent golden_combat_death_triggers_force_succession`, then `cargo test --workspace`, then `cargo clippy --workspace`
 
 ---
 

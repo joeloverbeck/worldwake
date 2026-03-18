@@ -20,6 +20,14 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
    - If similarly named helpers exist in multiple layers, name the exact layer and symbol being discussed.
 2. `Architecture Check`:
    - Explain why the proposed design is cleaner than alternatives.
+3. `Verification Layers`:
+   - Required for any mixed-layer or cross-system ticket.
+   - Map each important invariant to the exact verification surface that proves it.
+   - Use one line per invariant, for example:
+     - candidate absence / reasoning behavior -> decision trace or focused runtime coverage
+     - action lifecycle ordering -> action trace
+     - authoritative mutation ordering -> event-log delta and/or authoritative world state
+   - Do not collapse multiple layers into one generic "trace" or scenario-level assertion surface.
 3. `Tests`:
    - List new/modified tests and rationale per test.
    - Include targeted and full-suite verification commands.
@@ -49,6 +57,7 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
 5. If current code and ticket assumptions diverge, update the ticket before implementation and update scope to match the actual architecture.
 6. If a proposed test relies on a timing assumption, prefer the semantic invariant instead of an incidental tick-boundary assumption unless the tick boundary is itself the contract.
 7. If the invariant is about AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence such as missing event-log entries.
+8. For mixed-layer scenarios, list the invariant-to-layer mapping explicitly instead of implying that one assertion surface proves the whole chain.
 
 ## Mandatory Pre-Implementation Checks
 
