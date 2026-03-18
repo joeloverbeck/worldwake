@@ -11,6 +11,7 @@ pub fn trade_system_tick(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         rng: _rng,
         active_actions: _active_actions,
         action_defs: _action_defs,
+        politics_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -222,6 +223,7 @@ mod tests {
             rng,
             active_actions,
             action_defs,
+            politics_trace: None,
             tick: Tick(tick),
             system_id: SystemId::Trade,
         }

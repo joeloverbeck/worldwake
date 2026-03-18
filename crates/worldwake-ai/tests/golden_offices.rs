@@ -897,8 +897,8 @@ fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, State
             .expect("decision tracing should be enabled")
             .trace_at(agent, Tick(tick))
             .is_some_and(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => planning.candidates.generated.iter().any(
-                    |goal| {
+                DecisionOutcome::Planning(planning) => {
+                    planning.candidates.generated.iter().any(|goal| {
                         matches!(
                             goal.kind,
                             GoalKind::ClaimOffice { office: goal_office }
@@ -908,8 +908,8 @@ fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, State
                             GoalKind::SupportCandidateForOffice { office: goal_office, .. }
                                 if goal_office == office
                         )
-                    },
-                ),
+                    })
+                }
                 _ => false,
             })
     });

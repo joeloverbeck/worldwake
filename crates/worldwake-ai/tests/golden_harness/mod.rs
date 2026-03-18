@@ -24,8 +24,8 @@ use worldwake_core::{
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
     ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
-    RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler,
-    SimulationState, SystemManifest, TickStepResult, TickStepServices,
+    PoliticalTraceSink, RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState,
+    Scheduler, SimulationState, SystemManifest, TickStepResult, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -654,6 +654,7 @@ pub struct GoldenHarness {
     pub recipes: RecipeRegistry,
     pub driver: AgentTickDriver,
     pub action_trace: Option<ActionTraceSink>,
+    pub politics_trace: Option<PoliticalTraceSink>,
 }
 
 impl GoldenHarness {
@@ -676,6 +677,7 @@ impl GoldenHarness {
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
             action_trace: None,
+            politics_trace: None,
         }
     }
 
@@ -685,6 +687,14 @@ impl GoldenHarness {
 
     pub fn action_trace_sink(&self) -> Option<&ActionTraceSink> {
         self.action_trace.as_ref()
+    }
+
+    pub fn enable_politics_tracing(&mut self) {
+        self.politics_trace = Some(PoliticalTraceSink::new());
+    }
+
+    pub fn politics_trace_sink(&self) -> Option<&PoliticalTraceSink> {
+        self.politics_trace.as_ref()
     }
 
     pub fn step_once(&mut self) -> TickStepResult {
@@ -702,6 +712,7 @@ impl GoldenHarness {
                 systems: &dispatch_table(),
                 input_producer: Some(&mut controllers),
                 action_trace: self.action_trace.as_mut(),
+                politics_trace: self.politics_trace.as_mut(),
             },
         )
         .unwrap()
@@ -757,6 +768,7 @@ impl GoldenHarness {
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
             action_trace: None,
+            politics_trace: None,
         }
     }
 

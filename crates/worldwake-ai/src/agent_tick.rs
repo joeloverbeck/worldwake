@@ -2035,6 +2035,7 @@ mod tests {
                     systems: &SystemDispatchTable::canonical_noop(),
                     input_producer: Some(&mut controllers),
                     action_trace: None,
+                    politics_trace: None,
                 },
             )
             .unwrap()
@@ -2498,6 +2499,7 @@ mod tests {
             rng: &mut harness.rng,
             active_actions: &active_actions,
             action_defs: &harness.defs,
+            politics_trace: None,
             tick,
             system_id: SystemId::Perception,
         })
@@ -2512,6 +2514,7 @@ mod tests {
             rng: &mut harness.rng,
             active_actions: &active_actions,
             action_defs: &harness.defs,
+            politics_trace: None,
             tick,
             system_id: SystemId::Perception,
         })

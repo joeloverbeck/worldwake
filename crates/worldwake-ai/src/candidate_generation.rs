@@ -1269,8 +1269,7 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
 mod tests {
     use super::{
         deliverable_quantity, emit_produce_goals, emit_restock_goals, generate_candidates,
-        generate_candidates_with_travel_horizon, CandidateGenerationDiagnostics,
-        GenerationContext,
+        generate_candidates_with_travel_horizon, CandidateGenerationDiagnostics, GenerationContext,
     };
     use crate::{
         enterprise::{analyze_candidate_enterprise, EnterpriseSignals},

@@ -30,6 +30,7 @@ pub mod input_event;
 pub mod input_queue;
 pub mod interrupt_abort;
 pub mod per_agent_belief_view;
+pub mod politics_trace;
 pub mod recipe_def;
 pub mod recipe_registry;
 pub mod replan_needed;
@@ -90,6 +91,10 @@ pub use input_event::{ActionRequestMode, InputEvent, InputKind};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
+pub use politics_trace::{
+    ForceCandidateTrace, OfficeSuccessionOutcome, OfficeSuccessionTrace, PoliticalTraceEvent,
+    PoliticalTraceSink, SupportDeclarationTrace,
+};
 pub use recipe_def::RecipeDefinition;
 pub use recipe_registry::RecipeRegistry;
 pub use replan_needed::ReplanNeeded;

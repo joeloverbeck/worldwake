@@ -1582,6 +1582,7 @@ mod tests {
                 rng: &mut rng,
                 active_actions: &active,
                 action_defs: &defs,
+                politics_trace: None,
                 tick: Tick(tick),
                 system_id: SystemId::Needs,
             })
@@ -2093,6 +2094,7 @@ mod tests {
                 rng: &mut rng,
                 active_actions: &active,
                 action_defs: &defs,
+                politics_trace: None,
                 tick: Tick(tick),
                 system_id: SystemId::Needs,
             })

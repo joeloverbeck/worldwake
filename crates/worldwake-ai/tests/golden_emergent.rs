@@ -15,7 +15,7 @@ use worldwake_core::{
     Quantity, RelationValue, Seed, StateHash, SuccessionLaw, Tick, UtilityProfile, Wound,
     WoundCause, WoundId, WoundList,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{ActionTraceKind, OfficeSuccessionOutcome};
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -775,6 +775,7 @@ fn golden_loot_corpse_self_care_chain_replays_deterministically() {
 fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
     h.enable_action_tracing();
+    h.enable_politics_tracing();
 
     let challenger = seed_agent_with_recipes(
         &mut h.world,
@@ -925,6 +926,44 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
     assert_eq!(
         declare_support_commits, 0,
         "force-law succession must not rely on declare_support actions"
+    );
+
+    let politics_sink = h
+        .politics_trace_sink()
+        .expect("politics tracing should be enabled for combat succession scenario");
+    let vacancy_trace = politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::VacancyActivated
+            )
+        })
+        .expect("politics trace should explain when vacancy first activates");
+    let install_trace = politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::ForceInstalled { holder } if holder == challenger
+            )
+        })
+        .expect("politics trace should explain the force-law installation");
+    assert!(
+        politics_sink
+            .events_for_office(office)
+            .into_iter()
+            .any(|event| matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::WaitingForTimer { .. }
+            )),
+        "politics trace should include timer-blocked waiting before installation"
+    );
+    assert!(
+        install_trace.tick.0.saturating_sub(vacancy_trace.tick.0) >= 5,
+        "politics trace should preserve the configured succession delay"
     );
 
     let death_event_id =

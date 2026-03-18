@@ -941,8 +941,12 @@ mod tests {
             let place = world.topology().place_ids().next().unwrap();
             let (actor, target) = {
                 let mut txn = new_txn(&mut world, 1);
-                let actor = txn.create_agent("Payload Actor", ControlSource::Ai).unwrap();
-                let target = txn.create_agent("Payload Target", ControlSource::Ai).unwrap();
+                let actor = txn
+                    .create_agent("Payload Actor", ControlSource::Ai)
+                    .unwrap();
+                let target = txn
+                    .create_agent("Payload Target", ControlSource::Ai)
+                    .unwrap();
                 txn.set_ground_location(actor, place).unwrap();
                 txn.set_ground_location(target, place).unwrap();
                 txn.set_component_agent_belief_store(actor, AgentBeliefStore::new())
@@ -1036,6 +1040,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(tick),
             system_id: SystemId::Perception,
         })

@@ -2,9 +2,9 @@ use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
     ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, ControlError,
-    ControllerState, DeterministicRng, ExternalAbortReason, InputKind, RecipeRegistry, Scheduler,
-    SystemDispatchTable, SystemError, TickInputContext, TickInputError, TickInputProducer,
-    TickOutcome,
+    ControllerState, DeterministicRng, ExternalAbortReason, InputKind, PoliticalTraceSink,
+    RecipeRegistry, Scheduler, SystemDispatchTable, SystemError, TickInputContext, TickInputError,
+    TickInputProducer, TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -20,6 +20,7 @@ pub struct TickStepServices<'a> {
     pub systems: &'a SystemDispatchTable,
     pub input_producer: Option<&'a mut dyn TickInputProducer>,
     pub action_trace: Option<&'a mut ActionTraceSink>,
+    pub politics_trace: Option<&'a mut PoliticalTraceSink>,
 }
 
 struct TickStepRuntime<'a> {
@@ -140,7 +141,7 @@ pub fn step_tick(
         process_inputs(&mut runtime, controller, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &services)?;
-    let systems_ran = run_systems(&mut runtime, tick, &services)?;
+    let systems_ran = run_systems(&mut runtime, tick, &mut services)?;
     let post_system_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     emit_end_of_tick_marker(runtime.event_log, tick);
     runtime.scheduler.increment_tick();
@@ -576,7 +577,7 @@ fn abort_actions_for_dead_actors(
 fn run_systems(
     runtime: &mut TickStepRuntime<'_>,
     tick: Tick,
-    services: &TickStepServices<'_>,
+    services: &mut TickStepServices<'_>,
 ) -> Result<u32, TickStepError> {
     let mut systems_ran = 0u32;
 
@@ -594,6 +595,7 @@ fn run_systems(
             rng: &mut system_rng,
             active_actions: runtime.scheduler.active_actions(),
             action_defs: services.action_defs,
+            politics_trace: services.politics_trace.as_deref_mut(),
             tick,
             system_id,
         })
@@ -929,6 +931,7 @@ mod tests {
             systems,
             input_producer: None,
             action_trace: None,
+            politics_trace: None,
         }
     }
 
@@ -1056,6 +1059,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1107,6 +1111,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1160,6 +1165,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap_err();
@@ -1229,6 +1235,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1332,6 +1339,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1358,6 +1366,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1405,6 +1414,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap_err();
@@ -1460,6 +1470,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1514,6 +1525,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1570,6 +1582,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1650,6 +1663,7 @@ mod tests {
                 ),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1687,6 +1701,7 @@ mod tests {
                 systems: &ordered_systems(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1734,6 +1749,7 @@ mod tests {
                 systems: &ordered_systems(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1785,6 +1801,7 @@ mod tests {
                 systems: &systems,
                 input_producer: Some(&mut producer),
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1844,6 +1861,7 @@ mod tests {
                 systems: &systems,
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1867,6 +1885,7 @@ mod tests {
                 systems: &systems,
                 input_producer: Some(&mut producer),
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1920,6 +1939,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();
@@ -1936,6 +1956,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                politics_trace: None,
             },
         )
         .unwrap();

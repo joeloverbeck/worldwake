@@ -331,6 +331,7 @@ mod tests {
             systems,
             input_producer: None,
             action_trace: None,
+            politics_trace: None,
         }
     }
 

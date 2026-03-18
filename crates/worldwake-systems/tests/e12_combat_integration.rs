@@ -313,6 +313,7 @@ impl CombatHarness {
             systems: &self.systems,
             input_producer: None,
             action_trace: None,
+            politics_trace: None,
         };
         step_tick(
             &mut self.world,

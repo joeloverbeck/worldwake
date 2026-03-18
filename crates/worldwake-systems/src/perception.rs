@@ -20,6 +20,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         rng,
         active_actions: _active_actions,
         action_defs: _action_defs,
+        politics_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -572,6 +573,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -637,6 +639,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -701,6 +704,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -765,6 +769,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -830,6 +835,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -901,6 +907,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -974,6 +981,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(5),
             system_id: SystemId::Perception,
         })
@@ -1135,6 +1143,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(6),
             system_id: SystemId::Perception,
         })
@@ -1219,6 +1228,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(7),
             system_id: SystemId::Perception,
         })
@@ -1263,6 +1273,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1312,6 +1323,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(2),
             system_id: SystemId::Perception,
         })
@@ -1371,6 +1383,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1445,6 +1458,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1539,6 +1553,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1588,6 +1603,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1646,6 +1662,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1704,6 +1721,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1745,6 +1763,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1796,6 +1815,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1864,6 +1884,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1948,6 +1969,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2034,6 +2056,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2135,6 +2158,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2251,6 +2275,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
