@@ -1,6 +1,6 @@
 # E16DPOLPLAN-005: Unit tests for Bribe/Threaten planning state transitions
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -77,3 +77,12 @@ The new Bribe and Threaten arms in `apply_planner_step` need targeted unit tests
 
 1. `cargo test -p worldwake-ai goal_model::tests`
 2. `cargo test -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - `crates/worldwake-ai/src/goal_model.rs`: Added 9 unit tests covering all Bribe/Threaten planning state transitions. Extended `TestBeliefView` with `courage_values` and `combat_profiles` fields for per-entity control. Added `political_view()` and `combat_with_attack_skill()` test helpers.
+  - `crates/worldwake-ai/src/planning_state.rs`: Added `#[cfg(test)]` accessor `test_support_override()` to verify support declaration overrides (needed because `support_declaration()` only queries actor-as-supporter, while Bribe/Threaten add target-as-supporter).
+- **Deviations**: Ticket scoped only `goal_model.rs`, but a minimal `#[cfg(test)]` accessor was added to `planning_state.rs` to enable proper assertion of support declaration overrides for non-actor supporters. No production code changed.
+- **Verification**: All 9 new tests pass. Full `cargo test -p worldwake-ai` passes (0 failures). `cargo clippy -p worldwake-ai` clean.

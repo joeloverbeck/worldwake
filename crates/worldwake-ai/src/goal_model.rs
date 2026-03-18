@@ -961,8 +961,9 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionPayload, DurationExpr, Interruptibility, QueueForFacilityUsePayload,
-        RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
+        ActionPayload, BribeActionPayload, DurationExpr, Interruptibility,
+        QueueForFacilityUsePayload, RuntimeBeliefView, TellActionPayload,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     };
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
@@ -1380,6 +1381,8 @@ mod tests {
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
+        courage_values: BTreeMap<EntityId, Permille>,
+        combat_profiles: BTreeMap<EntityId, Option<CombatProfile>>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -1553,7 +1556,14 @@ mod tests {
             None
         }
 
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courage_values.get(&agent).copied()
+        }
+
+        fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+            if let Some(override_val) = self.combat_profiles.get(&agent) {
+                return *override_val;
+            }
             Some(CombatProfile::new(
                 pm(1000),
                 pm(700),
@@ -2798,5 +2808,419 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── Bribe / Threaten planning state transition tests ────────────────
+
+    /// Helper: build a minimal view for political planning tests.
+    /// Actor at `town` with specified bread quantity and combat profile.
+    fn political_view(
+        actor: EntityId,
+        target: EntityId,
+        town: EntityId,
+        office: EntityId,
+        actor_bread: Quantity,
+        actor_combat: Option<CombatProfile>,
+        target_courage: Option<Permille>,
+    ) -> TestBeliefView {
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target, town, office]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(target, town);
+        view.effective_places.insert(office, town);
+        view.entities_at
+            .insert(town, vec![actor, target, office]);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), actor_bread);
+        if let Some(profile) = actor_combat {
+            view.combat_profiles.insert(actor, Some(profile));
+        }
+        if let Some(courage) = target_courage {
+            view.courage_values.insert(target, courage);
+        }
+        view
+    }
+
+    fn combat_with_attack_skill(attack_skill: Permille) -> CombatProfile {
+        CombatProfile::new(
+            pm(1000),
+            pm(700),
+            attack_skill,
+            pm(580),
+            pm(80),
+            pm(25),
+            pm(18),
+            pm(120),
+            pm(35),
+            NonZeroU32::new(6).unwrap(),
+        )
+    }
+
+    #[test]
+    fn bribe_sufficient_goods_deducts_and_adds_support() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(5),
+            None,
+            None,
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ClaimOffice { office };
+        let payload = ActionPayload::Bribe(BribeActionPayload {
+            target,
+            offered_commodity: CommodityKind::Bread,
+            offered_quantity: Quantity(5),
+        });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Bread),
+            Quantity(0),
+            "actor should have 0 bread after bribe"
+        );
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            Some(actor),
+            "target should support actor after bribe"
+        );
+    }
+
+    #[test]
+    fn bribe_insufficient_goods_unchanged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(0),
+            None,
+            None,
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ClaimOffice { office };
+        let payload = ActionPayload::Bribe(BribeActionPayload {
+            target,
+            offered_commodity: CommodityKind::Bread,
+            offered_quantity: Quantity(5),
+        });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Bread),
+            Quantity(0),
+            "commodity should remain unchanged"
+        );
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            None,
+            "no support should be added when goods insufficient"
+        );
+    }
+
+    #[test]
+    fn bribe_no_payload_unchanged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(5),
+            None,
+            None,
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ClaimOffice { office };
+
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], None);
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Bread),
+            Quantity(5),
+            "commodity should remain unchanged without payload"
+        );
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            None,
+            "no support should be added without payload"
+        );
+    }
+
+    #[test]
+    fn threaten_yield_adds_support() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(0),
+            Some(combat_with_attack_skill(pm(800))),
+            Some(pm(200)),
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ClaimOffice { office };
+        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            Some(actor),
+            "target should support actor when attack_skill > courage"
+        );
+    }
+
+    #[test]
+    fn threaten_resist_unchanged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(0),
+            Some(combat_with_attack_skill(pm(200))),
+            Some(pm(800)),
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ClaimOffice { office };
+        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            None,
+            "no support when attack_skill < courage (resist)"
+        );
+    }
+
+    #[test]
+    fn threaten_missing_combat_profile_unchanged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let mut view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(0),
+            None,
+            Some(pm(200)),
+        );
+        // Explicitly set no combat profile for actor
+        view.combat_profiles.insert(actor, None);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ClaimOffice { office };
+        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            None,
+            "no support when actor has no combat profile (attack defaults to 0)"
+        );
+    }
+
+    #[test]
+    fn threaten_missing_courage_unchanged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        // Target has NO courage set → defaults to MAX → resist
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(0),
+            Some(combat_with_attack_skill(pm(800))),
+            None, // no courage on target
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ClaimOffice { office };
+        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            None,
+            "no support when target courage is unknown (defaults to MAX)"
+        );
+    }
+
+    #[test]
+    fn bribe_non_claim_office_unchanged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(5),
+            None,
+            None,
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        // Use a non-ClaimOffice goal
+        let goal = GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let payload = ActionPayload::Bribe(BribeActionPayload {
+            target,
+            offered_commodity: CommodityKind::Bread,
+            offered_quantity: Quantity(5),
+        });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Bread),
+            Quantity(5),
+            "commodity should remain unchanged for non-ClaimOffice goal"
+        );
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            None,
+            "no support for non-ClaimOffice goal"
+        );
+    }
+
+    #[test]
+    fn threaten_non_claim_office_unchanged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let office = entity(40);
+        let view = political_view(
+            actor,
+            target,
+            town,
+            office,
+            Quantity(0),
+            Some(combat_with_attack_skill(pm(800))),
+            Some(pm(200)),
+        );
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        // Use a non-ClaimOffice goal
+        let goal = GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
+
+        let advanced =
+            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+
+        assert_eq!(
+            advanced.test_support_override(target, office),
+            None,
+            "no support for non-ClaimOffice goal even when attack > courage"
+        );
     }
 }

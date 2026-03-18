@@ -703,6 +703,20 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 }
 
+#[cfg(test)]
+impl PlanningState<'_> {
+    pub(crate) fn test_support_override(
+        &self,
+        supporter: EntityId,
+        office: EntityId,
+    ) -> Option<EntityId> {
+        self.support_declaration_overrides
+            .get(&(supporter, office))
+            .copied()
+            .flatten()
+    }
+}
+
 impl RuntimeBeliefView for PlanningState<'_> {
     fn is_alive(&self, entity: EntityId) -> bool {
         !self
