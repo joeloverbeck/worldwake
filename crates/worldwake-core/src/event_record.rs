@@ -649,6 +649,7 @@ mod tests {
                     resource_source: None,
                     alive: true,
                     wounds: Vec::new(),
+                    courage: None,
                 },
             )]),
             visibility: VisibilitySpec::SamePlace,

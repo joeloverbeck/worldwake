@@ -1620,6 +1620,7 @@ mod tests {
             resource_source: None,
             alive: true,
             wounds: Vec::new(),
+            last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source,
         }
@@ -3136,6 +3137,7 @@ mod tests {
                         resource_source: None,
                         alive: true,
                         wounds: Vec::new(),
+                        last_known_courage: None,
                         observed_tick: Tick(8),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -3149,6 +3151,7 @@ mod tests {
                         resource_source: None,
                         alive: true,
                         wounds: Vec::new(),
+                        last_known_courage: None,
                         observed_tick: Tick(9),
                         source: PerceptionSource::DirectObservation,
                     },

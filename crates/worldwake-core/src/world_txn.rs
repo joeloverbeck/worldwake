@@ -3079,6 +3079,7 @@ mod tests {
                 resource_source: None,
                 alive: false,
                 wounds: Vec::new(),
+                last_known_courage: None,
                 observed_tick: Tick(12),
                 source: PerceptionSource::Inference,
             },

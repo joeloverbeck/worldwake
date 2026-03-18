@@ -508,13 +508,13 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn courage(&self, agent: EntityId) -> Option<Permille> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_utility_profile(agent)
-                    .map(|p| p.courage)
-            })
-            .flatten()
+        if agent == self.agent {
+            return self.world
+                .get_component_utility_profile(agent)
+                .map(|p| p.courage);
+        }
+        self.believed_entity(agent)
+            .and_then(|state| state.last_known_courage)
     }
 
     fn wounds(&self, agent: EntityId) -> Vec<Wound> {
@@ -776,6 +776,7 @@ mod tests {
             } else {
                 vec![sample_wound()]
             },
+            last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source: worldwake_core::PerceptionSource::DirectObservation,
         }
@@ -1438,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn courage_returns_profile_value_for_self_and_none_for_others() {
+    fn courage_returns_profile_value_for_self_and_believed_for_observed() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, other) = {
@@ -1467,8 +1468,11 @@ mod tests {
             (agent, other)
         };
 
+        // Beliefs include courage for the observed agent.
+        let mut belief_state = entity_belief(place, true, 0, 3);
+        belief_state.last_known_courage = Some(Permille::new(200).unwrap());
         let mut beliefs = AgentBeliefStore::new();
-        beliefs.update_entity(other, entity_belief(place, true, 0, 3));
+        beliefs.update_entity(other, belief_state);
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         // Self-authoritative: returns own courage
@@ -1476,15 +1480,64 @@ mod tests {
             RuntimeBeliefView::courage(&view, agent),
             Some(Permille::new(750).unwrap())
         );
-        // Other agent: returns None (self-authoritative read only)
-        assert_eq!(RuntimeBeliefView::courage(&view, other), None);
+        // Other agent: returns believed courage
+        assert_eq!(
+            RuntimeBeliefView::courage(&view, other),
+            Some(Permille::new(200).unwrap())
+        );
 
         // GoalBeliefView delegation matches
         assert_eq!(
             GoalBeliefView::courage(&view, agent),
             Some(Permille::new(750).unwrap())
         );
-        assert_eq!(GoalBeliefView::courage(&view, other), None);
+        assert_eq!(
+            GoalBeliefView::courage(&view, other),
+            Some(Permille::new(200).unwrap())
+        );
+    }
+
+    #[test]
+    fn courage_returns_none_for_observed_agent_without_courage_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        // Beliefs exist for other but without courage (last_known_courage = None).
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(other, entity_belief(place, true, 0, 3));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::courage(&view, other), None);
+    }
+
+    #[test]
+    fn courage_returns_none_for_unknown_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, unknown) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let unknown = txn.create_agent("Ghost", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(unknown, place).unwrap();
+            commit_txn(txn);
+            (agent, unknown)
+        };
+
+        // No beliefs about the unknown agent at all.
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::courage(&view, unknown), None);
     }
 
     #[test]

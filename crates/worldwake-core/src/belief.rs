@@ -91,6 +91,7 @@ pub struct ObservedEntitySnapshot {
     pub resource_source: Option<ResourceSource>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
+    pub courage: Option<Permille>,
 }
 
 impl ObservedEntitySnapshot {
@@ -107,6 +108,7 @@ impl ObservedEntitySnapshot {
             resource_source: self.resource_source.clone(),
             alive: self.alive,
             wounds: self.wounds.clone(),
+            last_known_courage: self.courage,
             observed_tick,
             source,
         }
@@ -121,6 +123,7 @@ pub struct BelievedEntityState {
     pub resource_source: Option<ResourceSource>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
+    pub last_known_courage: Option<Permille>,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
 }
@@ -152,6 +155,9 @@ pub fn build_observed_entity_snapshot(
             .get_component_wound_list(entity)
             .map(|wounds| wounds.wounds.clone())
             .unwrap_or_default(),
+        courage: world
+            .get_component_utility_profile(entity)
+            .map(|p| p.courage),
     })
 }
 
@@ -377,6 +383,7 @@ mod tests {
             resource_source: None,
             alive: true,
             wounds: vec![sample_wound(1, observed_tick)],
+            last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
@@ -527,6 +534,7 @@ mod tests {
             resource_source: None,
             alive: true,
             wounds: vec![sample_wound(1, 4)],
+            courage: None,
         };
 
         let bytes = bincode::serialize(&snapshot).unwrap();
@@ -892,6 +900,36 @@ mod tests {
         );
         assert!(snapshot.alive);
         assert!(snapshot.wounds.is_empty());
+        assert_eq!(snapshot.courage, None); // no UtilityProfile set
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_captures_courage() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = world
+            .create_agent("Brave", ControlSource::Ai, Tick(1))
+            .unwrap();
+        world.set_ground_location(agent, place).unwrap();
+
+        let courage = Permille::new(600).unwrap();
+        world
+            .insert_component_utility_profile(
+                agent,
+                crate::UtilityProfile {
+                    courage,
+                    ..crate::UtilityProfile::default()
+                },
+            )
+            .unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, agent).unwrap();
+        assert_eq!(snapshot.courage, Some(courage));
+
+        // Verify it propagates through to_believed_entity_state
+        let believed =
+            snapshot.to_believed_entity_state(Tick(2), PerceptionSource::DirectObservation);
+        assert_eq!(believed.last_known_courage, Some(courage));
     }
 
     #[test]

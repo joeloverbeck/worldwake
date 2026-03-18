@@ -3,8 +3,8 @@
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: None
-**Deps**: E16DPOLPLAN-004, E16DPOLPLAN-007, E16DPOLPLAN-022, E16DPOLPLAN-023, E16DPOLPLAN-024, E16DPOLPLAN-025
+**Engine Changes**: None (but depends on E16DPOLPLAN-028 which has engine changes)
+**Deps**: E16DPOLPLAN-004, E16DPOLPLAN-007, E16DPOLPLAN-022, E16DPOLPLAN-023, E16DPOLPLAN-024, E16DPOLPLAN-025, E16DPOLPLAN-028
 
 ## Problem
 
@@ -16,6 +16,7 @@ No golden test covers the threaten political path with diverse courage values pr
 2. `commit_threaten` does loyalty increase on yield, hostility on resist — confirmed
 3. `CombatProfile.attack_skill` accessible via snapshot — confirmed
 4. `UtilityProfile.courage` varies per agent — confirmed
+5. **BLOCKER DISCOVERED**: `PerAgentBeliefView::courage()` only returns courage for self (the planning agent). For other agents it returns `None`, which defaults to `pm(1000)` in `apply_threaten_for_office`, making the planner always evaluate Threaten as "resist." The belief pipeline (`ObservedEntitySnapshot` / `BelievedEntityState`) does not capture courage. **Fix**: E16DPOLPLAN-028 adds courage to the belief observation pipeline, following the same pattern as wounds.
 
 ## Architecture Check
 

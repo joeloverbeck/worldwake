@@ -4,9 +4,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, BeliefConfidencePolicy, CommodityKind, EventTag, HomeostaticNeeds,
-    MetabolismProfile, Permille, PerceptionProfile, PerceptionSource, Quantity, Seed, StateHash,
-    SuccessionLaw, Tick, UtilityProfile,
+    hash_event_log, hash_world, BeliefConfidencePolicy, CombatProfile, CommodityKind, EventTag,
+    HomeostaticNeeds, MetabolismProfile, Permille, PerceptionProfile, PerceptionSource, Quantity,
+    Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
 };
 
 // ---------------------------------------------------------------------------
@@ -470,5 +470,244 @@ fn golden_bribe_support_coalition() {
     assert!(
         !political_events.is_empty(),
         "Event log should contain Political events from bribe, support, and installation"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 14: Threaten with Courage Diversity (Principle 20)
+// ---------------------------------------------------------------------------
+//
+// Setup: Vacant office (Support law, period=5). Agent A eligible with high
+// enterprise_weight and attack_skill=pm(800). Agent B at jurisdiction with
+// courage=pm(200) (should yield — 800 > 200). Agent C at jurisdiction with
+// courage=pm(900) (should resist — 800 < 900). Agent D (competitor) at
+// jurisdiction, has already self-declared support for own office claim.
+//
+// The competitor ensures DeclareSupport alone from A would produce a tie,
+// motivating the planner to select Threaten to build a winning coalition.
+//
+// Expected: A generates ClaimOffice. Planner finds Threaten(B) viable
+// (800 > 200) but not Threaten(C) (800 < 900). A threatens B -> B yields ->
+// loyalty increase. B generates SupportCandidateForOffice(A). A declares
+// for self. A's coalition (self + B = 2) exceeds D's (self = 1).
+// C has hostility toward A or is unaffected.
+
+fn combat_profile_with_attack_skill(attack_skill: Permille) -> CombatProfile {
+    CombatProfile::new(
+        pm(1000), // wound_capacity
+        pm(700),  // incapacitation_threshold
+        attack_skill,
+        pm(500),  // guard_skill
+        pm(80),   // defend_bonus
+        pm(25),   // natural_clot_resistance
+        pm(18),   // natural_recovery_rate
+        pm(120),  // unarmed_wound_severity
+        pm(35),   // unarmed_bleed_rate
+        nz(6),    // unarmed_attack_ticks
+    )
+}
+
+#[test]
+#[ignore = "blocked on E16DPOLPLAN-028: courage not yet in belief pipeline"]
+fn golden_threaten_with_courage_diversity() {
+    // Wider beam — same rationale as bribe scenario: many equal-cost travel
+    // candidates can push Threaten nodes past the default beam cutoff.
+    let mut h = GoldenHarness::new(Seed([115; 32]));
+    h.driver = worldwake_ai::AgentTickDriver::new(worldwake_ai::PlanningBudget {
+        beam_width: 16,
+        ..worldwake_ai::PlanningBudget::default()
+    });
+
+    // Agent A — claimant with high enterprise weight and high attack_skill.
+    let agent_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Threatener Alpha",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(900)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        default_perception_profile(),
+    );
+    // Override combat profile to set attack_skill=pm(800) (threat pressure).
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_combat_profile(agent_a, combat_profile_with_attack_skill(pm(800)))
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Agent B — low courage (pm(200)), should yield to threat (800 > 200).
+    // social_weight > 0 so SupportCandidateForOffice is viable after loyalty
+    // increases. enterprise_weight=0 so B won't try to ClaimOffice itself.
+    let agent_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Timid Target",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_supporter_utility(pm(600)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_b,
+        default_perception_profile(),
+    );
+    set_courage(&mut h.world, &mut h.event_log, agent_b, pm(200));
+
+    // Agent C — high courage (pm(900)), should resist threat (800 < 900).
+    // social_weight > 0, enterprise_weight=0. C exists to prove agent
+    // diversity: same Threaten action, different courage → different outcome.
+    let agent_c = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Brave Resister",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_supporter_utility(pm(600)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_c,
+        default_perception_profile(),
+    );
+    set_courage(&mut h.world, &mut h.event_log, agent_c, pm(900));
+
+    // Agent D — competitor at jurisdiction. High enterprise weight, already
+    // self-declared support. Creates the contested scenario where Threaten
+    // is rational for building a winning coalition.
+    let agent_d = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Competitor",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_d,
+        default_perception_profile(),
+    );
+
+    // Vacant office at VillageSquare — Support law, 5-tick succession period.
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    // Pre-declare D's self-support — creates the tie scenario.
+    declare_support(&mut h.world, &mut h.event_log, agent_d, office, agent_d);
+
+    // Seed beliefs: all agents need to know about the office.
+    for agent in [agent_a, agent_b, agent_c, agent_d] {
+        seed_actor_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            &[office],
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+    }
+    // A needs to know about B, C (threaten targets) and D (competitor).
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        &[agent_b, agent_c, agent_d],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    // B needs to know about A (to generate SupportCandidateForOffice(A)
+    // after loyalty increases from the threat yield).
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent_b,
+        &[agent_a],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    // Record initial loyalty state for delta assertions.
+    let initial_b_loyalty_to_a = h.world.loyalty_to(agent_b, agent_a);
+    assert_eq!(
+        initial_b_loyalty_to_a, None,
+        "B should have no initial loyalty to A"
+    );
+
+    // Run simulation — enough ticks for threat, support declaration, and succession.
+    for _ in 0..40 {
+        h.step_once();
+    }
+
+    // Assertion 1: B has increased loyalty to A (yield outcome from threat).
+    let final_b_loyalty = h.world.loyalty_to(agent_b, agent_a);
+    assert!(
+        final_b_loyalty.is_some() && final_b_loyalty.unwrap() > pm(0),
+        "Agent B (low courage) should have gained loyalty to A after yielding to threat, \
+         got {:?}",
+        final_b_loyalty
+    );
+
+    // Assertion 2: C has hostility toward A (resist outcome) or is unaffected.
+    // The planner should not even select Threaten(C) since 800 < 900,
+    // so C may have no interaction at all. But if A does threaten C,
+    // the resist outcome produces hostility.
+    let c_hostile_to_a = h.world.hostile_targets_of(agent_c).contains(&agent_a);
+    let c_loyalty_to_a = h.world.loyalty_to(agent_c, agent_a);
+    // C must NOT have gained loyalty (would mean the threat yielded, violating
+    // the courage check).
+    assert!(
+        c_loyalty_to_a.is_none() || c_loyalty_to_a == Some(pm(0)),
+        "Agent C (high courage) must not gain loyalty to A from threat, got {:?}",
+        c_loyalty_to_a
+    );
+    // If threatened, C should be hostile. If not threatened, that's fine too
+    // (planner correctly filtered it out).
+    if c_hostile_to_a {
+        // Resist outcome confirmed — C was threatened and resisted.
+    }
+    // Either way, the diversity assertion holds: B yielded, C did not.
+
+    // Assertion 3: A is installed as office holder.
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(agent_a),
+        "Agent A should be installed as office holder after threat coalition \
+         (A self-support + B threat-yield support = 2 > D's 1)"
+    );
+
+    // Assertion 4: Agent diversity (Principle 20) — same action type,
+    // different courage values produced divergent outcomes.
+    // B gained loyalty (yield), C did not (resist or not threatened).
+    assert_ne!(
+        final_b_loyalty, c_loyalty_to_a,
+        "Principle 20: same Threaten action must produce divergent outcomes \
+         for agents with different courage values"
+    );
+
+    // Assertion 5: Event log contains Political events.
+    let political_events = h.event_log.events_by_tag(EventTag::Political);
+    assert!(
+        !political_events.is_empty(),
+        "Event log should contain Political events from threat, support, and installation"
     );
 }

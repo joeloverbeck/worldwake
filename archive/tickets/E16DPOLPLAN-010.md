@@ -1,6 +1,6 @@
 # E16DPOLPLAN-010: Golden Scenario 13 — Bribe -> support coalition (full-quantity transfer)
 
-**Status**: DONE
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None (wider beam_width=16 on test's PlanningBudget only)
@@ -72,3 +72,10 @@ No golden test covers the full bribe political loop: planner selects Bribe -> co
 ## Dependency Chain Note
 
 This ticket depends on the coalition-aware planner changes from E16DPOLPLAN-022 through E16DPOLPLAN-025. The competitor agent setup is required because the coalition-aware planner (E16DPOLPLAN-024) now produces `GoalSatisfied` for uncontested DeclareSupport. Without a competitor, the planner would never select Bribe — it would just DeclareSupport and succeed immediately. The competitor creates the contested scenario where Bribe is the rational choice.
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**: Added `golden_bribe_support_coalition` test to `golden_offices.rs`. Updated `docs/golden-e2e-coverage.md` and `docs/golden-e2e-scenarios.md` with Scenario 13 documentation.
+- **Deviations**: None. Test uses `beam_width=16` as specified. No engine changes required.
+- **Verification**: `cargo test -p worldwake-ai --test golden_offices` — 10/10 pass including `golden_bribe_support_coalition`.
