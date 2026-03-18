@@ -5,7 +5,7 @@ use worldwake_core::{
     CombatProfile,
     CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
     EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, PlaceTag, Quantity, RecipeId, ResourceSource,
+    MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId, ResourceSource,
     TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
@@ -42,6 +42,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
     pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
     pub(crate) combat_profile: Option<CombatProfile>,
+    pub(crate) courage: Option<Permille>,
     pub(crate) hostile_targets: Vec<EntityId>,
     pub(crate) visible_hostiles: Vec<EntityId>,
     pub(crate) current_attackers: Vec<EntityId>,
@@ -78,6 +79,7 @@ impl Default for SnapshotEntity {
             metabolism_profile: None,
             trade_disposition_profile: None,
             combat_profile: None,
+            courage: None,
             hostile_targets: Vec::new(),
             visible_hostiles: Vec::new(),
             current_attackers: Vec::new(),
@@ -389,6 +391,7 @@ fn build_snapshot_entity(
         metabolism_profile: view.metabolism_profile(entity),
         trade_disposition_profile: view.trade_disposition_profile(entity),
         combat_profile: view.combat_profile(entity),
+        courage: view.courage(entity),
         hostile_targets: view.hostile_targets_of(entity),
         visible_hostiles: view.visible_hostiles_for(entity),
         current_attackers: view.current_attackers_of(entity),

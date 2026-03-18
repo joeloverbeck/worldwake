@@ -1071,6 +1071,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.combat_profile)
     }
 
+    fn courage(&self, agent: EntityId) -> Option<Permille> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.courage)
+    }
+
     fn wounds(&self, agent: EntityId) -> Vec<Wound> {
         self.snapshot
             .entities
@@ -1315,6 +1322,7 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
+        courages: BTreeMap<EntityId, Permille>,
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -1529,6 +1537,10 @@ mod tests {
 
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
+        }
+
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courages.get(&agent).copied()
         }
 
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
@@ -2494,5 +2506,28 @@ mod tests {
         let zero_remaining = zero.remaining_carry_capacity_ref(actor_ref).unwrap();
         let firewood_unit = LoadUnits(worldwake_core::load_per_unit(CommodityKind::Firewood).0);
         assert!(firewood_unit > zero_remaining);
+    }
+
+    #[test]
+    fn courage_round_trips_through_snapshot_and_planning_state() {
+        let (mut view, actor, _town, _field, bread) = test_view();
+        let courage_value = Permille::new(500).unwrap();
+        view.courages.insert(actor, courage_value);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        // Agent with courage returns Some
+        assert_eq!(
+            RuntimeBeliefView::courage(&state, actor),
+            Some(courage_value)
+        );
+
+        // Entity in snapshot without UtilityProfile (bread is an ItemLot) returns None
+        assert_eq!(RuntimeBeliefView::courage(&state, bread), None);
+
+        // Entity not in snapshot returns None
+        let unknown = entity(999);
+        assert_eq!(RuntimeBeliefView::courage(&state, unknown), None);
     }
 }

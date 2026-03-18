@@ -1,6 +1,6 @@
 # E16DPOLPLAN-002: Add `courage` to `SnapshotEntity` + expose through `PlanningState`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — planning snapshot, planning state belief view impl
@@ -76,3 +76,12 @@ fn courage(&self, agent: EntityId) -> Option<Permille> {
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - `planning_snapshot.rs`: Added `Permille` import, `courage: Option<Permille>` field to `SnapshotEntity`, `None` in `Default` impl, `courage: view.courage(entity)` in `build_snapshot_entity()`
+  - `planning_state.rs`: Added `courage()` method to `PlanningState`'s `RuntimeBeliefView` impl reading from snapshot. Added `courages` field + impl to test `StubBeliefView`. Added unit test `courage_round_trips_through_snapshot_and_planning_state` covering all 3 acceptance criteria.
+- **Deviations**: `PlanningState::courage()` uses `self.snapshot.entities.get(&agent).and_then(|snapshot| snapshot.courage)` instead of `self.snapshot.entity(agent).and_then(|e| e.courage)` — matches the exact pattern used by `combat_profile()` which accesses the entities map directly.
+- **Verification**: `cargo clippy --workspace` clean, all worldwake-ai tests pass (403+).
