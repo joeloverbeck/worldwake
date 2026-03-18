@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None
-**Deps**: E16DPOLPLAN-004, E16DPOLPLAN-007
+**Deps**: E16DPOLPLAN-004, E16DPOLPLAN-007, E16DPOLPLAN-022, E16DPOLPLAN-023, E16DPOLPLAN-024, E16DPOLPLAN-025
 
 ## Problem
 
@@ -26,8 +26,8 @@ No golden test covers the threaten political path with diverse courage values pr
 
 ### 1. Add to `golden_offices.rs`
 
-- **Setup**: Vacant office. Agent A (high `attack_skill=pm(800)`, `enterprise_weight=pm(900)`). Agent B (`courage=pm(200)`, should yield). Agent C (`courage=pm(900)`, should resist). All at jurisdiction, sated.
-- **Expected**: A generates `ClaimOffice`. Planner finds `Threaten(B)` viable (800 > 200) but not `Threaten(C)` (800 < 900). A threatens B -> B yields -> loyalty increase. A declares for self. B may support A. C does not.
+- **Setup**: Vacant office. Agent A (high `attack_skill=pm(800)`, `enterprise_weight=pm(900)`). Agent B (`courage=pm(200)`, should yield). Agent C (`courage=pm(900)`, should resist). **Agent D (competitor)** at jurisdiction, has already self-declared support for own office claim. All at jurisdiction, sated. The competitor ensures DeclareSupport alone from A would produce a tie, motivating the planner to select Threaten to build a winning coalition.
+- **Expected**: A generates `ClaimOffice`. Planner finds `Threaten(B)` viable (800 > 200) but not `Threaten(C)` (800 < 900) because DeclareSupport alone ties with competitor D. A threatens B -> B yields -> loyalty increase. A declares for self. B may support A. C does not. A's coalition exceeds D's.
 - **Assertions**: B has increased loyalty to A. C has hostility or is unaffected. A becomes holder if sufficient support.
 
 > **Golden E2E documentation**: Review and update `docs/golden-e2e-coverage.md` and `docs/golden-e2e-scenarios.md` as necessary to reflect the new scenario(s) added by this ticket.
@@ -67,3 +67,7 @@ No golden test covers the threaten political path with diverse courage values pr
 
 1. `cargo test -p worldwake-ai golden_offices`
 2. `cargo test --workspace`
+
+## Dependency Chain Note
+
+This ticket depends on the coalition-aware planner changes from E16DPOLPLAN-022 through E16DPOLPLAN-025. The competitor agent setup is required because the coalition-aware planner (E16DPOLPLAN-024) now produces `GoalSatisfied` for uncontested DeclareSupport. Without a competitor, the planner would never select Threaten — it would just DeclareSupport and succeed immediately. The competitor creates the contested scenario where Threaten is the rational choice for building a winning coalition.

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: E16DPOLPLAN-007
+**Deps**: E16DPOLPLAN-007, E16DPOLPLAN-022, E16DPOLPLAN-023, E16DPOLPLAN-024, E16DPOLPLAN-025
 
 ## Problem
 
@@ -22,6 +22,7 @@ No golden test covers the simplest political path: a single agent claiming a vac
 
 1. Tests real AI loop (AgentTickDriver + AutonomousControllerRuntime) + real system dispatch — no mocking
 2. Scenario 11b verifies same seed produces identical world + event log hashes (determinism)
+3. **Terminal kind note (post E16DPOLPLAN-024)**: This is an uncontested scenario (single agent, no competitor). The coalition-aware planner now produces `GoalSatisfied` (not `ProgressBarrier`) for solo DeclareSupport when no competitor exists. Any assertions about `PlanTerminalKind` should expect `GoalSatisfied`.
 
 ## What to Change
 
@@ -76,3 +77,7 @@ No golden test covers the simplest political path: a single agent claiming a vac
 
 1. `cargo test -p worldwake-ai golden_offices`
 2. `cargo test --workspace`
+
+## Dependency Chain Note
+
+This ticket depends on the coalition-aware planner changes from E16DPOLPLAN-022 through E16DPOLPLAN-025. Specifically, E16DPOLPLAN-024 changed uncontested DeclareSupport to produce `GoalSatisfied` instead of `ProgressBarrier`. This scenario (single agent, no competitor) exercises that path directly.

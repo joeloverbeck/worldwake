@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: E16DPOLPLAN-005
+**Deps**: E16DPOLPLAN-005, E16DPOLPLAN-022, E16DPOLPLAN-023, E16DPOLPLAN-024, E16DPOLPLAN-025
 
 ## Problem
 
@@ -27,10 +27,10 @@ Unit tests verify state transitions but don't prove the GOAP search actually sel
 ### 1. Add integration tests
 
 4 integration tests in `goal_model.rs` or `crates/worldwake-ai/tests/`:
-1. **Planner selects Bribe plan**: agent at jurisdiction with goods, bribable target, vacant office -> plan contains `PlannerOpKind::Bribe` + `DeclareSupport`
-2. **Planner selects Threaten plan**: agent at jurisdiction, high attack_skill, low-courage target -> plan contains `Threaten`
-3. **Planner selects Travel + Bribe**: agent NOT at jurisdiction but has goods -> plan starts with `Travel` then includes `Bribe` + `DeclareSupport`
-4. **Planner rejects Threaten against high-courage**: target courage exceeds attack_skill -> Threaten NOT in plan
+1. **Planner selects Bribe plan**: agent at jurisdiction with goods, bribable target, vacant office. **A competitor agent must be present** with existing support (e.g., self-declared) so the actor faces competition and DeclareSupport alone would produce a tie (ProgressBarrier), motivating the planner to select Bribe for a winning coalition (GoalSatisfied). -> plan contains `PlannerOpKind::Bribe` + `DeclareSupport`
+2. **Planner selects Threaten plan**: agent at jurisdiction, high attack_skill, low-courage target. **A competitor agent must be present** with existing support so the planner is motivated to select Threaten rather than relying on DeclareSupport alone. -> plan contains `Threaten`
+3. **Planner selects Travel + Bribe**: agent NOT at jurisdiction but has goods. **A competitor agent must be present at the jurisdiction** with existing support. -> plan starts with `Travel` then includes `Bribe` + `DeclareSupport`
+4. **Planner rejects Threaten against high-courage**: target courage exceeds attack_skill -> Threaten NOT in plan. Planner falls back to Bribe (if goods available) or DeclareSupport with ProgressBarrier terminal kind.
 
 ## Files to Touch
 
@@ -73,3 +73,7 @@ Unit tests verify state transitions but don't prove the GOAP search actually sel
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
+
+## Dependency Chain Note
+
+This ticket's test scenarios depend on the coalition-aware planner changes from E16DPOLPLAN-022 (coalition-aware terminal kind), E16DPOLPLAN-023 (deferred ProgressBarrier semantics), E16DPOLPLAN-024 (solo DeclareSupport GoalSatisfied in uncontested scenarios), and E16DPOLPLAN-025 (deferred ProgressBarrier for tied coalitions). Without these, the planner would not correctly distinguish contested vs. uncontested scenarios, and tests requiring competitor-motivated Bribe/Threaten selection would not produce the expected plan structures.

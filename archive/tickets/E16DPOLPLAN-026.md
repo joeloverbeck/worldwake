@@ -1,6 +1,6 @@
 # E16DPOLPLAN-026: Update E16DPOLPLAN-006 and dependent golden scenario tickets after coalition-aware planner
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — ticket corrections only
@@ -88,3 +88,14 @@ None — this ticket modifies ticket files, not code.
 ### Commands
 
 1. Review each affected ticket for consistency with the coalition-aware planner
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - E16DPOLPLAN-006: Added competitor setup requirements to tests 1-3; updated test 4 fallback behavior; added deps on 022-025; added dependency chain note
+  - E16DPOLPLAN-008: Added terminal kind note (GoalSatisfied for uncontested); added deps on 022-025; added dependency chain note
+  - E16DPOLPLAN-010: Added competitor agent to setup and expected behavior with coalition counting; added deps on 022-025; added dependency chain note
+  - E16DPOLPLAN-011: Added competitor agent to setup and expected behavior with coalition motivation; added deps on 022-025; added dependency chain note
+- **Deviations**: None — all four changes applied as specified
+- **Verification**: All tickets have correct deps, competitor setup where needed, terminal kind expectations updated, and dependency chain notes
