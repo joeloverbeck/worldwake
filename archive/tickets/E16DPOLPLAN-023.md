@@ -1,6 +1,6 @@
 # E16DPOLPLAN-023: Support-aware planning snapshot and hypothetical support counting
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — planning_snapshot.rs, planning_state.rs
@@ -171,3 +171,12 @@ pub(crate) fn has_support_majority(&self, office: EntityId, candidate: EntityId)
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - `planning_snapshot.rs`: Added `office_support_declarations` field to `PlanningSnapshot`, populated during `build()` from belief view. Added `base_support_declarations_for_office()` accessor.
+  - `planning_state.rs`: Added `hypothetical_support_count(office, candidate)` merging base snapshot with overrides, and `has_support_majority(office, candidate)` for strict majority check.
+- **Deviations from original plan**: The ticket assumed `support_declaration_overrides` has value type `EntityId`, but the actual type is `Option<EntityId>` (where `Some(None)` = withdrawn). The counting logic was adapted to handle all three cases correctly.
+- **Verification**: 8 new tests pass, full workspace suite (1924 tests) passes, `cargo clippy --workspace` clean.

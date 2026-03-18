@@ -194,6 +194,9 @@ pub struct PlanningSnapshot {
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
     pub(crate) actor_support_declarations: BTreeMap<EntityId, EntityId>,
+    /// Base support declarations per office: (supporter, candidate) pairs.
+    /// Captured at snapshot build time from belief view.
+    pub(crate) office_support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
     pub(crate) actor_tell_profile: Option<TellProfile>,
     /// All-pairs shortest travel times between snapshot places.
@@ -264,6 +267,12 @@ impl PlanningSnapshot {
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
                 .filter_map(|office| view.support_declaration(actor, office).map(|candidate| (office, candidate)))
                 .collect(),
+            office_support_declarations: included_entities
+                .iter()
+                .copied()
+                .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
+                .map(|office| (office, view.support_declarations_for_office(office)))
+                .collect(),
             actor_confidence_policy: view.belief_confidence_policy(actor),
             actor_tell_profile: view.tell_profile(actor),
             shortest_travel_ticks,
@@ -273,6 +282,18 @@ impl PlanningSnapshot {
     #[must_use]
     pub fn actor(&self) -> EntityId {
         self.actor
+    }
+
+    /// Base support declarations for an office, captured at snapshot build time.
+    /// Returns `(supporter, candidate)` pairs.
+    #[must_use]
+    pub(crate) fn base_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> &[(EntityId, EntityId)] {
+        self.office_support_declarations
+            .get(&office)
+            .map_or(&[], std::vec::Vec::as_slice)
     }
 
     /// Minimum travel ticks from `from` to `to`, or `None` if unreachable.
@@ -613,6 +634,7 @@ mod tests {
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
+        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -855,6 +877,16 @@ mod tests {
             place: EntityId,
         ) -> Vec<(EntityId, NonZeroU32)> {
             self.adjacent.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn support_declarations_for_office(
+            &self,
+            office: EntityId,
+        ) -> Vec<(EntityId, EntityId)> {
+            self.support_declarations
+                .get(&office)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn estimate_duration(
@@ -1293,5 +1325,52 @@ mod tests {
                 active_grant: None,
             })
         );
+    }
+
+    #[test]
+    fn snapshot_captures_office_support_declarations() {
+        let actor = entity(1);
+        let supporter_a = entity(2);
+        let supporter_b = entity(3);
+        let office = entity(100);
+        let town = entity(10);
+
+        let mut view = StubBeliefView::default();
+        for &e in &[actor, supporter_a, supporter_b, office, town] {
+            view.alive.insert(e, true);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(supporter_a, EntityKind::Agent);
+        view.kinds.insert(supporter_b, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(supporter_a, town);
+        view.effective_places.insert(supporter_b, town);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(
+            town,
+            vec![actor, supporter_a, supporter_b, office],
+        );
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+
+        // supporter_a supports actor, supporter_b supports actor
+        view.support_declarations.insert(
+            office,
+            vec![(supporter_a, actor), (supporter_b, actor)],
+        );
+
+        let mut evidence = BTreeSet::new();
+        evidence.insert(office);
+        let snapshot = build_planning_snapshot(&view, actor, &evidence, &BTreeSet::new(), 1);
+
+        let declarations = snapshot.base_support_declarations_for_office(office);
+        assert_eq!(declarations.len(), 2);
+        assert!(declarations.contains(&(supporter_a, actor)));
+        assert!(declarations.contains(&(supporter_b, actor)));
+
+        // Non-office returns empty
+        assert!(snapshot.base_support_declarations_for_office(entity(999)).is_empty());
     }
 }

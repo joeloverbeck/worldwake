@@ -112,6 +112,72 @@ impl<'snapshot> PlanningState<'snapshot> {
         self
     }
 
+    /// Count hypothetical support declarations for `candidate` at `office`,
+    /// combining base snapshot declarations with planning overrides.
+    #[must_use]
+    pub fn hypothetical_support_count(&self, office: EntityId, candidate: EntityId) -> usize {
+        let base_declarations = self.snapshot.base_support_declarations_for_office(office);
+
+        // Start with base declarations, applying any overrides
+        let mut count = 0usize;
+        for &(supporter, base_candidate) in base_declarations {
+            let effective_candidate =
+                match self.support_declaration_overrides.get(&(supporter, office)) {
+                    Some(Some(c)) => Some(*c),    // overridden to support c
+                    Some(None) => None,            // support withdrawn
+                    None => Some(base_candidate),  // no override, use base
+                };
+            if effective_candidate == Some(candidate) {
+                count += 1;
+            }
+        }
+
+        // Add purely hypothetical declarations (supporters NOT in base)
+        for (&(supporter, decl_office), override_val) in &self.support_declaration_overrides {
+            if decl_office == office {
+                if let Some(decl_candidate) = override_val {
+                    if *decl_candidate == candidate
+                        && !base_declarations.iter().any(|(s, _)| *s == supporter)
+                    {
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        count
+    }
+
+    /// Returns true if `candidate` has strictly more hypothetical support
+    /// declarations than every other candidate for `office`.
+    #[must_use]
+    pub fn has_support_majority(&self, office: EntityId, candidate: EntityId) -> bool {
+        let actor_count = self.hypothetical_support_count(office, candidate);
+        if actor_count == 0 {
+            return false;
+        }
+
+        // Collect all known candidates (from base + overrides)
+        let base = self.snapshot.base_support_declarations_for_office(office);
+        let mut all_candidates = BTreeSet::new();
+        for &(_, c) in base {
+            all_candidates.insert(c);
+        }
+        for (&(_, decl_office), override_val) in &self.support_declaration_overrides {
+            if decl_office == office {
+                if let Some(c) = override_val {
+                    all_candidates.insert(*c);
+                }
+            }
+        }
+
+        // Actor must have strictly more than every other candidate
+        all_candidates
+            .into_iter()
+            .filter(|&c| c != candidate)
+            .all(|c| self.hypothetical_support_count(office, c) < actor_count)
+    }
+
     #[must_use]
     pub fn move_lot_to_holder(
         self,
@@ -1337,6 +1403,7 @@ mod tests {
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         courages: BTreeMap<EntityId, Permille>,
+        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -1555,6 +1622,13 @@ mod tests {
 
         fn courage(&self, agent: EntityId) -> Option<Permille> {
             self.courages.get(&agent).copied()
+        }
+
+        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+            self.support_declarations
+                .get(&office)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
@@ -2543,5 +2617,159 @@ mod tests {
         // Entity not in snapshot returns None
         let unknown = entity(999);
         assert_eq!(RuntimeBeliefView::courage(&state, unknown), None);
+    }
+
+    // ── hypothetical_support_count / has_support_majority ──────────────
+
+    fn support_test_setup() -> (StubBeliefView, EntityId, EntityId, EntityId, EntityId, EntityId) {
+        let actor = entity(1);
+        let rival = entity(2);
+        let supporter_a = entity(3);
+        let supporter_b = entity(4);
+        let office = entity(100);
+        let town = entity(10);
+
+        let mut view = StubBeliefView::default();
+        for &e in &[actor, rival, supporter_a, supporter_b, office, town] {
+            view.alive.insert(e, true);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(rival, EntityKind::Agent);
+        view.kinds.insert(supporter_a, EntityKind::Agent);
+        view.kinds.insert(supporter_b, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(rival, town);
+        view.effective_places.insert(supporter_a, town);
+        view.effective_places.insert(supporter_b, town);
+        view.effective_places.insert(office, town);
+
+        view.entities_at.insert(
+            town,
+            vec![actor, rival, supporter_a, supporter_b, office],
+        );
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+
+        (view, actor, rival, supporter_a, supporter_b, office)
+    }
+
+    fn build_support_snapshot(
+        view: &StubBeliefView,
+        actor: EntityId,
+        office: EntityId,
+    ) -> crate::planning_snapshot::PlanningSnapshot {
+        let mut evidence = BTreeSet::new();
+        evidence.insert(office);
+        build_planning_snapshot(view, actor, &evidence, &BTreeSet::new(), 1)
+    }
+
+    #[test]
+    fn hypothetical_support_count_base_only() {
+        let (mut view, actor, _rival, supporter_a, supporter_b, office) = support_test_setup();
+        // supporter_a → actor, supporter_b → actor
+        view.support_declarations.insert(
+            office,
+            vec![(supporter_a, actor), (supporter_b, actor)],
+        );
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(state.hypothetical_support_count(office, actor), 2);
+    }
+
+    #[test]
+    fn hypothetical_support_count_with_override_changing_existing() {
+        let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
+        // Base: both support actor
+        view.support_declarations.insert(
+            office,
+            vec![(supporter_a, actor), (supporter_b, actor)],
+        );
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        // Override: supporter_b now supports rival
+        let state = PlanningState::new(&snapshot)
+            .with_support_declaration(supporter_b, office, rival);
+
+        assert_eq!(state.hypothetical_support_count(office, actor), 1);
+        assert_eq!(state.hypothetical_support_count(office, rival), 1);
+    }
+
+    #[test]
+    fn hypothetical_support_count_with_purely_hypothetical_new_declaration() {
+        let (mut view, actor, _rival, supporter_a, supporter_b, office) = support_test_setup();
+        // Base: only supporter_a supports actor
+        view.support_declarations
+            .insert(office, vec![(supporter_a, actor)]);
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        // Hypothetical: supporter_b (not in base) now also supports actor
+        let state = PlanningState::new(&snapshot)
+            .with_support_declaration(supporter_b, office, actor);
+
+        assert_eq!(state.hypothetical_support_count(office, actor), 2);
+    }
+
+    #[test]
+    fn has_support_majority_true_when_strictly_more() {
+        let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
+        // actor has 2, rival has 1
+        view.support_declarations.insert(
+            office,
+            vec![
+                (supporter_a, actor),
+                (supporter_b, actor),
+                (rival, rival),
+            ],
+        );
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(state.has_support_majority(office, actor));
+        assert!(!state.has_support_majority(office, rival));
+    }
+
+    #[test]
+    fn has_support_majority_false_on_tie() {
+        let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
+        // actor has 1, rival has 1
+        view.support_declarations.insert(
+            office,
+            vec![(supporter_a, actor), (supporter_b, rival)],
+        );
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!state.has_support_majority(office, actor));
+        assert!(!state.has_support_majority(office, rival));
+    }
+
+    #[test]
+    fn has_support_majority_false_when_zero_support() {
+        let (view, actor, _rival, _supporter_a, _supporter_b, office) = support_test_setup();
+        // No declarations at all
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!state.has_support_majority(office, actor));
+    }
+
+    #[test]
+    fn has_support_majority_true_sole_candidate_with_one_support() {
+        let (mut view, actor, _rival, supporter_a, _supporter_b, office) = support_test_setup();
+        // Only one declaration, no competitors
+        view.support_declarations
+            .insert(office, vec![(supporter_a, actor)]);
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(state.has_support_majority(office, actor));
     }
 }
