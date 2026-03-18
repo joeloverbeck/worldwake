@@ -6,7 +6,7 @@
 
 ---
 
-The golden suite contains 87 tests across 8 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
+The golden suite contains 89 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
 
 ---
 
@@ -565,3 +565,24 @@ The golden suite contains 87 tests across 8 domain files. Every test uses the re
 - Two runs with the same seed produce identical hashes.
 **Foundation alignment**: Principle 1 (maximal emergence — no quest logic drives the loot→heal chain), Principle 3 (concrete wounds, concrete medicine), Principle 24 (systems interact only through state mutation).
 **Cross-system chain**: Observe corpse → LootCorpse goal → loot action transfers medicine → TreatWounds{self} goal emerges → medicine consumed → wound reduced.
+
+### Scenario 11: Simple Office Claim via DeclareSupport
+**File**: `golden_offices.rs` | **Test**: `golden_simple_office_claim_via_declare_support`
+**Systems exercised**: Succession (office resolution), AI (candidate generation for ClaimOffice, GOAP planning for DeclareSupport), Political actions (declare_support)
+**Setup**: Single sated agent ("Claimant") at Village Square with enterprise_weight=pm(800) and PerceptionProfile. Vacant office ("Village Elder") with SuccessionLaw::Support, succession_period_ticks=5, no eligibility rules. Agent has DirectObservation beliefs about the office.
+**Emergent behavior proven**:
+- Agent autonomously generates ClaimOffice goal from enterprise_weight and believed vacant office.
+- GOAP planner finds DeclareSupport(self) plan.
+- Agent executes DeclareSupport action (1-tick, non-interruptible).
+- After succession period elapses, succession_system installs agent as office holder.
+- Event log contains Political events from declaration and installation.
+**Foundation alignment**: Principle 10 (agent plans from beliefs about the office, not world state), Principle 20 (enterprise_weight drives political ambition).
+**Cross-system chain**: Enterprise weight → ClaimOffice candidate → DeclareSupport plan → action execution → succession_system resolution → office installation.
+
+### Scenario 11b: Simple Office Claim Deterministic Replay
+**File**: `golden_offices.rs` | **Test**: `golden_simple_office_claim_deterministic_replay`
+**Systems exercised**: Same as Scenario 11 + determinism verification.
+**Setup**: Same as Scenario 11, run twice with identical seed.
+**Emergent behavior proven**:
+- Two runs with the same seed produce identical world and event log hashes.
+- World state differs from initial (non-trivial simulation occurred).

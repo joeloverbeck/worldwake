@@ -1,6 +1,6 @@
 # E16DPOLPLAN-008: Golden Scenario 11 + 11b — Simple office claim via DeclareSupport + deterministic replay
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -81,3 +81,13 @@ No golden test covers the simplest political path: a single agent claiming a vac
 ## Dependency Chain Note
 
 This ticket depends on the coalition-aware planner changes from E16DPOLPLAN-022 through E16DPOLPLAN-025. Specifically, E16DPOLPLAN-024 changed uncontested DeclareSupport to produce `GoalSatisfied` instead of `ProgressBarrier`. This scenario (single agent, no competitor) exercises that path directly.
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - New file: `crates/worldwake-ai/tests/golden_offices.rs` with 2 golden tests (Scenario 11 + 11b).
+  - Updated `docs/golden-e2e-coverage.md` — added golden_offices.rs to file layout, ClaimOffice to GoalKind matrix, political cross-system chain, updated test count (87→89).
+  - Updated `docs/golden-e2e-scenarios.md` — added Scenario 11 and 11b descriptions.
+- **Deviations from original plan**: None.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.
