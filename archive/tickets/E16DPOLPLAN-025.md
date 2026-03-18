@@ -1,6 +1,6 @@
 # E16DPOLPLAN-025: Deferred ProgressBarrier in GOAP search — prefer GoalSatisfied across expansion levels
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — search.rs
@@ -156,3 +156,10 @@ if expansions >= budget.max_node_expansions {
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**: Modified `search_plan()` in `crates/worldwake-ai/src/search.rs` to defer ProgressBarrier terminals instead of returning them immediately. GoalSatisfied and CombatCommitment terminals still return immediately. Deferred barriers are returned as fallback on frontier or budget exhaustion. Removed the ConsumeOwnedCommodity special-case sort (subsumed by general mechanism).
+- **Deviations from plan**: None. All three changes implemented as specified.
+- **Verification**: 431 unit tests + 149 golden tests pass (0 failures). `cargo clippy --workspace` clean. 3 new tests added covering: GoalSatisfied preference across expansion levels, fallback after frontier exhaustion, fallback on budget exhaustion.

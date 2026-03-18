@@ -117,6 +117,7 @@ pub fn search_plan(
     let mut frontier = BinaryHeap::new();
     frontier.push(FrontierEntry::new(root_node(snapshot, goal_relevant_places)));
     let mut expansions = 0u16;
+    let mut best_barrier: Option<PlannedPlan> = None;
 
     while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
         if goal.key.kind.is_satisfied(&node.state) {
@@ -130,6 +131,9 @@ pub fn search_plan(
             continue;
         }
         if expansions >= budget.max_node_expansions {
+            if let Some(barrier_plan) = best_barrier {
+                return PlanSearchResult::Found(barrier_plan);
+            }
             return PlanSearchResult::BudgetExhausted { expansions_used: expansions };
         }
         expansions = expansions.saturating_add(1);
@@ -170,25 +174,33 @@ pub fn search_plan(
             }
         }
         if !terminal_successors.is_empty() {
-            // For consumption goals, prefer GoalSatisfied (eat) over
-            // ProgressBarrier (pick_up) when both are available — eating
-            // possessed stock is better than picking up more ground stock.
-            if matches!(goal.key.kind, GoalKind::ConsumeOwnedCommodity { .. }) {
-                terminal_successors.sort_by(|left, right| {
-                    let kind_order = |kind: &PlanTerminalKind| match kind {
-                        PlanTerminalKind::GoalSatisfied => 0,
-                        _ => 1,
-                    };
-                    kind_order(&left.0)
-                        .cmp(&kind_order(&right.0))
-                        .then_with(|| compare_search_nodes(&left.1, &right.1))
-                });
-            } else {
-                terminal_successors
-                    .sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+            // Sort by cost so the best candidate of each kind is first.
+            terminal_successors
+                .sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+
+            for (terminal_kind, successor) in terminal_successors {
+                match terminal_kind {
+                    // GoalSatisfied and CombatCommitment are returned immediately.
+                    PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
+                        return PlanSearchResult::Found(PlannedPlan::new(
+                            goal.key,
+                            successor.steps,
+                            terminal_kind,
+                        ));
+                    }
+                    // ProgressBarrier is stored as a fallback — keep searching
+                    // for a GoalSatisfied plan across deeper expansion levels.
+                    PlanTerminalKind::ProgressBarrier => {
+                        if best_barrier.is_none() {
+                            best_barrier = Some(PlannedPlan::new(
+                                goal.key,
+                                successor.steps,
+                                terminal_kind,
+                            ));
+                        }
+                    }
+                }
             }
-            let (terminal_kind, successor) = terminal_successors.remove(0);
-            return PlanSearchResult::Found(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
         }
         successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
         successors.truncate(usize::from(budget.beam_width));
@@ -201,6 +213,9 @@ pub fn search_plan(
         }
     }
 
+    if let Some(barrier_plan) = best_barrier {
+        return PlanSearchResult::Found(barrier_plan);
+    }
     PlanSearchResult::FrontierExhausted { expansions_used: expansions }
 }
 
@@ -4168,6 +4183,264 @@ mod tests {
             Some(corpse_x),
             "required_target should be the goal's canonical corpse"
         );
+    }
+
+    /// With the deferred ProgressBarrier mechanism, a GoalSatisfied plan at
+    /// depth 2 (Travel + pick_up) is preferred over a ProgressBarrier (Trade)
+    /// at depth 1.  Before the deferral change, the search would greedily
+    /// return the Trade ProgressBarrier without exploring deeper.
+    #[test]
+    fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+        let market = entity(11);
+        let bread = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town, market, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(market, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.effective_places.insert(bread, market);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.entities_at.insert(market, vec![bread]);
+        view.adjacent
+            .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(market, vec![(town, NonZeroU32::new(2).unwrap())]);
+        // Actor has coins for Trade and carry capacity for pick_up.
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.carry_capacities.insert(actor, LoadUnits(4));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(bread, LoadUnits(1));
+        // Seller has bread merchandise.
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(town),
+            },
+        );
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        // Ground bread lot at market.
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
+        // Needs/thresholds for the acquire goal context.
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller, bread]),
+            evidence_places: BTreeSet::from([town, market]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[market],
+            None,
+        )
+        .into_plan()
+        .expect("should find a plan");
+
+        // The search should prefer GoalSatisfied (Travel + pick_up) over the
+        // deferred Trade ProgressBarrier.
+        assert_eq!(
+            plan.terminal_kind,
+            PlanTerminalKind::GoalSatisfied,
+            "deferred barrier should yield to GoalSatisfied at deeper level"
+        );
+        assert!(plan.steps.len() >= 2, "plan should include Travel + pick_up");
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+        assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
+    }
+
+    /// When only a ProgressBarrier exists and no GoalSatisfied is reachable,
+    /// the deferred barrier is returned as a fallback after the frontier is
+    /// exhausted.
+    #[test]
+    fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(town),
+            },
+        );
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[],
+            None,
+        )
+        .into_plan()
+        .expect("deferred barrier should be returned as fallback");
+
+        assert_eq!(
+            plan.terminal_kind,
+            PlanTerminalKind::ProgressBarrier,
+            "barrier fallback should be returned after frontier exhaustion"
+        );
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
+    }
+
+    /// When the node expansion budget is exhausted but a ProgressBarrier was
+    /// found earlier, the barrier plan is returned instead of BudgetExhausted.
+    #[test]
+    fn search_returns_deferred_barrier_on_budget_exhaustion() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+        let market = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town, market]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(market, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.entities_at.insert(market, vec![]);
+        view.adjacent
+            .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(market, vec![(town, NonZeroU32::new(2).unwrap())]);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(town),
+            },
+        );
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+
+        // Tight budget: only 2 expansions.  Expansion 1 finds the Trade
+        // ProgressBarrier (deferred).  Expansion 2 exhausts the budget.
+        let tight_budget = PlanningBudget {
+            max_node_expansions: 2,
+            ..PlanningBudget::default()
+        };
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &tight_budget,
+            &[],
+            None,
+        );
+
+        // Should return the deferred barrier, not BudgetExhausted.
+        let plan = result
+            .into_plan()
+            .expect("deferred barrier should be returned on budget exhaustion");
+        assert_eq!(
+            plan.terminal_kind,
+            PlanTerminalKind::ProgressBarrier,
+            "barrier found before budget exhaustion should be returned"
+        );
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
     }
 
     #[test]
