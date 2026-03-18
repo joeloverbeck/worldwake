@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-005: Belief-driven care candidate generation with direct-observation gate
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — candidate generation in worldwake-ai
@@ -99,3 +99,16 @@ Ensure no code path emits `AcquireCommodity` with `CommodityPurpose::Treatment` 
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - Replaced `emit_heal_goals()` + `emit_treatment_candidates()` + `local_heal_targets()` with single `emit_care_goals()` in `candidate_generation.rs`
+  - Self-care emits `TreatWounds { patient: agent }` when agent has wounds (no medicine gate)
+  - Third-party care iterates `known_entity_beliefs`, emits `TreatWounds` only for `DirectObservation` source
+  - Removed `serves_treatment` from recipe relevance check (medicine production subordinate to `TreatWounds` plan)
+  - Added `PerceptionSource` to non-test imports
+  - Replaced 5 old tests with 5 new belief-driven tests
+- **Deviations**: Removed `serves_treatment` from recipe candidate filter (not in original ticket scope but `local_heal_targets` deletion required it; consistent with spec intent that medicine production is subordinate to `TreatWounds`)
+- **Verification**: `cargo test --workspace` (1877 passed, 0 failed), `cargo clippy --workspace` clean

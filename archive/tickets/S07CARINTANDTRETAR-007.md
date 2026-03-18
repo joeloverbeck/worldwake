@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-007: Update goal policy, failure handling, and remaining Heal→TreatWounds match arms
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — goal policy, failure handling, interrupts in worldwake-ai
@@ -100,3 +100,14 @@ Update test code at line 2108 that uses `CommodityPurpose::Treatment` — use a 
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - `goal_policy.rs`: `Heal` → `TreatWounds` match arm and 3 test instances
+  - `failure_handling.rs`: `Heal` → `TreatWounds` in `TargetGone` resolution
+  - `interrupts.rs`: `Heal` → `TreatWounds` in 2 test constructions
+  - `search.rs`: Changed test from `CommodityPurpose::Treatment` to `SelfConsume` (test exercises pick-up search, not treatment-specific behavior)
+- **Deviations**: Also added `MoveCargo` and `Harvest` to `TREAT_WOUNDS_OPS` in `goal_model.rs` (spec gap — needed for ground lot pickup, discovered via golden test failure). Fixed CLI RON test data missing `care_weight` field.
+- **Verification**: `cargo test --workspace` (1877 passed, 0 failed), `cargo clippy --workspace` clean

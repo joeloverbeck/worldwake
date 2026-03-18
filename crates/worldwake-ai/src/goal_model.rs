@@ -23,7 +23,7 @@ pub enum GoalKindTag {
     Wash,
     EngageHostile,
     ReduceDanger,
-    Heal,
+    TreatWounds,
     ProduceCommodity,
     SellCommodity,
     RestockCommodity,
@@ -108,12 +108,14 @@ const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Defend,
     PlannerOpKind::Heal,
 ];
-const HEAL_OPS: &[PlannerOpKind] = &[
+const TREAT_WOUNDS_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Heal,
     PlannerOpKind::Trade,
     PlannerOpKind::QueueForFacilityUse,
     PlannerOpKind::Craft,
+    PlannerOpKind::MoveCargo,
+    PlannerOpKind::Harvest,
 ];
 const PRODUCE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
@@ -238,7 +240,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Wash => GoalKindTag::Wash,
             GoalKind::EngageHostile { .. } => GoalKindTag::EngageHostile,
             GoalKind::ReduceDanger => GoalKindTag::ReduceDanger,
-            GoalKind::Heal { .. } => GoalKindTag::Heal,
+            GoalKind::TreatWounds { .. } => GoalKindTag::TreatWounds,
             GoalKind::ProduceCommodity { .. } => GoalKindTag::ProduceCommodity,
             GoalKind::SellCommodity { .. } => GoalKindTag::SellCommodity,
             GoalKind::RestockCommodity { .. } => GoalKindTag::RestockCommodity,
@@ -262,7 +264,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Wash => WASH_OPS,
             GoalKind::EngageHostile { .. } => ENGAGE_HOSTILE_OPS,
             GoalKind::ReduceDanger => REDUCE_DANGER_OPS,
-            GoalKind::Heal { .. } => HEAL_OPS,
+            GoalKind::TreatWounds { .. } => TREAT_WOUNDS_OPS,
             GoalKind::ProduceCommodity { .. } => PRODUCE_OPS,
             GoalKind::SellCommodity { .. } => SELL_OPS,
             GoalKind::RestockCommodity { .. } => RESTOCK_OPS,
@@ -298,7 +300,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Wash
             | GoalKind::EngageHostile { .. }
             | GoalKind::ReduceDanger
-            | GoalKind::Heal { .. }
+            | GoalKind::TreatWounds { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
             | GoalKind::ShareBelief { .. }
@@ -329,7 +331,7 @@ impl GoalKindPlannerExt for GoalKind {
                     GoalKind::AcquireCommodity { commodity, .. }
                     | GoalKind::RestockCommodity { commodity }
                     | GoalKind::ConsumeOwnedCommodity { commodity } => *commodity,
-                    GoalKind::Heal { .. } => CommodityKind::Medicine,
+                    GoalKind::TreatWounds { .. } => CommodityKind::Medicine,
                     _ => return Err(GoalPayloadOverrideError::UnsupportedGoal),
                 };
                 let Some(actor_place) = state.effective_place(actor) else {
@@ -447,7 +449,7 @@ impl GoalKindPlannerExt for GoalKind {
                 needs.dirtiness = below_medium(thresholds.dirtiness.medium());
             }),
             PlannerOpKind::Heal => match self {
-                GoalKind::Heal { target } => state.with_pain(*target, Permille::new_unchecked(0)),
+                GoalKind::TreatWounds { patient } => state.with_pain(*patient, Permille::new_unchecked(0)),
                 _ => state,
             },
             PlannerOpKind::Loot => match self {
@@ -513,7 +515,7 @@ impl GoalKindPlannerExt for GoalKind {
                 self,
                 GoalKind::ConsumeOwnedCommodity { .. }
                     | GoalKind::AcquireCommodity { .. }
-                    | GoalKind::Heal { .. }
+                    | GoalKind::TreatWounds { .. }
                     | GoalKind::ProduceCommodity { .. }
                     | GoalKind::RestockCommodity { .. }
             );
@@ -554,7 +556,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. } => true,
-            GoalKind::Heal { .. } => step.op_kind == PlannerOpKind::Trade,
+            GoalKind::TreatWounds { .. } => step.op_kind == PlannerOpKind::Trade,
             _ => false,
         }
     }
@@ -580,7 +582,6 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
                 CommodityPurpose::SelfConsume
                 | CommodityPurpose::Restock
-                | CommodityPurpose::Treatment
                 | CommodityPurpose::RecipeInput(_) => {
                     state.commodity_quantity(actor, *commodity) > Quantity(0)
                 }
@@ -603,8 +604,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
                 derive_danger_pressure(state, actor) < thresholds.danger.high()
             }),
-            GoalKind::Heal { target } => state
-                .pain_summary(*target)
+            GoalKind::TreatWounds { patient } => state
+                .pain_summary(*patient)
                 .is_some_and(|pain| pain == Permille::new_unchecked(0)),
             GoalKind::MoveCargo {
                 commodity,
@@ -646,7 +647,8 @@ impl GoalKindPlannerExt for GoalKind {
                 places
             }
             GoalKind::Relieve => places_with_place_tag(state, PlaceTag::Latrine),
-            GoalKind::EngageHostile { target } | GoalKind::Heal { target } => {
+            GoalKind::EngageHostile { target }
+            | GoalKind::TreatWounds { patient: target } => {
                 state.effective_place(*target).into_iter().collect()
             }
             GoalKind::Sleep | GoalKind::Wash | GoalKind::ReduceDanger => Vec::new(),
@@ -736,7 +738,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SupportCandidateForOffice { .. } => true,
 
             // Exact-bound goals: target must match.
-            GoalKind::EngageHostile { target } | GoalKind::Heal { target } => {
+            GoalKind::EngageHostile { target }
+            | GoalKind::TreatWounds { patient: target } => {
                 authoritative_targets.contains(target)
             }
             GoalKind::LootCorpse { corpse } => authoritative_targets.contains(corpse),
@@ -921,7 +924,7 @@ mod tests {
     fn crate_re_exports_the_canonical_shared_goal_identity() {
         let kind = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
-            purpose: CommodityPurpose::Treatment,
+            purpose: CommodityPurpose::SelfConsume,
         };
         let key = GoalKey::from(kind);
 
@@ -932,8 +935,8 @@ mod tests {
     #[test]
     fn grounded_goal_roundtrips_through_bincode() {
         let goal = GroundedGoal {
-            key: GoalKey::from(GoalKind::Heal {
-                target: entity_id(7, 1),
+            key: GoalKey::from(GoalKind::TreatWounds {
+                patient: entity_id(7, 1),
             }),
             evidence_entities: BTreeSet::from([entity_id(3, 0), entity_id(3, 1)]),
             evidence_places: BTreeSet::from([entity_id(10, 0)]),
@@ -949,8 +952,8 @@ mod tests {
     fn ranked_goal_roundtrips_through_bincode() {
         let goal = RankedGoal {
             grounded: GroundedGoal {
-                key: GoalKey::from(GoalKind::Heal {
-                    target: entity_id(7, 1),
+                key: GoalKey::from(GoalKind::TreatWounds {
+                    patient: entity_id(7, 1),
                 }),
                 evidence_entities: BTreeSet::from([entity_id(3, 0), entity_id(3, 1)]),
                 evidence_places: BTreeSet::from([entity_id(10, 0)]),
@@ -970,7 +973,7 @@ mod tests {
         assert_eq!(
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::Treatment,
+                purpose: CommodityPurpose::SelfConsume,
             }
             .goal_kind_tag(),
             GoalKindTag::AcquireCommodity
@@ -2461,8 +2464,8 @@ mod tests {
                 target: entity(99),
             },
             GoalKind::ReduceDanger,
-            GoalKind::Heal {
-                target: entity(99),
+            GoalKind::TreatWounds {
+                patient: entity(99),
             },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(0),
@@ -2579,18 +2582,18 @@ mod tests {
             assert!(!goal.matches_binding(&[id(11)], PlannerOpKind::Attack));
         }
 
-        // ── Heal ──────────────────────────────────────────────────────
+        // ── TreatWounds ──────────────────────────────────────────────
 
         #[test]
-        fn heal_match() {
-            let target = id(20);
-            let goal = GoalKind::Heal { target };
-            assert!(goal.matches_binding(&[target], PlannerOpKind::Heal));
+        fn treat_wounds_match() {
+            let patient = id(20);
+            let goal = GoalKind::TreatWounds { patient };
+            assert!(goal.matches_binding(&[patient], PlannerOpKind::Heal));
         }
 
         #[test]
-        fn heal_mismatch() {
-            let goal = GoalKind::Heal { target: id(20) };
+        fn treat_wounds_mismatch() {
+            let goal = GoalKind::TreatWounds { patient: id(20) };
             assert!(!goal.matches_binding(&[id(21)], PlannerOpKind::Heal));
         }
 

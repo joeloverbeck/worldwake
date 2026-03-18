@@ -401,8 +401,8 @@ mod tests {
         let challengers = vec![
             ranked(current_goal, GoalPriorityClass::Medium, 100),
             ranked(
-                GoalKind::Heal {
-                    target: entity(99),
+                GoalKind::TreatWounds {
+                    patient: entity(99),
                 },
                 GoalPriorityClass::Critical,
                 1_000,
@@ -771,8 +771,8 @@ mod tests {
         let current_goal = GoalKind::RestockCommodity {
             commodity: CommodityKind::Bread,
         };
-        let heal_goal = GoalKind::Heal {
-            target: entity(99),
+        let heal_goal = GoalKind::TreatWounds {
+            patient: entity(99),
         };
 
         // Heal at higher priority class can interrupt freely (Reactive role).

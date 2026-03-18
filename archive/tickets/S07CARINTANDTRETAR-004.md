@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-004: TreatWounds goal model — ops, satisfaction, binding, tag
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — goal model semantics in worldwake-ai
@@ -111,3 +111,12 @@ Update tests referencing `GoalKind::Heal` or `GoalKindTag::Heal` to use `TreatWo
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - `goal_model.rs`: `GoalKindTag::Heal` → `TreatWounds`, `HEAL_OPS` → `TREAT_WOUNDS_OPS`, all `GoalKind::Heal { target }` → `GoalKind::TreatWounds { patient }` across the `GoalKindPlannerExt` impl and tests. Removed stale `CommodityPurpose::Treatment` arm from `is_satisfied()` (variant removed by ticket 001 in core).
+  - `planner_ops.rs`: All `GoalKindTag::Heal` → `TreatWounds`, `GOALS_HEAL` → `GOALS_TREAT_WOUNDS`.
+- **Deviations**: Also removed `CommodityPurpose::Treatment` from `is_satisfied()` and test references — necessary because ticket 001 removed that variant from core. Used `patient: target` field-rename pattern binding in combined `EngageHostile | TreatWounds` match arms.
+- **Verification**: Zero compile errors in goal_model.rs and planner_ops.rs. Remaining errors (9) are exclusively in out-of-scope files covered by tickets 005-007.

@@ -151,14 +151,6 @@ fn priority_class(
         } => self_consume_priority(commodity, context),
         GoalKind::AcquireCommodity {
             commodity: _,
-            purpose: CommodityPurpose::Treatment,
-        } => context
-            .thresholds
-            .map_or(GoalPriorityClass::Background, |thresholds| {
-                classify_band(treatment_pain(context), &thresholds.pain)
-            }),
-        GoalKind::AcquireCommodity {
-            commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
         } => recipe_output_priority(recipe_id, context, recipes),
         GoalKind::AcquireCommodity { .. }
@@ -185,18 +177,13 @@ fn priority_class(
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             context.decision_context.danger_class
         }
-        GoalKind::Heal { target } => {
-            let target_pain = derive_pain_pressure(context.view, target);
-            let pain_class = context
+        GoalKind::TreatWounds { patient } => {
+            let patient_pain = derive_pain_pressure(context.view, patient);
+            context
                 .thresholds
                 .map_or(GoalPriorityClass::Background, |thresholds| {
-                    classify_band(target_pain, &thresholds.pain)
-                });
-            if context.decision_context.danger_class >= GoalPriorityClass::High {
-                promote_priority_class(pain_class)
-            } else {
-                pain_class
-            }
+                    classify_band(patient_pain, &thresholds.pain)
+                })
         }
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
@@ -227,15 +214,6 @@ fn drive_priority(
     }
 }
 
-fn promote_priority_class(priority: GoalPriorityClass) -> GoalPriorityClass {
-    match priority {
-        GoalPriorityClass::Background => GoalPriorityClass::Low,
-        GoalPriorityClass::Low => GoalPriorityClass::Medium,
-        GoalPriorityClass::Medium => GoalPriorityClass::High,
-        GoalPriorityClass::High | GoalPriorityClass::Critical => GoalPriorityClass::Critical,
-    }
-}
-
 fn motive_score(
     candidate: &GroundedGoal,
     context: &RankingContext<'_>,
@@ -251,10 +229,6 @@ fn motive_score(
             .map(|(pressure, weight, _)| score_product(weight, pressure))
             .max()
             .unwrap_or(0),
-        GoalKind::AcquireCommodity {
-            commodity,
-            purpose: CommodityPurpose::Treatment,
-        } => treatment_score(commodity, context),
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
@@ -280,15 +254,12 @@ fn motive_score(
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
-        GoalKind::Heal { target } => {
-            let pain_score = score_product(
-                context.utility.pain_weight,
-                derive_pain_pressure(context.view, target),
-            );
-            if context.danger_pressure.value() == 0 {
-                pain_score
+        GoalKind::TreatWounds { patient } => {
+            let patient_pain = derive_pain_pressure(context.view, patient);
+            if patient == context.agent {
+                score_product(context.utility.pain_weight, patient_pain)
             } else {
-                pain_score + score_product(context.utility.danger_weight, context.danger_pressure)
+                score_product(context.utility.care_weight, patient_pain)
             }
         }
         GoalKind::ProduceCommodity { recipe_id } => {
@@ -368,40 +339,6 @@ fn drive_score(
     }
 }
 
-/// Maximum pain across the agent itself and any local wounded patients.
-/// Used by both `priority_class` and `motive_score` for treatment acquisition.
-fn treatment_pain(context: &RankingContext<'_>) -> Permille {
-    let self_pain = derive_pain_pressure(context.view, context.agent);
-    let local_patient_pain = context
-        .view
-        .effective_place(context.agent)
-        .map_or(Permille::new_unchecked(0), |place| {
-            context
-                .view
-                .entities_at(place)
-                .into_iter()
-                .filter(|e| *e != context.agent)
-                .filter(|e| context.view.is_alive(*e) && context.view.has_wounds(*e))
-                .map(|e| derive_pain_pressure(context.view, e))
-                .max()
-                .unwrap_or(Permille::new_unchecked(0))
-        });
-    std::cmp::max(self_pain, local_patient_pain)
-}
-
-fn treatment_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
-    if commodity.spec().treatment_profile.is_none() {
-        return 0;
-    }
-
-    let pain_score = score_product(context.utility.pain_weight, treatment_pain(context));
-    if context.danger_pressure.value() == 0 {
-        pain_score
-    } else {
-        pain_score + score_product(context.utility.danger_weight, context.danger_pressure)
-    }
-}
-
 fn recipe_output_priority(
     recipe_id: worldwake_core::RecipeId,
     context: &RankingContext<'_>,
@@ -426,17 +363,6 @@ fn commodity_goal_priority(
     let self_consume = self_consume_priority(commodity, context);
     if self_consume > GoalPriorityClass::Background {
         return self_consume;
-    }
-
-    if commodity.spec().treatment_profile.is_some() {
-        return context
-            .thresholds
-            .map_or(GoalPriorityClass::Background, |thresholds| {
-                classify_band(
-                    derive_pain_pressure(context.view, context.agent),
-                    &thresholds.pain,
-                )
-            });
     }
 
     if enterprise_score(commodity, context) > 0 {
@@ -469,11 +395,6 @@ fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContex
         .unwrap_or(0);
     if self_consume > 0 {
         return self_consume;
-    }
-
-    let treatment = treatment_score(commodity, context);
-    if treatment > 0 {
-        return treatment;
     }
 
     enterprise_score(commodity, context)
@@ -554,7 +475,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::Wash => 4,
         GoalKind::EngageHostile { .. } => 5,
         GoalKind::ReduceDanger => 6,
-        GoalKind::Heal { .. } => 7,
+        GoalKind::TreatWounds { .. } => 7,
         GoalKind::ProduceCommodity { .. } => 8,
         GoalKind::SellCommodity { .. } => 9,
         GoalKind::RestockCommodity { .. } => 10,
@@ -1545,16 +1466,13 @@ mod tests {
     }
 
     #[test]
-    fn heal_uses_target_pain_and_is_promoted_by_high_danger() {
+    fn self_treat_wounds_uses_pain_weight_for_motive() {
         let agent = entity(1);
-        let target = entity(7);
-        let attacker = entity(9);
         let mut view = base_view(agent);
-        view.wounds.insert(target, vec![wound(650)]);
-        view.attackers.insert(agent, vec![attacker]);
+        view.wounds.insert(agent, vec![wound(650)]);
 
         let ranked = rank(
-            &[goal(GoalKind::Heal { target })],
+            &[goal(GoalKind::TreatWounds { patient: agent })],
             &view,
             agent,
             current_tick(),
@@ -1563,8 +1481,93 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
-        assert_eq!(ranked[0].motive_score, (400 * 650) + (300 * 550));
+        assert_eq!(ranked[0].motive_score, 400 * 650);
+    }
+
+    #[test]
+    fn other_treat_wounds_uses_care_weight_for_motive() {
+        let agent = entity(1);
+        let patient = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(patient, vec![wound(650)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::TreatWounds { patient })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 200 * 650);
+    }
+
+    #[test]
+    fn high_care_weight_prioritizes_other_care_over_self_care() {
+        let agent = entity(1);
+        let patient = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(500)]);
+        view.wounds.insert(patient, vec![wound(500)]);
+
+        let profile = UtilityProfile {
+            pain_weight: pm(100),
+            care_weight: pm(900),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::TreatWounds { patient }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient });
+        assert_eq!(ranked[0].motive_score, 900 * 500);
+        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(ranked[1].motive_score, 100 * 500);
+    }
+
+    #[test]
+    fn high_pain_weight_prioritizes_self_care_over_other_care() {
+        let agent = entity(1);
+        let patient = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(500)]);
+        view.wounds.insert(patient, vec![wound(500)]);
+
+        let profile = UtilityProfile {
+            pain_weight: pm(900),
+            care_weight: pm(100),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::TreatWounds { patient }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(ranked[0].motive_score, 900 * 500);
+        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient });
+        assert_eq!(ranked[1].motive_score, 100 * 500);
     }
 
     #[test]

@@ -139,8 +139,8 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
             free_interrupt: FreeInterruptRole::Reactive,
         },
 
-        // --- Healing ---
-        GoalKind::Heal { .. } => GoalFamilyPolicy {
+        // --- Care ---
+        GoalKind::TreatWounds { .. } => GoalFamilyPolicy {
             suppression: SuppressionRule::Never,
             penalty_interrupt: PenaltyInterruptEligibility::Never,
             free_interrupt: FreeInterruptRole::Reactive,
@@ -252,8 +252,8 @@ mod tests {
             GoalKind::EngageHostile {
                 target: dummy_entity(),
             },
-            GoalKind::Heal {
-                target: dummy_entity(),
+            GoalKind::TreatWounds {
+                patient: dummy_entity(),
             },
             GoalKind::ProduceCommodity {
                 recipe_id: dummy_recipe(),
@@ -349,8 +349,8 @@ mod tests {
     #[test]
     fn penalty_never_for_heal_combat_enterprise_corpse_social_political() {
         let goals = [
-            GoalKind::Heal {
-                target: dummy_entity(),
+            GoalKind::TreatWounds {
+                patient: dummy_entity(),
             },
             GoalKind::EngageHostile {
                 target: dummy_entity(),
@@ -412,8 +412,8 @@ mod tests {
             GoalKind::Relieve,
             GoalKind::Wash,
             GoalKind::ReduceDanger,
-            GoalKind::Heal {
-                target: dummy_entity(),
+            GoalKind::TreatWounds {
+                patient: dummy_entity(),
             },
         ];
         for kind in &reactive {

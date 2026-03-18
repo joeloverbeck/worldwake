@@ -2084,7 +2084,7 @@ mod tests {
     }
 
     #[test]
-    fn search_returns_pick_up_goal_satisfaction_for_local_treatment_lot() {
+    fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
         let actor = entity(1);
         let town = entity(10);
         let medicine = entity(20);
@@ -2105,7 +2105,7 @@ mod tests {
 
         let (registry, handlers) = build_registry();
         let goal = GroundedGoal {
-            key: acquire_goal_with_purpose(CommodityKind::Medicine, CommodityPurpose::Treatment)
+            key: acquire_goal_with_purpose(CommodityKind::Medicine, CommodityPurpose::SelfConsume)
                 .key,
             evidence_entities: BTreeSet::from([medicine]),
             evidence_places: BTreeSet::from([town]),

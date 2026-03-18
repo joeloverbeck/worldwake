@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-006: Split care ranking with pain_weight/care_weight and remove treatment helpers
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — ranking semantics in worldwake-ai
@@ -112,3 +112,16 @@ Replace all `Heal` arms with the new `TreatWounds` arms.
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - Replaced `GoalKind::Heal` arms in `priority_class()` and `motive_score()` with `TreatWounds` self/other split (`pain_weight` vs `care_weight`)
+  - Deleted `treatment_pain()`, `treatment_score()`, `promote_priority_class()`
+  - Removed `CommodityPurpose::Treatment` branches from priority and motive ranking
+  - Removed treatment-specific logic from `commodity_goal_priority()` and `commodity_goal_motive_score()`
+  - Updated `goal_kind_discriminant()` from `Heal` to `TreatWounds`
+  - Replaced 1 old test with 4 new tests (self-motive, other-motive, high-care-weight, high-pain-weight)
+- **Deviations**: Removed `promote_priority_class()` (became dead code after removing danger-class promotion from TreatWounds priority, per spec D06 which does not include danger promotion)
+- **Verification**: `cargo test --workspace` (1877 passed, 0 failed), `cargo clippy --workspace` clean

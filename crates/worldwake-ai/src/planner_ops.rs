@@ -58,7 +58,7 @@ const GOALS_TRAVEL: &[GoalKindTag] = &[
     GoalKindTag::Wash,
     GoalKindTag::EngageHostile,
     GoalKindTag::ReduceDanger,
-    GoalKindTag::Heal,
+    GoalKindTag::TreatWounds,
     GoalKindTag::ProduceCommodity,
     GoalKindTag::SellCommodity,
     GoalKindTag::RestockCommodity,
@@ -68,7 +68,7 @@ const GOALS_TRAVEL: &[GoalKindTag] = &[
 const GOALS_ACQUIRE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
     GoalKindTag::AcquireCommodity,
-    GoalKindTag::Heal,
+    GoalKindTag::TreatWounds,
     GoalKindTag::SellCommodity,
     GoalKindTag::RestockCommodity,
 ];
@@ -80,14 +80,14 @@ const GOALS_HARVEST: &[GoalKindTag] = &[
 const GOALS_QUEUE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
     GoalKindTag::AcquireCommodity,
-    GoalKindTag::Heal,
+    GoalKindTag::TreatWounds,
     GoalKindTag::ProduceCommodity,
     GoalKindTag::RestockCommodity,
 ];
 const GOALS_PRODUCE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
     GoalKindTag::AcquireCommodity,
-    GoalKindTag::Heal,
+    GoalKindTag::TreatWounds,
     GoalKindTag::ProduceCommodity,
     GoalKindTag::RestockCommodity,
 ];
@@ -100,7 +100,7 @@ const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
     GoalKindTag::RestockCommodity,
     GoalKindTag::MoveCargo,
 ];
-const GOALS_HEAL: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::Heal];
+const GOALS_TREAT_WOUNDS: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::TreatWounds];
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
 const GOALS_BURY: &[GoalKindTag] = &[GoalKindTag::BuryCorpse];
 const GOALS_TELL: &[GoalKindTag] = &[GoalKindTag::ShareBelief];
@@ -243,7 +243,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             true,
             false,
             PlannerTransitionKind::GoalModelFallback,
-            GOALS_HEAL,
+            GOALS_TREAT_WOUNDS,
         ),
         PlannerOpKind::Loot => base_semantics(
             op_kind,

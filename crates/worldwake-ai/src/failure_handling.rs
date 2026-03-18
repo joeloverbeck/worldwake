@@ -454,7 +454,7 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
             view.commodity_quantity(agent, commodity) > Quantity(0)
         }
         BlockingFact::TargetGone => match intent.goal_key.kind {
-            GoalKind::Heal { .. } | GoalKind::ReduceDanger => intent
+            GoalKind::TreatWounds { .. } | GoalKind::ReduceDanger => intent
                 .related_entity
                 .is_some_and(|entity| view.entity_kind(entity).is_some() && view.is_alive(entity)),
             _ => intent
