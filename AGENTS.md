@@ -69,6 +69,19 @@ These design rules are intentional and should be preserved unless the user expli
 - Unique location. Every entity exists in exactly one place.
 - No backward compatibility layers. When a design changes, update or remove the old path instead of adding shims, redirects, or deprecated wrappers.
 
+## Authoritative-To-AI Impact Rule
+
+Any change to authoritative validation or control checks such as action preconditions, `validate_*` functions, or `can_exercise_control` must be verified across the full AI decision pipeline before it is considered complete:
+
+1. `get_affordances` still exposes the expected candidates.
+2. `generate_candidates` still emits the expected goal kinds.
+3. `search_plan` still finds valid plans, including terminal ordering and barrier handling.
+4. Action start in `tick_step` still handles newly rejected plans gracefully.
+5. `handle_plan_failure` still records blockers and replans correctly after rejection.
+6. Relevant golden coverage passes, and changes that touch AI behavior should normally include `cargo test -p worldwake-ai`.
+
+Golden tests that expect agents to observe produced or newly materialized output need an appropriate `PerceptionProfile`. Without it, tests can fail by never observing the new state.
+
 ## Spec Drafting Rules
 
 All new spec drafts must:
@@ -114,19 +127,41 @@ Tracing is opt-in and zero-cost when disabled. Do not leave `enable_tracing()` i
 
 ## Debugging Action Execution with Action Traces
 
-For action lifecycle questions ("Did the action run?", "When did it complete?", "Why was it aborted?"), use the action execution trace system in `worldwake-sim`. Enable with `h.enable_action_tracing()` in golden tests. Query with `h.action_trace_sink().unwrap().events_for(agent)`.
+For action lifecycle questions ("Did the action run?", "When did it complete?", "Why was it aborted?"), use the action execution trace system in `worldwake-sim`.
+
+**Quick start in golden tests:**
+
+```rust
+// Enable before stepping:
+h.enable_action_tracing();
+
+// Run ticks, then query:
+let sink = h.action_trace_sink().unwrap();
+let agent_events = sink.events_for(agent);
+let tick_events = sink.events_at(Tick(5));
+let agent_tick_events = sink.events_for_at(agent, Tick(5));
+
+// Dump human-readable summary to stderr:
+sink.dump_agent(agent);
+```
 
 Key types: `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` (Started, Committed, Aborted, StartFailed).
 
-**Important**: Some actions (e.g., loot, eat) complete within a single tick. They are invisible to inter-tick `agent_active_action_name()` observation. Use action traces or state-delta checks for these.
+**When to use which trace:**
+- "Why did the agent choose this action?" -> decision trace
+- "Did the chosen action actually start or commit?" -> action trace
+- "How long did the action take?" -> action trace
+- "Why was the action aborted?" -> action trace
 
-See CLAUDE.md for detailed usage examples and the decision-trace vs action-trace guidance table.
+**Important**: Some actions (e.g., loot, eat) complete within a single tick. They are invisible to inter-tick `agent_active_action_name()` observation. Use action traces or state-delta checks for these. Multi-tick actions such as harvest, travel, and craft remain visible between ticks.
+
+When in doubt, enable action tracing and inspect `events_for_at(agent, tick)` to see exactly what happened during that tick.
 
 ## Delivery Planning
 
 - The implementation plan spans 22 epics across 4 phases.
 - Phase 1 (`E01`-`E08`) and Phase 2 (`E09`-`E13`) are completed and archived under `archive/specs/`.
-- Active epic specs live in `specs/E14-*.md` through `specs/E22-*.md`.
+- Active planning material lives in `specs/` and currently includes the `S04`-`S12` specs plus active `E16b`-`E22` epic specs.
 - Phase ordering and gates live in `specs/IMPLEMENTATION-ORDER.md`.
 - Do not treat phase gates as advisory. New phase work should not begin until the prior gate conditions pass.
 
@@ -145,7 +180,7 @@ Avoid introducing a third-party ECS crate.
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Active epic specs: `specs/E14-*.md` through `specs/E22-*.md`
+- Active specs: `specs/`
 - Archived completed specs: `archive/specs/`
 - Archival workflow: `docs/archival-workflow.md`
 
