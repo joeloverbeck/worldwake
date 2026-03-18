@@ -10,10 +10,10 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BeliefConfidencePolicy, BodyPart,
-    CombatProfile, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, DeadAt, EventId,
-    EventRecord, EventTag, EventView, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
-    PerceptionProfile, PerceptionSource, Quantity, RelationDelta, RelationValue, Seed, StateDelta,
-    StateHash, SuccessionLaw, Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
+    CombatProfile, CommodityKind, ComponentKind, ComponentValue, DeadAt, EventTag, EventView,
+    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource,
+    Quantity, RelationValue, Seed, StateHash, SuccessionLaw, Tick, UtilityProfile, Wound,
+    WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -90,69 +90,6 @@ fn fragile_office_holder_profile() -> CombatProfile {
         pm(50),  // unarmed_bleed_rate
         nz(6),   // unarmed_attack_ticks
     )
-}
-
-fn event_sets_dead_at(record: &EventRecord, entity: worldwake_core::EntityId) -> bool {
-    record.state_deltas().iter().any(|delta| {
-        matches!(
-            delta,
-            StateDelta::Component(ComponentDelta::Set {
-                entity: changed,
-                component_kind: ComponentKind::DeadAt,
-                after: ComponentValue::DeadAt(_),
-                ..
-            }) if *changed == entity
-        )
-    })
-}
-
-fn event_removes_office_holder(
-    record: &EventRecord,
-    office: worldwake_core::EntityId,
-    holder: worldwake_core::EntityId,
-) -> bool {
-    record.state_deltas().iter().any(|delta| {
-        matches!(
-            delta,
-            StateDelta::Relation(RelationDelta::Removed {
-                relation:
-                    RelationValue::OfficeHolder {
-                        office: changed_office,
-                        holder: changed_holder,
-                    },
-                ..
-            }) if *changed_office == office && *changed_holder == holder
-        )
-    })
-}
-
-fn event_adds_office_holder(
-    record: &EventRecord,
-    office: worldwake_core::EntityId,
-    holder: worldwake_core::EntityId,
-) -> bool {
-    record.state_deltas().iter().any(|delta| {
-        matches!(
-            delta,
-            StateDelta::Relation(RelationDelta::Added {
-                relation:
-                    RelationValue::OfficeHolder {
-                        office: changed_office,
-                        holder: changed_holder,
-                    },
-                ..
-            }) if *changed_office == office && *changed_holder == holder
-        )
-    })
-}
-
-fn first_matching_event_id(
-    log: &worldwake_core::EventLog,
-    predicate: impl Fn(&EventRecord) -> bool,
-) -> Option<EventId> {
-    (0..log.len())
-        .map(|index| EventId(index as u64))
-        .find(|event_id| log.get(*event_id).is_some_and(&predicate))
 }
 
 // ===========================================================================
@@ -944,7 +881,10 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         }
     }
 
-    assert!(h.agent_is_dead(incumbent), "incumbent should die from combat");
+    assert!(
+        h.agent_is_dead(incumbent),
+        "incumbent should die from combat"
+    );
     assert!(
         !h.agent_is_dead(challenger),
         "challenger should survive the succession scenario"
@@ -987,28 +927,45 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         "force-law succession must not rely on declare_support actions"
     );
 
-    let death_event_id = first_matching_event_id(&h.event_log, |record| {
-        record.tags().contains(&EventTag::Combat) && event_sets_dead_at(record, incumbent)
-    })
-    .expect("combat should emit a death event for the incumbent");
-    let vacancy_event_id = first_matching_event_id(&h.event_log, |record| {
-        record.tags().contains(&EventTag::Political)
-            && event_removes_office_holder(record, office, incumbent)
-    })
-    .expect("politics should vacate the office after the incumbent dies");
-    let install_event_id = first_matching_event_id(&h.event_log, |record| {
-        record.tags().contains(&EventTag::Political)
-            && event_adds_office_holder(record, office, challenger)
-    })
-    .expect("politics should later install the challenger as office holder");
+    let death_event_id =
+        first_tagged_event_id_matching(&h.event_log, EventTag::Combat, |_, record| {
+            event_sets_component(record, incumbent, ComponentKind::DeadAt, |after| {
+                matches!(after, ComponentValue::DeadAt(_))
+            })
+        })
+        .expect("combat should emit a death event for the incumbent");
+    let vacancy_event_id =
+        first_tagged_event_id_matching(&h.event_log, EventTag::Political, |_, record| {
+            event_removes_relation(
+                record,
+                &RelationValue::OfficeHolder {
+                    office,
+                    holder: incumbent,
+                },
+            )
+        })
+        .expect("politics should vacate the office after the incumbent dies");
+    let install_event_id =
+        first_tagged_event_id_matching(&h.event_log, EventTag::Political, |_, record| {
+            event_adds_relation(
+                record,
+                &RelationValue::OfficeHolder {
+                    office,
+                    holder: challenger,
+                },
+            )
+        })
+        .expect("politics should later install the challenger as office holder");
 
-    assert!(
-        death_event_id < vacancy_event_id,
-        "death event must precede the vacancy mutation"
+    assert_event_order(
+        death_event_id,
+        vacancy_event_id,
+        "death event must precede the vacancy mutation",
     );
-    assert!(
-        vacancy_event_id < install_event_id,
-        "vacancy mutation must precede office installation"
+    assert_event_order(
+        vacancy_event_id,
+        install_event_id,
+        "vacancy mutation must precede office installation",
     );
 
     let vacancy_tick = h

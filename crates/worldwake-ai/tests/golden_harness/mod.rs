@@ -12,13 +12,14 @@ use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
     AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, BodyCostPerTick, CarryCapacity,
-    CauseRef, CombatProfile, CombatStance, CommodityKind, ControlSource, DeprivationExposure,
-    DriveThresholds, EligibilityRule, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
+    CauseRef, CombatProfile, CombatStance, CommodityKind, ComponentDelta, ComponentKind,
+    ComponentValue, ControlSource, DeprivationExposure, DriveThresholds, EligibilityRule, EntityId,
+    EntityKind, EventId, EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
     FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
     HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, PerceptionProfile,
-    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, ResourceSource, Seed,
-    SuccessionLaw, TellProfile, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, WoundList,
+    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, RelationDelta, RelationValue,
+    ResourceSource, Seed, StateDelta, SuccessionLaw, TellProfile, Tick, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -64,6 +65,81 @@ pub fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
 
 pub fn commit_txn(txn: WorldTxn<'_>, event_log: &mut EventLog) {
     let _ = txn.commit(event_log);
+}
+
+pub fn first_event_id_matching(
+    log: &EventLog,
+    mut predicate: impl FnMut(EventId, &EventRecord) -> bool,
+) -> Option<EventId> {
+    (0..log.len())
+        .map(|index| EventId(index as u64))
+        .find(|event_id| {
+            log.get(*event_id)
+                .is_some_and(|record| predicate(*event_id, record))
+        })
+}
+
+pub fn first_tagged_event_id_matching(
+    log: &EventLog,
+    tag: EventTag,
+    mut predicate: impl FnMut(EventId, &EventRecord) -> bool,
+) -> Option<EventId> {
+    log.events_by_tag(tag).iter().copied().find(|event_id| {
+        log.get(*event_id)
+            .is_some_and(|record| predicate(*event_id, record))
+    })
+}
+
+pub fn event_sets_component(
+    record: &impl EventView,
+    entity: EntityId,
+    component_kind: ComponentKind,
+    after_matches: impl Fn(&ComponentValue) -> bool,
+) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Component(ComponentDelta::Set {
+                entity: changed_entity,
+                component_kind: changed_kind,
+                after,
+                ..
+            }) if *changed_entity == entity
+                && *changed_kind == component_kind
+                && after_matches(after)
+        )
+    })
+}
+
+pub fn event_adds_relation(record: &impl EventView, relation: &RelationValue) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation: changed_relation,
+                ..
+            }) if changed_relation == relation
+        )
+    })
+}
+
+pub fn event_removes_relation(record: &impl EventView, relation: &RelationValue) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Removed {
+                relation: changed_relation,
+                ..
+            }) if changed_relation == relation
+        )
+    })
+}
+
+pub fn assert_event_order(earlier: EventId, later: EventId, description: &str) {
+    assert!(
+        earlier < later,
+        "{description}: expected {earlier:?} to precede {later:?}"
+    );
 }
 
 pub fn seed_actor_beliefs(
@@ -755,8 +831,31 @@ impl GoldenHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
+
+    fn emit_test_event(
+        log: &mut EventLog,
+        tick: u64,
+        tags: &[EventTag],
+        state_deltas: Vec<StateDelta>,
+    ) -> EventId {
+        log.emit(worldwake_core::PendingEvent::from_payload(
+            worldwake_core::EventPayload {
+                tick: Tick(tick),
+                cause: CauseRef::Bootstrap,
+                actor_id: None,
+                target_ids: Vec::new(),
+                evidence: Vec::new(),
+                place_id: None,
+                state_deltas,
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::Hidden,
+                witness_data: WitnessData::default(),
+                tags: tags.iter().copied().collect::<BTreeSet<_>>(),
+            },
+        ))
+    }
 
     #[test]
     fn setup_does_not_seed_remote_beliefs_by_default() {
@@ -1023,5 +1122,121 @@ mod tests {
         seed_belief(&mut h.world, &mut h.event_log, agent, subject, older);
 
         assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&newer));
+    }
+
+    #[test]
+    fn event_log_helpers_match_component_and_relation_deltas() {
+        let office = EntityId {
+            slot: 91,
+            generation: 0,
+        };
+        let incumbent = EntityId {
+            slot: 92,
+            generation: 0,
+        };
+        let challenger = EntityId {
+            slot: 93,
+            generation: 0,
+        };
+        let death_tick = Tick(7);
+
+        let mut log = EventLog::new();
+        let death_event_id = emit_test_event(
+            &mut log,
+            death_tick.0,
+            &[EventTag::Combat],
+            vec![StateDelta::Component(ComponentDelta::Set {
+                entity: incumbent,
+                component_kind: ComponentKind::DeadAt,
+                before: None,
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt(death_tick)),
+            })],
+        );
+        let vacancy_relation = RelationValue::OfficeHolder {
+            office,
+            holder: incumbent,
+        };
+        let install_relation = RelationValue::OfficeHolder {
+            office,
+            holder: challenger,
+        };
+        let vacancy_event_id = emit_test_event(
+            &mut log,
+            8,
+            &[EventTag::Political],
+            vec![StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: worldwake_core::RelationKind::OfficeHolder,
+                relation: vacancy_relation.clone(),
+            })],
+        );
+        let install_event_id = emit_test_event(
+            &mut log,
+            13,
+            &[EventTag::Political],
+            vec![StateDelta::Relation(RelationDelta::Added {
+                relation_kind: worldwake_core::RelationKind::OfficeHolder,
+                relation: install_relation.clone(),
+            })],
+        );
+
+        let matched_death = first_tagged_event_id_matching(&log, EventTag::Combat, |_, record| {
+            event_sets_component(
+                record,
+                incumbent,
+                ComponentKind::DeadAt,
+                |after| matches!(after, ComponentValue::DeadAt(worldwake_core::DeadAt(tick)) if *tick == death_tick),
+            )
+        });
+        let matched_vacancy =
+            first_tagged_event_id_matching(&log, EventTag::Political, |_, record| {
+                event_removes_relation(record, &vacancy_relation)
+            });
+        let matched_install =
+            first_tagged_event_id_matching(&log, EventTag::Political, |_, record| {
+                event_adds_relation(record, &install_relation)
+            });
+
+        assert_eq!(matched_death, Some(death_event_id));
+        assert_eq!(matched_vacancy, Some(vacancy_event_id));
+        assert_eq!(matched_install, Some(install_event_id));
+    }
+
+    #[test]
+    fn event_log_helpers_preserve_append_order() {
+        let entity = EntityId {
+            slot: 101,
+            generation: 0,
+        };
+        let mut log = EventLog::new();
+
+        let earlier = emit_test_event(
+            &mut log,
+            1,
+            &[EventTag::Combat],
+            vec![StateDelta::Component(ComponentDelta::Set {
+                entity,
+                component_kind: ComponentKind::DeadAt,
+                before: None,
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt(Tick(1))),
+            })],
+        );
+        let later = emit_test_event(&mut log, 2, &[EventTag::Political], Vec::new());
+
+        let matched_earlier = first_event_id_matching(&log, |event_id, record| {
+            event_id == earlier
+                && event_sets_component(record, entity, ComponentKind::DeadAt, |_| true)
+        })
+        .expect("expected to find earlier event");
+        let matched_later =
+            first_tagged_event_id_matching(&log, EventTag::Political, |event_id, _| {
+                event_id == later
+            })
+            .expect("expected to find later event");
+
+        assert_event_order(
+            matched_earlier,
+            matched_later,
+            "append-only ordering must hold",
+        );
     }
 }
