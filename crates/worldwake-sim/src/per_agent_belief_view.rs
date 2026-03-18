@@ -9,7 +9,7 @@ use worldwake_core::{
     BelievedEntityState, CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
     ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
     HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
+    OfficeData, Permille, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
     TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, World,
     Wound,
 };
@@ -507,6 +507,16 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn courage(&self, agent: EntityId) -> Option<Permille> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_utility_profile(agent)
+                    .map(|p| p.courage)
+            })
+            .flatten()
+    }
+
     fn wounds(&self, agent: EntityId) -> Vec<Wound> {
         if agent == self.agent {
             return self
@@ -734,8 +744,8 @@ mod tests {
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
         CommodityKind, ControlSource, EntityKind, EventLog, FactionData, FactionPurpose,
         MerchandiseProfile, OfficeData, Permille, PerceptionProfile, Quantity, ResourceSource,
-        SuccessionLaw, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-        World, WorldTxn, Wound, WoundCause, WoundId,
+        SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1419,5 +1429,74 @@ mod tests {
             RuntimeBeliefView::believed_owner_of(&view, lot),
             Some(agent)
         );
+    }
+
+    #[test]
+    fn courage_returns_profile_value_for_self_and_none_for_others() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            txn.set_component_utility_profile(
+                agent,
+                UtilityProfile {
+                    courage: Permille::new(750).unwrap(),
+                    ..UtilityProfile::default()
+                },
+            )
+            .unwrap();
+            txn.set_component_utility_profile(
+                other,
+                UtilityProfile {
+                    courage: Permille::new(200).unwrap(),
+                    ..UtilityProfile::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(other, entity_belief(place, true, 0, 3));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        // Self-authoritative: returns own courage
+        assert_eq!(
+            RuntimeBeliefView::courage(&view, agent),
+            Some(Permille::new(750).unwrap())
+        );
+        // Other agent: returns None (self-authoritative read only)
+        assert_eq!(RuntimeBeliefView::courage(&view, other), None);
+
+        // GoalBeliefView delegation matches
+        assert_eq!(
+            GoalBeliefView::courage(&view, agent),
+            Some(Permille::new(750).unwrap())
+        );
+        assert_eq!(GoalBeliefView::courage(&view, other), None);
+    }
+
+    #[test]
+    fn courage_returns_none_when_no_utility_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.clear_component_utility_profile(agent).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::courage(&view, agent), None);
     }
 }

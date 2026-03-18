@@ -71,6 +71,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn courage(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId>;
@@ -186,6 +190,10 @@ pub trait RuntimeBeliefView {
         None
     }
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
+    fn courage(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
         self.visible_hostiles_for(agent)
@@ -460,6 +468,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::TellProfile> {
                 $crate::RuntimeBeliefView::tell_profile(self, agent)
+            }
+
+            fn courage(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::Permille> {
+                $crate::RuntimeBeliefView::courage(self, agent)
             }
 
             fn merchandise_profile(
