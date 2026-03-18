@@ -5,10 +5,11 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, BeliefConfidencePolicy, CombatProfile,
-    CommodityKind, DriveThresholds, EventTag, HomeostaticNeeds, MetabolismProfile, Permille,
-    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, Seed, StateHash,
-    SuccessionLaw, Tick, UtilityProfile,
+    CommodityKind, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
+    MetabolismProfile, Permille, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
 };
+use worldwake_ai::DecisionOutcome;
 use worldwake_sim::ActionTraceKind;
 
 // ---------------------------------------------------------------------------
@@ -993,5 +994,143 @@ fn golden_survival_pressure_suppresses_political_goals_replays_deterministically
     assert_eq!(
         first, second,
         "survival-pressure office suppression scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 17: Faction Eligibility Filters Office Claim
+// ---------------------------------------------------------------------------
+//
+// Setup: Vacant office at VillageSquare (Support law, period=5) restricted by
+// EligibilityRule::FactionMember(faction). Agent A belongs to the faction and
+// Agent B does not. Both are sated, colocated, politically ambitious, and
+// have direct beliefs about the office.
+//
+// Expected: A generates ClaimOffice and is installed. B never generates
+// ClaimOffice and never commits declare_support.
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn golden_faction_eligibility_filters_office_claim() {
+    let mut h = GoldenHarness::new(Seed([119; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let eligible_agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Faction Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        eligible_agent,
+        default_perception_profile(),
+    );
+
+    let ineligible_agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Unaffiliated Rival",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        ineligible_agent,
+        default_perception_profile(),
+    );
+
+    let faction = seed_faction(
+        &mut h.world,
+        &mut h.event_log,
+        "Council Circle",
+        FactionPurpose::Political,
+    );
+    add_faction_membership(&mut h.world, &mut h.event_log, eligible_agent, faction);
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+    );
+
+    for agent in [eligible_agent, ineligible_agent] {
+        seed_actor_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            &[office],
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+    }
+
+    for _ in 0..30 {
+        h.step_once();
+    }
+
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(eligible_agent),
+        "eligible faction member should be installed as office holder"
+    );
+
+    let decision_sink = h.driver.trace_sink().expect("decision tracing should be enabled");
+    let eligible_generated_claim = (0u64..=30).any(|tick| {
+        decision_sink
+            .trace_at(eligible_agent, Tick(tick))
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+                _ => false,
+            })
+    });
+    assert!(
+        eligible_generated_claim,
+        "eligible agent should generate ClaimOffice while the office is visibly vacant"
+    );
+
+    let ineligible_generated_claim = (0u64..=30).any(|tick| {
+        decision_sink
+            .trace_at(ineligible_agent, Tick(tick))
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+                _ => false,
+            })
+    });
+    assert!(
+        !ineligible_generated_claim,
+        "ineligible agent must never generate ClaimOffice for a faction-restricted office"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let ineligible_declared_support = action_sink.events_for(ineligible_agent).iter().any(|event| {
+        event.action_name == "declare_support"
+            && matches!(event.kind, ActionTraceKind::Committed { .. })
+    });
+    assert!(
+        !ineligible_declared_support,
+        "ineligible agent must never commit declare_support for the restricted office"
     );
 }

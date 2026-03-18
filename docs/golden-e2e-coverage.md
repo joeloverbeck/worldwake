@@ -21,7 +21,7 @@ crates/worldwake-ai/tests/
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
   golden_emergent.rs          — 9 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e + replays)
-  golden_offices.rs           — 8 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: survival pressure suppresses political goals + deterministic replay)
+  golden_offices.rs           — 9 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: survival pressure suppresses political goals + deterministic replay, scenario 17: faction eligibility filters office claim)
 ```
 
 ---
@@ -50,7 +50,7 @@ crates/worldwake-ai/tests/
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 | ShareBelief | Yes | 2e |
-| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16 |
+| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17 |
 | SupportCandidateForOffice | Yes | 12, 13, 14 |
 
 **Coverage: 19/19 GoalKinds tested (100%).**
@@ -157,6 +157,7 @@ crates/worldwake-ai/tests/
 | Threaten → courage diversity → yield/resist divergence → coalition building → office installation (Principle 20) | Yes |
 | Remote ClaimOffice belief → multi-hop travel planning (Principle 7 locality) → sequential travel → DeclareSupport → succession installation | Yes |
 | Hunger self-care pressure suppresses ClaimOffice → eat → suppression lift → DeclareSupport → succession installation | Yes |
+| Faction membership eligibility gate → ClaimOffice candidate generation allowed for member and denied for non-member → only eligible claimant installs | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
 | UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
 | Wound vs hunger priority resolved by concrete utility weights (Principle 3, 20) | Yes |
@@ -170,12 +171,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 95 | 95 |
+| Proven tests | 96 | 96 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 54 | 54 |
+| Cross-system chains | 55 | 55 |
 
 ### Pending Backlog Summary
 

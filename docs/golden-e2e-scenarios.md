@@ -651,3 +651,15 @@ The golden suite contains 95 tests across 9 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes for the suppression scenario.
 **Foundation alignment**: Principle 10 (belief-only planning), Principle 20 (enterprise ambition remains real but is subordinated to concrete self-care pressure), Principle 24 (no office system special-case; shared goal-policy suppression coordinates the behavior through state).
 **Cross-system chain**: Believed vacant office + enterprise motive → ClaimOffice candidate → shared self-care suppression in ranking → eat commit → suppression lift → DeclareSupport → succession resolution → office installation.
+
+### Scenario 17: Faction Eligibility Filters Office Claim
+**File**: `golden_offices.rs` | **Test**: `golden_faction_eligibility_filters_office_claim`
+**Systems exercised**: Factions (`member_of` relation), Succession (support-law installation), AI (belief-driven ClaimOffice candidate generation, decision tracing), Political actions (`declare_support`), action tracing
+**Setup**: Vacant office ("Village Elder") at Village Square with `EligibilityRule::FactionMember(faction)`. Agent A ("Faction Claimant") and Agent B ("Unaffiliated Rival") are both sated, colocated, politically ambitious, and have DirectObservation beliefs about the office. Only A belongs to the required faction.
+**Emergent behavior proven**:
+- The eligible faction member generates `ClaimOffice` while the office is visibly vacant.
+- The ineligible rival never generates `ClaimOffice` in decision traces, proving the filter happens at candidate generation rather than only at action-time rejection.
+- The ineligible rival never commits `declare_support`.
+- The eligible faction member becomes office holder after the succession period.
+**Foundation alignment**: Principle 10 (agents plan from beliefs, not omniscient world shortcuts), Principle 20 (shared ambition still respects concrete eligibility constraints), Principle 24 (AI filtering and authoritative validation coordinate through state rather than special-case cross-calls).
+**Cross-system chain**: Faction membership state + believed vacant office → AI eligibility gate on `ClaimOffice` candidate generation → only lawful claimant plans `DeclareSupport` → succession resolves to eligible office holder.

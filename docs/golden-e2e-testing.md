@@ -53,6 +53,9 @@ The first pair encodes the architectural rule. The second overfits to scheduler 
 - debugging why a goal did or did not appear
 - proving suppression, ranking, or planner-search behavior
 - distinguishing "candidate missing" from "candidate present but filtered/suppressed"
+- proving negative AI invariants such as "this goal never appeared" or "this candidate was never generated"
+
+When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
 
 ### Use both when:
 
@@ -71,9 +74,11 @@ New golden scenarios should usually add a deterministic replay companion test un
 Golden-related tickets should:
 
 1. name the exact scenario gap
+2. state whether the gap is missing focused coverage, missing golden coverage, or both
 2. identify the exact assertion surface to use
 3. avoid stale command examples
 4. distinguish candidate generation, ranking/suppression, execution, and authoritative outcome
+5. name the exact layer when similar helpers exist in both AI/planning code and authoritative/system code
 
 ## Verification Commands
 
