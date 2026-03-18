@@ -2013,6 +2013,13 @@ mod tests {
             }
         }
 
+        fn with_full_action_registries(mut self) -> Self {
+            let registries = build_full_action_registries(&self.recipes).unwrap();
+            self.defs = registries.defs;
+            self.handlers = registries.handlers;
+            self
+        }
+
         fn step_once(&mut self) -> worldwake_sim::TickStepResult {
             let mut controllers = AutonomousControllerRuntime::new(vec![&mut self.driver]);
             step_tick(
@@ -4936,10 +4943,7 @@ mod tests {
 
     #[test]
     fn trace_force_law_office_skips_political_candidates_and_planning() {
-        let mut harness = Harness::new(ControlSource::Ai);
-        let registries = build_full_action_registries(&harness.recipes).unwrap();
-        harness.defs = registries.defs;
-        harness.handlers = registries.handlers;
+        let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
 
         let place = harness
             .world
@@ -5070,6 +5074,23 @@ mod tests {
                 );
             }
             other => panic!("expected Planning outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn harness_with_full_action_registries_exposes_non_needs_actions() {
+        let harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+        let action_names = harness
+            .defs
+            .iter()
+            .map(|def| def.name.as_str())
+            .collect::<Vec<_>>();
+
+        for required in ["travel", "queue_for_facility_use", "declare_support"] {
+            assert!(
+                action_names.contains(&required),
+                "full-registry harness should include {required}"
+            );
         }
     }
 
