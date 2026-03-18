@@ -12,8 +12,8 @@
 
 ## Assumption Reassessment (<YYYY-MM-DD>)
 
-1. <Assumption checked against current code/test state>
-2. <Assumption checked against current specs>
+1. <Assumption checked against current code/test state, with exact file/symbol reference>
+2. <Assumption checked against current specs/docs, with exact file reference>
 3. <Mismatch + correction (if any)>
 
 ## Architecture Check
@@ -57,8 +57,10 @@
 ### New/Modified Tests
 
 1. `<path/to/test>` — <short rationale>
+2. `<path/to/test>` — <short rationale>
 
 ### Commands
 
 1. `<targeted test command>`
 2. `<lint/typecheck/full test command>`
+3. `scripts/verify.sh` <or explain why a narrower command is the correct verification boundary>

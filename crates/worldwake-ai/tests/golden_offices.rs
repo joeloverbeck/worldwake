@@ -5,10 +5,11 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, BeliefConfidencePolicy, CombatProfile,
-    CommodityKind, EventTag, HomeostaticNeeds, MetabolismProfile, Permille, PerceptionProfile,
-    PerceptionSource, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, Tick,
-    UtilityProfile,
+    CommodityKind, DriveThresholds, EventTag, HomeostaticNeeds, MetabolismProfile, Permille,
+    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, Seed, StateHash,
+    SuccessionLaw, Tick, UtilityProfile,
 };
+use worldwake_sim::ActionTraceKind;
 
 // ---------------------------------------------------------------------------
 // Scenario 11: Simple Office Claim via DeclareSupport
@@ -808,5 +809,189 @@ fn golden_travel_to_distant_jurisdiction_for_claim() {
     assert!(
         !political_events.is_empty(),
         "Event log should contain Political events from support declaration and installation"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 16: Survival Pressure Suppresses Political Goals
+// ---------------------------------------------------------------------------
+//
+// Setup: Vacant office at VillageSquare (Support law, period=5). Single agent
+// at VillageSquare has high enterprise_weight, a belief about the vacant
+// office, and 1 owned bread. Hunger starts exactly at the agent's High
+// threshold, so ClaimOffice is generated but suppressed by shared goal-policy
+// evaluation until self-care pressure is relieved.
+//
+// Expected: Agent commits eat before any declare_support commit. Hunger drops
+// below the High threshold before declare_support commits. Once suppression
+// lifts, the agent declares support for self and is later installed as holder.
+
+fn build_survival_pressure_suppresses_political_goals_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    Permille,
+) {
+    let mut h = GoldenHarness::new(seed);
+    let hunger_high = DriveThresholds::default().hunger.high();
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Hungry Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(hunger_high, pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        default_perception_profile(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        &[office],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    (h, agent, office, hunger_high)
+}
+
+fn run_survival_pressure_suppresses_political_goals(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, agent, office, hunger_high) =
+        build_survival_pressure_suppresses_political_goals_scenario(seed);
+    h.enable_action_tracing();
+
+    let mut first_eat_commit_tick = None;
+    let mut first_hunger_below_high_tick = None;
+    let mut first_declare_commit_tick = None;
+    let mut hunger_below_high_when_declare_committed = None;
+
+    for _ in 0..30 {
+        h.step_once();
+
+        let current_tick = h.scheduler.current_tick();
+        let sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for suppression scenario");
+
+        if first_eat_commit_tick.is_none() {
+            first_eat_commit_tick = sink.events_for(agent).iter().find_map(|event| {
+                if event.action_name == "eat"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                {
+                    Some(event.tick)
+                } else {
+                    None
+                }
+            });
+        }
+
+        if first_declare_commit_tick.is_none() {
+            first_declare_commit_tick = sink.events_for(agent).iter().find_map(|event| {
+                if event.action_name == "declare_support"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                {
+                    Some(event.tick)
+                } else {
+                    None
+                }
+            });
+        }
+
+        let hunger = h.agent_hunger(agent);
+        if first_hunger_below_high_tick.is_none() && hunger < hunger_high {
+            first_hunger_below_high_tick = Some(current_tick);
+        }
+        if hunger_below_high_when_declare_committed.is_none() && first_declare_commit_tick.is_some() {
+            hunger_below_high_when_declare_committed = Some(hunger < hunger_high);
+        }
+
+        if hunger >= hunger_high {
+            assert!(
+                first_declare_commit_tick.is_none(),
+                "Political declaration must remain suppressed while hunger is at or above the High threshold"
+            );
+        }
+
+        if first_eat_commit_tick.is_some()
+            && first_hunger_below_high_tick.is_some()
+            && first_declare_commit_tick.is_some()
+            && h.world.office_holder(office) == Some(agent)
+        {
+            break;
+        }
+    }
+
+    let eat_tick = first_eat_commit_tick.expect("Claimant should commit eat before politics");
+    first_hunger_below_high_tick
+        .expect("Claimant hunger should fall below the High threshold after eating");
+    let declare_tick = first_declare_commit_tick
+        .expect("Claimant should commit declare_support after suppression lifts");
+
+    assert!(
+        eat_tick < declare_tick,
+        "Claimant should commit eat before declare_support"
+    );
+    assert!(
+        hunger_below_high_when_declare_committed == Some(true),
+        "declare_support must not commit while hunger remains at or above the High threshold"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(agent, CommodityKind::Bread),
+        Quantity(0),
+        "Owned bread should be consumed during self-care resolution"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(agent),
+        "Claimant should be installed as office holder after suppression lifts"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_survival_pressure_suppresses_political_goals() {
+    let _ = run_survival_pressure_suppresses_political_goals(Seed([117; 32]));
+}
+
+#[test]
+fn golden_survival_pressure_suppresses_political_goals_replays_deterministically() {
+    let seed = Seed([118; 32]);
+    let first = run_survival_pressure_suppresses_political_goals(seed);
+    let second = run_survival_pressure_suppresses_political_goals(seed);
+
+    assert_eq!(
+        first, second,
+        "survival-pressure office suppression scenario should replay deterministically"
     );
 }

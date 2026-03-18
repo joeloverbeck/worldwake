@@ -3,10 +3,11 @@
 **Date**: 2026-03-12 (updated 2026-03-18)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Detailed reference for what each golden test proves. Consult when you need to understand a specific scenario or verify whether a behavior is already tested. For coverage gaps and matrices, see [golden-e2e-coverage.md](golden-e2e-coverage.md).
+**Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
 
 ---
 
-The golden suite contains 93 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. All behavior is emergent.
+The golden suite contains 95 tests across 9 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). The emergent slice (golden_emergent.rs) proves cross-system care interactions: wound-vs-hunger priority resolution via concrete utility weights, care_weight diversity producing divergent behavior, care+travel to remote patients, and loot→self-care chains. The offices slice now also proves that shared self-care suppression rules can defer political ambition without any office-specific suppression code. All behavior is emergent.
 
 ---
 
@@ -637,3 +638,16 @@ The golden suite contains 93 tests across 9 domain files. Every test uses the re
 - Succession system installs agent as holder after succession period.
 **Foundation alignment**: Principle 7 (locality — political actions require co-location at jurisdiction), Principle 8 (preconditions — travel has duration and occupancy), Principle 10 (belief-only planning), Principle 1 (maximal emergence — travel + office claim is emergent, not scripted).
 **Cross-system chain**: AI goal from remote belief → multi-hop travel planning → sequential travel execution → arrival at jurisdiction → DeclareSupport → succession resolution → office installation.
+
+### Scenario 16: Survival Pressure Suppresses Political Goals
+**File**: `golden_offices.rs` | **Tests**: `golden_survival_pressure_suppresses_political_goals`, `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
+**Systems exercised**: Needs/self-care (`eat`), AI (ClaimOffice candidate generation, shared goal-policy suppression, ranking, action sequencing), Political actions (`declare_support`), Succession (installation), action tracing, deterministic replay
+**Setup**: Vacant office (Support law, period=5, no eligibility) at VillageSquare. Single agent ("Hungry Claimant") at VillageSquare with enterprise_weight=pm(800), one owned bread, and DirectObservation belief about the office. Hunger starts exactly at the agent's `High` threshold so the shared self-care suppression rule applies immediately.
+**Emergent behavior proven**:
+- ClaimOffice still exists as a lawful political path, but ranking suppresses it while self-care pressure remains `High-or-above`.
+- Agent commits `eat` before any `declare_support` commit.
+- No `declare_support` commit occurs while hunger remains at or above the `High` threshold.
+- Once hunger relief is achieved, the same office-claim architecture proceeds normally: the agent declares support for self and is installed after the succession period.
+- Two runs with the same seed produce identical world and event-log hashes for the suppression scenario.
+**Foundation alignment**: Principle 10 (belief-only planning), Principle 20 (enterprise ambition remains real but is subordinated to concrete self-care pressure), Principle 24 (no office system special-case; shared goal-policy suppression coordinates the behavior through state).
+**Cross-system chain**: Believed vacant office + enterprise motive → ClaimOffice candidate → shared self-care suppression in ranking → eat commit → suppression lift → DeclareSupport → succession resolution → office installation.
