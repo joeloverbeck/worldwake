@@ -54,6 +54,7 @@ The first pair encodes the architectural rule. The second overfits to scheduler 
 - proving suppression, ranking, or planner-search behavior
 - distinguishing "candidate missing" from "candidate present but filtered/suppressed"
 - proving negative AI invariants such as "this goal never appeared" or "this candidate was never generated"
+- inspecting the final selected path via `planning.selection.selected_plan` and `planning.selection.selected_plan_source` when you need the chosen plan shape, terminal semantics, or whether the trace reflects a fresh search result, retained current plan, or snapshot-only continuation
 
 When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
 

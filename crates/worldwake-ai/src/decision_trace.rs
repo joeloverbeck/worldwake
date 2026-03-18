@@ -58,6 +58,16 @@ impl DecisionOutcome {
                     .selected
                     .as_ref()
                     .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+                let selected_plan = planning
+                    .selection
+                    .selected_plan
+                    .as_ref()
+                    .map_or_else(|| "none".to_string(), format_selected_plan);
+                let provenance = planning
+                    .selection
+                    .selected_plan_source
+                    .as_ref()
+                    .map_or_else(|| "none".to_string(), |source| format!("{source:?}"));
                 let candidates = planning.candidates.ranked.len();
                 let plans_found = planning
                     .planning
@@ -66,7 +76,7 @@ impl DecisionOutcome {
                     .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                     .count();
                 format!(
-                    "PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}"
+                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}"
                 )
             }
         }
@@ -231,10 +241,33 @@ pub struct PlannedStepSummary {
 pub struct SelectionTrace {
     /// The goal/plan that was selected (None if no plans available).
     pub selected: Option<GoalKey>,
+    /// Canonical summary of the final selected plan, if one exists.
+    pub selected_plan: Option<SelectedPlanTrace>,
+    /// Where the final selected plan came from.
+    pub selected_plan_source: Option<SelectedPlanSource>,
     /// Whether a goal switch occurred from the previous tick's goal.
     pub goal_switch: Option<GoalSwitchSummary>,
     /// The previous goal (if any) for context.
     pub previous_goal: Option<GoalKey>,
+}
+
+/// Canonical summary of the final plan the agent is following after selection.
+#[derive(Clone, Debug)]
+pub struct SelectedPlanTrace {
+    pub steps: Vec<PlannedStepSummary>,
+    pub terminal_kind: PlanTerminalKind,
+    /// Step index the runtime will execute next, if any.
+    pub next_step_index: Option<usize>,
+    /// The next step on the selected path before execution/revalidation outcome.
+    pub next_step: Option<PlannedStepSummary>,
+}
+
+/// Provenance for the final selected plan surface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedPlanSource {
+    SearchSelection,
+    RetainedCurrentPlan,
+    SnapshotContinuation,
 }
 
 /// Summary of a goal switch event.
@@ -366,6 +399,16 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .selected
                 .as_ref()
                 .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+            let selected_plan = planning
+                .selection
+                .selected_plan
+                .as_ref()
+                .map_or_else(|| "none".to_string(), format_selected_plan);
+            let provenance = planning
+                .selection
+                .selected_plan_source
+                .as_ref()
+                .map_or_else(|| "none".to_string(), |source| format!("{source:?}"));
             let candidates = planning.candidates.ranked.len();
             let plans_found = planning
                 .planning
@@ -374,7 +417,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                 .count();
             let mut out = format!(
-                "PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}"
+                "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}"
             );
             for attempt in &planning.planning.attempts {
                 for rej in &attempt.binding_rejections {
@@ -409,6 +452,25 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             out
         }
     }
+}
+
+fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
+    let step_kinds = selected_plan
+        .steps
+        .iter()
+        .map(|step| format!("{:?}", step.op_kind))
+        .collect::<Vec<_>>()
+        .join("->");
+    let next_step = selected_plan
+        .next_step
+        .as_ref()
+        .map_or_else(|| "none".to_string(), |step| format!("{:?}", step.op_kind));
+    format!(
+        "{:?}[steps={}, next_index={:?}, next_step={next_step}, path={step_kinds}]",
+        selected_plan.terminal_kind,
+        selected_plan.steps.len(),
+        selected_plan.next_step_index,
+    )
 }
 
 impl Default for DecisionTraceSink {
@@ -530,6 +592,25 @@ mod tests {
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
                 selected: Some(GoalKey::new(GoalKind::Sleep)),
+                selected_plan: Some(SelectedPlanTrace {
+                    steps: vec![PlannedStepSummary {
+                        action_def_id: ActionDefId(1),
+                        action_name: "sleep".to_string(),
+                        op_kind: PlannerOpKind::Sleep,
+                        targets: vec![],
+                        estimated_ticks: 2,
+                    }],
+                    terminal_kind: PlanTerminalKind::GoalSatisfied,
+                    next_step_index: Some(0),
+                    next_step: Some(PlannedStepSummary {
+                        action_def_id: ActionDefId(1),
+                        action_name: "sleep".to_string(),
+                        op_kind: PlannerOpKind::Sleep,
+                        targets: vec![],
+                        estimated_ticks: 2,
+                    }),
+                }),
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
                 previous_goal: None,
             },
@@ -545,6 +626,9 @@ mod tests {
         assert!(summary.contains("candidates=1"));
         assert!(summary.contains("plans_found=0"));
         assert!(summary.contains("Sleep"));
+        assert!(summary.contains("SearchSelection"));
+        assert!(summary.contains("GoalSatisfied"));
+        assert!(summary.contains("Sleep]") || summary.contains("path=Sleep"));
     }
 
     #[test]

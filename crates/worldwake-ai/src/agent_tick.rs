@@ -3,7 +3,8 @@ use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
     GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
+    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectedPlanSource,
+    SelectedPlanTrace, SelectionTrace,
 };
 use crate::search::PlanSearchResult;
 use crate::{
@@ -423,6 +424,8 @@ fn process_agent(
                 }),
                 selection: selection_trace.unwrap_or(SelectionTrace {
                     selected: None,
+                    selected_plan: None,
+                    selected_plan_source: None,
                     goal_switch: None,
                     previous_goal: None,
                 }),
@@ -474,6 +477,42 @@ fn summarize_step(
             .filter_map(|t| authoritative_target(*t))
             .collect(),
         estimated_ticks: step.estimated_ticks,
+    }
+}
+
+fn summarize_selected_plan(
+    plan: &PlannedPlan,
+    current_step_index: usize,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+) -> SelectedPlanTrace {
+    SelectedPlanTrace {
+        steps: plan
+            .steps
+            .iter()
+            .map(|step| summarize_step(step, action_defs))
+            .collect(),
+        terminal_kind: plan.terminal_kind,
+        next_step_index: (current_step_index < plan.steps.len()).then_some(current_step_index),
+        next_step: plan
+            .steps
+            .get(current_step_index)
+            .map(|step| summarize_step(step, action_defs)),
+    }
+}
+
+fn determine_selected_plan_source(
+    selected_goal: worldwake_core::GoalKey,
+    current_goal_before_selection: Option<worldwake_core::GoalKey>,
+    plans: &[(worldwake_core::GoalKey, Option<PlannedPlan>)],
+) -> SelectedPlanSource {
+    if plans
+        .iter()
+        .any(|(goal, plan)| *goal == selected_goal && plan.is_some())
+    {
+        SelectedPlanSource::SearchSelection
+    } else {
+        debug_assert_eq!(current_goal_before_selection, Some(selected_goal));
+        SelectedPlanSource::RetainedCurrentPlan
     }
 }
 
@@ -1166,6 +1205,8 @@ fn plan_and_validate_next_step_traced(
     };
     let mut selection_trace = SelectionTrace {
         selected: None,
+        selected_plan: None,
+        selected_plan_source: None,
         goal_switch: None,
         previous_goal,
     };
@@ -1194,6 +1235,11 @@ fn plan_and_validate_next_step_traced(
                         runtime.dirty = false;
                         plan_continued = true;
                         selection_trace.selected = runtime.current_goal;
+                        selection_trace.selected_plan = runtime.current_plan.as_ref().map(|plan| {
+                            summarize_selected_plan(plan, runtime.current_step_index, action_defs)
+                        });
+                        selection_trace.selected_plan_source =
+                            Some(SelectedPlanSource::SnapshotContinuation);
                         return (
                             Some(step),
                             Some(true),
@@ -1236,6 +1282,7 @@ fn plan_and_validate_next_step_traced(
         }
 
         let plans_options = plans_as_options(&plans);
+        let current_goal_before_selection = runtime.current_goal;
 
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
@@ -1246,6 +1293,13 @@ fn plan_and_validate_next_step_traced(
         ) {
             let selected_goal = selected_plan.goal;
             selection_trace.selected = Some(selected_goal);
+            selection_trace.selected_plan =
+                Some(summarize_selected_plan(&selected_plan, 0, action_defs));
+            selection_trace.selected_plan_source = Some(determine_selected_plan_source(
+                selected_goal,
+                current_goal_before_selection,
+                &plans_options,
+            ));
 
             // Detect goal switch.
             if let Some(prev) = previous_goal {
@@ -1907,9 +1961,10 @@ mod tests {
     use super::{
         abandon_expired_facility_queues_with_limit, advance_completed_step,
         apply_step_materialization_bindings, committed_action_for_step,
-        effective_goal_switch_margin, facility_queue_patience_exhausted,
-        handle_recoverable_travel_step_blockage, persist_blocked_memory,
-        plan_and_validate_next_step, refresh_runtime_for_read_phase, resolve_step_targets,
+        determine_selected_plan_source, effective_goal_switch_margin,
+        facility_queue_patience_exhausted, handle_recoverable_travel_step_blockage,
+        persist_blocked_memory, plan_and_validate_next_step, plan_and_validate_next_step_traced,
+        refresh_runtime_for_read_phase, resolve_step_targets,
         update_journey_fields_for_adopted_plan, update_runtime_observation_snapshot,
         AgentTickDriver, ReadPhaseContext,
     };
@@ -1932,8 +1987,8 @@ mod tests {
         HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
         OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
         RecipeId, ResourceSource, Seed, SuccessionLaw, Tick, Topology, TravelDispositionProfile,
-        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn,
+        TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -4913,6 +4968,44 @@ mod tests {
     // ── S08AIDECTRA-002: Trace collection acceptance tests ──
 
     #[test]
+    fn determine_selected_plan_source_distinguishes_search_selection_from_retention() {
+        let current_goal = GoalKey::from(GoalKind::Sleep);
+        let challenger_goal = GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let current_plan = PlannedPlan::new(
+            current_goal,
+            vec![barrier_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let challenger_plan = PlannedPlan::new(
+            challenger_goal,
+            vec![barrier_step()],
+            PlanTerminalKind::ProgressBarrier,
+        );
+
+        assert_eq!(
+            determine_selected_plan_source(
+                challenger_goal,
+                Some(current_goal),
+                &[
+                    (current_goal, Some(current_plan.clone())),
+                    (challenger_goal, Some(challenger_plan)),
+                ],
+            ),
+            crate::SelectedPlanSource::SearchSelection
+        );
+        assert_eq!(
+            determine_selected_plan_source(
+                current_goal,
+                Some(current_goal),
+                &[(challenger_goal, None)],
+            ),
+            crate::SelectedPlanSource::RetainedCurrentPlan
+        );
+    }
+
+    #[test]
     fn trace_planning_outcome_for_hungry_agent() {
         let mut harness = Harness::new(ControlSource::Ai);
         harness.driver.enable_tracing();
@@ -4939,9 +5032,185 @@ mod tests {
                     !planning.candidates.ranked.is_empty(),
                     "hungry agent should have at least one ranked goal"
                 );
+                let selected_plan = planning
+                    .selection
+                    .selected_plan
+                    .as_ref()
+                    .expect("final trace should expose the selected plan directly");
+                assert_eq!(
+                    planning.selection.selected_plan_source,
+                    Some(crate::SelectedPlanSource::SearchSelection)
+                );
+                assert!(
+                    !selected_plan.steps.is_empty(),
+                    "selected plan trace should preserve planned steps"
+                );
+                assert_eq!(selected_plan.next_step_index, Some(0));
+                assert!(
+                    selected_plan.next_step.is_some(),
+                    "selected plan trace should preserve the immediate next step"
+                );
+                assert_eq!(
+                    selected_plan
+                        .next_step
+                        .as_ref()
+                        .expect("selected plan should expose next step")
+                        .op_kind,
+                    planning
+                        .execution
+                        .enqueued_step
+                        .as_ref()
+                        .expect("selected step should be enqueued for execution")
+                        .op_kind
+                );
             }
             other => panic!("expected Planning outcome, got {other:?}"),
         }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn trace_snapshot_continuation_records_selected_plan_provenance() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let utility = harness
+            .world
+            .get_component_utility_profile(harness.actor)
+            .cloned()
+            .unwrap_or_default();
+        let budget = PlanningBudget::default();
+        let semantics = build_semantics_table(&harness.defs);
+        let runtime = harness
+            .driver
+            .runtime_by_agent
+            .entry(harness.actor)
+            .or_default();
+        let mut blocked = BlockedIntentMemory::default();
+
+        let initial_read = refresh_runtime_for_read_phase(
+            &harness.world,
+            &harness.scheduler,
+            &harness.defs,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(1),
+                travel_horizon: budget.snapshot_travel_horizon,
+                structural_block_ticks: budget.structural_block_ticks,
+            },
+        );
+        let previous_goal = runtime.current_goal;
+        let (_, initial_valid, initial_continued, _, initial_selection) =
+            plan_and_validate_next_step_traced(
+                &harness.world,
+                &harness.scheduler,
+                runtime,
+                harness.actor,
+                &initial_read.ranked,
+                &blocked,
+                budget.switch_margin_permille,
+                budget.switch_margin_permille,
+                Tick(1),
+                &budget,
+                &semantics,
+                &harness.defs,
+                &harness.handlers,
+                true,
+                previous_goal,
+                &initial_read.dirty_reasons,
+                &harness.recipes,
+            );
+        assert_eq!(initial_valid, Some(true));
+        assert!(!initial_continued);
+        assert_eq!(
+            initial_selection
+                .expect("initial traced selection should exist")
+                .selected_plan_source,
+            Some(crate::SelectedPlanSource::SearchSelection)
+        );
+
+        let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+        update_runtime_observation_snapshot(&initial_view, harness.actor, runtime);
+
+        {
+            let place = harness.world.effective_place(harness.actor).unwrap();
+            let mut txn = new_txn(&mut harness.world, 2);
+            let tool = txn
+                .create_unique_item(UniqueItemKind::SimpleTool, Some("Awl"), BTreeMap::new())
+                .unwrap();
+            txn.set_ground_location(tool, place).unwrap();
+            txn.set_possessor(tool, harness.actor).unwrap();
+            commit_txn(txn);
+        }
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
+
+        let continuation_read = refresh_runtime_for_read_phase(
+            &harness.world,
+            &harness.scheduler,
+            &harness.defs,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(2),
+                travel_horizon: budget.snapshot_travel_horizon,
+                structural_block_ticks: budget.structural_block_ticks,
+            },
+        );
+        assert_eq!(
+            continuation_read.dirty_reasons,
+            vec![DirtyReason::SnapshotChanged]
+        );
+
+        let previous_goal = runtime.current_goal;
+        let (continued_step, continued_valid, plan_continued, _, continuation_selection) =
+            plan_and_validate_next_step_traced(
+                &harness.world,
+                &harness.scheduler,
+                runtime,
+                harness.actor,
+                &continuation_read.ranked,
+                &blocked,
+                budget.switch_margin_permille,
+                budget.switch_margin_permille,
+                Tick(2),
+                &budget,
+                &semantics,
+                &harness.defs,
+                &harness.handlers,
+                true,
+                previous_goal,
+                &continuation_read.dirty_reasons,
+                &harness.recipes,
+            );
+        let selection = continuation_selection.expect("snapshot continuation trace should exist");
+        let selected_plan = selection
+            .selected_plan
+            .expect("snapshot continuation should still expose the selected plan");
+
+        assert!(plan_continued);
+        assert_eq!(continued_valid, Some(true));
+        assert_eq!(
+            selection.selected_plan_source,
+            Some(crate::SelectedPlanSource::SnapshotContinuation)
+        );
+        assert_eq!(selected_plan.next_step_index, Some(0));
+        assert_eq!(
+            selected_plan
+                .next_step
+                .as_ref()
+                .expect("selected plan should preserve next step")
+                .op_kind,
+            continued_step
+                .expect("snapshot continuation should keep current step")
+                .op_kind
+        );
     }
 
     #[test]
