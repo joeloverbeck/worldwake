@@ -3665,18 +3665,51 @@ mod tests {
     fn political_candidates_require_visible_vacancy_and_skip_existing_declaration() {
         let agent = entity(1);
         let office = entity(2);
+        let incumbent = entity(3);
         let town = entity(10);
         let faction = entity(11);
         let mut view = TestBeliefView::default();
-        view.alive.insert(agent);
+        view.alive.extend([agent, incumbent]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(incumbent, EntityKind::Agent);
         view.entity_kinds.insert(office, EntityKind::Office);
         view.effective_places.insert(agent, town);
-        view.entities_at.insert(town, vec![agent]);
+        view.effective_places.insert(incumbent, town);
+        view.entities_at.insert(town, vec![agent, incumbent]);
         view.factions_by_member.insert(agent, vec![faction]);
         view.beliefs.insert(agent, vec![known_entity(office, town)]);
 
         let mut office_data = vacant_office("Captain", town, faction);
+        view.office_holders.insert(office, incumbent);
+        view.office_data.insert(office, office_data.clone());
+        let occupied_with_stale_vacancy = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+        assert!(!contains_goal(
+            &occupied_with_stale_vacancy.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_political_omission(
+            &occupied_with_stale_vacancy.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
+        assert!(contains_political_omission(
+            &occupied_with_stale_vacancy.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
+
+        view.office_holders.clear();
         office_data.vacancy_since = None;
         view.office_data.insert(office, office_data.clone());
         let filled = generate_candidates_with_travel_horizon(
