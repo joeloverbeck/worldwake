@@ -788,7 +788,7 @@ mod tests {
         AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
         BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, ExternalAbortReason,
-        SystemExecutionContext, SystemId, ThreatenActionPayload,
+        PerAgentBeliefView, SystemExecutionContext, SystemId, ThreatenActionPayload,
     };
 
     fn pm(value: u16) -> Permille {
@@ -928,6 +928,78 @@ mod tests {
         }
     }
 
+    struct PayloadFixture {
+        world: World,
+        place: EntityId,
+        actor: EntityId,
+        target: EntityId,
+    }
+
+    impl PayloadFixture {
+        fn new(with_combat_profile: bool) -> Self {
+            let mut world = World::new(build_prototype_world()).unwrap();
+            let place = world.topology().place_ids().next().unwrap();
+            let (actor, target) = {
+                let mut txn = new_txn(&mut world, 1);
+                let actor = txn.create_agent("Payload Actor", ControlSource::Ai).unwrap();
+                let target = txn.create_agent("Payload Target", ControlSource::Ai).unwrap();
+                txn.set_ground_location(actor, place).unwrap();
+                txn.set_ground_location(target, place).unwrap();
+                txn.set_component_agent_belief_store(actor, AgentBeliefStore::new())
+                    .unwrap();
+                if with_combat_profile {
+                    txn.set_component_combat_profile(
+                        actor,
+                        CombatProfile::new(
+                            pm(1000),
+                            pm(700),
+                            pm(650),
+                            pm(500),
+                            pm(50),
+                            pm(25),
+                            pm(20),
+                            pm(100),
+                            pm(25),
+                            NonZeroU32::new(4).unwrap(),
+                        ),
+                    )
+                    .unwrap();
+                }
+                let mut log = EventLog::new();
+                let _ = txn.commit(&mut log);
+                (actor, target)
+            };
+
+            Self {
+                world,
+                place,
+                actor,
+                target,
+            }
+        }
+
+        fn view(&self) -> PerAgentBeliefView<'_> {
+            PerAgentBeliefView::from_world(self.actor, &self.world)
+        }
+
+        fn give_actor_commodity(&mut self, commodity: CommodityKind, quantity: Quantity) {
+            let mut txn = new_txn(&mut self.world, 2);
+            let lot = txn.create_item_lot(commodity, quantity).unwrap();
+            txn.set_ground_location(lot, self.place).unwrap();
+            txn.set_owner(lot, self.actor).unwrap();
+            txn.set_possessor(lot, self.actor).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        fn clear_actor_combat_profile(&mut self) {
+            let mut txn = new_txn(&mut self.world, 2);
+            txn.clear_component_combat_profile(self.actor).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+    }
+
     fn commit_action(
         world: &mut World,
         defs: &ActionDefRegistry,
@@ -986,6 +1058,130 @@ mod tests {
                 worldwake_sim::ActionDomain::Social,
             ]
         );
+    }
+
+    #[test]
+    fn bribe_payload_offers_full_stock() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.give_actor_commodity(CommodityKind::Bread, Quantity(5));
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(
+            payloads[0],
+            ActionPayload::Bribe(BribeActionPayload {
+                target: fx.target,
+                offered_commodity: CommodityKind::Bread,
+                offered_quantity: Quantity(5),
+            })
+        );
+    }
+
+    #[test]
+    fn bribe_payload_no_self_bribe() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.give_actor_commodity(CommodityKind::Bread, Quantity(5));
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.actor], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn bribe_payload_empty_without_commodities() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn bribe_payload_multiple_commodity_types() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.give_actor_commodity(CommodityKind::Bread, Quantity(5));
+        fx.give_actor_commodity(CommodityKind::Coin, Quantity(3));
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert_eq!(payloads.len(), 2);
+        assert!(payloads.contains(&ActionPayload::Bribe(BribeActionPayload {
+            target: fx.target,
+            offered_commodity: CommodityKind::Bread,
+            offered_quantity: Quantity(5),
+        })));
+        assert!(payloads.contains(&ActionPayload::Bribe(BribeActionPayload {
+            target: fx.target,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(3),
+        })));
+    }
+
+    #[test]
+    fn threaten_payload_emits_for_bound_target_with_combat_profile() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert_eq!(
+            payloads,
+            vec![ActionPayload::Threaten(ThreatenActionPayload {
+                target: fx.target,
+            })]
+        );
+    }
+
+    #[test]
+    fn threaten_payload_no_self_threaten() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[fx.actor], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn threaten_payload_empty_without_targets() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn threaten_payload_requires_combat_profile() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.clear_actor_combat_profile();
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert!(payloads.is_empty());
     }
 
     #[test]
