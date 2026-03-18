@@ -1,1 +1,21 @@
 experiment_id	combined_duration_ms	lines_delta	category	status	description
+baseline	44869	0	baseline	ACCEPT	baseline measurement
+exp-001	41760	35	caching	ACCEPT	Replace Floyd-Warshall BTreeMap with Vec-based distance matrix
+exp-002	41605	8	search-pruning	NEAR_MISS	Hoist relevant_action_defs out of per-node search_candidates
+exp-003	43684	8	snapshot-optimization	REJECT	Optimize build_snapshot_places entity grouping
+exp-004	42098	20	replan-reduction	NEAR_MISS	Skip read phase for non-interruptible active actions
+exp-005	41051	14	snapshot-optimization	ACCEPT	Share merged snapshot across all candidates per agent
+exp-006	39851	18	clone-reduction	ACCEPT	Fast-path entities_at using snapshot place index for unmodified states
+exp-007	40500	14	clone-reduction	REJECT	Fast-path direct_possessions using snapshot data
+exp-008	39970	10	clone-reduction	NEAR_MISS	Fast-path effective_place for unmodified states
+exp-009	39979	5	replan-reduction	NEAR_MISS	Lazy commodity signature in observation_snapshot_changed
+exp-010	43904	18	other	REJECT	Combine near-miss exp-002 + exp-008
+exp-011	0	15	other	CRASH	Batch commodity signature — semantics mismatch with belief view
+exp-012	0	40	caching	REJECT	Precompute goal distances — too many test callsite changes, abandoned
+exp-013	41957	3	route-optimization	REJECT	BTreeMap index in DistanceMatrix — slower than binary_search for small N
+exp-014	40283	25	snapshot-optimization	NEAR_MISS	Kind-aware snapshot entity construction
+exp-015	0	25	snapshot-optimization	CRASH	Batch actor commodity collection — missing container traversal
+exp-016	0	10	search-pruning	REJECT	Early GoalSatisfied return — changes combat behavior (multiple targets)
+exp-017	40924	3	replan-reduction	NEAR_MISS	Skip journey plans when not dirty
+exp-018	40523	40	ownership-query	NEAR_MISS	Batch commodity/unique item queries via single BFS
+exp-017	40924	3	replan-reduction	NEAR_MISS	Skip journey plans in active-action path when not dirty
