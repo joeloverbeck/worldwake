@@ -944,8 +944,9 @@ pub struct RankedGoal {
 mod tests {
     use super::{GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal};
     use crate::{
-        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind,
-        PlannerOpSemantics, PlannerTransitionKind, PlanningState,
+        build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
+        GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
+        PlannerTransitionKind, PlanningBudget, PlanningState,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -960,11 +961,12 @@ mod tests {
         UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDef, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionPayload, BribeActionPayload, DurationExpr, Interruptibility,
-        QueueForFacilityUsePayload, RuntimeBeliefView, TellActionPayload,
+        estimate_duration_from_beliefs, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,
+        ActionHandlerId, ActionPayload, BribeActionPayload, DurationExpr, Interruptibility,
+        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
         ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     };
+    use worldwake_systems::build_full_action_registries;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
@@ -3466,6 +3468,336 @@ mod tests {
         assert!(
             !goal.is_satisfied(&state2),
             "SupportCandidateForOffice should NOT be satisfied without declaration"
+        );
+    }
+
+    // ── E16DPOLPLAN-006: Integration tests — planner finds Bribe/Threaten plans ──
+
+    fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
+        let recipes = RecipeRegistry::new();
+        let registries = build_full_action_registries(&recipes).unwrap();
+        (registries.defs, registries.handlers)
+    }
+
+    fn claim_office_goal(office: EntityId) -> GroundedGoal {
+        GroundedGoal {
+            key: GoalKey::from(GoalKind::ClaimOffice { office }),
+            evidence_entities: BTreeSet::from([office]),
+            evidence_places: BTreeSet::new(),
+        }
+    }
+
+    /// Test 1: Planner selects Bribe plan when competitor has existing support.
+    ///
+    /// Setup: actor at jurisdiction with coins, bribable target, vacant office.
+    /// A competitor (rival) is at a DIFFERENT place but has self-declared support,
+    /// so DeclareSupport alone would produce a tie (ProgressBarrier). The rival
+    /// cannot be bribed directly (not co-located). Bribe(target) + DeclareSupport
+    /// gives a winning coalition (GoalSatisfied).
+    #[test]
+    fn planner_selects_bribe_plan() {
+        let actor = entity(1);
+        let target = entity(2); // bribable agent at same place
+        let rival = entity(3); // competitor NOT at actor's place
+        let office = entity(40);
+        let town = entity(10);
+        let remote = entity(11); // rival's location
+
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, target, rival, office, town, remote]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(rival, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(target, town);
+        view.effective_places.insert(rival, remote);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, target, office]);
+        view.entities_at.insert(remote, vec![rival]);
+
+        // Actor has coins for bribing
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(5));
+
+        // Rival has self-declared support — creates competition
+        view.support_declarations
+            .insert(office, vec![(rival, rival)]);
+
+        // Target has high courage — Threaten won't work (default attack_skill=620)
+        view.courage_values
+            .insert(target, Permille::new(900).unwrap());
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target, rival]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let goal = claim_office_goal(office);
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            None,
+        )
+        .into_plan()
+        .expect("planner should find a plan with Bribe");
+
+        let op_kinds: Vec<_> = plan.steps.iter().map(|s| s.op_kind).collect();
+        assert!(
+            op_kinds.contains(&PlannerOpKind::Bribe),
+            "plan should contain Bribe, got: {op_kinds:?}"
+        );
+        assert!(
+            op_kinds.contains(&PlannerOpKind::DeclareSupport),
+            "plan should contain DeclareSupport, got: {op_kinds:?}"
+        );
+    }
+
+    /// Test 2: Planner selects Threaten plan when attack_skill > target courage.
+    ///
+    /// Setup: actor at jurisdiction with high attack_skill, low-courage target.
+    /// A competitor (rival) is at a DIFFERENT place but has self-declared support,
+    /// motivating the planner to select Threaten rather than relying on
+    /// DeclareSupport alone.
+    #[test]
+    fn planner_selects_threaten_plan() {
+        let actor = entity(1);
+        let target = entity(2); // low-courage agent at same place
+        let rival = entity(3); // competitor NOT at actor's place
+        let office = entity(40);
+        let town = entity(10);
+        let remote = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, target, rival, office, town, remote]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(rival, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(target, town);
+        view.effective_places.insert(rival, remote);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, target, office]);
+        view.entities_at.insert(remote, vec![rival]);
+
+        // Actor has high attack_skill (default CombatProfile has attack_skill=620)
+        // Target has low courage
+        view.courage_values
+            .insert(target, Permille::new(100).unwrap());
+
+        // Rival has self-declared support — creates competition
+        view.support_declarations
+            .insert(office, vec![(rival, rival)]);
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target, rival]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let goal = claim_office_goal(office);
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            None,
+        )
+        .into_plan()
+        .expect("planner should find a plan with Threaten");
+
+        let op_kinds: Vec<_> = plan.steps.iter().map(|s| s.op_kind).collect();
+        assert!(
+            op_kinds.contains(&PlannerOpKind::Threaten),
+            "plan should contain Threaten, got: {op_kinds:?}"
+        );
+    }
+
+    /// Test 3: Planner selects Travel + Bribe when actor is NOT at jurisdiction.
+    ///
+    /// Setup: actor at a remote place, has coins. Target and rival at the
+    /// jurisdiction. Rival has self-declared support. Plan should start with
+    /// Travel then include Bribe + DeclareSupport.
+    #[test]
+    fn planner_selects_travel_then_bribe() {
+        let actor = entity(1);
+        let target = entity(2); // bribable agent at jurisdiction
+        let rival = entity(3); // competitor with existing support
+        let office = entity(40);
+        let town = entity(10); // jurisdiction
+        let remote = entity(11); // actor starts here
+
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, target, rival, office, town, remote]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(rival, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.effective_places.insert(actor, remote);
+        view.effective_places.insert(target, town);
+        view.effective_places.insert(rival, town);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(remote, vec![actor]);
+        view.entities_at
+            .insert(town, vec![target, rival, office]);
+
+        // Travel edge between remote and town
+        view.adjacent
+            .insert(remote, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(town, vec![(remote, NonZeroU32::new(3).unwrap())]);
+
+        // Actor has coins for bribing
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(5));
+
+        // Target has courage
+        view.courage_values
+            .insert(target, Permille::new(500).unwrap());
+
+        // Rival has self-declared support — creates competition
+        view.support_declarations
+            .insert(office, vec![(rival, rival)]);
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target, rival]),
+            &BTreeSet::from([town, remote]),
+            2,
+        );
+        let goal = claim_office_goal(office);
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            None,
+        )
+        .into_plan()
+        .expect("planner should find a Travel+Bribe plan");
+
+        let op_kinds: Vec<_> = plan.steps.iter().map(|s| s.op_kind).collect();
+        assert!(
+            op_kinds.contains(&PlannerOpKind::Travel),
+            "plan should contain Travel, got: {op_kinds:?}"
+        );
+        assert!(
+            op_kinds.contains(&PlannerOpKind::Bribe),
+            "plan should contain Bribe after Travel, got: {op_kinds:?}"
+        );
+
+        // Travel must come before Bribe
+        let travel_pos = op_kinds
+            .iter()
+            .position(|op| *op == PlannerOpKind::Travel)
+            .unwrap();
+        let bribe_pos = op_kinds
+            .iter()
+            .position(|op| *op == PlannerOpKind::Bribe)
+            .unwrap();
+        assert!(
+            travel_pos < bribe_pos,
+            "Travel (pos {travel_pos}) should come before Bribe (pos {bribe_pos})"
+        );
+    }
+
+    /// Test 4: Planner rejects Threaten when target courage exceeds attack_skill.
+    ///
+    /// Setup: actor at jurisdiction, target with high courage (exceeds actor's
+    /// attack_skill). Rival is at a DIFFERENT place but has self-declared support.
+    /// Threaten would fail, so the planner falls back to Bribe (actor has coins)
+    /// + DeclareSupport. Plan must NOT contain Threaten.
+    #[test]
+    fn planner_rejects_threaten_against_high_courage() {
+        let actor = entity(1);
+        let target = entity(2); // high-courage agent at same place
+        let rival = entity(3); // competitor NOT at actor's place
+        let office = entity(40);
+        let town = entity(10);
+        let remote = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, target, rival, office, town, remote]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(rival, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(target, town);
+        view.effective_places.insert(rival, remote);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, target, office]);
+        view.entities_at.insert(remote, vec![rival]);
+
+        // Target has very high courage — exceeds actor's default attack_skill (620)
+        view.courage_values
+            .insert(target, Permille::new(900).unwrap());
+
+        // Actor has coins so planner can fall back to Bribe
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(5));
+
+        // Rival has self-declared support — creates competition
+        view.support_declarations
+            .insert(office, vec![(rival, rival)]);
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, target, rival]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let goal = claim_office_goal(office);
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[town],
+            None,
+        )
+        .into_plan()
+        .expect("planner should find a plan without Threaten");
+
+        let op_kinds: Vec<_> = plan.steps.iter().map(|s| s.op_kind).collect();
+        assert!(
+            !op_kinds.contains(&PlannerOpKind::Threaten),
+            "plan should NOT contain Threaten against high-courage target, got: {op_kinds:?}"
         );
     }
 }

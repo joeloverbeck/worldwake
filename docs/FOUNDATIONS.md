@@ -20,7 +20,7 @@ Authoring beasts, hunger, roads, caravans, towns, offices, and bounty procedures
 
 No outcome may bottom out at a naked designer dial such as `chanceOfEncounter`, `spawnRate`, `crimeChance`, `questSpawnChance`, or `eventProbability`.
 
-Randomness is allowed only when it stands in for hidden local microstate, noisy perception, uncertain execution, or real variation the simulation does not model explicitly. In those cases, the distribution must still be a function of concrete, local state. Randomness must be seeded, attributable, and never used as a drama generator. Given the same seed and the same causal history, the simulation should reproduce the same outcome.
+Randomness is allowed only when it stands in for hidden local microstate, noisy perception, uncertain execution, or real variation the simulation does not model explicitly. In those cases, the distribution must still be a function of concrete, local state. Randomness must be seeded, attributable, and never used as a drama generator. Given the same seed and the same causal history, the simulation should reproduce the same outcome. Different seeds may diverge, but only through those same declared local uncertainty paths.
 
 Utility weights, need rates, fear sensitivity, memory fidelity, and skill parameters may exist as concrete agent properties. “Interesting thing happens here 30% of the time” may not.
 
@@ -40,7 +40,9 @@ Every meaningful thing in the simulation has stable identity while it exists: ag
 
 Movement, splitting, merging, damage, consumption, creation, transfer, and destruction must be explicit world processes. If gold leaves a stash, there must have been a theft, payment, transfer, misplacement, destruction, or prior accounting error. If a bounty exists, someone or some institution must have created it at a place and time. If a caravan no longer has cargo, that cargo must be somewhere else, destroyed, or consumed.
 
-**Test**: If you cannot answer “where did it go?”, “who changed it?”, or “is this the same entity as before?” the model is too abstract.
+For quantities the simulation treats as conserved or explicitly accounted — coin, goods, bodies, ingredients, outputs, or claim-like balances — every increase, decrease, split, merge, creation, destruction, and transformation must have an explicit source or sink path. Harvests draw from sources. Crafts transform inputs into outputs. Regeneration, decay, inheritance, spoilage, write-offs, births, and minting must be equally explicit if they exist.
+
+**Test**: If you cannot answer “where did it go?”, “where did it come from?”, “who changed it?”, or “is this the same entity as before?” the model is too abstract.
 
 ---
 
@@ -76,7 +78,9 @@ Nothing important is free and nothing important is instantaneous. Actions consum
 
 Long actions must unfold over time and remain interruptible. “Go to market” is not a teleporting atomic call. “Investigate robbery” is not a single instant state flip.
 
-**Test**: For any action, name its preconditions, its consumed resources, its occupied capacities, its duration, and what can interrupt it. If you cannot, the action is too abstract.
+Whenever multiple actors can lawfully attempt the same scarce or exclusive affordance, the resolution mechanism must also be explicit: reservation, queue, grant, lock, contested race, or some other concrete world process. Planner intent is not silent control. “I planned to use the orchard” does not make the orchard unavailable to others.
+
+**Test**: For any action or contested affordance, name its preconditions, its consumed resources, its occupied capacities, its duration, what can interrupt it, and how contention is resolved if more than one actor tries it. If you cannot, the action is too abstract.
 
 ### 9. Outcomes Are Granular and Leave Aftermath
 
@@ -102,9 +106,11 @@ Optimization is allowed. Causal cheating is not.
 
 Offscreen simulation may batch, summarize, sleep, or approximate only if causally relevant outcomes remain equivalent to the explicit model. You may compress the math. You may not compress away travel time, information delay, inventory depletion, injury recovery, or other state that agents could later observe and react to.
 
+The same rule applies to save/load, replay, migration, and any other representation boundary. Boundaries may change encoding, batching, or scheduling strategy, never world meaning.
+
 The rule is simple: performance may change how the machine computes a result, never what the world means.
 
-**Test**: If an optimization causes an agent to observe a state that could not have arisen from any legal sequence of world events, the optimization is invalid.
+**Test**: If an optimization or boundary causes an agent to observe a state that could not have arisen from any legal sequence of world events, the optimization is invalid.
 
 ---
 
@@ -122,13 +128,17 @@ A planner may consult only the agent’s accessible belief state, memory, and kn
 
 Knowledge enters an agent through perception, memory retrieval, inference, testimony, documents, traces, and other explicit carriers. Knowledge then moves through the world by physical or social transmission, with delay, distortion, source attribution, and possible loss.
 
+Where relevance matters, beliefs must also carry provenance, acquisition time, confidence, and freshness or chain metadata sufficient for agents to discount stale rumor, prefer direct evidence, and reason about who said what.
+
 Witness testimony, posted notices, letters, ledgers, rumors, tracks, blood trails, empty shelves, missing items, and public speeches are not flavor. They are mechanisms of causal propagation.
 
-**Test**: For any belief that changes an agent’s plan, identify how it was acquired and how it traveled. If the answer is “the AI system knew,” the design violates this principle.
+**Test**: For any belief that changes an agent’s plan, identify how it was acquired, how it traveled, and what makes it more or less trustworthy than competing claims. If the answer is “the AI system knew,” the design violates this principle.
 
 ### 14. Ignorance, Uncertainty, and Contradiction Are First-Class
 
 Agents must be able to not know, to suspect, to misremember, to hold stale beliefs, and to believe false or conflicting reports. Unknown is not false. Unobserved is not empty. Contradiction is not a system error.
+
+Retention is not perfect or free. Beliefs may decay, be overwritten, or be evicted when time passes, memory is weak, or stronger evidence arrives.
 
 The simulation must support cases where one witness says the beast fled east, another says west, and the town reacts imperfectly. It must support an owner believing their gold is home while the gold is already gone.
 
@@ -166,6 +176,8 @@ The human may swap into any agent without the world changing its laws.
 
 AI agents must reason as limited actors in a dynamic world, using beliefs, priorities, habits, skills, and commitments to choose actions. Plans exist to make reasoning tractable under limited time and limited knowledge, not to hard-script a performance.
 
+Goals name desired world conditions, not privileged one-step solutions. Reaching them may require enabling subchains — travel, acquisition, queueing, bargaining, pickup, treatment, proof, or retreat — through the same lawful affordances everyone else uses.
+
 The implementation may evolve — GOAP, utility systems, BDI, HTN, or hybrids are all acceptable — but the standard does not change: decisions must be explainable as what this agent, with this belief state and these priorities, would try to do.
 
 **Test**: For any decision, you must be able to explain it as “Agent X chose Y because they believed Z and cared about Q.” If the explanation is “the behavior tree hit this node” or “the quest logic told them to,” the design violates this principle.
@@ -174,9 +186,11 @@ The implementation may evolve — GOAP, utility systems, BDI, HTN, or hybrids ar
 
 Agents need commitments so they do not thrash between options every tick. But commitments are never rails. They are stable intentions held under assumptions.
 
-Agents must monitor the assumptions beneath an active intention and suspend, revise, or replace that intention when new local evidence invalidates it. Hungry agent going to market sees dragon -> flee. Guard escorting caravan hears nearby bandits and may tighten formation, investigate, retreat, or continue depending on their beliefs and priorities.
+Intent is not entitlement. A plan reserves nothing unless the world contains an explicit reservation, queue position, contract, assignment, or other claim artifact that other agents can observe or contest. Selecting a plan does not secretly hold the workstation, the bread, the corpse, the patient, or the road.
 
-**Test**: If an agent cannot abandon or revise a plan when its assumptions are broken by new information, the architecture cannot support emergent interruption.
+Agents must monitor the assumptions beneath an active intention and suspend, revise, or replace that intention when new local evidence invalidates it or when another actor lawfully changes the relevant world state. Hungry agent going to market sees dragon -> flee. Guard escorting caravan hears nearby bandits and may tighten formation, investigate, retreat, or continue depending on their beliefs and priorities.
+
+**Test**: If an agent cannot abandon or revise a plan when its assumptions are broken by new information or by another actor legitimately taking the opportunity first, the architecture cannot support emergent interruption.
 
 ### 20. Agent Diversity Through Concrete Variation
 
@@ -200,6 +214,8 @@ Institutions act through agents, artifacts, and rules — never through omniscie
 
 Possession is not ownership. Ownership is not permission. Permission is not capability. Debt is not payment. Claim is not custody. Jurisdiction is not universal.
 
+These distinctions apply to organizations as well as people. A faction, guild, temple, household, or state may own something that an individual member can access, steward, tax, or use without personally owning it.
+
 To model theft, trade, taxation, inheritance, confiscation, trespass, and robbery correctly, the simulation must separate:
 - who owns a thing,
 - who currently holds it,
@@ -209,7 +225,7 @@ To model theft, trade, taxation, inheritance, confiscation, trespass, and robber
 
 This applies to places, containers, offices, and records as much as to goods.
 
-**Test**: If the model cannot represent “the gold is mine, the chest holds it, my servant has the key, and the city watch has jurisdiction,” it is too coarse for the target world.
+**Test**: If the model cannot represent “the gold is the guild’s, the chest holds it, my servant has the key, my office lets me open it, and the city watch has jurisdiction,” it is too coarse for the target world.
 
 ### 23. Social Artifacts Are First-Class: Contracts, Notices, Bounties, Debts, Accusations, Rumors, Warrants
 
@@ -241,13 +257,15 @@ A cached danger estimate is acceptable. A danger estimate that becomes more real
 
 **Test**: Delete the cache and recompute from source state. If the world’s meaning changes, the cache was illegally promoted to truth.
 
-### 26. No Backward Compatibility
+### 26. No Backward Compatibility in Live Authority Paths
 
-Do not preserve dead abstractions, alias paths, compatibility layers, deprecated shims, or legacy systems simply because old code once depended on them. When the design changes, the code changes with it. Broken callers get updated or removed.
+Do not preserve dead abstractions, alias paths, compatibility layers, deprecated shims, or legacy systems inside the live authoritative simulation simply because old code once depended on them. When the design changes, the live authority path changes with it. Broken callers get updated or removed.
+
+Compatibility may exist at boundaries — save migration, import/export, tooling, replay decoding — only if it normalizes into the current model before the world advances. Two live authoritative representations of the same fact may not coexist.
 
 This keeps the simulation honest and prevents fossilized logic from silently bypassing the current world model.
 
-**Test**: If you are adding a wrapper so an obsolete abstraction can continue to exist beside the new one, stop and pay the migration cost now.
+**Test**: If you are adding a wrapper so an obsolete abstraction can continue to mutate live world meaning beside the new one, stop and pay the migration cost now.
 
 ### 27. Debuggability Is a Product Feature
 
@@ -272,17 +290,19 @@ The answers must be reconstructable from state, beliefs, records, and causal his
 Every system proposal must explicitly state:
 1. what concrete entities, relations, and records it introduces,
 2. what actions or world processes mutate them,
-3. what information it produces and who can observe it,
-4. what quantities it conserves, transfers, or destroys,
-5. what partial failures and aftermath states it creates,
-6. what positive feedback loops it amplifies,
-7. what physical dampeners limit those loops,
-8. what derived views or optimizations are allowed,
-9. and how agents can become wrong about it.
+3. what information it produces, how that information travels, and who can observe it,
+4. what quantities it conserves, transfers, transforms, creates, or destroys, and by what source/sink paths,
+5. what scarce capacities, exclusive affordances, reservations, queues, or claims it introduces, and how contention, expiry, and invalidation work,
+6. what partial failures and aftermath states it creates,
+7. what positive feedback loops it amplifies,
+8. what physical dampeners limit those loops,
+9. what derived views or optimizations are allowed,
+10. how agents can become wrong about it, how they can correct those errors, and what provenance or freshness markers matter,
+11. and what must survive save/load, replay, and offscreen compression without changing world meaning.
 
 If a proposed system cannot answer those questions, it is not specified well enough to join this simulation.
 
-**Test**: A system spec that has behavior but no declared consequences, knowledge flow, or failure states is incomplete by definition.
+**Test**: A system spec that has behavior but no declared consequences, knowledge flow, contention rules, or failure states is incomplete by definition.
 
 ---
 
@@ -340,8 +360,38 @@ The architecture must be able to produce this chain from ownership, belief, and 
 
 **Failure smell**: If the gold can disappear without a transfer or destruction path, or if the owner can know theft occurred without prior expectation or new evidence, the architecture is too abstract.
 
+### D. Rumor -> Travel -> Empty Source -> Discovery -> Belief Correction -> Replan
+
+The architecture must be able to produce this chain from belief provenance, travel, perception, and replanning:
+
+1. An agent acquires a belief — from rumor, testimony, memory, or stale prior observation — that a desired resource, person, opportunity, or danger exists at a specific place.
+2. That belief carries source, age, and credibility rather than masquerading as ground truth.
+3. The agent adopts a plan based on that belief.
+4. Before arrival, the relevant world state changes through ordinary local processes.
+5. The agent reaches the place and locally observes a mismatch between expectation and reality.
+6. That mismatch produces new evidence with explicit provenance rather than teleporting omniscient correction into belief state.
+7. The agent revises, abandons, or replaces the old plan based on the new evidence.
+8. Other agents can continue to act on the stale report until new evidence reaches them by lawful channels.
+
+**Failure smell**: If the agent is corrected by global truth before any new carrier arrives, if stale beliefs can never survive long enough to waste work, or if contradictory reports cannot coexist, the architecture is too clean for the target world.
+
+### E. Competing Claimants -> Queue or Race -> Expiry/Prune -> Next Actor Acts
+
+The architecture must be able to produce this chain from explicit contention, scarcity, and revisable planning:
+
+1. Multiple agents perceive the same scarce resource, facility, target, or newly materialized output and each forms a lawful intention to use it.
+2. Those intentions do not silently reserve the opportunity.
+3. Access is resolved through an explicit race, reservation, queue, grant, lock, or other concrete world mechanism.
+4. One claimant acts first or receives access while others wait, lose, detour, or replan.
+5. Claims can expire, be abandoned, be invalidated by death or incapacity, or be displaced by higher-priority needs.
+6. The underlying resource or capacity changes only through the actual winning action, not through planner bookkeeping or hypothetical future consumption.
+7. Waiting or losing agents continue from the new world state and may retry, reroute, choose a fallback, or give up.
+8. Any resulting line, grant, blocker, or reservation is inspectable world state rather than invisible runtime magic.
+
+**Failure smell**: If selecting a plan secretly guarantees future access, if dead claimants continue blocking the line, or if contention is resolved only by hidden tick order with no inspectable world state, the architecture is wrong.
+
 ---
 
 ## VII. Final Rule of Thumb
 
-When in doubt, choose the design that adds a new carrier of consequence, preserves locality and partial observability, keeps beliefs separate from truth, and creates more downstream reactions with less special-case code. Reject the design that produces content by exception, authority by singleton, knowledge by omniscience, or outcomes by fiat.
+When in doubt, choose the design that adds a new carrier of consequence, preserves locality and partial observability, keeps beliefs separate from truth, preserves accounted source/sink paths, resolves contention through world state rather than planner entitlement, and creates more downstream reactions with less special-case code. Reject the design that produces content by exception, authority by singleton, knowledge by omniscience, guarantees by hidden planner state, or outcomes by fiat.

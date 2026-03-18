@@ -1,6 +1,6 @@
 # E16DPOLPLAN-006: Integration tests — planner finds Bribe/Threaten plans
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -77,3 +77,10 @@ Unit tests verify state transitions but don't prove the GOAP search actually sel
 ## Dependency Chain Note
 
 This ticket's test scenarios depend on the coalition-aware planner changes from E16DPOLPLAN-022 (coalition-aware terminal kind), E16DPOLPLAN-023 (deferred ProgressBarrier semantics), E16DPOLPLAN-024 (solo DeclareSupport GoalSatisfied in uncontested scenarios), and E16DPOLPLAN-025 (deferred ProgressBarrier for tied coalitions). Without these, the planner would not correctly distinguish contested vs. uncontested scenarios, and tests requiring competitor-motivated Bribe/Threaten selection would not produce the expected plan structures.
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**: Added 4 integration tests to `crates/worldwake-ai/src/goal_model.rs` test module: `planner_selects_bribe_plan`, `planner_selects_threaten_plan`, `planner_selects_travel_then_bribe`, `planner_rejects_threaten_against_high_courage`.
+- **Deviations**: Rivals are placed at a different location than the actor in all tests. Without this, the planner shortcuts by bribing/threatening the rival directly (1-step plan), bypassing the intended multi-step coalition-building. This is correct planner behavior but defeats the test's purpose of verifying multi-step Bribe/Threaten plans.
+- **Verification**: `cargo test -p worldwake-ai` (all pass), `cargo clippy --workspace` (clean).
