@@ -18,6 +18,7 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
    - When claiming a coverage gap, search for existing focused/unit, runtime trace/integration, and golden/E2E coverage first; name the exact tests found or state that none were found and how you checked.
    - Distinguish missing focused/unit coverage from missing golden/E2E coverage when the ticket claims a testing gap.
    - If similarly named helpers exist in multiple layers, name the exact layer and symbol being discussed.
+   - If the ticket proposes removing, weakening, bypassing, or replacing a heuristic/filter, state which missing architectural substrate that heuristic is currently standing in for, whether this ticket introduces that substrate, and why the change does not reopen regressions in unrelated scenarios.
 2. `Architecture Check`:
    - Explain why the proposed design is cleaner than alternatives.
 3. `Verification Layers`:
@@ -58,6 +59,7 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
 6. If a proposed test relies on a timing assumption, prefer the semantic invariant instead of an incidental tick-boundary assumption unless the tick boundary is itself the contract.
 7. If the invariant is about AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence such as missing event-log entries.
 8. For mixed-layer scenarios, list the invariant-to-layer mapping explicitly instead of implying that one assertion surface proves the whole chain.
+9. If a golden scenario is intended to prove one specific causal branch while the current architecture lawfully permits competing affordances, document the scenario-isolation choice explicitly and explain which unrelated lawful branches were intentionally removed from setup.
 
 ## Mandatory Pre-Implementation Checks
 

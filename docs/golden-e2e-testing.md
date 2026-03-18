@@ -77,16 +77,29 @@ New golden scenarios should usually add a deterministic replay companion test un
 - the scenario is too small and redundant with an existing deterministic helper
 - the owning ticket explicitly justifies why replay coverage is unnecessary
 
+## Scenario Isolation
+
+When a golden scenario is intended to prove one specific causal branch, document the scenario-isolation choice explicitly if the current architecture lawfully permits competing affordances that could also satisfy local needs or planner branching.
+
+State all of the following in the owning ticket/spec:
+
+1. the intended branch or invariant under test
+2. the lawful competing affordances the current architecture would otherwise allow
+3. which unrelated lawful branches were intentionally removed from setup, and why they are outside the contract under test
+
+This guidance exists to keep goldens honest, not to stage-manage outcomes. Remove unrelated lawful affordances only when they would obscure the invariant you are trying to prove. If the competing branch is part of the architecture contract, keep it and assert the branching behavior directly instead.
+
 ## Ticket Expectations For Golden Work
 
 Golden-related tickets should:
 
 1. name the exact scenario gap
 2. state whether the gap is missing focused coverage, missing golden coverage, or both
-2. identify the exact assertion surface to use
-3. avoid stale command examples
-4. distinguish candidate generation, ranking/suppression, execution, and authoritative outcome
-5. name the exact layer when similar helpers exist in both AI/planning code and authoritative/system code
+3. identify the exact assertion surface to use
+4. avoid stale command examples
+5. distinguish candidate generation, ranking/suppression, execution, and authoritative outcome
+6. name the exact layer when similar helpers exist in both AI/planning code and authoritative/system code
+7. document scenario-isolation choices when lawful competing affordances exist and the golden is intended to prove one branch
 
 ## Verification Commands
 

@@ -15,7 +15,9 @@
 1. <Assumption checked against current code/test state, including exact existing focused/unit, runtime trace/integration, and golden/E2E coverage where relevant>
 2. <Assumption checked against current specs/docs, with exact file reference>
 3. <If this is an AI regression: intended layer is candidate generation, runtime `agent_tick`, or golden E2E; if `agent_tick`, state whether local needs-only harness is sufficient or full action registries are required>
-4. <Mismatch + correction (if any)>
+4. <If removing/weakening/bypassing a heuristic or filter: name the exact heuristic, the missing substrate it is standing in for today, whether this ticket adds that substrate, and why the change does not reopen unrelated regressions>
+5. <If a golden scenario isolates one intended branch from lawful competing affordances: name the isolation choice and which unrelated lawful branches were intentionally excluded from setup>
+6. <Mismatch + correction (if any)>
 
 ## Architecture Check
 
