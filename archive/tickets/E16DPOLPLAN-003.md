@@ -1,6 +1,6 @@
 # E16DPOLPLAN-003: Implement `apply_planner_step` for `PlannerOpKind::Bribe`
 
-**Status**: PENDING
+**Status**: DONE
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — goal_model.rs planner step logic

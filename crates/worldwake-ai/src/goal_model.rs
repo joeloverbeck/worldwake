@@ -505,6 +505,12 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => state,
             },
+            PlannerOpKind::Bribe => match self {
+                GoalKind::ClaimOffice { office } => {
+                    apply_bribe_for_office(state, actor, *office, payload_override)
+                }
+                _ => state,
+            },
             _ => state,
         }
     }
@@ -849,6 +855,27 @@ fn update_actor_needs(
     };
     apply(&mut needs, thresholds);
     state.with_homeostatic_needs(actor, needs)
+}
+
+/// Hypothetical bribe outcome: actor pays commodity, target declares support.
+fn apply_bribe_for_office<'s>(
+    state: PlanningState<'s>,
+    actor: EntityId,
+    office: EntityId,
+    payload_override: Option<&ActionPayload>,
+) -> PlanningState<'s> {
+    let Some(bribe) = payload_override.and_then(ActionPayload::as_bribe) else {
+        return state;
+    };
+    let current_qty = state.commodity_quantity(actor, bribe.offered_commodity);
+    if current_qty >= bribe.offered_quantity {
+        let remaining = Quantity(current_qty.0.saturating_sub(bribe.offered_quantity.0));
+        state
+            .with_commodity_quantity(actor, bribe.offered_commodity, remaining)
+            .with_support_declaration(bribe.target, office, actor)
+    } else {
+        state
+    }
 }
 
 fn below_medium(medium: Permille) -> Permille {
