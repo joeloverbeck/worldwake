@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-17)
+**Date**: 2026-03-12 (updated 2026-03-18)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 
@@ -13,7 +13,7 @@ crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 11 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b)
-  golden_care.rs              — 4 tests (same-place healing + treatment acquisition companion + replays)
+  golden_care.rs              — 12 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + replays)
   golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
   golden_combat.rs            — 19 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays)
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
@@ -33,13 +33,13 @@ crates/worldwake-ai/tests/
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | Yes | 2d |
 | AcquireCommodity (RecipeInput) | Yes | 6a |
-| AcquireCommodity (Treatment) | Yes | 2c |
+| TreatWounds (self) | Yes | 2c |
+| TreatWounds (other) | Yes | 2c |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
 | Wash | Yes | 7e |
 | EngageHostile | Yes | 7c |
 | ReduceDanger | Yes | 7f |
-| Heal | Yes | 2c |
 | ProduceCommodity | Yes | 6b |
 | SellCommodity | **No** | — |
 | RestockCommodity | Yes | 2d |
@@ -62,7 +62,7 @@ crates/worldwake-ai/tests/
 | Travel | Yes | 1, 3 (implicit) |
 | Transport | Yes | pick-up/materialization (4, 6c) + destination-local cargo delivery semantics (2d) |
 | Combat (attack, defend) | Yes | 7c, 7f |
-| Care (heal) | Yes | 2c |
+| Care (heal, self-care) | Yes | 2c |
 | Corpse (`loot`, `bury`) | Yes | 8, 8b |
 | Social (`tell`) | Yes | 2e |
 
@@ -138,6 +138,10 @@ crates/worldwake-ai/tests/
 | Stale belief → travel to depleted source → passive re-observation → replan | Yes |
 | Memory retention decay → belief eviction → changed candidate generation | Focused runtime coverage |
 | Pain pressure → treatment acquisition → pick-up → heal | Yes |
+| Self-care: wound → TreatWounds{self} → medicine consumption → wound reduction | Yes |
+| Self-care supply path: wound → TreatWounds{self} → ground pick-up → heal | Yes |
+| Direct-observation gate: Report-sourced wound belief does NOT trigger TreatWounds | Yes |
+| Care goal invalidation: patient self-heals → healer's TreatWounds satisfied | Yes |
 | Speaker-side chain-length filtering prevents infinite gossip propagation | Yes |
 | social_weight diversity → distinct social behavior (Principle 20) | Yes |
 | Zero-motive filter prevents execution of unmotivated goals | Yes |
@@ -151,12 +155,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 70 | 73 |
+| Proven tests | 78 | 81 |
 | GoalKind coverage | 17/18 (94.4%) | 17/18 (94.4%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 40 | 43 |
+| Cross-system chains | 44 | 47 |
 
 ### Pending Backlog Summary
 
@@ -180,7 +184,7 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 4. **SellCommodity** — `GoalKind::SellCommodity` variant exists but `candidate_generation.rs` lacks sell-specific emission logic. Not testable as a golden scenario without first implementing new system code to generate sell candidates.
 
-5. **Self-treatment through ordinary `heal`** — rejected after reassessment. The current care architecture explicitly forbids self-targeted `heal`, and `AcquireCommodity(Treatment)` is already golden-covered by the healer-acquires-ground-medicine scenario. If self-treatment becomes desirable later, it should arrive as a deliberate engine design, not as a test-only extension of the existing interpersonal care action.
+5. **Self-treatment through ordinary `heal`** — (2026-03-14: rejected. 2026-03-18: implemented.) S07 unified care model made self-treatment lawful via `TreatWounds { patient: self }`. Now golden-tested in Scenario 2c (`golden_self_care_with_medicine`, `golden_self_care_acquires_ground_medicine`).
 
 ---
 

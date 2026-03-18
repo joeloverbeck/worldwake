@@ -37,7 +37,10 @@ Established explicit ownership for production output: `ProductionOutputOwnership
 Unified goal-family decision policy into a single `goal_policy.rs` module with `GoalFamilyPolicy`, `DecisionContext`, and `evaluate_suppression()`. Ranking and interrupts both consume the shared policy surface. Removed all four legacy functions (`is_suppressed`, `is_critical_survival_goal`, `is_reactive_goal`, `no_medium_or_above_self_care_or_danger`). All 16 goal families migrated.
 
 ### S03: Planner Target Identity & Affordance Binding — COMPLETED
-Added `matches_binding()` to `GoalKindPlannerExt` with auxiliary-pass/terminal-check dispatch across all 17 `GoalKind` variants. Wired `.retain()` binding filter in search candidates. Added `BindingRejection` trace struct for debuggability. Exact-bound goals (`LootCorpse`, `EngageHostile`, `Heal`, `ShareBelief`, `BuryCorpse`) now reject wrong-target affordances before successor construction; flexible goals remain unaffected.
+Added `matches_binding()` to `GoalKindPlannerExt` with auxiliary-pass/terminal-check dispatch across all 17 `GoalKind` variants. Wired `.retain()` binding filter in search candidates. Added `BindingRejection` trace struct for debuggability. Exact-bound goals (`LootCorpse`, `EngageHostile`, `TreatWounds`, `ShareBelief`, `BuryCorpse`) now reject wrong-target affordances before successor construction; flexible goals remain unaffected.
+
+### S07: Care Intent & Treatment Targeting — COMPLETED
+Replaced split care model (`GoalKind::Heal` + `CommodityPurpose::Treatment`) with unified patient-anchored `GoalKind::TreatWounds { patient }`. Added `care_weight` to `UtilityProfile` for self/other ranking split. Made self-care lawful. Established `DirectObservation` gate for third-party care via `emit_care_goals()`. 12 golden tests prove self-care, third-party care, observation gate, and care goal invalidation.
 
 All completed specs are archived under `archive/specs/`.
 
@@ -46,7 +49,7 @@ All completed specs are archived under `archive/specs/`.
 ## Dependency Graph
 
 ```text
-Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b + S02 + S03: COMPLETED
+Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15b + S02 + S03 + S07: COMPLETED
 
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
 S01 ──→ ✅ COMPLETED (production output ownership claims)
@@ -69,7 +72,7 @@ S04 ──→ S05 (stock storage needs selling + ownership)
 S04 ──→ S06 (opportunity valuation needs market presence)
 S10 (no unmet deps — E11 trade + E14 perception both completed; can be scheduled anytime)
 S10 ──→ S06 (opportunity valuation benefits from variable pricing)
-E14 provides the prerequisite belief boundary for E15, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, S07, and S10.
+E14 provides the prerequisite belief boundary for E15, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, ~~S07~~, and S10.
 E18, E19, E20 ──→ E22 (integration tests need everything)
 ```
 
@@ -91,7 +94,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S01**: Production Output Ownership Claims — ✅ COMPLETED
 - **S02**: Goal Decision Policy Unification — ✅ COMPLETED
 - **S03**: Planner Target Identity & Affordance Binding — ✅ COMPLETED
-- **S07**: Care Intent & Treatment Targeting
+- **S07**: Care Intent & Treatment Targeting — ✅ COMPLETED
 
 **Step 11**:
 - **E16d**: Political Planning Fix & Golden E2E Coverage
@@ -166,7 +169,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S07-care-intent-and-treatment-targeting.md` | 3 | 10 | E14 |
 | `E16d-political-planning-and-golden-coverage.md` | 3 | 11 | E16, E13, E12 |
 | `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 12 | E14, E15, E16 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
@@ -199,6 +201,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16, S01, S02, S03 complete) |
+| 3: Information & Politics | E14–E17, E15b, E16b, E16c, E16d, S01–S03, S07 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E16, S01, S02, S03, S07 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

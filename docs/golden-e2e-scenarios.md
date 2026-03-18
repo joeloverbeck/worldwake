@@ -1,12 +1,12 @@
 # Golden E2E Suite: Scenario Catalog
 
-**Date**: 2026-03-12 (updated 2026-03-17)
+**Date**: 2026-03-12 (updated 2026-03-18)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
 **Purpose**: Detailed reference for what each golden test proves. Consult when you need to understand a specific scenario or verify whether a behavior is already tested. For coverage gaps and matrices, see [golden-e2e-coverage.md](golden-e2e-coverage.md).
 
 ---
 
-The golden suite contains 70 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). All behavior is emergent.
+The golden suite contains 78 tests across 7 domain files. Every test uses the real AI loop (`AgentTickDriver` + `AutonomousControllerRuntime`) and real system dispatch. The social slice locks down autonomous Tell, suppression under survival pressure, bystander locality, entity-missing discovery, stale-belief correction, chain-length gossip cutoff, agent diversity via social_weight, and the full rumor→wasted-trip→discovery lifecycle. The determinism slice now includes a 200-tick 4-agent world-runs-without-observers proof. The AI decisions slice now includes utility-weight-driven goal divergence (Principle 20, survival vs enterprise). All behavior is emergent.
 
 ---
 
@@ -43,17 +43,27 @@ The golden suite contains 70 tests across 7 domain files. Every test uses the re
 - Two runs with the same seed produce identical world and event-log hashes for the trade scenario.
 **Cross-system chain**: Need pressure → seller discovery via `MerchandiseProfile` → planner trade barrier selection → trade valuation/exchange → consumption.
 
-### Scenario 2c: Healing a Wounded Agent and Acquiring Treatment
-**File**: `golden_care.rs` | **Tests**: `golden_healing_wounded_agent`, `golden_healing_wounded_agent_replays_deterministically`, `golden_healer_acquires_ground_medicine_for_patient`, `golden_healer_acquires_ground_medicine_for_patient_replays_deterministically`
-**Systems exercised**: AI (candidate generation, planning), Care action domain, Combat/wound treatment, Conservation, deterministic replay
-**Setup**: Two same-place care scenarios are covered. In the first, a healthy healer starts with medicine and a wounded patient is co-located. In the second, the healer starts without medicine while accessible ground medicine is available beside the same wounded patient.
+### Scenario 2c: Care Domain — Third-Party, Self-Care, Observation Gate, and Goal Invalidation
+**File**: `golden_care.rs` | **Tests**: `golden_healing_wounded_agent`, `golden_healing_wounded_agent_replays_deterministically`, `golden_healer_acquires_ground_medicine_for_patient`, `golden_healer_acquires_ground_medicine_for_patient_replays_deterministically`, `golden_self_care_with_medicine`, `golden_self_care_with_medicine_replays_deterministically`, `golden_self_care_acquires_ground_medicine`, `golden_self_care_acquires_ground_medicine_replays_deterministically`, `golden_indirect_report_does_not_trigger_care`, `golden_indirect_report_does_not_trigger_care_replays_deterministically`, `golden_care_goal_invalidation_when_patient_heals`, `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`
+**Systems exercised**: AI (candidate generation, planning, `TreatWounds` goal family), Care action domain, Combat/wound treatment, Perception (direct-observation gate), Conservation, deterministic replay
+**Setup**: Six care sub-scenarios are covered:
+1. **Third-party care with medicine**: Healthy healer with medicine, co-located wounded patient. Healer directly observes wounds via passive perception and treats.
+2. **Third-party care with ground medicine**: Healer without medicine, ground medicine available beside wounded patient. Healer picks up medicine then treats.
+3. **Self-care with medicine**: Single wounded agent with own medicine. Agent emits `TreatWounds { patient: self }` and self-treats.
+4. **Self-care with ground medicine acquisition**: Single wounded agent, no medicine in inventory, ground medicine at same place. Agent picks up medicine and self-treats.
+5. **Indirect report does NOT trigger care**: Observer at Village Square with medicine. Wounded patient at Orchard Farm. Observer has Report-sourced belief about patient's wounds. Observer does NOT consume medicine and does NOT travel to patient — only `DirectObservation` triggers care.
+6. **Care goal invalidation**: Patient with medicine and healer without medicine, co-located. Patient self-treats. Healer's `TreatWounds { patient }` goal is satisfied by patient's self-healing (healer never acquires medicine).
 **Emergent behavior proven**:
-- Healer generates `Heal { target }` from the local wounded target plus medicine in inventory.
-- When the healer lacks medicine but a wounded local target exists, candidate generation emits the treatment-acquisition path and the planner resolves it through `pick_up` before healing.
+- Healer generates `TreatWounds { patient }` from directly-observed wounded target via passive perception.
+- When the healer lacks medicine but a wounded local target exists, candidate generation emits the care goal and the planner resolves acquisition through `pick_up` before healing.
+- Self-care is lawful: wounded agents emit `TreatWounds { patient: self }` and consume own medicine.
+- Self-care acquisition works: wounded agents pick up ground medicine and self-treat.
+- Report-sourced wound beliefs do NOT trigger `TreatWounds` — only `PerceptionSource::DirectObservation` does (Principle 7 locality).
+- When a patient self-heals, the healer's `TreatWounds` goal is satisfied (patient pain reaches zero) and drops cleanly.
 - Planner selects the care-domain heal action through the real action registry.
 - Heal executes through the normal lifecycle: medicine is consumed and the patient's wound load decreases.
-- Two runs with the same seed produce identical world and event-log hashes for both care scenarios.
-**Cross-system chain**: Local wound state → treatment acquire-goal emission when needed → transport `pick_up` → heal-goal completion → medicine consumption → wound severity/bleed reduction.
+- Two runs with the same seed produce identical world and event-log hashes for all care scenarios.
+**Cross-system chain**: Wound state → passive perception seeds `DirectObservation` belief → `TreatWounds` goal emission (self or other) → planner resolves supply (pick_up/trade) → heal action → medicine consumption → wound severity/bleed reduction. Report-sourced beliefs are filtered by the direct-observation gate. Goal invalidation propagates when patient pain reaches zero.
 
 ### Scenario 2d: Merchant Restock and Return to Home Market
 **File**: `golden_trade.rs` | **Tests**: `golden_merchant_restock_return_stock`, `golden_merchant_restock_return_stock_replays_deterministically`

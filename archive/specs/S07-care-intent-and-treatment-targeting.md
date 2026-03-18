@@ -1,4 +1,4 @@
-**Status**: READY
+**Status**: COMPLETED
 
 # Care Intent and Treatment Targeting
 
@@ -425,3 +425,21 @@ No derived care summary may become the source of truth over wounds, inventory, o
 - **Investigation goal**: Dedicated `InvestigateReport` goal kind that triggers travel to a reported-wounded patient's location, leading to direct observation and then care
 - **Triage priority**: Multiple concurrent `TreatWounds` goals ranked by patient severity and agent relationship
 - **Role-based care**: Specialized healer roles via profile weights and equipment requirements
+
+## Outcome
+
+**Completion date**: 2026-03-18
+
+**What changed**: All 12 deliverables (D01–D12) implemented across tickets S07CARINTANDTRETAR-001 through 008:
+- `GoalKind::TreatWounds { patient }` replaces `GoalKind::Heal` and `CommodityPurpose::Treatment`
+- `care_weight: Permille` added to `UtilityProfile` with self/other ranking split
+- `emit_care_goals()` replaces `emit_heal_goals()` + `emit_treatment_candidates()` with DirectObservation gate
+- Self-care lawful (self-target prohibition removed from `validate_heal_context()`)
+- `SelfTargetActionKind::Heal` removed
+- `GoalFamilyPolicy` for `TreatWounds` (Never/Never/Reactive)
+- Patient-semantic goal satisfaction, failure handling, and exact binding
+- 12 golden tests proving self-care, third-party care, direct-observation gate, and care goal invalidation
+
+**Deviations**: None. All deliverables implemented as specified.
+
+**Verification**: `cargo test --workspace` all passing, `cargo clippy --workspace` clean. All invariants from spec hold.

@@ -1,6 +1,6 @@
 # S07CARINTANDTRETAR-008: Golden tests and full workspace validation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — test-only
@@ -109,3 +109,25 @@ Any existing golden tests that reference `GoalKind::Heal` or `AcquireCommodity {
 1. `cargo test --workspace`
 2. `cargo clippy --workspace`
 3. `cargo build --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-18
+
+**What changed**:
+- Added 8 new golden tests to `crates/worldwake-ai/tests/golden_care.rs` (total: 12 care golden tests):
+  - `golden_self_care_with_medicine` + replay — wounded agent self-treats with own medicine
+  - `golden_self_care_acquires_ground_medicine` + replay — wounded agent picks up ground medicine and self-treats
+  - `golden_indirect_report_does_not_trigger_care` + replay — Report-sourced wound belief does NOT trigger care (DirectObservation gate proven)
+  - `golden_care_goal_invalidation_when_patient_heals` + replay — patient self-heals, healer's TreatWounds goal satisfied without consuming medicine
+- Updated `docs/golden-e2e-scenarios.md`: Scenario 2c rewritten for unified `TreatWounds` model with 6 sub-scenarios
+- Updated `docs/golden-e2e-coverage.md`: test counts 70→78, cross-system chains 40→44, coverage matrix updated
+
+**Deviations from plan**:
+- Ticket item 2 ("Healer treats directly-observed wounded patient") was already covered by existing `golden_healing_wounded_agent` tests — no duplicate added.
+- Ticket item 6 ("Update existing golden tests") required no code changes — existing tests had no `GoalKind::Heal` or `CommodityPurpose::Treatment` references in Rust code (only agent name strings "Healer" which are correct).
+
+**Verification**:
+- `cargo test --workspace` — all passing (0 failures)
+- `cargo clippy --workspace` — clean
+- All 8 acceptance invariants verified: no `GoalKind::Heal`, `CommodityPurpose::Treatment`, `SelfTargetActionKind::Heal`, `emit_heal_goals`, `emit_treatment_candidates`, `local_heal_targets`, `treatment_pain`, `treatment_score` references remain
