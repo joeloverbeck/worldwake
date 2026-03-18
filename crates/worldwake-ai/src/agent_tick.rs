@@ -817,6 +817,7 @@ fn handle_active_action_phase(
             action_handlers,
             ctx.recipe_registry,
             false,
+            false,
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
@@ -899,7 +900,8 @@ fn build_candidate_plans(
     action_handlers: &ActionHandlerRegistry,
     recipe_registry: &RecipeRegistry,
     collect_rejections: bool,
-) -> Vec<(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>)> {
+    collect_expansion_summaries: bool,
+) -> Vec<(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>, Vec<crate::decision_trace::SearchExpansionSummary>)> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
@@ -933,6 +935,7 @@ fn build_candidate_plans(
                 recipe_registry,
             );
             let mut rejections = Vec::new();
+            let mut expansions = Vec::new();
             let result = search_plan(
                 &snapshot,
                 &ranked.grounded,
@@ -942,8 +945,9 @@ fn build_candidate_plans(
                 budget,
                 &goal_relevant_places,
                 if collect_rejections { Some(&mut rejections) } else { None },
+                if collect_expansion_summaries { Some(&mut expansions) } else { None },
             );
-            (ranked.grounded.key, result, rejections)
+            (ranked.grounded.key, result, rejections, expansions)
         })
         .collect()
 }
@@ -951,11 +955,11 @@ fn build_candidate_plans(
 /// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
 /// only care about found plans (selection, interrupt evaluation).
 fn plans_as_options(
-    plans: &[(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>)],
+    plans: &[(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>, Vec<crate::decision_trace::SearchExpansionSummary>)],
 ) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
     plans
         .iter()
-        .map(|(key, result, _)| (*key, result.clone().into_plan()))
+        .map(|(key, result, _, _)| (*key, result.clone().into_plan()))
         .collect()
 }
 
@@ -1022,6 +1026,7 @@ fn plan_and_validate_next_step(
             action_defs,
             action_handlers,
             recipe_registry,
+            false,
             false,
         );
         let plans_options = plans_as_options(&plans);
@@ -1193,15 +1198,17 @@ fn plan_and_validate_next_step_traced(
             action_handlers,
             recipe_registry,
             true,
+            true,
         );
 
         // Populate PlanSearchTrace from search results.
-        for (goal_key, result, rejections) in &plans {
+        for (goal_key, result, rejections, expansions) in &plans {
             plan_search_trace.attempts.push(plan_search_result_to_trace(
                 *goal_key,
                 result,
                 action_defs,
                 rejections.clone(),
+                expansions.clone(),
             ));
         }
 
@@ -1292,6 +1299,7 @@ fn plan_search_result_to_trace(
     result: &PlanSearchResult,
     action_defs: &worldwake_sim::ActionDefRegistry,
     binding_rejections: Vec<BindingRejection>,
+    expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
 ) -> PlanAttemptTrace {
     let outcome = match result {
         PlanSearchResult::Found(plan) => PlanSearchOutcome::Found {
@@ -1318,6 +1326,7 @@ fn plan_search_result_to_trace(
         goal,
         outcome,
         binding_rejections,
+        expansion_summaries,
     }
 }
 
@@ -4200,6 +4209,7 @@ mod tests {
             &harness.handlers,
             &budget,
             &[],
+            None,
             None,
         );
         assert!(

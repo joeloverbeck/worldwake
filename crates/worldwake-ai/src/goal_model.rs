@@ -3549,6 +3549,7 @@ mod tests {
             &PlanningBudget::default(),
             &[town],
             None,
+            None,
         )
         .into_plan()
         .expect("planner should find a plan with Bribe");
@@ -3621,6 +3622,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[town],
+            None,
             None,
         )
         .into_plan()
@@ -3699,6 +3701,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[town],
+            None,
             None,
         )
         .into_plan()
@@ -3789,6 +3792,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[town],
+            None,
             None,
         )
         .into_plan()

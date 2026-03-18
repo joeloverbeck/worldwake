@@ -1,6 +1,6 @@
 # E16DPOLPLAN-027: Search Expansion Trace for Plan Search Debuggability
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `decision_trace.rs`, `search.rs`
@@ -125,3 +125,16 @@ Add a compact one-line-per-expansion format to the decision trace dump, e.g.:
 1. `cargo test -p worldwake-ai search_expansion`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-18
+- **What changed**:
+  - Added `SearchExpansionSummary` struct to `decision_trace.rs` with 7 per-expansion counters (depth, candidates_generated, candidates_skipped, terminal_successors, non_terminal_before_beam, non_terminal_after_beam, found_goal_satisfied)
+  - Added `expansion_summaries: Vec<SearchExpansionSummary>` field to `PlanAttemptTrace`
+  - Extended `search_plan` in `search.rs` with `Option<&mut Vec<SearchExpansionSummary>>` parameter; accumulates one summary per expansion iteration
+  - Wired through `agent_tick.rs`: `build_candidate_plans` passes collector when tracing enabled, `plan_search_result_to_trace` stores summaries
+  - Extended `format_outcome` dump output with compact one-line-per-expansion format
+  - Added 4 tests: `expansion_summary_default_and_debug_format`, `search_expansion_summaries_collected_when_tracing_enabled`, `search_expansion_summaries_empty_when_tracing_disabled`, `beam_truncation_visible_in_expansion_summary`
+- **Deviations from plan**: None. All deliverables implemented as specified.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.

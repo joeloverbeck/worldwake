@@ -99,7 +99,7 @@ impl PlanSearchResult {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn search_plan(
     snapshot: &PlanningSnapshot,
     goal: &GroundedGoal,
@@ -109,6 +109,7 @@ pub fn search_plan(
     budget: &PlanningBudget,
     goal_relevant_places: &[EntityId],
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
@@ -138,6 +139,8 @@ pub fn search_plan(
         }
         expansions = expansions.saturating_add(1);
 
+        let depth = node.steps.len() as u8;
+
         let mut candidates = search_candidates(
             goal,
             &node,
@@ -159,12 +162,16 @@ pub fn search_plan(
             );
         }
 
+        let candidates_generated = candidates.len() as u16;
+
         let mut terminal_successors = Vec::new();
         let mut successors = Vec::new();
+        let mut candidates_skipped = 0u16;
         for candidate in candidates {
             let Some((terminal, successor)) =
                 build_successor(goal, semantics_table, registry, &node, &candidate, goal_relevant_places)
             else {
+                candidates_skipped += 1;
                 continue;
             };
             if let Some(terminal_kind) = terminal {
@@ -173,6 +180,12 @@ pub fn search_plan(
                 successors.push((terminal, successor));
             }
         }
+
+        let terminal_count = terminal_successors.len() as u16;
+        let non_terminal_before_beam = successors.len() as u16;
+
+        let mut found_goal_satisfied = false;
+
         if !terminal_successors.is_empty() {
             // Sort by cost so the best candidate of each kind is first.
             terminal_successors
@@ -182,6 +195,18 @@ pub fn search_plan(
                 match terminal_kind {
                     // GoalSatisfied and CombatCommitment are returned immediately.
                     PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
+                        found_goal_satisfied = matches!(terminal_kind, PlanTerminalKind::GoalSatisfied);
+                        if let Some(ref mut sink) = expansion_summaries {
+                            sink.push(crate::decision_trace::SearchExpansionSummary {
+                                depth,
+                                candidates_generated,
+                                candidates_skipped,
+                                terminal_successors: terminal_count,
+                                non_terminal_before_beam,
+                                non_terminal_after_beam: non_terminal_before_beam, // no truncation happened yet
+                                found_goal_satisfied,
+                            });
+                        }
                         return PlanSearchResult::Found(PlannedPlan::new(
                             goal.key,
                             successor.steps,
@@ -204,6 +229,20 @@ pub fn search_plan(
         }
         successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
         successors.truncate(usize::from(budget.beam_width));
+
+        let non_terminal_after_beam = successors.len() as u16;
+
+        if let Some(ref mut sink) = expansion_summaries {
+            sink.push(crate::decision_trace::SearchExpansionSummary {
+                depth,
+                candidates_generated,
+                candidates_skipped,
+                terminal_successors: terminal_count,
+                non_terminal_before_beam,
+                non_terminal_after_beam,
+                found_goal_satisfied,
+            });
+        }
 
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
@@ -1220,6 +1259,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1329,6 +1369,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         )
         .into_plan()
         .unwrap();
@@ -1374,6 +1415,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         );
 
@@ -1442,6 +1484,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -1528,6 +1571,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         )
         .into_plan()
         .expect("local trade barrier should not be pruned by cheaper travel branches");
@@ -1598,6 +1642,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         )
         .into_plan()
         .expect("local recipe-input acquire goal should plan through trade");
@@ -1657,6 +1702,7 @@ mod tests {
             &budget,
             &[],
             None,
+            None,
         );
 
         assert!(!plan.is_found());
@@ -1708,6 +1754,7 @@ mod tests {
             &budget,
             &[],
             None,
+            None,
         );
 
         assert!(!plan.is_found());
@@ -1755,6 +1802,7 @@ mod tests {
             },
             &[],
             None,
+            None,
         );
         let wide_beam_plan = search_plan(
             &snapshot,
@@ -1767,6 +1815,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -1833,6 +1882,7 @@ mod tests {
             },
             &[],
             None,
+            None,
         );
         let beam_three_plan = search_plan(
             &snapshot,
@@ -1845,6 +1895,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -1910,6 +1961,7 @@ mod tests {
             },
             &[],
             None,
+            None,
         );
         let sufficient_budget_plan = search_plan(
             &snapshot,
@@ -1923,6 +1975,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -1966,6 +2019,7 @@ mod tests {
                 ..PlanningBudget::default()
             },
             &[],
+            None,
             None,
         );
 
@@ -2033,6 +2087,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         );
 
         assert!(!plan.is_found());
@@ -2089,6 +2144,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2140,6 +2196,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -2200,6 +2257,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -2286,6 +2344,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -2374,6 +2433,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -2591,6 +2651,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         )
         .into_plan()
         .unwrap();
@@ -2641,6 +2702,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -2793,6 +2855,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -2964,6 +3027,7 @@ mod tests {
             &PlanningBudget::default(),
             &[],
             None,
+            None,
         )
         .into_plan()
         .expect("exclusive orchard should yield a queue barrier plan");
@@ -3013,6 +3077,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -3215,6 +3280,7 @@ mod tests {
             &fixture.handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -3962,6 +4028,7 @@ mod tests {
             &PlanningBudget::default(),
             &[town],
             Some(&mut rejections),
+            None,
         );
 
         let plan = result.into_plan().expect("search should find a loot plan");
@@ -4038,6 +4105,7 @@ mod tests {
             &PlanningBudget::default(),
             &[town],
             Some(&mut rejections),
+            None,
         );
 
         let plan = result.into_plan().expect("search should find an attack plan");
@@ -4101,6 +4169,7 @@ mod tests {
             &PlanningBudget::default(),
             &[town],
             Some(&mut rejections),
+            None,
         );
 
         let plan = result.into_plan().expect("search should find a sleep plan");
@@ -4159,6 +4228,7 @@ mod tests {
             &PlanningBudget::default(),
             &[town],
             Some(&mut rejections),
+            None,
         );
 
         // Verify BindingRejection fields are populated correctly.
@@ -4265,6 +4335,7 @@ mod tests {
             &PlanningBudget::default(),
             &[market],
             None,
+            None,
         )
         .into_plan()
         .expect("should find a plan");
@@ -4341,6 +4412,7 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &[],
+            None,
             None,
         )
         .into_plan()
@@ -4429,6 +4501,7 @@ mod tests {
             &tight_budget,
             &[],
             None,
+            None,
         );
 
         // Should return the deferred barrier, not BudgetExhausted.
@@ -4496,5 +4569,169 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── Expansion summary trace tests ──────────────────────────────
+
+    #[test]
+    fn search_expansion_summaries_collected_when_tracing_enabled() {
+        // Simple 1-step consume plan: actor has bread locally.
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.controllable.insert((actor, bread));
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        let (registry, handlers) = build_registry();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let mut summaries = Vec::new();
+        let result = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[],
+            None,
+            Some(&mut summaries),
+        );
+
+        assert!(result.is_found(), "plan should be found");
+        assert!(
+            !summaries.is_empty(),
+            "expansion summaries should be non-empty when tracing is enabled"
+        );
+        // Depth should start at 0.
+        assert_eq!(summaries[0].depth, 0);
+        // At least one candidate was generated.
+        assert!(summaries[0].candidates_generated > 0);
+    }
+
+    #[test]
+    fn search_expansion_summaries_empty_when_tracing_disabled() {
+        // Same setup as above but with tracing disabled (None).
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.controllable.insert((actor, bread));
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        let (registry, handlers) = build_registry();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let result = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &[],
+            None,
+            None, // tracing disabled
+        );
+
+        assert!(result.is_found(), "plan should be found");
+        // No summaries collector was passed — zero-cost path.
+    }
+
+    #[test]
+    fn beam_truncation_visible_in_expansion_summary() {
+        // Setup: actor at town with 2 adjacent places (dead_end, pantry).
+        // beam_width=1 forces truncation of one non-terminal successor.
+        let actor = entity(1);
+        let town = entity(10);
+        let dead_end = entity(11);
+        let pantry = entity(12);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        let mut pantry_entities = Vec::new();
+        view.alive.extend([actor, town, dead_end, pantry]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(dead_end, EntityKind::Place);
+        view.kinds.insert(pantry, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(dead_end, Vec::new());
+        insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
+        view.entities_at.insert(pantry, pantry_entities);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.adjacent.insert(
+            town,
+            vec![
+                (dead_end, NonZeroU32::new(1).unwrap()),
+                (pantry, NonZeroU32::new(3).unwrap()),
+            ],
+        );
+
+        let (registry, handlers) = build_registry();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let mut summaries = Vec::new();
+        let _result = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 1,
+                ..PlanningBudget::default()
+            },
+            &[],
+            None,
+            Some(&mut summaries),
+        );
+
+        // The first expansion (depth 0) should show beam truncation:
+        // at least 2 travel candidates before beam, truncated to 1.
+        assert!(
+            !summaries.is_empty(),
+            "should have at least one expansion summary"
+        );
+        let first = &summaries[0];
+        assert_eq!(first.depth, 0);
+        assert!(
+            first.non_terminal_before_beam > first.non_terminal_after_beam,
+            "beam truncation should be visible: before={} after={}",
+            first.non_terminal_before_beam,
+            first.non_terminal_after_beam,
+        );
+        assert_eq!(
+            first.non_terminal_after_beam, 1,
+            "beam_width=1 should leave exactly 1 non-terminal successor"
+        );
     }
 }

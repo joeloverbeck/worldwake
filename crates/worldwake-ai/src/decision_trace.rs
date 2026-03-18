@@ -138,12 +138,34 @@ pub struct BindingRejection {
     pub required_target: Option<EntityId>,
 }
 
+/// Per-expansion summary recorded during plan search.
+#[derive(Clone, Debug)]
+pub struct SearchExpansionSummary {
+    /// Depth (number of steps already in the node being expanded).
+    pub depth: u8,
+    /// Total search candidates generated at this expansion.
+    pub candidates_generated: u16,
+    /// Candidates for which `build_successor` returned `None`.
+    pub candidates_skipped: u16,
+    /// Terminal successors found (`GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`).
+    pub terminal_successors: u16,
+    /// Non-terminal successors before beam truncation.
+    pub non_terminal_before_beam: u16,
+    /// Non-terminal successors after beam truncation (pushed to frontier).
+    pub non_terminal_after_beam: u16,
+    /// Whether a `GoalSatisfied` terminal was found at this expansion
+    /// (search returns immediately in this case).
+    pub found_goal_satisfied: bool,
+}
+
 /// Trace of a single plan search attempt for one goal.
 #[derive(Clone, Debug)]
 pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub outcome: PlanSearchOutcome,
     pub binding_rejections: Vec<BindingRejection>,
+    /// Per-expansion summaries. Empty when tracing is disabled.
+    pub expansion_summaries: Vec<SearchExpansionSummary>,
 }
 
 /// Outcome of a plan search for one goal.
@@ -335,6 +357,20 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                         rej.rejected_targets, rej.required_target
                     );
                 }
+                for exp in &attempt.expansion_summaries {
+                    let satisfied_tag = if exp.found_goal_satisfied { " satisfied" } else { "" };
+                    let _ = write!(
+                        out,
+                        "\n  search expansion d={}: {} candidates, {} skipped, {} terminal{}, {}→{} beam",
+                        exp.depth,
+                        exp.candidates_generated,
+                        exp.candidates_skipped,
+                        exp.terminal_successors,
+                        satisfied_tag,
+                        exp.non_terminal_before_beam,
+                        exp.non_terminal_after_beam,
+                    );
+                }
             }
             out
         }
@@ -519,9 +555,35 @@ mod tests {
             goal: GoalKey::new(GoalKind::Sleep),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
             binding_rejections: rejections,
+            expansion_summaries: vec![],
         };
         assert_eq!(trace.binding_rejections.len(), 2);
         assert_eq!(trace.binding_rejections[0].def_id, ActionDefId(1));
         assert_eq!(trace.binding_rejections[1].rejected_targets[0], entity(30));
+    }
+
+    #[test]
+    fn expansion_summary_default_and_debug_format() {
+        let summary = SearchExpansionSummary {
+            depth: 0,
+            candidates_generated: 12,
+            candidates_skipped: 1,
+            terminal_successors: 2,
+            non_terminal_before_beam: 11,
+            non_terminal_after_beam: 8,
+            found_goal_satisfied: false,
+        };
+        assert_eq!(summary.depth, 0);
+        assert_eq!(summary.candidates_generated, 12);
+        assert_eq!(summary.candidates_skipped, 1);
+        assert_eq!(summary.terminal_successors, 2);
+        assert_eq!(summary.non_terminal_before_beam, 11);
+        assert_eq!(summary.non_terminal_after_beam, 8);
+        assert!(!summary.found_goal_satisfied);
+
+        // Verify Debug is derived and non-empty.
+        let debug = format!("{summary:?}");
+        assert!(debug.contains("SearchExpansionSummary"));
+        assert!(debug.contains("depth: 0"));
     }
 }
