@@ -313,7 +313,10 @@ mod tests {
         assert_eq!(record.payload.tick, Tick(9));
         assert_eq!(record.payload.cause, CauseRef::Event(EventId(1)));
         assert_eq!(record.payload.actor_id, Some(entity(2)));
-        assert_eq!(record.payload.target_ids, vec![entity(3), entity(4), entity(5)]);
+        assert_eq!(
+            record.payload.target_ids,
+            vec![entity(3), entity(4), entity(5)]
+        );
         assert!(record.payload.evidence.is_empty());
         assert_eq!(record.payload.place_id, Some(entity(6)));
         assert_eq!(record.payload.state_deltas.len(), 2);
@@ -401,7 +404,10 @@ mod tests {
         let roundtrip: PendingEvent = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, pending);
-        assert_eq!(roundtrip.payload.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(
+            roundtrip.payload.target_ids,
+            vec![entity(2), entity(3), entity(4)]
+        );
         assert_eq!(
             roundtrip.payload.evidence,
             vec![
@@ -609,7 +615,10 @@ mod tests {
             },
         );
 
-        assert_eq!(record.payload.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(
+            record.payload.target_ids,
+            vec![entity(2), entity(3), entity(4)]
+        );
         assert_eq!(
             record.payload.evidence,
             vec![
@@ -674,48 +683,54 @@ mod tests {
 
     #[test]
     fn event_record_roundtrips_through_bincode_with_ordered_deltas() {
-        let record = EventRecord::from_payload(EventId(12), EventPayload {
-            tick: Tick(18),
-            cause: CauseRef::SystemTick(Tick(18)),
-            actor_id: Some(entity(1)),
-            target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
-            evidence: vec![EvidenceRef::Wound {
-                entity: entity(1),
-                wound_id: WoundId(4),
-            }],
-            place_id: Some(entity(6)),
-            state_deltas: vec![
-                StateDelta::Component(ComponentDelta::Set {
+        let record = EventRecord::from_payload(
+            EventId(12),
+            EventPayload {
+                tick: Tick(18),
+                cause: CauseRef::SystemTick(Tick(18)),
+                actor_id: Some(entity(1)),
+                target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
+                evidence: vec![EvidenceRef::Wound {
                     entity: entity(1),
-                    component_kind: ComponentKind::Name,
-                    before: Some(ComponentValue::Name(Name("Old".to_string()))),
-                    after: ComponentValue::Name(Name("New".to_string())),
-                }),
-                StateDelta::Relation(RelationDelta::Added {
-                    relation_kind: RelationKind::HostileTo,
-                    relation: RelationValue::HostileTo {
-                        subject: entity(1),
-                        target: entity(22),
-                    },
-                }),
-                StateDelta::Reservation(ReservationDelta::Created {
-                    reservation: reservation_record(),
-                }),
-            ],
-            observed_entities: BTreeMap::new(),
-            visibility: VisibilitySpec::AdjacentPlaces { max_hops: 2 },
-            witness_data: WitnessData {
-                direct_witnesses: BTreeSet::from([entity(1), entity(2)]),
-                potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
+                    wound_id: WoundId(4),
+                }],
+                place_id: Some(entity(6)),
+                state_deltas: vec![
+                    StateDelta::Component(ComponentDelta::Set {
+                        entity: entity(1),
+                        component_kind: ComponentKind::Name,
+                        before: Some(ComponentValue::Name(Name("Old".to_string()))),
+                        after: ComponentValue::Name(Name("New".to_string())),
+                    }),
+                    StateDelta::Relation(RelationDelta::Added {
+                        relation_kind: RelationKind::HostileTo,
+                        relation: RelationValue::HostileTo {
+                            subject: entity(1),
+                            target: entity(22),
+                        },
+                    }),
+                    StateDelta::Reservation(ReservationDelta::Created {
+                        reservation: reservation_record(),
+                    }),
+                ],
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::AdjacentPlaces { max_hops: 2 },
+                witness_data: WitnessData {
+                    direct_witnesses: BTreeSet::from([entity(1), entity(2)]),
+                    potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
+                },
+                tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
             },
-            tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
-        });
+        );
 
         let bytes = bincode::serialize(&record).unwrap();
         let roundtrip: EventRecord = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, record);
-        assert_eq!(roundtrip.payload.target_ids, vec![entity(2), entity(3), entity(4)]);
+        assert_eq!(
+            roundtrip.payload.target_ids,
+            vec![entity(2), entity(3), entity(4)]
+        );
         assert_eq!(roundtrip.payload.evidence, record.payload.evidence);
         assert!(matches!(
             roundtrip.payload.state_deltas[0],
@@ -733,29 +748,32 @@ mod tests {
 
     #[test]
     fn event_record_roundtrips_with_mismatch_evidence() {
-        let record = EventRecord::from_payload(EventId(14), EventPayload {
-            tick: Tick(22),
-            cause: CauseRef::SystemTick(Tick(22)),
-            actor_id: Some(entity(3)),
-            target_ids: vec![entity(8)],
-            evidence: vec![EvidenceRef::Mismatch {
-                observer: entity(3),
-                subject: entity(8),
-                kind: MismatchKind::PlaceChanged {
-                    believed_place: entity(5),
-                    observed_place: entity(7),
+        let record = EventRecord::from_payload(
+            EventId(14),
+            EventPayload {
+                tick: Tick(22),
+                cause: CauseRef::SystemTick(Tick(22)),
+                actor_id: Some(entity(3)),
+                target_ids: vec![entity(8)],
+                evidence: vec![EvidenceRef::Mismatch {
+                    observer: entity(3),
+                    subject: entity(8),
+                    kind: MismatchKind::PlaceChanged {
+                        believed_place: entity(5),
+                        observed_place: entity(7),
+                    },
+                }],
+                place_id: Some(entity(7)),
+                state_deltas: Vec::new(),
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::ParticipantsOnly,
+                witness_data: WitnessData {
+                    direct_witnesses: BTreeSet::from([entity(3)]),
+                    potential_witnesses: BTreeSet::from([entity(3)]),
                 },
-            }],
-            place_id: Some(entity(7)),
-            state_deltas: Vec::new(),
-            observed_entities: BTreeMap::new(),
-            visibility: VisibilitySpec::ParticipantsOnly,
-            witness_data: WitnessData {
-                direct_witnesses: BTreeSet::from([entity(3)]),
-                potential_witnesses: BTreeSet::from([entity(3)]),
+                tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
             },
-            tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
-        });
+        );
 
         let bytes = bincode::serialize(&record).unwrap();
         let roundtrip: EventRecord = bincode::deserialize(&bytes).unwrap();

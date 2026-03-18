@@ -1335,7 +1335,10 @@ mod tests {
         let expected_transitions = [
             ("tell", PlannerTransitionKind::GoalModelFallback),
             ("eat", PlannerTransitionKind::ConsumeMatchingTargetCommodity),
-            ("drink", PlannerTransitionKind::ConsumeMatchingTargetCommodity),
+            (
+                "drink",
+                PlannerTransitionKind::ConsumeMatchingTargetCommodity,
+            ),
             ("pick_up", PlannerTransitionKind::PickUpGroundLot),
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
         ];

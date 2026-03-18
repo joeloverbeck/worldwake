@@ -116,7 +116,10 @@ pub fn search_plan(
     }
 
     let mut frontier = BinaryHeap::new();
-    frontier.push(FrontierEntry::new(root_node(snapshot, goal_relevant_places)));
+    frontier.push(FrontierEntry::new(root_node(
+        snapshot,
+        goal_relevant_places,
+    )));
     let mut expansions = 0u16;
     let mut best_barrier: Option<PlannedPlan> = None;
 
@@ -135,7 +138,9 @@ pub fn search_plan(
             if let Some(barrier_plan) = best_barrier {
                 return PlanSearchResult::Found(barrier_plan);
             }
-            return PlanSearchResult::BudgetExhausted { expansions_used: expansions };
+            return PlanSearchResult::BudgetExhausted {
+                expansions_used: expansions,
+            };
         }
         expansions = expansions.saturating_add(1);
 
@@ -149,9 +154,11 @@ pub fn search_plan(
             handlers,
             binding_rejections.as_deref_mut(),
         );
-        if let Some(current_place) = node
-            .state
-            .effective_place_ref(PlanningEntityRef::Authoritative(node.state.snapshot().actor()))
+        if let Some(current_place) =
+            node.state
+                .effective_place_ref(PlanningEntityRef::Authoritative(
+                    node.state.snapshot().actor(),
+                ))
         {
             prune_travel_away_from_goal(
                 &mut candidates,
@@ -168,9 +175,14 @@ pub fn search_plan(
         let mut successors = Vec::new();
         let mut candidates_skipped = 0u16;
         for candidate in candidates {
-            let Some((terminal, successor)) =
-                build_successor(goal, semantics_table, registry, &node, &candidate, goal_relevant_places)
-            else {
+            let Some((terminal, successor)) = build_successor(
+                goal,
+                semantics_table,
+                registry,
+                &node,
+                &candidate,
+                goal_relevant_places,
+            ) else {
                 candidates_skipped += 1;
                 continue;
             };
@@ -188,14 +200,14 @@ pub fn search_plan(
 
         if !terminal_successors.is_empty() {
             // Sort by cost so the best candidate of each kind is first.
-            terminal_successors
-                .sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+            terminal_successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
 
             for (terminal_kind, successor) in terminal_successors {
                 match terminal_kind {
                     // GoalSatisfied and CombatCommitment are returned immediately.
                     PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
-                        found_goal_satisfied = matches!(terminal_kind, PlanTerminalKind::GoalSatisfied);
+                        found_goal_satisfied =
+                            matches!(terminal_kind, PlanTerminalKind::GoalSatisfied);
                         if let Some(ref mut sink) = expansion_summaries {
                             sink.push(crate::decision_trace::SearchExpansionSummary {
                                 depth,
@@ -217,11 +229,8 @@ pub fn search_plan(
                     // for a GoalSatisfied plan across deeper expansion levels.
                     PlanTerminalKind::ProgressBarrier => {
                         if best_barrier.is_none() {
-                            best_barrier = Some(PlannedPlan::new(
-                                goal.key,
-                                successor.steps,
-                                terminal_kind,
-                            ));
+                            best_barrier =
+                                Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
                         }
                     }
                 }
@@ -246,7 +255,11 @@ pub fn search_plan(
 
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
-                return PlanSearchResult::Found(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
+                return PlanSearchResult::Found(PlannedPlan::new(
+                    goal.key,
+                    successor.steps,
+                    terminal_kind,
+                ));
             }
             frontier.push(FrontierEntry::new(successor));
         }
@@ -255,7 +268,9 @@ pub fn search_plan(
     if let Some(barrier_plan) = best_barrier {
         return PlanSearchResult::Found(barrier_plan);
     }
-    PlanSearchResult::FrontierExhausted { expansions_used: expansions }
+    PlanSearchResult::FrontierExhausted {
+        expansions_used: expansions,
+    }
 }
 
 /// Compute the A* heuristic: minimum travel ticks from the actor's current
@@ -467,8 +482,10 @@ fn search_candidates(
             let Some(semantics) = semantics_table.get(&candidate.def_id) else {
                 return true;
             };
-            let passes =
-                goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind);
+            let passes = goal
+                .key
+                .kind
+                .matches_binding(&candidate.authoritative_targets, semantics.op_kind);
             if !passes {
                 let required_target = goal.key.entity.or(goal.key.place);
                 rejections.push(crate::decision_trace::BindingRejection {
@@ -484,7 +501,9 @@ fn search_candidates(
             let Some(semantics) = semantics_table.get(&candidate.def_id) else {
                 return true;
             };
-            goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind)
+            goal.key
+                .kind
+                .matches_binding(&candidate.authoritative_targets, semantics.op_kind)
         });
     }
     candidates
@@ -689,7 +708,6 @@ mod tests {
         search_candidate_from_planner, search_candidates, search_candidates_from_affordance,
         search_plan, FrontierEntry, SearchCandidate, SearchNode,
     };
-    use std::cmp::Ordering;
     use crate::goal_model::GoalKindPlannerExt;
     use crate::planner_ops::planner_only_candidates;
     use crate::{
@@ -698,6 +716,7 @@ mod tests {
         PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningBudget,
         PlanningEntityRef, PlanningSnapshot, PlanningState,
     };
+    use std::cmp::Ordering;
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1235,8 +1254,7 @@ mod tests {
         view.effective_places.insert(bread, town);
         view.entities_at.insert(town, vec![actor, bread]);
         view.controllable.insert((actor, bread));
-        view.direct_possessions
-            .insert(actor, vec![bread]);
+        view.direct_possessions.insert(actor, vec![bread]);
         view.direct_possessors.insert(bread, actor);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
         view.consumable_profiles.insert(
@@ -2571,7 +2589,8 @@ mod tests {
             heuristic_ticks: 0,
         };
 
-        let initial_candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
+        let initial_candidates =
+            search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
         let pick_up = initial_candidates
             .iter()
             .find(|candidate| {
@@ -2589,8 +2608,14 @@ mod tests {
         );
         assert!(!after_pick_up.steps[0].expected_materializations.is_empty());
 
-        let follow_up_candidates =
-            search_candidates(&goal, &after_pick_up, &semantics, &registry, &handlers, None);
+        let follow_up_candidates = search_candidates(
+            &goal,
+            &after_pick_up,
+            &semantics,
+            &registry,
+            &handlers,
+            None,
+        );
         let travel = follow_up_candidates
             .iter()
             .find(|candidate| {
@@ -3465,10 +3490,8 @@ mod tests {
         view.entities_at.insert(place_b, Vec::new());
         view.entities_at.insert(place_c, Vec::new());
         // A --3--> B --5--> C (bidirectional)
-        view.adjacent.insert(
-            place_a,
-            vec![(place_b, NonZeroU32::new(3).unwrap())],
-        );
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(3).unwrap())]);
         view.adjacent.insert(
             place_b,
             vec![
@@ -3476,10 +3499,8 @@ mod tests {
                 (place_c, NonZeroU32::new(5).unwrap()),
             ],
         );
-        view.adjacent.insert(
-            place_c,
-            vec![(place_b, NonZeroU32::new(5).unwrap())],
-        );
+        view.adjacent
+            .insert(place_c, vec![(place_b, NonZeroU32::new(5).unwrap())]);
         (view, actor, place_a, place_b, place_c)
     }
 
@@ -3530,13 +3551,7 @@ mod tests {
     #[test]
     fn heuristic_is_zero_when_goal_relevant_places_empty() {
         let (view, actor, _place_a, _place_b, _place_c) = build_chain_heuristic_view();
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            3,
-        );
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 3);
         let node = root_node(&snapshot, &[]);
         assert_eq!(node.heuristic_ticks, 0);
     }
@@ -3791,15 +3806,13 @@ mod tests {
             make_travel_candidate(travel_south_id, south),
         ];
 
-        prune_travel_away_from_goal(
-            &mut candidates,
-            hub,
-            &[],
-            &snapshot,
-            &semantics_table,
-        );
+        prune_travel_away_from_goal(&mut candidates, hub, &[], &snapshot, &semantics_table);
 
-        assert_eq!(candidates.len(), 2, "no candidates should be pruned when goal_places is empty");
+        assert_eq!(
+            candidates.len(),
+            2,
+            "no candidates should be pruned when goal_places is empty"
+        );
     }
 
     #[test]
@@ -3842,7 +3855,11 @@ mod tests {
             &semantics_table,
         );
 
-        assert_eq!(candidates.len(), 2, "non-travel candidates must never be pruned");
+        assert_eq!(
+            candidates.len(),
+            2,
+            "non-travel candidates must never be pruned"
+        );
     }
 
     #[test]
@@ -4039,15 +4056,17 @@ mod tests {
             .find(|s| s.op_kind == PlannerOpKind::Loot)
             .expect("plan should contain a Loot step");
         assert!(
-            loot_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_x)
-            ),
+            loot_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_x)),
             "Loot step must target corpse X"
         );
         assert!(
-            !loot_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_y)
-            ),
+            !loot_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_y)),
             "Loot step must NOT target corpse Y"
         );
         assert!(
@@ -4055,7 +4074,9 @@ mod tests {
             "wrong-target loot affordance for corpse Y should be rejected"
         );
         assert!(
-            rejections.iter().any(|r| r.rejected_targets.contains(&corpse_y)),
+            rejections
+                .iter()
+                .any(|r| r.rejected_targets.contains(&corpse_y)),
             "binding rejections must include corpse Y"
         );
     }
@@ -4108,22 +4129,26 @@ mod tests {
             None,
         );
 
-        let plan = result.into_plan().expect("search should find an attack plan");
+        let plan = result
+            .into_plan()
+            .expect("search should find an attack plan");
         let attack_step = plan
             .steps
             .iter()
             .find(|s| s.op_kind == PlannerOpKind::Attack)
             .expect("plan should contain an Attack step");
         assert!(
-            attack_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_a)
-            ),
+            attack_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_a)),
             "Attack step must target hostile A"
         );
         assert!(
-            !attack_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_b)
-            ),
+            !attack_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_b)),
             "Attack step must NOT target hostile B"
         );
         assert!(
@@ -4157,8 +4182,13 @@ mod tests {
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::from([town]),
         };
-        let snapshot =
-            build_planning_snapshot(&view, actor, &goal.evidence_entities, &goal.evidence_places, 0);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
         let mut rejections = Vec::new();
         let result = search_plan(
             &snapshot,
@@ -4347,7 +4377,10 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
             "deferred barrier should yield to GoalSatisfied at deeper level"
         );
-        assert!(plan.steps.len() >= 2, "plan should include Travel + pick_up");
+        assert!(
+            plan.steps.len() >= 2,
+            "plan should include Travel + pick_up"
+        );
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
     }
@@ -4596,8 +4629,7 @@ mod tests {
             CommodityKind::Bread.spec().consumable_profile.unwrap(),
         );
         let (registry, handlers) = build_registry();
-        let snapshot =
-            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
 
         let mut summaries = Vec::new();
         let result = search_plan(
@@ -4646,8 +4678,7 @@ mod tests {
             CommodityKind::Bread.spec().consumable_profile.unwrap(),
         );
         let (registry, handlers) = build_registry();
-        let snapshot =
-            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
 
         let result = search_plan(
             &snapshot,
@@ -4696,8 +4727,7 @@ mod tests {
         );
 
         let (registry, handlers) = build_registry();
-        let snapshot =
-            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
 
         let mut summaries = Vec::new();
         let _result = search_plan(

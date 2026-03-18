@@ -5,9 +5,9 @@ use crate::{
     World, WorldError,
 };
 use crate::{
-    CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventTag,
-    EventPayload, EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta, RelationKind,
-    RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
+    CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
+    EventTag, EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta,
+    RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
@@ -685,7 +685,8 @@ impl<'w> WorldTxn<'w> {
         office: EntityId,
     ) -> Result<(), WorldError> {
         let before = self.staged_world.support_declarations_for_office(office);
-        self.staged_world.clear_support_declarations_for_office(office)?;
+        self.staged_world
+            .clear_support_declarations_for_office(office)?;
         let after = self.staged_world.support_declarations_for_office(office);
         self.push_support_declaration_set_delta(office, &before, &after);
         Ok(())
@@ -1098,7 +1099,7 @@ impl<'w> WorldTxn<'w> {
                     target,
                     strength,
                 },
-                }));
+            }));
         }
     }
 
@@ -1644,7 +1645,9 @@ mod tests {
         world
             .set_loyalty(archived, loyal_target, loyal_strength)
             .unwrap();
-        world.declare_support(archived, loyal_target, holder).unwrap();
+        world
+            .declare_support(archived, loyal_target, holder)
+            .unwrap();
         world.add_hostility(archived, hostile_target).unwrap();
         let first_reservation = world.try_reserve(archived, holder, first_range).unwrap();
         let second_reservation = world
@@ -2250,7 +2253,9 @@ mod tests {
         commit_txn(overwrite_txn);
 
         let mut clear_txn = new_txn(&mut world);
-        clear_txn.clear_support_declaration(supporter, office).unwrap();
+        clear_txn
+            .clear_support_declaration(supporter, office)
+            .unwrap();
         assert_eq!(
             clear_txn.deltas(),
             &[StateDelta::Relation(RelationDelta::Removed {
@@ -2435,21 +2440,24 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(
-            record.observed_entities()
+            record
+                .observed_entities()
                 .keys()
                 .copied()
                 .collect::<Vec<_>>(),
             vec![actor, target, bread]
         );
         assert_eq!(
-            record.observed_entities()
+            record
+                .observed_entities()
                 .get(&target)
                 .unwrap()
                 .last_known_inventory,
             BTreeMap::from([(CommodityKind::Bread, Quantity(2))])
         );
         assert_eq!(
-            record.observed_entities()
+            record
+                .observed_entities()
                 .get(&bread)
                 .unwrap()
                 .last_known_place,
@@ -2554,14 +2562,16 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(
-            record.observed_entities()
+            record
+                .observed_entities()
                 .keys()
                 .copied()
                 .collect::<Vec<_>>(),
             vec![actor, subject]
         );
         assert_eq!(
-            record.observed_entities()
+            record
+                .observed_entities()
                 .get(&subject)
                 .unwrap()
                 .last_known_inventory,
@@ -3005,7 +3015,8 @@ mod tests {
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_office_data(office, after.clone()).unwrap();
+        txn.set_component_office_data(office, after.clone())
+            .unwrap();
 
         assert_eq!(
             txn.deltas(),
@@ -3039,7 +3050,8 @@ mod tests {
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_faction_data(faction, after.clone()).unwrap();
+        txn.set_component_faction_data(faction, after.clone())
+            .unwrap();
 
         assert_eq!(
             txn.deltas(),
@@ -3859,7 +3871,12 @@ mod tests {
         let mut log = EventLog::new();
         let event_id = txn.commit(&mut log);
         let record = log.get(event_id).unwrap();
-        let provenance = world.get_component_item_lot(lot).unwrap().provenance.last().unwrap();
+        let provenance = world
+            .get_component_item_lot(lot)
+            .unwrap()
+            .provenance
+            .last()
+            .unwrap();
 
         assert_eq!(provenance.operation, LotOperation::Transferred);
         assert_eq!(provenance.amount, Quantity(2));
@@ -4003,7 +4020,10 @@ mod tests {
                 }) if *lot_id == lot && *owner_id == owner
             )
         });
-        assert!(has_ownership_delta, "expected OwnedBy relation delta for lot");
+        assert!(
+            has_ownership_delta,
+            "expected OwnedBy relation delta for lot"
+        );
     }
 
     #[test]
@@ -4016,12 +4036,18 @@ mod tests {
             .unwrap();
 
         let has_ownership_delta = txn.deltas().iter().any(|d| {
-            matches!(d, StateDelta::Relation(RelationDelta::Added {
-                relation_kind: RelationKind::OwnedBy,
-                ..
-            }))
+            matches!(
+                d,
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::OwnedBy,
+                    ..
+                })
+            )
         });
-        assert!(!has_ownership_delta, "no OwnedBy delta expected for unowned lot");
+        assert!(
+            !has_ownership_delta,
+            "no OwnedBy delta expected for unowned lot"
+        );
     }
 
     #[test]
@@ -4039,10 +4065,13 @@ mod tests {
 
         // No PossessedBy delta should exist
         let has_possession_delta = txn.deltas().iter().any(|d| {
-            matches!(d, StateDelta::Relation(RelationDelta::Added {
-                relation_kind: RelationKind::PossessedBy,
-                ..
-            }))
+            matches!(
+                d,
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::PossessedBy,
+                    ..
+                })
+            )
         });
         assert!(!has_possession_delta, "lot must not be auto-possessed");
 

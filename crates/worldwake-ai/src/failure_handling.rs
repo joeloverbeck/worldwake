@@ -288,7 +288,9 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
-        | PlannerOpKind::DeclareSupport => view.entity_kind(target).is_none() || view.is_dead(target),
+        | PlannerOpKind::DeclareSupport => {
+            view.entity_kind(target).is_none() || view.is_dead(target)
+        }
         PlannerOpKind::Travel => false,
     }
 }

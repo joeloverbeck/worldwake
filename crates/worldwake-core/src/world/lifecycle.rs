@@ -528,7 +528,10 @@ impl World {
             .unwrap_or_default()
     }
 
-    fn snapshot_support_declarations(&self, entity: EntityId) -> Vec<(EntityId, EntityId, EntityId)> {
+    fn snapshot_support_declarations(
+        &self,
+        entity: EntityId,
+    ) -> Vec<(EntityId, EntityId, EntityId)> {
         self.relations
             .support_declarations
             .iter()

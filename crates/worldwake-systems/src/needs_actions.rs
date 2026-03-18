@@ -391,9 +391,9 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
         AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile,
-        PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile, PerceptionSource,
+        Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -905,9 +905,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
-            affordances
-                .iter()
-                .all(|a| a.def_id != eat_def_id()),
+            affordances.iter().all(|a| a.def_id != eat_def_id()),
             "eat should not be offered for owned-but-unpossessed ground lot"
         );
     }
@@ -949,9 +947,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
-            affordances
-                .iter()
-                .all(|a| a.def_id != drink_def_id()),
+            affordances.iter().all(|a| a.def_id != drink_def_id()),
             "drink should not be offered for owned-but-unpossessed ground lot"
         );
     }
@@ -993,9 +989,7 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
-            affordances
-                .iter()
-                .all(|a| a.def_id != wash_def_id()),
+            affordances.iter().all(|a| a.def_id != wash_def_id()),
             "wash should not be offered for owned-but-unpossessed water lot"
         );
     }

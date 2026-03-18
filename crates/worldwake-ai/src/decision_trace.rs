@@ -65,7 +65,9 @@ impl DecisionOutcome {
                     .iter()
                     .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                     .count();
-                format!("PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}")
+                format!(
+                    "PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}"
+                )
             }
         }
     }
@@ -358,7 +360,11 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                     );
                 }
                 for exp in &attempt.expansion_summaries {
-                    let satisfied_tag = if exp.found_goal_satisfied { " satisfied" } else { "" };
+                    let satisfied_tag = if exp.found_goal_satisfied {
+                        " satisfied"
+                    } else {
+                        ""
+                    };
                     let _ = write!(
                         out,
                         "\n  search expansion d={}: {} candidates, {} skipped, {} terminal{}, {}→{} beam",

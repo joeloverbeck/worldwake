@@ -242,7 +242,9 @@ impl World {
     ) -> Result<(), WorldError> {
         self.ensure_alive(supporter)?;
         self.ensure_live_kind(office, EntityKind::Office, "support declaration office")?;
-        self.relations.support_declarations.remove(&(supporter, office));
+        self.relations
+            .support_declarations
+            .remove(&(supporter, office));
         Ok(())
     }
 

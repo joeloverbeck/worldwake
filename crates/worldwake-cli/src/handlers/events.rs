@@ -29,7 +29,9 @@ fn format_event_summary(sim: &SimulationState, event_id: EventId) -> Option<Stri
 
     Some(format!(
         "[E{}] tick {} — {}{actor_str}",
-        event_id.0, record.tick().0, tag_str
+        event_id.0,
+        record.tick().0,
+        tag_str
     ))
 }
 
@@ -212,8 +214,8 @@ mod tests {
     use crate::scenario::{spawn_scenario, types::*};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        cause::CauseRef, control::ControlSource, event_record::PendingEvent,
-        event_record::EventPayload, event_record::EventView, event_tag::EventTag, ids::EventId,
+        cause::CauseRef, control::ControlSource, event_record::EventPayload,
+        event_record::EventView, event_record::PendingEvent, event_tag::EventTag, ids::EventId,
         topology::PlaceTag, visibility::VisibilitySpec, witness::WitnessData,
     };
 

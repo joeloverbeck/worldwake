@@ -1336,8 +1336,8 @@ mod tests {
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyPart,
         CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef, CommodityKind,
         Container, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EntityKind, EventLog,
-        EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource,
-        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, Seed, Tick,
+        EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, Seed, Tick,
         VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
         WoundCause, WoundId, WoundList,
     };

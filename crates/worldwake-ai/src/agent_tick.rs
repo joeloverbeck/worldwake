@@ -901,7 +901,12 @@ fn build_candidate_plans(
     recipe_registry: &RecipeRegistry,
     collect_rejections: bool,
     collect_expansion_summaries: bool,
-) -> Vec<(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>, Vec<crate::decision_trace::SearchExpansionSummary>)> {
+) -> Vec<(
+    crate::GoalKey,
+    PlanSearchResult,
+    Vec<BindingRejection>,
+    Vec<crate::decision_trace::SearchExpansionSummary>,
+)> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
@@ -930,10 +935,11 @@ fn build_candidate_plans(
     candidates_to_plan
         .into_iter()
         .map(|ranked| {
-            let goal_relevant_places = ranked.grounded.key.kind.goal_relevant_places(
-                &crate::PlanningState::new(&snapshot),
-                recipe_registry,
-            );
+            let goal_relevant_places = ranked
+                .grounded
+                .key
+                .kind
+                .goal_relevant_places(&crate::PlanningState::new(&snapshot), recipe_registry);
             let mut rejections = Vec::new();
             let mut expansions = Vec::new();
             let result = search_plan(
@@ -944,8 +950,16 @@ fn build_candidate_plans(
                 action_handlers,
                 budget,
                 &goal_relevant_places,
-                if collect_rejections { Some(&mut rejections) } else { None },
-                if collect_expansion_summaries { Some(&mut expansions) } else { None },
+                if collect_rejections {
+                    Some(&mut rejections)
+                } else {
+                    None
+                },
+                if collect_expansion_summaries {
+                    Some(&mut expansions)
+                } else {
+                    None
+                },
             );
             (ranked.grounded.key, result, rejections, expansions)
         })
@@ -955,7 +969,12 @@ fn build_candidate_plans(
 /// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
 /// only care about found plans (selection, interrupt evaluation).
 fn plans_as_options(
-    plans: &[(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>, Vec<crate::decision_trace::SearchExpansionSummary>)],
+    plans: &[(
+        crate::GoalKey,
+        PlanSearchResult,
+        Vec<BindingRejection>,
+        Vec<crate::decision_trace::SearchExpansionSummary>,
+    )],
 ) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
     plans
         .iter()
@@ -1228,9 +1247,7 @@ fn plan_and_validate_next_step_traced(
             if let Some(prev) = previous_goal {
                 if prev != selected_goal {
                     // Determine switch kind from ranking comparison.
-                    let prev_rank = ranked_candidates
-                        .iter()
-                        .find(|c| c.grounded.key == prev);
+                    let prev_rank = ranked_candidates.iter().find(|c| c.grounded.key == prev);
                     let new_rank = ranked_candidates
                         .iter()
                         .find(|c| c.grounded.key == selected_goal);
@@ -1908,10 +1925,11 @@ mod tests {
         CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
-        PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId, ResourceSource,
-        Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId,
+        ResourceSource, Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId,
+        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -2447,19 +2465,21 @@ mod tests {
         place: EntityId,
         observed_actor: EntityId,
     ) {
-        let _ = harness.event_log.emit(PendingEvent::from_payload(EventPayload {
-            tick,
-            cause: CauseRef::Bootstrap,
-            actor_id: Some(observed_actor),
-            target_ids: vec![observed_actor],
-            evidence: Vec::new(),
-            place_id: Some(place),
-            state_deltas: Vec::new(),
-            observed_entities: BTreeMap::new(),
-            visibility: VisibilitySpec::SamePlace,
-            witness_data: WitnessData::default(),
-            tags: BTreeSet::new(),
-        }));
+        let _ = harness
+            .event_log
+            .emit(PendingEvent::from_payload(EventPayload {
+                tick,
+                cause: CauseRef::Bootstrap,
+                actor_id: Some(observed_actor),
+                target_ids: vec![observed_actor],
+                evidence: Vec::new(),
+                place_id: Some(place),
+                state_deltas: Vec::new(),
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::SamePlace,
+                witness_data: WitnessData::default(),
+                tags: BTreeSet::new(),
+            }));
         let active_actions = std::collections::BTreeMap::new();
         perception_system(SystemExecutionContext {
             world: &mut harness.world,
@@ -4925,7 +4945,11 @@ mod tests {
 
         let sink = harness.driver.trace_sink().unwrap();
         let traces = sink.traces_for(harness.actor);
-        assert_eq!(traces.len(), 1, "dead agent should produce exactly one trace");
+        assert_eq!(
+            traces.len(),
+            1,
+            "dead agent should produce exactly one trace"
+        );
         assert!(
             matches!(traces[0].outcome, crate::DecisionOutcome::Dead),
             "dead agent should produce Dead outcome"
@@ -4987,7 +5011,12 @@ mod tests {
         );
 
         // Traced harness should have trace data.
-        assert!(!harness_traced.driver.trace_sink().unwrap().traces().is_empty());
+        assert!(!harness_traced
+            .driver
+            .trace_sink()
+            .unwrap()
+            .traces()
+            .is_empty());
 
         // Non-traced harness should have no trace data.
         assert!(harness_no_trace.driver.trace_sink().is_none());

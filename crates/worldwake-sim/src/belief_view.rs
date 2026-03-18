@@ -1,12 +1,12 @@
 use crate::{ActionDuration, ActionPayload, DurationExpr};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
-    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId, ResourceSource,
-    TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile,
+    CommodityKind, CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId,
+    EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -289,7 +289,10 @@ macro_rules! impl_goal_belief_view {
             fn known_entity_beliefs(
                 &self,
                 agent: worldwake_core::EntityId,
-            ) -> Vec<(worldwake_core::EntityId, worldwake_core::BelievedEntityState)> {
+            ) -> Vec<(
+                worldwake_core::EntityId,
+                worldwake_core::BelievedEntityState,
+            )> {
                 $crate::RuntimeBeliefView::known_entity_beliefs(self, agent)
             }
 
@@ -478,10 +481,7 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::tell_profile(self, agent)
             }
 
-            fn courage(
-                &self,
-                agent: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::Permille> {
+            fn courage(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {
                 $crate::RuntimeBeliefView::courage(self, agent)
             }
 
@@ -546,11 +546,17 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::office_data(self, office)
             }
 
-            fn office_holder(&self, office: worldwake_core::EntityId) -> Option<worldwake_core::EntityId> {
+            fn office_holder(
+                &self,
+                office: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::office_holder(self, office)
             }
 
-            fn factions_of(&self, member: worldwake_core::EntityId) -> Vec<worldwake_core::EntityId> {
+            fn factions_of(
+                &self,
+                member: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::factions_of(self, member)
             }
 

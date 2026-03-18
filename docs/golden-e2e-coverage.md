@@ -21,7 +21,7 @@ crates/worldwake-ai/tests/
   golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
   golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
   golden_emergent.rs          — 9 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e + replays)
-  golden_offices.rs           — 9 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: survival pressure suppresses political goals + deterministic replay, scenario 17: faction eligibility filters office claim)
+  golden_offices.rs           — 11 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: survival pressure suppresses political goals + deterministic replay, scenario 17: faction eligibility filters office claim, scenario 18: force succession sole eligible + deterministic replay)
 ```
 
 ---
@@ -50,7 +50,7 @@ crates/worldwake-ai/tests/
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 | ShareBelief | Yes | 2e |
-| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17 |
+| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18 |
 | SupportCandidateForOffice | Yes | 12, 13, 14 |
 
 **Coverage: 19/19 GoalKinds tested (100%).**

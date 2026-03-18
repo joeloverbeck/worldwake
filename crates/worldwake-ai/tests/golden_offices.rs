@@ -3,13 +3,13 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, BeliefConfidencePolicy, CombatProfile,
-    CommodityKind, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
-    MetabolismProfile, Permille, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    CommodityKind, DeadAt, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
     Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
 };
-use worldwake_ai::DecisionOutcome;
 use worldwake_sim::ActionTraceKind;
 
 // ---------------------------------------------------------------------------
@@ -21,7 +21,13 @@ use worldwake_sim::ActionTraceKind;
 // Agent generates ClaimOffice -> plans DeclareSupport(self) -> executes ->
 // after succession period, succession_system installs agent as holder.
 
-fn build_simple_office_claim_scenario(seed: Seed) -> (GoldenHarness, worldwake_core::EntityId, worldwake_core::EntityId) {
+fn build_simple_office_claim_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
     let mut h = GoldenHarness::new(seed);
 
     // Sated agent with high enterprise weight — political goals dominate.
@@ -503,13 +509,13 @@ fn combat_profile_with_attack_skill(attack_skill: Permille) -> CombatProfile {
         pm(1000), // wound_capacity
         pm(700),  // incapacitation_threshold
         attack_skill,
-        pm(500),  // guard_skill
-        pm(80),   // defend_bonus
-        pm(25),   // natural_clot_resistance
-        pm(18),   // natural_recovery_rate
-        pm(120),  // unarmed_wound_severity
-        pm(35),   // unarmed_bleed_rate
-        nz(6),    // unarmed_attack_ticks
+        pm(500), // guard_skill
+        pm(80),  // defend_bonus
+        pm(25),  // natural_clot_resistance
+        pm(18),  // natural_recovery_rate
+        pm(120), // unarmed_wound_severity
+        pm(35),  // unarmed_bleed_rate
+        nz(6),   // unarmed_attack_ticks
     )
 }
 
@@ -929,7 +935,8 @@ fn run_survival_pressure_suppresses_political_goals(seed: Seed) -> (StateHash, S
         if first_hunger_below_high_tick.is_none() && hunger < hunger_high {
             first_hunger_below_high_tick = Some(current_tick);
         }
-        if hunger_below_high_when_declare_committed.is_none() && first_declare_commit_tick.is_some() {
+        if hunger_below_high_when_declare_committed.is_none() && first_declare_commit_tick.is_some()
+        {
             hunger_below_high_when_declare_committed = Some(hunger < hunger_high);
         }
 
@@ -1087,7 +1094,10 @@ fn golden_faction_eligibility_filters_office_claim() {
         "eligible faction member should be installed as office holder"
     );
 
-    let decision_sink = h.driver.trace_sink().expect("decision tracing should be enabled");
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
     let eligible_generated_claim = (0u64..=30).any(|tick| {
         decision_sink
             .trace_at(eligible_agent, Tick(tick))
@@ -1125,12 +1135,159 @@ fn golden_faction_eligibility_filters_office_claim() {
     let action_sink = h
         .action_trace_sink()
         .expect("action tracing should be enabled");
-    let ineligible_declared_support = action_sink.events_for(ineligible_agent).iter().any(|event| {
-        event.action_name == "declare_support"
-            && matches!(event.kind, ActionTraceKind::Committed { .. })
-    });
+    let ineligible_declared_support =
+        action_sink
+            .events_for(ineligible_agent)
+            .iter()
+            .any(|event| {
+                event.action_name == "declare_support"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
     assert!(
         !ineligible_declared_support,
         "ineligible agent must never commit declare_support for the restricted office"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 18: Force Succession Installs Sole Living Eligible Contender
+// ---------------------------------------------------------------------------
+//
+// Setup: Vacant office at VillageSquare using SuccessionLaw::Force. Agent A is
+// politically ambitious, informed about the office, and alive at the
+// jurisdiction. Agent B is colocated and otherwise eligible but has
+// DeadAt(Tick(0)).
+//
+// Expected: Force-law succession installs A after the succession period. Since
+// Force offices do not use support-based political actions, no declare_support
+// action commits occur.
+
+fn build_force_succession_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+
+    let living_claimant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Force Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        living_claimant,
+        default_perception_profile(),
+    );
+
+    let dead_rival = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Dead Rival",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        dead_rival,
+        default_perception_profile(),
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(dead_rival, DeadAt(Tick(0)))
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "War Chief",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Force,
+        5,
+        vec![],
+    );
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        living_claimant,
+        &[office],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    (h, living_claimant, dead_rival, office)
+}
+
+fn run_force_succession(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, living_claimant, dead_rival, office) = build_force_succession_scenario(seed);
+
+    for _ in 0..12 {
+        h.step_once();
+    }
+
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(living_claimant),
+        "Force-law succession should install the sole living eligible contender"
+    );
+    assert_eq!(
+        h.world.get_component_dead_at(dead_rival),
+        Some(&DeadAt(Tick(0))),
+        "dead rival should remain dead and excluded from eligibility"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for force succession scenario");
+    let declare_support_commits = action_sink
+        .events_for(living_claimant)
+        .iter()
+        .chain(action_sink.events_for(dead_rival).iter())
+        .filter(|event| {
+            event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .count();
+    assert_eq!(
+        declare_support_commits, 0,
+        "Force-law offices must not produce declare_support commits"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_force_succession_sole_eligible() {
+    let _ = run_force_succession(Seed([120; 32]));
+}
+
+#[test]
+fn golden_force_succession_deterministic_replay() {
+    let seed = Seed([121; 32]);
+
+    let first = run_force_succession(seed);
+    let second = run_force_succession(seed);
+
+    assert_eq!(
+        first, second,
+        "force succession scenario should replay deterministically"
     );
 }

@@ -52,9 +52,7 @@ fn enterprise_trade_disposition() -> TradeDispositionProfile {
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
-fn run_merchant_restock_with_traces(
-    seed: Seed,
-) -> (StateHash, StateHash) {
+fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
     let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
     let mut h = GoldenHarness::new(seed);
 

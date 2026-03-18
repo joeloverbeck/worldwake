@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_core::{
-    CauseRef, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, OfficeData,
-    Permille, VisibilitySpec, WitnessData, World, WorldTxn,
+    CauseRef, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, OfficeData, Permille,
+    VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -98,7 +98,9 @@ pub fn public_order(place: EntityId, world: &World) -> Permille {
 }
 
 pub fn count_present_hostile_faction_pairs_at(place: EntityId, world: &World) -> usize {
-    let present_factions = present_factions_at(place, world).into_iter().collect::<Vec<_>>();
+    let present_factions = present_factions_at(place, world)
+        .into_iter()
+        .collect::<Vec<_>>();
     let mut count = 0;
 
     for (index, faction_a) in present_factions.iter().enumerate() {
@@ -126,11 +128,17 @@ pub fn eligible_agents_at(office: EntityId, place: EntityId, world: &World) -> V
         .collect()
 }
 
-pub(crate) fn candidate_is_eligible(world: &World, office: &OfficeData, candidate: EntityId) -> bool {
+pub(crate) fn candidate_is_eligible(
+    world: &World,
+    office: &OfficeData,
+    candidate: EntityId,
+) -> bool {
     world.entity_kind(candidate) == Some(EntityKind::Agent)
         && world.get_component_dead_at(candidate).is_none()
         && office.eligibility_rules.iter().all(|rule| match rule {
-            EligibilityRule::FactionMember(faction) => world.factions_of(candidate).contains(faction),
+            EligibilityRule::FactionMember(faction) => {
+                world.factions_of(candidate).contains(faction)
+            }
         })
 }
 
@@ -267,7 +275,8 @@ fn living_holder(world: &World, office: EntityId) -> Option<EntityId> {
 }
 
 fn present_factions_at(place: EntityId, world: &World) -> BTreeSet<EntityId> {
-    world.entities_effectively_at(place)
+    world
+        .entities_effectively_at(place)
         .into_iter()
         .filter(|entity| world.entity_kind(*entity) == Some(EntityKind::Agent))
         .flat_map(|entity| world.factions_of(entity))
@@ -395,7 +404,8 @@ mod tests {
 
         fn declare_support(&mut self, supporter: EntityId, candidate: EntityId, tick: u64) {
             let mut txn = new_txn(&mut self.world, tick);
-            txn.declare_support(supporter, self.office, candidate).unwrap();
+            txn.declare_support(supporter, self.office, candidate)
+                .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
@@ -405,7 +415,10 @@ mod tests {
     fn office_helpers_reflect_current_authoritative_state() {
         let fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
 
-        assert_eq!(offices_with_jurisdiction(fx.place, &fx.world), vec![fx.office]);
+        assert_eq!(
+            offices_with_jurisdiction(fx.place, &fx.world),
+            vec![fx.office]
+        );
         assert!(!office_is_vacant(fx.office, &fx.world));
         assert!(candidate_is_eligible(
             &fx.world,
@@ -429,7 +442,9 @@ mod tests {
         let office_data = fx.world.get_component_office_data(fx.office).unwrap();
         assert_eq!(office_data.vacancy_since, Some(Tick(3)));
         assert_eq!(fx.world.office_holder(fx.office), None);
-        let record = event_log.get(event_log.events_by_tag(EventTag::Political)[0]).unwrap();
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Political)[0])
+            .unwrap();
         assert_eq!(record.place_id(), Some(fx.place));
         assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
         assert!(record.target_ids().contains(&fx.office));
@@ -451,10 +466,15 @@ mod tests {
         run_succession(&mut fx.world, &mut event_log, 3);
 
         assert_eq!(
-            fx.world.get_component_office_data(fx.office).unwrap().vacancy_since,
+            fx.world
+                .get_component_office_data(fx.office)
+                .unwrap()
+                .vacancy_since,
             None
         );
-        let record = event_log.get(event_log.events_by_tag(EventTag::Political)[0]).unwrap();
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Political)[0])
+            .unwrap();
         assert_eq!(record.visibility(), VisibilitySpec::Hidden);
     }
 
@@ -472,11 +492,19 @@ mod tests {
 
         assert_eq!(fx.world.office_holder(fx.office), Some(fx.candidate_a));
         assert_eq!(
-            fx.world.get_component_office_data(fx.office).unwrap().vacancy_since,
+            fx.world
+                .get_component_office_data(fx.office)
+                .unwrap()
+                .vacancy_since,
             None
         );
-        assert!(fx.world.support_declarations_for_office(fx.office).is_empty());
-        let record = event_log.get(event_log.events_by_tag(EventTag::Political)[0]).unwrap();
+        assert!(fx
+            .world
+            .support_declarations_for_office(fx.office)
+            .is_empty());
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Political)[0])
+            .unwrap();
         assert_eq!(record.place_id(), Some(fx.place));
         assert!(record.target_ids().contains(&fx.candidate_a));
     }
@@ -512,10 +540,15 @@ mod tests {
 
         assert_eq!(fx.world.office_holder(fx.office), None);
         assert_eq!(
-            fx.world.get_component_office_data(fx.office).unwrap().vacancy_since,
+            fx.world
+                .get_component_office_data(fx.office)
+                .unwrap()
+                .vacancy_since,
             Some(Tick(8))
         );
-        let record = event_log.get(event_log.events_by_tag(EventTag::Political)[0]).unwrap();
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Political)[0])
+            .unwrap();
         assert_eq!(record.visibility(), VisibilitySpec::Hidden);
     }
 
@@ -533,7 +566,10 @@ mod tests {
 
         assert_eq!(fx.world.office_holder(fx.office), None);
         assert_eq!(
-            fx.world.get_component_office_data(fx.office).unwrap().vacancy_since,
+            fx.world
+                .get_component_office_data(fx.office)
+                .unwrap()
+                .vacancy_since,
             Some(Tick(6))
         );
     }
@@ -550,7 +586,8 @@ mod tests {
             .unwrap();
         {
             let mut txn = new_txn(&mut fx.world, 3);
-            txn.set_ground_location(fx.candidate_b, other_place).unwrap();
+            txn.set_ground_location(fx.candidate_b, other_place)
+                .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
@@ -581,7 +618,10 @@ mod tests {
     fn public_order_baseline_is_stable_when_place_has_no_vacancy_or_hostility() {
         let fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
 
-        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(750));
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(750)
+        );
     }
 
     #[test]
@@ -613,7 +653,10 @@ mod tests {
         let mut event_log = EventLog::new();
         run_succession(&mut fx.world, &mut event_log, 3);
 
-        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(350));
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(350)
+        );
     }
 
     #[test]
@@ -633,8 +676,14 @@ mod tests {
             faction_b
         };
 
-        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 1);
-        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(650));
+        assert_eq!(
+            count_present_hostile_faction_pairs_at(fx.place, &fx.world),
+            1
+        );
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(650)
+        );
 
         {
             let mut txn = new_txn(&mut fx.world, 3);
@@ -643,8 +692,14 @@ mod tests {
             let _ = txn.commit(&mut log);
         }
 
-        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 1);
-        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(650));
+        assert_eq!(
+            count_present_hostile_faction_pairs_at(fx.place, &fx.world),
+            1
+        );
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(650)
+        );
     }
 
     #[test]
@@ -666,7 +721,10 @@ mod tests {
             let _ = txn.commit(&mut log);
         }
 
-        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 1);
+        assert_eq!(
+            count_present_hostile_faction_pairs_at(fx.place, &fx.world),
+            1
+        );
     }
 
     #[test]
@@ -724,8 +782,14 @@ mod tests {
         let mut event_log = EventLog::new();
         run_succession(&mut fx.world, &mut event_log, 3);
 
-        assert_eq!(count_present_hostile_faction_pairs_at(fx.place, &fx.world), 6);
-        assert_eq!(public_order(fx.place, &fx.world), Permille::new_unchecked(0));
+        assert_eq!(
+            count_present_hostile_faction_pairs_at(fx.place, &fx.world),
+            6
+        );
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(0)
+        );
     }
 
     #[test]
@@ -750,7 +814,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            fx.world.get_component_office_data(fx.office).unwrap().vacancy_since,
+            fx.world
+                .get_component_office_data(fx.office)
+                .unwrap()
+                .vacancy_since,
             Some(Tick(3))
         );
     }

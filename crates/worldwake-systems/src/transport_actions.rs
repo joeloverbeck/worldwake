@@ -1146,14 +1146,31 @@ mod tests {
         let mut rng = test_rng();
 
         let instance_id = start_action_for_target(
-            &mut world, &mut log, &mut active_actions, &mut rng,
-            &defs, &handlers, actor, lot,
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            lot,
         );
         let outcome = tick_action(
-            instance_id, &defs, &handlers,
-            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
-            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
-        ).unwrap();
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(lot), Some(actor));
@@ -1171,14 +1188,31 @@ mod tests {
         let mut rng = test_rng();
 
         let instance_id = start_action_for_target(
-            &mut world, &mut log, &mut active_actions, &mut rng,
-            &defs, &handlers, actor, lot,
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            lot,
         );
         let outcome = tick_action(
-            instance_id, &defs, &handlers,
-            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
-            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
-        ).unwrap();
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(lot), Some(actor));
@@ -1196,19 +1230,33 @@ mod tests {
         };
         let (defs, handlers, pick_up_id, _) = setup_registries();
         let affordance = worldwake_sim::Affordance {
-            def_id: pick_up_id, actor, bound_targets: vec![lot],
-            payload_override: None, explanation: None,
+            def_id: pick_up_id,
+            actor,
+            bound_targets: vec![lot],
+            payload_override: None,
+            explanation: None,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut next_instance_id = ActionInstanceId(1);
         let mut rng = test_rng();
         let err = start_action(
-            &affordance, &defs, &handlers,
-            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
             &mut next_instance_id,
-            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(5) },
-        ).unwrap_err();
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap_err();
 
         assert!(matches!(err, ActionError::PreconditionFailed(msg) if
             msg.contains("TargetUnownedOrActorControls") || msg.contains("cannot lawfully pick up")));
@@ -1231,14 +1279,31 @@ mod tests {
         let mut rng = test_rng();
 
         let instance_id = start_action_for_target(
-            &mut world, &mut log, &mut active_actions, &mut rng,
-            &defs, &handlers, actor, lot,
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            lot,
         );
         let outcome = tick_action(
-            instance_id, &defs, &handlers,
-            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
-            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
-        ).unwrap();
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(lot), Some(actor));
@@ -1261,14 +1326,31 @@ mod tests {
         let mut rng = test_rng();
 
         let instance_id = start_action_for_target(
-            &mut world, &mut log, &mut active_actions, &mut rng,
-            &defs, &handlers, actor, lot,
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            lot,
         );
         let outcome = tick_action(
-            instance_id, &defs, &handlers,
-            ActionExecutionAuthority { active_actions: &mut active_actions, world: &mut world, event_log: &mut log, rng: &mut rng },
-            ActionExecutionContext { cause: CauseRef::Bootstrap, tick: Tick(6) },
-        ).unwrap();
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.possessor_of(lot), Some(actor));

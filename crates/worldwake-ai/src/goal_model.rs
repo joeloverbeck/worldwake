@@ -9,9 +9,9 @@ use worldwake_core::{
     WorkstationTag,
 };
 use worldwake_sim::{
-    ActionDef, ActionPayload, CombatActionPayload, DeclareSupportActionPayload,
-    LootActionPayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
-    TradeActionPayload, TransportActionPayload,
+    ActionDef, ActionPayload, CombatActionPayload, DeclareSupportActionPayload, LootActionPayload,
+    RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
+    TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -75,11 +75,7 @@ pub trait GoalKindPlannerExt {
     /// - Terminal ops on exact-bound goals → `true` only if targets contain the
     ///   goal's canonical entity.
     /// - Flexible goals → always `true` regardless of op or targets.
-    fn matches_binding(
-        &self,
-        authoritative_targets: &[EntityId],
-        op_kind: PlannerOpKind,
-    ) -> bool;
+    fn matches_binding(&self, authoritative_targets: &[EntityId], op_kind: PlannerOpKind) -> bool;
 }
 
 const CONSUME_OPS: &[PlannerOpKind] = &[
@@ -209,14 +205,12 @@ fn build_declare_support_payload_override(
                 candidate: actor,
             },
         ))),
-        GoalKind::SupportCandidateForOffice { office, candidate } => {
-            Ok(Some(ActionPayload::DeclareSupport(
-                DeclareSupportActionPayload {
-                    office: *office,
-                    candidate: *candidate,
-                },
-            )))
-        }
+        GoalKind::SupportCandidateForOffice { office, candidate } => Ok(Some(
+            ActionPayload::DeclareSupport(DeclareSupportActionPayload {
+                office: *office,
+                candidate: *candidate,
+            }),
+        )),
         _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
     }
 }
@@ -249,9 +243,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::BuryCorpse { .. } => GoalKindTag::BuryCorpse,
             GoalKind::ShareBelief { .. } => GoalKindTag::ShareBelief,
             GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
-            GoalKind::SupportCandidateForOffice { .. } => {
-                GoalKindTag::SupportCandidateForOffice
-            }
+            GoalKind::SupportCandidateForOffice { .. } => GoalKindTag::SupportCandidateForOffice,
         }
     }
 
@@ -450,7 +442,9 @@ impl GoalKindPlannerExt for GoalKind {
                 needs.dirtiness = below_medium(thresholds.dirtiness.medium());
             }),
             PlannerOpKind::Heal => match self {
-                GoalKind::TreatWounds { patient } => state.with_pain(*patient, Permille::new_unchecked(0)),
+                GoalKind::TreatWounds { patient } => {
+                    state.with_pain(*patient, Permille::new_unchecked(0))
+                }
                 _ => state,
             },
             PlannerOpKind::Loot => match self {
@@ -675,11 +669,14 @@ impl GoalKindPlannerExt for GoalKind {
                 places
             }
             GoalKind::Relieve => places_with_place_tag(state, PlaceTag::Latrine),
-            GoalKind::EngageHostile { target }
-            | GoalKind::TreatWounds { patient: target } => {
+            GoalKind::EngageHostile { target } | GoalKind::TreatWounds { patient: target } => {
                 state.effective_place(*target).into_iter().collect()
             }
-            GoalKind::Sleep | GoalKind::Wash | GoalKind::ReduceDanger => Vec::new(),
+            GoalKind::Sleep
+            | GoalKind::Wash
+            | GoalKind::ReduceDanger
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
             GoalKind::ProduceCommodity { recipe_id } => {
                 let required_tag = recipes
                     .get(*recipe_id)
@@ -689,9 +686,7 @@ impl GoalKindPlannerExt for GoalKind {
                     None => Vec::new(),
                 }
             }
-            GoalKind::SellCommodity { commodity } => {
-                demand_memory_places(state, actor, *commodity)
-            }
+            GoalKind::SellCommodity { commodity } => demand_memory_places(state, actor, *commodity),
             GoalKind::RestockCommodity { commodity } => {
                 if state.commodity_quantity(actor, *commodity) > Quantity(0) {
                     demand_memory_places(state, actor, *commodity)
@@ -706,17 +701,10 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { listener, .. } => {
                 state.effective_place(*listener).into_iter().collect()
             }
-            GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => {
-                Vec::new()
-            }
         }
     }
 
-    fn matches_binding(
-        &self,
-        authoritative_targets: &[EntityId],
-        op_kind: PlannerOpKind,
-    ) -> bool {
+    fn matches_binding(&self, authoritative_targets: &[EntityId], op_kind: PlannerOpKind) -> bool {
         // Planner-only synthetic candidates have empty targets — always pass.
         if authoritative_targets.is_empty() {
             return true;
@@ -766,8 +754,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SupportCandidateForOffice { .. } => true,
 
             // Exact-bound goals: target must match.
-            GoalKind::EngageHostile { target }
-            | GoalKind::TreatWounds { patient: target } => {
+            GoalKind::EngageHostile { target } | GoalKind::TreatWounds { patient: target } => {
                 authoritative_targets.contains(target)
             }
             GoalKind::LootCorpse { corpse } => authoritative_targets.contains(corpse),
@@ -779,15 +766,16 @@ impl GoalKindPlannerExt for GoalKind {
                     || authoritative_targets.contains(burial_site)
             }
             GoalKind::ShareBelief { listener, .. } => authoritative_targets.contains(listener),
-            GoalKind::MoveCargo { destination, .. } => {
-                authoritative_targets.contains(destination)
-            }
+            GoalKind::MoveCargo { destination, .. } => authoritative_targets.contains(destination),
         }
     }
 }
 
 /// Collect places containing entities with a `ResourceSource` for the given commodity.
-fn places_with_resource_source(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
+fn places_with_resource_source(
+    state: &PlanningState<'_>,
+    commodity: CommodityKind,
+) -> Vec<EntityId> {
     let mut places = BTreeSet::new();
     for &entity_id in state.snapshot().entities.keys() {
         if state
@@ -974,8 +962,8 @@ mod tests {
     use super::{GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal};
     use crate::{
         build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
-        GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
-        PlannerTransitionKind, PlanningBudget, PlanningState,
+        GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
+        PlanningBudget, PlanningState,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -1652,11 +1640,7 @@ mod tests {
                 .is_some_and(|tags| tags.contains(&tag))
         }
 
-        fn resource_sources_at(
-            &self,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Vec<EntityId> {
+        fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
             self.entities_at(place)
                 .into_iter()
                 .filter(|entity| {
@@ -1700,25 +1684,16 @@ mod tests {
             estimate_duration_from_beliefs(self, actor, duration, targets, payload)
         }
 
-        fn support_declaration(
-            &self,
-            supporter: EntityId,
-            office: EntityId,
-        ) -> Option<EntityId> {
-            self.support_declarations
-                .get(&office)
-                .and_then(|decls| {
-                    decls
-                        .iter()
-                        .find(|(s, _)| *s == supporter)
-                        .map(|(_, candidate)| *candidate)
-                })
+        fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
+            self.support_declarations.get(&office).and_then(|decls| {
+                decls
+                    .iter()
+                    .find(|(s, _)| *s == supporter)
+                    .map(|(_, candidate)| *candidate)
+            })
         }
 
-        fn support_declarations_for_office(
-            &self,
-            office: EntityId,
-        ) -> Vec<(EntityId, EntityId)> {
+        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
             self.support_declarations
                 .get(&office)
                 .cloned()
@@ -1936,7 +1911,8 @@ mod tests {
         view.effective_places.insert(actor, place);
         view.effective_places.insert(listener, place);
         view.effective_places.insert(subject, place);
-        view.entities_at.insert(place, vec![actor, listener, subject]);
+        view.entities_at
+            .insert(place, vec![actor, listener, subject]);
 
         let snapshot = build_planning_snapshot(
             &view,
@@ -2194,7 +2170,8 @@ mod tests {
         view.effective_places.insert(actor, town);
         view.effective_places.insert(candidate, town);
         view.effective_places.insert(office, town);
-        view.entities_at.insert(town, vec![actor, candidate, office]);
+        view.entities_at
+            .insert(town, vec![actor, candidate, office]);
         set_office_jurisdiction(&mut view, office, town);
 
         let snapshot = build_planning_snapshot(
@@ -2269,14 +2246,9 @@ mod tests {
         view.kinds.insert(place_b, EntityKind::Place);
         view.kinds.insert(place_c, EntityKind::Place);
         view.effective_places.insert(actor, place_a);
-        view.entities_at
-            .insert(place_a, vec![actor]);
-        view.adjacent.insert(
-            place_a,
-            vec![
-                (place_b, NonZeroU32::new(2).unwrap()),
-            ],
-        );
+        view.entities_at.insert(place_a, vec![actor]);
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(2).unwrap())]);
         view.adjacent.insert(
             place_b,
             vec![
@@ -2284,10 +2256,8 @@ mod tests {
                 (place_c, NonZeroU32::new(3).unwrap()),
             ],
         );
-        view.adjacent.insert(
-            place_c,
-            vec![(place_b, NonZeroU32::new(3).unwrap())],
-        );
+        view.adjacent
+            .insert(place_c, vec![(place_b, NonZeroU32::new(3).unwrap())]);
         view.needs.insert(
             actor,
             HomeostaticNeeds::new(pm(500), pm(0), pm(500), pm(0), pm(0)),
@@ -2415,10 +2385,7 @@ mod tests {
         view.alive.insert(merchant);
         view.kinds.insert(merchant, EntityKind::Agent);
         view.effective_places.insert(merchant, place_c);
-        view.entities_at
-            .entry(place_c)
-            .or_default()
-            .push(merchant);
+        view.entities_at.entry(place_c).or_default().push(merchant);
         view.merchandise_profiles.insert(
             merchant,
             MerchandiseProfile {
@@ -2438,7 +2405,10 @@ mod tests {
             purpose: CommodityPurpose::SelfConsume,
         };
         let places = goal.goal_relevant_places(&state, &recipes);
-        assert!(places.contains(&place_b), "should contain resource source place");
+        assert!(
+            places.contains(&place_b),
+            "should contain resource source place"
+        );
         assert!(places.contains(&place_c), "should contain merchant place");
     }
 
@@ -2449,10 +2419,7 @@ mod tests {
         view.alive.insert(target);
         view.kinds.insert(target, EntityKind::Agent);
         view.effective_places.insert(target, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(target);
+        view.entities_at.entry(place_b).or_default().push(target);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -2468,10 +2435,7 @@ mod tests {
         view.alive.remove(&corpse); // corpse is dead
         view.kinds.insert(corpse, EntityKind::Agent);
         view.effective_places.insert(corpse, place_c);
-        view.entities_at
-            .entry(place_c)
-            .or_default()
-            .push(corpse);
+        view.entities_at.entry(place_c).or_default().push(corpse);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -2513,10 +2477,8 @@ mod tests {
     #[test]
     fn relieve_returns_latrine_places() {
         let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        view.place_tags.insert(
-            place_b,
-            BTreeSet::from([worldwake_core::PlaceTag::Latrine]),
-        );
+        view.place_tags
+            .insert(place_b, BTreeSet::from([worldwake_core::PlaceTag::Latrine]));
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -2531,12 +2493,8 @@ mod tests {
         view.alive.insert(forge);
         view.kinds.insert(forge, EntityKind::UniqueItem);
         view.effective_places.insert(forge, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(forge);
-        view.workstation_tags
-            .insert(forge, WorkstationTag::Forge);
+        view.entities_at.entry(place_b).or_default().push(forge);
+        view.workstation_tags.insert(forge, WorkstationTag::Forge);
         let mut recipes = worldwake_sim::RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
             name: "Smelt Iron".to_string(),
@@ -2595,9 +2553,7 @@ mod tests {
             GoalKind::Sleep,
             GoalKind::Relieve,
             GoalKind::Wash,
-            GoalKind::EngageHostile {
-                target: entity(99),
-            },
+            GoalKind::EngageHostile { target: entity(99) },
             GoalKind::ReduceDanger,
             GoalKind::TreatWounds {
                 patient: entity(99),
@@ -2615,9 +2571,7 @@ mod tests {
                 commodity: CommodityKind::Bread,
                 destination: place_b,
             },
-            GoalKind::LootCorpse {
-                corpse: entity(99),
-            },
+            GoalKind::LootCorpse { corpse: entity(99) },
             GoalKind::BuryCorpse {
                 corpse: entity(99),
                 burial_site: entity(98),
@@ -2626,9 +2580,7 @@ mod tests {
                 listener: entity(99),
                 subject: entity(98),
             },
-            GoalKind::ClaimOffice {
-                office: entity(99),
-            },
+            GoalKind::ClaimOffice { office: entity(99) },
             GoalKind::SupportCandidateForOffice {
                 office: entity(99),
                 candidate: entity(98),
@@ -2895,8 +2847,7 @@ mod tests {
         view.effective_places.insert(actor, town);
         view.effective_places.insert(target, town);
         view.effective_places.insert(office, town);
-        view.entities_at
-            .insert(town, vec![actor, target, office]);
+        view.entities_at.insert(town, vec![actor, target, office]);
         view.commodity_quantities
             .insert((actor, CommodityKind::Bread), actor_bread);
         if let Some(profile) = actor_combat {
@@ -2930,15 +2881,7 @@ mod tests {
         let target = entity(2);
         let town = entity(10);
         let office = entity(40);
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(5),
-            None,
-            None,
-        );
+        let view = political_view(actor, target, town, office, Quantity(5), None, None);
         let snapshot = build_planning_snapshot(
             &view,
             actor,
@@ -2954,8 +2897,7 @@ mod tests {
             offered_quantity: Quantity(5),
         });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
 
         assert_eq!(
             advanced.commodity_quantity(actor, CommodityKind::Bread),
@@ -2975,15 +2917,7 @@ mod tests {
         let target = entity(2);
         let town = entity(10);
         let office = entity(40);
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(0),
-            None,
-            None,
-        );
+        let view = political_view(actor, target, town, office, Quantity(0), None, None);
         let snapshot = build_planning_snapshot(
             &view,
             actor,
@@ -2999,8 +2933,7 @@ mod tests {
             offered_quantity: Quantity(5),
         });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
 
         assert_eq!(
             advanced.commodity_quantity(actor, CommodityKind::Bread),
@@ -3020,15 +2953,7 @@ mod tests {
         let target = entity(2);
         let town = entity(10);
         let office = entity(40);
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(5),
-            None,
-            None,
-        );
+        let view = political_view(actor, target, town, office, Quantity(5), None, None);
         let snapshot = build_planning_snapshot(
             &view,
             actor,
@@ -3079,8 +3004,7 @@ mod tests {
         let goal = GoalKind::ClaimOffice { office };
         let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
 
         assert_eq!(
             advanced.test_support_override(target, office),
@@ -3115,8 +3039,7 @@ mod tests {
         let goal = GoalKind::ClaimOffice { office };
         let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
 
         assert_eq!(
             advanced.test_support_override(target, office),
@@ -3154,8 +3077,7 @@ mod tests {
         let goal = GoalKind::ClaimOffice { office };
         let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
 
         assert_eq!(
             advanced.test_support_override(target, office),
@@ -3191,8 +3113,7 @@ mod tests {
         let goal = GoalKind::ClaimOffice { office };
         let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
 
         assert_eq!(
             advanced.test_support_override(target, office),
@@ -3207,15 +3128,7 @@ mod tests {
         let target = entity(2);
         let town = entity(10);
         let office = entity(40);
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(5),
-            None,
-            None,
-        );
+        let view = political_view(actor, target, town, office, Quantity(5), None, None);
         let snapshot = build_planning_snapshot(
             &view,
             actor,
@@ -3234,8 +3147,7 @@ mod tests {
             offered_quantity: Quantity(5),
         });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
 
         assert_eq!(
             advanced.commodity_quantity(actor, CommodityKind::Bread),
@@ -3278,8 +3190,7 @@ mod tests {
         };
         let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
 
-        let advanced =
-            goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
+        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
 
         assert_eq!(
             advanced.test_support_override(target, office),
@@ -3315,19 +3226,13 @@ mod tests {
                     view.alive.insert(supporter);
                     view.kinds.insert(supporter, EntityKind::Agent);
                     view.effective_places.insert(supporter, town);
-                    view.entities_at
-                        .get_mut(&town)
-                        .unwrap()
-                        .push(supporter);
+                    view.entities_at.get_mut(&town).unwrap().push(supporter);
                 }
                 if !view.alive.contains(&candidate) {
                     view.alive.insert(candidate);
                     view.kinds.insert(candidate, EntityKind::Agent);
                     view.effective_places.insert(candidate, town);
-                    view.entities_at
-                        .get_mut(&town)
-                        .unwrap()
-                        .push(candidate);
+                    view.entities_at.get_mut(&town).unwrap().push(candidate);
                 }
             }
             view.support_declarations
@@ -3341,13 +3246,7 @@ mod tests {
             evidence.insert(e);
         }
 
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &evidence,
-            &BTreeSet::from([town]),
-            1,
-        );
+        let snapshot = build_planning_snapshot(&view, actor, &evidence, &BTreeSet::from([town]), 1);
         // Leak to get 'static lifetime for convenience in tests
         let leaked = Box::leak(Box::new(snapshot));
         let state = PlanningState::new(leaked);
@@ -3722,8 +3621,7 @@ mod tests {
         view.effective_places.insert(rival, town);
         view.effective_places.insert(office, town);
         view.entities_at.insert(remote, vec![actor]);
-        view.entities_at
-            .insert(town, vec![target, rival, office]);
+        view.entities_at.insert(town, vec![target, rival, office]);
 
         // Travel edge between remote and town
         view.adjacent

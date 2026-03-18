@@ -28,25 +28,25 @@ pub mod search;
 pub use agent_tick::{AgentTickDriver, JourneyDebugSnapshot, JourneySwitchMarginSource};
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
+pub use decision_runtime::{
+    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation,
+    JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
+};
 pub use decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
     GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
     PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
 };
-pub use decision_runtime::{
-    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation,
-    JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
-};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
-pub use goal_policy::{
-    evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole,
-    GoalFamilyPolicy, GoalPolicyOutcome,
-};
-pub use goal_switching::GoalSwitchKind;
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
 };
+pub use goal_policy::{
+    evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,
+    GoalPolicyOutcome,
+};
+pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
 pub use plan_revalidation::revalidate_next_step;
 pub use plan_selection::select_best_plan;

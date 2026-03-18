@@ -126,9 +126,9 @@ fn test_default_scenario_ai_produces_actor_events_within_100_ticks() {
 
     ctx.dispatch(CliCommand::Tick { n: Some(100) }).unwrap();
 
-    let any_ai_authored_event = ai_agents.iter().any(|agent| {
-        !ctx.sim.event_log().events_by_actor(*agent).is_empty()
-    });
+    let any_ai_authored_event = ai_agents
+        .iter()
+        .any(|agent| !ctx.sim.event_log().events_by_actor(*agent).is_empty());
     assert!(
         any_ai_authored_event,
         "default scenario should produce at least one AI-authored event within 100 ticks"

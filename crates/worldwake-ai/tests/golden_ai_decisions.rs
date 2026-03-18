@@ -8,8 +8,8 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, JourneyCommitmentState};
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
-    HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PrototypePlace,
-    Quantity, ResourceSource, Seed, TravelDispositionProfile, UtilityProfile, WorkstationTag,
+    HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
+    ResourceSource, Seed, TravelDispositionProfile, UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -1298,8 +1298,8 @@ fn golden_utility_weight_diversity_in_need_selection() {
     );
     {
         use worldwake_core::{
-            DemandMemory, DemandObservation, DemandObservationReason,
-            MerchandiseProfile, Tick, TradeDispositionProfile,
+            DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, Tick,
+            TradeDispositionProfile,
         };
 
         let mut txn = new_txn(&mut h.world, 0);

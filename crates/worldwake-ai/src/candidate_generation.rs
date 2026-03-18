@@ -200,6 +200,9 @@ fn emit_political_candidates(
         let Some(office_data) = ctx.view.office_data(office) else {
             continue;
         };
+        if office_data.succession_law != worldwake_core::SuccessionLaw::Support {
+            continue;
+        }
         if !office_is_visibly_vacant(ctx.view, office, &office_data) {
             continue;
         }
@@ -541,9 +544,7 @@ fn emit_care_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         }
         emit_candidate(
             candidates,
-            GoalKind::TreatWounds {
-                patient: ctx.agent,
-            },
+            GoalKind::TreatWounds { patient: ctx.agent },
             evidence,
             ctx.blocked,
             ctx.current_tick,
@@ -1188,10 +1189,10 @@ mod tests {
         BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity, RecipeId,
-        ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        WorkstationTag, Wound, WoundCause, WoundId,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity,
+        RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -3115,15 +3116,18 @@ mod tests {
         let place = entity(10);
         let remote_place = entity(11);
         let mut view = TestBeliefView::default();
-        view.alive.extend([speaker, listener, local_subject, remote_subject]);
+        view.alive
+            .extend([speaker, listener, local_subject, remote_subject]);
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(local_subject, EntityKind::Agent);
-        view.entity_kinds.insert(remote_subject, EntityKind::Facility);
+        view.entity_kinds
+            .insert(remote_subject, EntityKind::Facility);
         view.effective_places.insert(speaker, place);
         view.effective_places.insert(local_subject, place);
         view.effective_places.insert(remote_subject, remote_place);
-        view.entities_at.insert(place, vec![speaker, listener, local_subject]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, local_subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         view.beliefs.insert(
             speaker,
@@ -3586,5 +3590,54 @@ mod tests {
             Tick(10),
         );
         assert!(!contains_goal(&declared, GoalKind::ClaimOffice { office }));
+    }
+
+    #[test]
+    fn political_candidates_skip_force_law_offices() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+
+        let mut office_data = vacant_office("Warlord", town, faction);
+        office_data.succession_law = worldwake_core::SuccessionLaw::Force;
+        view.office_data.insert(office, office_data);
+
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+        );
+
+        assert!(
+            !contains_goal(&candidates, GoalKind::ClaimOffice { office }),
+            "Force-law offices should not emit support-based ClaimOffice goals"
+        );
+        assert!(
+            !contains_goal(
+                &candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "Force-law offices should not emit support-based support-candidate goals"
+        );
     }
 }

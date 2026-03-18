@@ -326,7 +326,10 @@ mod tests {
         assert_eq!(tables.iter_exclusive_facility_policies().count(), 0);
         assert_eq!(tables.iter_facility_use_queues().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
-        assert_eq!(tables.iter_production_output_ownership_policies().count(), 0);
+        assert_eq!(
+            tables.iter_production_output_ownership_policies().count(),
+            0
+        );
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);

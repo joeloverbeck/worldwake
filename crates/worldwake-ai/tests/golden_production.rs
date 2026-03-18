@@ -284,7 +284,10 @@ fn setup_capacity_constrained_ground_lot_pickup(seed: Seed) -> (GoldenHarness, E
         UtilityProfile::default(),
     );
     set_agent_perception_profile(
-        &mut h.world, &mut h.event_log, agent, production_perception_profile(),
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        production_perception_profile(),
     );
 
     let mut txn = new_txn(&mut h.world, 0);
@@ -361,8 +364,8 @@ fn observe_capacity_constrained_pickup_step(
         outcome.hunger_decreased = true;
         // Conservation: authoritative total must be initial minus consumed units.
         // Each eat consumes 1 unit, so at the first hunger decrease, auth should be initial - 1.
-        outcome.conservation_held = authoritative_apples
-            < outcome.initial_authoritative.unwrap_or(0);
+        outcome.conservation_held =
+            authoritative_apples < outcome.initial_authoritative.unwrap_or(0);
     }
 
     outcome.hunger_decreased
@@ -421,7 +424,10 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         KnownRecipes::with([apple_recipe]),
     );
     set_agent_perception_profile(
-        &mut harness.world, &mut harness.event_log, thief, production_perception_profile(),
+        &mut harness.world,
+        &mut harness.event_log,
+        thief,
+        production_perception_profile(),
     );
     let crafter = seed_agent_with_recipes(
         &mut harness.world,
@@ -434,7 +440,10 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         KnownRecipes::with([apple_recipe, bread_recipe]),
     );
     set_agent_perception_profile(
-        &mut harness.world, &mut harness.event_log, crafter, production_perception_profile(),
+        &mut harness.world,
+        &mut harness.event_log,
+        crafter,
+        production_perception_profile(),
     );
     give_commodity(
         &mut harness.world,
@@ -657,7 +666,10 @@ fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOu
     ];
     for agent in &agents {
         set_agent_perception_profile(
-            &mut h.world, &mut h.event_log, *agent, production_perception_profile(),
+            &mut h.world,
+            &mut h.event_log,
+            *agent,
+            production_perception_profile(),
         );
     }
 
@@ -791,7 +803,10 @@ fn seed_exclusive_orchard_contenders(h: &mut GoldenHarness) -> [EntityId; 4] {
     ];
     for agent in &agents {
         set_agent_perception_profile(
-            &mut h.world, &mut h.event_log, *agent, production_perception_profile(),
+            &mut h.world,
+            &mut h.event_log,
+            *agent,
+            production_perception_profile(),
         );
     }
     agents
@@ -2160,7 +2175,11 @@ fn record_faction_ownership_milestones(
     // Check for faction-owned apple lots at ORCHARD_FARM.
     let has_faction_owned_apples = world
         .entities()
-        .filter(|e| world.get_component_item_lot(*e).is_some_and(|lot| lot.commodity == CommodityKind::Apple))
+        .filter(|e| {
+            world
+                .get_component_item_lot(*e)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
+        })
         .any(|lot| world.owner_of(lot) == Some(scenario.faction));
     if has_faction_owned_apples {
         milestones.insert(FactionOwnershipMilestone::FactionOwnedApplesMaterialized);
@@ -2168,7 +2187,10 @@ fn record_faction_ownership_milestones(
 
     // Member picked up faction apples (possesses apples).
     if milestones.contains(&FactionOwnershipMilestone::FactionOwnedApplesMaterialized)
-        && scenario.harness.agent_commodity_qty(scenario.member, CommodityKind::Apple) > Quantity(0)
+        && scenario
+            .harness
+            .agent_commodity_qty(scenario.member, CommodityKind::Apple)
+            > Quantity(0)
     {
         milestones.insert(FactionOwnershipMilestone::MemberPickedUpFactionApples);
     }

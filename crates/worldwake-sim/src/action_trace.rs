@@ -263,10 +263,7 @@ mod tests {
 
     #[test]
     fn summary_format_covers_all_variants() {
-        let started = sample_event(
-            1,
-            ActionTraceKind::Started { targets: vec![] },
-        );
+        let started = sample_event(1, ActionTraceKind::Started { targets: vec![] });
         assert!(started.summary().contains("started"));
 
         let committed = sample_event(

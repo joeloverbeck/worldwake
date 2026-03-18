@@ -4,10 +4,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity, BeliefConfidencePolicy,
-    CommodityKind, HomeostaticNeeds, MetabolismProfile, PerceptionProfile,
+    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
+    BeliefConfidencePolicy, CommodityKind, HomeostaticNeeds, MetabolismProfile, PerceptionProfile,
     PrototypePlace, Quantity, ResourceSource, Seed, StateHash, UtilityProfile, WorkstationTag,
-    prototype_place_entity,
 };
 
 // ---------------------------------------------------------------------------
@@ -241,7 +240,10 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     );
     {
         use std::collections::BTreeSet;
-        use worldwake_core::{DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, Tick, TradeDispositionProfile};
+        use worldwake_core::{
+            DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, Tick,
+            TradeDispositionProfile,
+        };
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_perception_profile(
             merchant,
@@ -464,10 +466,7 @@ fn run_world_runs_without_observers(seed: Seed) -> (StateHash, StateHash) {
         "At least one consumption event should have occurred over 200 ticks"
     );
 
-    (
-        final_world_hash,
-        hash_event_log(&h.event_log).unwrap(),
-    )
+    (final_world_hash, hash_event_log(&h.event_log).unwrap())
 }
 
 #[test]

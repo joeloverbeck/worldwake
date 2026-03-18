@@ -2,9 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory, BlockingFact,
-    CombatProfile,
-    CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
-    EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
     MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId, ResourceSource,
     TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
@@ -268,7 +267,10 @@ impl PlanningSnapshot {
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
-                .filter_map(|office| view.support_declaration(actor, office).map(|candidate| (office, candidate)))
+                .filter_map(|office| {
+                    view.support_declaration(actor, office)
+                        .map(|candidate| (office, candidate))
+                })
                 .collect(),
             office_support_declarations: included_entities
                 .iter()
@@ -891,10 +893,7 @@ mod tests {
             self.adjacent.get(&place).cloned().unwrap_or_default()
         }
 
-        fn support_declarations_for_office(
-            &self,
-            office: EntityId,
-        ) -> Vec<(EntityId, EntityId)> {
+        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
             self.support_declarations
                 .get(&office)
                 .cloned()
@@ -1209,10 +1208,8 @@ mod tests {
         view.entities_at.insert(place_b, vec![]);
         view.entities_at.insert(place_c, vec![]);
         // Bidirectional edges: A<->B(3), B<->C(5)
-        view.adjacent.insert(
-            place_a,
-            vec![(place_b, NonZeroU32::new(3).unwrap())],
-        );
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(3).unwrap())]);
         view.adjacent.insert(
             place_b,
             vec![
@@ -1220,19 +1217,11 @@ mod tests {
                 (place_c, NonZeroU32::new(5).unwrap()),
             ],
         );
-        view.adjacent.insert(
-            place_c,
-            vec![(place_b, NonZeroU32::new(5).unwrap())],
-        );
+        view.adjacent
+            .insert(place_c, vec![(place_b, NonZeroU32::new(5).unwrap())]);
 
         // travel_horizon=3 to include all places
-        build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            3,
-        )
+        build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 3)
     }
 
     #[test]
@@ -1360,18 +1349,14 @@ mod tests {
         view.effective_places.insert(supporter_a, town);
         view.effective_places.insert(supporter_b, town);
         view.effective_places.insert(office, town);
-        view.entities_at.insert(
-            town,
-            vec![actor, supporter_a, supporter_b, office],
-        );
+        view.entities_at
+            .insert(town, vec![actor, supporter_a, supporter_b, office]);
         view.carry_capacities.insert(actor, LoadUnits(10));
         view.entity_loads.insert(actor, LoadUnits(0));
 
         // supporter_a supports actor, supporter_b supports actor
-        view.support_declarations.insert(
-            office,
-            vec![(supporter_a, actor), (supporter_b, actor)],
-        );
+        view.support_declarations
+            .insert(office, vec![(supporter_a, actor), (supporter_b, actor)]);
 
         let mut evidence = BTreeSet::new();
         evidence.insert(office);
@@ -1383,6 +1368,8 @@ mod tests {
         assert!(declarations.contains(&(supporter_b, actor)));
 
         // Non-office returns empty
-        assert!(snapshot.base_support_declarations_for_office(entity(999)).is_empty());
+        assert!(snapshot
+            .base_support_declarations_for_office(entity(999))
+            .is_empty());
     }
 }

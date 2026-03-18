@@ -330,9 +330,7 @@ fn apply_input(
                     action_name,
                     kind: ActionTraceKind::Aborted {
                         instance_id: action_instance_id,
-                        reason: format!(
-                            "CancelledByInput {{ sequence_no: {sequence_no} }}"
-                        ),
+                        reason: format!("CancelledByInput {{ sequence_no: {sequence_no} }}"),
                     },
                 });
             }

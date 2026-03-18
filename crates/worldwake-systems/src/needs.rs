@@ -310,8 +310,8 @@ mod tests {
         build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, DeadAt,
         DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
         DeprivationKind, DriveThresholds, EventLog, EventTag, EventView, HomeostaticNeeds,
-        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
+        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn, WoundCause,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,

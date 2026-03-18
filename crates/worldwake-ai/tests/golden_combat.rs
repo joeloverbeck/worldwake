@@ -1331,8 +1331,7 @@ fn build_bury_suppressed_under_stress_scenario(
 }
 
 fn run_bury_suppressed_under_stress_scenario(seed: Seed) -> (StateHash, StateHash) {
-    let (mut h, corpse, burier, hunger_high) =
-        build_bury_suppressed_under_stress_scenario(seed);
+    let (mut h, corpse, burier, hunger_high) = build_bury_suppressed_under_stress_scenario(seed);
 
     let mut first_eat_tick = None;
     let mut first_hunger_below_high_tick = None;
@@ -1512,7 +1511,14 @@ fn build_suppression_then_binding_scenario(
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
 
-    (h, corpse_a, corpse_b, scavenger, initial_coin_total, hunger_high)
+    (
+        h,
+        corpse_a,
+        corpse_b,
+        scavenger,
+        initial_coin_total,
+        hunger_high,
+    )
 }
 
 fn run_suppression_then_binding_scenario(seed: Seed) -> (StateHash, StateHash) {
@@ -1706,9 +1712,7 @@ fn golden_action_trace_records_loot_lifecycle() {
         .collect();
     let loot_commits: Vec<_> = looter_events
         .iter()
-        .filter(|e| {
-            e.action_name == "loot" && matches!(e.kind, ActionTraceKind::Committed { .. })
-        })
+        .filter(|e| e.action_name == "loot" && matches!(e.kind, ActionTraceKind::Committed { .. }))
         .collect();
 
     assert_eq!(

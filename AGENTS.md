@@ -17,6 +17,16 @@ This file provides guidance to coding agents working in this repository.
 - Respect worktree boundaries. If the user asks you to work inside `.claude/worktrees/<name>/`, use that worktree root for all reads, writes, searches, moves, and archival actions.
 - Maintain ticket fidelity. Do not silently skip explicit deliverables from a spec or ticket. If a deliverable seems wrong or blocked, surface it with the 1-3-1 rule instead of deciding unilaterally.
 
+## Ticket Expectations
+
+- Follow `tickets/README.md` when creating or revising tickets. Start from `tickets/_TEMPLATE.md`.
+- Reassess every ticket against current code, focused tests, golden coverage, and harness setup before implementation. If current code and ticket assumptions diverge, update the ticket first.
+- Do not leave a ticket marked `Engine Changes: None` or “tests only” when the requested invariant actually exposes an architectural contradiction in production code. Correct the scope first.
+- When a ticket claims a testing gap, distinguish missing focused/unit coverage from missing golden/E2E coverage.
+- Name the exact layer and symbol for non-trivial claims. Do not collapse AI/planning behavior, authoritative action validation, and system resolution into one vague statement.
+- If a test relies on timing, state whether the contract is action-lifecycle ordering, event-log ordering, or authoritative world-state ordering.
+- Prefer decision-trace assertions for AI candidate absence, suppression, or planner behavior rather than relying only on missing events or missing committed actions.
+
 ## Foundational Principles
 
 Read `docs/FOUNDATIONS.md` before making any design decision. It defines 13 non-negotiable principles in 4 categories (Causal Foundations, World Dynamics, Agent Architecture, System Architecture) that govern every system in this project — including maximal emergence, no magic numbers, concrete state over abstract scores, locality of information, physical dampeners for feedback loops, agent symmetry, agent diversity, system decoupling, and no backward compatibility. All code, specs, and architectural choices must be evaluated against these principles.
@@ -212,7 +222,7 @@ PRs should include:
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **worldwake** (7376 symbols, 29260 relationships, 300 execution flows).
+This project is indexed by GitNexus as **worldwake** (7358 symbols, 29276 relationships, 300 execution flows).
 
 ## Always Start Here
 

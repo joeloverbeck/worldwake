@@ -663,3 +663,20 @@ The golden suite contains 95 tests across 9 domain files. Every test uses the re
 - The eligible faction member becomes office holder after the succession period.
 **Foundation alignment**: Principle 10 (agents plan from beliefs, not omniscient world shortcuts), Principle 20 (shared ambition still respects concrete eligibility constraints), Principle 24 (AI filtering and authoritative validation coordinate through state rather than special-case cross-calls).
 **Cross-system chain**: Faction membership state + believed vacant office → AI eligibility gate on `ClaimOffice` candidate generation → only lawful claimant plans `DeclareSupport` → succession resolves to eligible office holder.
+
+### Scenario 18: Force Succession Installs Sole Living Eligible Contender
+**File**: `golden_offices.rs` | **Test**: `golden_force_succession_sole_eligible`
+**Systems exercised**: Succession (force-law installation), death-state filtering via `DeadAt`, AI/action suppression for support-law political paths, action tracing
+**Setup**: Vacant office ("War Chief") at Village Square with `SuccessionLaw::Force`. Agent A ("Force Claimant") is sated, politically ambitious, and has a direct belief about the office. Agent B ("Dead Rival") is colocated and otherwise similar but already has `DeadAt(Tick(0))`.
+**Emergent behavior proven**:
+- The force-law succession path installs the sole living eligible contender after the succession period without relying on support counting.
+- Dead contenders are filtered out of the eligibility set.
+- Even when the live contender is informed and politically ambitious, no `declare_support` commit occurs for the Force-law office.
+**Foundation alignment**: Principle 3 (office succession follows concrete alive/dead state rather than abstract weighting), Principle 8 (office resolution still follows explicit preconditions and timing), Principle 24 (AI/political behavior is constrained by office state rather than cross-system special cases).
+**Cross-system chain**: visible vacant Force-law office + colocated contenders + one contender marked dead → AI suppresses support-law office goals → succession system resolves sole living eligible contender → office holder relation updates deterministically.
+
+### Scenario 18b: Force Succession Deterministic Replay
+**File**: `golden_offices.rs` | **Test**: `golden_force_succession_deterministic_replay`
+**Systems exercised**: Same as Scenario 18 + deterministic replay verification.
+**Setup**: Same as Scenario 18, run twice with identical seed.
+**Assertion focus**: Both runs produce identical world and event-log hashes while still yielding a non-trivial office-holder transition.

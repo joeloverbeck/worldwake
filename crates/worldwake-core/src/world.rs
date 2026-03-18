@@ -4,12 +4,12 @@ use crate::{
     component_schema::with_component_schema_entries, AgentBeliefStore, AgentData,
     BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
     ComponentTables, ComponentValue, Container, DeadAt, DemandMemory, DeprivationExposure,
-    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId, FactionData,
-    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds,
-    InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-    MetabolismProfile, Name, OfficeData, PerceptionProfile, PlaceTag, ProductionJob,
-    ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RelationTables, ResourceSource,
-    SubstitutePreferences, TellProfile, Tick, Topology, TradeDispositionProfile,
+    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
+    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+    MerchandiseProfile, MetabolismProfile, Name, OfficeData, PerceptionProfile, PlaceTag,
+    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RelationTables,
+    ResourceSource, SubstitutePreferences, TellProfile, Tick, Topology, TradeDispositionProfile,
     TravelDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker,
     WorldError, WoundList,
 };
@@ -3659,13 +3659,18 @@ mod tests {
             1
         );
 
-        world.clear_support_declaration(supporter_b, office).unwrap();
+        world
+            .clear_support_declaration(supporter_b, office)
+            .unwrap();
         assert_eq!(world.support_declaration(supporter_b, office), None);
 
         world.clear_support_declarations_for_office(office).unwrap();
         world.clear_support_declarations_for_office(office).unwrap();
 
-        assert_eq!(world.support_declarations_for_office(office), Vec::<(EntityId, EntityId)>::new());
+        assert_eq!(
+            world.support_declarations_for_office(office),
+            Vec::<(EntityId, EntityId)>::new()
+        );
     }
 
     #[test]
@@ -3744,7 +3749,10 @@ mod tests {
             Vec::<(EntityId, Permille)>::new()
         );
         assert_eq!(world.support_declaration(member, office), None);
-        assert_eq!(world.support_declarations_for_office(office), Vec::<(EntityId, EntityId)>::new());
+        assert_eq!(
+            world.support_declarations_for_office(office),
+            Vec::<(EntityId, EntityId)>::new()
+        );
         assert_eq!(world.office_holder(office), None);
         assert_eq!(world.offices_held_by(member), Vec::<EntityId>::new());
         assert_eq!(world.hostile_targets_of(member), Vec::<EntityId>::new());
@@ -4249,7 +4257,9 @@ mod tests {
         let id = world.create_entity(EntityKind::Office, Tick(1));
         let office = sample_office_data();
 
-        world.insert_component_office_data(id, office.clone()).unwrap();
+        world
+            .insert_component_office_data(id, office.clone())
+            .unwrap();
         assert_eq!(world.get_component_office_data(id), Some(&office));
         assert!(world.has_component_office_data(id));
         assert_eq!(

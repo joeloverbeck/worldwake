@@ -9,9 +9,9 @@ use worldwake_core::{
     BelievedEntityState, CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
     ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
     HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, Permille, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, World,
-    Wound,
+    OfficeData, Permille, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
+    TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag,
+    World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -306,9 +306,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
         let accessible =
             self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
-        accessible
-            .then(|| self.world.owner_of(entity))
-            .flatten()
+        accessible.then(|| self.world.owner_of(entity)).flatten()
     }
 
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
@@ -466,7 +464,9 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.world
             .get_component_perception_profile(agent)
             .map(|profile| profile.confidence_policy)
-            .expect("acting agents must have PerceptionProfile before reading belief confidence policy")
+            .expect(
+                "acting agents must have PerceptionProfile before reading belief confidence policy",
+            )
     }
 
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
@@ -509,7 +509,8 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         if agent == self.agent {
-            return self.world
+            return self
+                .world
                 .get_component_utility_profile(agent)
                 .map(|p| p.courage);
         }
@@ -660,9 +661,9 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             return None;
         }
 
-        self.world.office_holder(office).filter(|holder| {
-            *holder == self.agent || self.believed_entity(*holder).is_some()
-        })
+        self.world
+            .office_holder(office)
+            .filter(|holder| *holder == self.agent || self.believed_entity(*holder).is_some())
     }
 
     fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
@@ -749,7 +750,7 @@ mod tests {
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
         CommodityKind, ControlSource, EntityKind, EventLog, FactionData, FactionPurpose,
-        MerchandiseProfile, OfficeData, Permille, PerceptionProfile, Quantity, ResourceSource,
+        MerchandiseProfile, OfficeData, PerceptionProfile, Permille, Quantity, ResourceSource,
         SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
@@ -1057,8 +1058,14 @@ mod tests {
             .unwrap()
             .confidence_policy;
 
-        assert_eq!(RuntimeBeliefView::belief_confidence_policy(&view, agent), expected);
-        assert_eq!(GoalBeliefView::belief_confidence_policy(&view, agent), expected);
+        assert_eq!(
+            RuntimeBeliefView::belief_confidence_policy(&view, agent),
+            expected
+        );
+        assert_eq!(
+            GoalBeliefView::belief_confidence_policy(&view, agent),
+            expected
+        );
     }
 
     #[test]
@@ -1295,7 +1302,9 @@ mod tests {
                     title: "Steward".to_string(),
                     jurisdiction: place,
                     succession_law: SuccessionLaw::Support,
-                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
+                        faction,
+                    )],
                     succession_period_ticks: 6,
                     vacancy_since: None,
                 },
@@ -1325,7 +1334,10 @@ mod tests {
                 .jurisdiction,
             place
         );
-        assert_eq!(RuntimeBeliefView::office_holder(&view, office), Some(holder));
+        assert_eq!(
+            RuntimeBeliefView::office_holder(&view, office),
+            Some(holder)
+        );
         assert_eq!(RuntimeBeliefView::factions_of(&view, agent), vec![faction]);
         assert_eq!(
             RuntimeBeliefView::loyalty_to(&view, agent, holder),
@@ -1395,12 +1407,7 @@ mod tests {
             let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
             txn.set_ground_location(other, place).unwrap();
             let lot = txn
-                .create_item_lot_with_owner(
-                    CommodityKind::Bread,
-                    Quantity(3),
-                    place,
-                    Some(other),
-                )
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(other))
                 .unwrap();
             commit_txn(txn);
             (agent, lot)
@@ -1582,7 +1589,9 @@ mod tests {
                     title: "Steward".to_string(),
                     jurisdiction: place,
                     succession_law: SuccessionLaw::Support,
-                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
+                        faction,
+                    )],
                     succession_period_ticks: 6,
                     vacancy_since: None,
                 },
@@ -1596,8 +1605,7 @@ mod tests {
 
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        let declarations =
-            RuntimeBeliefView::support_declarations_for_office(&view, office);
+        let declarations = RuntimeBeliefView::support_declarations_for_office(&view, office);
         assert_eq!(declarations.len(), 2);
         assert!(declarations.contains(&(agent, holder)));
         assert!(declarations.contains(&(other, holder)));
@@ -1618,8 +1626,7 @@ mod tests {
 
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        let declarations =
-            RuntimeBeliefView::support_declarations_for_office(&view, office);
+        let declarations = RuntimeBeliefView::support_declarations_for_office(&view, office);
         assert!(declarations.is_empty());
     }
 
@@ -1638,8 +1645,7 @@ mod tests {
         // Query using the agent ID as if it were an office — should return empty.
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        let declarations =
-            RuntimeBeliefView::support_declarations_for_office(&view, agent);
+        let declarations = RuntimeBeliefView::support_declarations_for_office(&view, agent);
         assert!(declarations.is_empty());
     }
 }

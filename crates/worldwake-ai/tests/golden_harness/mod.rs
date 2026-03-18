@@ -183,11 +183,14 @@ pub fn agent_belief_about(
     agent: EntityId,
     subject: EntityId,
 ) -> Option<&BelievedEntityState> {
-    world.get_component_agent_belief_store(agent)?.get_entity(&subject)
+    world
+        .get_component_agent_belief_store(agent)?
+        .get_entity(&subject)
 }
 
 pub fn agent_belief_count(world: &World, agent: EntityId) -> usize {
-    world.get_component_agent_belief_store(agent)
+    world
+        .get_component_agent_belief_store(agent)
         .map_or(0, |store| store.known_entities.len())
 }
 
@@ -540,12 +543,7 @@ pub fn declare_support(
 }
 
 /// Update an agent's `UtilityProfile.courage` field.
-pub fn set_courage(
-    world: &mut World,
-    event_log: &mut EventLog,
-    agent: EntityId,
-    value: Permille,
-) {
+pub fn set_courage(world: &mut World, event_log: &mut EventLog, agent: EntityId, value: Permille) {
     let mut profile = world
         .get_component_utility_profile(agent)
         .cloned()
@@ -866,7 +864,10 @@ mod tests {
         set_agent_tell_profile(&mut h.world, &mut h.event_log, agent, tell_profile);
         set_agent_perception_profile(&mut h.world, &mut h.event_log, agent, perception_profile);
 
-        assert_eq!(h.world.get_component_tell_profile(agent), Some(&tell_profile));
+        assert_eq!(
+            h.world.get_component_tell_profile(agent),
+            Some(&tell_profile)
+        );
         assert_eq!(
             h.world.get_component_perception_profile(agent),
             Some(&perception_profile)
@@ -910,7 +911,13 @@ mod tests {
         belief.last_known_place = Some(ORCHARD_FARM);
         belief.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(7))]);
 
-        seed_belief(&mut h.world, &mut h.event_log, agent, subject, belief.clone());
+        seed_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            subject,
+            belief.clone(),
+        );
 
         assert_eq!(agent_belief_count(&h.world, agent), 1);
         assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&belief));

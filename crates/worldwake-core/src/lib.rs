@@ -42,8 +42,8 @@ pub mod error;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
-pub mod factions;
 pub mod facility_queue;
+pub mod factions;
 pub mod goal;
 pub mod ids;
 pub mod items;
@@ -97,11 +97,11 @@ pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
-pub use factions::{FactionData, FactionPurpose};
 pub use facility_queue::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueError, FacilityUseQueue,
     GrantedFacilityUse, QueuedFacilityUse,
 };
+pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use items::{

@@ -299,7 +299,9 @@ fn motive_score(
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
             .view
             .loyalty_to(context.agent, candidate)
-            .map_or(0, |loyalty| score_product(context.utility.social_weight, loyalty)),
+            .map_or(0, |loyalty| {
+                score_product(context.utility.social_weight, loyalty)
+            }),
     }
 }
 
@@ -1016,7 +1018,10 @@ mod tests {
         danger_view.attackers.insert(agent, vec![attacker]);
         danger_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
 
         let ranked = rank(
@@ -1038,7 +1043,10 @@ mod tests {
         );
         self_care_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
 
         let ranked = rank(
@@ -1055,7 +1063,10 @@ mod tests {
         let mut calm_view = base_view(agent);
         calm_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
         let ranked = rank(
             &[goal(GoalKind::ShareBelief { listener, subject })],
@@ -1070,15 +1081,14 @@ mod tests {
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
         assert_eq!(
             ranked[0].motive_score,
-            150
-                * u32::from(
-                    belief_confidence(
-                        &PerceptionSource::DirectObservation,
-                        1,
-                        &BeliefConfidencePolicy::default(),
-                    )
-                    .value(),
+            150 * u32::from(
+                belief_confidence(
+                    &PerceptionSource::DirectObservation,
+                    1,
+                    &BeliefConfidencePolicy::default(),
                 )
+                .value(),
+            )
         );
     }
 
@@ -1148,9 +1158,18 @@ mod tests {
         );
 
         assert!(baseline_ranked[0].motive_score > baseline_ranked[1].motive_score);
-        assert_eq!(baseline_ranked[0].motive_score, 150 * u32::from(fresh_pressure.value()));
-        assert_eq!(baseline_ranked[1].motive_score, 150 * u32::from(rumor_pressure.value()));
-        assert_eq!(boosted_ranked[0].motive_score, 300 * u32::from(fresh_pressure.value()));
+        assert_eq!(
+            baseline_ranked[0].motive_score,
+            150 * u32::from(fresh_pressure.value())
+        );
+        assert_eq!(
+            baseline_ranked[1].motive_score,
+            150 * u32::from(rumor_pressure.value())
+        );
+        assert_eq!(
+            boosted_ranked[0].motive_score,
+            300 * u32::from(fresh_pressure.value())
+        );
     }
 
     #[test]
@@ -1161,7 +1180,10 @@ mod tests {
         let mut skeptical_view = base_view(agent);
         skeptical_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(4, PerceptionSource::Rumor { chain_len: 2 }))],
+            vec![(
+                subject,
+                believed_state(4, PerceptionSource::Rumor { chain_len: 2 }),
+            )],
         );
         skeptical_view.confidence_policies.insert(
             agent,
@@ -1220,7 +1242,10 @@ mod tests {
         let mut view = base_view(agent);
         view.beliefs.insert(
             agent,
-            vec![(known_subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                known_subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
 
         let zero_social = UtilityProfile {
@@ -1261,7 +1286,10 @@ mod tests {
         let mut enterprise_view = base_view(agent);
         enterprise_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
         enterprise_view.merchandise_profiles.insert(
             agent,
@@ -1532,9 +1560,15 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient }
+        );
         assert_eq!(ranked[0].motive_score, 900 * 500);
-        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
         assert_eq!(ranked[1].motive_score, 100 * 500);
     }
 
@@ -1565,9 +1599,15 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
         assert_eq!(ranked[0].motive_score, 900 * 500);
-        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient });
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::TreatWounds { patient }
+        );
         assert_eq!(ranked[1].motive_score, 100 * 500);
     }
 

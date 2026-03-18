@@ -584,7 +584,12 @@ fn commit_harvest(
 
     let owner = resolve_output_owner(txn, instance.actor, workstation)?;
     let lot = txn
-        .create_item_lot_with_owner(payload.output_commodity, payload.output_quantity, place, owner)
+        .create_item_lot_with_owner(
+            payload.output_commodity,
+            payload.output_quantity,
+            place,
+            owner,
+        )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
     Ok(CommitOutcome::empty())
@@ -668,9 +673,9 @@ mod tests {
         CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
         EntityId, EventId, EventLog, EventView, ExclusiveFacilityPolicy, FacilityUseQueue,
         GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
-        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
-        RelationDelta, RelationKind, RelationValue, ResourceSource, Seed, StateDelta, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, RelationDelta,
+        RelationKind, RelationValue, ResourceSource, Seed, StateDelta, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -2276,7 +2281,11 @@ mod tests {
             .unwrap();
             commit_txn(txn);
         }
-        assert_eq!(world.owner_of(workstation), None, "workstation must be ownerless");
+        assert_eq!(
+            world.owner_of(workstation),
+            None,
+            "workstation must be ownerless"
+        );
 
         grant_recipe(&mut world, actor, recipe_id);
         grant_facility_use(&mut world, workstation, actor, ids[0], 9);
@@ -2334,7 +2343,10 @@ mod tests {
                 _ => break,
             }
         }
-        assert!(errored || !committed, "ProducerOwner on ownerless producer must fail commit");
+        assert!(
+            errored || !committed,
+            "ProducerOwner on ownerless producer must fail commit"
+        );
     }
 
     #[test]
@@ -2373,8 +2385,18 @@ mod tests {
             txn.set_component_metabolism_profile(
                 actor,
                 MetabolismProfile::new(
-                    pm(1), pm(1), pm(1), pm(1), pm(1), pm(20),
-                    nz(10), nz(10), nz(10), nz(10), nz(2), nz(3),
+                    pm(1),
+                    pm(1),
+                    pm(1),
+                    pm(1),
+                    pm(1),
+                    pm(20),
+                    nz(10),
+                    nz(10),
+                    nz(10),
+                    nz(10),
+                    nz(2),
+                    nz(3),
                 ),
             )
             .unwrap();
@@ -2439,7 +2461,10 @@ mod tests {
                 _ => break,
             }
         }
-        assert!(errored || !committed, "missing policy on producer must fail commit");
+        assert!(
+            errored || !committed,
+            "missing policy on producer must fail commit"
+        );
     }
 
     #[test]
@@ -2447,8 +2472,7 @@ mod tests {
         let policy = ProductionOutputOwnershipPolicy {
             output_owner: ProductionOutputOwner::Actor,
         };
-        let (world, actor, _ws, place, event_log) =
-            run_harvest_to_completion_with_policy(policy);
+        let (world, actor, _ws, place, event_log) = run_harvest_to_completion_with_policy(policy);
         let lot = find_apple_lot(&world, place);
 
         // Find the commit event (last event with ActionCommitted tag).
@@ -2578,7 +2602,9 @@ mod tests {
         // Create a facility owner and assign ownership.
         let facility_owner = {
             let mut txn = new_txn(&mut world, 5);
-            let owner = txn.create_agent("GuildMaster", ControlSource::None).unwrap();
+            let owner = txn
+                .create_agent("GuildMaster", ControlSource::None)
+                .unwrap();
             txn.set_ground_location(owner, place).unwrap();
             txn.set_owner(workstation, owner).unwrap();
             txn.set_component_production_output_ownership_policy(
@@ -2661,7 +2687,11 @@ mod tests {
             .unwrap();
             commit_txn(txn);
         }
-        assert_eq!(world.owner_of(workstation), None, "workstation must be ownerless");
+        assert_eq!(
+            world.owner_of(workstation),
+            None,
+            "workstation must be ownerless"
+        );
 
         grant_recipe(&mut world, actor, recipe_id);
         add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
@@ -2720,7 +2750,10 @@ mod tests {
                 _ => break,
             }
         }
-        assert!(errored || !committed, "ProducerOwner on ownerless producer must fail craft commit");
+        assert!(
+            errored || !committed,
+            "ProducerOwner on ownerless producer must fail craft commit"
+        );
     }
 
     #[test]
@@ -2798,8 +2831,16 @@ mod tests {
             .collect();
         assert_eq!(output_lots.len(), 2, "expected two output lots");
         for (lot_id, _lot) in &output_lots {
-            assert_eq!(world.owner_of(*lot_id), Some(actor), "all outputs must share actor ownership");
-            assert_eq!(world.possessor_of(*lot_id), None, "outputs must be unpossessed");
+            assert_eq!(
+                world.owner_of(*lot_id),
+                Some(actor),
+                "all outputs must share actor ownership"
+            );
+            assert_eq!(
+                world.possessor_of(*lot_id),
+                None,
+                "outputs must be unpossessed"
+            );
         }
     }
 

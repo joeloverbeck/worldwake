@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     build_believed_entity_state, AgentBeliefStore, CauseRef, EntityId, EntityKind, EventLog,
-    EventPayload, EventTag, EventView, EvidenceRef, MismatchKind, PendingEvent,
-    PerceptionSource, SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World,
-    WorldTxn,
+    EventPayload, EventTag, EventView, EvidenceRef, MismatchKind, PendingEvent, PerceptionSource,
+    SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -241,12 +240,16 @@ fn detect_observation_mismatches(
             .resource_source
             .as_ref()
             .filter(|source| source.commodity == commodity)
-            .map_or(worldwake_core::Quantity(0), |source| source.available_quantity);
+            .map_or(worldwake_core::Quantity(0), |source| {
+                source.available_quantity
+            });
         let seen = observed
             .resource_source
             .as_ref()
             .filter(|source| source.commodity == commodity)
-            .map_or(worldwake_core::Quantity(0), |source| source.available_quantity);
+            .map_or(worldwake_core::Quantity(0), |source| {
+                source.available_quantity
+            });
         if believed != seen {
             mismatches.push(MismatchKind::ResourceSourceDiscrepancy {
                 commodity,
@@ -448,18 +451,16 @@ fn social_kind(record: &impl EventView) -> Option<SocialObservationKind> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        perception_system, resolve_witnesses, social_kind, social_observations_for_event,
-    };
+    use super::{perception_system, resolve_witnesses, social_kind, social_observations_for_event};
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
-        DeadAt, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
-        MismatchKind, ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource,
-        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource,
-        Seed, SocialObservationKind, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        DeadAt, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef, MismatchKind,
+        ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed,
+        SocialObservationKind, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
@@ -1079,7 +1080,10 @@ mod tests {
 
         let observations = social_observations_for_event(&world, &pending, Tick(6));
         assert_eq!(observations.len(), 1);
-        assert_eq!(observations[0].kind, SocialObservationKind::WitnessedTelling);
+        assert_eq!(
+            observations[0].kind,
+            SocialObservationKind::WitnessedTelling
+        );
         assert_eq!(observations[0].subjects, (speaker, listener));
         assert_eq!(observations[0].place, place);
         assert_eq!(observations[0].observed_tick, Tick(6));
@@ -1497,8 +1501,11 @@ mod tests {
                 .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
-            txn.set_component_workstation_marker(target, WorkstationMarker(WorkstationTag::OrchardRow))
-                .unwrap();
+            txn.set_component_workstation_marker(
+                target,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
             txn.set_component_resource_source(
                 target,
                 ResourceSource {

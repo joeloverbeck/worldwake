@@ -298,8 +298,8 @@ mod tests {
     use super::{
         ActionPayload, BribeActionPayload, CombatActionPayload, CraftActionPayload,
         DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
-        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload,
+        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
