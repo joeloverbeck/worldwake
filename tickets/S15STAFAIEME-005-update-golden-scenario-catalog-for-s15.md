@@ -18,7 +18,8 @@
 4. The catalog must follow the testing guidance in [docs/golden-e2e-testing.md](/home/joeloverbeck/projects/worldwake/docs/golden-e2e-testing.md): for S08-style cases, it should explicitly state that action traces prove the `StartFailed` lifecycle fact and decision traces prove next-tick AI reconciliation.
 5. The descriptions must remain precise about the verification layer split. They should not collapse "failed start", "AI cleared stale plan", and "later world recovery" into one vague scenario-level assertion.
 6. Scenario isolation should be documented where relevant: each entry should say which competing lawful affordances were removed so the intended start-failure recovery branch remains reviewable.
-7. Scope correction: if implemented scenario behavior diverges from the spec, update the catalog to match the actual final tests and file placement rather than preserving the earlier assumption.
+7. The catalog also duplicates suite inventory in its header summary. Because [docs/golden-e2e-coverage.md](/home/joeloverbeck/projects/worldwake/docs/golden-e2e-coverage.md) was already corrected to the live 124-test inventory, this ticket should reconcile any stale counts in `docs/golden-e2e-scenarios.md` while it is already editing that file rather than preserving a second drifting manual count.
+8. Scope correction: if implemented scenario behavior diverges from the spec, update the catalog to match the actual final tests, file placement, and live inventory rather than preserving the earlier assumption.
 
 ## Architecture Check
 
@@ -30,7 +31,8 @@
 1. Scenario entries name the exact new tests and their owning files -> doc review against implemented golden test names.
 2. Each entry distinguishes action-trace proof, decision-trace proof, and authoritative outcome -> doc review against the implemented assertions.
 3. "Distinct from existing scenario" rationale is documented for each S15 case -> doc review against Scenario 3d, 2b, and the political suites.
-4. Additional executable verification layers are not applicable because this ticket only updates catalog prose.
+4. Any duplicated suite-count or inventory summary in `docs/golden-e2e-scenarios.md` matches the live `cargo test -p worldwake-ai -- --list` output and the corrected coverage dashboard -> doc review plus inventory check.
+5. Additional executable verification layers are not applicable because this ticket only updates catalog prose.
 
 ## What to Change
 
@@ -45,6 +47,10 @@ Document the local-trade opportunity drift chain, its S10-safe simple pricing se
 ### 3. Add Scenario 28 entry
 
 Document the remote-office claim loss chain, including lawful office knowledge propagation, `StartFailed` on the losing political action, and why it is distinct from the current political locality and claim-success suites.
+
+### 4. Reconcile duplicated inventory prose
+
+If `docs/golden-e2e-scenarios.md` still states stale suite counts or file totals, update those header-level inventory lines to match the live `cargo test -p worldwake-ai -- --list` output while making the S15 scenario additions.
 
 ## Files to Touch
 
@@ -71,6 +77,7 @@ Document the remote-office claim loss chain, including lawful office knowledge p
 1. The catalog must accurately describe the actual implemented scenarios, test names, and owning files.
 2. Each S15 entry must explicitly separate action-trace lifecycle proof, decision-trace AI proof, and authoritative downstream outcome.
 3. Each S15 entry must explain why it is not redundant with an existing success-path or contention-path golden.
+4. Any suite-count summary inside `docs/golden-e2e-scenarios.md` must stay consistent with the live golden inventory and the coverage dashboard.
 
 ## Test Plan
 

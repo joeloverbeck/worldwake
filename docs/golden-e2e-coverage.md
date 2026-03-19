@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -16,12 +16,12 @@ crates/worldwake-ai/tests/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 12 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b + trace-enabled smoke coverage)
   golden_care.rs              — 14 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + care start-abort recovery + replays)
-  golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
+  golden_production.rs        — 19 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d, 26 + replays)
   golden_combat.rs            — 20 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays + action-trace integration)
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
-  golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
+  golden_trade.rs             — 6 tests (scenarios 2b, 2d, 27 + replays)
   golden_social.rs            — 14 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, unchanged-repeat suppression, re-tell after belief change, re-tell after conversation-memory expiry, trace-visible social re-enablement, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
-  golden_emergent.rs          — 20 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, wounded-politician care-vs-politics ordering S13-003, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e, combat-death-to-force-succession S13-001, social-tell-to-political-claim S13-002, same-place office-fact Tell locality S14-001, pre-truncation crowd-out prevention S14-002 + replays)
+  golden_emergent.rs          — 22 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, wounded-politician care-vs-politics ordering S13-003, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e, combat-death-to-force-succession S13-001, social-tell-to-political-claim S13-002, same-place office-fact Tell locality S14-001, pre-truncation crowd-out prevention S14-002, remote office-claim start-failure graceful loss S15-003 + replays)
   golden_offices.rs           — 13 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: political office facts remain local until belief update + deterministic replay, scenario 17: survival pressure suppresses political goals + deterministic replay, scenario 18: faction eligibility filters office claim, scenario 19: force succession sole eligible + deterministic replay)
   golden_supply_chain.rs      — 0 `golden_*` tests (contains trace-segment supply-chain tests plus 2 ignored blocked full-chain tests)
 ```
@@ -52,7 +52,7 @@ crates/worldwake-ai/tests/
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 | ShareBelief | Yes | 2e, 22, 24, 25 |
-| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25 |
+| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 28 |
 | SupportCandidateForOffice | Yes | 12, 13, 14 |
 
 **Coverage: 19/19 GoalKinds tested (100%).**
@@ -63,9 +63,9 @@ crates/worldwake-ai/tests/
 |--------|---------|-----|
 | Generic | Implicit | — |
 | Needs (eat, drink, sleep, relieve, wash) | Yes | eat + drink + sleep + relieve + wash |
-| Production (harvest, craft) | Yes | 4, 5, 6b |
+| Production (harvest, craft) | Yes | 4, 5, 6b, 26 |
 | FacilityQueue (queue_for_facility_use) | Yes | 9 |
-| Trade | Yes | 2b |
+| Trade | Yes | 2b, 27 |
 | Travel | Yes | 1, 3 (implicit) |
 | Transport | Yes | pick-up/materialization (4, 6c) + destination-local cargo delivery semantics (2d) |
 | Combat (attack, defend) | Yes | 7c, 7f |
@@ -153,6 +153,8 @@ crates/worldwake-ai/tests/
 | Direct-observation gate: Report-sourced wound belief does NOT trigger TreatWounds | Yes |
 | Care goal invalidation: patient self-heals → healer's TreatWounds satisfied | Yes |
 | Care pre-start wound disappearance: lawful TreatWounds selection → wounds disappear before authoritative input drain → `StartFailed` → blocked intent persisted next tick | Yes |
+| Contested harvest start failure: two agents lawfully select the same local harvest → loser records `StartFailed` at authoritative start → next AI tick clears stale branch → travel to remote orchard → harvest → eat | Yes |
+| Local trade opportunity vanishes: two buyers lawfully target one edible stock unit → loser records `StartFailed` on stale trade start → next AI tick abandons dead local trade branch → distant production fallback → eat | Yes |
 | Speaker-side chain-length filtering prevents infinite gossip propagation | Yes |
 | social_weight diversity → distinct social behavior (Principle 20) | Yes |
 | Zero-motive filter prevents execution of unmotivated goals | Yes |
@@ -169,6 +171,7 @@ crates/worldwake-ai/tests/
 | Remote office Tell → reported office belief update → ClaimOffice emerges → travel → DeclareSupport → succession installation | Yes |
 | Same-place office fact still requires Tell: co-location alone does not create office knowledge, but Tell unlocks ClaimOffice and DeclareSupport at the same place | Yes |
 | Already-told recent subject omitted before truncation → older untold office fact still told → remote ClaimOffice travel and succession still occur | Yes |
+| Remote office claim race: two informed claimants travel toward the same vacancy → winner installs first → loser records political `StartFailed` at authoritative start → next AI tick clears stale claim path and stops re-attempting the occupied office | Yes |
 | Wounded politician ordering: medium pain commits `heal` before `declare_support`, low pain commits `declare_support` before `heal`, and both converge to office-holder + reduced wounds | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
 | UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
@@ -183,16 +186,16 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 118 | 118 |
+| Proven tests | 124 | 124 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 63 | 63 |
+| Cross-system chains | 66 | 66 |
 
 ### Pending Backlog Summary
 
-**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — blocked on `specs/S08-ai-decision-traceability.md`. The producer→merchant→consumer end-to-end test could not be debugged to completion without AI decision traces. Will be re-implemented after S08 lands.
+**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — blocked on `specs/S10-bilateral-trade-negotiation.md`. The remaining full producer→merchant→consumer golden chain is no longer blocked on S08 tracing; the archived S09 outcome confirmed the unresolved gap is trade valuation/pricing architecture, and `golden_supply_chain.rs` still contains only trace-segment tests plus ignored blocked full-chain cases.
 
 ### Recommended Implementation Order
 
