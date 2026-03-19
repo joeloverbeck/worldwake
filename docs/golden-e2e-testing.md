@@ -55,6 +55,7 @@ Do not claim a "same-state, weight-only divergence" unless both compared branche
 - proving an action started, committed, aborted, or failed to start
 - proving same-tick actions that are invisible to inter-tick active-action inspection
 - proving same-tick cross-agent causal order without overfitting to tick numbers
+- proving a committed `tell` targeted a specific `listener`/`subject` pair via `ActionTraceDetail::Tell`
 
 ### Use decision traces when:
 
@@ -63,9 +64,11 @@ Do not claim a "same-state, weight-only divergence" unless both compared branche
 - distinguishing "candidate missing" from "candidate present but filtered/suppressed"
 - proving negative AI invariants such as "this goal never appeared" or "this candidate was never generated"
 - inspecting the final selected path via `planning.selection.selected_plan` and `planning.selection.selected_plan_source` when you need the chosen plan shape, terminal semantics, or whether the trace reflects a fresh search result, retained current plan, or snapshot-only continuation
+- proving social omission reasons such as `SpeakerHasAlreadyToldCurrentBelief` before any `tell` commit exists
 
 When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
 For conversation-memory crowd-out scenarios, prove the stale subject was omitted with the concrete social omission reason before claiming an untold subject survived truncation. The absence of a duplicate `tell` commit by itself is too weak because that could also arise from ranking loss, invalidation, or unrelated execution failure.
+For social scenarios, action traces and decision traces answer different questions: action traces prove that a committed `tell` happened for a specific `listener`/`subject`, while decision traces prove why another `ShareBelief` candidate was omitted, suppressed, or never generated.
 
 ### Use both when:
 
@@ -99,6 +102,9 @@ State all of the following in the owning ticket/spec:
 3. which unrelated lawful branches were intentionally removed from setup, and why they are outside the contract under test
 
 This guidance exists to keep goldens honest, not to stage-manage outcomes. Remove unrelated lawful affordances only when they would obscure the invariant you are trying to prove. If the competing branch is part of the architecture contract, keep it and assert the branching behavior directly instead.
+
+For social goldens, document whether the speaker needs an explicit belief about the intended listener for `ShareBelief` to materialize. Blind-perception or heavily isolated setups often require explicit listener-belief seeding even when the agents are co-located.
+For social goldens, also document subject choice explicitly. Agent subjects can create additional lawful `ShareBelief` branches around the subject's own changing state or location. If the contract is about resend suppression or a specific downstream office fact, prefer a non-agent subject unless the extra agent-subject branches are part of the invariant under test.
 
 ## Ticket Expectations For Golden Work
 
