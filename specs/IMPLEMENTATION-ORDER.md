@@ -66,6 +66,7 @@ S09 (no unmet deps — design fix to defend action duration)
 S11 (no unmet deps — investigation of wound lifecycle anomaly)
 S12 (no unmet deps — planner prerequisite-aware search heuristic)
 S13 (no unmet deps post-E16d — political emergence golden coverage)
+S15 (no unmet deps post-S08 — cross-system start-failure emergence golden coverage)
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
 E15, E15b ──→ E15c ✅ (conversation memory and recipient knowledge completed)
 E15c, E16d ──→ S14 ✅ (cross-system golden proof for same-place Tell and listener-aware pre-truncation)
@@ -125,6 +126,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - extends A* heuristic and spatial pruning to consider prerequisite resource locations, enabling 4+ step cross-domain plans
 - **S13**: Political Emergence Golden E2E Suites (no unmet deps post-E16d)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
+- **S15**: Start-Failure Emergence Golden E2E Suites (no unmet deps post-S08)
+  - adds production/trade/politics goldens proving `StartFailed` plus next-tick AI recovery outside the care domain
 
 **Step 12**:
 - **E16c**: Institutional Beliefs & Record Consultation
@@ -199,6 +202,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | `S11-wound-lifecycle-audit.md` | 3 | 11 | None (investigation) |
 | `S12-planner-prerequisite-aware-search.md` | 3 | 11 | None (planner enhancement) |
 | `S13-political-emergence-golden-suites.md` | 3 | 11 | E14, S07, E16d (all met) |
+| `S15-start-failure-emergence-golden-suites.md` | 3 | 11 | S08, E14, E15c, E16d (all met) |
 | `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 12 | E14, E15, E16 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
