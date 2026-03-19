@@ -69,9 +69,11 @@ pub mod wounds;
 pub use allocator::EntityAllocator;
 pub use belief::{
     belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, MismatchKind,
-    ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, SocialObservation,
-    SocialObservationKind, TellProfile,
+    recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
+    BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
+    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+    RecipientKnowledgeStatus, SharedBeliefSnapshot, SocialObservation, SocialObservationKind,
+    TellMemoryKey, TellProfile, ToldBeliefMemory,
 };
 pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
 pub use canonical::{

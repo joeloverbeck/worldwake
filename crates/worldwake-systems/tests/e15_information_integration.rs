@@ -50,6 +50,7 @@ fn accepting_tell_profile() -> TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
         acceptance_fidelity: Permille::new(1000).unwrap(),
+        ..TellProfile::default()
     }
 }
 

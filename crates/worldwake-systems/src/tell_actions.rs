@@ -426,6 +426,7 @@ mod tests {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 3,
                     acceptance_fidelity: Permille::new(1000).unwrap(),
+                    ..TellProfile::default()
                 },
             )
             .unwrap();
@@ -965,6 +966,7 @@ mod tests {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 2,
                     acceptance_fidelity: Permille::new(800).unwrap(),
+                    ..TellProfile::default()
                 },
             )
             .unwrap();
@@ -1262,6 +1264,7 @@ mod tests {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 3,
                     acceptance_fidelity: Permille::new(0).unwrap(),
+                    ..TellProfile::default()
                 },
             )
             .unwrap();
@@ -1381,6 +1384,7 @@ mod tests {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 1,
                     acceptance_fidelity: Permille::new(800).unwrap(),
+                    ..TellProfile::default()
                 },
             )
             .unwrap();
@@ -1455,6 +1459,7 @@ mod tests {
                 max_tell_candidates: 3,
                 max_relay_chain_len: 3,
                 acceptance_fidelity: Permille::new(800).unwrap(),
+                ..TellProfile::default()
             },
         );
         view.beliefs.insert(
@@ -1550,6 +1555,7 @@ mod tests {
                 max_tell_candidates: 3,
                 max_relay_chain_len: 2,
                 acceptance_fidelity: Permille::new(800).unwrap(),
+                ..TellProfile::default()
             },
         );
         view.beliefs.insert(

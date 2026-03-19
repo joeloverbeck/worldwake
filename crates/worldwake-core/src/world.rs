@@ -667,6 +667,8 @@ mod tests {
         AgentBeliefStore {
             known_entities,
             social_observations: Vec::new(),
+            told_beliefs: BTreeMap::new(),
+            heard_beliefs: BTreeMap::new(),
         }
     }
 
@@ -684,6 +686,8 @@ mod tests {
             max_tell_candidates: 5,
             max_relay_chain_len: 2,
             acceptance_fidelity: Permille::new(700).unwrap(),
+            conversation_memory_capacity: 11,
+            conversation_memory_retention_ticks: 30,
         }
     }
 

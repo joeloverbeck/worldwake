@@ -317,6 +317,8 @@ mod tests {
                     },
                 )]),
                 social_observations: Vec::new(),
+                told_beliefs: BTreeMap::new(),
+                heard_beliefs: BTreeMap::new(),
             }),
             ComponentValue::PerceptionProfile(PerceptionProfile {
                 memory_capacity: 16,
@@ -328,6 +330,8 @@ mod tests {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
                 acceptance_fidelity: Permille::new(720).unwrap(),
+                conversation_memory_capacity: 9,
+                conversation_memory_retention_ticks: 28,
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(

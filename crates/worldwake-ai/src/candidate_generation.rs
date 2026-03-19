@@ -3084,6 +3084,7 @@ mod tests {
                 max_tell_candidates: 2,
                 max_relay_chain_len: 2,
                 acceptance_fidelity: pm(800),
+                ..TellProfile::default()
             },
         );
         view.beliefs.insert(

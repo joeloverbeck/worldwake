@@ -996,6 +996,7 @@ mod tests {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
                 acceptance_fidelity: Permille::new(650).unwrap(),
+                ..TellProfile::default()
             },
         );
 

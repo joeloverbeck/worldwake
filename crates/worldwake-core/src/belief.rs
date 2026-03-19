@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 pub struct AgentBeliefStore {
     pub known_entities: BTreeMap<EntityId, BelievedEntityState>,
     pub social_observations: Vec<SocialObservation>,
+    pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
+    pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
 }
 
 impl AgentBeliefStore {
@@ -36,6 +38,14 @@ impl AgentBeliefStore {
 
     pub fn record_social_observation(&mut self, observation: SocialObservation) {
         self.social_observations.push(observation);
+    }
+
+    pub fn record_told_belief(&mut self, key: TellMemoryKey, memory: ToldBeliefMemory) {
+        self.told_beliefs.insert(key, memory);
+    }
+
+    pub fn record_heard_belief(&mut self, key: TellMemoryKey, memory: HeardBeliefMemory) {
+        self.heard_beliefs.insert(key, memory);
     }
 
     pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
@@ -76,6 +86,83 @@ impl AgentBeliefStore {
 
         for (_, entity) in eviction_order.into_iter().take(excess) {
             self.known_entities.remove(&entity);
+        }
+    }
+
+    pub fn enforce_conversation_memory(&mut self, profile: &TellProfile, current_tick: Tick) {
+        self.told_beliefs.retain(|_, memory| {
+            within_retention_window(
+                memory.told_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        });
+        self.heard_beliefs.retain(|_, memory| {
+            within_retention_window(
+                memory.heard_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        });
+
+        enforce_memory_lane_capacity(
+            &mut self.told_beliefs,
+            usize::from(profile.conversation_memory_capacity),
+            |memory| memory.told_tick,
+        );
+        enforce_memory_lane_capacity(
+            &mut self.heard_beliefs,
+            usize::from(profile.conversation_memory_capacity),
+            |memory| memory.heard_tick,
+        );
+    }
+
+    #[must_use]
+    pub fn told_belief_memory(
+        &self,
+        key: &TellMemoryKey,
+        current_tick: Tick,
+        profile: &TellProfile,
+    ) -> Option<&ToldBeliefMemory> {
+        self.told_beliefs.get(key).filter(|memory| {
+            within_retention_window(
+                memory.told_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        })
+    }
+
+    #[must_use]
+    pub fn heard_belief_memory(
+        &self,
+        key: &TellMemoryKey,
+        current_tick: Tick,
+        profile: &TellProfile,
+    ) -> Option<&HeardBeliefMemory> {
+        self.heard_beliefs.get(key).filter(|memory| {
+            within_retention_window(
+                memory.heard_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        })
+    }
+
+    #[must_use]
+    pub fn recipient_knowledge_status(
+        &self,
+        key: &TellMemoryKey,
+        current_belief: &BelievedEntityState,
+        current_tick: Tick,
+        profile: &TellProfile,
+    ) -> RecipientKnowledgeStatus {
+        match self.told_belief_memory(key, current_tick, profile) {
+            Some(memory) => recipient_knowledge_status(current_belief, Some(memory)),
+            None if self.told_beliefs.contains_key(key) => {
+                RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+            }
+            None => RecipientKnowledgeStatus::UnknownToSpeaker,
         }
     }
 }
@@ -126,6 +213,89 @@ pub struct BelievedEntityState {
     pub last_known_courage: Option<Permille>,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct TellMemoryKey {
+    pub counterparty: EntityId,
+    pub subject: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ToldBeliefMemory {
+    pub shared_state: SharedBeliefSnapshot,
+    pub told_tick: Tick,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HeardBeliefMemory {
+    pub heard_state: SharedBeliefSnapshot,
+    pub heard_tick: Tick,
+    pub disposition: HeardBeliefDisposition,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum HeardBeliefDisposition {
+    Accepted,
+    Rejected,
+    AlreadyHeldEqualOrNewer,
+    NotInternalized,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SharedBeliefSnapshot {
+    pub last_known_place: Option<EntityId>,
+    pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
+    pub workstation_tag: Option<WorkstationTag>,
+    pub resource_source: Option<ResourceSource>,
+    pub alive: bool,
+    pub wounds: Vec<Wound>,
+    pub last_known_courage: Option<Permille>,
+    pub source: PerceptionSource,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RecipientKnowledgeStatus {
+    UnknownToSpeaker,
+    SpeakerHasAlreadyToldCurrentBelief,
+    SpeakerHasOnlyToldStaleBelief,
+    SpeakerPreviouslyToldButMemoryExpired,
+}
+
+#[must_use]
+pub fn to_shared_belief_snapshot(state: &BelievedEntityState) -> SharedBeliefSnapshot {
+    SharedBeliefSnapshot {
+        last_known_place: state.last_known_place,
+        last_known_inventory: state.last_known_inventory.clone(),
+        workstation_tag: state.workstation_tag,
+        resource_source: state.resource_source.clone(),
+        alive: state.alive,
+        wounds: state.wounds.clone(),
+        last_known_courage: state.last_known_courage,
+        source: state.source,
+    }
+}
+
+#[must_use]
+pub fn share_equivalent(
+    current_belief: &BelievedEntityState,
+    prior_shared_state: &SharedBeliefSnapshot,
+) -> bool {
+    to_shared_belief_snapshot(current_belief) == *prior_shared_state
+}
+
+#[must_use]
+pub fn recipient_knowledge_status(
+    current_belief: &BelievedEntityState,
+    prior_tell: Option<&ToldBeliefMemory>,
+) -> RecipientKnowledgeStatus {
+    match prior_tell {
+        None => RecipientKnowledgeStatus::UnknownToSpeaker,
+        Some(memory) if share_equivalent(current_belief, &memory.shared_state) => {
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        }
+        Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
+    }
 }
 
 #[must_use]
@@ -306,6 +476,8 @@ pub struct TellProfile {
     pub max_tell_candidates: u8,
     pub max_relay_chain_len: u8,
     pub acceptance_fidelity: Permille,
+    pub conversation_memory_capacity: u16,
+    pub conversation_memory_retention_ticks: u64,
 }
 
 impl Component for TellProfile {}
@@ -316,7 +488,37 @@ impl Default for TellProfile {
             max_tell_candidates: 3,
             max_relay_chain_len: 3,
             acceptance_fidelity: Permille::new(800).unwrap(),
+            conversation_memory_capacity: 12,
+            conversation_memory_retention_ticks: 48,
         }
+    }
+}
+
+fn enforce_memory_lane_capacity<T, F>(
+    lane: &mut BTreeMap<TellMemoryKey, T>,
+    capacity: usize,
+    tick_of: F,
+) where
+    F: Fn(&T) -> Tick,
+{
+    if capacity == 0 {
+        lane.clear();
+        return;
+    }
+
+    let excess = lane.len().saturating_sub(capacity);
+    if excess == 0 {
+        return;
+    }
+
+    let mut eviction_order = lane
+        .iter()
+        .map(|(key, memory)| (tick_of(memory), *key))
+        .collect::<Vec<_>>();
+    eviction_order.sort_unstable();
+
+    for (_, key) in eviction_order.into_iter().take(excess) {
+        lane.remove(&key);
     }
 }
 
@@ -328,9 +530,11 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 mod tests {
     use super::{
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, MismatchKind,
-        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, SocialObservation,
-        SocialObservationKind, TellProfile,
+        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition,
+        HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile,
+        PerceptionSource, RecipientKnowledgeStatus, SocialObservation, SocialObservationKind,
+        TellMemoryKey, TellProfile, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
@@ -399,6 +603,55 @@ mod tests {
         }
     }
 
+    fn tell_profile() -> TellProfile {
+        TellProfile {
+            max_tell_candidates: 3,
+            max_relay_chain_len: 2,
+            acceptance_fidelity: Permille::new(800).unwrap(),
+            conversation_memory_capacity: 2,
+            conversation_memory_retention_ticks: 5,
+        }
+    }
+
+    fn tell_memory_key(counterparty: u32, subject: u32) -> TellMemoryKey {
+        TellMemoryKey {
+            counterparty: entity(counterparty),
+            subject: entity(subject),
+        }
+    }
+
+    fn told_memory(
+        counterparty: u32,
+        subject: u32,
+        told_tick: u64,
+        state: &BelievedEntityState,
+    ) -> (TellMemoryKey, ToldBeliefMemory) {
+        (
+            tell_memory_key(counterparty, subject),
+            ToldBeliefMemory {
+            shared_state: to_shared_belief_snapshot(state),
+            told_tick: Tick(told_tick),
+            },
+        )
+    }
+
+    fn heard_memory(
+        counterparty: u32,
+        subject: u32,
+        heard_tick: u64,
+        state: &BelievedEntityState,
+        disposition: HeardBeliefDisposition,
+    ) -> (TellMemoryKey, HeardBeliefMemory) {
+        (
+            tell_memory_key(counterparty, subject),
+            HeardBeliefMemory {
+            heard_state: to_shared_belief_snapshot(state),
+            heard_tick: Tick(heard_tick),
+            disposition,
+            },
+        )
+    }
+
     fn assert_component_bounds<T: Component>() {}
 
     fn assert_serde_bounds<T: Eq + Clone + Serialize + DeserializeOwned>() {}
@@ -411,6 +664,8 @@ mod tests {
 
         assert!(store.known_entities.is_empty());
         assert!(store.social_observations.is_empty());
+        assert!(store.told_beliefs.is_empty());
+        assert!(store.heard_beliefs.is_empty());
     }
 
     #[test]
@@ -665,6 +920,8 @@ mod tests {
                 max_tell_candidates: 3,
                 max_relay_chain_len: 3,
                 acceptance_fidelity: Permille::new(800).unwrap(),
+                conversation_memory_capacity: 12,
+                conversation_memory_retention_ticks: 48,
             }
         );
     }
@@ -675,12 +932,148 @@ mod tests {
             max_tell_candidates: 5,
             max_relay_chain_len: 2,
             acceptance_fidelity: Permille::new(650).unwrap(),
+            conversation_memory_capacity: 9,
+            conversation_memory_retention_ticks: 21,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
         let roundtrip: TellProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn shared_belief_snapshot_ignores_observed_tick_and_matches_shareable_content() {
+        let older = sample_state(3, 4);
+        let mut newer = older.clone();
+        newer.observed_tick = Tick(9);
+        let snapshot = to_shared_belief_snapshot(&older);
+
+        assert_eq!(snapshot, to_shared_belief_snapshot(&newer));
+        assert!(share_equivalent(&newer, &snapshot));
+    }
+
+    #[test]
+    fn conversation_memory_read_helpers_ignore_expired_entries_before_cleanup() {
+        let mut store = AgentBeliefStore::new();
+        let profile = tell_profile();
+        let fresh_state = sample_state(9, 3);
+        let stale_state = sample_state(1, 2);
+        let stale_key = tell_memory_key(2, 21);
+        let fresh_key = tell_memory_key(3, 22);
+
+        let stale_told = told_memory(2, 21, 1, &stale_state);
+        let fresh_told = told_memory(3, 22, 9, &fresh_state);
+        let stale_heard = heard_memory(
+            2,
+            21,
+            1,
+            &stale_state,
+            HeardBeliefDisposition::Accepted,
+        );
+        let fresh_heard = heard_memory(
+            3,
+            22,
+            9,
+            &fresh_state,
+            HeardBeliefDisposition::AlreadyHeldEqualOrNewer,
+        );
+
+        store.record_told_belief(stale_told.0, stale_told.1);
+        store.record_told_belief(fresh_told.0, fresh_told.1);
+        store.record_heard_belief(stale_heard.0, stale_heard.1);
+        store.record_heard_belief(fresh_heard.0, fresh_heard.1);
+
+        assert_eq!(store.told_belief_memory(&stale_key, Tick(9), &profile), None);
+        assert_eq!(store.heard_belief_memory(&stale_key, Tick(9), &profile), None);
+        assert!(store.told_beliefs.contains_key(&stale_key));
+        assert!(store.heard_beliefs.contains_key(&stale_key));
+        assert_eq!(
+            store.recipient_knowledge_status(&stale_key, &fresh_state, Tick(9), &profile),
+            RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+        );
+
+        assert_eq!(
+            store
+                .told_belief_memory(&fresh_key, Tick(9), &profile)
+                .map(|_| fresh_key),
+            Some(fresh_key)
+        );
+        assert_eq!(
+            store
+                .heard_belief_memory(&fresh_key, Tick(9), &profile)
+                .map(|_| fresh_key),
+            Some(fresh_key)
+        );
+    }
+
+    #[test]
+    fn enforce_conversation_memory_evicts_oldest_told_and_heard_entries_independently() {
+        let mut store = AgentBeliefStore::new();
+        let profile = tell_profile();
+
+        let told_a = told_memory(2, 20, 4, &sample_state(4, 1));
+        let told_b = told_memory(1, 10, 4, &sample_state(4, 2));
+        let told_c = told_memory(3, 30, 6, &sample_state(6, 3));
+        let heard_a = heard_memory(
+            5,
+            50,
+            3,
+            &sample_state(3, 1),
+            HeardBeliefDisposition::Accepted,
+        );
+        let heard_b = heard_memory(
+            4,
+            40,
+            3,
+            &sample_state(3, 2),
+            HeardBeliefDisposition::Accepted,
+        );
+        let heard_c = heard_memory(
+            6,
+            60,
+            7,
+            &sample_state(7, 3),
+            HeardBeliefDisposition::Accepted,
+        );
+
+        store.record_told_belief(told_a.0, told_a.1);
+        store.record_told_belief(told_b.0, told_b.1);
+        store.record_told_belief(told_c.0, told_c.1);
+        store.record_heard_belief(heard_a.0, heard_a.1);
+        store.record_heard_belief(heard_b.0, heard_b.1);
+        store.record_heard_belief(heard_c.0, heard_c.1);
+
+        store.enforce_conversation_memory(&profile, Tick(8));
+
+        assert_eq!(
+            store.told_beliefs.keys().copied().collect::<Vec<_>>(),
+            vec![tell_memory_key(2, 20), tell_memory_key(3, 30)]
+        );
+        assert_eq!(
+            store.heard_beliefs.keys().copied().collect::<Vec<_>>(),
+            vec![tell_memory_key(5, 50), tell_memory_key(6, 60)]
+        );
+    }
+
+    #[test]
+    fn recipient_knowledge_status_distinguishes_current_and_stale_tells() {
+        let current = sample_state(8, 4);
+        let stale = sample_state(8, 9);
+        let (_, remembered) = told_memory(7, 44, 6, &current);
+
+        assert_eq!(
+            recipient_knowledge_status(&current, Some(&remembered)),
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        );
+        assert_eq!(
+            recipient_knowledge_status(&stale, Some(&remembered)),
+            RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief
+        );
+        assert_eq!(
+            recipient_knowledge_status(&current, None),
+            RecipientKnowledgeStatus::UnknownToSpeaker
+        );
     }
 
     #[test]

@@ -40,6 +40,7 @@ fn accepting_tell_profile() -> TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
         acceptance_fidelity: pm(1000),
+        ..TellProfile::default()
     }
 }
 
@@ -48,6 +49,7 @@ fn rejecting_tell_profile() -> TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
         acceptance_fidelity: pm(0),
+        ..TellProfile::default()
     }
 }
 
@@ -1207,6 +1209,7 @@ fn run_chain_length_filtering_scenario(
                 max_tell_candidates: 1,
                 max_relay_chain_len: 3,
                 acceptance_fidelity: pm(1000),
+                ..TellProfile::default()
             },
         );
     }
@@ -1219,6 +1222,7 @@ fn run_chain_length_filtering_scenario(
             max_tell_candidates: 1,
             max_relay_chain_len: 1,
             acceptance_fidelity: pm(1000),
+            ..TellProfile::default()
         },
     );
     // Dave: willing to relay up to 3, but never receives because Carol cannot relay.
@@ -1230,6 +1234,7 @@ fn run_chain_length_filtering_scenario(
             max_tell_candidates: 1,
             max_relay_chain_len: 3,
             acceptance_fidelity: pm(1000),
+            ..TellProfile::default()
         },
     );
 

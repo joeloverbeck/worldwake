@@ -968,6 +968,7 @@ mod tests {
             max_tell_candidates: 2,
             max_relay_chain_len: 1,
             acceptance_fidelity: pm(250),
+            ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {
             memory_capacity: 5,

@@ -190,6 +190,8 @@ mod tests {
                 },
             )]),
             social_observations: Vec::new(),
+            told_beliefs: BTreeMap::new(),
+            heard_beliefs: BTreeMap::new(),
         }
     }
 
@@ -198,6 +200,8 @@ mod tests {
             max_tell_candidates: 4,
             max_relay_chain_len: 2,
             acceptance_fidelity: Permille::new(725).unwrap(),
+            conversation_memory_capacity: 10,
+            conversation_memory_retention_ticks: 32,
         }
     }
 
