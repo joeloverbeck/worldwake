@@ -5,12 +5,14 @@
 //! `worldwake-ai`.
 
 use crate::{ActionInstanceId, CommitOutcome};
+use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId, Tick};
 
 /// A single action lifecycle event recorded during `step_tick()`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActionTraceEvent {
     pub tick: Tick,
+    pub sequence_in_tick: u32,
     pub actor: EntityId,
     pub def_id: ActionDefId,
     pub action_name: String,
@@ -37,14 +39,32 @@ pub enum ActionTraceKind {
 }
 
 impl ActionTraceEvent {
+    #[must_use]
+    pub fn new(
+        tick: Tick,
+        actor: EntityId,
+        def_id: ActionDefId,
+        action_name: String,
+        kind: ActionTraceKind,
+    ) -> Self {
+        Self {
+            tick,
+            sequence_in_tick: 0,
+            actor,
+            def_id,
+            action_name,
+            kind,
+        }
+    }
+
     /// One-line human-readable summary (no registry lookups required).
     #[must_use]
     pub fn summary(&self) -> String {
         match &self.kind {
             ActionTraceKind::Started { targets } => {
                 format!(
-                    "tick {}: {} started '{}' targeting {:?}",
-                    self.tick.0, self.actor, self.action_name, targets
+                    "tick {} seq {}: {} started '{}' targeting {:?}",
+                    self.tick.0, self.sequence_in_tick, self.actor, self.action_name, targets
                 )
             }
             ActionTraceKind::Committed {
@@ -53,8 +73,13 @@ impl ActionTraceEvent {
             } => {
                 let mat_count = outcome.materializations.len();
                 format!(
-                    "tick {}: {} committed '{}' (instance {}, {} materializations)",
-                    self.tick.0, self.actor, self.action_name, instance_id, mat_count
+                    "tick {} seq {}: {} committed '{}' (instance {}, {} materializations)",
+                    self.tick.0,
+                    self.sequence_in_tick,
+                    self.actor,
+                    self.action_name,
+                    instance_id,
+                    mat_count
                 )
             }
             ActionTraceKind::Aborted {
@@ -62,14 +87,19 @@ impl ActionTraceEvent {
                 reason,
             } => {
                 format!(
-                    "tick {}: {} aborted '{}' (instance {}, reason: {})",
-                    self.tick.0, self.actor, self.action_name, instance_id, reason
+                    "tick {} seq {}: {} aborted '{}' (instance {}, reason: {})",
+                    self.tick.0,
+                    self.sequence_in_tick,
+                    self.actor,
+                    self.action_name,
+                    instance_id,
+                    reason
                 )
             }
             ActionTraceKind::StartFailed { reason } => {
                 format!(
-                    "tick {}: {} failed to start '{}' (reason: {})",
-                    self.tick.0, self.actor, self.action_name, reason
+                    "tick {} seq {}: {} failed to start '{}' (reason: {})",
+                    self.tick.0, self.sequence_in_tick, self.actor, self.action_name, reason
                 )
             }
         }
@@ -83,15 +113,24 @@ impl ActionTraceEvent {
 /// for debugging and golden test assertions.
 pub struct ActionTraceSink {
     events: Vec<ActionTraceEvent>,
+    next_sequence_in_tick: BTreeMap<Tick, u32>,
 }
 
 impl ActionTraceSink {
     #[must_use]
     pub fn new() -> Self {
-        Self { events: Vec::new() }
+        Self {
+            events: Vec::new(),
+            next_sequence_in_tick: BTreeMap::new(),
+        }
     }
 
-    pub fn record(&mut self, event: ActionTraceEvent) {
+    pub fn record(&mut self, mut event: ActionTraceEvent) {
+        let sequence_in_tick = self.next_sequence_in_tick.entry(event.tick).or_insert(0);
+        event.sequence_in_tick = *sequence_in_tick;
+        *sequence_in_tick = sequence_in_tick
+            .checked_add(1)
+            .expect("action trace per-tick sequence overflowed");
         self.events.push(event);
     }
 
@@ -129,6 +168,7 @@ impl ActionTraceSink {
 
     pub fn clear(&mut self) {
         self.events.clear();
+        self.next_sequence_in_tick.clear();
     }
 
     /// Dump all events for an agent to stderr (for interactive debugging).
@@ -156,16 +196,16 @@ mod tests {
     use super::*;
 
     fn sample_event(tick: u64, kind: ActionTraceKind) -> ActionTraceEvent {
-        ActionTraceEvent {
-            tick: Tick(tick),
-            actor: EntityId {
+        ActionTraceEvent::new(
+            Tick(tick),
+            EntityId {
                 slot: 1,
                 generation: 0,
             },
-            def_id: ActionDefId(0),
-            action_name: "eat".to_string(),
+            ActionDefId(0),
+            "eat".to_string(),
             kind,
-        }
+        )
     }
 
     #[test]
@@ -186,26 +226,28 @@ mod tests {
             generation: 0,
         };
 
-        sink.record(ActionTraceEvent {
-            tick: Tick(1),
-            actor: actor_a,
-            def_id: ActionDefId(0),
-            action_name: "eat".to_string(),
-            kind: ActionTraceKind::Started { targets: vec![] },
-        });
-        sink.record(ActionTraceEvent {
-            tick: Tick(1),
-            actor: actor_b,
-            def_id: ActionDefId(1),
-            action_name: "loot".to_string(),
-            kind: ActionTraceKind::Started {
+        sink.record(ActionTraceEvent::new(
+            Tick(1),
+            actor_a,
+            ActionDefId(0),
+            "eat".to_string(),
+            ActionTraceKind::Started { targets: vec![] },
+        ));
+        sink.record(ActionTraceEvent::new(
+            Tick(1),
+            actor_b,
+            ActionDefId(1),
+            "loot".to_string(),
+            ActionTraceKind::Started {
                 targets: vec![actor_a],
             },
-        });
+        ));
 
         assert_eq!(sink.events_for(actor_a).len(), 1);
         assert_eq!(sink.events_for(actor_b).len(), 1);
         assert_eq!(sink.events().len(), 2);
+        assert_eq!(sink.events()[0].sequence_in_tick, 0);
+        assert_eq!(sink.events()[1].sequence_in_tick, 1);
     }
 
     #[test]
@@ -235,26 +277,26 @@ mod tests {
             slot: 1,
             generation: 0,
         };
-        sink.record(ActionTraceEvent {
-            tick: Tick(1),
+        sink.record(ActionTraceEvent::new(
+            Tick(1),
             actor,
-            def_id: ActionDefId(0),
-            action_name: "eat".to_string(),
-            kind: ActionTraceKind::Committed {
+            ActionDefId(0),
+            "eat".to_string(),
+            ActionTraceKind::Committed {
                 instance_id: ActionInstanceId(1),
                 outcome: CommitOutcome::empty(),
             },
-        });
-        sink.record(ActionTraceEvent {
-            tick: Tick(3),
+        ));
+        sink.record(ActionTraceEvent::new(
+            Tick(3),
             actor,
-            def_id: ActionDefId(1),
-            action_name: "loot".to_string(),
-            kind: ActionTraceKind::Committed {
+            ActionDefId(1),
+            "loot".to_string(),
+            ActionTraceKind::Committed {
                 instance_id: ActionInstanceId(2),
                 outcome: CommitOutcome::empty(),
             },
-        });
+        ));
 
         let last = sink.last_committed(actor).unwrap();
         assert_eq!(last.action_name, "loot");
@@ -264,6 +306,7 @@ mod tests {
     #[test]
     fn summary_format_covers_all_variants() {
         let started = sample_event(1, ActionTraceKind::Started { targets: vec![] });
+        assert!(started.summary().contains("seq 0"));
         assert!(started.summary().contains("started"));
 
         let committed = sample_event(
@@ -303,5 +346,62 @@ mod tests {
         assert_eq!(sink.events().len(), 1);
         sink.clear();
         assert!(sink.events().is_empty());
+    }
+
+    #[test]
+    fn record_assigns_explicit_sequence_per_tick_even_when_ticks_interleave() {
+        let mut sink = ActionTraceSink::new();
+        let actor = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+        let other = EntityId {
+            slot: 2,
+            generation: 0,
+        };
+
+        sink.record(ActionTraceEvent::new(
+            Tick(1),
+            actor,
+            ActionDefId(0),
+            "eat".to_string(),
+            ActionTraceKind::Started { targets: vec![] },
+        ));
+        sink.record(ActionTraceEvent::new(
+            Tick(1),
+            other,
+            ActionDefId(1),
+            "loot".to_string(),
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty(),
+            },
+        ));
+        sink.record(ActionTraceEvent::new(
+            Tick(2),
+            actor,
+            ActionDefId(2),
+            "rest".to_string(),
+            ActionTraceKind::Aborted {
+                instance_id: ActionInstanceId(2),
+                reason: "test".to_string(),
+            },
+        ));
+        sink.record(ActionTraceEvent::new(
+            Tick(1),
+            actor,
+            ActionDefId(3),
+            "craft".to_string(),
+            ActionTraceKind::StartFailed {
+                reason: "missing tool".to_string(),
+            },
+        ));
+
+        let tick_one = sink.events_at(Tick(1));
+        assert_eq!(tick_one.len(), 3);
+        assert_eq!(tick_one[0].sequence_in_tick, 0);
+        assert_eq!(tick_one[1].sequence_in_tick, 1);
+        assert_eq!(tick_one[2].sequence_in_tick, 2);
+        assert_eq!(sink.events_at(Tick(2))[0].sequence_in_tick, 0);
     }
 }

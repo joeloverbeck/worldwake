@@ -261,29 +261,29 @@ fn apply_input(
                         },
                     );
                     let action_name = lookup_action_name(services.action_defs, def_id);
-                    runtime.record_action_trace(ActionTraceEvent {
+                    runtime.record_action_trace(ActionTraceEvent::new(
                         tick,
                         actor,
                         def_id,
                         action_name,
-                        kind: ActionTraceKind::StartFailed {
+                        ActionTraceKind::StartFailed {
                             reason: format!("{err:?}"),
                         },
-                    });
+                    ));
                     return Ok(InputOutcome::default());
                 }
                 return Err(TickStepError::Action(err));
             }
             let action_name = lookup_action_name(services.action_defs, def_id);
-            runtime.record_action_trace(ActionTraceEvent {
+            runtime.record_action_trace(ActionTraceEvent::new(
                 tick,
                 actor,
                 def_id,
                 action_name,
-                kind: ActionTraceKind::Started {
+                ActionTraceKind::Started {
                     targets: targets.clone(),
                 },
-            });
+            ));
             Ok(InputOutcome {
                 actions_started: 1,
                 actions_aborted: 0,
@@ -324,16 +324,16 @@ fn apply_input(
                     .action_defs
                     .get(def_id)
                     .map_or_else(|| "unknown".to_owned(), |d| d.name.clone()) /* PLACEHOLDER_SHOULD_NOT_EXIST */;
-                runtime.record_action_trace(ActionTraceEvent {
+                runtime.record_action_trace(ActionTraceEvent::new(
                     tick,
                     actor,
                     def_id,
                     action_name,
-                    kind: ActionTraceKind::Aborted {
+                    ActionTraceKind::Aborted {
                         instance_id: action_instance_id,
                         reason: format!("CancelledByInput {{ sequence_no: {sequence_no} }}"),
                     },
-                });
+                ));
             }
             Ok(InputOutcome {
                 actions_started: 0,
@@ -471,32 +471,32 @@ fn progress_active_actions(
                         outcome: outcome.clone(),
                     });
                 let action_name = lookup_action_name(services.action_defs, instance.def_id);
-                runtime.record_action_trace(ActionTraceEvent {
+                runtime.record_action_trace(ActionTraceEvent::new(
                     tick,
-                    actor: instance.actor,
-                    def_id: instance.def_id,
+                    instance.actor,
+                    instance.def_id,
                     action_name,
-                    kind: ActionTraceKind::Committed {
+                    ActionTraceKind::Committed {
                         instance_id,
                         outcome,
                     },
-                });
+                ));
                 actions_completed = actions_completed
                     .checked_add(1)
                     .expect("tick-step action-complete counter overflowed");
             }
             TickOutcome::Aborted { reason, replan } => {
                 let action_name = lookup_action_name(services.action_defs, instance.def_id);
-                runtime.record_action_trace(ActionTraceEvent {
+                runtime.record_action_trace(ActionTraceEvent::new(
                     tick,
-                    actor: instance.actor,
-                    def_id: instance.def_id,
+                    instance.actor,
+                    instance.def_id,
                     action_name,
-                    kind: ActionTraceKind::Aborted {
+                    ActionTraceKind::Aborted {
                         instance_id,
                         reason: format!("{reason:?}"),
                     },
-                });
+                ));
                 runtime.scheduler.retain_replan(replan);
                 actions_aborted = actions_aborted
                     .checked_add(1)
@@ -555,16 +555,16 @@ fn abort_actions_for_dead_actors(
         runtime.scheduler.retain_replan(replan);
         if let Some(inst) = dead_instance {
             let action_name = lookup_action_name(services.action_defs, inst.def_id);
-            runtime.record_action_trace(ActionTraceEvent {
+            runtime.record_action_trace(ActionTraceEvent::new(
                 tick,
-                actor: inst.actor,
-                def_id: inst.def_id,
+                inst.actor,
+                inst.def_id,
                 action_name,
-                kind: ActionTraceKind::Aborted {
+                ActionTraceKind::Aborted {
                     instance_id,
                     reason: "ActorMarkedDead".to_string(),
                 },
-            });
+            ));
         }
         aborted = aborted
             .checked_add(1)
@@ -655,11 +655,11 @@ mod tests {
     use crate::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionRequestMode, ActionState, ActionStatus, CommitOutcome,
-        ControllerState, DeterministicRng, DurationExpr, InputKind, Interruptibility, Precondition,
-        RecipeRegistry, ReservationReq, Scheduler, SystemDispatchTable, SystemError,
-        SystemExecutionContext, SystemManifest, TargetSpec, TickInputContext, TickInputError,
-        TickInputProducer,
+        ActionProgress, ActionRequestMode, ActionState, ActionStatus, ActionTraceKind,
+        ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng, DurationExpr, InputKind,
+        Interruptibility, Precondition, RecipeRegistry, ReservationReq, Scheduler,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
+        TickInputContext, TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -1200,6 +1200,7 @@ mod tests {
         let recipes = RecipeRegistry::new();
         let defs = reservation_action_registry();
         let handlers = handler_registry();
+        let mut action_trace = ActionTraceSink::new();
 
         scheduler.input_queue_mut().enqueue(
             Tick(0),
@@ -1234,7 +1235,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
-                action_trace: None,
+                action_trace: Some(&mut action_trace),
                 politics_trace: None,
             },
         )
@@ -1251,6 +1252,18 @@ mod tests {
         assert_eq!(failures[0].actor, actor);
         assert_eq!(failures[0].def_id, ActionDefId(2));
         assert!(!failures[0].reason.is_empty(), "reason must be non-empty");
+        let tick_events = action_trace.events_at(Tick(0));
+        assert_eq!(tick_events.len(), 2);
+        assert_eq!(tick_events[0].sequence_in_tick, 0);
+        assert!(matches!(
+            tick_events[0].kind,
+            ActionTraceKind::Started { .. }
+        ));
+        assert_eq!(tick_events[1].sequence_in_tick, 1);
+        assert!(matches!(
+            tick_events[1].kind,
+            ActionTraceKind::StartFailed { .. }
+        ));
     }
 
     #[test]
@@ -1315,6 +1328,7 @@ mod tests {
             handlers,
         ) = build_state();
         let actor = controlled_actor(&controller);
+        let mut action_trace = ActionTraceSink::new();
 
         scheduler.input_queue_mut().enqueue(
             Tick(0),
@@ -1338,7 +1352,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
-                action_trace: None,
+                action_trace: Some(&mut action_trace),
                 politics_trace: None,
             },
         )
@@ -1365,7 +1379,7 @@ mod tests {
                 recipe_registry: &recipes,
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
-                action_trace: None,
+                action_trace: Some(&mut action_trace),
                 politics_trace: None,
             },
         )
@@ -1374,6 +1388,128 @@ mod tests {
         assert_eq!(result.actions_aborted, 1);
         assert!(scheduler.active_actions().is_empty());
         assert_eq!(hook_log().lock().unwrap().aborts, vec![action_id]);
+        let tick_zero = action_trace.events_at(Tick(0));
+        assert_eq!(tick_zero.len(), 1);
+        assert_eq!(tick_zero[0].sequence_in_tick, 0);
+        assert!(matches!(tick_zero[0].kind, ActionTraceKind::Started { .. }));
+        let tick_one = action_trace.events_at(Tick(1));
+        assert_eq!(tick_one.len(), 1);
+        assert_eq!(tick_one[0].sequence_in_tick, 0);
+        assert!(matches!(tick_one[0].kind, ActionTraceKind::Aborted { .. }));
+    }
+
+    #[test]
+    fn action_trace_assigns_explicit_order_across_started_failed_and_committed_events() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = spawn_agent(&mut world, 1, ControlSource::Ai);
+        {
+            let place = world.topology().place_ids().next().unwrap();
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(actor, place).unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        let mut event_log = EventLog::new();
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut controller = ControllerState::with_entity(actor);
+        let mut rng = DeterministicRng::new(Seed([11; 32]));
+        let recipes = RecipeRegistry::new();
+        let defs = reservation_action_registry();
+        let handlers = handler_registry();
+        let mut action_trace = ActionTraceSink::new();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(0),
+                targets: Vec::new(),
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(2),
+                targets: vec![actor],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(2),
+                targets: vec![actor],
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+            },
+        );
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(1),
+                targets: Vec::new(),
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: Some(&mut action_trace),
+                politics_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.actions_started, 3);
+        assert_eq!(result.actions_completed, 1);
+        let tick_events = action_trace.events_at(Tick(0));
+        assert_eq!(tick_events.len(), 5);
+        for (expected_sequence, event) in tick_events.iter().enumerate() {
+            assert_eq!(event.sequence_in_tick, expected_sequence as u32);
+        }
+        assert_eq!(tick_events[0].action_name, "continue");
+        assert!(matches!(
+            tick_events[0].kind,
+            ActionTraceKind::Started { .. }
+        ));
+        assert_eq!(tick_events[1].action_name, "reserved-target");
+        assert!(matches!(
+            tick_events[1].kind,
+            ActionTraceKind::Started { .. }
+        ));
+        assert_eq!(tick_events[2].action_name, "reserved-target");
+        assert!(matches!(
+            tick_events[2].kind,
+            ActionTraceKind::StartFailed { .. }
+        ));
+        assert_eq!(tick_events[3].action_name, "complete");
+        assert!(matches!(
+            tick_events[3].kind,
+            ActionTraceKind::Started { .. }
+        ));
+        assert_eq!(tick_events[4].action_name, "complete");
+        assert!(matches!(
+            tick_events[4].kind,
+            ActionTraceKind::Committed { .. }
+        ));
     }
 
     #[test]

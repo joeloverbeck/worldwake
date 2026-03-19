@@ -273,10 +273,10 @@ mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_ai::{AgentDecisionTrace, DecisionOutcome, DecisionTraceSink};
+    use worldwake_core::ComponentValue;
     use worldwake_core::{
         CauseRef, EventPayload, PendingEvent, SuccessionLaw, VisibilitySpec, WitnessData,
     };
-    use worldwake_core::ComponentValue;
     use worldwake_sim::{
         ActionTraceEvent, ActionTraceKind, ActionTraceSink, OfficeSuccessionOutcome,
         OfficeSuccessionTrace, PoliticalTraceEvent, PoliticalTraceSink, SupportDeclarationTrace,
@@ -289,11 +289,7 @@ mod tests {
         }
     }
 
-    fn event_with_tag_and_delta(
-        tick: Tick,
-        tag: EventTag,
-        delta: StateDelta,
-    ) -> PendingEvent {
+    fn event_with_tag_and_delta(tick: Tick, tag: EventTag, delta: StateDelta) -> PendingEvent {
         let mut tags = BTreeSet::new();
         tags.insert(tag);
         PendingEvent::from_payload(EventPayload {
@@ -324,13 +320,15 @@ mod tests {
         });
 
         let mut action_sink = ActionTraceSink::new();
-        action_sink.record(ActionTraceEvent {
-            tick: Tick(3),
-            actor: agent,
-            def_id: worldwake_core::ActionDefId(7),
-            action_name: "attack".to_string(),
-            kind: ActionTraceKind::Started { targets: vec![office] },
-        });
+        action_sink.record(ActionTraceEvent::new(
+            Tick(3),
+            agent,
+            worldwake_core::ActionDefId(7),
+            "attack".to_string(),
+            ActionTraceKind::Started {
+                targets: vec![office],
+            },
+        ));
 
         let mut politics_sink = PoliticalTraceSink::new();
         politics_sink.record(PoliticalTraceEvent {
@@ -399,8 +397,8 @@ mod tests {
         ));
 
         let without_events = CrossLayerTimelineBuilder::new(&event_log).build();
-        let with_events = CrossLayerTimelineBuilder::new(&event_log)
-            .build_with_event_filter(|_, _| true);
+        let with_events =
+            CrossLayerTimelineBuilder::new(&event_log).build_with_event_filter(|_, _| true);
 
         assert!(without_events.entries().is_empty());
         assert_eq!(with_events.entries().len(), 1);

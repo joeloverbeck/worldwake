@@ -10,11 +10,10 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
-    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind,
-    ComponentValue, DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    RelationValue, Seed, StateHash, SuccessionLaw, TellProfile, Tick, UtilityProfile, Wound,
-    WoundCause, WoundId, WoundList,
+    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
+    DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, RelationValue, Seed, StateHash,
+    SuccessionLaw, TellProfile, Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{ActionTraceKind, OfficeSuccessionOutcome};
 
@@ -378,8 +377,9 @@ fn run_wounded_politician(
             .expect("action tracing should be enabled for wounded-politician scenario");
         if heal_commit_tick.is_none() {
             heal_commit_tick = action_sink.events_for(agent).iter().find_map(|event| {
-                (event.action_name == "heal" && matches!(event.kind, ActionTraceKind::Committed { .. }))
-                    .then_some(event.tick)
+                (event.action_name == "heal"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some(event.tick)
             });
         }
         if declare_support_commit_tick.is_none() {
@@ -1267,7 +1267,9 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         .for_office(office)
         .tick_window(Tick(dead_at_tick.0.saturating_sub(1)), install_tick)
         .build_with_event_filter(|event_id, _| {
-            event_id == death_event_id || event_id == vacancy_event_id || event_id == install_event_id
+            event_id == death_event_id
+                || event_id == vacancy_event_id
+                || event_id == install_event_id
         });
     let rendered_timeline = timeline.render();
     assert!(
@@ -1424,8 +1426,8 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
         }
     }
 
-    let tell_commit_tick =
-        tell_commit_tick.expect("listener should receive the office belief through the tell action");
+    let tell_commit_tick = tell_commit_tick
+        .expect("listener should receive the office belief through the tell action");
     let action_sink = h
         .action_trace_sink()
         .expect("action tracing should be enabled for social-political emergence");
@@ -1670,8 +1672,8 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
         }
     }
 
-    let tell_commit_tick =
-        tell_commit_tick.expect("listener should receive the same-place office belief through Tell");
+    let tell_commit_tick = tell_commit_tick
+        .expect("listener should receive the same-place office belief through Tell");
     assert!(
         h.driver
             .trace_sink()
@@ -1694,10 +1696,10 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
             .events_for(speaker)
             .iter()
             .any(|event| {
-            event.tick <= tell_commit_tick
-                && event.action_name == "tell"
-                && matches!(event.kind, ActionTraceKind::Committed { .. })
-        }),
+                event.tick <= tell_commit_tick
+                    && event.action_name == "tell"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
         "same-place office belief should arrive only after the speaker commits Tell"
     );
 
@@ -1738,26 +1740,32 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
     let action_sink = h
         .action_trace_sink()
         .expect("action tracing should be enabled for same-place social-political emergence");
-    let tell_commit_index = action_sink
+    let tell_commit_sequence = action_sink
         .events()
         .iter()
-        .position(|event| {
+        .find(|event| {
             event.actor == speaker
                 && event.action_name == "tell"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
         })
         .expect("speaker should commit Tell in the same-place office scenario");
-    let declare_support_commit_index = action_sink
+    let declare_support_commit_sequence = action_sink
         .events()
         .iter()
-        .position(|event| {
+        .find(|event| {
             event.actor == listener
                 && event.action_name == "declare_support"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
         })
         .expect("listener should commit declare_support after hearing the same-place office fact");
     assert!(
-        tell_commit_index < declare_support_commit_index,
+        (
+            tell_commit_sequence.tick,
+            tell_commit_sequence.sequence_in_tick
+        ) < (
+            declare_support_commit_sequence.tick,
+            declare_support_commit_sequence.sequence_in_tick,
+        ),
         "Tell must appear earlier than declare_support in the same-place action trace"
     );
     assert_eq!(
