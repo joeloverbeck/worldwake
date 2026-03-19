@@ -8,15 +8,19 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
-    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
-    DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
-    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, RecipientKnowledgeStatus,
-    RelationValue, Seed, StateHash, SuccessionLaw, TellProfile, Tick, UtilityProfile, Wound,
-    WoundCause, WoundId, WoundList,
+    AgentData, BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind,
+    ComponentValue, ControlSource, DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
+    Quantity, RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw,
+    TellProfile, Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
-use worldwake_sim::{ActionTraceDetail, ActionTraceKind, OfficeSuccessionOutcome};
+use worldwake_sim::{
+    ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
+    DeclareSupportActionPayload, InputKind, OfficeSuccessionOutcome, RequestProvenance,
+};
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -54,6 +58,18 @@ fn focused_accepting_tell_profile() -> TellProfile {
         max_tell_candidates: 1,
         ..accepting_tell_profile()
     }
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
 }
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
@@ -1802,7 +1818,357 @@ fn golden_same_place_office_fact_still_requires_tell_replays_deterministically()
 }
 
 // ===========================================================================
-// Suite 8: already_told_recent_subject_does_not_crowd_out_untold_office_fact
+// Suite 8: remote_office_claim_start_failure_loses_gracefully
+//
+// Proves: a stale political `declare_support` step can lawfully reach
+// authoritative `StartFailed` after another claimant has already been
+// installed, and the shared S08 reconciliation path clears the stale claim
+// without office-specific retry hacks.
+// Foundation: Principle 7, Principle 19, Principle 24.
+// Cross-systems: Beliefs + Travel + AI political planning + Politics.
+// ===========================================================================
+
+struct RemoteOfficeClaimStartFailureOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    loser_start_failure_count: usize,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_remote_office_claim_start_failure_loses_gracefully(
+    seed: Seed,
+) -> RemoteOfficeClaimStartFailureOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let herald = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Herald",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let winner = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Installed Winner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    let supporter = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Settled Supporter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let loser = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Delayed Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+
+    for agent in [winner, loser, supporter] {
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            default_perception_profile(),
+        );
+    }
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_combat_profile(loser, no_recovery_combat_profile())
+            .unwrap();
+        txn.set_component_wound_list(loser, stable_wound_list(450))
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        loser,
+        VILLAGE_SQUARE,
+        CommodityKind::Medicine,
+        Quantity(1),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        1,
+        vec![],
+    );
+    declare_support(&mut h.world, &mut h.event_log, supporter, office, winner);
+
+    for agent in [winner, loser] {
+        seed_actor_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            &[office, winner, loser],
+            Tick(0),
+            PerceptionSource::Report {
+                from: herald,
+                chain_len: 1,
+            },
+        );
+    }
+
+    h.step_once();
+
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for political start-failure scenario");
+    assert_eq!(
+        trace_sink
+            .trace_at(loser, Tick(0))
+            .and_then(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => planning.selection.selected.as_ref(),
+                _ => None,
+            })
+            .map(|goal| goal.kind.clone()),
+        Some(GoalKind::TreatWounds { patient: loser }),
+        "the delayed claimant should prioritize lawful self-care first so the political request can become stale"
+    );
+    assert!(
+        trace_sink
+            .goal_history_for(loser, &GoalKind::ClaimOffice { office })
+            .into_iter()
+            .any(|entry| entry.tick == Tick(0) && entry.status.is_generated()),
+        "the delayed claimant should still generate ClaimOffice before the office closes"
+    );
+    assert_eq!(
+        h.agent_active_action_name(loser),
+        Some("heal"),
+        "tick 0 should leave the delayed claimant occupied with heal"
+    );
+    let loser_hold_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, loser, ControlSource::Human, loser_hold_tick.0);
+    h.driver = worldwake_ai::AgentTickDriver::new(worldwake_ai::PlanningBudget::default());
+    h.driver.enable_tracing();
+
+    let declare_support_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "declare_support")
+        .map(|def| def.id)
+        .expect("full registries should include declare_support");
+    let winner_support_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, winner, ControlSource::Human, winner_support_tick.0);
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        winner_support_tick,
+        InputKind::RequestAction {
+            actor: winner,
+            def_id: declare_support_def_id,
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::DeclareSupport(DeclareSupportActionPayload {
+                office,
+                candidate: winner,
+            })),
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+
+    let winner_install_sequence = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(winner)
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("winner should commit declare_support through the ordinary action path");
+
+    for _ in 0..16 {
+        if !h.agent_has_active_action(loser) {
+            break;
+        }
+        h.step_once();
+    }
+    assert!(
+        !h.agent_has_active_action(loser),
+        "the delayed claimant should eventually finish healing before the stale political request is retried"
+    );
+
+    let stale_request_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, loser, ControlSource::Human, stale_request_tick.0);
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        stale_request_tick,
+        InputKind::RequestAction {
+            actor: loser,
+            def_id: declare_support_def_id,
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::DeclareSupport(DeclareSupportActionPayload {
+                office,
+                candidate: loser,
+            })),
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+
+    let loser_failure_sequence = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(loser)
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::StartFailed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "stale late declare_support should hit StartFailed once the office is no longer lawfully claimable; loser events={:?}; loser failures={:?}; office_holder={:?}; office_data={:?}",
+                h.action_trace_sink()
+                    .expect("action tracing should remain enabled")
+                    .events_for(loser),
+                h.scheduler.action_start_failures(),
+                h.world.office_holder(office),
+                h.world.get_component_office_data(office)
+            )
+        });
+    assert!(
+        winner_install_sequence < loser_failure_sequence,
+        "another lawful political action must close the opportunity before the stale request fails: winner={winner_install_sequence:?}, loser={loser_failure_sequence:?}"
+    );
+
+    let loser_failures = h
+        .scheduler
+        .action_start_failures()
+        .iter()
+        .filter(|failure| failure.actor == loser)
+        .collect::<Vec<_>>();
+    assert_eq!(loser_failures.len(), 1);
+    assert!(
+        matches!(
+            &loser_failures[0].reason,
+            ActionStartFailureReason::PreconditionFailed(detail) if detail.contains("not vacant")
+        ),
+        "late political failure should come from authoritative vacancy validation, got {:?}",
+        loser_failures[0].reason
+    );
+
+    let failure_tick = loser_failures[0].tick;
+    set_control_source(&mut h, loser, ControlSource::Ai, failure_tick.0);
+    h.step_once();
+
+    let loser_after_failure = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .trace_at(loser, failure_tick + 1)
+        .expect("loser should have a planning trace immediately after the political start failure");
+    let loser_planning_after_failure = match &loser_after_failure.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected post-failure planning trace, got {other:?}"),
+    };
+    assert_eq!(loser_planning_after_failure.action_start_failures.len(), 1);
+    assert!(
+        matches!(
+            &loser_planning_after_failure.action_start_failures[0].reason,
+            ActionStartFailureReason::PreconditionFailed(detail) if detail.contains("not vacant")
+        ),
+        "next-tick reconciliation should expose the authoritative vacancy failure"
+    );
+    assert!(
+        loser_planning_after_failure.selection.selected_plan_source
+            != Some(SelectedPlanSource::RetainedCurrentPlan),
+        "shared S08 reconciliation should clear the stale political plan instead of retaining it"
+    );
+    assert!(
+        !loser_planning_after_failure
+            .candidates
+            .generated
+            .iter()
+            .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+        "occupied office should stop emitting a fresh ClaimOffice candidate after the failure"
+    );
+    assert!(
+        loser_planning_after_failure
+            .candidates
+            .omitted_political
+            .iter()
+            .any(|omission| {
+                omission.office == office
+                    && omission.reason == PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant
+            }),
+        "post-failure planning should explain the missing political candidate as OfficeNotVisiblyVacant"
+    );
+    assert!(
+        h.scheduler
+            .action_start_failures()
+            .iter()
+            .all(|failure| failure.actor != loser),
+        "post-failure reconciliation should drain the loser's structured political start failure"
+    );
+
+    for _ in 0..12 {
+        h.step_once();
+    }
+
+    let loser_start_failure_count = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(loser)
+        .into_iter()
+        .filter(|event| {
+            event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+        })
+        .count();
+    assert_eq!(
+        loser_start_failure_count, 1,
+        "occupied-office knowledge should prevent repeated stale declare_support retries"
+    );
+    RemoteOfficeClaimStartFailureOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        loser_start_failure_count,
+    }
+}
+
+#[test]
+fn golden_remote_office_claim_start_failure_loses_gracefully() {
+    let outcome = run_remote_office_claim_start_failure_loses_gracefully(Seed([45; 32]));
+    assert_eq!(outcome.loser_start_failure_count, 1);
+}
+
+#[test]
+fn golden_remote_office_claim_start_failure_loses_gracefully_replays_deterministically() {
+    let first = run_remote_office_claim_start_failure_loses_gracefully(Seed([46; 32]));
+    let second = run_remote_office_claim_start_failure_loses_gracefully(Seed([46; 32]));
+    assert_eq!(first.world_hash, second.world_hash);
+    assert_eq!(first.log_hash, second.log_hash);
+    assert_eq!(
+        first.loser_start_failure_count, second.loser_start_failure_count,
+        "political start-failure emergence should replay deterministically"
+    );
+}
+
+// ===========================================================================
+// Suite 9: already_told_recent_subject_does_not_crowd_out_untold_office_fact
 //
 // Proves: listener-aware resend suppression happens before tell-candidate
 // truncation in the live AI/action path. A more recent already-told subject
