@@ -1535,3 +1535,259 @@ fn golden_tell_propagates_political_knowledge_replays_deterministically() {
         "social-to-political knowledge propagation should replay deterministically"
     );
 }
+
+// ===========================================================================
+// Suite 7: same_place_office_fact_still_requires_tell
+//
+// Proves: co-location with an office does not alias into listener knowledge.
+// Even when speaker, listener, and office all share the same place, the
+// listener must still learn the office fact through Tell before political
+// planning can begin.
+// Foundation: Principle 7, Principle 12, Principle 13, Principle 24.
+// Cross-systems: Social + Beliefs + AI political planning + Politics.
+// ===========================================================================
+
+#[allow(clippy::too_many_lines)]
+fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Informant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Ambitious Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            enterprise_weight: pm(800),
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        blind_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        blind_perception_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        &[listener],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    assert!(
+        agent_belief_about(&h.world, listener, office).is_none(),
+        "listener should start without office knowledge despite sharing the office place"
+    );
+    assert_eq!(
+        h.world.effective_place(listener),
+        Some(VILLAGE_SQUARE),
+        "listener should start at the office jurisdiction"
+    );
+
+    for _ in 0..8 {
+        h.step_once();
+    }
+
+    let speaker_update_tick = h.scheduler.current_tick();
+    let generated_before_tell = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for same-place social-political emergence")
+        .goal_history_for(listener, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| entry.tick <= speaker_update_tick)
+        .any(|entry| entry.status.is_generated());
+    assert!(
+        !generated_before_tell,
+        "co-location alone must not generate ClaimOffice before the listener is told"
+    );
+    assert!(
+        agent_belief_about(&h.world, listener, office).is_none(),
+        "listener should still lack the office belief after sharing the place without Tell"
+    );
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        &[office],
+        speaker_update_tick,
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut tell_commit_tick = None;
+    for _ in 0..40 {
+        h.step_once();
+        if agent_belief_about(&h.world, listener, office).is_some() {
+            tell_commit_tick = Some(h.scheduler.current_tick());
+            break;
+        }
+    }
+
+    let tell_commit_tick =
+        tell_commit_tick.expect("listener should receive the same-place office belief through Tell");
+    assert!(
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for same-place social-political emergence")
+            .goal_history_for(
+                speaker,
+                &GoalKind::ShareBelief {
+                    listener,
+                    subject: office,
+                },
+            )
+            .into_iter()
+            .any(|entry| entry.tick <= tell_commit_tick && entry.status.is_generated()),
+        "speaker should generate ShareBelief for the same-place office fact before Tell commits"
+    );
+
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing should be enabled for same-place social-political emergence")
+            .events_for(speaker)
+            .iter()
+            .any(|event| {
+            event.tick <= tell_commit_tick
+                && event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        }),
+        "same-place office belief should arrive only after the speaker commits Tell"
+    );
+
+    let told_belief = agent_belief_about(&h.world, listener, office)
+        .expect("listener should receive the office belief through Tell");
+    assert!(
+        matches!(
+            told_belief.source,
+            PerceptionSource::Report {
+                from,
+                chain_len: 1
+            } if from == speaker
+        ),
+        "listener should learn the same-place office fact as a first-hand report from the speaker"
+    );
+
+    for _ in 0..40 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(listener) {
+            break;
+        }
+    }
+
+    let final_tick = h.scheduler.current_tick();
+    let generated_after_tell = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for same-place social-political emergence")
+        .goal_history_for(listener, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| tell_commit_tick <= entry.tick && entry.tick <= final_tick)
+        .any(|entry| entry.status.is_generated());
+    assert!(
+        generated_after_tell,
+        "listener should generate ClaimOffice only after receiving the same-place office belief"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for same-place social-political emergence");
+    let tell_commit_index = action_sink
+        .events()
+        .iter()
+        .position(|event| {
+            event.actor == speaker
+                && event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .expect("speaker should commit Tell in the same-place office scenario");
+    let declare_support_commit_index = action_sink
+        .events()
+        .iter()
+        .position(|event| {
+            event.actor == listener
+                && event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .expect("listener should commit declare_support after hearing the same-place office fact");
+    assert!(
+        tell_commit_index < declare_support_commit_index,
+        "Tell must appear earlier than declare_support in the same-place action trace"
+    );
+    assert_eq!(
+        h.world.effective_place(listener),
+        Some(VILLAGE_SQUARE),
+        "listener should remain at the office jurisdiction throughout the same-place scenario"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(listener),
+        "listener should become office holder through the ordinary support-law path"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_same_place_office_fact_still_requires_tell() {
+    let _ = run_same_place_office_fact_still_requires_tell(Seed([43; 32]));
+}
+
+#[test]
+fn golden_same_place_office_fact_still_requires_tell_replays_deterministically() {
+    let first = run_same_place_office_fact_still_requires_tell(Seed([44; 32]));
+    let second = run_same_place_office_fact_still_requires_tell(Seed([44; 32]));
+    assert_eq!(
+        first, second,
+        "same-place office Tell gating should replay deterministically"
+    );
+}
