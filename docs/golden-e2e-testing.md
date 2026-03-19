@@ -8,16 +8,19 @@ It exists to keep golden assertions aligned with the architecture instead of dri
 
 Prefer the strongest, most semantic assertion surface available:
 
-1. **Authoritative world state**
+1. **Request-resolution traces**
+   - Use for pre-start request binding or rejection facts.
+   - Examples: "`RequestResolutionOutcome::RejectedBeforeStart` proved the request never reached authoritative start", "request bound through `ReproducedAffordance` before a later `StartFailed`".
+2. **Authoritative world state**
    - Use for durable outcomes.
    - Examples: office holder, location, commodity totals, wound state, containment, relations.
-2. **Action traces**
+3. **Action traces**
    - Use for lifecycle ordering and execution facts.
    - Examples: "`eat` committed before `declare_support`", "action started but never committed", "action aborted with reason".
-3. **Decision traces**
+4. **Decision traces**
    - Use for AI reasoning questions.
    - Examples: "candidate existed but was suppressed", "plan search exhausted frontier", "agent selected X over Y".
-4. **Event log**
+5. **Event log**
    - Use when event provenance, tags, or public record visibility is itself the contract.
    - Do not default to event-log ordering when action traces or authoritative state express the behavior more directly.
 
@@ -49,6 +52,16 @@ Do not claim a "same-state, weight-only divergence" unless both compared branche
 
 ## Trace Guidance
 
+### Use request-resolution traces when:
+
+- proving whether a request was rejected before authoritative start
+- proving which binding path (`ReproducedAffordance` vs `BestEffortFallback`) carried a request into start
+- distinguishing "request never reached start" from "request reached start and then lawfully failed"
+- debugging stale or retained concrete requests whose truth boundary is affordance reproduction rather than action execution
+
+When request-resolution tracing exists for the scenario, do not claim pre-start rejection from missing action-trace events alone. Use `RequestResolutionOutcome::RejectedBeforeStart` directly for that boundary.
+When a scenario involves stale or retained requests, state explicitly whether the contract is request-resolution rejection before start, authoritative `StartFailed` at start, or post-start abort after lawful start.
+
 ### Use action traces when:
 
 - proving one action completed before another
@@ -69,6 +82,12 @@ Do not claim a "same-state, weight-only divergence" unless both compared branche
 When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
 For conversation-memory crowd-out scenarios, prove the stale subject was omitted with the concrete social omission reason before claiming an untold subject survived truncation. The absence of a duplicate `tell` commit by itself is too weak because that could also arise from ranking loss, invalidation, or unrelated execution failure.
 For social scenarios, action traces and decision traces answer different questions: action traces prove that a committed `tell` happened for a specific `listener`/`subject`, while decision traces prove why another `ShareBelief` candidate was omitted, suppressed, or never generated.
+
+### Request-Resolution Boundary Examples
+
+- `strict_request_records_resolution_rejection_without_start_attempt` in `crates/worldwake-sim/src/tick_step.rs` is the focused proof that a request can be rejected before start.
+- `best_effort_stale_request_records_start_failure_when_affordance_no_longer_matches` in `crates/worldwake-sim/src/tick_step.rs` is the focused proof that a request can bind first and then still hit authoritative `StartFailed`.
+- `golden_care_pre_start_wound_disappearance_records_blocker` and `golden_local_trade_start_failure_recovers_via_production_fallback` in `crates/worldwake-ai/tests/` are golden examples of the later start-failure and reconciliation boundary, not proof of pre-start rejection.
 
 ### Use both when:
 
@@ -118,6 +137,7 @@ Golden-related tickets should:
 6. name the exact layer when similar helpers exist in both AI/planning code and authoritative/system code
 7. document scenario-isolation choices when lawful competing affordances exist and the golden is intended to prove one branch
 8. if the ticket depends on ordering, state whether the compared branches are symmetric in the current architecture or whether the divergence depends on priority class, motive score, suppression, delayed system resolution, or a mixed-layer combination
+9. if the ticket involves stale or retained requests, state whether the contract is request-resolution rejection before start, authoritative `StartFailed`, or post-start abort
 
 ## Verification Commands
 
