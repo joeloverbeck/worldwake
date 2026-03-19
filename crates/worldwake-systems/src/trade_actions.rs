@@ -132,9 +132,10 @@ fn start_trade(
     def: &ActionDef,
     instance: &ActionInstance,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
-    let _ = trade_payload(def, instance)?;
+    let payload = trade_payload(def, instance)?;
+    let _ = validate_trade_bundle_context(txn, instance, payload)?;
     Ok(Some(ActionState::Empty))
 }
 
@@ -155,20 +156,7 @@ fn commit_trade(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let payload = trade_payload(def, instance)?;
-    let (counterparty, place) = validate_trade_context(txn, instance, payload)?;
-    ensure_accessible_quantity(
-        txn,
-        instance.actor,
-        payload.offered_commodity,
-        payload.offered_quantity,
-    )?;
-    ensure_accessible_quantity(
-        txn,
-        counterparty,
-        payload.requested_commodity,
-        payload.requested_quantity,
-    )?;
-    ensure_bundle_accepted(txn, instance.actor, counterparty, payload, place)?;
+    let (counterparty, place) = validate_trade_bundle_context(txn, instance, payload)?;
     execute_trade_transfers(txn, instance.actor, counterparty, payload, place)?;
     Ok(CommitOutcome::empty())
 }
@@ -215,6 +203,28 @@ fn validate_trade_context(
             },
         ));
     }
+    Ok((counterparty, place))
+}
+
+fn validate_trade_bundle_context(
+    txn: &WorldTxn<'_>,
+    instance: &ActionInstance,
+    payload: &TradeActionPayload,
+) -> Result<(EntityId, EntityId), ActionError> {
+    let (counterparty, place) = validate_trade_context(txn, instance, payload)?;
+    ensure_accessible_quantity(
+        txn,
+        instance.actor,
+        payload.offered_commodity,
+        payload.offered_quantity,
+    )?;
+    ensure_accessible_quantity(
+        txn,
+        counterparty,
+        payload.requested_commodity,
+        payload.requested_quantity,
+    )?;
+    ensure_bundle_accepted(txn, instance.actor, counterparty, payload, place)?;
     Ok((counterparty, place))
 }
 
@@ -611,10 +621,10 @@ mod tests {
         WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
-        ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload,
-        ActionStatus, Affordance, DeterministicRng, PerAgentBeliefView, TickOutcome,
-        TradeActionPayload,
+        get_affordances, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
+        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
+        ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng,
+        PerAgentBeliefView, TickOutcome, TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -842,6 +852,46 @@ mod tests {
             .unwrap();
             (instance_id, active)
         }
+
+        fn start_result(
+            &mut self,
+        ) -> Result<
+            ActionInstanceId,
+            ActionError,
+        > {
+            let affordance = Affordance {
+                def_id: self.def_id,
+                actor: self.actor,
+                bound_targets: vec![self.counterparty],
+                payload_override: Some(ActionPayload::Trade(self.payload.clone())),
+                explanation: None,
+            };
+            let mut active = BTreeMap::new();
+            start_action(
+                &affordance,
+                &self.defs,
+                &self.handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut self.world,
+                    event_log: &mut self.log,
+                    rng: &mut self.rng,
+                },
+                &mut self.next_instance_id,
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(3),
+                },
+            )
+        }
+
+        fn remove_counterparty_offer(&mut self) {
+            let mut txn = new_txn(&mut self.world, 4);
+            txn.clear_possessor(self.counterparty_offer).unwrap();
+            txn.clear_owner(self.counterparty_offer).unwrap();
+            txn.archive_entity(self.counterparty_offer).unwrap();
+            commit_txn(txn);
+        }
     }
 
     #[test]
@@ -855,7 +905,7 @@ mod tests {
         };
         let mut harness = TradeHarness::new(
             &payload,
-            3,
+            1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
         let (_instance_id, active) = harness.start_with_active();
@@ -972,6 +1022,40 @@ mod tests {
     }
 
     #[test]
+    fn trade_start_rejects_when_counterparty_lacks_requested_commodity() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.remove_counterparty_offer();
+
+        let err = harness
+            .start_result()
+            .expect_err("trade start should fail once the requested stock is already gone");
+
+        assert_eq!(
+            err,
+            ActionError::AbortRequested(ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder: harness.counterparty,
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+            })
+        );
+        assert!(
+            harness.log.events_by_tag(EventTag::ActionCommitted).is_empty(),
+            "failing to start should not commit any trade event"
+        );
+    }
+
+    #[test]
     fn partial_lot_trade_splits_and_preserves_conservation() {
         let payload = TradeActionPayload {
             counterparty: entity(2),
@@ -1064,6 +1148,45 @@ mod tests {
 
         assert!(matches!(outcome, TickOutcome::Aborted { .. }));
         assert_eq!(harness.log.events_by_tag(EventTag::ActionAborted).len(), 1);
+    }
+
+    #[test]
+    fn trade_aborts_when_counterparty_loses_requested_commodity_before_commit() {
+        let payload = TradeActionPayload {
+            counterparty: entity(2),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_commodity: CommodityKind::Bread,
+            requested_quantity: Quantity(1),
+        };
+        let mut harness = TradeHarness::new(
+            &payload,
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        let (instance_id, mut active) = harness.start_with_active();
+        harness.remove_counterparty_offer();
+
+        let outcome = tick_action(
+            instance_id,
+            &harness.defs,
+            &harness.handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut harness.world,
+                event_log: &mut harness.log,
+                rng: &mut harness.rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(4),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Aborted { .. }));
+        assert_eq!(harness.log.events_by_tag(EventTag::ActionAborted).len(), 1);
+        verify_live_lot_conservation(&harness.world, CommodityKind::Coin, 1).unwrap();
     }
 
     #[test]

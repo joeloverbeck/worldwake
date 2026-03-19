@@ -4,14 +4,21 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeSet;
+use worldwake_ai::{DecisionOutcome, SelectedPlanSource};
 use worldwake_core::{
+    AgentData,
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind, DemandMemory,
-    DemandObservation, DemandObservationReason, EventTag, HomeostaticNeeds, KnownRecipes,
-    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
+    BodyPart, ControlSource, DemandObservation, DemandObservationReason, DeprivationKind,
+    EventTag, HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile,
+    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId,
+    WoundList,
 };
-use worldwake_sim::RecipeRegistry;
+use worldwake_sim::{
+    ActionAbortRequestReason, ActionPayload, ActionRequestMode, ActionStartFailureReason,
+    ActionTraceKind, InputKind, RecipeRegistry, TradeActionPayload,
+};
 
 fn default_trade_disposition_profile() -> TradeDispositionProfile {
     TradeDispositionProfile {
@@ -27,6 +34,25 @@ fn enterprise_trade_disposition_profile() -> TradeDispositionProfile {
         demand_memory_retention_ticks: 240,
         ..default_trade_disposition_profile()
     }
+}
+
+fn instant_trade_disposition_profile() -> TradeDispositionProfile {
+    TradeDispositionProfile {
+        negotiation_round_ticks: nz(1),
+        ..default_trade_disposition_profile()
+    }
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
 }
 
 fn remembered_demand(
@@ -319,6 +345,421 @@ fn run_merchant_restock_return_stock_scenario(
     )
 }
 
+struct LocalTradeStartFailureOutcome {
+    world_hash: worldwake_core::StateHash,
+    log_hash: worldwake_core::StateHash,
+    loser_start_failure_count: usize,
+    loser_hunger_decreased: bool,
+    remote_source_final_quantity: Quantity,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_local_trade_start_failure_production_fallback_scenario(
+    seed: Seed,
+) -> LocalTradeStartFailureOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let seller = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Seller",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let winner = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Winner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let loser = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Loser",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let mut loser_txn = new_txn(&mut h.world, 0);
+    loser_txn
+        .set_component_wound_list(
+            loser,
+            WoundList {
+                wounds: vec![Wound {
+                    id: WoundId(1),
+                    body_part: BodyPart::Torso,
+                    cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                    severity: pm(360),
+                    inflicted_at: Tick(0),
+                    bleed_rate_per_tick: pm(60),
+                }],
+            },
+        )
+        .unwrap();
+    commit_txn(loser_txn, &mut h.event_log);
+
+    let remote_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(6),
+            max_quantity: Quantity(6),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        loser,
+        VILLAGE_SQUARE,
+        CommodityKind::Medicine,
+        Quantity(1),
+    );
+
+    set_control_source(&mut h, winner, ControlSource::Human, 0);
+    set_control_source(&mut h, loser, ControlSource::Human, 0);
+
+    let heal_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "heal")
+        .map(|def| def.id)
+        .expect("full registries should include the heal action");
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        Tick(0),
+        InputKind::RequestAction {
+            actor: loser,
+            def_id: heal_def_id,
+            targets: vec![loser],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+        },
+    );
+    h.step_once();
+    assert_eq!(
+        h.agent_active_action_name(loser),
+        Some("heal"),
+        "scenario warmup should leave the loser occupied with lawful self-care"
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        seller,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        winner,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(2),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        loser,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(2),
+    );
+
+    let mut txn = new_txn(&mut h.world, 1);
+    txn.set_component_merchandise_profile(
+        seller,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_market: Some(VILLAGE_SQUARE),
+        },
+    )
+    .unwrap();
+    txn.set_component_trade_disposition_profile(seller, default_trade_disposition_profile())
+        .unwrap();
+    txn.set_component_trade_disposition_profile(winner, instant_trade_disposition_profile())
+        .unwrap();
+    txn.set_component_trade_disposition_profile(loser, default_trade_disposition_profile())
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    set_control_source(&mut h, loser, ControlSource::Ai, 1);
+    let trade_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "trade")
+        .map(|def| def.id)
+        .expect("full registries should include the trade action");
+    for tick in [Tick(1), Tick(2)] {
+        let _ = h.scheduler.input_queue_mut().enqueue(
+            tick,
+            InputKind::RequestAction {
+                actor: winner,
+                def_id: trade_def_id,
+                targets: vec![seller],
+                payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+                    counterparty: seller,
+                    offered_commodity: CommodityKind::Coin,
+                    offered_quantity: Quantity(1),
+                    requested_commodity: CommodityKind::Bread,
+                    requested_quantity: Quantity(1),
+                })),
+                mode: ActionRequestMode::BestEffort,
+            },
+        );
+    }
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        winner,
+        &[seller, remote_workstation],
+        Tick(1),
+        worldwake_core::PerceptionSource::Inference,
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        loser,
+        &[seller, remote_workstation],
+        Tick(1),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let loser_initial_hunger = h.agent_hunger(loser);
+
+    h.step_once();
+
+    let action_trace = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let mut winner_trade_committed = action_trace.events_for_at(winner, Tick(1)).iter().any(|event| {
+        event.action_name == "trade"
+            && matches!(event.kind, ActionTraceKind::Committed { .. })
+    });
+    let mut local_stock_gone = h.agent_commodity_qty(seller, CommodityKind::Bread) == Quantity(0);
+    assert!(
+        action_trace.events_for_at(loser, Tick(1)).iter().all(|event| event.action_name != "trade"),
+        "loser should remain occupied and not start trade on the winner's initial acquisition tick"
+    );
+
+    for _ in 0..12 {
+        if winner_trade_committed && local_stock_gone {
+            break;
+        }
+        h.step_once();
+        winner_trade_committed |= h
+            .action_trace_sink()
+            .expect("action tracing should remain enabled")
+            .events_for(winner)
+            .into_iter()
+            .any(|event| {
+                event.action_name == "trade"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        local_stock_gone |= h.agent_commodity_qty(seller, CommodityKind::Bread) == Quantity(0);
+    }
+    assert!(
+        winner_trade_committed,
+        "winner should eventually complete the local trade before the loser retries the stale branch; winner events={:?}, seller_bread={:?}",
+        h.action_trace_sink()
+            .expect("action tracing should remain enabled")
+            .events_for(winner),
+        h.agent_commodity_qty(seller, CommodityKind::Bread)
+    );
+    assert!(
+        local_stock_gone,
+        "winner's trade should consume the seller's only bread while the loser is still occupied"
+    );
+
+    for _ in 0..40 {
+        if !h.agent_has_active_action(loser) {
+            break;
+        }
+        h.step_once();
+    }
+    assert!(
+        !h.agent_has_active_action(loser),
+        "loser should finish the warmup self-care before the stale trade start is injected"
+    );
+
+    let stale_trade_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, loser, ControlSource::Human, stale_trade_tick.0);
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        stale_trade_tick,
+        InputKind::RequestAction {
+            actor: loser,
+            def_id: trade_def_id,
+            targets: vec![seller],
+            payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_commodity: CommodityKind::Bread,
+                requested_quantity: Quantity(1),
+            })),
+            mode: ActionRequestMode::BestEffort,
+        },
+    );
+    h.step_once();
+
+    let failure_tick = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(loser)
+        .into_iter()
+        .find(|event| {
+            event.action_name == "trade"
+                && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+        })
+        .map(|event| event.tick)
+        .expect("stale queued loser trade should hit StartFailed once the seller stock is gone");
+
+    let loser_failures = h
+        .scheduler
+        .action_start_failures()
+        .iter()
+        .filter(|failure| failure.actor == loser)
+        .collect::<Vec<_>>();
+    assert_eq!(loser_failures.len(), 1);
+    assert!(matches!(
+        loser_failures[0].reason,
+        ActionStartFailureReason::AbortRequested(
+            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder,
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+            }
+        ) if holder == seller
+    ), "unexpected loser start-failure reason: {:?}", loser_failures[0].reason);
+
+    let reconciliation_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, loser, ControlSource::Ai, reconciliation_tick.0);
+    h.step_once();
+
+    let loser_tick_2 = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .trace_at(loser, failure_tick + 1)
+        .expect("loser should have a planning trace immediately after the trade start failure");
+    let loser_planning_after_failure = match &loser_tick_2.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace after failure, got {other:?}"),
+    };
+    assert_eq!(loser_planning_after_failure.action_start_failures.len(), 1);
+    assert!(matches!(
+        loser_planning_after_failure.action_start_failures[0].reason,
+        ActionStartFailureReason::AbortRequested(
+            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder,
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+            }
+        ) if holder == seller
+    ));
+    assert!(
+        loser_planning_after_failure.selection.selected_plan_source
+            != Some(SelectedPlanSource::RetainedCurrentPlan),
+        "start-failure reconciliation should clear the stale local trade plan"
+    );
+    assert!(
+        h.world
+            .get_component_blocked_intent_memory(loser)
+            .is_some_and(|memory| memory.intents.iter().any(|intent| {
+                intent.blocking_fact == worldwake_core::BlockingFact::SellerOutOfStock
+                    && intent.related_entity == Some(seller)
+            })),
+        "the loser should remember that this seller is out of stock rather than blocking all food acquisition"
+    );
+    assert!(
+        h.scheduler
+            .action_start_failures()
+            .iter()
+            .all(|failure| failure.actor != loser),
+        "post-failure reconciliation should drain the loser's structured trade start failure"
+    );
+
+    let mut loser_committed_remote_harvest = false;
+    let mut loser_hunger_decreased = false;
+
+    for _ in 0..160 {
+        h.step_once();
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        assert!(
+            authoritative_apples <= 6,
+            "authoritative apple quantity must remain bounded by the seeded remote orchard stock"
+        );
+
+        let remote_source_quantity = h
+            .world
+            .get_component_resource_source(remote_workstation)
+            .expect("remote orchard should retain its source component")
+            .available_quantity;
+        loser_committed_remote_harvest |= remote_source_quantity < Quantity(6);
+        loser_hunger_decreased |= h.agent_hunger(loser) < loser_initial_hunger;
+
+        if loser_committed_remote_harvest && loser_hunger_decreased {
+            break;
+        }
+    }
+
+    assert!(
+        loser_committed_remote_harvest,
+        "loser should recover through the remote orchard rather than remaining stuck on the failed local trade"
+    );
+    assert!(
+        loser_hunger_decreased,
+        "loser should eventually eat after switching from failed local trade to production fallback"
+    );
+
+    let loser_start_failure_count = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(loser)
+        .into_iter()
+        .filter(|event| {
+            event.action_name == "trade"
+                && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+        })
+        .count();
+    assert_eq!(
+        loser_start_failure_count, 1,
+        "seller-out-of-stock memory should prevent repeated stale local trade start attempts"
+    );
+
+    LocalTradeStartFailureOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        loser_start_failure_count,
+        loser_hunger_decreased,
+        remote_source_final_quantity: h
+            .world
+            .get_component_resource_source(remote_workstation)
+            .expect("remote orchard should retain its source component through scenario end")
+            .available_quantity,
+    }
+}
+
 #[test]
 fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
     let mut h = GoldenHarness::with_recipes(Seed([16; 32]), build_recipes());
@@ -427,5 +868,33 @@ fn golden_merchant_restock_return_stock_replays_deterministically() {
     assert_eq!(
         first, second,
         "merchant restock-return stock scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_local_trade_start_failure_recovers_via_production_fallback() {
+    let outcome =
+        run_local_trade_start_failure_production_fallback_scenario(Seed([16; 32]));
+    assert_eq!(outcome.loser_start_failure_count, 1);
+    assert!(outcome.loser_hunger_decreased);
+    assert!(outcome.remote_source_final_quantity < Quantity(6));
+}
+
+#[test]
+fn golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically() {
+    let first =
+        run_local_trade_start_failure_production_fallback_scenario(Seed([17; 32]));
+    let second =
+        run_local_trade_start_failure_production_fallback_scenario(Seed([17; 32]));
+
+    assert_eq!(first.world_hash, second.world_hash);
+    assert_eq!(first.log_hash, second.log_hash);
+    assert_eq!(
+        first.loser_start_failure_count, second.loser_start_failure_count,
+        "trade start-failure scenario should replay the same failure count"
+    );
+    assert_eq!(
+        first.remote_source_final_quantity, second.remote_source_final_quantity,
+        "trade start-failure scenario should replay the same remote fallback outcome"
     );
 }

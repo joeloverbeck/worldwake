@@ -238,10 +238,13 @@ fn apply_input(
                 runtime.world,
                 services.action_defs,
                 services.action_handlers,
-                actor,
-                def_id,
-                &targets,
-                payload_override,
+                RequestedAction {
+                    actor,
+                    def_id,
+                    targets: &targets,
+                    payload_override,
+                    mode,
+                },
             )?;
             if let Err(err) = runtime.scheduler.start_affordance(
                 &affordance,
@@ -376,17 +379,21 @@ fn resolve_affordance(
     world: &World,
     action_defs: &ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
-    actor: EntityId,
-    def_id: ActionDefId,
-    targets: &[EntityId],
-    payload_override: Option<crate::ActionPayload>,
+    request: RequestedAction<'_>,
 ) -> Result<crate::Affordance, TickStepError> {
+    let RequestedAction {
+        actor,
+        def_id,
+        targets,
+        payload_override,
+        mode,
+    } = request;
     let view = crate::PerAgentBeliefView::from_world(actor, world);
     let Some(def) = action_defs.get(def_id) else {
         return Err(TickStepError::RequestedAffordanceUnavailable {
             actor,
             def_id,
-            targets: targets.to_owned(),
+            targets: targets.to_vec(),
             payload_override,
         });
     };
@@ -396,7 +403,7 @@ fn resolve_affordance(
             .ok_or(TickStepError::RequestedAffordanceUnavailable {
                 actor,
                 def_id,
-                targets: targets.to_owned(),
+                targets: targets.to_vec(),
                 payload_override: payload_override.clone(),
             })?;
     let mut affordance = get_affordances(&view, actor, action_defs, action_handlers)
@@ -412,14 +419,32 @@ fn resolve_affordance(
                 &view,
             )
         })
+        .or_else(|| {
+            (mode == crate::ActionRequestMode::BestEffort).then_some(crate::Affordance {
+                def_id,
+                actor,
+                bound_targets: targets.to_vec(),
+                payload_override: payload_override.clone(),
+                explanation: None,
+            })
+        })
         .ok_or(TickStepError::RequestedAffordanceUnavailable {
             actor,
             def_id,
-            targets: targets.to_owned(),
+            targets: targets.to_vec(),
             payload_override: payload_override.clone(),
         })?;
     affordance.payload_override = payload_override;
     Ok(affordance)
+}
+
+#[derive(Clone)]
+struct RequestedAction<'a> {
+    actor: EntityId,
+    def_id: ActionDefId,
+    targets: &'a [EntityId],
+    payload_override: Option<crate::ActionPayload>,
+    mode: crate::ActionRequestMode,
 }
 
 fn validate_cancel_actor(
@@ -1446,6 +1471,77 @@ mod tests {
     }
 
     #[test]
+    fn best_effort_stale_request_records_start_failure_when_affordance_no_longer_matches() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = spawn_agent(&mut world, 1, ControlSource::Ai);
+        let target = spawn_agent(&mut world, 2, ControlSource::Human);
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(actor, places[0]).unwrap();
+            txn.set_ground_location(target, places[1]).unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        let mut event_log = EventLog::new();
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut controller = ControllerState::with_entity(actor);
+        let mut rng = DeterministicRng::new(Seed([14; 32]));
+        let recipes = RecipeRegistry::new();
+        let defs = reservation_action_registry();
+        let handlers = handler_registry();
+        let mut action_trace = ActionTraceSink::new();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(4),
+                targets: vec![target],
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: Some(&mut action_trace),
+                politics_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.inputs_processed, 1);
+        assert_eq!(result.actions_started, 0);
+        assert!(scheduler.active_actions().is_empty());
+        assert_eq!(scheduler.action_start_failures().len(), 1);
+        assert_eq!(scheduler.action_start_failures()[0].actor, actor);
+        assert_eq!(scheduler.action_start_failures()[0].def_id, ActionDefId(4));
+        assert!(matches!(
+            scheduler.action_start_failures()[0].reason,
+            crate::ActionStartFailureReason::PreconditionFailed(_)
+        ));
+        let tick_events = action_trace.events_at(Tick(0));
+        assert_eq!(tick_events.len(), 1);
+        assert_eq!(tick_events[0].action_name, "abort-start");
+        assert!(matches!(
+            tick_events[0].kind,
+            ActionTraceKind::StartFailed { .. }
+        ));
+    }
+
+    #[test]
     fn strict_request_propagates_abort_requested_start_failure() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
@@ -1522,10 +1618,13 @@ mod tests {
             &world,
             &defs,
             &handlers,
-            actor,
-            affordance.def_id,
-            &[],
-            None,
+            RequestedAction {
+                actor,
+                def_id: affordance.def_id,
+                targets: &[],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
         )
         .unwrap();
         assert_eq!(resolved.def_id, affordance.def_id);
@@ -1535,10 +1634,13 @@ mod tests {
             &world,
             &defs,
             &handlers,
-            actor,
-            affordance.def_id,
-            &[actor],
-            None,
+            RequestedAction {
+                actor,
+                def_id: affordance.def_id,
+                targets: &[actor],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
         )
         .unwrap_err();
         assert!(matches!(

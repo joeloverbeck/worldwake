@@ -93,7 +93,9 @@ fn derive_blocking_fact(
             }
         }
         PlannerOpKind::Trade => {
-            if let Some(fact) = classify_trade_failure(view, agent, goal_key, step) {
+            if let Some(fact) =
+                classify_trade_failure(view, agent, goal_key, step, execution_failure)
+            {
                 return fact;
             }
         }
@@ -140,10 +142,15 @@ fn classify_trade_failure(
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
+    execution_failure: Option<ExecutionFailure<'_>>,
 ) -> Option<BlockingFact> {
     let payload = step.payload_override.as_ref()?.as_trade()?;
     let commodity = goal_key.commodity.unwrap_or(payload.requested_commodity);
     let place = view.effective_place(agent)?;
+
+    if let Some(fact) = classify_trade_execution_failure(agent, payload, execution_failure) {
+        return Some(fact);
+    }
 
     if view.commodity_quantity(payload.counterparty, payload.requested_commodity)
         < payload.requested_quantity
@@ -170,6 +177,84 @@ fn classify_trade_failure(
     }
 
     None
+}
+
+fn classify_trade_execution_failure(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    execution_failure: Option<ExecutionFailure<'_>>,
+) -> Option<BlockingFact> {
+    match execution_failure? {
+        ExecutionFailure::Start(failure) => {
+            classify_trade_start_failure_reason(agent, payload, &failure.reason)
+        }
+        ExecutionFailure::Replan(signal) => classify_trade_abort_reason(agent, payload, &signal.reason),
+    }
+}
+
+fn classify_trade_start_failure_reason(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    reason: &ActionStartFailureReason,
+) -> Option<BlockingFact> {
+    match reason {
+        ActionStartFailureReason::AbortRequested(reason) => {
+            classify_trade_handler_abort_reason(agent, payload, reason)
+        }
+        _ => None,
+    }
+}
+
+fn classify_trade_abort_reason(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    reason: &AbortReason,
+) -> Option<BlockingFact> {
+    match reason {
+        AbortReason::ExternalAbort {
+            kind: ExternalAbortReason::HandlerRequested { reason },
+            ..
+        } => classify_trade_handler_abort_reason(agent, payload, reason),
+        _ => None,
+    }
+}
+
+fn classify_trade_handler_abort_reason(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    reason: &ActionAbortRequestReason,
+) -> Option<BlockingFact> {
+    match reason {
+        ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+            holder,
+            commodity,
+            ..
+        } if *holder == payload.counterparty && *commodity == payload.requested_commodity => {
+            Some(BlockingFact::SellerOutOfStock)
+        }
+        ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+            holder,
+            commodity,
+            ..
+        } if *holder == agent && *commodity == payload.offered_commodity => {
+            Some(if *commodity == CommodityKind::Coin {
+                BlockingFact::TooExpensive
+            } else {
+                BlockingFact::MissingInput(*commodity)
+            })
+        }
+        ActionAbortRequestReason::TradeBundleRejected { acceptance, .. } => match acceptance {
+            worldwake_sim::TradeAcceptance::Accept => None,
+            worldwake_sim::TradeAcceptance::Reject { reason } => match reason {
+                worldwake_sim::TradeRejectionReason::InsufficientPayment
+                | worldwake_sim::TradeRejectionReason::PostTradeStateWorse => {
+                    Some(BlockingFact::TooExpensive)
+                }
+                worldwake_sim::TradeRejectionReason::NoNeed => Some(BlockingFact::NoKnownSeller),
+            },
+        },
+        _ => None,
+    }
 }
 
 fn classify_production_failure(
@@ -621,9 +706,9 @@ mod tests {
         Wound,
     };
     use worldwake_sim::{
-        AbortReason, ActionDuration, ActionPayload, ActionStartFailure,
-        ActionStartFailureReason, CombatActionPayload, CraftActionPayload, DurationExpr,
-        InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
+        AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload,
+        ActionStartFailure, ActionStartFailureReason, CombatActionPayload, CraftActionPayload,
+        DurationExpr, InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -1183,6 +1268,46 @@ mod tests {
         );
 
         assert_eq!(fact, BlockingFact::ReservationConflict);
+    }
+
+    #[test]
+    fn derive_blocking_fact_uses_authoritative_trade_start_failure_when_belief_is_stale() {
+        let agent = entity(1);
+        let place = entity(10);
+        let seller = entity(2);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(1));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(1));
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(3),
+            reason: ActionStartFailureReason::AbortRequested(
+                ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                    holder: seller,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                },
+            ),
+        };
+
+        let fact = derive_blocking_fact(
+            &view,
+            agent,
+            &trade_goal(),
+            &trade_step(seller),
+            Some(ExecutionFailure::Start(&start_failure)),
+        );
+
+        assert_eq!(fact, BlockingFact::SellerOutOfStock);
     }
 
     #[test]
