@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # S14: Conversation Memory Emergence Golden E2E Suites
 
@@ -291,7 +291,7 @@ This doc work must explicitly include the already-landed E15c social tests, whic
 
 | File | Role |
 |------|------|
-| `specs/S14-conversation-memory-emergence-golden-suites.md` | this spec |
+| `archive/specs/S14-conversation-memory-emergence-golden-suites.md` | this archived spec |
 | `crates/worldwake-ai/tests/golden_emergent.rs` | preferred home for the new suites |
 | `crates/worldwake-ai/tests/golden_harness/mod.rs` | helper additions if needed |
 | `docs/golden-e2e-coverage.md` | coverage matrix update |
@@ -308,3 +308,20 @@ This doc work must explicitly include the already-landed E15c social tests, whic
 ## Implementation Order
 
 S14-001 -> S14-002 -> S14-003
+
+## Outcome
+
+Completion date: 2026-03-19
+
+What changed:
+- Added `golden_same_place_office_fact_still_requires_tell` and its deterministic replay companion in `crates/worldwake-ai/tests/golden_emergent.rs`.
+- Added `golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact` and its deterministic replay companion in `crates/worldwake-ai/tests/golden_emergent.rs`.
+- Updated `docs/golden-e2e-coverage.md` and `docs/golden-e2e-scenarios.md` so the new S14 emergence coverage and the already-landed E15c social coverage are both reflected in the canonical golden docs.
+
+Deviations from original plan:
+- No production component, SystemFn, or harness architecture changes were needed; the work landed entirely in the preferred golden-test and docs surfaces.
+- The E15c social-doc catch-up shipped in the same docs pass as the new S14 scenario documentation instead of as a separately visible phase.
+
+Verification results:
+- Targeted `worldwake-ai` golden emergent tests passed for both new S14 scenarios.
+- The owning `golden_emergent` test binary passed.
