@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -15,7 +15,7 @@ crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
   golden_ai_decisions.rs      — 12 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b + trace-enabled smoke coverage)
-  golden_care.rs              — 12 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + replays)
+  golden_care.rs              — 14 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + care start-abort recovery + replays)
   golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
   golden_combat.rs            — 20 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays + action-trace integration)
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
@@ -152,6 +152,7 @@ crates/worldwake-ai/tests/
 | Self-care supply path: wound → TreatWounds{self} → ground pick-up → heal | Yes |
 | Direct-observation gate: Report-sourced wound belief does NOT trigger TreatWounds | Yes |
 | Care goal invalidation: patient self-heals → healer's TreatWounds satisfied | Yes |
+| Care pre-start wound disappearance: lawful TreatWounds selection → wounds disappear before authoritative input drain → `StartFailed` → blocked intent persisted next tick | Yes |
 | Speaker-side chain-length filtering prevents infinite gossip propagation | Yes |
 | social_weight diversity → distinct social behavior (Principle 20) | Yes |
 | Zero-motive filter prevents execution of unmotivated goals | Yes |
@@ -182,7 +183,7 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 116 | 116 |
+| Proven tests | 118 | 118 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |

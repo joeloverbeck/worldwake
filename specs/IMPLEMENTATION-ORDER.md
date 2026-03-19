@@ -44,6 +44,9 @@ Added `matches_binding()` to `GoalKindPlannerExt` with auxiliary-pass/terminal-c
 ### S07: Care Intent & Treatment Targeting — COMPLETED
 Replaced split care model (`GoalKind::Heal` + `CommodityPurpose::Treatment`) with unified patient-anchored `GoalKind::TreatWounds { patient }`. Added `care_weight` to `UtilityProfile` for self/other ranking split. Made self-care lawful. Established `DirectObservation` gate for third-party care via `emit_care_goals()`. 12 golden tests prove self-care, third-party care, observation gate, and care goal invalidation.
 
+### S08: Action Start Abort Resilience — COMPLETED
+Established recoverable BestEffort start-abort handling, structured authoritative start-failure handoff into AI/runtime reconciliation, validation-only `start_heal()`, first-effect Medicine spending with explicit heal-local state, and golden care coverage for the real pre-start wound-disappearance race.
+
 ### E15c: Conversation Memory & Recipient Knowledge — COMPLETED
 Replaced same-place Tell suppression with explicit conversation memory: `AgentBeliefStore` now tracks told/heard memory with retention-aware reads and deterministic eviction, Tell affordances and AI social candidate generation share listener-aware resend suppression, Tell commit records participant memory and heard dispositions, and golden/trace coverage proves unchanged-repeat suppression plus lawful re-tell after belief change or expiry.
 
@@ -57,9 +60,8 @@ All completed specs are archived under `archive/specs/`.
 ## Dependency Graph
 
 ```text
-Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15 + E15b + E15c + E16 + E16d + S01 + S02 + S03 + S07 + S14: COMPLETED
+Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15 + E15b + E15c + E16 + E16d + S01 + S02 + S03 + S07 + S08 + S14: COMPLETED
 
-S08 (no unmet deps — bug fix to existing action framework)
 S09 (no unmet deps — design fix to defend action duration)
 S11 (no unmet deps — investigation of wound lifecycle anomaly)
 S12 (no unmet deps — planner prerequisite-aware search heuristic)
@@ -113,8 +115,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 **Step 11** (parallel):
 - **E15c**: Conversation Memory & Recipient Knowledge — ✅ COMPLETED
   - established explicit conversation memory and lawful resend suppression
-- **S08**: Action Start Abort Resilience (bug fix, no deps)
-  - fixes `AbortRequested` crash during BestEffort action start and medicine conservation leak in heal action
+- **S08**: Action Start Abort Resilience — ✅ COMPLETED
+  - recoverable start-failure classification, structured AI/runtime failure handoff, first-effect Medicine spending, and care golden regression are in place
 - **S09**: Indefinite Action Re-Evaluation (design fix, no deps)
   - converts defend from indefinite to finite-duration with renewal to prevent agent deadlock
 - **S11**: Wound Lifecycle Audit (investigation, no deps)
@@ -193,7 +195,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S08-action-start-abort-resilience.md` | 3 | 11 | None (bug fix) |
 | `S09-indefinite-action-re-evaluation.md` | 3 | 11 | None (design fix) |
 | `S11-wound-lifecycle-audit.md` | 3 | 11 | None (investigation) |
 | `S12-planner-prerequisite-aware-search.md` | 3 | 11 | None (planner enhancement) |
@@ -229,6 +230,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S13 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S14 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S13 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S14 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

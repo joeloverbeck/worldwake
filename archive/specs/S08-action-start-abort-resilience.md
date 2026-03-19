@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Action Start Abort Resilience
 
@@ -270,3 +270,20 @@ Derived state:
 - derived blocker classification from abort reasons
 
 S08 should not introduce abstract truth caches. Any added bookkeeping should stay action-local and minimal.
+
+## Outcome
+
+- Completion date: 2026-03-19
+- What actually changed:
+  - `worldwake-sim` now treats `ActionError::AbortRequested(_)` as a recoverable BestEffort start failure and preserves structured start-failure data for AI/runtime consumption.
+  - `worldwake-systems` made `start_heal()` validation-only and now spends Medicine exactly once on the first successful treatment-effect tick via explicit action-local heal state.
+  - `worldwake-ai` now consumes start failures through the canonical execution-failure path, and golden care coverage proves the real AI loop handles pre-start wound disappearance as `StartFailed` plus blocked-intent persistence rather than a crash.
+- Deviations from original plan:
+  - The finished care race rejects at the shared authoritative precondition boundary (`PreconditionFailed(\"TargetHasWounds(0)\")`) when wounds disappear before input drain, rather than forcing the rejection deeper into `start_heal()`. Focused coverage still preserves the lower-layer `AbortRequested(...)` path.
+  - A narrow `worldwake-sim` substrate change was required so tick handlers can persist action-local state and convert lawful `on_tick()` aborts into clean action aborts.
+- Verification results:
+  - `cargo test -p worldwake-sim`
+  - `cargo test -p worldwake-systems`
+  - `cargo test -p worldwake-ai`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace`

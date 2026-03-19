@@ -3,11 +3,59 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::{DecisionOutcome, GoalKind, PlannerOpKind};
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BodyPart, CommodityKind, DeprivationKind,
     EntityId, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash,
     Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
+use worldwake_sim::{
+    step_tick, ActionStartFailureReason, ActionTraceKind, AutonomousControllerRuntime,
+    TickInputContext, TickInputError, TickInputProducer, TickStepServices,
+};
+
+struct ClearPatientWoundsAfterPlanning<'a> {
+    inner: AutonomousControllerRuntime<'a>,
+    patient: EntityId,
+    cleared: bool,
+}
+
+impl TickInputProducer for ClearPatientWoundsAfterPlanning<'_> {
+    fn produce_inputs(&mut self, ctx: TickInputContext<'_>) -> Result<(), TickInputError> {
+        let TickInputContext {
+            world,
+            event_log,
+            scheduler,
+            rng,
+            action_defs,
+            action_handlers,
+            recipe_registry,
+            pending_replans,
+            tick,
+        } = ctx;
+        self.inner.produce_inputs(TickInputContext {
+            world,
+            event_log,
+            scheduler,
+            rng,
+            action_defs,
+            action_handlers,
+            recipe_registry,
+            pending_replans,
+            tick,
+        })?;
+
+        if !self.cleared {
+            let mut txn = new_txn(world, tick.0);
+            txn.set_component_wound_list(self.patient, WoundList::default())
+                .unwrap();
+            commit_txn(txn, event_log);
+            self.cleared = true;
+        }
+
+        Ok(())
+    }
+}
 
 fn seed_wounded_patient(h: &mut GoldenHarness) -> EntityId {
     seed_wounded_agent_at(h, "Patient", VILLAGE_SQUARE)
@@ -547,5 +595,178 @@ fn golden_care_goal_invalidation_when_patient_heals_replays_deterministically() 
     assert_eq!(
         first, second,
         "care goal invalidation scenario should replay deterministically"
+    );
+}
+
+fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+
+    let healer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Healer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(100), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let patient = seed_wounded_patient(&mut h);
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        healer,
+        VILLAGE_SQUARE,
+        CommodityKind::Medicine,
+        Quantity(1),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        healer,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    {
+        let controllers = AutonomousControllerRuntime::new(vec![&mut h.driver]);
+        let mut producer = ClearPatientWoundsAfterPlanning {
+            inner: controllers,
+            patient,
+            cleared: false,
+        };
+
+        let result = step_tick(
+            &mut h.world,
+            &mut h.event_log,
+            &mut h.scheduler,
+            &mut h.controller,
+            &mut h.rng,
+            TickStepServices {
+                action_defs: &h.defs,
+                action_handlers: &h.handlers,
+                recipe_registry: &h.recipes,
+                systems: &worldwake_systems::dispatch_table(),
+                input_producer: Some(&mut producer),
+                action_trace: h.action_trace.as_mut(),
+                politics_trace: h.politics_trace.as_mut(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.tick, Tick(0));
+    }
+
+    let care_goal = GoalKind::TreatWounds { patient };
+    let care_goal_key = worldwake_core::GoalKey::from(care_goal.clone());
+    let trace_tick_0 = h
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled")
+        .trace_at(healer, Tick(0))
+        .expect("healer should have a tick 0 trace");
+    let planning_tick_0 = match &trace_tick_0.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome at tick 0, got {other:?}"),
+    };
+
+    assert!(
+        planning_tick_0.candidates.generated.contains(&care_goal_key),
+        "healer should generate TreatWounds before the authoritative start race"
+    );
+    let selected_plan = planning_tick_0
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("healer should select a care plan before the start failure");
+    assert_eq!(
+        planning_tick_0
+            .selection
+            .selected
+            .expect("tick 0 should have a selected goal")
+            .kind,
+        care_goal
+    );
+    assert_eq!(
+        selected_plan
+            .next_step
+            .as_ref()
+            .expect("selected plan should expose its next step")
+            .op_kind,
+        PlannerOpKind::Heal
+    );
+
+    let tick_0_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for_at(healer, Tick(0));
+    assert_eq!(tick_0_events.len(), 1);
+    assert!(matches!(
+        tick_0_events[0].kind,
+        ActionTraceKind::StartFailed { .. }
+    ));
+
+    assert_eq!(h.scheduler.action_start_failures().len(), 1);
+    assert_eq!(
+        h.scheduler.action_start_failures()[0].reason,
+        ActionStartFailureReason::PreconditionFailed("TargetHasWounds(0)".to_string())
+    );
+
+    h.step_once();
+
+    let trace_tick_1 = h
+        .driver
+        .trace_sink()
+        .expect("tracing should stay enabled")
+        .trace_at(healer, Tick(1))
+        .expect("healer should have a tick 1 trace");
+    let planning_tick_1 = match &trace_tick_1.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome at tick 1, got {other:?}"),
+    };
+    assert_eq!(planning_tick_1.action_start_failures.len(), 1);
+    assert_eq!(
+        planning_tick_1.action_start_failures[0].reason,
+        ActionStartFailureReason::PreconditionFailed("TargetHasWounds(0)".to_string())
+    );
+
+    let blocked = h
+        .world
+        .get_component_blocked_intent_memory(healer)
+        .expect("healer should carry blocked intent memory after start failure");
+    assert_eq!(blocked.intents.len(), 1);
+    assert_eq!(blocked.intents[0].goal_key.kind, care_goal);
+    assert_eq!(blocked.intents[0].related_entity, Some(patient));
+    assert!(
+        h.scheduler.action_start_failures().is_empty(),
+        "tick 1 reconciliation should drain the structured start failure"
+    );
+    assert!(
+        h.agent_active_action_name(healer) != Some("heal"),
+        "failed care start should not leave the rejected heal step active"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_care_pre_start_wound_disappearance_records_blocker() {
+    let _ = run_care_pre_start_wound_disappearance_records_blocker(Seed([28; 32]));
+}
+
+#[test]
+fn golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically() {
+    let first = run_care_pre_start_wound_disappearance_records_blocker(Seed([29; 32]));
+    let second = run_care_pre_start_wound_disappearance_records_blocker(Seed([29; 32]));
+
+    assert_eq!(
+        first, second,
+        "care start-abort regression should replay deterministically"
     );
 }
