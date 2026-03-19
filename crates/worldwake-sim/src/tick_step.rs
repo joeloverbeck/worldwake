@@ -1513,6 +1513,111 @@ mod tests {
     }
 
     #[test]
+    fn action_trace_exposes_same_tick_cross_actor_commit_order() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor_a = controlled_actor(&controller);
+        let actor_b = spawn_agent(&mut world, 2, ControlSource::Ai);
+        let mut action_trace = ActionTraceSink::new();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor: actor_b,
+                def_id: ActionDefId(1),
+                targets: Vec::new(),
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor: actor_a,
+                def_id: ActionDefId(1),
+                targets: Vec::new(),
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: Some(&mut action_trace),
+                politics_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.actions_started, 2);
+        assert_eq!(result.actions_completed, 2);
+
+        let tick_events = action_trace.events_at(Tick(0));
+        assert_eq!(tick_events.len(), 4);
+        for (expected_sequence, event) in tick_events.iter().enumerate() {
+            assert_eq!(event.sequence_in_tick, expected_sequence as u32);
+        }
+
+        assert_eq!(tick_events[0].actor, actor_b);
+        assert_eq!(tick_events[0].action_name, "complete");
+        assert!(matches!(
+            tick_events[0].kind,
+            ActionTraceKind::Started { .. }
+        ));
+        assert_eq!(tick_events[1].actor, actor_a);
+        assert_eq!(tick_events[1].action_name, "complete");
+        assert!(matches!(
+            tick_events[1].kind,
+            ActionTraceKind::Started { .. }
+        ));
+
+        let committed_events: Vec<_> = tick_events
+            .iter()
+            .copied()
+            .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .collect();
+        assert_eq!(committed_events.len(), 2);
+
+        let actor_b_commit = committed_events
+            .iter()
+            .copied()
+            .find(|event| event.actor == actor_b)
+            .expect("actor_b should commit in the same tick");
+        let actor_a_commit = committed_events
+            .iter()
+            .copied()
+            .find(|event| event.actor == actor_a)
+            .expect("actor_a should commit in the same tick");
+        assert_eq!(actor_b_commit.action_name, "complete");
+        assert_eq!(actor_a_commit.action_name, "complete");
+        assert!(
+            (actor_b_commit.tick, actor_b_commit.sequence_in_tick)
+                < (actor_a_commit.tick, actor_a_commit.sequence_in_tick),
+            "same-tick cross-actor ordering should be inspectable via the explicit trace key"
+        );
+    }
+
+    #[test]
     fn switch_control_mismatch_returns_structured_error() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
