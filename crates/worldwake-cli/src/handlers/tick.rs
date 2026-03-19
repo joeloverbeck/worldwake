@@ -61,6 +61,7 @@ pub fn handle_tick(
                 systems: dispatch_table,
                 input_producer: Some(&mut controllers),
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )

@@ -3,8 +3,10 @@ use crate::{
     get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
     ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
     ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
-    PoliticalTraceSink, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
-    TickInputContext, TickInputError, TickInputProducer, TickOutcome,
+    PoliticalTraceSink, RecipeRegistry, RequestBindingKind, RequestResolutionOutcome,
+    RequestResolutionRejectionReason, RequestResolutionTraceEvent, RequestResolutionTraceSink,
+    Scheduler, SystemDispatchTable, SystemError, TickInputContext, TickInputError,
+    TickInputProducer, TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -20,6 +22,7 @@ pub struct TickStepServices<'a> {
     pub systems: &'a SystemDispatchTable,
     pub input_producer: Option<&'a mut dyn TickInputProducer>,
     pub action_trace: Option<&'a mut ActionTraceSink>,
+    pub request_resolution_trace: Option<&'a mut RequestResolutionTraceSink>,
     pub politics_trace: Option<&'a mut PoliticalTraceSink>,
 }
 
@@ -29,11 +32,18 @@ struct TickStepRuntime<'a> {
     scheduler: &'a mut Scheduler,
     rng: &'a mut DeterministicRng,
     action_trace: Option<&'a mut ActionTraceSink>,
+    request_resolution_trace: Option<&'a mut RequestResolutionTraceSink>,
 }
 
 impl TickStepRuntime<'_> {
     fn record_action_trace(&mut self, event: ActionTraceEvent) {
         if let Some(sink) = self.action_trace.as_mut() {
+            sink.record(event);
+        }
+    }
+
+    fn record_request_resolution_trace(&mut self, event: RequestResolutionTraceEvent) {
+        if let Some(sink) = self.request_resolution_trace.as_mut() {
             sink.record(event);
         }
     }
@@ -134,12 +144,14 @@ pub fn step_tick(
     mut services: TickStepServices<'_>,
 ) -> Result<TickStepResult, TickStepError> {
     let action_trace = services.action_trace.take();
+    let request_resolution_trace = services.request_resolution_trace.take();
     let mut runtime = TickStepRuntime {
         world,
         event_log,
         scheduler,
         rng,
         action_trace,
+        request_resolution_trace,
     };
     let tick = runtime.scheduler.current_tick();
     let events_before = runtime.event_log.len();
@@ -233,8 +245,9 @@ fn apply_input(
             targets,
             payload_override,
             mode,
+            provenance,
         } => {
-            let affordance = resolve_affordance(
+            let resolution = resolve_affordance(
                 runtime.world,
                 services.action_defs,
                 services.action_handlers,
@@ -242,12 +255,49 @@ fn apply_input(
                     actor,
                     def_id,
                     targets: &targets,
-                    payload_override,
+                    payload_override: payload_override.clone(),
                     mode,
                 },
-            )?;
+            );
+            let resolved = match resolution {
+                Ok(resolved) => resolved,
+                Err(reason) => {
+                    runtime.record_request_resolution_trace(RequestResolutionTraceEvent {
+                        tick,
+                        sequence_in_tick: 0,
+                        actor,
+                        def_id,
+                        action_name: lookup_action_name(services.action_defs, def_id),
+                        requested_targets: targets.clone(),
+                        mode,
+                        provenance,
+                        outcome: RequestResolutionOutcome::RejectedBeforeStart { reason },
+                    });
+                    return Err(TickStepError::RequestedAffordanceUnavailable {
+                        actor,
+                        def_id,
+                        targets,
+                        payload_override,
+                    });
+                }
+            };
+            runtime.record_request_resolution_trace(RequestResolutionTraceEvent {
+                tick,
+                sequence_in_tick: 0,
+                actor,
+                def_id,
+                action_name: lookup_action_name(services.action_defs, def_id),
+                requested_targets: targets.clone(),
+                mode,
+                provenance,
+                outcome: RequestResolutionOutcome::Bound {
+                    binding: resolved.binding,
+                    resolved_targets: resolved.affordance.bound_targets.clone(),
+                    start_attempted: true,
+                },
+            });
             if let Err(err) = runtime.scheduler.start_affordance(
-                &affordance,
+                &resolved.affordance,
                 SchedulerActionRuntime {
                     action_defs: services.action_defs,
                     action_handlers: services.action_handlers,
@@ -290,7 +340,8 @@ fn apply_input(
                 return Err(TickStepError::Action(err));
             }
             let action_name = lookup_action_name(services.action_defs, def_id);
-            let trace_detail = action_trace_detail_for_affordance(services.action_defs, &affordance);
+            let trace_detail =
+                action_trace_detail_for_affordance(services.action_defs, &resolved.affordance);
             runtime.record_action_trace(
                 ActionTraceEvent::new(
                     tick,
@@ -380,7 +431,7 @@ fn resolve_affordance(
     action_defs: &ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
     request: RequestedAction<'_>,
-) -> Result<crate::Affordance, TickStepError> {
+) -> Result<ResolvedRequest, RequestResolutionRejectionReason> {
     let RequestedAction {
         actor,
         def_id,
@@ -390,23 +441,12 @@ fn resolve_affordance(
     } = request;
     let view = crate::PerAgentBeliefView::from_world(actor, world);
     let Some(def) = action_defs.get(def_id) else {
-        return Err(TickStepError::RequestedAffordanceUnavailable {
-            actor,
-            def_id,
-            targets: targets.to_vec(),
-            payload_override,
-        });
+        return Err(RequestResolutionRejectionReason::UnknownActionDef);
     };
-    let handler =
-        action_handlers
-            .get(def.handler)
-            .ok_or(TickStepError::RequestedAffordanceUnavailable {
-                actor,
-                def_id,
-                targets: targets.to_vec(),
-                payload_override: payload_override.clone(),
-            })?;
-    let mut affordance = get_affordances(&view, actor, action_defs, action_handlers)
+    let handler = action_handlers
+        .get(def.handler)
+        .ok_or(RequestResolutionRejectionReason::MissingHandler)?;
+    let reproduced = get_affordances(&view, actor, action_defs, action_handlers)
         .into_iter()
         .find(|affordance| {
             crate::requested_affordance_matches(
@@ -418,24 +458,26 @@ fn resolve_affordance(
                 payload_override.as_ref(),
                 &view,
             )
-        })
-        .or_else(|| {
-            (mode == crate::ActionRequestMode::BestEffort).then_some(crate::Affordance {
+        });
+    let (mut affordance, binding) = match reproduced {
+        Some(affordance) => (affordance, RequestBindingKind::ReproducedAffordance),
+        None if mode == crate::ActionRequestMode::BestEffort => (
+            crate::Affordance {
                 def_id,
                 actor,
                 bound_targets: targets.to_vec(),
                 payload_override: payload_override.clone(),
                 explanation: None,
-            })
-        })
-        .ok_or(TickStepError::RequestedAffordanceUnavailable {
-            actor,
-            def_id,
-            targets: targets.to_vec(),
-            payload_override: payload_override.clone(),
-        })?;
+            },
+            RequestBindingKind::BestEffortFallback,
+        ),
+        None => return Err(RequestResolutionRejectionReason::NoMatchingAffordance),
+    };
     affordance.payload_override = payload_override;
-    Ok(affordance)
+    Ok(ResolvedRequest {
+        affordance,
+        binding,
+    })
 }
 
 #[derive(Clone)]
@@ -445,6 +487,12 @@ struct RequestedAction<'a> {
     targets: &'a [EntityId],
     payload_override: Option<crate::ActionPayload>,
     mode: crate::ActionRequestMode,
+}
+
+#[derive(Clone, Debug)]
+struct ResolvedRequest {
+    affordance: crate::Affordance,
+    binding: RequestBindingKind,
 }
 
 fn validate_cancel_actor(
@@ -705,15 +753,20 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_affordance, step_tick, TickStepError, TickStepResult, TickStepServices};
+    use super::{
+        resolve_affordance, step_tick, RequestedAction, TickStepError, TickStepResult,
+        TickStepServices,
+    };
     use crate::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
         ActionProgress, ActionRequestMode, ActionState, ActionStatus, ActionTraceDetail,
         ActionTraceKind, ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng,
-        DurationExpr, InputKind, Interruptibility, Precondition, RecipeRegistry, ReservationReq,
-        Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest,
-        TargetSpec, TellActionPayload, TickInputContext, TickInputError, TickInputProducer,
+        DurationExpr, InputKind, Interruptibility, Precondition, RecipeRegistry,
+        RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
+        RequestResolutionRejectionReason, RequestResolutionTraceSink, ReservationReq, Scheduler,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
+        TellActionPayload, TickInputContext, TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -1055,6 +1108,7 @@ mod tests {
             systems,
             input_producer: None,
             action_trace: None,
+            request_resolution_trace: None,
             politics_trace: None,
         }
     }
@@ -1077,6 +1131,7 @@ mod tests {
                     targets: Vec::new(),
                     payload_override: None,
                     mode: crate::ActionRequestMode::Strict,
+                    provenance: crate::RequestProvenance::External,
                 },
             );
             Ok(())
@@ -1157,6 +1212,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -1167,6 +1223,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1183,6 +1240,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1219,6 +1277,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1235,6 +1294,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1273,6 +1333,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1289,6 +1350,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1334,6 +1396,7 @@ mod tests {
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -1344,6 +1407,7 @@ mod tests {
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::BestEffort,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1360,6 +1424,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1422,6 +1487,7 @@ mod tests {
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::BestEffort,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1438,6 +1504,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1492,6 +1559,7 @@ mod tests {
         let defs = reservation_action_registry();
         let handlers = handler_registry();
         let mut action_trace = ActionTraceSink::new();
+        let mut request_trace = RequestResolutionTraceSink::new();
 
         scheduler.input_queue_mut().enqueue(
             Tick(0),
@@ -1501,6 +1569,7 @@ mod tests {
                 targets: vec![target],
                 payload_override: None,
                 mode: ActionRequestMode::BestEffort,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1517,6 +1586,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: Some(&mut request_trace),
                 politics_trace: None,
             },
         )
@@ -1539,6 +1609,147 @@ mod tests {
             tick_events[0].kind,
             ActionTraceKind::StartFailed { .. }
         ));
+        let request_events = request_trace.events_at(Tick(0));
+        assert_eq!(request_events.len(), 1);
+        assert_eq!(request_events[0].actor, actor);
+        assert_eq!(request_events[0].provenance, RequestProvenance::External);
+        assert_eq!(
+            request_events[0].outcome,
+            RequestResolutionOutcome::Bound {
+                binding: RequestBindingKind::BestEffortFallback,
+                resolved_targets: vec![target],
+                start_attempted: true,
+            }
+        );
+    }
+
+    #[test]
+    fn reproduced_request_records_request_resolution_trace_before_start() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+        let mut request_trace = RequestResolutionTraceSink::new();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(0),
+                targets: Vec::new(),
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: None,
+                request_resolution_trace: Some(&mut request_trace),
+                politics_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.inputs_processed, 1);
+        let request_events = request_trace.events_at(Tick(0));
+        assert_eq!(request_events.len(), 1);
+        assert_eq!(request_events[0].provenance, RequestProvenance::External);
+        assert_eq!(
+            request_events[0].outcome,
+            RequestResolutionOutcome::Bound {
+                binding: RequestBindingKind::ReproducedAffordance,
+                resolved_targets: Vec::new(),
+                start_attempted: true,
+            }
+        );
+    }
+
+    #[test]
+    fn strict_request_records_resolution_rejection_without_start_attempt() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+        let mut request_trace = RequestResolutionTraceSink::new();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(0),
+                targets: vec![actor],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
+            },
+        );
+
+        let error = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: None,
+                request_resolution_trace: Some(&mut request_trace),
+                politics_trace: None,
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TickStepError::RequestedAffordanceUnavailable {
+                actor: err_actor,
+                def_id,
+                ..
+            } if err_actor == actor && def_id == ActionDefId(0)
+        ));
+        let request_events = request_trace.events_at(Tick(0));
+        assert_eq!(request_events.len(), 1);
+        assert_eq!(request_events[0].provenance, RequestProvenance::External);
+        assert_eq!(
+            request_events[0].outcome,
+            RequestResolutionOutcome::RejectedBeforeStart {
+                reason: RequestResolutionRejectionReason::NoMatchingAffordance,
+            }
+        );
     }
 
     #[test]
@@ -1569,6 +1780,7 @@ mod tests {
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1585,6 +1797,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1627,8 +1840,9 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(resolved.def_id, affordance.def_id);
-        assert!(resolved.bound_targets.is_empty());
+        assert_eq!(resolved.affordance.def_id, affordance.def_id);
+        assert!(resolved.affordance.bound_targets.is_empty());
+        assert_eq!(resolved.binding, RequestBindingKind::ReproducedAffordance);
 
         let error = resolve_affordance(
             &world,
@@ -1643,14 +1857,10 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(matches!(
+        assert_eq!(
             error,
-            TickStepError::RequestedAffordanceUnavailable {
-                actor: err_actor,
-                def_id: err_def_id,
-                ..
-            } if err_actor == actor && err_def_id == affordance.def_id
-        ));
+            RequestResolutionRejectionReason::NoMatchingAffordance
+        );
     }
 
     #[test]
@@ -1678,6 +1888,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         step_tick(
@@ -1693,6 +1904,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1720,6 +1932,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1768,6 +1981,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -1778,6 +1992,7 @@ mod tests {
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -1788,6 +2003,7 @@ mod tests {
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::BestEffort,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -1798,6 +2014,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1814,6 +2031,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1879,6 +2097,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.input_queue_mut().enqueue(
@@ -1889,6 +2108,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1905,6 +2125,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -1983,6 +2204,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -1999,6 +2221,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: Some(&mut action_trace),
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2020,7 +2243,10 @@ mod tests {
                 subject: entity(8),
             })
         );
-        assert_eq!(tick_events[1].detail.as_ref(), tick_events[0].detail.as_ref());
+        assert_eq!(
+            tick_events[1].detail.as_ref(),
+            tick_events[0].detail.as_ref()
+        );
         assert!(matches!(
             tick_events[0].kind,
             ActionTraceKind::Started { .. }
@@ -2069,6 +2295,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2108,6 +2335,7 @@ mod tests {
                     targets: Vec::new(),
                     payload_override: None,
                     mode: crate::ActionRequestMode::Strict,
+                    provenance: crate::RequestProvenance::External,
                 },
             );
         }
@@ -2125,6 +2353,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2164,6 +2393,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -2180,6 +2410,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2237,6 +2468,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2318,6 +2550,7 @@ mod tests {
                 ),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2356,6 +2589,7 @@ mod tests {
                 systems: &ordered_systems(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2388,6 +2622,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -2404,6 +2639,7 @@ mod tests {
                 systems: &ordered_systems(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2456,6 +2692,7 @@ mod tests {
                 systems: &systems,
                 input_producer: Some(&mut producer),
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2516,6 +2753,7 @@ mod tests {
                 systems: &systems,
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2540,6 +2778,7 @@ mod tests {
                 systems: &systems,
                 input_producer: Some(&mut producer),
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2572,6 +2811,7 @@ mod tests {
                 targets: Vec::new(),
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
 
@@ -2594,6 +2834,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -2611,6 +2852,7 @@ mod tests {
                 systems: &SystemDispatchTable::canonical_noop(),
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )

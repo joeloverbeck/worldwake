@@ -1627,11 +1627,10 @@ mod tests {
                     memories
                         .iter()
                         .find(|(key, _)| {
-                            *key
-                                == TellMemoryKey {
-                                    counterparty,
-                                    subject,
-                                }
+                            *key == TellMemoryKey {
+                                counterparty,
+                                subject,
+                            }
                         })
                         .map(|(_, memory)| memory)
                 })
@@ -1655,21 +1654,23 @@ mod tests {
                 .find(|(known_subject, _)| *known_subject == subject)
                 .map(|(_, belief)| belief)?;
             let remembered = self.told_belief_memory(actor, counterparty, subject);
-            let had_raw_memory = self
-                .told_beliefs
-                .get(&actor)
-                .is_some_and(|memories| memories.iter().any(|(key, _)| {
-                    *key
-                        == TellMemoryKey {
-                            counterparty,
-                            subject,
-                        }
-                }));
+            let had_raw_memory = self.told_beliefs.get(&actor).is_some_and(|memories| {
+                memories.iter().any(|(key, _)| {
+                    *key == TellMemoryKey {
+                        counterparty,
+                        subject,
+                    }
+                })
+            });
             self.tell_profile(actor)?;
 
             Some(match remembered.as_ref() {
-                Some(memory) => worldwake_core::recipient_knowledge_status(current_belief, Some(memory)),
-                None if had_raw_memory => RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired,
+                Some(memory) => {
+                    worldwake_core::recipient_knowledge_status(current_belief, Some(memory))
+                }
+                None if had_raw_memory => {
+                    RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+                }
                 None => RecipientKnowledgeStatus::UnknownToSpeaker,
             })
         }
@@ -3402,15 +3403,14 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places.extend([
-            (speaker, place),
-            (listener, place),
-            (subject, place),
-        ]);
-        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let belief = known_entity(subject, place).1;
-        view.beliefs.insert(speaker, vec![(subject, belief.clone())]);
+        view.beliefs
+            .insert(speaker, vec![(subject, belief.clone())]);
         view.told_beliefs
             .insert(speaker, vec![told_memory(listener, subject, 10, &belief)]);
 
@@ -3449,21 +3449,22 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places.extend([
-            (speaker, place),
-            (listener, place),
-            (subject, place),
-        ]);
-        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let old_belief = known_entity(subject, place).1;
         let mut new_belief = old_belief.clone();
         new_belief
             .last_known_inventory
             .insert(CommodityKind::Bread, Quantity(2));
-        view.beliefs.insert(speaker, vec![(subject, new_belief.clone())]);
-        view.told_beliefs
-            .insert(speaker, vec![told_memory(listener, subject, 10, &old_belief)]);
+        view.beliefs
+            .insert(speaker, vec![(subject, new_belief.clone())]);
+        view.told_beliefs.insert(
+            speaker,
+            vec![told_memory(listener, subject, 10, &old_belief)],
+        );
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -3500,19 +3501,20 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places.extend([
-            (speaker, place),
-            (listener, place),
-            (subject, place),
-        ]);
-        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let old_belief = known_entity(subject, place).1;
         let mut refreshed_belief = old_belief.clone();
         refreshed_belief.observed_tick = Tick(11);
-        view.beliefs.insert(speaker, vec![(subject, refreshed_belief)]);
-        view.told_beliefs
-            .insert(speaker, vec![told_memory(listener, subject, 10, &old_belief)]);
+        view.beliefs
+            .insert(speaker, vec![(subject, refreshed_belief)]);
+        view.told_beliefs.insert(
+            speaker,
+            vec![told_memory(listener, subject, 10, &old_belief)],
+        );
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -3549,15 +3551,14 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places.extend([
-            (speaker, place),
-            (listener, place),
-            (subject, place),
-        ]);
-        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let belief = known_entity(subject, place).1;
-        view.beliefs.insert(speaker, vec![(subject, belief.clone())]);
+        view.beliefs
+            .insert(speaker, vec![(subject, belief.clone())]);
         view.told_beliefs
             .insert(speaker, vec![told_memory(listener, subject, 1, &belief)]);
 
@@ -3605,8 +3606,10 @@ mod tests {
             (recent_subject, place),
             (older_subject, place),
         ]);
-        view.entities_at
-            .insert(place, vec![speaker, listener, recent_subject, older_subject]);
+        view.entities_at.insert(
+            place,
+            vec![speaker, listener, recent_subject, older_subject],
+        );
         view.tell_profiles.insert(
             speaker,
             TellProfile {

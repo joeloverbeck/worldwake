@@ -420,10 +420,7 @@ mod tests {
             })),
             Some(ActionTraceDetail::Tell { listener, subject })
         );
-        assert_eq!(
-            ActionTraceDetail::from_payload(&ActionPayload::None),
-            None
-        );
+        assert_eq!(ActionTraceDetail::from_payload(&ActionPayload::None), None);
     }
 
     #[test]

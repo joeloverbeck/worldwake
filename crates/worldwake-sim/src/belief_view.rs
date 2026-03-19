@@ -552,12 +552,7 @@ macro_rules! impl_goal_belief_view {
                 counterparty: worldwake_core::EntityId,
                 subject: worldwake_core::EntityId,
             ) -> Option<worldwake_core::ToldBeliefMemory> {
-                $crate::RuntimeBeliefView::told_belief_memory(
-                    self,
-                    actor,
-                    counterparty,
-                    subject,
-                )
+                $crate::RuntimeBeliefView::told_belief_memory(self, actor, counterparty, subject)
             }
 
             fn recipient_knowledge_status(

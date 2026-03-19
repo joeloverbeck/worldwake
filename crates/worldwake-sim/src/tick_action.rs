@@ -96,6 +96,7 @@ fn abort_requested_during_tick(
     Ok(TickOutcome::Aborted { reason, replan })
 }
 
+#[allow(clippy::too_many_lines)]
 fn tick_action_inner(
     instance: &mut ActionInstance,
     registry: &ActionDefRegistry,
@@ -134,7 +135,9 @@ fn tick_action_inner(
     let progress = match (handler.on_tick)(def, instance, rng, &mut txn) {
         Ok(progress) => progress,
         Err(ActionError::AbortRequested(reason)) => {
-            return abort_requested_during_tick(def, instance, handler, txn, event_log, rng, reason);
+            return abort_requested_during_tick(
+                def, instance, handler, txn, event_log, rng, reason,
+            );
         }
         Err(err) => return Err(err),
     };
@@ -695,8 +698,9 @@ mod tests {
     fn tick_action_persists_updated_local_state_from_handler() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
-        hook_state().lock().unwrap().replace_local_state =
-            Some(ActionState::Heal { medicine_spent: true });
+        hook_state().lock().unwrap().replace_local_state = Some(ActionState::Heal {
+            medicine_spent: true,
+        });
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_stateful_sample_action();
         let mut rng = test_rng();

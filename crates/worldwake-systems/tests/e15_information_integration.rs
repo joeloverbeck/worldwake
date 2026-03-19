@@ -217,6 +217,7 @@ impl TellHarness {
                 targets: vec![destination],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
             },
         );
     }
@@ -235,6 +236,7 @@ impl TellHarness {
                     subject_entity: self.subject,
                 })),
                 mode: ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
             },
         );
     }
@@ -253,6 +255,7 @@ impl TellHarness {
                 systems: &self.systems,
                 input_producer: None,
                 action_trace: None,
+                request_resolution_trace: None,
                 politics_trace: None,
             },
         )
@@ -384,6 +387,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                 targets: vec![destination],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
             },
         )
     }
@@ -407,6 +411,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     systems: &systems,
                     input_producer: None,
                     action_trace: None,
+                    request_resolution_trace: None,
                     politics_trace: None,
                 },
             )
@@ -461,6 +466,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     subject_entity: subject,
                 })),
                 mode: ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
             },
         )
     }
@@ -484,6 +490,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     systems: &systems,
                     input_producer: None,
                     action_trace: None,
+                    request_resolution_trace: None,
                     politics_trace: None,
                 },
             )
@@ -629,6 +636,7 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
             systems: &dispatch_table(),
             input_producer: None,
             action_trace: None,
+            request_resolution_trace: None,
             politics_trace: None,
         },
     )
@@ -690,6 +698,7 @@ fn replay_verification_accepts_recorded_tell_and_discovery_scenario() {
             systems: &systems,
             input_producer: None,
             action_trace: None,
+            request_resolution_trace: None,
             politics_trace: None,
         },
     )

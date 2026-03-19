@@ -54,9 +54,7 @@ pub fn listener_aware_relayable_subjects(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects,
-    };
+    use super::{belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects};
     use std::collections::BTreeMap;
     use worldwake_core::{
         BelievedEntityState, EntityId, PerceptionSource, RecipientKnowledgeStatus, Tick,

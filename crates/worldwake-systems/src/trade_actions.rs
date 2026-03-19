@@ -624,7 +624,7 @@ mod tests {
         get_affordances, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
         ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng,
-        PerAgentBeliefView, TickOutcome, TradeActionPayload,
+        PerAgentBeliefView, TickOutcome, TradeAcceptance, TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -853,12 +853,7 @@ mod tests {
             (instance_id, active)
         }
 
-        fn start_result(
-            &mut self,
-        ) -> Result<
-            ActionInstanceId,
-            ActionError,
-        > {
+        fn start_result(&mut self) -> Result<ActionInstanceId, ActionError> {
             let affordance = Affordance {
                 def_id: self.def_id,
                 actor: self.actor,
@@ -913,7 +908,7 @@ mod tests {
 
         assert_eq!(
             instance.remaining_duration,
-            worldwake_sim::ActionDuration::Finite(3)
+            worldwake_sim::ActionDuration::Finite(1)
         );
         assert_eq!(instance.status, ActionStatus::Active);
     }
@@ -1050,7 +1045,10 @@ mod tests {
             })
         );
         assert!(
-            harness.log.events_by_tag(EventTag::ActionCommitted).is_empty(),
+            harness
+                .log
+                .events_by_tag(EventTag::ActionCommitted)
+                .is_empty(),
             "failing to start should not commit any trade event"
         );
     }
@@ -1190,7 +1188,7 @@ mod tests {
     }
 
     #[test]
-    fn trade_aborts_when_bundle_is_rejected() {
+    fn trade_start_rejects_when_bundle_is_rejected() {
         let payload = TradeActionPayload {
             counterparty: entity(2),
             offered_commodity: CommodityKind::Coin,
@@ -1199,26 +1197,15 @@ mod tests {
             requested_quantity: Quantity(1),
         };
         let mut harness = TradeHarness::new(&payload, 1, HomeostaticNeeds::new_sated());
-        let (instance_id, mut active) = harness.start_with_active();
+        let error = harness.start_result().unwrap_err();
 
-        let outcome = tick_action(
-            instance_id,
-            &harness.defs,
-            &harness.handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut harness.world,
-                event_log: &mut harness.log,
-                rng: &mut harness.rng,
-            },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(4),
-            },
-        )
-        .unwrap();
-
-        assert!(matches!(outcome, TickOutcome::Aborted { .. }));
+        assert!(matches!(
+            error,
+            ActionError::AbortRequested(ActionAbortRequestReason::TradeBundleRejected {
+                participant,
+                acceptance: TradeAcceptance::Reject { .. },
+            }) if participant == harness.actor
+        ));
         assert_eq!(
             harness.world.possessor_of(harness.actor_offer),
             Some(harness.actor)

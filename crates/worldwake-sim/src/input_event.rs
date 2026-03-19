@@ -8,6 +8,12 @@ pub enum ActionRequestMode {
     BestEffort,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum RequestProvenance {
+    AiPlan,
+    External,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum InputKind {
     RequestAction {
@@ -16,6 +22,7 @@ pub enum InputKind {
         targets: Vec<EntityId>,
         payload_override: Option<ActionPayload>,
         mode: ActionRequestMode,
+        provenance: RequestProvenance,
     },
     CancelAction {
         actor: EntityId,
@@ -36,7 +43,7 @@ pub struct InputEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActionRequestMode, InputEvent, InputKind};
+    use super::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
     use crate::{ActionInstanceId, ActionPayload, TradeActionPayload};
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, Tick};
@@ -79,6 +86,7 @@ mod tests {
                 targets: vec![entity(3)],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: RequestProvenance::External,
             },
         };
         let later_tick = InputEvent {
@@ -108,6 +116,7 @@ mod tests {
                 requested_quantity: Quantity(1),
             })),
             mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::AiPlan,
         };
 
         let bytes = bincode::serialize(&kind).unwrap();
@@ -153,6 +162,7 @@ mod tests {
                 targets: vec![entity(6)],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
+                provenance: RequestProvenance::External,
             },
         };
 

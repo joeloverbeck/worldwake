@@ -14,7 +14,10 @@ use worldwake_core::{
     MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
-use worldwake_sim::{ActionStartFailureReason, ActionTraceKind};
+use worldwake_sim::{
+    ActionStartFailureReason, ActionTraceKind, RequestBindingKind, RequestProvenance,
+    RequestResolutionOutcome,
+};
 
 fn production_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
@@ -758,6 +761,7 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
 
     let agents = [
         seed_agent(
@@ -834,7 +838,10 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
 
     h.step_once();
 
-    let trace_sink = h.driver.trace_sink().expect("decision tracing should be enabled");
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
     for agent in agents {
         let trace_tick_0 = trace_sink
             .trace_at(agent, Tick(0))
@@ -867,13 +874,19 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
     let action_trace = h
         .action_trace_sink()
         .expect("action tracing should be enabled");
+    let request_trace = h
+        .request_resolution_trace_sink()
+        .expect("request-resolution tracing should be enabled");
     let loser = agents
         .into_iter()
         .find(|agent| {
-            action_trace.events_for_at(*agent, Tick(0)).iter().any(|event| {
-                event.action_name == "harvest:Harvest Apples"
-                    && matches!(event.kind, ActionTraceKind::StartFailed { .. })
-            })
+            action_trace
+                .events_for_at(*agent, Tick(0))
+                .iter()
+                .any(|event| {
+                    event.action_name == "harvest:Harvest Apples"
+                        && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+                })
         })
         .expect("one contender should lose the same-tick local harvest start");
     let winner = agents
@@ -893,12 +906,32 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
         ActionTraceKind::StartFailed { .. }
     ));
     assert!(
-        action_trace.events_for_at(winner, Tick(0)).iter().any(|event| {
-            event.action_name == "harvest:Harvest Apples"
-                && matches!(event.kind, ActionTraceKind::Started { .. })
-        }),
+        action_trace
+            .events_for_at(winner, Tick(0))
+            .iter()
+            .any(|event| {
+                event.action_name == "harvest:Harvest Apples"
+                    && matches!(event.kind, ActionTraceKind::Started { .. })
+            }),
         "the winning contender should successfully start the local harvest in the same tick"
     );
+    for agent in agents {
+        let request_events = request_trace.events_for_at(agent, Tick(0));
+        assert_eq!(
+            request_events.len(),
+            1,
+            "each contender should emit one request-resolution event for the initial harvest attempt"
+        );
+        assert_eq!(request_events[0].provenance, RequestProvenance::AiPlan);
+        assert_eq!(
+            request_events[0].outcome,
+            RequestResolutionOutcome::Bound {
+                binding: RequestBindingKind::ReproducedAffordance,
+                resolved_targets: vec![local_workstation],
+                start_attempted: true,
+            }
+        );
+    }
 
     assert_eq!(h.scheduler.action_start_failures().len(), 1);
     assert_eq!(h.scheduler.action_start_failures()[0].actor, loser);
@@ -2298,8 +2331,7 @@ fn golden_resource_exhaustion_race_replays_deterministically() {
 }
 
 #[test]
-fn golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically()
-{
+fn golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically() {
     let seed = Seed([30; 32]);
 
     let outcome_1 = run_contested_harvest_start_failure_remote_recovery_scenario(seed);

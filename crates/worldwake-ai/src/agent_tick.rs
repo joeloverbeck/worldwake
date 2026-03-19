@@ -600,6 +600,7 @@ fn enqueue_valid_step_or_handle_failure(
             targets,
             payload_override: step.payload_override.clone(),
             mode: worldwake_sim::ActionRequestMode::BestEffort,
+            provenance: worldwake_sim::RequestProvenance::AiPlan,
         },
     );
     runtime.step_in_flight = true;
@@ -1504,8 +1505,7 @@ fn reconcile_in_flight_state(
         return Ok(());
     }
 
-    let Some(committed_action) =
-        committed_action_for_step(&step, reconciliation.committed_actions)
+    let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
     else {
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
         return Ok(());
@@ -2145,6 +2145,7 @@ mod tests {
                     systems: &SystemDispatchTable::canonical_noop(),
                     input_producer: Some(&mut controllers),
                     action_trace: None,
+                    request_resolution_trace: None,
                     politics_trace: None,
                 },
             )
@@ -5583,7 +5584,11 @@ mod tests {
         match &trace.outcome {
             crate::DecisionOutcome::Planning(planning) => {
                 assert!(
-                    !planning.candidates.generated.iter().any(|goal| goal.kind == share_goal),
+                    !planning
+                        .candidates
+                        .generated
+                        .iter()
+                        .any(|goal| goal.kind == share_goal),
                     "unchanged told beliefs must not emit ShareBelief candidates"
                 );
                 assert!(

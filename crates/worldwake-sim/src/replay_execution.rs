@@ -104,6 +104,7 @@ pub fn replay_and_verify(
         systems,
         input_producer,
         action_trace: _,
+        request_resolution_trace: _,
         politics_trace: _,
     } = services;
     assert!(
@@ -152,6 +153,7 @@ pub fn replay_and_verify(
                     systems,
                     input_producer: None,
                     action_trace: None,
+                    request_resolution_trace: None,
                     politics_trace: None,
                 },
             )
@@ -404,6 +406,7 @@ mod tests {
             systems,
             input_producer: None,
             action_trace: None,
+            request_resolution_trace: None,
             politics_trace: None,
         }
     }

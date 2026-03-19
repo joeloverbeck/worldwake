@@ -188,7 +188,9 @@ fn classify_trade_execution_failure(
         ExecutionFailure::Start(failure) => {
             classify_trade_start_failure_reason(agent, payload, &failure.reason)
         }
-        ExecutionFailure::Replan(signal) => classify_trade_abort_reason(agent, payload, &signal.reason),
+        ExecutionFailure::Replan(signal) => {
+            classify_trade_abort_reason(agent, payload, &signal.reason)
+        }
     }
 }
 
@@ -226,16 +228,12 @@ fn classify_trade_handler_abort_reason(
 ) -> Option<BlockingFact> {
     match reason {
         ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-            holder,
-            commodity,
-            ..
+            holder, commodity, ..
         } if *holder == payload.counterparty && *commodity == payload.requested_commodity => {
             Some(BlockingFact::SellerOutOfStock)
         }
         ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-            holder,
-            commodity,
-            ..
+            holder, commodity, ..
         } if *holder == agent && *commodity == payload.offered_commodity => {
             Some(if *commodity == CommodityKind::Coin {
                 BlockingFact::TooExpensive
@@ -449,7 +447,9 @@ fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
 
 fn map_start_failure_reason(reason: &ActionStartFailureReason) -> Option<BlockingFact> {
     match reason {
-        ActionStartFailureReason::ReservationUnavailable(_) => Some(BlockingFact::ReservationConflict),
+        ActionStartFailureReason::ReservationUnavailable(_) => {
+            Some(BlockingFact::ReservationConflict)
+        }
         ActionStartFailureReason::PreconditionFailed(detail) => parse_abort_detail(detail),
         ActionStartFailureReason::InvalidTarget(_) => Some(BlockingFact::TargetGone),
         ActionStartFailureReason::AbortRequested(reason) => map_handler_abort_reason(reason),
@@ -706,9 +706,9 @@ mod tests {
         Wound,
     };
     use worldwake_sim::{
-        AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload,
-        ActionStartFailure, ActionStartFailureReason, CombatActionPayload, CraftActionPayload,
-        DurationExpr, InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
+        AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
+        ActionStartFailureReason, CombatActionPayload, CraftActionPayload, DurationExpr,
+        InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]

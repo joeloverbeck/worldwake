@@ -653,6 +653,7 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
                 systems: &worldwake_systems::dispatch_table(),
                 input_producer: Some(&mut producer),
                 action_trace: h.action_trace.as_mut(),
+                request_resolution_trace: None,
                 politics_trace: h.politics_trace.as_mut(),
             },
         )
@@ -675,7 +676,10 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
     };
 
     assert!(
-        planning_tick_0.candidates.generated.contains(&care_goal_key),
+        planning_tick_0
+            .candidates
+            .generated
+            .contains(&care_goal_key),
         "healer should generate TreatWounds before the authoritative start race"
     );
     let selected_plan = planning_tick_0

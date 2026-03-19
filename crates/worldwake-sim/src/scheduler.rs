@@ -1,7 +1,7 @@
 use crate::{
-    abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
-    ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-    ActionInstanceId, ActionAbortRequestReason, Affordance, CommitOutcome, DeterministicRng,
+    abort_action, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
+    ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
+    ActionInstance, ActionInstanceId, Affordance, CommitOutcome, DeterministicRng,
     ExternalAbortReason, InputEvent, InputQueue, InterruptReason, ReplanNeeded, SystemManifest,
     TickOutcome,
 };
@@ -24,7 +24,9 @@ impl ActionStartFailureReason {
             ActionError::ReservationUnavailable(entity) => {
                 Some(Self::ReservationUnavailable(*entity))
             }
-            ActionError::PreconditionFailed(detail) => Some(Self::PreconditionFailed(detail.clone())),
+            ActionError::PreconditionFailed(detail) => {
+                Some(Self::PreconditionFailed(detail.clone()))
+            }
             ActionError::InvalidTarget(target) => Some(Self::InvalidTarget(*target)),
             ActionError::AbortRequested(reason) => Some(Self::AbortRequested(reason.clone())),
             ActionError::UnknownActionInstance(_)
@@ -505,6 +507,7 @@ mod tests {
                 targets: vec![entity(9)],
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.insert_action(sample_action(4));

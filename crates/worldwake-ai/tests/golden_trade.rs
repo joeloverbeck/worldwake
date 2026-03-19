@@ -6,18 +6,17 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{DecisionOutcome, SelectedPlanSource};
 use worldwake_core::{
-    AgentData,
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind, DemandMemory,
-    BodyPart, ControlSource, DemandObservation, DemandObservationReason, DeprivationKind,
+    total_live_lot_quantity, AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind,
+    ControlSource, DemandMemory, DemandObservation, DemandObservationReason, DeprivationKind,
     EventTag, HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile,
     PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
-    TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId,
-    WoundList,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionAbortRequestReason, ActionPayload, ActionRequestMode, ActionStartFailureReason,
-    ActionTraceKind, InputKind, RecipeRegistry, TradeActionPayload,
+    ActionTraceKind, InputKind, RecipeRegistry, RequestBindingKind, RequestProvenance,
+    RequestResolutionOutcome, TradeActionPayload,
 };
 
 fn default_trade_disposition_profile() -> TradeDispositionProfile {
@@ -360,6 +359,7 @@ fn run_local_trade_start_failure_production_fallback_scenario(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
 
     let seller = seed_agent_with_recipes(
         &mut h.world,
@@ -449,6 +449,7 @@ fn run_local_trade_start_failure_production_fallback_scenario(
             targets: vec![loser],
             payload_override: None,
             mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
         },
     );
     h.step_once();
@@ -522,6 +523,7 @@ fn run_local_trade_start_failure_production_fallback_scenario(
                     requested_quantity: Quantity(1),
                 })),
                 mode: ActionRequestMode::BestEffort,
+                provenance: RequestProvenance::External,
             },
         );
     }
@@ -550,13 +552,20 @@ fn run_local_trade_start_failure_production_fallback_scenario(
     let action_trace = h
         .action_trace_sink()
         .expect("action tracing should be enabled");
-    let mut winner_trade_committed = action_trace.events_for_at(winner, Tick(1)).iter().any(|event| {
-        event.action_name == "trade"
-            && matches!(event.kind, ActionTraceKind::Committed { .. })
-    });
+    let mut winner_trade_committed =
+        action_trace
+            .events_for_at(winner, Tick(1))
+            .iter()
+            .any(|event| {
+                event.action_name == "trade"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
     let mut local_stock_gone = h.agent_commodity_qty(seller, CommodityKind::Bread) == Quantity(0);
     assert!(
-        action_trace.events_for_at(loser, Tick(1)).iter().all(|event| event.action_name != "trade"),
+        action_trace
+            .events_for_at(loser, Tick(1))
+            .iter()
+            .all(|event| event.action_name != "trade"),
         "loser should remain occupied and not start trade on the winner's initial acquisition tick"
     );
 
@@ -616,6 +625,7 @@ fn run_local_trade_start_failure_production_fallback_scenario(
                 requested_quantity: Quantity(1),
             })),
             mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
         },
     );
     h.step_once();
@@ -639,16 +649,38 @@ fn run_local_trade_start_failure_production_fallback_scenario(
         .filter(|failure| failure.actor == loser)
         .collect::<Vec<_>>();
     assert_eq!(loser_failures.len(), 1);
+    assert!(
+        matches!(
+            loser_failures[0].reason,
+            ActionStartFailureReason::AbortRequested(
+                ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                    holder,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                }
+            ) if holder == seller
+        ),
+        "unexpected loser start-failure reason: {:?}",
+        loser_failures[0].reason
+    );
+    let loser_request_events = h
+        .request_resolution_trace_sink()
+        .expect("request-resolution tracing should remain enabled")
+        .events_for_at(loser, failure_tick);
+    assert_eq!(loser_request_events.len(), 1);
+    assert_eq!(
+        loser_request_events[0].provenance,
+        RequestProvenance::External
+    );
     assert!(matches!(
-        loser_failures[0].reason,
-        ActionStartFailureReason::AbortRequested(
-            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-                holder,
-                commodity: CommodityKind::Bread,
-                quantity: Quantity(1),
-            }
-        ) if holder == seller
-    ), "unexpected loser start-failure reason: {:?}", loser_failures[0].reason);
+        loser_request_events[0].outcome,
+        RequestResolutionOutcome::Bound {
+            binding: RequestBindingKind::ReproducedAffordance
+                | RequestBindingKind::BestEffortFallback,
+            ref resolved_targets,
+            start_attempted: true,
+        } if resolved_targets == &vec![seller]
+    ));
 
     let reconciliation_tick = h.scheduler.current_tick();
     set_control_source(&mut h, loser, ControlSource::Ai, reconciliation_tick.0);
@@ -873,8 +905,7 @@ fn golden_merchant_restock_return_stock_replays_deterministically() {
 
 #[test]
 fn golden_local_trade_start_failure_recovers_via_production_fallback() {
-    let outcome =
-        run_local_trade_start_failure_production_fallback_scenario(Seed([16; 32]));
+    let outcome = run_local_trade_start_failure_production_fallback_scenario(Seed([16; 32]));
     assert_eq!(outcome.loser_start_failure_count, 1);
     assert!(outcome.loser_hunger_decreased);
     assert!(outcome.remote_source_final_quantity < Quantity(6));
@@ -882,10 +913,8 @@ fn golden_local_trade_start_failure_recovers_via_production_fallback() {
 
 #[test]
 fn golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically() {
-    let first =
-        run_local_trade_start_failure_production_fallback_scenario(Seed([17; 32]));
-    let second =
-        run_local_trade_start_failure_production_fallback_scenario(Seed([17; 32]));
+    let first = run_local_trade_start_failure_production_fallback_scenario(Seed([17; 32]));
+    let second = run_local_trade_start_failure_production_fallback_scenario(Seed([17; 32]));
 
     assert_eq!(first.world_hash, second.world_hash);
     assert_eq!(first.log_hash, second.log_hash);

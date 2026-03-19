@@ -28,7 +28,8 @@ use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
     ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
     PoliticalTraceSink, RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState,
-    Scheduler, SimulationState, SystemManifest, TickStepResult, TickStepServices,
+    RequestResolutionTraceSink, Scheduler, SimulationState, SystemManifest, TickStepResult,
+    TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -703,6 +704,7 @@ pub struct GoldenHarness {
     pub recipes: RecipeRegistry,
     pub driver: AgentTickDriver,
     pub action_trace: Option<ActionTraceSink>,
+    pub request_resolution_trace: Option<RequestResolutionTraceSink>,
     pub politics_trace: Option<PoliticalTraceSink>,
 }
 
@@ -726,6 +728,7 @@ impl GoldenHarness {
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
             action_trace: None,
+            request_resolution_trace: None,
             politics_trace: None,
         }
     }
@@ -736,6 +739,14 @@ impl GoldenHarness {
 
     pub fn action_trace_sink(&self) -> Option<&ActionTraceSink> {
         self.action_trace.as_ref()
+    }
+
+    pub fn enable_request_resolution_tracing(&mut self) {
+        self.request_resolution_trace = Some(RequestResolutionTraceSink::new());
+    }
+
+    pub fn request_resolution_trace_sink(&self) -> Option<&RequestResolutionTraceSink> {
+        self.request_resolution_trace.as_ref()
     }
 
     pub fn enable_politics_tracing(&mut self) {
@@ -761,6 +772,7 @@ impl GoldenHarness {
                 systems: &dispatch_table(),
                 input_producer: Some(&mut controllers),
                 action_trace: self.action_trace.as_mut(),
+                request_resolution_trace: self.request_resolution_trace.as_mut(),
                 politics_trace: self.politics_trace.as_mut(),
             },
         )
@@ -817,6 +829,7 @@ impl GoldenHarness {
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
             action_trace: None,
+            request_resolution_trace: None,
             politics_trace: None,
         }
     }

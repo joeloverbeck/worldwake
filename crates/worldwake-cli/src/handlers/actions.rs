@@ -109,6 +109,7 @@ pub fn handle_do(
             targets: affordance.bound_targets.clone(),
             payload_override: affordance.payload_override.clone(),
             mode: ActionRequestMode::Strict,
+            provenance: worldwake_sim::RequestProvenance::External,
         },
     );
 

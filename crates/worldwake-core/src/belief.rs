@@ -530,11 +530,11 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 mod tests {
     use super::{
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition,
-        HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile,
-        PerceptionSource, RecipientKnowledgeStatus, SocialObservation, SocialObservationKind,
-        TellMemoryKey, TellProfile, ToldBeliefMemory,
+        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
+        BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
+        MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+        RecipientKnowledgeStatus, SocialObservation, SocialObservationKind, TellMemoryKey,
+        TellProfile, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
@@ -629,8 +629,8 @@ mod tests {
         (
             tell_memory_key(counterparty, subject),
             ToldBeliefMemory {
-            shared_state: to_shared_belief_snapshot(state),
-            told_tick: Tick(told_tick),
+                shared_state: to_shared_belief_snapshot(state),
+                told_tick: Tick(told_tick),
             },
         )
     }
@@ -645,9 +645,9 @@ mod tests {
         (
             tell_memory_key(counterparty, subject),
             HeardBeliefMemory {
-            heard_state: to_shared_belief_snapshot(state),
-            heard_tick: Tick(heard_tick),
-            disposition,
+                heard_state: to_shared_belief_snapshot(state),
+                heard_tick: Tick(heard_tick),
+                disposition,
             },
         )
     }
@@ -964,13 +964,7 @@ mod tests {
 
         let stale_told = told_memory(2, 21, 1, &stale_state);
         let fresh_told = told_memory(3, 22, 9, &fresh_state);
-        let stale_heard = heard_memory(
-            2,
-            21,
-            1,
-            &stale_state,
-            HeardBeliefDisposition::Accepted,
-        );
+        let stale_heard = heard_memory(2, 21, 1, &stale_state, HeardBeliefDisposition::Accepted);
         let fresh_heard = heard_memory(
             3,
             22,
@@ -984,8 +978,14 @@ mod tests {
         store.record_heard_belief(stale_heard.0, stale_heard.1);
         store.record_heard_belief(fresh_heard.0, fresh_heard.1);
 
-        assert_eq!(store.told_belief_memory(&stale_key, Tick(9), &profile), None);
-        assert_eq!(store.heard_belief_memory(&stale_key, Tick(9), &profile), None);
+        assert_eq!(
+            store.told_belief_memory(&stale_key, Tick(9), &profile),
+            None
+        );
+        assert_eq!(
+            store.heard_belief_memory(&stale_key, Tick(9), &profile),
+            None
+        );
         assert!(store.told_beliefs.contains_key(&stale_key));
         assert!(store.heard_beliefs.contains_key(&stale_key));
         assert_eq!(

@@ -1178,7 +1178,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
                 subject,
             })
             .filter(|memory| {
-                self.snapshot.current_tick.0.saturating_sub(memory.told_tick.0)
+                self.snapshot
+                    .current_tick
+                    .0
+                    .saturating_sub(memory.told_tick.0)
                     <= profile.conversation_memory_retention_ticks
             })
             .cloned()
@@ -1203,7 +1206,9 @@ impl RuntimeBeliefView for PlanningState<'_> {
         let remembered = self.told_belief_memory(actor, counterparty, subject);
 
         Some(match remembered.as_ref() {
-            Some(memory) => worldwake_core::recipient_knowledge_status(current_belief, Some(memory)),
+            Some(memory) => {
+                worldwake_core::recipient_knowledge_status(current_belief, Some(memory))
+            }
             None if self.snapshot.actor_told_beliefs.contains_key(&key) => {
                 RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
             }
@@ -2358,7 +2363,8 @@ mod tests {
 
         assert_eq!(RuntimeBeliefView::current_tick(&state), Tick(8));
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&state, actor, listener, bread).map(|m| m.told_tick),
+            RuntimeBeliefView::told_belief_memory(&state, actor, listener, bread)
+                .map(|m| m.told_tick),
             Some(Tick(6))
         );
         assert_eq!(

@@ -1797,10 +1797,16 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
         assert_eq!(ranked[0].motive_score, 850);
-        assert_eq!(ranked[1].grounded.key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::ClaimOffice { office }
+        );
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[1].motive_score, 1000);
     }
@@ -1830,10 +1836,16 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 1050);
-        assert_eq!(ranked[1].grounded.key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::ClaimOffice { office }
+        );
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[1].motive_score, 1000);
     }
@@ -1863,10 +1875,16 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::ClaimOffice { office }
+        );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 1);
-        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Low);
         assert_eq!(ranked[1].motive_score, 200_000);
     }

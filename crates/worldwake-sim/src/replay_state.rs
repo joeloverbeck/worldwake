@@ -237,6 +237,7 @@ mod tests {
                 targets: vec![entity(target_slot)],
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         }
     }

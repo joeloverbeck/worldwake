@@ -230,6 +230,7 @@ impl CombatHarness {
                     weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
                 })),
                 mode: worldwake_sim::ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
             },
         );
     }
@@ -248,6 +249,7 @@ impl CombatHarness {
                     target,
                 })),
                 mode: worldwake_sim::ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
             },
         );
     }
@@ -272,6 +274,7 @@ impl CombatHarness {
                         weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
                     })),
                     mode: worldwake_sim::ActionRequestMode::Strict,
+                    provenance: worldwake_sim::RequestProvenance::External,
                 },
             )
         }
@@ -298,6 +301,7 @@ impl CombatHarness {
                         target,
                     })),
                     mode: worldwake_sim::ActionRequestMode::Strict,
+                    provenance: worldwake_sim::RequestProvenance::External,
                 },
             )
         }
@@ -313,6 +317,7 @@ impl CombatHarness {
             systems: &self.systems,
             input_producer: None,
             action_trace: None,
+            request_resolution_trace: None,
             politics_trace: None,
         };
         step_tick(

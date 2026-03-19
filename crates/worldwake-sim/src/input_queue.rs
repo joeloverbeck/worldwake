@@ -158,6 +158,7 @@ mod tests {
             targets: target_slots.iter().map(|slot| entity(*slot)).collect(),
             payload_override: None,
             mode: ActionRequestMode::Strict,
+            provenance: crate::RequestProvenance::External,
         }
     }
 

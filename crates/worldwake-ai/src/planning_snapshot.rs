@@ -635,8 +635,8 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
         EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
-        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 

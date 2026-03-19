@@ -36,6 +36,7 @@ pub mod recipe_registry;
 pub mod replan_needed;
 pub mod replay_execution;
 pub mod replay_state;
+pub mod request_resolution_trace;
 pub mod save_load;
 pub mod scheduler;
 pub mod simulation_state;
@@ -87,7 +88,7 @@ pub use autonomous_controller::{
 pub use belief_view::{estimate_duration_from_beliefs, GoalBeliefView, RuntimeBeliefView};
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
-pub use input_event::{ActionRequestMode, InputEvent, InputKind};
+pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
@@ -103,6 +104,10 @@ pub use replay_execution::{
     ReplayCheckpointError, ReplayError,
 };
 pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
+pub use request_resolution_trace::{
+    RequestBindingKind, RequestResolutionOutcome, RequestResolutionRejectionReason,
+    RequestResolutionTraceEvent, RequestResolutionTraceSink,
+};
 pub use save_load::{
     load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
 };

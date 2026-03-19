@@ -1128,7 +1128,9 @@ mod tests {
 
         let current_belief = entity_belief(place, true, 2, 6);
         let mut stale_belief = current_belief.clone();
-        stale_belief.last_known_inventory.insert(CommodityKind::Bread, Quantity(1));
+        stale_belief
+            .last_known_inventory
+            .insert(CommodityKind::Bread, Quantity(1));
 
         let mut beliefs = AgentBeliefStore::new();
         beliefs.update_entity(subject, current_belief.clone());
@@ -1146,7 +1148,8 @@ mod tests {
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&view, agent, listener, subject).map(|m| m.told_tick),
+            RuntimeBeliefView::told_belief_memory(&view, agent, listener, subject)
+                .map(|m| m.told_tick),
             Some(Tick(4))
         );
         assert_eq!(

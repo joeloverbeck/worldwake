@@ -482,7 +482,8 @@ fn goal_status_in_planning(
     {
         return GoalTraceStatus::OmittedPolitical(reason);
     }
-    if let Some(status) = omitted_social_status_for_goal(&planning.candidates.omitted_social, goal) {
+    if let Some(status) = omitted_social_status_for_goal(&planning.candidates.omitted_social, goal)
+    {
         return GoalTraceStatus::OmittedSocial(status);
     }
 
@@ -774,7 +775,9 @@ mod tests {
         let omitted_goal = GoalKind::ClaimOffice { office };
         let suppressed_goal = GoalKind::Sleep;
         let zero_motive_goal = GoalKind::Wash;
-        let outranked_goal = GoalKind::TreatWounds { patient: entity(12) };
+        let outranked_goal = GoalKind::TreatWounds {
+            patient: entity(12),
+        };
         let selected_goal = GoalKind::ReduceDanger;
         let generated_only_goal = GoalKind::Relieve;
         let absent_goal = GoalKind::EngageHostile { target: entity(99) };
