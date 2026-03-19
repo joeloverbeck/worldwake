@@ -20,6 +20,7 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
    - If similarly named helpers exist in multiple layers, name the exact layer and symbol being discussed.
    - If the ticket depends on ordering, state whether the compared branches are symmetric in the current architecture or whether they depend on different ranking or resolution substrates.
    - If the ticket proposes removing, weakening, bypassing, or replacing a heuristic/filter, state which missing architectural substrate that heuristic is currently standing in for, whether this ticket introduces that substrate, and why the change does not reopen regressions in unrelated scenarios.
+   - If the ticket involves stale requests, contested affordances, or start-failure recovery, name the first failure boundary explicitly: request resolution / affordance reproduction, authoritative start, or post-start abort / commit-time revalidation.
 2. `Architecture Check`:
    - Explain why the proposed design is cleaner than alternatives.
 3. `Verification Layers`:
@@ -70,6 +71,12 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
 10. If the invariant is about AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence such as missing event-log entries.
 11. For mixed-layer scenarios, list the invariant-to-layer mapping explicitly instead of implying that one assertion surface proves the whole chain.
 12. If a golden scenario is intended to prove one specific causal branch while the current architecture lawfully permits competing affordances, document the scenario-isolation choice explicitly and explain which unrelated lawful branches were intentionally removed from setup.
+13. For stale-request, contested-affordance, or start-failure tickets, verify the shared runtime request path before assigning scope to a domain action handler or AI failure-reconciliation helper. Name the exact shared symbols you checked.
+14. For tickets in that class, map the boundary-specific proof surface explicitly:
+   - request resolution / affordance reproduction -> focused runtime request-resolution coverage
+   - authoritative start / abort lifecycle -> action trace and/or focused authoritative runtime coverage
+   - AI recovery / blocker reconciliation -> decision trace
+   - golden E2E -> only when the recovery chain itself is part of the contract
 
 ## Mandatory Pre-Implementation Checks
 
@@ -80,6 +87,7 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
 5. Test commands have been dry-run checked or verified against the current test binary layout.
 6. Claimed helper/function usage is verified against the exact current symbol location, not inferred from a similarly named helper elsewhere in the repo.
 7. For AI-test tickets, use `cargo test -p worldwake-ai -- --list` or an equivalently narrow real command to confirm the current test names/targets before writing verification steps.
+8. For stale-request, contested-affordance, or start-failure tickets, verify whether the first live rejection occurs in the shared runtime request layer before assigning scope to domain-specific handlers.
 
 ## Archival Reminder
 
