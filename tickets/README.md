@@ -53,6 +53,7 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
    - local needs-only harness is sufficient
    - full action registries are required
 4. If a ticket depends on ordering, state which ordering is the contract:
+   - strict tick separation
    - action lifecycle ordering
    - event-log ordering
    - authoritative world-state ordering
@@ -65,9 +66,10 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
 6. If delayed authoritative effects exist downstream of the behavior under test, do not use those later effects as a proxy for earlier ordering when a lower-layer assertion surface exists. Name both layers explicitly instead.
 7. If current code and ticket assumptions diverge, update the ticket before implementation and update scope to match the actual architecture.
 8. If a proposed test relies on a timing assumption, prefer the semantic invariant instead of an incidental tick-boundary assumption unless the tick boundary is itself the contract.
-9. If the invariant is about AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence such as missing event-log entries.
-10. For mixed-layer scenarios, list the invariant-to-layer mapping explicitly instead of implying that one assertion surface proves the whole chain.
-11. If a golden scenario is intended to prove one specific causal branch while the current architecture lawfully permits competing affordances, document the scenario-isolation choice explicitly and explain which unrelated lawful branches were intentionally removed from setup.
+9. If the scenario can lawfully produce a same-tick cross-agent chain, do not write the ticket as “actor B must act on a later tick” unless strict tick separation is the actual engine rule. In those cases, prefer the explicit action-trace ordering key `(tick, sequence_in_tick)` over incidental tick numbers.
+10. If the invariant is about AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence such as missing event-log entries.
+11. For mixed-layer scenarios, list the invariant-to-layer mapping explicitly instead of implying that one assertion surface proves the whole chain.
+12. If a golden scenario is intended to prove one specific causal branch while the current architecture lawfully permits competing affordances, document the scenario-isolation choice explicitly and explain which unrelated lawful branches were intentionally removed from setup.
 
 ## Mandatory Pre-Implementation Checks
 

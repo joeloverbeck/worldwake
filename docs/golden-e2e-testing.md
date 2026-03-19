@@ -25,12 +25,14 @@ Prefer the strongest, most semantic assertion surface available:
 
 When a test needs ordering, state explicitly which ordering is the contract:
 
+- strict tick separation
 - action lifecycle ordering
 - event-log ordering
 - authoritative state transition ordering
 
 Do not treat incidental tick-boundary details as the contract unless the system is intentionally specified that way.
 If the scenario spans multiple layers, state which earlier layer drives the divergence and which later layer is only a downstream consequence.
+If two actors can lawfully complete relevant actions in the same tick, do not rewrite that contract as "later tick" unless strict tick separation is the intended engine rule. In those cases, action-trace ordering should be asserted via the explicit `(tick, sequence_in_tick)` key on `ActionTraceEvent`.
 
 Good:
 - no `declare_support` commit while hunger remains `High-or-above`
@@ -52,6 +54,7 @@ Do not claim a "same-state, weight-only divergence" unless both compared branche
 - proving one action completed before another
 - proving an action started, committed, aborted, or failed to start
 - proving same-tick actions that are invisible to inter-tick active-action inspection
+- proving same-tick cross-agent causal order without overfitting to tick numbers
 
 ### Use decision traces when:
 
@@ -66,6 +69,8 @@ When the contract is about candidate generation, ranking, suppression, or plan s
 ### Use both when:
 
 - the AI reasoning contract and the execution contract are both under test
+
+For same-tick cross-agent chains, `events_at(tick)` and `events_for_at(actor, tick)` tell you which events happened within the tick, but not the contract by themselves. Use the recorded `sequence_in_tick` field when the assertion depends on relative order among those events.
 
 ### Use a cross-layer timeline when:
 

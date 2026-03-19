@@ -165,6 +165,7 @@ Key types: `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` (Started, Co
 **Important**: Some actions (e.g., loot, eat) complete within a single tick. They are invisible to inter-tick `agent_active_action_name()` observation. Use action traces or state-delta checks for these. Multi-tick actions such as harvest, travel, and craft remain visible between ticks.
 
 When in doubt, enable action tracing and inspect `events_for_at(agent, tick)` to see exactly what happened during that tick.
+For same-tick cross-agent ordering, `events_at()` / `events_for_at()` tell you which events occurred in the tick, but the ordering contract is the explicit `ActionTraceEvent.sequence_in_tick` key. Do not rewrite that contract as "later tick" unless strict tick separation is the intended engine rule.
 
 ## Delivery Planning
 
