@@ -9,11 +9,13 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
-    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
-    DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
-    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, RelationValue, Seed, StateHash,
-    SuccessionLaw, TellProfile, Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
+    build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
+    to_shared_belief_snapshot, total_live_lot_quantity, BeliefConfidencePolicy, BodyPart,
+    CombatProfile, CommodityKind, ComponentKind, ComponentValue, DeadAt, EventTag, EventView,
+    GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile,
+    PerceptionSource, PrototypePlace, Quantity, RecipientKnowledgeStatus, RelationValue, Seed,
+    StateHash, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
+    UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{ActionTraceKind, OfficeSuccessionOutcome};
 
@@ -1797,5 +1799,338 @@ fn golden_same_place_office_fact_still_requires_tell_replays_deterministically()
     assert_eq!(
         first, second,
         "same-place office Tell gating should replay deterministically"
+    );
+}
+
+// ===========================================================================
+// Suite 8: already_told_recent_subject_does_not_crowd_out_untold_office_fact
+//
+// Proves: listener-aware resend suppression happens before tell-candidate
+// truncation in the live AI/action path. A more recent already-told subject
+// must not crowd out an older untold office fact that enables downstream
+// political behavior.
+// Foundation: Principle 7, Principle 13, Principle 18, Principle 19,
+// Principle 24.
+// Cross-systems: Social + conversation memory + beliefs + AI political
+// planning + travel + politics.
+// ===========================================================================
+
+#[allow(clippy::too_many_lines)]
+fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
+    seed: Seed,
+) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Informant",
+        bandit_camp,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Ambitious Listener",
+        bandit_camp,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            enterprise_weight: pm(800),
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let recent_subject = ORCHARD_FARM;
+
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    for agent in [speaker, listener] {
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            blind_perception_profile(),
+        );
+    }
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    let share_recent = GoalKind::ShareBelief {
+        listener,
+        subject: recent_subject,
+    };
+    let share_office = GoalKind::ShareBelief {
+        listener,
+        subject: office,
+    };
+
+    assert!(
+        agent_belief_about(&h.world, listener, recent_subject).is_none(),
+        "listener should start without the recent-subject belief"
+    );
+    assert!(
+        agent_belief_about(&h.world, listener, office).is_none(),
+        "listener should start without office knowledge"
+    );
+    assert_eq!(
+        h.world.effective_place(listener),
+        Some(bandit_camp),
+        "listener should start away from the office jurisdiction"
+    );
+
+    let listener_belief =
+        build_believed_entity_state(&h.world, listener, Tick(0), PerceptionSource::DirectObservation);
+    let listener_belief = listener_belief.expect("listener should be observable for tell targeting");
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        listener_belief.clone(),
+    );
+    let recent_seed_tick = Tick(1);
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        &[recent_subject],
+        recent_seed_tick,
+        PerceptionSource::DirectObservation,
+    );
+    {
+        let mut store = h
+            .world
+            .get_component_agent_belief_store(speaker)
+            .cloned()
+            .expect("speaker should have a belief store after listener/subject seeding");
+        store.record_told_belief(
+            TellMemoryKey {
+                counterparty: listener,
+                subject: listener,
+            },
+            ToldBeliefMemory {
+                shared_state: to_shared_belief_snapshot(&listener_belief),
+                told_tick: Tick(0),
+            },
+        );
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_agent_belief_store(speaker, store)
+            .expect("golden harness should keep belief stores writable");
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let mut recent_tell_tick = None;
+    for _ in 0..40 {
+        h.step_once();
+        if agent_belief_about(&h.world, listener, recent_subject).is_some() {
+            recent_tell_tick = Some(h.scheduler.current_tick());
+            break;
+        }
+    }
+
+    let _recent_tell_tick = recent_tell_tick
+        .expect("speaker should first tell the listener about the more recent subject");
+    assert!(
+        agent_belief_about(&h.world, listener, office).is_none(),
+        "the office fact should still be untold after the first tell"
+    );
+
+    let office_observed_tick = Tick(0);
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        &[office],
+        office_observed_tick,
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut saw_recent_omission = false;
+    let mut saw_office_generated = false;
+    let mut office_tell_tick = None;
+    for _ in 0..80 {
+        h.step_once();
+        let speaker_trace = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for crowd-out emergence")
+            .traces_for(speaker)
+            .into_iter()
+            .last()
+            .expect("speaker should have decision traces in crowd-out emergence");
+        saw_recent_omission |= speaker_trace.goal_status(&share_recent)
+            == worldwake_ai::GoalTraceStatus::OmittedSocial(
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            );
+        saw_office_generated |= speaker_trace.goal_status(&share_office).is_generated();
+
+        if agent_belief_about(&h.world, listener, office).is_some() {
+            office_tell_tick = Some(h.scheduler.current_tick());
+            break;
+        }
+    }
+
+    let office_tell_tick = office_tell_tick
+        .expect("speaker should eventually tell the untold office fact after omitting the duplicate");
+    assert!(
+        saw_recent_omission,
+        "decision traces should show the recent subject omitted as already told before truncation"
+    );
+    assert!(
+        saw_office_generated,
+        "after the duplicate recent subject is omitted, the older office fact should still generate"
+    );
+
+    let tell_commit_count_before_office = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for crowd-out emergence")
+        .events_for(speaker)
+        .iter()
+        .filter(|event| {
+            event.tick <= office_tell_tick
+                && event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .count();
+    assert_eq!(
+        tell_commit_count_before_office, 2,
+        "speaker should commit exactly two tells before the office belief arrives: the recent subject, then the office fact"
+    );
+
+    let generated_claim_before_tell = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for crowd-out emergence")
+        .goal_history_for(listener, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| entry.tick < office_tell_tick)
+        .any(|entry| entry.status.is_generated());
+    assert!(
+        !generated_claim_before_tell,
+        "listener must not generate ClaimOffice before learning the office through Tell"
+    );
+
+    let told_office_belief = agent_belief_about(&h.world, listener, office)
+        .expect("listener should receive the office belief through Tell");
+    assert!(
+        matches!(
+            told_office_belief.source,
+            PerceptionSource::Report {
+                from,
+                chain_len: 1
+            } if from == speaker
+        ),
+        "listener should receive the office fact as a first-hand report from the speaker"
+    );
+
+    for _ in 0..80 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(listener) {
+            break;
+        }
+    }
+
+    let final_tick = h.scheduler.current_tick();
+    let generated_claim_after_tell = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for crowd-out emergence")
+        .goal_history_for(listener, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| office_tell_tick < entry.tick && entry.tick <= final_tick)
+        .any(|entry| entry.status.is_generated());
+    assert!(
+        generated_claim_after_tell,
+        "listener should generate ClaimOffice only after the older office fact is told"
+    );
+
+    let speaker_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for crowd-out emergence")
+        .events_for(speaker);
+    let second_tell_commit = speaker_events
+        .iter()
+        .filter(|event| {
+            event.action_name == "tell" && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .nth(1)
+        .expect("speaker should commit a second tell for the office fact");
+    let listener_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for crowd-out emergence")
+        .events_for(listener);
+    let declare_support_commit = listener_events
+        .iter()
+        .find(|event| {
+            event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .expect("listener should commit declare_support after learning the office fact");
+    assert!(
+        (
+            second_tell_commit.tick,
+            second_tell_commit.sequence_in_tick
+        ) < (
+            declare_support_commit.tick,
+            declare_support_commit.sequence_in_tick,
+        ),
+        "the tell that unlocks the office fact must appear before declare_support in the action trace"
+    );
+    assert_eq!(
+        h.world.effective_place(listener),
+        Some(VILLAGE_SQUARE),
+        "listener should travel to the office jurisdiction after learning the office fact"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(listener),
+        "listener should become office holder through the ordinary support-law path"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact() {
+    let _ = run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(Seed([45; 32]));
+}
+
+#[test]
+fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically(
+) {
+    let first =
+        run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(Seed([46; 32]));
+    let second =
+        run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(Seed([46; 32]));
+    assert_eq!(
+        first, second,
+        "crowd-out prevention should replay deterministically"
     );
 }

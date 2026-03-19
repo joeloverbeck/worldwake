@@ -65,6 +65,7 @@ Do not claim a "same-state, weight-only divergence" unless both compared branche
 - inspecting the final selected path via `planning.selection.selected_plan` and `planning.selection.selected_plan_source` when you need the chosen plan shape, terminal semantics, or whether the trace reflects a fresh search result, retained current plan, or snapshot-only continuation
 
 When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
+For conversation-memory crowd-out scenarios, prove the stale subject was omitted with the concrete social omission reason before claiming an untold subject survived truncation. The absence of a duplicate `tell` commit by itself is too weak because that could also arise from ranking loss, invalidation, or unrelated execution failure.
 
 ### Use both when:
 

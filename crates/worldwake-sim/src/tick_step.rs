@@ -1399,6 +1399,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn action_trace_assigns_explicit_order_across_started_failed_and_committed_events() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
@@ -1598,21 +1599,21 @@ mod tests {
             .collect();
         assert_eq!(committed_events.len(), 2);
 
-        let actor_b_commit = committed_events
+        let commit_for_actor_b = committed_events
             .iter()
             .copied()
             .find(|event| event.actor == actor_b)
             .expect("actor_b should commit in the same tick");
-        let actor_a_commit = committed_events
+        let commit_for_actor_a = committed_events
             .iter()
             .copied()
             .find(|event| event.actor == actor_a)
             .expect("actor_a should commit in the same tick");
-        assert_eq!(actor_b_commit.action_name, "complete");
-        assert_eq!(actor_a_commit.action_name, "complete");
+        assert_eq!(commit_for_actor_b.action_name, "complete");
+        assert_eq!(commit_for_actor_a.action_name, "complete");
         assert!(
-            (actor_b_commit.tick, actor_b_commit.sequence_in_tick)
-                < (actor_a_commit.tick, actor_a_commit.sequence_in_tick),
+            (commit_for_actor_b.tick, commit_for_actor_b.sequence_in_tick)
+                < (commit_for_actor_a.tick, commit_for_actor_a.sequence_in_tick),
             "same-tick cross-actor ordering should be inspectable via the explicit trace key"
         );
     }
