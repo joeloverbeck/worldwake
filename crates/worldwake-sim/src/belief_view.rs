@@ -5,8 +5,9 @@ use worldwake_core::{
     CommodityKind, CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId,
     EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
+    WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -22,6 +23,9 @@ use worldwake_core::{
 /// - duration estimation
 /// - broader affordance/runtime helpers used by snapshot/search code
 pub trait GoalBeliefView {
+    fn current_tick(&self) -> Tick {
+        Tick(0)
+    }
     fn is_alive(&self, entity: EntityId) -> bool;
     fn is_dead(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
@@ -71,6 +75,28 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn told_belief_memory(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<ToldBeliefMemory> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
+    fn recipient_knowledge_status(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<RecipientKnowledgeStatus> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         let _ = agent;
         None
@@ -116,6 +142,9 @@ pub trait GoalBeliefView {
 /// when they truly need runtime-only helpers such as reservations, queue state, or duration
 /// estimation.
 pub trait RuntimeBeliefView {
+    fn current_tick(&self) -> Tick {
+        Tick(0)
+    }
     fn is_alive(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
@@ -193,6 +222,28 @@ pub trait RuntimeBeliefView {
         let _ = agent;
         None
     }
+    fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn told_belief_memory(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<ToldBeliefMemory> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
+    fn recipient_knowledge_status(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<RecipientKnowledgeStatus> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         let _ = agent;
@@ -250,6 +301,10 @@ pub trait RuntimeBeliefView {
 macro_rules! impl_goal_belief_view {
     ($ty:ty) => {
         impl $crate::GoalBeliefView for $ty {
+            fn current_tick(&self) -> worldwake_core::Tick {
+                $crate::RuntimeBeliefView::current_tick(self)
+            }
+
             fn is_alive(&self, entity: worldwake_core::EntityId) -> bool {
                 $crate::RuntimeBeliefView::is_alive(self, entity)
             }
@@ -479,6 +534,44 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::TellProfile> {
                 $crate::RuntimeBeliefView::tell_profile(self, agent)
+            }
+
+            fn told_belief_memories(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<(
+                worldwake_core::TellMemoryKey,
+                worldwake_core::ToldBeliefMemory,
+            )> {
+                $crate::RuntimeBeliefView::told_belief_memories(self, agent)
+            }
+
+            fn told_belief_memory(
+                &self,
+                actor: worldwake_core::EntityId,
+                counterparty: worldwake_core::EntityId,
+                subject: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::ToldBeliefMemory> {
+                $crate::RuntimeBeliefView::told_belief_memory(
+                    self,
+                    actor,
+                    counterparty,
+                    subject,
+                )
+            }
+
+            fn recipient_knowledge_status(
+                &self,
+                actor: worldwake_core::EntityId,
+                counterparty: worldwake_core::EntityId,
+                subject: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::RecipientKnowledgeStatus> {
+                $crate::RuntimeBeliefView::recipient_knowledge_status(
+                    self,
+                    actor,
+                    counterparty,
+                    subject,
+                )
             }
 
             fn courage(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {

@@ -14,14 +14,16 @@ E15c changes a socially sensitive loop that already regressed when the old same-
 
 1. Current social goldens in `crates/worldwake-ai/tests/golden_social.rs` cover autonomous Tell, rumor relay, diversity, and suppression by needs, but none cover resend suppression or retell-after-change/expiry.
 2. Existing relevant goldens are `golden_agent_autonomously_tells_colocated_peer`, `golden_bystander_sees_telling_but_gets_no_belief`, and `golden_survival_needs_suppress_social_goals`.
-3. The E15c spec explicitly calls for goldens proving: no spam over repeated ticks, lawful retell after belief-content change, co-location alone not suppressing initial tell, memory-expiry retell, and trace visibility for reappearance.
-4. These are mixed-layer scenarios. Candidate-generation assertions should rely on decision traces for reasoning-layer behavior, while authoritative delivery should still be checked by resulting belief/memory state where necessary.
-5. Mismatch and correction: this ticket should not backfill core or systems semantics. It assumes the lower-layer tickets are already landed.
+3. `worldwake-core` conversation-memory storage and `E15CCONMEMANDRECKNO-002` view/planning plumbing already exist, so these goldens should validate the integrated end state of tickets 003, 004, and 005 rather than re-prove substrate existence.
+4. The E15c spec explicitly calls for goldens proving: no spam over repeated ticks, lawful retell after belief-content change, co-location alone not suppressing initial tell, memory-expiry retell, and trace visibility for reappearance.
+5. These are mixed-layer scenarios. Candidate-generation assertions should rely on decision traces for reasoning-layer behavior, while authoritative delivery should still be checked by resulting belief/memory state where necessary.
+6. Mismatch and correction: this ticket should not backfill core or systems semantics. It assumes the lower-layer tickets are already landed and verifies that the consumer switch and authoritative commit semantics work together.
 
 ## Architecture Check
 
 1. Keeping the final regressions in `golden_social.rs` is cleaner than scattering E15c end-to-end behavior across unrelated emergent or office goldens.
 2. Golden assertions should isolate the social branch intentionally and document any removed competing lawful affordances.
+3. This ticket is beneficial because it is the first place that can prove the broader E15c architecture actually works as one system rather than as disconnected focused-unit changes.
 
 ## Verification Layers
 

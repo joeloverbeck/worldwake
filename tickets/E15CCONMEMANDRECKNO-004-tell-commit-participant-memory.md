@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — authoritative Tell commit writes speaker/listener conversation memory
-**Deps**: `E15CCONMEMANDRECKNO-001`
+**Deps**: `E15CCONMEMANDRECKNO-001`, `E15CCONMEMANDRECKNO-002`
 
 ## Problem
 
@@ -12,16 +12,19 @@ The current `crates/worldwake-systems/src/tell_actions.rs::commit_tell()` only u
 
 ## Assumption Reassessment (2026-03-19)
 
-1. `commit_tell()` currently returns early on failed acceptance fidelity and writes nothing at all for the listener in that branch.
-2. Existing focused coverage proves only the old behavior: `tell_actions::tests::tell_commit_respects_listener_acceptance_fidelity`, `tell_actions::tests::tell_commit_keeps_listener_newer_belief`, and `tell_actions::tests::tell_commit_transfers_direct_observation_as_report_and_preserves_tick`.
-3. There is no current test for speaker-side remembered tells, listener-side remembered hears, or disposition values.
-4. The E15c spec requires conversation-memory writes and belief-store writes to happen in the same `WorldTxn`; this is authoritative world-state ordering, not merely event-log ordering.
-5. `Rejected` is reserved for concrete future trust/contradiction paths. This ticket should not invent omniscient rejection logic if none exists in current code.
+1. `crates/worldwake-core/src/belief.rs` already defines the authoritative data model for `told_beliefs`, `heard_beliefs`, and heard dispositions. The missing gap is not schema but `crates/worldwake-systems/src/tell_actions.rs::commit_tell()`, which still does not write that state.
+2. `commit_tell()` currently returns early on failed acceptance fidelity and writes nothing at all for the listener in that branch.
+3. Existing focused coverage proves only the old behavior: `tell_actions::tests::tell_commit_respects_listener_acceptance_fidelity`, `tell_actions::tests::tell_commit_keeps_listener_newer_belief`, and `tell_actions::tests::tell_commit_transfers_direct_observation_as_report_and_preserves_tick`.
+4. There is no current test for speaker-side remembered tells, listener-side remembered hears, or disposition values.
+5. `E15CCONMEMANDRECKNO-002` already exposed actor-local told-memory reads through runtime/planning surfaces, so this ticket is now the authoritative mutation half of the architecture rather than an isolated social feature.
+6. The E15c spec requires conversation-memory writes and belief-store writes to happen in the same `WorldTxn`; this is authoritative world-state ordering, not merely event-log ordering.
+7. `Rejected` is reserved for concrete future trust/contradiction paths. This ticket should not invent omniscient rejection logic if none exists in current code.
 
 ## Architecture Check
 
 1. `commit_tell()` is the correct and only authoritative mutation point because Tell is already the explicit social action that transmits knowledge.
 2. Writing speaker and listener memory in the same transaction is cleaner than deriving conversation memory later from event log replay or AI-side heuristics.
+3. This change is more beneficial than the current architecture because the current `commit_tell()` leaves no authoritative participant memory trail at all, forcing later AI behavior to rely on proxies or absence-based inference.
 
 ## Verification Layers
 

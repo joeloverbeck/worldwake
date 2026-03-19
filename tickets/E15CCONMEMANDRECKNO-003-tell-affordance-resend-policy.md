@@ -12,16 +12,19 @@ E15c requires listener-aware resend filtering before truncation for Tell payload
 
 ## Assumption Reassessment (2026-03-19)
 
-1. `crates/worldwake-sim/src/social_relay.rs` currently exposes only `relayable_social_subjects()`, which sorts all subjects by recency and truncates before listener expansion.
-2. `crates/worldwake-systems/src/tell_actions.rs::enumerate_tell_payloads()` directly uses that helper and therefore cannot honor per-listener resend suppression.
-3. Existing focused coverage names the current contract that must change: `tell_actions::tests::tell_affordances_filter_relay_depth_and_limit_subjects_by_recency`.
-4. The E15c spec explicitly requires AI candidate generation and Tell affordance payload enumeration to use the same resend policy. The cleanest way to do that is a shared helper rather than duplicated filters in AI and systems.
-5. This ticket is about payload enumeration, not candidate traces or Tell commit writes.
+1. `crates/worldwake-core/src/belief.rs` already provides the needed resend substrate: `ToldBeliefMemory`, retention-aware `told_belief_memory()`, and `recipient_knowledge_status()`. This ticket should not describe itself as adding conversation memory.
+2. `crates/worldwake-sim/src/social_relay.rs` currently exposes only `relayable_social_subjects()`, which sorts all subjects by recency and truncates before listener expansion.
+3. `crates/worldwake-systems/src/tell_actions.rs::enumerate_tell_payloads()` directly uses that helper and therefore still cannot honor per-listener resend suppression.
+4. `E15CCONMEMANDRECKNO-002` has now landed the actor-local belief-view/planning plumbing needed for retention-aware told-memory reads. This ticket is the first consumer-switch on top of that plumbing.
+5. Existing focused coverage names the current contract that must change: `tell_actions::tests::tell_affordances_filter_relay_depth_and_limit_subjects_by_recency`.
+6. The E15c spec explicitly requires AI candidate generation and Tell affordance payload enumeration to use the same resend policy. The cleanest way to do that is a shared helper rather than duplicated filters in AI and systems.
+7. This ticket is about payload enumeration, not candidate traces or Tell commit writes.
 
 ## Architecture Check
 
 1. A shared resend-policy helper in `worldwake-sim/src/social_relay.rs` is cleaner than duplicating listener-aware filtering logic in `candidate_generation.rs` and `tell_actions.rs`.
 2. The helper must accept actor-local current beliefs and actor-local told-memory state, never listener truth.
+3. This ticket is more beneficial than preserving the current recency-only truncation because the current architecture can permanently crowd out older untold subjects for a listener, which is exactly the kind of hidden planner/runtime artifact E15c is trying to eliminate.
 
 ## Verification Layers
 

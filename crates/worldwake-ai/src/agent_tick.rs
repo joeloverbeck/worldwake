@@ -120,8 +120,9 @@ fn runtime_belief_view<'a>(
     scheduler: &'a Scheduler,
     action_defs: &'a worldwake_sim::ActionDefRegistry,
 ) -> PerAgentBeliefView<'a> {
-    PerAgentBeliefView::with_runtime_from_world(
+    PerAgentBeliefView::with_runtime_from_world_at_tick(
         agent,
+        scheduler.current_tick(),
         world,
         PerAgentBeliefRuntime::new(scheduler.active_actions(), action_defs),
     )

@@ -12,18 +12,21 @@
 
 ## Assumption Reassessment (2026-03-19)
 
-1. The current same-place shortcut is explicit at `crates/worldwake-ai/src/candidate_generation.rs:194`, where `belief.last_known_place == Some(place)` suppresses sharing.
+1. The current same-place shortcut is explicit at `crates/worldwake-ai/src/candidate_generation.rs::emit_social_candidates`, where `belief.last_known_place == Some(place)` suppresses sharing.
 2. Existing focused coverage locks in that wrong behavior: `candidate_generation::tests::social_candidates_skip_subjects_already_known_to_be_colocated`.
-3. `CandidateGenerationDiagnostics` currently contains only `omitted_political`, and `decision_trace.rs` only supports `GoalTraceStatus::OmittedPolitical(...)`; there is no social omission surface.
-4. Candidate-generation work here is runtime `agent_tick` reasoning, but local focused tests in `candidate_generation.rs` are sufficient for the resend gate itself. Full action registries are not required for the core suppression logic.
-5. The intended verification layer for omission explainability is the decision trace, not indirect absence of events or missing committed actions.
-6. Mismatch and correction: the old same-place test must be removed or rewritten, not preserved beside the new resend model.
+3. `E15CCONMEMANDRECKNO-002` has already landed the actor-local told-memory and recipient-knowledge reads on live/runtime and planning surfaces, so this ticket should consume those surfaces rather than invent parallel lookup logic.
+4. `E15CCONMEMANDRECKNO-003` is the shared resend-policy ticket for social helper logic and authoritative affordance parity. This ticket should explicitly reuse that helper so AI generation and tell affordances do not diverge.
+5. `CandidateGenerationDiagnostics` currently contains only `omitted_political`, and `decision_trace.rs` only supports `GoalTraceStatus::OmittedPolitical(...)`; there is no social omission surface.
+6. Candidate-generation work here is runtime `agent_tick` reasoning, but local focused tests in `candidate_generation.rs` are sufficient for the resend gate itself. Full action registries are not required for the core suppression logic.
+7. The intended verification layer for omission explainability is the decision trace, not indirect absence of events or missing committed actions.
+8. Mismatch and correction: the old same-place test must be removed or rewritten, not preserved beside the new resend model.
 
 ## Architecture Check
 
 1. Reusing the shared resend helper from ticket 003 is cleaner than duplicating listener-aware filtering in AI with slightly different truncation semantics.
 2. Adding explicit social omission diagnostics to decision traces is cleaner than forcing developers to infer resend suppression from missing candidates.
 3. No backwards-compatibility flag should preserve the co-location shortcut.
+4. This change is more beneficial than the current architecture because the present AI path suppresses social behavior using a world-state proxy instead of explicit remembered interaction state, which violates the intended locality and debuggability model.
 
 ## Verification Layers
 

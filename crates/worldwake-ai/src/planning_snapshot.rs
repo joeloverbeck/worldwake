@@ -5,7 +5,8 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
     MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId, ResourceSource,
-    TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -191,10 +192,12 @@ pub(crate) struct SnapshotPlace {
 
 pub struct PlanningSnapshot {
     pub(crate) actor: EntityId,
+    pub(crate) current_tick: Tick,
     pub(crate) entities: BTreeMap<EntityId, SnapshotEntity>,
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
+    pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub(crate) actor_support_declarations: BTreeMap<EntityId, EntityId>,
     /// Base support declarations per office: (supporter, candidate) pairs.
     /// Captured at snapshot build time from belief view.
@@ -259,10 +262,12 @@ impl PlanningSnapshot {
 
         Self {
             actor,
+            current_tick: view.current_tick(),
             entities,
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
+            actor_told_beliefs: view.told_belief_memories(actor).into_iter().collect(),
             actor_support_declarations: included_entities
                 .iter()
                 .copied()
@@ -626,16 +631,17 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BeliefConfidencePolicy, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind,
-        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
+        EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
+        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
-    #[derive(Default)]
     struct StubBeliefView {
+        current_tick: Tick,
         alive: BTreeMap<EntityId, bool>,
         kinds: BTreeMap<EntityId, EntityKind>,
         effective_places: BTreeMap<EntityId, EntityId>,
@@ -647,11 +653,38 @@ mod tests {
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     }
 
+    impl Default for StubBeliefView {
+        fn default() -> Self {
+            Self {
+                current_tick: Tick(0),
+                alive: BTreeMap::new(),
+                kinds: BTreeMap::new(),
+                effective_places: BTreeMap::new(),
+                entities_at: BTreeMap::new(),
+                adjacent: BTreeMap::new(),
+                carry_capacities: BTreeMap::new(),
+                entity_loads: BTreeMap::new(),
+                exclusive_facilities: BTreeSet::new(),
+                facility_queue_positions: BTreeMap::new(),
+                facility_grants: BTreeMap::new(),
+                tell_profiles: BTreeMap::new(),
+                told_beliefs: BTreeMap::new(),
+                confidence_policies: BTreeMap::new(),
+                support_declarations: BTreeMap::new(),
+            }
+        }
+    }
+
     impl RuntimeBeliefView for StubBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
@@ -834,6 +867,10 @@ mod tests {
             self.tell_profiles.get(&agent).copied()
         }
 
+        fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+            self.told_beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
             Vec::new()
         }
@@ -1005,6 +1042,60 @@ mod tests {
         assert_eq!(
             snapshot.actor_tell_profile,
             view.tell_profiles.get(&actor).copied()
+        );
+    }
+
+    #[test]
+    fn build_snapshot_preserves_actor_told_belief_memory() {
+        let actor = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let place = entity(10);
+        let mut view = StubBeliefView {
+            current_tick: Tick(8),
+            ..StubBeliefView::default()
+        };
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor]);
+        view.tell_profiles.insert(actor, TellProfile::default());
+        view.told_beliefs.insert(
+            actor,
+            vec![(
+                TellMemoryKey {
+                    counterparty: listener,
+                    subject,
+                },
+                ToldBeliefMemory {
+                    shared_state: worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
+                        last_known_place: Some(place),
+                        last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        last_known_courage: None,
+                        observed_tick: Tick(6),
+                        source: worldwake_core::PerceptionSource::DirectObservation,
+                    }),
+                    told_tick: Tick(7),
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
+
+        assert_eq!(snapshot.current_tick, Tick(8));
+        assert_eq!(
+            snapshot
+                .actor_told_beliefs
+                .get(&TellMemoryKey {
+                    counterparty: listener,
+                    subject,
+                })
+                .map(|memory| memory.told_tick),
+            Some(Tick(7))
         );
     }
 
