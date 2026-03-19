@@ -1,10 +1,10 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, ControlError,
-    ControllerState, DeterministicRng, ExternalAbortReason, InputKind, PoliticalTraceSink,
-    RecipeRegistry, Scheduler, SystemDispatchTable, SystemError, TickInputContext, TickInputError,
-    TickInputProducer, TickOutcome,
+    ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
+    ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
+    PoliticalTraceSink, RecipeRegistry, Scheduler, SystemDispatchTable, SystemError,
+    TickInputContext, TickInputError, TickInputProducer, TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -42,6 +42,14 @@ impl TickStepRuntime<'_> {
 fn lookup_action_name(defs: &ActionDefRegistry, def_id: ActionDefId) -> String {
     defs.get(def_id)
         .map_or_else(|| "unknown".to_owned(), |d| d.name.clone())
+}
+
+fn action_trace_detail_for_affordance(
+    defs: &ActionDefRegistry,
+    affordance: &crate::Affordance,
+) -> Option<ActionTraceDetail> {
+    defs.get(affordance.def_id)
+        .and_then(|def| ActionTraceDetail::from_payload(affordance.effective_payload(def)))
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -275,15 +283,19 @@ fn apply_input(
                 return Err(TickStepError::Action(err));
             }
             let action_name = lookup_action_name(services.action_defs, def_id);
-            runtime.record_action_trace(ActionTraceEvent::new(
-                tick,
-                actor,
-                def_id,
-                action_name,
-                ActionTraceKind::Started {
-                    targets: targets.clone(),
-                },
-            ));
+            let trace_detail = action_trace_detail_for_affordance(services.action_defs, &affordance);
+            runtime.record_action_trace(
+                ActionTraceEvent::new(
+                    tick,
+                    actor,
+                    def_id,
+                    action_name,
+                    ActionTraceKind::Started {
+                        targets: targets.clone(),
+                    },
+                )
+                .with_detail(trace_detail),
+            );
             Ok(InputOutcome {
                 actions_started: 1,
                 actions_aborted: 0,
@@ -295,11 +307,11 @@ fn apply_input(
         } => {
             validate_cancel_actor(runtime.scheduler, actor, action_instance_id)?;
             // Capture instance info before abort removes it from the scheduler.
-            let cancel_def_id = runtime
+            let cancel_instance = runtime
                 .scheduler
                 .active_actions()
                 .get(&action_instance_id)
-                .map(|i| i.def_id);
+                .cloned();
             let replan = runtime
                 .scheduler
                 .abort_active_action(
@@ -319,21 +331,24 @@ fn apply_input(
                 )
                 .map_err(TickStepError::Action)?;
             runtime.scheduler.retain_replan(replan);
-            if let Some(def_id) = cancel_def_id {
+            if let Some(instance) = cancel_instance {
                 let action_name = services
                     .action_defs
-                    .get(def_id)
+                    .get(instance.def_id)
                     .map_or_else(|| "unknown".to_owned(), |d| d.name.clone()) /* PLACEHOLDER_SHOULD_NOT_EXIST */;
-                runtime.record_action_trace(ActionTraceEvent::new(
-                    tick,
-                    actor,
-                    def_id,
-                    action_name,
-                    ActionTraceKind::Aborted {
-                        instance_id: action_instance_id,
-                        reason: format!("CancelledByInput {{ sequence_no: {sequence_no} }}"),
-                    },
-                ));
+                runtime.record_action_trace(
+                    ActionTraceEvent::new(
+                        tick,
+                        actor,
+                        instance.def_id,
+                        action_name,
+                        ActionTraceKind::Aborted {
+                            instance_id: action_instance_id,
+                            reason: format!("CancelledByInput {{ sequence_no: {sequence_no} }}"),
+                        },
+                    )
+                    .with_detail(ActionTraceDetail::from_payload(&instance.payload)),
+                );
             }
             Ok(InputOutcome {
                 actions_started: 0,
@@ -471,32 +486,38 @@ fn progress_active_actions(
                         outcome: outcome.clone(),
                     });
                 let action_name = lookup_action_name(services.action_defs, instance.def_id);
-                runtime.record_action_trace(ActionTraceEvent::new(
-                    tick,
-                    instance.actor,
-                    instance.def_id,
-                    action_name,
-                    ActionTraceKind::Committed {
-                        instance_id,
-                        outcome,
-                    },
-                ));
+                runtime.record_action_trace(
+                    ActionTraceEvent::new(
+                        tick,
+                        instance.actor,
+                        instance.def_id,
+                        action_name,
+                        ActionTraceKind::Committed {
+                            instance_id,
+                            outcome,
+                        },
+                    )
+                    .with_detail(ActionTraceDetail::from_payload(&instance.payload)),
+                );
                 actions_completed = actions_completed
                     .checked_add(1)
                     .expect("tick-step action-complete counter overflowed");
             }
             TickOutcome::Aborted { reason, replan } => {
                 let action_name = lookup_action_name(services.action_defs, instance.def_id);
-                runtime.record_action_trace(ActionTraceEvent::new(
-                    tick,
-                    instance.actor,
-                    instance.def_id,
-                    action_name,
-                    ActionTraceKind::Aborted {
-                        instance_id,
-                        reason: format!("{reason:?}"),
-                    },
-                ));
+                runtime.record_action_trace(
+                    ActionTraceEvent::new(
+                        tick,
+                        instance.actor,
+                        instance.def_id,
+                        action_name,
+                        ActionTraceKind::Aborted {
+                            instance_id,
+                            reason: format!("{reason:?}"),
+                        },
+                    )
+                    .with_detail(ActionTraceDetail::from_payload(&instance.payload)),
+                );
                 runtime.scheduler.retain_replan(replan);
                 actions_aborted = actions_aborted
                     .checked_add(1)
@@ -555,16 +576,19 @@ fn abort_actions_for_dead_actors(
         runtime.scheduler.retain_replan(replan);
         if let Some(inst) = dead_instance {
             let action_name = lookup_action_name(services.action_defs, inst.def_id);
-            runtime.record_action_trace(ActionTraceEvent::new(
-                tick,
-                inst.actor,
-                inst.def_id,
-                action_name,
-                ActionTraceKind::Aborted {
-                    instance_id,
-                    reason: "ActorMarkedDead".to_string(),
-                },
-            ));
+            runtime.record_action_trace(
+                ActionTraceEvent::new(
+                    tick,
+                    inst.actor,
+                    inst.def_id,
+                    action_name,
+                    ActionTraceKind::Aborted {
+                        instance_id,
+                        reason: "ActorMarkedDead".to_string(),
+                    },
+                )
+                .with_detail(ActionTraceDetail::from_payload(&inst.payload)),
+            );
         }
         aborted = aborted
             .checked_add(1)
@@ -655,11 +679,11 @@ mod tests {
     use crate::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionError, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionRequestMode, ActionState, ActionStatus, ActionTraceKind,
-        ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng, DurationExpr, InputKind,
-        Interruptibility, Precondition, RecipeRegistry, ReservationReq, Scheduler,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
-        TickInputContext, TickInputError, TickInputProducer,
+        ActionProgress, ActionRequestMode, ActionState, ActionStatus, ActionTraceDetail,
+        ActionTraceKind, ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng,
+        DurationExpr, InputKind, Interruptibility, Precondition, RecipeRegistry, ReservationReq,
+        Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest,
+        TargetSpec, TellActionPayload, TickInputContext, TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -849,13 +873,33 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(1),
         });
+        registry.register(ActionDef {
+            id: ActionDefId(2),
+            name: "complete-tell".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: vec![crate::Constraint::ActorAlive],
+            targets: Vec::new(),
+            preconditions: vec![crate::Precondition::ActorAlive],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![crate::Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([EventTag::Social]),
+            payload: ActionPayload::Tell(TellActionPayload {
+                listener: entity(7),
+                subject_entity: entity(8),
+            }),
+            handler: ActionHandlerId(1),
+        });
         registry
     }
 
     fn reservation_action_registry() -> ActionDefRegistry {
         let mut registry = action_registry();
         registry.register(ActionDef {
-            id: ActionDefId(2),
+            id: ActionDefId(3),
             name: "reserved-target".to_string(),
             domain: ActionDomain::Generic,
             actor_constraints: vec![crate::Constraint::ActorAlive],
@@ -1206,7 +1250,7 @@ mod tests {
             Tick(0),
             InputKind::RequestAction {
                 actor,
-                def_id: ActionDefId(2),
+                def_id: ActionDefId(3),
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
@@ -1216,7 +1260,7 @@ mod tests {
             Tick(0),
             InputKind::RequestAction {
                 actor,
-                def_id: ActionDefId(2),
+                def_id: ActionDefId(3),
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::BestEffort,
@@ -1250,7 +1294,7 @@ mod tests {
         assert_eq!(failures.len(), 1, "BestEffort failure should be recorded");
         assert_eq!(failures[0].tick, Tick(0));
         assert_eq!(failures[0].actor, actor);
-        assert_eq!(failures[0].def_id, ActionDefId(2));
+        assert_eq!(failures[0].def_id, ActionDefId(3));
         assert!(!failures[0].reason.is_empty(), "reason must be non-empty");
         let tick_events = action_trace.events_at(Tick(0));
         assert_eq!(tick_events.len(), 2);
@@ -1434,7 +1478,7 @@ mod tests {
             Tick(0),
             InputKind::RequestAction {
                 actor,
-                def_id: ActionDefId(2),
+                def_id: ActionDefId(3),
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::Strict,
@@ -1444,7 +1488,7 @@ mod tests {
             Tick(0),
             InputKind::RequestAction {
                 actor,
-                def_id: ActionDefId(2),
+                def_id: ActionDefId(3),
                 targets: vec![actor],
                 payload_override: None,
                 mode: ActionRequestMode::BestEffort,
@@ -1616,6 +1660,79 @@ mod tests {
                 < (commit_for_actor_a.tick, commit_for_actor_a.sequence_in_tick),
             "same-tick cross-actor ordering should be inspectable via the explicit trace key"
         );
+    }
+
+    #[test]
+    fn action_trace_records_tell_detail_without_disturbing_ordering() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+        let mut action_trace = ActionTraceSink::new();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(2),
+                targets: Vec::new(),
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: Some(&mut action_trace),
+                politics_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.actions_started, 1);
+        assert_eq!(result.actions_completed, 1);
+
+        let tick_events = action_trace.events_at(Tick(0));
+        assert_eq!(tick_events.len(), 2);
+        assert_eq!(tick_events[0].sequence_in_tick, 0);
+        assert_eq!(tick_events[1].sequence_in_tick, 1);
+        assert_eq!(tick_events[0].action_name, "complete-tell");
+        assert_eq!(tick_events[1].action_name, "complete-tell");
+        assert_eq!(
+            tick_events[0].detail.as_ref(),
+            Some(&ActionTraceDetail::Tell {
+                listener: entity(7),
+                subject: entity(8),
+            })
+        );
+        assert_eq!(tick_events[1].detail.as_ref(), tick_events[0].detail.as_ref());
+        assert!(matches!(
+            tick_events[0].kind,
+            ActionTraceKind::Started { .. }
+        ));
+        assert!(matches!(
+            tick_events[1].kind,
+            ActionTraceKind::Committed { .. }
+        ));
     }
 
     #[test]

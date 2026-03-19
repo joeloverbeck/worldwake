@@ -74,7 +74,7 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
-pub use action_trace::{ActionTraceEvent, ActionTraceKind, ActionTraceSink};
+pub use action_trace::{ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink};
 pub use action_validation::validate_action_def_authoritatively;
 pub use affordance::Affordance;
 pub use affordance_query::{

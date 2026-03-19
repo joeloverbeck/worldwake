@@ -17,7 +17,7 @@ use worldwake_core::{
     StateHash, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
     UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
-use worldwake_sim::{ActionTraceKind, OfficeSuccessionOutcome};
+use worldwake_sim::{ActionTraceDetail, ActionTraceKind, OfficeSuccessionOutcome};
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -2005,20 +2005,43 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         "after the duplicate recent subject is omitted, the older office fact should still generate"
     );
 
-    let tell_commit_count_before_office = h
+    let speaker_action_events = h
         .action_trace_sink()
         .expect("action tracing should be enabled for crowd-out emergence")
-        .events_for(speaker)
+        .events_for(speaker);
+    let recent_tell_commits_before_office = speaker_action_events
         .iter()
         .filter(|event| {
             event.tick <= office_tell_tick
                 && event.action_name == "tell"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && event.detail.as_ref()
+                    == Some(&ActionTraceDetail::Tell {
+                        listener,
+                        subject: recent_subject,
+                    })
         })
         .count();
+    let office_tell_commit = speaker_action_events
+        .iter()
+        .find(|event| {
+            event.tick <= office_tell_tick
+                && event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && event.detail.as_ref()
+                    == Some(&ActionTraceDetail::Tell {
+                        listener,
+                        subject: office,
+                    })
+        })
+        .expect("speaker should commit a tell for the office fact");
+    let office_tell_commit_order = (
+        office_tell_commit.tick,
+        office_tell_commit.sequence_in_tick,
+    );
     assert_eq!(
-        tell_commit_count_before_office, 2,
-        "speaker should commit exactly two tells before the office belief arrives: the recent subject, then the office fact"
+        recent_tell_commits_before_office, 1,
+        "speaker should commit the more recent subject exactly once before the office fact is learned"
     );
 
     let generated_claim_before_tell = h
@@ -2068,17 +2091,6 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         "listener should generate ClaimOffice only after the older office fact is told"
     );
 
-    let speaker_events = h
-        .action_trace_sink()
-        .expect("action tracing should be enabled for crowd-out emergence")
-        .events_for(speaker);
-    let second_tell_commit = speaker_events
-        .iter()
-        .filter(|event| {
-            event.action_name == "tell" && matches!(event.kind, ActionTraceKind::Committed { .. })
-        })
-        .nth(1)
-        .expect("speaker should commit a second tell for the office fact");
     let listener_events = h
         .action_trace_sink()
         .expect("action tracing should be enabled for crowd-out emergence")
@@ -2091,10 +2103,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         })
         .expect("listener should commit declare_support after learning the office fact");
     assert!(
-        (
-            second_tell_commit.tick,
-            second_tell_commit.sequence_in_tick
-        ) < (
+        office_tell_commit_order < (
             declare_support_commit.tick,
             declare_support_commit.sequence_in_tick,
         ),
