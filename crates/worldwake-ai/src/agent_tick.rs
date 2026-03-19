@@ -5075,6 +5075,116 @@ mod tests {
     }
 
     #[test]
+    fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
+        let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+        {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_homeostatic_needs(
+                harness.actor,
+                HomeostaticNeeds::new(
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(0));
+        let heal_id = harness
+            .defs
+            .iter()
+            .find(|def| def.name == "heal")
+            .map(|def| def.id)
+            .expect("full registries should include heal");
+        let goal = GoalKey::from(GoalKind::TreatWounds {
+            patient: harness.actor,
+        });
+        let heal_step = PlannedStep {
+            def_id: heal_id,
+            targets: vec![PlanningEntityRef::Authoritative(harness.actor)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Heal,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+        harness.driver.runtime_by_agent.insert(
+            harness.actor,
+            crate::AgentDecisionRuntime {
+                current_goal: Some(goal),
+                current_plan: Some(PlannedPlan::new(
+                    goal,
+                    vec![heal_step],
+                    PlanTerminalKind::GoalSatisfied,
+                )),
+                step_in_flight: true,
+                ..crate::AgentDecisionRuntime::default()
+            },
+        );
+        harness
+            .scheduler
+            .record_action_start_failure(worldwake_sim::ActionStartFailure {
+                tick: Tick(0),
+                actor: harness.actor,
+                def_id: heal_id,
+                reason: format!(
+                    "{:?}",
+                    worldwake_sim::ActionError::AbortRequested(
+                        worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
+                            target: harness.actor,
+                        }
+                    )
+                ),
+            });
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let trace = harness
+            .driver
+            .trace_sink()
+            .expect("tracing should be enabled")
+            .trace_at(harness.actor, Tick(0))
+            .expect("tick 0 trace should exist");
+        let planning = match &trace.outcome {
+            crate::DecisionOutcome::Planning(planning) => planning,
+            other => panic!("expected Planning outcome, got {other:?}"),
+        };
+
+        assert_eq!(planning.action_start_failures.len(), 1);
+        assert_eq!(planning.action_start_failures[0].tick, Tick(0));
+        assert_eq!(planning.action_start_failures[0].def_id, heal_id);
+        assert_eq!(
+            planning.action_start_failures[0].reason,
+            format!(
+                "{:?}",
+                worldwake_sim::ActionError::AbortRequested(
+                    worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
+                        target: harness.actor,
+                    }
+                )
+            )
+        );
+
+        let runtime = harness
+            .runtime()
+            .expect("actor runtime should still exist after reconciliation");
+        assert!(
+            !runtime.step_in_flight,
+            "missing active action should clear in-flight state after start failure reconciliation"
+        );
+        let blocked = harness
+            .world
+            .get_component_blocked_intent_memory(harness.actor)
+            .expect("reconciled failure should persist blocked intent memory");
+        assert_eq!(blocked.intents.len(), 1);
+        assert_eq!(blocked.intents[0].goal_key, goal);
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn trace_snapshot_continuation_records_selected_plan_provenance() {
         let mut harness = Harness::new(ControlSource::Ai);

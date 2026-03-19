@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` targeted regression coverage, with minimal harness support only if required
-**Deps**: `S08ACTSTAABORES-001`, `S08ACTSTAABORES-002`, `specs/S08-action-start-abort-resilience.md`
+**Deps**: `S08ACTSTAABORES-001`, `S08ACTSTAABORES-002`, `S08ACTSTAABORES-004`, `specs/S08-action-start-abort-resilience.md`
 
 ## Problem
 
@@ -51,6 +51,8 @@ The new test should assert at least:
 - pre-failure `TreatWounds` selection or candidate presence,
 - same-tick `ActionTraceKind::StartFailed` or equivalent start-failure evidence,
 - blocked-intent memory / runtime-dirty state after failure.
+
+If `S08ACTSTAABORES-004` lands first, this regression should assert against that canonical structured start-failure handoff rather than freezing the current generic missing-in-flight reconciliation path as the intended long-term architecture.
 
 ### 3. Preserve existing care goldens intentionally
 

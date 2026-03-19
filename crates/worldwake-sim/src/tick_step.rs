@@ -364,6 +364,7 @@ fn is_best_effort_start_failure(error: &ActionError) -> bool {
         ActionError::ReservationUnavailable(_)
             | ActionError::PreconditionFailed(_)
             | ActionError::InvalidTarget(_)
+            | ActionError::AbortRequested(_)
     )
 }
 
@@ -758,6 +759,20 @@ mod tests {
         Ok(Some(ActionState::Empty))
     }
 
+    fn start_abort_requested(
+        _def: &ActionDef,
+        instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<Option<ActionState>, ActionError> {
+        let target = instance.targets.first().copied().ok_or_else(|| {
+            ActionError::InternalError("abort-start test action requires one target".to_string())
+        })?;
+        Err(ActionError::AbortRequested(
+            crate::ActionAbortRequestReason::TargetHasNoWounds { target },
+        ))
+    }
+
     #[allow(clippy::unnecessary_wraps)]
     fn tick_continue(
         _def: &ActionDef,
@@ -831,9 +846,16 @@ mod tests {
             commit_noop,
             abort_record,
         ));
+        let abort_start_id = registry.register(ActionHandler::new(
+            start_abort_requested,
+            tick_continue,
+            commit_noop,
+            abort_record,
+        ));
 
         assert_eq!(continue_id, ActionHandlerId(0));
         assert_eq!(complete_id, ActionHandlerId(1));
+        assert_eq!(abort_start_id, ActionHandlerId(2));
         registry
     }
 
@@ -926,6 +948,35 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+        });
+        registry.register(ActionDef {
+            id: ActionDefId(4),
+            name: "abort-start".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: vec![crate::Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetIsAgent(0),
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetIsAgent(0),
+            ],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(2),
         });
         registry
     }
@@ -1308,6 +1359,145 @@ mod tests {
             tick_events[1].kind,
             ActionTraceKind::StartFailed { .. }
         ));
+    }
+
+    #[test]
+    fn best_effort_request_records_abort_requested_start_failure_without_failing_tick() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = spawn_agent(&mut world, 1, ControlSource::Ai);
+        {
+            let place = world.topology().place_ids().next().unwrap();
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(actor, place).unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        let mut event_log = EventLog::new();
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut controller = ControllerState::with_entity(actor);
+        let mut rng = DeterministicRng::new(Seed([12; 32]));
+        let recipes = RecipeRegistry::new();
+        let defs = reservation_action_registry();
+        let handlers = handler_registry();
+        let mut action_trace = ActionTraceSink::new();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(4),
+                targets: vec![actor],
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: Some(&mut action_trace),
+                politics_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.inputs_processed, 1);
+        assert_eq!(result.actions_started, 0);
+        assert!(scheduler.active_actions().is_empty());
+        assert_eq!(scheduler.current_tick(), Tick(1));
+
+        let failures = scheduler.action_start_failures();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].tick, Tick(0));
+        assert_eq!(failures[0].actor, actor);
+        assert_eq!(failures[0].def_id, ActionDefId(4));
+        assert_eq!(
+            failures[0].reason,
+            format!(
+                "{:?}",
+                ActionError::AbortRequested(crate::ActionAbortRequestReason::TargetHasNoWounds {
+                    target: actor,
+                })
+            )
+        );
+
+        let tick_events = action_trace.events_at(Tick(0));
+        assert_eq!(tick_events.len(), 1);
+        assert_eq!(tick_events[0].sequence_in_tick, 0);
+        assert_eq!(tick_events[0].action_name, "abort-start");
+        assert!(matches!(
+            tick_events[0].kind,
+            ActionTraceKind::StartFailed { .. }
+        ));
+    }
+
+    #[test]
+    fn strict_request_propagates_abort_requested_start_failure() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let actor = spawn_agent(&mut world, 1, ControlSource::Ai);
+        {
+            let place = world.topology().place_ids().next().unwrap();
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(actor, place).unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        let mut event_log = EventLog::new();
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut controller = ControllerState::with_entity(actor);
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+        let recipes = RecipeRegistry::new();
+        let defs = reservation_action_registry();
+        let handlers = handler_registry();
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(4),
+                targets: vec![actor],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        );
+
+        let error = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: None,
+                politics_trace: None,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            TickStepError::Action(ActionError::AbortRequested(
+                crate::ActionAbortRequestReason::TargetHasNoWounds { target: actor }
+            ))
+        );
+        assert!(scheduler.action_start_failures().is_empty());
+        assert!(scheduler.active_actions().is_empty());
     }
 
     #[test]
