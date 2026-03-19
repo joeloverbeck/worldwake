@@ -157,7 +157,10 @@ fn retell_speaker_profile(retention_ticks: u64) -> TellProfile {
     }
 }
 
-fn build_social_retell_fixture(seed: Seed, speaker_tell_profile: TellProfile) -> SocialRetellFixture {
+fn build_social_retell_fixture(
+    seed: Seed,
+    speaker_tell_profile: TellProfile,
+) -> SocialRetellFixture {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
     h.enable_action_tracing();
     h.driver.enable_tracing();
@@ -223,33 +226,21 @@ fn build_social_retell_fixture(seed: Seed, speaker_tell_profile: TellProfile) ->
         keen_perception_profile(),
     );
 
-    let listener_belief = build_believed_entity_state(
-        &h.world,
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         listener,
         Tick(0),
         PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable for tell targeting");
-    seed_belief(
+    );
+    seed_belief_from_world(
         &mut h.world,
         &mut h.event_log,
         speaker,
-        listener,
-        listener_belief,
-    );
-    let subject_belief = build_believed_entity_state(
-        &h.world,
         subject,
         Tick(1),
         PerceptionSource::DirectObservation,
-    )
-    .expect("subject should be observable for speaker belief seeding");
-    seed_belief(
-        &mut h.world,
-        &mut h.event_log,
-        speaker,
-        subject,
-        subject_belief,
     );
 
     SocialRetellFixture {
@@ -298,7 +289,10 @@ fn wait_for_initial_tell(fixture: &mut SocialRetellFixture) -> Tick {
         fixture.h.step_once();
         agent_belief_about(&fixture.h.world, fixture.listener, fixture.subject).is_some()
     });
-    assert!(learned, "listener should learn the speaker's initial subject belief");
+    assert!(
+        learned,
+        "listener should learn the speaker's initial subject belief"
+    );
 
     let memory = told_memory(
         &fixture.h.world,
@@ -407,33 +401,21 @@ fn run_autonomous_tell_scenario(
         keen_perception_profile(),
     );
 
-    let listener_belief = build_believed_entity_state(
-        &h.world,
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         listener,
         Tick(0),
         PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable for tell targeting");
-    seed_belief(
+    );
+    seed_belief_from_world(
         &mut h.world,
         &mut h.event_log,
         speaker,
-        listener,
-        listener_belief,
-    );
-    let orchard_belief = build_believed_entity_state(
-        &h.world,
         orchard,
         Tick(1),
         PerceptionSource::DirectObservation,
-    )
-    .expect("orchard should be observable for belief seeding");
-    seed_belief(
-        &mut h.world,
-        &mut h.event_log,
-        speaker,
-        orchard,
-        orchard_belief,
     );
 
     let mut saw_social_event = false;
@@ -814,33 +796,21 @@ fn run_skeptical_listener_scenario(
         listener,
         keen_perception_profile(),
     );
-    let listener_belief = build_believed_entity_state(
-        &h.world,
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         listener,
         Tick(0),
         PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable for tell targeting");
-    seed_belief(
+    );
+    seed_belief_from_world(
         &mut h.world,
         &mut h.event_log,
         speaker,
-        listener,
-        listener_belief,
-    );
-    let orchard_belief = build_believed_entity_state(
-        &h.world,
         orchard,
         Tick(1),
         PerceptionSource::DirectObservation,
-    )
-    .expect("orchard should be observable for belief seeding");
-    seed_belief(
-        &mut h.world,
-        &mut h.event_log,
-        speaker,
-        orchard,
-        orchard_belief,
     );
 
     let mut saw_social_event = false;
@@ -948,33 +918,21 @@ fn run_bystander_witness_scenario(
         rejecting_tell_profile(),
     );
 
-    let listener_belief = build_believed_entity_state(
-        &h.world,
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         listener,
         Tick(0),
         PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable for tell targeting");
-    seed_belief(
+    );
+    seed_belief_from_world(
         &mut h.world,
         &mut h.event_log,
         speaker,
-        listener,
-        listener_belief,
-    );
-    let orchard_belief = build_believed_entity_state(
-        &h.world,
         orchard,
         Tick(1),
         PerceptionSource::DirectObservation,
-    )
-    .expect("orchard should be observable for belief seeding");
-    seed_belief(
-        &mut h.world,
-        &mut h.event_log,
-        speaker,
-        orchard,
-        orchard_belief,
     );
 
     let scenario_completed = run_until(60, || {
@@ -1380,7 +1338,10 @@ fn run_unchanged_tell_suppression_scenario(
         fixture.listener,
         fixture.subject,
     );
-    assert!(saw_resend_omission, "decision traces should expose unchanged resend suppression");
+    assert!(
+        saw_resend_omission,
+        "decision traces should expose unchanged resend suppression"
+    );
     assert_eq!(
         final_memory.told_tick, initial_told_tick,
         "unchanged resend suppression should leave the original told-memory tick intact"
@@ -1435,7 +1396,10 @@ fn run_retell_after_subject_belief_change_scenario(
             > initial_told_tick
     });
 
-    assert!(retold, "belief-content change should trigger a lawful re-tell");
+    assert!(
+        retold,
+        "belief-content change should trigger a lawful re-tell"
+    );
     assert!(
         saw_reenabled_share_goal,
         "decision traces should show ShareBelief re-enabled after a material belief change"
@@ -1519,7 +1483,10 @@ fn run_retell_after_conversation_memory_expiry_scenario(
             > initial_told_tick
     });
 
-    assert!(retold, "expired conversation memory should permit a lawful re-tell");
+    assert!(
+        retold,
+        "expired conversation memory should permit a lawful re-tell"
+    );
     assert!(
         saw_resend_omission_before_expiry,
         "before expiry, decision traces should still show unchanged resend suppression"
@@ -1804,7 +1771,10 @@ fn run_chain_length_filtering_scenario(
     // Verify chain degradation.
     let bob_belief = agent_belief_about(&h.world, bob, subject).unwrap();
     assert!(
-        matches!(bob_belief.source, PerceptionSource::Report { chain_len: 1, .. }),
+        matches!(
+            bob_belief.source,
+            PerceptionSource::Report { chain_len: 1, .. }
+        ),
         "Bob should hold first-order hearsay about the subject"
     );
 
@@ -1947,20 +1917,14 @@ fn run_agent_diversity_scenario(
     );
 
     // Seed beliefs: each speaker knows the listener + their unique subject.
-    let listener_belief = build_believed_entity_state(
-        &h.world,
-        listener,
-        Tick(0),
-        PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable");
     for speaker in [gossip, normal, loner] {
-        seed_belief(
+        seed_belief_from_world(
             &mut h.world,
             &mut h.event_log,
             speaker,
             listener,
-            listener_belief.clone(),
+            Tick(0),
+            PerceptionSource::DirectObservation,
         );
     }
 
@@ -1969,14 +1933,19 @@ fn run_agent_diversity_scenario(
         (normal, subject_n, "subject_n"),
         (loner, subject_l, "subject_l"),
     ] {
-        let believed = build_believed_entity_state(
-            &h.world,
+        let belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
             subject,
             Tick(1),
             PerceptionSource::DirectObservation,
-        )
-        .unwrap_or_else(|| panic!("{label} should be observable"));
-        seed_belief(&mut h.world, &mut h.event_log, speaker, subject, believed);
+        );
+        assert_eq!(
+            belief.observed_tick,
+            Tick(1),
+            "{label} belief should preserve the requested observed tick"
+        );
     }
 
     // Run simulation for extended ticks.

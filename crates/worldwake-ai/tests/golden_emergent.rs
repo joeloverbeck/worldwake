@@ -9,13 +9,12 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
-    to_shared_belief_snapshot, total_live_lot_quantity, BeliefConfidencePolicy, BodyPart,
-    CombatProfile, CommodityKind, ComponentKind, ComponentValue, DeadAt, EventTag, EventView,
-    GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, PrototypePlace, Quantity, RecipientKnowledgeStatus, RelationValue, Seed,
-    StateHash, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
-    UtilityProfile, Wound, WoundCause, WoundId, WoundList,
+    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
+    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
+    DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, RecipientKnowledgeStatus,
+    RelationValue, Seed, StateHash, SuccessionLaw, TellProfile, Tick, UtilityProfile, Wound,
+    WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind, OfficeSuccessionOutcome};
 
@@ -1902,15 +1901,13 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         "listener should start away from the office jurisdiction"
     );
 
-    let listener_belief =
-        build_believed_entity_state(&h.world, listener, Tick(0), PerceptionSource::DirectObservation);
-    let listener_belief = listener_belief.expect("listener should be observable for tell targeting");
-    seed_belief(
+    let listener_belief = seed_belief_from_world(
         &mut h.world,
         &mut h.event_log,
         speaker,
         listener,
-        listener_belief.clone(),
+        Tick(0),
+        PerceptionSource::DirectObservation,
     );
     let recent_seed_tick = Tick(1);
     seed_actor_beliefs(
@@ -1921,27 +1918,15 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         recent_seed_tick,
         PerceptionSource::DirectObservation,
     );
-    {
-        let mut store = h
-            .world
-            .get_component_agent_belief_store(speaker)
-            .cloned()
-            .expect("speaker should have a belief store after listener/subject seeding");
-        store.record_told_belief(
-            TellMemoryKey {
-                counterparty: listener,
-                subject: listener,
-            },
-            ToldBeliefMemory {
-                shared_state: to_shared_belief_snapshot(&listener_belief),
-                told_tick: Tick(0),
-            },
-        );
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_agent_belief_store(speaker, store)
-            .expect("golden harness should keep belief stores writable");
-        commit_txn(txn, &mut h.event_log);
-    }
+    seed_told_belief_memory(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        listener,
+        &listener_belief,
+        Tick(0),
+    );
 
     let mut recent_tell_tick = None;
     for _ in 0..40 {
@@ -1994,8 +1979,9 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         }
     }
 
-    let office_tell_tick = office_tell_tick
-        .expect("speaker should eventually tell the untold office fact after omitting the duplicate");
+    let office_tell_tick = office_tell_tick.expect(
+        "speaker should eventually tell the untold office fact after omitting the duplicate",
+    );
     assert!(
         saw_recent_omission,
         "decision traces should show the recent subject omitted as already told before truncation"
@@ -2035,10 +2021,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                     })
         })
         .expect("speaker should commit a tell for the office fact");
-    let office_tell_commit_order = (
-        office_tell_commit.tick,
-        office_tell_commit.sequence_in_tick,
-    );
+    let office_tell_commit_order = (office_tell_commit.tick, office_tell_commit.sequence_in_tick);
     assert_eq!(
         recent_tell_commits_before_office, 1,
         "speaker should commit the more recent subject exactly once before the office fact is learned"

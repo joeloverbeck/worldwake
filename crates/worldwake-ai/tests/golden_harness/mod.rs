@@ -13,15 +13,16 @@ use std::num::NonZeroU32;
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
-    AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, BodyCostPerTick, CarryCapacity,
-    CauseRef, CombatProfile, CombatStance, CommodityKind, ComponentDelta, ComponentKind,
-    ComponentValue, ControlSource, DeprivationExposure, DriveThresholds, EligibilityRule, EntityId,
-    EntityKind, EventId, EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
-    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, PerceptionProfile,
-    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, RelationDelta, RelationValue,
-    ResourceSource, Seed, StateDelta, SuccessionLaw, TellProfile, Tick, VisibilitySpec,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BlockedIntentMemory,
+    BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
+    ComponentDelta, ComponentKind, ComponentValue, ControlSource, DeprivationExposure,
+    DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog, EventRecord,
+    EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
+    FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille, PrototypePlace,
+    Quantity, RecipeId, RelationDelta, RelationValue, ResourceSource, Seed, StateDelta,
+    SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -32,9 +33,9 @@ use worldwake_sim::{
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
 // Re-export so test files using `use golden_harness::*` get the ownership types.
-pub use worldwake_core::{ProductionOutputOwner, ProductionOutputOwnershipPolicy};
 #[allow(unused_imports)]
 pub use timeline::{CrossLayerTimelineBuilder, TimelineLayer};
+pub use worldwake_core::{ProductionOutputOwner, ProductionOutputOwnershipPolicy};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -254,6 +255,50 @@ pub fn seed_belief(
 
     let mut txn = new_txn(world, 0);
     txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn seed_belief_from_world(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    subject: EntityId,
+    observed_tick: Tick,
+    source: PerceptionSource,
+) -> BelievedEntityState {
+    let belief = build_believed_entity_state(world, subject, observed_tick, source)
+        .expect("golden harness should only seed beliefs for observable subjects");
+    seed_belief(world, event_log, agent, subject, belief.clone());
+    belief
+}
+
+pub fn seed_told_belief_memory(
+    world: &mut World,
+    event_log: &mut EventLog,
+    speaker: EntityId,
+    listener: EntityId,
+    subject: EntityId,
+    shared_state: &BelievedEntityState,
+    told_tick: Tick,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(speaker)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    store.record_told_belief(
+        TellMemoryKey {
+            counterparty: listener,
+            subject,
+        },
+        ToldBeliefMemory {
+            shared_state: to_shared_belief_snapshot(shared_state),
+            told_tick,
+        },
+    );
+
+    let mut txn = new_txn(world, 0);
+    txn.set_component_agent_belief_store(speaker, store)
         .expect("golden harness should keep belief stores writable");
     commit_txn(txn, event_log);
 }
@@ -1139,6 +1184,127 @@ mod tests {
         seed_belief(&mut h.world, &mut h.event_log, agent, subject, older);
 
         assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&newer));
+    }
+
+    #[test]
+    fn seed_belief_from_world_builds_and_stores_snapshot() {
+        let mut h = GoldenHarness::new(Seed([47; 32]));
+        let agent = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Observer",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let subject = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Subject",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            subject,
+            Tick(6),
+            PerceptionSource::DirectObservation,
+        );
+
+        assert_eq!(belief.observed_tick, Tick(6));
+        assert_eq!(belief.source, PerceptionSource::DirectObservation);
+        assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&belief));
+    }
+
+    #[test]
+    fn seed_told_belief_memory_records_requested_entry_and_preserves_beliefs() {
+        let mut h = GoldenHarness::new(Seed([48; 32]));
+        let speaker = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Speaker",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let listener = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Listener",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let subject = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Subject",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let listener_belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            listener,
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+        let subject_belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            subject,
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        );
+
+        seed_told_belief_memory(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            listener,
+            subject,
+            &subject_belief,
+            Tick(9),
+        );
+
+        let store = h
+            .world
+            .get_component_agent_belief_store(speaker)
+            .expect("speaker should have a belief store");
+        let memory = store
+            .told_beliefs
+            .get(&TellMemoryKey {
+                counterparty: listener,
+                subject,
+            })
+            .expect("told memory should be recorded for the requested listener and subject");
+
+        assert_eq!(memory.told_tick, Tick(9));
+        assert_eq!(
+            memory.shared_state,
+            to_shared_belief_snapshot(&subject_belief)
+        );
+        assert_eq!(
+            agent_belief_about(&h.world, speaker, listener),
+            Some(&listener_belief)
+        );
+        assert_eq!(
+            agent_belief_about(&h.world, speaker, subject),
+            Some(&subject_belief)
+        );
     }
 
     #[test]
