@@ -6,6 +6,7 @@ use crate::decision_trace::{
     PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace,
 };
+use crate::failure_handling::ExecutionFailure;
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
@@ -23,9 +24,10 @@ use worldwake_core::{
     WorldTxn,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommitOutcome,
-    CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry,
-    ReplanNeeded, RuntimeBeliefView, Scheduler, SchedulerActionRuntime, TickInputError,
+    ActionHandlerRegistry, ActionStartFailure, AutonomousController, AutonomousControllerContext,
+    CommitOutcome, CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
+    RecipeRegistry, ReplanNeeded, RuntimeBeliefView, Scheduler, SchedulerActionRuntime,
+    TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -150,6 +152,13 @@ struct ReadPhaseContext<'a> {
     structural_block_ticks: u32,
 }
 
+#[derive(Clone, Copy)]
+struct InFlightReconciliation<'a> {
+    replan_signals: &'a [&'a ReplanNeeded],
+    start_failures: &'a [ActionStartFailure],
+    committed_actions: &'a [CommittedAction],
+}
+
 impl AutonomousController for AgentTickDriver {
     fn name(&self) -> &'static str {
         "agent_tick_driver"
@@ -228,6 +237,7 @@ fn process_agent(
         .unwrap_or_default();
     let runtime = runtime_by_agent.entry(agent).or_default();
     let active_action = active_action_for_agent(ctx, agent);
+    let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
 
     // ── Dead-agent early return ──
     {
@@ -255,8 +265,11 @@ fn process_agent(
         &mut blocked_memory,
         active_action.as_ref(),
         agent,
-        replan_signals,
-        committed_actions,
+        InFlightReconciliation {
+            replan_signals,
+            start_failures: &start_failures,
+            committed_actions,
+        },
     )?;
 
     let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
@@ -326,11 +339,8 @@ fn process_agent(
         let previous_goal = runtime.current_goal;
 
         // Drain action start failures for this agent from the scheduler.
-        let agent_failures: Vec<ActionStartFailureSummary> = ctx
-            .scheduler
-            .action_start_failures()
+        let agent_failures: Vec<ActionStartFailureSummary> = start_failures
             .iter()
-            .filter(|f| f.actor == agent)
             .map(|f| ActionStartFailureSummary {
                 tick: f.tick,
                 def_id: f.def_id,
@@ -898,7 +908,18 @@ fn handle_active_action_phase(
                 worldwake_sim::InterruptReason::Reprioritized,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-        reconcile_in_flight_state(ctx, runtime, blocked_memory, None, agent, &[&replan], &[])?;
+        reconcile_in_flight_state(
+            ctx,
+            runtime,
+            blocked_memory,
+            None,
+            agent,
+            InFlightReconciliation {
+                replan_signals: &[&replan],
+                start_failures: &[],
+                committed_actions: &[],
+            },
+        )?;
     }
 
     Ok(decision)
@@ -1444,8 +1465,7 @@ fn reconcile_in_flight_state(
     blocked_memory: &mut BlockedIntentMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
-    replan_signals: &[&ReplanNeeded],
-    committed_actions: &[CommittedAction],
+    reconciliation: InFlightReconciliation<'_>,
 ) -> Result<(), TickInputError> {
     if !runtime.step_in_flight {
         return Ok(());
@@ -1454,19 +1474,39 @@ fn reconcile_in_flight_state(
         return Ok(());
     }
 
-    let failed_signal = replan_signals.first().copied();
+    let failed_signal = reconciliation.replan_signals.first().copied();
     let Some(step) = current_step(runtime).cloned() else {
         runtime.step_in_flight = false;
         return Ok(());
     };
 
     if let Some(signal) = failed_signal {
-        let _ = ctx.action_defs.get(signal.failed_action_def);
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, Some(signal))?;
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            blocked_memory,
+            agent,
+            &step,
+            Some(ExecutionFailure::Replan(signal)),
+        )?;
         return Ok(());
     }
 
-    let Some(committed_action) = committed_action_for_step(&step, committed_actions) else {
+    if let Some(start_failure) = matching_start_failure(&step, reconciliation.start_failures) {
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            blocked_memory,
+            agent,
+            &step,
+            Some(ExecutionFailure::Start(start_failure)),
+        )?;
+        return Ok(());
+    }
+
+    let Some(committed_action) =
+        committed_action_for_step(&step, reconciliation.committed_actions)
+    else {
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
         return Ok(());
     };
@@ -1479,6 +1519,15 @@ fn reconcile_in_flight_state(
     runtime.step_in_flight = false;
     advance_completed_step(runtime, step.op_kind, ctx.tick);
     Ok(())
+}
+
+fn matching_start_failure<'a>(
+    step: &PlannedStep,
+    start_failures: &'a [ActionStartFailure],
+) -> Option<&'a ActionStartFailure> {
+    start_failures
+        .iter()
+        .find(|failure| failure.def_id == step.def_id)
 }
 
 fn reconcile_committed_facility_queue_intents(
@@ -1590,7 +1639,7 @@ fn handle_current_step_failure(
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     step: &PlannedStep,
-    replan_signal: Option<&ReplanNeeded>,
+    execution_failure: Option<ExecutionFailure<'_>>,
 ) -> Result<(), TickInputError> {
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
@@ -1610,7 +1659,7 @@ fn handle_current_step_failure(
             agent,
             goal_key,
             failed_step: step,
-            replan_signal,
+            execution_failure,
             current_tick: tick,
         },
         runtime,
@@ -5130,13 +5179,10 @@ mod tests {
                 tick: Tick(0),
                 actor: harness.actor,
                 def_id: heal_id,
-                reason: format!(
-                    "{:?}",
-                    worldwake_sim::ActionError::AbortRequested(
-                        worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
-                            target: harness.actor,
-                        }
-                    )
+                reason: worldwake_sim::ActionStartFailureReason::AbortRequested(
+                    worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
+                        target: harness.actor,
+                    },
                 ),
             });
 
@@ -5159,13 +5205,10 @@ mod tests {
         assert_eq!(planning.action_start_failures[0].def_id, heal_id);
         assert_eq!(
             planning.action_start_failures[0].reason,
-            format!(
-                "{:?}",
-                worldwake_sim::ActionError::AbortRequested(
-                    worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
-                        target: harness.actor,
-                    }
-                )
+            worldwake_sim::ActionStartFailureReason::AbortRequested(
+                worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
+                    target: harness.actor,
+                }
             )
         );
 
@@ -5182,6 +5225,10 @@ mod tests {
             .expect("reconciled failure should persist blocked intent memory");
         assert_eq!(blocked.intents.len(), 1);
         assert_eq!(blocked.intents[0].goal_key, goal);
+        assert!(
+            harness.scheduler.action_start_failures().is_empty(),
+            "agent tick should consume this agent's structured start failures once they are reconciled"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # S08ACTSTAABORES-004: Replace Trace-Only Start Failures With Canonical AI Execution-Failure Handoff
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` structured start-failure records plus `worldwake-ai` runtime failure handoff and trace plumbing
@@ -8,20 +8,21 @@
 
 ## Problem
 
-`worldwake-sim` now records recoverable BestEffort start failures, but `worldwake-ai` still treats them as a trace-only side channel. The AI runtime does not consume the start-failure record as the canonical reason its in-flight step disappeared; instead, `reconcile_in_flight_state()` falls back to generic "no active action and no commit" handling. That loses authoritative rejection semantics, weakens blocker derivation, and encourages string-based or care-specific patches instead of a clean shared execution-failure substrate.
+`worldwake-sim` now records recoverable BestEffort start failures, but `worldwake-ai` still treats them as a trace-facing side channel plus a generic missing-step fallback. The AI runtime does not consume the start-failure record as the canonical reason its in-flight step disappeared; instead, `reconcile_in_flight_state()` falls back to generic "no active action and no commit" handling. That still clears the failed step and records a blocker, but it loses authoritative rejection semantics, weakens blocker derivation, and encourages string-based or care-specific patches instead of a clean shared execution-failure substrate.
 
 ## Assumption Reassessment (2026-03-19)
 
 1. `crates/worldwake-sim/src/scheduler.rs::ActionStartFailure` currently stores `tick`, `actor`, `def_id`, and a `reason: String`. The record does not preserve structured authoritative failure semantics.
 2. `crates/worldwake-sim/src/tick_step.rs` now records recoverable BestEffort start failures for `ReservationUnavailable`, `PreconditionFailed`, `InvalidTarget`, and `AbortRequested`, but only into the scheduler plus action trace. No canonical replan/failure signal is emitted from action start.
 3. `crates/worldwake-ai/src/agent_tick.rs` currently reads `scheduler.action_start_failures()` only to populate `PlanningPipelineTrace.action_start_failures`. That read path does not drive runtime reconciliation or blocker recording.
-4. `crates/worldwake-ai/src/agent_tick.rs::reconcile_in_flight_state()` only handles structured failure semantics through `ReplanNeeded` from the active-action/abort pipeline. When an in-flight step vanishes without an active action, committed action, or `ReplanNeeded`, it calls `handle_current_step_failure(..., None)` and therefore discards the authoritative start-failure reason.
+4. `crates/worldwake-ai/src/agent_tick.rs::reconcile_in_flight_state()` still has a generic recovery path for vanished in-flight steps, so start failures are not ignored outright. But it only handles structured failure semantics through `ReplanNeeded` from the active-action/abort pipeline. When an in-flight step vanishes without an active action, committed action, or `ReplanNeeded`, it calls `handle_current_step_failure(..., None)` and therefore discards the authoritative start-failure reason.
 5. `crates/worldwake-ai/src/failure_handling.rs::derive_blocking_fact()` can already derive better blockers when it receives structured abort information through `replan_signal`, but start failures currently reach it without that signal and can therefore collapse to view-based heuristics or `BlockingFact::Unknown`.
 6. Existing coverage proves the gap precisely:
-   - `crates/worldwake-ai/src/agent_tick.rs::tests::planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons` proves observability in planning traces plus generic reconciliation.
+   - `crates/worldwake-ai/src/agent_tick.rs::tests::planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons` proves observability in planning traces plus generic reconciliation, but it does not assert that the authoritative rejection reason reaches blocker derivation.
    - `crates/worldwake-ai/src/failure_handling.rs::tests::handle_plan_failure_drops_plan_records_blocker_and_marks_runtime_dirty` proves blocker handling once a structured failure signal exists.
+   - `crates/worldwake-sim/src/tick_step.rs::tests::strict_request_propagates_abort_requested_start_failure` proves strict-mode propagation remains intact and must continue to pass after this ticket.
    - No active ticket currently owns replacing the trace-only start-failure side channel with a canonical runtime failure substrate.
-7. Mismatch found: `tickets/S08ACTSTAABORES-003-care-start-abort-ai-regression-coverage.md` covers regression assertions over the current behavior, but it does not introduce the architectural substrate. This ticket is needed to prevent the current generic missing-in-flight recovery path from ossifying into the permanent design.
+7. Mismatch found and corrected: `tickets/S08ACTSTAABORES-003-care-start-abort-ai-regression-coverage.md` covers regression assertions over the current behavior, but it does not introduce the architectural substrate. This ticket is needed to replace the current generic missing-in-flight recovery path with canonical structured reconciliation rather than to add basic start-failure recovery from scratch.
 
 ## Architecture Check
 
@@ -35,7 +36,8 @@
 2. `reconcile_in_flight_state()` consumes matching start-failure records before generic missing-action fallback -> focused `worldwake-ai` runtime test in `agent_tick.rs`
 3. Blocker derivation receives the structured authoritative rejection reason for start failures -> focused `worldwake-ai` failure-handling/runtime test
 4. Decision traces summarize the canonical failure substrate rather than a side-channel-only list -> focused `worldwake-ai` trace assertion
-5. Later replanning or world evolution must not be the only proof here; the ticket must assert the structured failure handoff itself, because that handoff is the architectural contract.
+5. Strict `RequestAction` must still propagate recoverable start errors outside `BestEffort` mode -> focused `worldwake-sim` runtime test
+6. Later replanning or world evolution must not be the only proof here; the ticket must assert the structured failure handoff itself, because that handoff is the architectural contract.
 
 ## What to Change
 
@@ -88,10 +90,11 @@ Update `crates/worldwake-ai/src/decision_trace.rs` and any related summaries so 
 ### Tests That Must Pass
 
 1. Existing focused start-failure behavior still passes: `cargo test -p worldwake-sim tick_step::tests::best_effort_request_records_abort_requested_start_failure_without_failing_tick`
-2. Existing focused AI observability still passes under the new substrate: `cargo test -p worldwake-ai agent_tick::tests::planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons`
-3. Existing blocker pipeline baseline still passes: `cargo test -p worldwake-ai failure_handling::tests::handle_plan_failure_drops_plan_records_blocker_and_marks_runtime_dirty`
-4. Crate suites: `cargo test -p worldwake-sim` and `cargo test -p worldwake-ai`
-5. Workspace lint/test boundary: `cargo test --workspace` and `cargo clippy --workspace`
+2. Existing strict-mode propagation still passes: `cargo test -p worldwake-sim tick_step::tests::strict_request_propagates_abort_requested_start_failure`
+3. Existing focused AI observability still passes under the new substrate: `cargo test -p worldwake-ai agent_tick::tests::planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons`
+4. Existing blocker pipeline baseline still passes: `cargo test -p worldwake-ai failure_handling::tests::handle_plan_failure_drops_plan_records_blocker_and_marks_runtime_dirty`
+5. Crate suites: `cargo test -p worldwake-sim` and `cargo test -p worldwake-ai`
+6. Workspace lint/test boundary: `cargo test --workspace` and `cargo clippy --workspace`
 
 ### Invariants
 
@@ -107,15 +110,23 @@ Update `crates/worldwake-ai/src/decision_trace.rs` and any related summaries so 
 1. `crates/worldwake-sim/src/scheduler.rs` and/or `crates/worldwake-sim/src/tick_step.rs` — assert structured start-failure recording rather than string-only storage.
 2. `crates/worldwake-ai/src/agent_tick.rs` — assert that matching start failures are consumed by in-flight reconciliation before generic missing-action fallback.
 3. `crates/worldwake-ai/src/failure_handling.rs` — assert blocker derivation receives structured start-failure reasons through the canonical execution-failure path.
-4. `crates/worldwake-ai/src/decision_trace.rs` or `agent_tick.rs` — assert trace summaries are derived from the same canonical failure substrate.
+4. `crates/worldwake-ai/src/decision_trace.rs` or `crates/worldwake-ai/src/agent_tick.rs` — assert trace summaries are derived from the same canonical failure substrate.
 
 ### Commands
 
 1. `cargo test -p worldwake-ai -- --list`
 2. `cargo test -p worldwake-sim tick_step::tests::best_effort_request_records_abort_requested_start_failure_without_failing_tick`
-3. `cargo test -p worldwake-ai agent_tick::tests::planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons`
-4. `cargo test -p worldwake-ai failure_handling::tests::handle_plan_failure_drops_plan_records_blocker_and_marks_runtime_dirty`
-5. `cargo test -p worldwake-sim`
-6. `cargo test -p worldwake-ai`
-7. `cargo test --workspace`
-8. `cargo clippy --workspace`
+3. `cargo test -p worldwake-sim tick_step::tests::strict_request_propagates_abort_requested_start_failure`
+4. `cargo test -p worldwake-ai agent_tick::tests::planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons`
+5. `cargo test -p worldwake-ai failure_handling::tests::handle_plan_failure_drops_plan_records_blocker_and_marks_runtime_dirty`
+6. `cargo test -p worldwake-sim`
+7. `cargo test -p worldwake-ai`
+8. `cargo test --workspace`
+9. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-19
+- **What actually changed**: `worldwake-sim` now stores recoverable start failures as structured `ActionStartFailureReason` data instead of canonical string payloads, and `Scheduler` now supports per-agent consumption via `take_action_start_failures_for()`. `worldwake-ai` now reconciles start-time failures and active-step replans through one `ExecutionFailure` handoff in the runtime failure path, and decision traces now carry the same structured start-failure reason type instead of a derived string.
+- **Deviations from original plan**: I did not replace `ReplanNeeded` with one shared `worldwake-sim` execution-failure record. The cleaner minimal change here was to keep authoritative start failures and active-step replans as distinct scheduler/runtime facts in `worldwake-sim`, then unify them at the AI runtime seam with one canonical `ExecutionFailure` enum. I also tightened the architecture beyond the original ticket by consuming start failures per actor instead of repeatedly reading a never-drained scheduler side list.
+- **Verification results**: `cargo test -p worldwake-sim tick_step::tests::best_effort_request_records_abort_requested_start_failure_without_failing_tick`, `cargo test -p worldwake-sim tick_step::tests::strict_request_propagates_abort_requested_start_failure`, `cargo test -p worldwake-ai agent_tick::tests::planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons`, `cargo test -p worldwake-ai failure_handling::tests::handle_plan_failure_drops_plan_records_blocker_and_marks_runtime_dirty`, `cargo test -p worldwake-ai failure_handling::tests::derive_blocking_fact_uses_structured_start_failure_when_view_is_insufficient`, `cargo test -p worldwake-sim`, `cargo test -p worldwake-ai`, `cargo test --workspace`, and `cargo clippy --workspace` all passed.

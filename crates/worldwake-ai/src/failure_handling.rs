@@ -7,16 +7,23 @@ use worldwake_core::{
     Quantity, Tick,
 };
 use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionPayload, ExternalAbortReason, InterruptReason,
-    ReplanNeeded, RuntimeBeliefView,
+    AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
+    ActionStartFailureReason, ExternalAbortReason, InterruptReason, ReplanNeeded,
+    RuntimeBeliefView,
 };
+
+#[derive(Clone, Copy)]
+pub enum ExecutionFailure<'a> {
+    Replan(&'a ReplanNeeded),
+    Start(&'a ActionStartFailure),
+}
 
 pub struct PlanFailureContext<'a> {
     pub view: &'a dyn RuntimeBeliefView,
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub failed_step: &'a PlannedStep,
-    pub replan_signal: Option<&'a ReplanNeeded>,
+    pub execution_failure: Option<ExecutionFailure<'a>>,
     pub current_tick: Tick,
 }
 
@@ -35,7 +42,7 @@ pub fn handle_plan_failure(
         context.agent,
         &context.goal_key,
         context.failed_step,
-        context.replan_signal,
+        context.execution_failure,
     );
     let expires_tick = context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, budget));
 
@@ -73,7 +80,7 @@ fn derive_blocking_fact(
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
-    replan_signal: Option<&ReplanNeeded>,
+    execution_failure: Option<ExecutionFailure<'_>>,
 ) -> BlockingFact {
     if target_gone(view, step) {
         return BlockingFact::TargetGone;
@@ -121,7 +128,7 @@ fn derive_blocking_fact(
         return BlockingFact::DangerTooHigh;
     }
 
-    if let Some(fact) = replan_signal.and_then(map_abort_reason) {
+    if let Some(fact) = execution_failure.and_then(map_execution_failure) {
         return fact;
     }
 
@@ -318,7 +325,14 @@ fn combat_too_risky(view: &dyn RuntimeBeliefView, agent: EntityId) -> bool {
         || (!view.visible_hostiles_for(agent).is_empty() && view.has_wounds(agent))
 }
 
-fn map_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
+fn map_execution_failure(failure: ExecutionFailure<'_>) -> Option<BlockingFact> {
+    match failure {
+        ExecutionFailure::Replan(signal) => map_replan_abort_reason(signal),
+        ExecutionFailure::Start(failure) => map_start_failure_reason(&failure.reason),
+    }
+}
+
+fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
     match &signal.reason {
         AbortReason::CommitConditionFailed { condition } => match condition {
             worldwake_sim::Precondition::TargetAdjacentToActor(_) => {
@@ -345,6 +359,15 @@ fn map_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
             ExternalAbortReason::HandlerRequested { reason } => map_handler_abort_reason(reason),
             ExternalAbortReason::Other => detail.as_deref().and_then(parse_abort_detail),
         },
+    }
+}
+
+fn map_start_failure_reason(reason: &ActionStartFailureReason) -> Option<BlockingFact> {
+    match reason {
+        ActionStartFailureReason::ReservationUnavailable(_) => Some(BlockingFact::ReservationConflict),
+        ActionStartFailureReason::PreconditionFailed(detail) => parse_abort_detail(detail),
+        ActionStartFailureReason::InvalidTarget(_) => Some(BlockingFact::TargetGone),
+        ActionStartFailureReason::AbortRequested(reason) => map_handler_abort_reason(reason),
     }
 }
 
@@ -581,7 +604,7 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
 mod tests {
     use super::{
         blocking_fact_ttl, clear_resolved_blockers, derive_blocking_fact, handle_plan_failure,
-        PlanFailureContext,
+        ExecutionFailure, PlanFailureContext,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
@@ -598,8 +621,9 @@ mod tests {
         Wound,
     };
     use worldwake_sim::{
-        AbortReason, ActionDuration, ActionPayload, CombatActionPayload, CraftActionPayload,
-        DurationExpr, InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
+        AbortReason, ActionDuration, ActionPayload, ActionStartFailure,
+        ActionStartFailureReason, CombatActionPayload, CraftActionPayload, DurationExpr,
+        InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -968,7 +992,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
-                replan_signal: None,
+                execution_failure: None,
                 current_tick: Tick(20),
             },
             &mut runtime,
@@ -1129,6 +1153,39 @@ mod tests {
     }
 
     #[test]
+    fn derive_blocking_fact_uses_structured_start_failure_when_view_is_insufficient() {
+        let agent = entity(1);
+        let workstation = entity(3);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, entity(10));
+        view.unique_items
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(3),
+            reason: ActionStartFailureReason::ReservationUnavailable(workstation),
+        };
+
+        let fact = derive_blocking_fact(
+            &view,
+            agent,
+            &GoalKey::from(GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(4),
+            }),
+            &craft_step(workstation),
+            Some(ExecutionFailure::Start(&start_failure)),
+        );
+
+        assert_eq!(fact, BlockingFact::ReservationConflict);
+    }
+
+    #[test]
     fn derive_blocking_fact_detects_no_known_seller_when_market_is_empty() {
         let agent = entity(1);
         let place = entity(10);
@@ -1175,7 +1232,7 @@ mod tests {
             agent,
             &GoalKey::from(GoalKind::Sleep),
             &step,
-            Some(&signal),
+            Some(ExecutionFailure::Replan(&signal)),
         );
         assert_eq!(fact, BlockingFact::DangerTooHigh);
     }

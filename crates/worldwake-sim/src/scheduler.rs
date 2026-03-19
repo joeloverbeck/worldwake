@@ -1,19 +1,64 @@
 use crate::{
     abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
     ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
-    ActionInstanceId, Affordance, CommitOutcome, DeterministicRng, ExternalAbortReason, InputEvent,
-    InputQueue, InterruptReason, ReplanNeeded, SystemManifest, TickOutcome,
+    ActionInstanceId, ActionAbortRequestReason, Affordance, CommitOutcome, DeterministicRng,
+    ExternalAbortReason, InputEvent, InputQueue, InterruptReason, ReplanNeeded, SystemManifest,
+    TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId, EventLog, Tick, World};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ActionStartFailureReason {
+    ReservationUnavailable(EntityId),
+    PreconditionFailed(String),
+    InvalidTarget(EntityId),
+    AbortRequested(ActionAbortRequestReason),
+}
+
+impl ActionStartFailureReason {
+    #[must_use]
+    pub fn from_action_error(error: &ActionError) -> Option<Self> {
+        match error {
+            ActionError::ReservationUnavailable(entity) => {
+                Some(Self::ReservationUnavailable(*entity))
+            }
+            ActionError::PreconditionFailed(detail) => Some(Self::PreconditionFailed(detail.clone())),
+            ActionError::InvalidTarget(target) => Some(Self::InvalidTarget(*target)),
+            ActionError::AbortRequested(reason) => Some(Self::AbortRequested(reason.clone())),
+            ActionError::UnknownActionInstance(_)
+            | ActionError::UnknownActionDef(_)
+            | ActionError::UnknownActionHandler(_)
+            | ActionError::InvalidActionStatus { .. }
+            | ActionError::InterruptBlocked { .. }
+            | ActionError::ConstraintFailed(_)
+            | ActionError::InternalError(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_action_error(&self) -> ActionError {
+        match self {
+            Self::ReservationUnavailable(entity) => ActionError::ReservationUnavailable(*entity),
+            Self::PreconditionFailed(detail) => ActionError::PreconditionFailed(detail.clone()),
+            Self::InvalidTarget(target) => ActionError::InvalidTarget(*target),
+            Self::AbortRequested(reason) => ActionError::AbortRequested(reason.clone()),
+        }
+    }
+
+    #[must_use]
+    pub fn debug_summary(&self) -> String {
+        format!("{:?}", self.as_action_error())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionStartFailure {
     pub tick: Tick,
     pub actor: EntityId,
     pub def_id: ActionDefId,
-    pub reason: String,
+    pub reason: ActionStartFailureReason,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -135,6 +180,19 @@ impl Scheduler {
 
     pub fn drain_action_start_failures(&mut self) -> Vec<ActionStartFailure> {
         std::mem::take(&mut self.action_start_failures)
+    }
+
+    pub fn take_action_start_failures_for(&mut self, actor: EntityId) -> Vec<ActionStartFailure> {
+        let mut taken = Vec::new();
+        self.action_start_failures.retain(|failure| {
+            if failure.actor == actor {
+                taken.push(failure.clone());
+                false
+            } else {
+                true
+            }
+        });
+        taken
     }
 
     pub(crate) fn drain_current_tick_inputs(&mut self) -> Vec<InputEvent> {
@@ -293,7 +351,7 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActionStartFailure, CommittedAction, Scheduler};
+    use super::{ActionStartFailure, ActionStartFailureReason, CommittedAction, Scheduler};
     use crate::{
         ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
         CommitOutcome, InputKind, SystemManifest,
@@ -497,13 +555,13 @@ mod tests {
             tick: Tick(1),
             actor: entity(2),
             def_id: ActionDefId(3),
-            reason: "precondition failed".into(),
+            reason: ActionStartFailureReason::PreconditionFailed("precondition failed".into()),
         };
         let f2 = ActionStartFailure {
             tick: Tick(1),
             actor: entity(4),
             def_id: ActionDefId(5),
-            reason: "reservation unavailable".into(),
+            reason: ActionStartFailureReason::ReservationUnavailable(entity(11)),
         };
 
         scheduler.record_action_start_failure(f1.clone());
@@ -523,7 +581,7 @@ mod tests {
             tick: Tick(5),
             actor: entity(7),
             def_id: ActionDefId(9),
-            reason: "invalid target".into(),
+            reason: ActionStartFailureReason::InvalidTarget(entity(3)),
         };
         scheduler.record_action_start_failure(failure.clone());
 
@@ -532,7 +590,36 @@ mod tests {
     }
 
     #[test]
+    fn action_start_failures_can_be_taken_per_actor() {
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let actor = entity(7);
+        let other = entity(8);
+        let actor_failure = ActionStartFailure {
+            tick: Tick(5),
+            actor,
+            def_id: ActionDefId(9),
+            reason: ActionStartFailureReason::InvalidTarget(entity(3)),
+        };
+        let other_failure = ActionStartFailure {
+            tick: Tick(6),
+            actor: other,
+            def_id: ActionDefId(4),
+            reason: ActionStartFailureReason::ReservationUnavailable(entity(11)),
+        };
+
+        scheduler.record_action_start_failure(actor_failure.clone());
+        scheduler.record_action_start_failure(other_failure.clone());
+
+        assert_eq!(
+            scheduler.take_action_start_failures_for(actor),
+            vec![actor_failure]
+        );
+        assert_eq!(scheduler.action_start_failures(), &[other_failure]);
+    }
+
+    #[test]
     fn action_start_failure_satisfies_required_traits() {
         assert_traits::<ActionStartFailure>();
+        assert_traits::<ActionStartFailureReason>();
     }
 }

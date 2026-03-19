@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 use worldwake_core::{ActionDefId, EntityId, GoalKey, RecipientKnowledgeStatus, Tick};
-use worldwake_sim::ActionDefRegistry;
+use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason};
 
 use crate::goal_model::GoalPriorityClass;
 use crate::goal_switching::GoalSwitchKind;
@@ -107,7 +107,7 @@ pub struct PlanningPipelineTrace {
 pub struct ActionStartFailureSummary {
     pub tick: Tick,
     pub def_id: ActionDefId,
-    pub reason: String,
+    pub reason: ActionStartFailureReason,
 }
 
 // ── Stage 1: Candidate Generation + Ranking ─────────────────────

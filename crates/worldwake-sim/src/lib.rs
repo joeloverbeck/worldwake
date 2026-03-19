@@ -106,7 +106,10 @@ pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Rep
 pub use save_load::{
     load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
 };
-pub use scheduler::{ActionStartFailure, CommittedAction, Scheduler, SchedulerActionRuntime};
+pub use scheduler::{
+    ActionStartFailure, ActionStartFailureReason, CommittedAction, Scheduler,
+    SchedulerActionRuntime,
+};
 pub use simulation_state::SimulationState;
 pub use social_relay::{
     belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects,

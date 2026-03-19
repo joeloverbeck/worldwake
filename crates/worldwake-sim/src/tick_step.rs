@@ -260,12 +260,16 @@ fn apply_input(
                 if mode == crate::ActionRequestMode::BestEffort
                     && is_best_effort_start_failure(&err)
                 {
+                    let failure_reason =
+                        crate::ActionStartFailureReason::from_action_error(&err).expect(
+                            "recoverable BestEffort start failures must convert into structured reasons",
+                        );
                     runtime.scheduler.record_action_start_failure(
                         crate::scheduler::ActionStartFailure {
                             tick,
                             actor,
                             def_id,
-                            reason: format!("{err:?}"),
+                            reason: failure_reason.clone(),
                         },
                     );
                     let action_name = lookup_action_name(services.action_defs, def_id);
@@ -275,7 +279,7 @@ fn apply_input(
                         def_id,
                         action_name,
                         ActionTraceKind::StartFailed {
-                            reason: format!("{err:?}"),
+                            reason: failure_reason.debug_summary(),
                         },
                     ));
                     return Ok(InputOutcome::default());
@@ -1346,7 +1350,10 @@ mod tests {
         assert_eq!(failures[0].tick, Tick(0));
         assert_eq!(failures[0].actor, actor);
         assert_eq!(failures[0].def_id, ActionDefId(3));
-        assert!(!failures[0].reason.is_empty(), "reason must be non-empty");
+        assert!(
+            !failures[0].reason.debug_summary().is_empty(),
+            "reason must be non-empty"
+        );
         let tick_events = action_trace.events_at(Tick(0));
         assert_eq!(tick_events.len(), 2);
         assert_eq!(tick_events[0].sequence_in_tick, 0);
@@ -1423,11 +1430,8 @@ mod tests {
         assert_eq!(failures[0].def_id, ActionDefId(4));
         assert_eq!(
             failures[0].reason,
-            format!(
-                "{:?}",
-                ActionError::AbortRequested(crate::ActionAbortRequestReason::TargetHasNoWounds {
-                    target: actor,
-                })
+            crate::ActionStartFailureReason::AbortRequested(
+                crate::ActionAbortRequestReason::TargetHasNoWounds { target: actor }
             )
         );
 
