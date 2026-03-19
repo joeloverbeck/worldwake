@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI social candidate generation and decision-trace omission diagnostics
-**Deps**: `E15CCONMEMANDRECKNO-001`, `E15CCONMEMANDRECKNO-002`, `E15CCONMEMANDRECKNO-003`
+**Deps**: `E15CCONMEMANDRECKNO-001`, `E15CCONMEMANDRECKNO-002`, `E15CCONMEMANDRECKNO-003`, `E15CCONMEMANDRECKNO-004`
 
 ## Problem
 
@@ -15,11 +15,12 @@
 1. The current same-place shortcut is explicit at `crates/worldwake-ai/src/candidate_generation.rs::emit_social_candidates`, where `belief.last_known_place == Some(place)` suppresses sharing.
 2. Existing focused coverage locks in that wrong behavior: `candidate_generation::tests::social_candidates_skip_subjects_already_known_to_be_colocated`.
 3. `E15CCONMEMANDRECKNO-002` has already landed the actor-local told-memory and recipient-knowledge reads on live/runtime and planning surfaces, so this ticket should consume those surfaces rather than invent parallel lookup logic.
-4. `E15CCONMEMANDRECKNO-003` is the shared resend-policy ticket for social helper logic and authoritative affordance parity. This ticket should explicitly reuse that helper so AI generation and tell affordances do not diverge.
-5. `CandidateGenerationDiagnostics` currently contains only `omitted_political`, and `decision_trace.rs` only supports `GoalTraceStatus::OmittedPolitical(...)`; there is no social omission surface.
-6. Candidate-generation work here is runtime `agent_tick` reasoning, but local focused tests in `candidate_generation.rs` are sufficient for the resend gate itself. Full action registries are not required for the core suppression logic.
-7. The intended verification layer for omission explainability is the decision trace, not indirect absence of events or missing committed actions.
-8. Mismatch and correction: the old same-place test must be removed or rewritten, not preserved beside the new resend model.
+4. `E15CCONMEMANDRECKNO-003` now owns the reusable listener-aware resend helper and the tell-affordance consumer switch. This ticket should explicitly reuse that helper so AI generation and tell affordances do not diverge.
+5. `E15CCONMEMANDRECKNO-004` is also a real dependency, not just adjacent work: without `commit_tell()` writing `told_beliefs`, the AI-side resend gate would have read surfaces but no authoritative runtime mutation path producing the remembered tell state it depends on.
+6. `CandidateGenerationDiagnostics` currently contains only `omitted_political`, and `decision_trace.rs` only supports `GoalTraceStatus::OmittedPolitical(...)`; there is no social omission surface.
+7. Candidate-generation work here is runtime `agent_tick` reasoning, but local focused tests in `candidate_generation.rs` are sufficient for the resend gate itself. Full action registries are not required for the core suppression logic.
+8. The intended verification layer for omission explainability is the decision trace, not indirect absence of events or missing committed actions.
+9. Mismatch and correction: the old same-place test must be removed or rewritten, not preserved beside the new resend model. Full E15c resend-policy parity is only complete after both ticket 004 and this ticket land.
 
 ## Architecture Check
 
@@ -27,6 +28,7 @@
 2. Adding explicit social omission diagnostics to decision traces is cleaner than forcing developers to infer resend suppression from missing candidates.
 3. No backwards-compatibility flag should preserve the co-location shortcut.
 4. This change is more beneficial than the current architecture because the present AI path suppresses social behavior using a world-state proxy instead of explicit remembered interaction state, which violates the intended locality and debuggability model.
+5. Ticket 005 should assume ticket 004 has already landed rather than introducing fallback behavior for missing authoritative tell-memory writes.
 
 ## Verification Layers
 

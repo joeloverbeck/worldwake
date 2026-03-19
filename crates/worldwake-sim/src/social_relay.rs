@@ -1,4 +1,4 @@
-use worldwake_core::{BelievedEntityState, EntityId, PerceptionSource};
+use worldwake_core::{BelievedEntityState, EntityId, PerceptionSource, RecipientKnowledgeStatus};
 
 #[must_use]
 pub fn belief_chain_len(source: PerceptionSource) -> u8 {
@@ -32,11 +32,35 @@ pub fn relayable_social_subjects(
     subjects.into_iter().map(|(_, subject)| subject).collect()
 }
 
+#[must_use]
+pub fn listener_aware_relayable_subjects(
+    beliefs: impl IntoIterator<Item = (EntityId, BelievedEntityState)>,
+    max_relay_chain_len: u8,
+    max_tell_candidates: u8,
+    mut recipient_knowledge_status: impl FnMut(
+        EntityId,
+        &BelievedEntityState,
+    ) -> RecipientKnowledgeStatus,
+) -> Vec<EntityId> {
+    relayable_social_subjects(
+        beliefs.into_iter().filter(|(subject, belief)| {
+            recipient_knowledge_status(*subject, belief)
+                != RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        }),
+        max_relay_chain_len,
+        max_tell_candidates,
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{belief_chain_len, relayable_social_subjects};
+    use super::{
+        belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects,
+    };
     use std::collections::BTreeMap;
-    use worldwake_core::{BelievedEntityState, EntityId, PerceptionSource, Tick};
+    use worldwake_core::{
+        BelievedEntityState, EntityId, PerceptionSource, RecipientKnowledgeStatus, Tick,
+    };
 
     fn entity(id: u64) -> EntityId {
         EntityId {
@@ -123,5 +147,84 @@ mod tests {
         );
 
         assert!(subjects.is_empty());
+    }
+
+    #[test]
+    fn listener_aware_relayable_subjects_skip_already_told_current_beliefs() {
+        let subjects = listener_aware_relayable_subjects(
+            vec![
+                (
+                    entity(10),
+                    believed_state(9, PerceptionSource::DirectObservation),
+                ),
+                (
+                    entity(11),
+                    believed_state(7, PerceptionSource::DirectObservation),
+                ),
+            ],
+            3,
+            3,
+            |subject, _| match subject {
+                s if s == entity(10) => {
+                    RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                }
+                _ => RecipientKnowledgeStatus::UnknownToSpeaker,
+            },
+        );
+
+        assert_eq!(subjects, vec![entity(11)]);
+    }
+
+    #[test]
+    fn listener_aware_relayable_subjects_filter_before_truncation() {
+        let subjects = listener_aware_relayable_subjects(
+            vec![
+                (
+                    entity(10),
+                    believed_state(10, PerceptionSource::DirectObservation),
+                ),
+                (
+                    entity(11),
+                    believed_state(8, PerceptionSource::DirectObservation),
+                ),
+            ],
+            3,
+            1,
+            |subject, _| match subject {
+                s if s == entity(10) => {
+                    RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                }
+                _ => RecipientKnowledgeStatus::UnknownToSpeaker,
+            },
+        );
+
+        assert_eq!(subjects, vec![entity(11)]);
+    }
+
+    #[test]
+    fn listener_aware_relayable_subjects_reinclude_stale_or_expired_tells() {
+        let subjects = listener_aware_relayable_subjects(
+            vec![
+                (
+                    entity(10),
+                    believed_state(10, PerceptionSource::DirectObservation),
+                ),
+                (
+                    entity(11),
+                    believed_state(8, PerceptionSource::DirectObservation),
+                ),
+            ],
+            3,
+            2,
+            |subject, _| match subject {
+                s if s == entity(10) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
+                s if s == entity(11) => {
+                    RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+                }
+                _ => RecipientKnowledgeStatus::UnknownToSpeaker,
+            },
+        );
+
+        assert_eq!(subjects, vec![entity(10), entity(11)]);
     }
 }

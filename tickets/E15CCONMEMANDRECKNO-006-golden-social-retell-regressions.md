@@ -17,7 +17,7 @@ E15c changes a socially sensitive loop that already regressed when the old same-
 3. `worldwake-core` conversation-memory storage and `E15CCONMEMANDRECKNO-002` view/planning plumbing already exist, so these goldens should validate the integrated end state of tickets 003, 004, and 005 rather than re-prove substrate existence.
 4. The E15c spec explicitly calls for goldens proving: no spam over repeated ticks, lawful retell after belief-content change, co-location alone not suppressing initial tell, memory-expiry retell, and trace visibility for reappearance.
 5. These are mixed-layer scenarios. Candidate-generation assertions should rely on decision traces for reasoning-layer behavior, while authoritative delivery should still be checked by resulting belief/memory state where necessary.
-6. Mismatch and correction: this ticket should not backfill core or systems semantics. It assumes the lower-layer tickets are already landed and verifies that the consumer switch and authoritative commit semantics work together.
+6. Mismatch and correction: this ticket should not backfill core or systems semantics. It assumes the lower-layer tickets are already landed and verifies that the AI consumer switch from ticket 005 and the authoritative commit-memory writes from ticket 004 work together.
 
 ## Architecture Check
 

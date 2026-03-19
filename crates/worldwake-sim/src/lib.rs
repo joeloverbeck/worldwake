@@ -108,7 +108,9 @@ pub use save_load::{
 };
 pub use scheduler::{ActionStartFailure, CommittedAction, Scheduler, SchedulerActionRuntime};
 pub use simulation_state::SimulationState;
-pub use social_relay::{belief_chain_len, relayable_social_subjects};
+pub use social_relay::{
+    belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects,
+};
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
