@@ -1527,6 +1527,103 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
+    #[test]
+    fn harvest_second_start_failure_preserves_source_until_winner_commit() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor_a, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor_a, recipe_id);
+        let actor_b = {
+            let place = world.topology().place_ids().next().unwrap();
+            let mut txn = new_txn(&mut world, 3);
+            let actor = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([recipe_id]))
+                .unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+            actor
+        };
+        grant_facility_use(&mut world, workstation, actor_a, ids[0], 9);
+
+        let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
+        let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x84);
+        let mut next_id = ActionInstanceId(0);
+
+        let first_id = start_action(
+            &affordance_a,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        grant_facility_use(&mut world, workstation, actor_b, ids[0], 10);
+        let second_start = start_action(
+            &affordance_b,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            second_start,
+            ActionError::ReservationUnavailable(workstation)
+        );
+        assert_eq!(
+            world
+                .get_component_resource_source(workstation)
+                .unwrap()
+                .available_quantity,
+            Quantity(5),
+            "losing the contested start must not consume orchard stock"
+        );
+
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            first_id,
+            &mut active,
+            11,
+        );
+
+        assert_eq!(
+            world
+                .get_component_resource_source(workstation)
+                .unwrap()
+                .available_quantity,
+            Quantity(3),
+            "orchard stock should drop only when the winning harvest commits"
+        );
+    }
+
     #[test]
     fn harvest_body_cost_flows_through_needs_system() {
         let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
