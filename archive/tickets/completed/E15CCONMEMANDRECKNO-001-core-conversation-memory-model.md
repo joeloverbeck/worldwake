@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core` belief schema, retention helpers, TellProfile fields
-**Deps**: `specs/E15c-conversation-memory-and-recipient-knowledge.md`, `specs/IMPLEMENTATION-ORDER.md`
+**Deps**: `archive/specs/E15c-conversation-memory-and-recipient-knowledge.md`, `specs/IMPLEMENTATION-ORDER.md`
 
 ## Problem
 

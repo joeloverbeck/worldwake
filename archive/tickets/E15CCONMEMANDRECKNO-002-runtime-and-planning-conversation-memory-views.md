@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` belief/runtime traits and AI planning snapshot/state
-**Deps**: `E15CCONMEMANDRECKNO-001`, `specs/E15c-conversation-memory-and-recipient-knowledge.md`
+**Deps**: `E15CCONMEMANDRECKNO-001`, `archive/specs/E15c-conversation-memory-and-recipient-knowledge.md`
 
 ## Problem
 

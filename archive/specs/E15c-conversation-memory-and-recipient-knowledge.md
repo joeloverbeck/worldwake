@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # E15c: Conversation Memory & Recipient Knowledge for Social Telling
 
@@ -572,3 +572,25 @@ No invisible spam cooldown table or hardcoded retry clamp is permitted.
 - [ ] golden E2E: repeated local co-location without new tell memory does not itself suppress lawful telling
 - [ ] golden E2E: after tell-memory expiry, the speaker can lawfully retell even without a belief-content change
 - [ ] golden E2E: decision trace shows social candidate reappearing only after belief-content change or memory expiry
+
+## Outcome
+
+- Completion date: 2026-03-19
+- What actually changed:
+  - `worldwake-core` now stores first-class conversation memory in `AgentBeliefStore` via `told_beliefs`, `heard_beliefs`, retention-aware read helpers, deterministic eviction, `SharedBeliefSnapshot`, and recipient-knowledge derivation that ignores bookkeeping-only belief refreshes.
+  - `worldwake-sim` and `worldwake-ai` now expose actor-local conversation-memory reads consistently across live runtime views, planning snapshots, and planning state.
+  - `worldwake-systems` Tell affordance expansion now applies listener-aware resend filtering before truncation, and Tell commit now records speaker/listener participant memory with concrete heard dispositions.
+  - `worldwake-ai` social candidate generation now uses conversation memory instead of the old same-place shortcut, and decision traces now report social omission reasons through `RecipientKnowledgeStatus`.
+  - Golden coverage now proves unchanged-repeat suppression, lawful re-tell after belief-content change, lawful re-tell after conversation-memory expiry, and trace visibility for re-enabled social candidates.
+- Deviations from original plan:
+  - the final core record shape keeps `(counterparty, subject)` in `TellMemoryKey` rather than duplicating identity fields inside `ToldBeliefMemory` and `HeardBeliefMemory`.
+  - the spec's placeholder `Rejected` disposition remains reserved; implementation landed `Accepted`, `AlreadyHeldEqualOrNewer`, and `NotInternalized` without inventing a trust/contradiction path.
+  - the old raw `relayable_social_subjects()` helper was preserved and the resend-aware policy was added as a separate reusable layer so authoritative tell enumeration and AI candidate generation could converge on one explicit policy without silently changing unrelated callers.
+- Verification results:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-sim`
+  - `cargo test -p worldwake-systems`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-ai --test golden_social`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
