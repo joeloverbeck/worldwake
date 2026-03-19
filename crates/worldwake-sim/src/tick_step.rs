@@ -780,7 +780,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn tick_continue(
         _def: &ActionDef,
-        instance: &ActionInstance,
+        instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -791,7 +791,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn tick_complete(
         _def: &ActionDef,
-        instance: &ActionInstance,
+        instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {

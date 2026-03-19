@@ -70,6 +70,32 @@ pub fn tick_action(
     }
 }
 
+fn abort_requested_during_tick(
+    def: &crate::ActionDef,
+    instance: &mut ActionInstance,
+    handler: &crate::ActionHandler,
+    txn: WorldTxn<'_>,
+    event_log: &mut EventLog,
+    rng: &mut DeterministicRng,
+    reason: crate::ActionAbortRequestReason,
+) -> Result<TickOutcome, ActionError> {
+    let reason = AbortReason::external_abort(ExternalAbortReason::HandlerRequested { reason });
+    let replan = finalize_failed_action(
+        def,
+        instance,
+        handler,
+        txn,
+        event_log,
+        rng,
+        &FailedActionTermination {
+            status: ActionStatus::Aborted,
+            reason: reason.clone(),
+            event_tag: EventTag::ActionAborted,
+        },
+    )?;
+    Ok(TickOutcome::Aborted { reason, replan })
+}
+
 fn tick_action_inner(
     instance: &mut ActionInstance,
     registry: &ActionDefRegistry,
@@ -105,7 +131,13 @@ fn tick_action_inner(
     );
 
     let duration_elapsed = instance.remaining_duration.advance();
-    let progress = (handler.on_tick)(def, instance, rng, &mut txn)?;
+    let progress = match (handler.on_tick)(def, instance, rng, &mut txn) {
+        Ok(progress) => progress,
+        Err(ActionError::AbortRequested(reason)) => {
+            return abort_requested_during_tick(def, instance, handler, txn, event_log, rng, reason);
+        }
+        Err(err) => return Err(err),
+    };
     let should_finalize = matches!(progress, ActionProgress::Complete) || duration_elapsed;
 
     if !should_finalize {
@@ -213,6 +245,8 @@ mod tests {
         complete_on_tick: bool,
         mutate_on_tick: bool,
         fail_after_tick_mutation: bool,
+        abort_requested_on_tick: Option<crate::ActionAbortRequestReason>,
+        replace_local_state: Option<ActionState>,
         abort_reasons: Vec<AbortReason>,
         commit_outcome: CommitOutcome,
     }
@@ -269,14 +303,27 @@ mod tests {
         Ok(None)
     }
 
-    fn tick_handler(
+    #[allow(clippy::unnecessary_wraps)]
+    fn start_empty_state(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<Option<ActionState>, ActionError> {
+        Ok(Some(ActionState::Empty))
+    }
+
+    fn tick_handler(
+        _def: &ActionDef,
+        instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
         let mut state = hook_state().lock().unwrap();
         state.tick_calls += 1;
+        if let Some(next) = state.replace_local_state {
+            instance.local_state = Some(next);
+        }
         if state.mutate_on_tick {
             let name = format!("tick-agent-{}", state.tick_calls);
             txn.create_agent(&name, ControlSource::Ai)
@@ -286,6 +333,9 @@ mod tests {
             return Err(ActionError::InternalError(
                 "tick handler failed after staging mutation".to_string(),
             ));
+        }
+        if let Some(reason) = state.abort_requested_on_tick.clone() {
+            return Err(ActionError::AbortRequested(reason));
         }
         Ok(if state.complete_on_tick {
             ActionProgress::Complete
@@ -531,6 +581,78 @@ mod tests {
         )
     }
 
+    fn start_stateful_sample_action() -> (
+        World,
+        EventLog,
+        BTreeMap<ActionInstanceId, ActionInstance>,
+        ActionDefRegistry,
+        ActionHandlerRegistry,
+        ActionInstanceId,
+        EntityId,
+        EntityId,
+    ) {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, target) = setup_actor_and_target(&mut world);
+        let affordance = Affordance {
+            def_id: ActionDefId(0),
+            actor,
+            bound_targets: vec![target],
+            payload_override: None,
+            explanation: None,
+        };
+
+        let mut defs = ActionDefRegistry::new();
+        defs.register(sample_def(
+            ActionDefId(0),
+            ActionHandlerId(0),
+            NonZeroU32::new(3).unwrap(),
+            Vec::new(),
+            vec![Precondition::ActorAlive],
+            BTreeSet::new(),
+        ));
+
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(ActionHandler::new(
+            start_empty_state,
+            tick_handler,
+            commit_handler,
+            abort_handler,
+        ));
+
+        let mut active_actions = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_instance_id = ActionInstanceId(5);
+        let mut rng = test_rng();
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        (
+            world,
+            log,
+            active_actions,
+            defs,
+            handlers,
+            instance_id,
+            actor,
+            target,
+        )
+    }
+
     #[test]
     fn tick_action_decrements_finite_duration_and_reinserts_active_instance() {
         let _guard = test_lock().lock().unwrap();
@@ -567,6 +689,81 @@ mod tests {
         assert_eq!(instance.status, ActionStatus::Active);
         assert_eq!(log.len(), 1);
         assert_eq!(hook_state().lock().unwrap().tick_calls, 1);
+    }
+
+    #[test]
+    fn tick_action_persists_updated_local_state_from_handler() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        hook_state().lock().unwrap().replace_local_state =
+            Some(ActionState::Heal { medicine_spent: true });
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
+            start_stateful_sample_action();
+        let mut rng = test_rng();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome, TickOutcome::Continuing);
+        assert_eq!(
+            active_actions.get(&instance_id).unwrap().local_state,
+            Some(ActionState::Heal {
+                medicine_spent: true,
+            })
+        );
+    }
+
+    #[test]
+    fn tick_action_converts_handler_requested_tick_abort_into_action_abort() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        hook_state().lock().unwrap().abort_requested_on_tick =
+            Some(crate::ActionAbortRequestReason::TargetHasNoWounds { target: entity(99) });
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, target) =
+            start_sample_action(
+                NonZeroU32::new(3).unwrap(),
+                vec![ReservationReq { target_index: 0 }],
+                vec![Precondition::ActorAlive],
+                BTreeSet::new(),
+            );
+        let mut rng = test_rng();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Aborted { .. }));
+        assert!(!active_actions.contains_key(&instance_id));
+        assert!(world.reservations_for(target).is_empty());
+        assert_eq!(hook_state().lock().unwrap().abort_calls, 1);
+        assert_eq!(log.events_by_tag(EventTag::ActionAborted).len(), 1);
     }
 
     #[test]

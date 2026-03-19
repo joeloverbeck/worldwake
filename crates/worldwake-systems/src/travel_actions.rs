@@ -67,10 +67,12 @@ fn travel_state(
             departure_tick,
             arrival_tick,
         }) => Ok((edge_id, origin, destination, departure_tick, arrival_tick)),
-        Some(ActionState::Empty) | None => Err(ActionError::InternalError(format!(
-            "travel action instance {} is missing travel state",
-            instance.instance_id
-        ))),
+        Some(ActionState::Empty | ActionState::Heal { .. }) | None => {
+            Err(ActionError::InternalError(format!(
+                "travel action instance {} is missing travel state",
+                instance.instance_id
+            )))
+        }
     }
 }
 
@@ -152,7 +154,7 @@ fn start_travel(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_travel(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {

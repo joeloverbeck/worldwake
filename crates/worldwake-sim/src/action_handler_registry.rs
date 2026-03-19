@@ -134,7 +134,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn tick_a(
         _def: &ActionDef,
-        _instance: &ActionInstance,
+        _instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {

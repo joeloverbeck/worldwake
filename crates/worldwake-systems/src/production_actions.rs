@@ -415,7 +415,7 @@ fn start_harvest(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_harvest(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -475,7 +475,7 @@ fn start_craft(
 
 fn tick_craft(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {

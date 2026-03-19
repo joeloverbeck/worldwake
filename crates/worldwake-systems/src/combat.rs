@@ -585,7 +585,7 @@ fn start_defend(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_defend(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1012,12 +1012,9 @@ fn start_heal(
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let _ = validate_heal_context(txn, instance)?;
-    let _ = consume_one_unit_of_commodity(
-        txn,
-        instance.actor,
-        worldwake_core::CommodityKind::Medicine,
-    )?;
-    Ok(None)
+    Ok(Some(ActionState::Heal {
+        medicine_spent: false,
+    }))
 }
 
 fn direct_loot_entities(txn: &WorldTxn<'_>, corpse: EntityId) -> Vec<EntityId> {
@@ -1100,7 +1097,7 @@ fn start_bury(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_loot(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1110,7 +1107,7 @@ fn tick_loot(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_bury(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1119,10 +1116,23 @@ fn tick_bury(
 
 fn tick_heal(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
+    let medicine_spent = match instance.local_state {
+        Some(ActionState::Heal { medicine_spent }) => medicine_spent,
+        Some(other) => {
+            return Err(ActionError::InternalError(format!(
+                "heal action carried unexpected local state {other:?}"
+            )));
+        }
+        None => {
+            return Err(ActionError::InternalError(
+                "heal action missing local state".to_string(),
+            ));
+        }
+    };
     let target = validate_heal_context(txn, instance)?;
     let wounds =
         txn.get_component_wound_list(target)
@@ -1139,6 +1149,16 @@ fn tick_heal(
 
     if let Some(next) = apply_treatment(&wounds, profile) {
         let completed = next.wounds.is_empty();
+        if !medicine_spent {
+            let _ = consume_one_unit_of_commodity(
+                txn,
+                instance.actor,
+                worldwake_core::CommodityKind::Medicine,
+            )?;
+            instance.local_state = Some(ActionState::Heal {
+                medicine_spent: true,
+            });
+        }
         txn.set_component_wound_list(target, next)
             .map_err(|error| ActionError::InternalError(error.to_string()))?;
         return Ok(if completed {
@@ -1199,7 +1219,7 @@ fn commit_bury(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_attack(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1801,7 +1821,7 @@ mod tests {
 
         assert_eq!(
             world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
-            Quantity(0)
+            Quantity(1)
         );
 
         let outcome = tick_action(
@@ -1821,6 +1841,10 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(
+            world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
+            Quantity(0)
+        );
         assert_eq!(outcome, TickOutcome::Continuing);
         let wound = &world.get_component_wound_list(patient).unwrap().wounds[0];
         assert_eq!(wound.bleed_rate_per_tick, pm(30));
@@ -2019,15 +2043,36 @@ mod tests {
         )
         .unwrap();
 
-        // Medicine consumed on start.
+        assert_eq!(
+            world.controlled_commodity_quantity(agent, CommodityKind::Medicine),
+            Quantity(1)
+        );
+
+        let first_tick = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
         assert_eq!(
             world.controlled_commodity_quantity(agent, CommodityKind::Medicine),
             Quantity(0)
         );
+        assert_eq!(first_tick, TickOutcome::Continuing);
 
-        // Tick until committed.
         let mut outcome = TickOutcome::Continuing;
-        for tick in 11..20 {
+        for tick in 12..20 {
             outcome = tick_action(
                 action_id,
                 &defs,
@@ -2050,6 +2095,92 @@ mod tests {
         }
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
+    }
+
+    #[test]
+    fn heal_abort_before_first_treatment_tick_preserves_medicine() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let healer = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let patient = spawn_guard(&mut world, 2, ControlSource::Ai);
+        arm_actor(&mut world, healer, 3, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 180, 20, 4)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+        let affordance = affordances_for(&world, healer, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x39);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
+            Quantity(1)
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 10);
+            txn.set_component_wound_list(patient, WoundList::default())
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Aborted { .. }));
+        assert_eq!(
+            world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
+            Quantity(1)
+        );
     }
 
     #[test]

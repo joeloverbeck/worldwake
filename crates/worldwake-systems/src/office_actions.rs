@@ -391,7 +391,7 @@ fn start_bribe(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_bribe(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -449,7 +449,7 @@ fn start_threaten(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_threaten(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -508,7 +508,7 @@ fn start_declare_support(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_declare_support(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {

@@ -224,7 +224,7 @@ fn start_noop(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_continue(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -254,7 +254,7 @@ fn abort_noop(
 
 fn tick_sleep(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {

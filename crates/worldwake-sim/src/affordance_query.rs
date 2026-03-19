@@ -740,7 +740,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn noop_tick(
         _def: &ActionDef,
-        _instance: &crate::ActionInstance,
+        _instance: &mut crate::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {

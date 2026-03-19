@@ -317,7 +317,7 @@ fn commit_put_down(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_transport(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {

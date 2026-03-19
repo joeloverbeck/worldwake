@@ -7,6 +7,9 @@ use worldwake_core::{EntityId, Tick, TravelEdgeId};
 pub enum ActionState {
     #[default]
     Empty,
+    Heal {
+        medicine_spent: bool,
+    },
     Travel {
         edge_id: TravelEdgeId,
         origin: EntityId,
@@ -49,6 +52,9 @@ mod tests {
     fn action_state_bincode_roundtrip_covers_every_variant() {
         for state in [
             ActionState::Empty,
+            ActionState::Heal {
+                medicine_spent: true,
+            },
             ActionState::Travel {
                 edge_id: TravelEdgeId(5),
                 origin: EntityId {

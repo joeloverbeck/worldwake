@@ -37,7 +37,7 @@ pub type ActionStartFn = for<'w> fn(
 ) -> Result<Option<ActionState>, ActionError>;
 pub type ActionTickFn = for<'w> fn(
     &ActionDef,
-    &ActionInstance,
+    &mut ActionInstance,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<ActionProgress, ActionError>;
@@ -396,7 +396,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn noop_tick(
         _def: &ActionDef,
-        _instance: &ActionInstance,
+        _instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -468,7 +468,7 @@ mod tests {
     fn action_handler_hooks_are_callable() {
         let handler = ActionHandler::new(noop_start, noop_tick, create_agent_on_commit, noop_abort);
         let mut world = World::new(build_prototype_world()).unwrap();
-        let instance = sample_instance();
+        let mut instance = sample_instance();
         let def = sample_def();
         let mut rng = DeterministicRng::new(Seed([0x11; 32]));
         let mut txn = WorldTxn::new(
@@ -486,7 +486,7 @@ mod tests {
             Some(ActionState::Empty)
         );
         assert_eq!(
-            (handler.on_tick)(&def, &instance, &mut rng, &mut txn).unwrap(),
+            (handler.on_tick)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
             ActionProgress::Continue
         );
         (handler.on_abort)(
