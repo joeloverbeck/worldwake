@@ -5,7 +5,6 @@ This file provides guidance to coding agents working in this repository.
 ## Agent Workflow
 
 - Read this file before making changes.
-- Start with the GitNexus context resource and follow the matching GitNexus skill when the task calls for codebase exploration, impact analysis, debugging, or refactoring.
 - Keep edits minimal and targeted. Do not refactor unrelated code while completing the requested task.
 - If instructions, specs, or repo documentation appear incomplete or contradictory, propose an update to the relevant rules or docs files. Do not make those documentation changes unless the user asks for them.
 
@@ -216,31 +215,3 @@ PRs should include:
 - A linked issue or spec section when applicable.
 - Confirmation that references, numbering, and terminology remain consistent.
 - A concrete test plan with verification steps.
-
-## GitNexus
-
-<!-- gitnexus:start -->
-# GitNexus MCP
-
-This project is indexed by GitNexus as **worldwake** (7616 symbols, 30442 relationships, 300 execution flows).
-
-## Always Start Here
-
-1. **Read `gitnexus://repo/{name}/context`** — codebase overview + check index freshness
-2. **Match your task to a skill below** and **read that skill file**
-3. **Follow the skill's workflow and checklist**
-
-> If step 1 warns the index is stale, run `npx gitnexus analyze` in the terminal first.
-
-## Skills
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->
