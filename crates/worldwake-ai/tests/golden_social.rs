@@ -3,11 +3,13 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::GoalTraceStatus;
 use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
-    HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
-    Seed, SocialObservationKind, TellProfile, Tick, UtilityProfile, WorkstationTag,
+    GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity,
+    RecipientKnowledgeStatus, ResourceSource, Seed, SocialObservationKind, TellMemoryKey,
+    TellProfile, Tick, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -130,6 +132,212 @@ fn run_until(limit: usize, mut step: impl FnMut() -> bool) -> bool {
         }
     }
     false
+}
+
+struct SocialRetellFixture {
+    h: GoldenHarness,
+    speaker: EntityId,
+    listener: EntityId,
+    subject: EntityId,
+}
+
+fn listener_suppressed_social_utility() -> UtilityProfile {
+    UtilityProfile {
+        social_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+fn retell_speaker_profile(retention_ticks: u64) -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 1,
+        acceptance_fidelity: pm(1000),
+        conversation_memory_retention_ticks: retention_ticks,
+        ..TellProfile::default()
+    }
+}
+
+fn build_social_retell_fixture(seed: Seed, speaker_tell_profile: TellProfile) -> SocialRetellFixture {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        listener_suppressed_social_utility(),
+    );
+    let subject = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in [speaker, listener] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+    }
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        speaker_tell_profile,
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        blind_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        keen_perception_profile(),
+    );
+
+    let listener_belief = build_believed_entity_state(
+        &h.world,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("listener should be observable for tell targeting");
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        listener_belief,
+    );
+    let subject_belief = build_believed_entity_state(
+        &h.world,
+        subject,
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("subject should be observable for speaker belief seeding");
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        subject,
+        subject_belief,
+    );
+
+    SocialRetellFixture {
+        h,
+        speaker,
+        listener,
+        subject,
+    }
+}
+
+fn share_goal(listener: EntityId, subject: EntityId) -> GoalKind {
+    GoalKind::ShareBelief { listener, subject }
+}
+
+fn told_memory(
+    world: &worldwake_core::World,
+    speaker: EntityId,
+    listener: EntityId,
+    subject: EntityId,
+) -> worldwake_core::ToldBeliefMemory {
+    world
+        .get_component_agent_belief_store(speaker)
+        .and_then(|store| {
+            store.told_beliefs.get(&TellMemoryKey {
+                counterparty: listener,
+                subject,
+            })
+        })
+        .cloned()
+        .expect("speaker should have told-memory for the listener and subject")
+}
+
+fn latest_goal_status(h: &GoldenHarness, speaker: EntityId, goal: &GoalKind) -> GoalTraceStatus {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .traces_for(speaker)
+        .into_iter()
+        .last()
+        .expect("speaker should have at least one decision trace")
+        .goal_status(goal)
+}
+
+fn wait_for_initial_tell(fixture: &mut SocialRetellFixture) -> Tick {
+    let learned = run_until(24, || {
+        fixture.h.step_once();
+        agent_belief_about(&fixture.h.world, fixture.listener, fixture.subject).is_some()
+    });
+    assert!(learned, "listener should learn the speaker's initial subject belief");
+
+    let memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    memory.told_tick
+}
+
+fn seed_subject_belief_change(fixture: &mut SocialRetellFixture, available_quantity: Quantity) {
+    let mut source = fixture
+        .h
+        .world
+        .get_component_resource_source(fixture.subject)
+        .cloned()
+        .expect("subject workstation should have a resource source");
+    source.available_quantity = available_quantity;
+
+    let observed_tick = fixture.h.scheduler.current_tick();
+    let mut txn = new_txn(&mut fixture.h.world, observed_tick.0);
+    txn.set_component_resource_source(fixture.subject, source)
+        .expect("subject resource source should remain writable");
+    commit_txn(txn, &mut fixture.h.event_log);
+
+    let changed_belief = build_believed_entity_state(
+        &fixture.h.world,
+        fixture.subject,
+        observed_tick,
+        PerceptionSource::DirectObservation,
+    )
+    .expect("changed subject should remain observable for belief seeding");
+    seed_belief(
+        &mut fixture.h.world,
+        &mut fixture.h.event_log,
+        fixture.speaker,
+        fixture.subject,
+        changed_belief,
+    );
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1140,6 +1348,271 @@ fn golden_survival_needs_suppress_social_goals() {
     assert_eq!(
         first, second,
         "survival-needs suppression scenario should replay deterministically"
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_unchanged_tell_suppression_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut fixture = build_social_retell_fixture(seed, retell_speaker_profile(48));
+    let share_goal = share_goal(fixture.listener, fixture.subject);
+    let initial_told_tick = wait_for_initial_tell(&mut fixture);
+    let initial_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+
+    let mut saw_resend_omission = false;
+    for _ in 0..6 {
+        fixture.h.step_once();
+        saw_resend_omission |= latest_goal_status(&fixture.h, fixture.speaker, &share_goal)
+            == GoalTraceStatus::OmittedSocial(
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            );
+    }
+
+    let final_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    assert!(saw_resend_omission, "decision traces should expose unchanged resend suppression");
+    assert_eq!(
+        final_memory.told_tick, initial_told_tick,
+        "unchanged resend suppression should leave the original told-memory tick intact"
+    );
+    assert_eq!(
+        final_memory.shared_state, initial_memory.shared_state,
+        "unchanged resend suppression should preserve the original shared snapshot"
+    );
+
+    (
+        hash_world(&fixture.h.world).unwrap(),
+        hash_event_log(&fixture.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener() {
+    let first = run_unchanged_tell_suppression_scenario(Seed([100; 32]));
+    let second = run_unchanged_tell_suppression_scenario(Seed([100; 32]));
+
+    assert_eq!(
+        first, second,
+        "unchanged tell suppression scenario should replay deterministically"
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_retell_after_subject_belief_change_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut fixture = build_social_retell_fixture(seed, retell_speaker_profile(48));
+    let share_goal = share_goal(fixture.listener, fixture.subject);
+    let initial_told_tick = wait_for_initial_tell(&mut fixture);
+
+    seed_subject_belief_change(&mut fixture, Quantity(6));
+
+    let mut saw_reenabled_share_goal = false;
+    let retold = run_until(16, || {
+        fixture.h.step_once();
+        let status = latest_goal_status(&fixture.h, fixture.speaker, &share_goal);
+        saw_reenabled_share_goal |= matches!(
+            status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        );
+        told_memory(
+            &fixture.h.world,
+            fixture.speaker,
+            fixture.listener,
+            fixture.subject,
+        )
+        .told_tick
+            > initial_told_tick
+    });
+
+    assert!(retold, "belief-content change should trigger a lawful re-tell");
+    assert!(
+        saw_reenabled_share_goal,
+        "decision traces should show ShareBelief re-enabled after a material belief change"
+    );
+
+    let final_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    assert!(
+        final_memory.told_tick > initial_told_tick,
+        "re-tell after belief change should refresh the told-memory tick"
+    );
+    assert_eq!(
+        final_memory
+            .shared_state
+            .resource_source
+            .as_ref()
+            .expect("shared subject snapshot should retain resource source")
+            .available_quantity,
+        Quantity(6),
+        "re-tell should store the materially changed shared content"
+    );
+    assert_eq!(
+        agent_belief_about(&fixture.h.world, fixture.listener, fixture.subject)
+            .and_then(|belief| belief.resource_source.as_ref())
+            .map(|source| source.available_quantity),
+        Some(Quantity(6)),
+        "listener should receive the updated belief content through the second tell"
+    );
+
+    (
+        hash_world(&fixture.h.world).unwrap(),
+        hash_event_log(&fixture.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_agent_retells_after_subject_belief_changes() {
+    let first = run_retell_after_subject_belief_change_scenario(Seed([101; 32]));
+    let second = run_retell_after_subject_belief_change_scenario(Seed([101; 32]));
+
+    assert_eq!(
+        first, second,
+        "belief-change re-tell scenario should replay deterministically"
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_retell_after_conversation_memory_expiry_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut fixture = build_social_retell_fixture(seed, retell_speaker_profile(2));
+    let share_goal = share_goal(fixture.listener, fixture.subject);
+    let initial_told_tick = wait_for_initial_tell(&mut fixture);
+
+    let mut saw_resend_omission_before_expiry = false;
+    let mut saw_reenabled_after_expiry = false;
+    let retold = run_until(16, || {
+        fixture.h.step_once();
+        let status = latest_goal_status(&fixture.h, fixture.speaker, &share_goal);
+        match status {
+            GoalTraceStatus::OmittedSocial(
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            ) => saw_resend_omission_before_expiry = true,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. } => {
+                saw_reenabled_after_expiry = true;
+            }
+            _ => {}
+        }
+
+        told_memory(
+            &fixture.h.world,
+            fixture.speaker,
+            fixture.listener,
+            fixture.subject,
+        )
+        .told_tick
+            > initial_told_tick
+    });
+
+    assert!(retold, "expired conversation memory should permit a lawful re-tell");
+    assert!(
+        saw_resend_omission_before_expiry,
+        "before expiry, decision traces should still show unchanged resend suppression"
+    );
+    assert!(
+        saw_reenabled_after_expiry,
+        "after expiry, decision traces should show ShareBelief re-enabled"
+    );
+
+    let final_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    assert!(
+        final_memory.told_tick > initial_told_tick,
+        "re-tell after expiry should refresh the speaker's told-memory tick"
+    );
+
+    (
+        hash_world(&fixture.h.world).unwrap(),
+        hash_event_log(&fixture.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_agent_retells_after_conversation_memory_expiry() {
+    let first = run_retell_after_conversation_memory_expiry_scenario(Seed([102; 32]));
+    let second = run_retell_after_conversation_memory_expiry_scenario(Seed([102; 32]));
+
+    assert_eq!(
+        first, second,
+        "conversation-memory expiry re-tell scenario should replay deterministically"
+    );
+}
+
+fn run_trace_reenabled_social_candidate_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut changed = build_social_retell_fixture(seed, retell_speaker_profile(48));
+    let changed_goal = share_goal(changed.listener, changed.subject);
+    wait_for_initial_tell(&mut changed);
+    seed_subject_belief_change(&mut changed, Quantity(4));
+    changed.h.step_once();
+
+    let changed_status = latest_goal_status(&changed.h, changed.speaker, &changed_goal);
+    assert!(
+        matches!(
+            changed_status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        ),
+        "belief change should re-enable ShareBelief in the decision trace"
+    );
+
+    let mut expired = build_social_retell_fixture(seed, retell_speaker_profile(2));
+    let expired_goal = share_goal(expired.listener, expired.subject);
+    wait_for_initial_tell(&mut expired);
+    expired.h.step_once();
+    let pre_expiry_status = latest_goal_status(&expired.h, expired.speaker, &expired_goal);
+    assert_eq!(
+        pre_expiry_status,
+        GoalTraceStatus::OmittedSocial(
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ),
+        "before expiry, unchanged resend suppression should still appear in the decision trace"
+    );
+
+    expired.h.step_once();
+    expired.h.step_once();
+    let expired_status = latest_goal_status(&expired.h, expired.speaker, &expired_goal);
+    assert!(
+        matches!(
+            expired_status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        ),
+        "expired conversation memory should re-enable ShareBelief in the decision trace"
+    );
+
+    (
+        hash_event_log(&changed.h.event_log).unwrap(),
+        hash_event_log(&expired.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry() {
+    let first = run_trace_reenabled_social_candidate_scenario(Seed([103; 32]));
+    let second = run_trace_reenabled_social_candidate_scenario(Seed([103; 32]));
+
+    assert_eq!(
+        first, second,
+        "trace-level social reenablement scenario should replay deterministically"
     );
 }
 
