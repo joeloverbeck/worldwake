@@ -1,6 +1,7 @@
 use crate::{
     decision_trace::{
         PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+        SocialCandidateOmission,
     },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
@@ -10,9 +11,12 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
     EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, OfficeData,
-    PerceptionSource, Quantity, Tick,
+    PerceptionSource, Quantity, RecipientKnowledgeStatus, Tick,
 };
-use worldwake_sim::{relayable_social_subjects, GoalBeliefView, RecipeDefinition, RecipeRegistry};
+use worldwake_sim::{
+    belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
+    RecipeRegistry,
+};
 
 #[derive(Default)]
 struct Evidence {
@@ -59,6 +63,7 @@ struct GenerationContext<'a> {
 #[derive(Default)]
 pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
+    pub omitted_social: Vec<SocialCandidateOmission>,
 }
 
 pub(crate) struct CandidateGenerationResult {
@@ -114,7 +119,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_production_candidates(&mut candidates, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &ctx);
     emit_combat_candidates(&mut candidates, &ctx);
-    emit_social_candidates(&mut candidates, &ctx);
+    emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
 
     CandidateGenerationResult {
@@ -169,6 +174,7 @@ fn emit_combat_candidates(
 
 fn emit_social_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let Some(place) = ctx.place else {
@@ -179,22 +185,38 @@ fn emit_social_candidates(
     };
     let known_beliefs = ctx.view.known_entity_beliefs(ctx.agent);
 
-    let subjects = relayable_social_subjects(
-        known_beliefs.clone(),
-        profile.max_relay_chain_len,
-        profile.max_tell_candidates,
-    );
-    if subjects.is_empty() {
-        return;
-    }
-
     for listener in social_listeners_at(ctx.view, ctx.agent, place) {
-        for subject in subjects.iter().copied() {
-            if known_beliefs.iter().any(|(known_subject, belief)| {
-                *known_subject == subject && belief.last_known_place == Some(place)
-            }) {
+        let subjects = listener_aware_relayable_subjects(
+            known_beliefs.clone(),
+            profile.max_relay_chain_len,
+            profile.max_tell_candidates,
+            |subject, _| {
+                ctx.view
+                    .recipient_knowledge_status(ctx.agent, listener, subject)
+                    .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker)
+            },
+        );
+        let selected = subjects.iter().copied().collect::<BTreeSet<_>>();
+        for (subject, belief) in &known_beliefs {
+            if belief_chain_len(belief.source) > profile.max_relay_chain_len {
                 continue;
             }
+            let status = ctx
+                .view
+                .recipient_knowledge_status(ctx.agent, listener, *subject)
+                .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker);
+            if !selected.contains(subject)
+                && status == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+            {
+                diagnostics.omitted_social.push(SocialCandidateOmission {
+                    listener,
+                    subject: *subject,
+                    status,
+                });
+            }
+        }
+
+        for subject in subjects.iter().copied() {
             let mut evidence = Evidence::with_entity(listener);
             evidence.entities.insert(subject);
             evidence.places.insert(place);
@@ -1273,7 +1295,7 @@ mod tests {
     };
     use crate::{
         enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
-        PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+        PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1283,16 +1305,17 @@ mod tests {
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
         EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
         MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity,
-        RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        RecipeId, RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
         RuntimeBeliefView,
     };
 
-    #[derive(Default)]
     struct TestBeliefView {
+        current_tick: Tick,
         alive: BTreeSet<EntityId>,
         dead: BTreeSet<EntityId>,
         incapacitated: BTreeSet<EntityId>,
@@ -1328,6 +1351,7 @@ mod tests {
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         office_data: BTreeMap<EntityId, OfficeData>,
         office_holders: BTreeMap<EntityId, EntityId>,
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
@@ -1335,9 +1359,62 @@ mod tests {
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
     }
 
+    impl Default for TestBeliefView {
+        fn default() -> Self {
+            Self {
+                current_tick: Tick(0),
+                alive: BTreeSet::new(),
+                dead: BTreeSet::new(),
+                incapacitated: BTreeSet::new(),
+                entity_kinds: BTreeMap::new(),
+                effective_places: BTreeMap::new(),
+                entities_at: BTreeMap::new(),
+                direct_possessions: BTreeMap::new(),
+                adjacent_places: BTreeMap::new(),
+                unique_item_counts: BTreeMap::new(),
+                commodity_quantities: BTreeMap::new(),
+                carry_capacities: BTreeMap::new(),
+                entity_loads: BTreeMap::new(),
+                lot_commodities: BTreeMap::new(),
+                consumable_profiles: BTreeMap::new(),
+                direct_containers: BTreeMap::new(),
+                direct_possessors: BTreeMap::new(),
+                workstation_tags: BTreeMap::new(),
+                resource_sources: BTreeMap::new(),
+                production_jobs: BTreeSet::new(),
+                controllable: BTreeSet::new(),
+                controlled_entities: BTreeSet::new(),
+                homeostatic_needs: BTreeMap::new(),
+                drive_thresholds: BTreeMap::new(),
+                wounds: BTreeMap::new(),
+                hostiles: BTreeMap::new(),
+                attackers: BTreeMap::new(),
+                sellers: BTreeMap::new(),
+                known_recipes: BTreeMap::new(),
+                workstations: BTreeMap::new(),
+                sources_at: BTreeMap::new(),
+                demand_memory: BTreeMap::new(),
+                merchandise_profiles: BTreeMap::new(),
+                corpses_at: BTreeMap::new(),
+                beliefs: BTreeMap::new(),
+                tell_profiles: BTreeMap::new(),
+                told_beliefs: BTreeMap::new(),
+                office_data: BTreeMap::new(),
+                office_holders: BTreeMap::new(),
+                factions_by_member: BTreeMap::new(),
+                loyalties: BTreeMap::new(),
+                support_declarations: BTreeMap::new(),
+            }
+        }
+    }
+
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
 
     impl RuntimeBeliefView for TestBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity) && !self.dead.contains(&entity)
         }
@@ -1533,6 +1610,70 @@ mod tests {
             self.tell_profiles.get(&agent).copied()
         }
 
+        fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+            self.told_beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn told_belief_memory(
+            &self,
+            actor: EntityId,
+            counterparty: EntityId,
+            subject: EntityId,
+        ) -> Option<ToldBeliefMemory> {
+            let profile = self.tell_profile(actor)?;
+            self.told_beliefs
+                .get(&actor)
+                .and_then(|memories| {
+                    memories
+                        .iter()
+                        .find(|(key, _)| {
+                            *key
+                                == TellMemoryKey {
+                                    counterparty,
+                                    subject,
+                                }
+                        })
+                        .map(|(_, memory)| memory)
+                })
+                .filter(|memory| {
+                    self.current_tick.0.saturating_sub(memory.told_tick.0)
+                        <= profile.conversation_memory_retention_ticks
+                })
+                .cloned()
+        }
+
+        fn recipient_knowledge_status(
+            &self,
+            actor: EntityId,
+            counterparty: EntityId,
+            subject: EntityId,
+        ) -> Option<RecipientKnowledgeStatus> {
+            let current_belief = self
+                .beliefs
+                .get(&actor)?
+                .iter()
+                .find(|(known_subject, _)| *known_subject == subject)
+                .map(|(_, belief)| belief)?;
+            let remembered = self.told_belief_memory(actor, counterparty, subject);
+            let had_raw_memory = self
+                .told_beliefs
+                .get(&actor)
+                .is_some_and(|memories| memories.iter().any(|(key, _)| {
+                    *key
+                        == TellMemoryKey {
+                            counterparty,
+                            subject,
+                        }
+                }));
+            self.tell_profile(actor)?;
+
+            Some(match remembered.as_ref() {
+                Some(memory) => worldwake_core::recipient_knowledge_status(current_belief, Some(memory)),
+                None if had_raw_memory => RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired,
+                None => RecipientKnowledgeStatus::UnknownToSpeaker,
+            })
+        }
+
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
@@ -1720,6 +1861,22 @@ mod tests {
         })
     }
 
+    fn contains_social_omission(
+        diagnostics: &CandidateGenerationDiagnostics,
+        listener: EntityId,
+        subject: EntityId,
+        status: RecipientKnowledgeStatus,
+    ) -> bool {
+        diagnostics.omitted_social.iter().any(|omission| {
+            *omission
+                == SocialCandidateOmission {
+                    listener,
+                    subject,
+                    status,
+                }
+        })
+    }
+
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
             last_known_place: None,
@@ -1740,6 +1897,24 @@ mod tests {
             BelievedEntityState {
                 last_known_place: Some(place),
                 ..believed_state(5, PerceptionSource::DirectObservation)
+            },
+        )
+    }
+
+    fn told_memory(
+        counterparty: EntityId,
+        subject: EntityId,
+        told_tick: u64,
+        belief: &BelievedEntityState,
+    ) -> (TellMemoryKey, ToldBeliefMemory) {
+        (
+            TellMemoryKey {
+                counterparty,
+                subject,
+            },
+            ToldBeliefMemory {
+                shared_state: worldwake_core::to_shared_belief_snapshot(belief),
+                told_tick: Tick(told_tick),
             },
         )
     }
@@ -3090,10 +3265,7 @@ mod tests {
         view.beliefs.insert(
             speaker,
             vec![
-                (
-                    subject_a,
-                    believed_state(8, PerceptionSource::DirectObservation),
-                ),
+                known_entity(subject_a, place),
                 (
                     subject_b,
                     believed_state(
@@ -3217,81 +3389,267 @@ mod tests {
     }
 
     #[test]
-    fn social_candidates_skip_subjects_already_known_to_be_colocated() {
+    fn social_candidates_suppress_unchanged_repeat_tells_via_told_memory() {
         let speaker = entity(1);
         let listener = entity(2);
-        let local_subject = entity(20);
-        let remote_subject = entity(21);
+        let subject = entity(20);
         let place = entity(10);
-        let remote_place = entity(11);
-        let mut view = TestBeliefView::default();
-        view.alive
-            .extend([speaker, listener, local_subject, remote_subject]);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
-        view.entity_kinds.insert(local_subject, EntityKind::Agent);
-        view.entity_kinds
-            .insert(remote_subject, EntityKind::Facility);
-        view.effective_places.insert(speaker, place);
-        view.effective_places.insert(local_subject, place);
-        view.effective_places.insert(remote_subject, remote_place);
-        view.entities_at
-            .insert(place, vec![speaker, listener, local_subject]);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, place),
+        ]);
+        view.entities_at.insert(place, vec![speaker, listener, subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
-        view.beliefs.insert(
-            speaker,
-            vec![
-                (
-                    local_subject,
-                    BelievedEntityState {
-                        last_known_place: Some(place),
-                        last_known_inventory: BTreeMap::new(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        observed_tick: Tick(8),
-                        source: PerceptionSource::DirectObservation,
-                    },
-                ),
-                (
-                    remote_subject,
-                    BelievedEntityState {
-                        last_known_place: Some(remote_place),
-                        last_known_inventory: BTreeMap::new(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        observed_tick: Tick(9),
-                        source: PerceptionSource::DirectObservation,
-                    },
-                ),
-            ],
-        );
+        let belief = known_entity(subject, place).1;
+        view.beliefs.insert(speaker, vec![(subject, belief.clone())]);
+        view.told_beliefs
+            .insert(speaker, vec![told_memory(listener, subject, 10, &belief)]);
 
-        let candidates = generate_candidates(
+        let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
+            6,
         );
 
         assert!(!contains_goal(
-            &candidates,
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_reemit_when_shared_content_changes() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, place),
+        ]);
+        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let old_belief = known_entity(subject, place).1;
+        let mut new_belief = old_belief.clone();
+        new_belief
+            .last_known_inventory
+            .insert(CommodityKind::Bread, Quantity(2));
+        view.beliefs.insert(speaker, vec![(subject, new_belief.clone())]);
+        view.told_beliefs
+            .insert(speaker, vec![told_memory(listener, subject, 10, &old_belief)]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(!contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_ignore_observed_tick_only_refreshes() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, place),
+        ]);
+        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let old_belief = known_entity(subject, place).1;
+        let mut refreshed_belief = old_belief.clone();
+        refreshed_belief.observed_tick = Tick(11);
+        view.beliefs.insert(speaker, vec![(subject, refreshed_belief)]);
+        view.told_beliefs
+            .insert(speaker, vec![told_memory(listener, subject, 10, &old_belief)]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+        );
+
+        assert!(!contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_reemit_when_tell_memory_has_expired() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(60),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, place),
+        ]);
+        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let belief = known_entity(subject, place).1;
+        view.beliefs.insert(speaker, vec![(subject, belief.clone())]);
+        view.told_beliefs
+            .insert(speaker, vec![told_memory(listener, subject, 1, &belief)]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(60),
+            6,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(!contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_listener_aware_filtering_happens_before_truncation() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let recent_subject = entity(20);
+        let older_subject = entity(21);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive
+            .extend([speaker, listener, recent_subject, older_subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(recent_subject, EntityKind::Agent);
+        view.entity_kinds.insert(older_subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (recent_subject, place),
+            (older_subject, place),
+        ]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, recent_subject, older_subject]);
+        view.tell_profiles.insert(
+            speaker,
+            TellProfile {
+                max_tell_candidates: 1,
+                ..TellProfile::default()
+            },
+        );
+        let recent_belief = known_entity(recent_subject, place).1;
+        let mut older_belief = known_entity(older_subject, place).1;
+        older_belief.observed_tick = Tick(8);
+        view.beliefs.insert(
+            speaker,
+            vec![
+                (recent_subject, recent_belief.clone()),
+                (older_subject, older_belief),
+            ],
+        );
+        view.told_beliefs.insert(
+            speaker,
+            vec![told_memory(listener, recent_subject, 10, &recent_belief)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+        );
+
+        assert!(!contains_goal(
+            &result.candidates,
             GoalKind::ShareBelief {
                 listener,
-                subject: local_subject,
+                subject: recent_subject,
             }
         ));
         assert!(contains_goal(
-            &candidates,
+            &result.candidates,
             GoalKind::ShareBelief {
                 listener,
-                subject: remote_subject,
+                subject: older_subject,
             }
         ));
     }

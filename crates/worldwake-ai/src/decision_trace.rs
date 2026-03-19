@@ -4,7 +4,7 @@
 //! and test query purposes. See spec S08 for design rationale.
 
 use std::fmt::Write as _;
-use worldwake_core::{ActionDefId, EntityId, GoalKey, Tick};
+use worldwake_core::{ActionDefId, EntityId, GoalKey, RecipientKnowledgeStatus, Tick};
 use worldwake_sim::ActionDefRegistry;
 
 use crate::goal_model::GoalPriorityClass;
@@ -125,6 +125,8 @@ pub struct CandidateTrace {
     pub zero_motive: Vec<GoalKey>,
     /// Political goals omitted before generation due to hard gates.
     pub omitted_political: Vec<PoliticalCandidateOmission>,
+    /// Social goals omitted before generation due to resend suppression.
+    pub omitted_social: Vec<SocialCandidateOmission>,
 }
 
 /// Political goal families that can be omitted before candidate emission.
@@ -151,6 +153,14 @@ pub struct PoliticalCandidateOmission {
     pub office: EntityId,
     pub candidate: Option<EntityId>,
     pub reason: PoliticalCandidateOmissionReason,
+}
+
+/// Diagnostic record for a social goal omitted before generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SocialCandidateOmission {
+    pub listener: EntityId,
+    pub subject: EntityId,
+    pub status: RecipientKnowledgeStatus,
 }
 
 /// Summary of a ranked goal for trace output.
@@ -331,6 +341,7 @@ pub enum GoalTraceStatus {
     Dead,
     ActiveAction,
     OmittedPolitical(PoliticalCandidateOmissionReason),
+    OmittedSocial(RecipientKnowledgeStatus),
     NotGenerated,
     GeneratedOnly,
     Suppressed,
@@ -471,6 +482,9 @@ fn goal_status_in_planning(
     {
         return GoalTraceStatus::OmittedPolitical(reason);
     }
+    if let Some(status) = omitted_social_status_for_goal(&planning.candidates.omitted_social, goal) {
+        return GoalTraceStatus::OmittedSocial(status);
+    }
 
     let goal_key = GoalKey::from(goal);
     if planning.candidates.suppressed.contains(&goal_key) {
@@ -514,6 +528,20 @@ fn omitted_political_reason_for_goal(
                 && omission.candidate == Some(*candidate) =>
         {
             Some(omission.reason)
+        }
+        _ => None,
+    })
+}
+
+fn omitted_social_status_for_goal(
+    omissions: &[SocialCandidateOmission],
+    goal: &crate::GoalKind,
+) -> Option<RecipientKnowledgeStatus> {
+    omissions.iter().find_map(|omission| match goal {
+        crate::GoalKind::ShareBelief { listener, subject }
+            if omission.listener == *listener && omission.subject == *subject =>
+        {
+            Some(omission.status)
         }
         _ => None,
     })
@@ -652,6 +680,7 @@ mod tests {
         selected_plan_source: Option<SelectedPlanSource>,
         plan_continued: bool,
         omitted_political: Vec<PoliticalCandidateOmission>,
+        omitted_social: Vec<SocialCandidateOmission>,
     ) -> AgentDecisionTrace {
         AgentDecisionTrace {
             agent: entity(1),
@@ -665,6 +694,7 @@ mod tests {
                     suppressed,
                     zero_motive,
                     omitted_political,
+                    omitted_social,
                 },
                 planning: PlanSearchTrace {
                     attempts: Vec::new(),
@@ -781,6 +811,7 @@ mod tests {
                 candidate: None,
                 reason: PoliticalCandidateOmissionReason::ForceSuccessionLaw,
             }],
+            Vec::new(),
         );
 
         assert_eq!(
@@ -837,11 +868,43 @@ mod tests {
                 candidate: Some(rival),
                 reason: PoliticalCandidateOmissionReason::CandidateNotEligible,
             }],
+            Vec::new(),
         );
         assert_eq!(
             support_trace.goal_status(&support_goal),
             GoalTraceStatus::OmittedPolitical(
                 PoliticalCandidateOmissionReason::CandidateNotEligible
+            )
+        );
+    }
+
+    #[test]
+    fn goal_status_reports_social_omission_reason() {
+        let listener = entity(10);
+        let subject = entity(11);
+        let share_goal = GoalKind::ShareBelief { listener, subject };
+
+        let trace = goal_trace(
+            Tick(7),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            Vec::new(),
+            vec![SocialCandidateOmission {
+                listener,
+                subject,
+                status: RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            }],
+        );
+
+        assert_eq!(
+            trace.goal_status(&share_goal),
+            GoalTraceStatus::OmittedSocial(
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
             )
         );
     }
@@ -865,6 +928,7 @@ mod tests {
             Some(SelectedPlanSource::SearchSelection),
             false,
             Vec::new(),
+            Vec::new(),
         ));
         sink.record(goal_trace(
             Tick(2),
@@ -879,6 +943,7 @@ mod tests {
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SnapshotContinuation),
             true,
+            Vec::new(),
             Vec::new(),
         ));
 
@@ -955,6 +1020,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_social: vec![],
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {

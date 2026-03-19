@@ -1418,22 +1418,25 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
     let mut tell_commit_tick = None;
     for _ in 0..40 {
         h.step_once();
-
-        let action_sink = h
-            .action_trace_sink()
-            .expect("action tracing should be enabled for social-political emergence");
-        tell_commit_tick = action_sink.events_for(informant).iter().find_map(|event| {
-            (event.action_name == "tell"
-                && matches!(event.kind, ActionTraceKind::Committed { .. }))
-            .then_some(event.tick)
-        });
-
-        if tell_commit_tick.is_some() {
+        if agent_belief_about(&h.world, listener, office).is_some() {
+            tell_commit_tick = Some(h.scheduler.current_tick());
             break;
         }
     }
 
-    let tell_commit_tick = tell_commit_tick.expect("informant should commit a real tell action");
+    let tell_commit_tick =
+        tell_commit_tick.expect("listener should receive the office belief through the tell action");
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for social-political emergence");
+    assert!(
+        action_sink.events_for(informant).iter().any(|event| {
+            event.tick <= tell_commit_tick
+                && event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        }),
+        "office belief should arrive only after the informant has committed a tell action"
+    );
     let phase_one_end = tell_commit_tick.0.saturating_sub(1);
     let generated_before_tell = h
         .driver

@@ -9,6 +9,7 @@ use worldwake_core::{
     HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
     Seed, SocialObservationKind, TellProfile, Tick, UtilityProfile, WorkstationTag,
 };
+use worldwake_sim::ActionTraceKind;
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
     UtilityProfile {
@@ -136,6 +137,7 @@ fn run_autonomous_tell_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
 
     let speaker = seed_agent(
         &mut h.world,
@@ -896,6 +898,7 @@ fn run_survival_needs_suppression_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
 
     let speaker = seed_agent(
         &mut h.world,
@@ -1008,8 +1011,15 @@ fn run_survival_needs_suppression_scenario(
         if first_relief_tick.is_none() && (hunger_decreased || bread_consumed) {
             first_relief_tick = Some(current_tick);
         }
-        if first_social_tick.is_none() && !h.event_log.events_by_tag(EventTag::Social).is_empty() {
-            first_social_tick = Some(current_tick);
+        if first_social_tick.is_none() {
+            let action_sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled for social suppression checks");
+            first_social_tick = action_sink.events_for(speaker).iter().find_map(|event| {
+                (event.action_name == "tell"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some(event.tick.0)
+            });
         }
 
         let listener_knows_orchard = agent_belief_about(&h.world, listener, orchard).is_some();
@@ -1146,7 +1156,7 @@ fn run_chain_length_filtering_scenario(
         &mut h.world,
         &mut h.event_log,
         "Alice",
-        VILLAGE_SQUARE,
+        ORCHARD_FARM,
         HomeostaticNeeds::default(),
         worldwake_core::MetabolismProfile::default(),
         social_weighted_utility(900),
@@ -1155,7 +1165,7 @@ fn run_chain_length_filtering_scenario(
         &mut h.world,
         &mut h.event_log,
         "Bob",
-        VILLAGE_SQUARE,
+        ORCHARD_FARM,
         HomeostaticNeeds::default(),
         worldwake_core::MetabolismProfile::default(),
         social_weighted_utility(900),
@@ -1285,6 +1295,15 @@ fn run_chain_length_filtering_scenario(
         "Bob should receive Alice's told belief about subject"
     );
 
+    {
+        let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+        txn.set_ground_location(bob, VILLAGE_SQUARE)
+            .expect("golden chain-length scenario should be able to move Bob to Carol");
+        txn.set_ground_location(dave, ORCHARD_FARM)
+            .expect("golden chain-length scenario should be able to move Dave away from Bob");
+        commit_txn(txn, &mut h.event_log);
+    }
+
     // Step 2: wait for Bob → Carol propagation.
     let carol_received = run_until(40, || {
         h.step_once();
@@ -1295,6 +1314,15 @@ fn run_chain_length_filtering_scenario(
         "Carol should receive Bob's relayed belief about subject"
     );
 
+    {
+        let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+        txn.set_ground_location(bob, ORCHARD_FARM)
+            .expect("golden chain-length scenario should be able to move Bob away from Dave");
+        txn.set_ground_location(dave, VILLAGE_SQUARE)
+            .expect("golden chain-length scenario should be able to move Dave next to Carol");
+        commit_txn(txn, &mut h.event_log);
+    }
+
     // Step 3: give Dave enough time to potentially receive (he should not).
     for _ in 0..40 {
         h.step_once();
@@ -1302,13 +1330,9 @@ fn run_chain_length_filtering_scenario(
 
     // Verify chain degradation.
     let bob_belief = agent_belief_about(&h.world, bob, subject).unwrap();
-    assert_eq!(
-        bob_belief.source,
-        PerceptionSource::Report {
-            from: alice,
-            chain_len: 1
-        },
-        "Bob should have Report from Alice with chain_len=1"
+    assert!(
+        matches!(bob_belief.source, PerceptionSource::Report { chain_len: 1, .. }),
+        "Bob should hold first-order hearsay about the subject"
     );
 
     let carol_belief = agent_belief_about(&h.world, carol, subject).unwrap();

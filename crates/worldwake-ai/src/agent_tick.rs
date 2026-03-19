@@ -414,6 +414,7 @@ fn process_agent(
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
                 omitted_political: read_result.omitted_political,
+                omitted_social: read_result.omitted_social,
             };
 
             DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -689,6 +690,8 @@ struct ReadPhaseResult {
     zero_motive: Vec<worldwake_core::GoalKey>,
     /// Political goals omitted before emission due to hard gates.
     omitted_political: Vec<crate::PoliticalCandidateOmission>,
+    /// Social goals omitted before emission due to resend suppression.
+    omitted_social: Vec<crate::SocialCandidateOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
     decision_context: DecisionContext,
 }
@@ -769,6 +772,7 @@ fn refresh_runtime_for_read_phase(
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,
+        omitted_social: candidates.diagnostics.omitted_social,
         decision_context: dc,
     }
 }
@@ -1987,8 +1991,9 @@ mod tests {
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
         HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
         OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-        RecipeId, ResourceSource, Seed, SuccessionLaw, Tick, Topology, TravelDispositionProfile,
-        TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData,
+        RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
+        TellProfile, Tick, ToldBeliefMemory, Topology, TravelDispositionProfile, TravelEdge,
+        TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData,
         WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
@@ -5345,6 +5350,99 @@ mod tests {
                                 == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
                     }),
                     "Force-law omission should be preserved in the decision trace for SupportCandidateForOffice"
+                );
+            }
+            other => panic!("expected Planning outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trace_social_resend_omission_reason() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("harness actor should start at a place");
+        let (listener, subject) = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_tell_profile(harness.actor, TellProfile::default())
+                .unwrap();
+            let listener = txn.create_agent("Listener", ControlSource::Ai).unwrap();
+            let subject = txn.create_agent("Subject", ControlSource::Ai).unwrap();
+            txn.set_ground_location(listener, place).unwrap();
+            txn.set_ground_location(subject, place).unwrap();
+            commit_txn(txn);
+            (listener, subject)
+        };
+
+        sync_selected_beliefs(
+            &mut harness.world,
+            harness.actor,
+            &[listener, subject],
+            Tick(2),
+            PerceptionSource::DirectObservation,
+        );
+        {
+            let mut store = harness
+                .world
+                .get_component_agent_belief_store(harness.actor)
+                .cloned()
+                .expect("actor should have a belief store");
+            let current = store
+                .get_entity(&subject)
+                .cloned()
+                .expect("seeded subject belief should exist");
+            store.record_told_belief(
+                TellMemoryKey {
+                    counterparty: listener,
+                    subject,
+                },
+                ToldBeliefMemory {
+                    shared_state: worldwake_core::to_shared_belief_snapshot(&current),
+                    told_tick: Tick(2),
+                },
+            );
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_agent_belief_store(harness.actor, store)
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let trace = harness
+            .driver
+            .trace_sink()
+            .unwrap()
+            .traces_for(harness.actor)
+            .into_iter()
+            .next()
+            .expect("expected one decision trace");
+        let share_goal = GoalKind::ShareBelief { listener, subject };
+
+        match &trace.outcome {
+            crate::DecisionOutcome::Planning(planning) => {
+                assert!(
+                    !planning.candidates.generated.iter().any(|goal| goal.kind == share_goal),
+                    "unchanged told beliefs must not emit ShareBelief candidates"
+                );
+                assert!(
+                    planning.candidates.omitted_social.iter().any(|omission| {
+                        omission.listener == listener
+                            && omission.subject == subject
+                            && omission.status
+                                == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                    }),
+                    "social resend omission should be preserved in the decision trace"
+                );
+                assert_eq!(
+                    trace.goal_status(&share_goal),
+                    crate::GoalTraceStatus::OmittedSocial(
+                        RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                    )
                 );
             }
             other => panic!("expected Planning outcome, got {other:?}"),

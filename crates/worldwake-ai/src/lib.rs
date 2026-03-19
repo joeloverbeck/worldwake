@@ -39,6 +39,7 @@ pub use decision_trace::{
     PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace,
     PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
     RankedGoalSummary, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
+    SocialCandidateOmission,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
