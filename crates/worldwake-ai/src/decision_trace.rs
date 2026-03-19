@@ -324,6 +324,39 @@ pub enum DirtyReason {
     QueuePatienceExhausted,
 }
 
+/// Semantic status of one goal within one recorded agent tick.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GoalTraceStatus {
+    NoTrace,
+    Dead,
+    ActiveAction,
+    OmittedPolitical(PoliticalCandidateOmissionReason),
+    NotGenerated,
+    GeneratedOnly,
+    Suppressed,
+    ZeroMotive,
+    Ranked { rank: usize, selected: bool },
+}
+
+impl GoalTraceStatus {
+    #[must_use]
+    pub fn is_generated(self) -> bool {
+        matches!(
+            self,
+            Self::GeneratedOnly | Self::Suppressed | Self::ZeroMotive | Self::Ranked { .. }
+        )
+    }
+}
+
+/// Derived per-tick view of one goal's status and plan provenance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GoalHistoryEntry {
+    pub tick: Tick,
+    pub status: GoalTraceStatus,
+    pub plan_continued: bool,
+    pub selected_plan_source: Option<SelectedPlanSource>,
+}
+
 // ── Collection Sink ─────────────────────────────────────────────
 
 /// Append-only collection of decision traces with query helpers.
@@ -358,6 +391,29 @@ impl DecisionTraceSink {
             .find(|t| t.agent == agent && t.tick == tick)
     }
 
+    #[must_use]
+    pub fn goal_status_at(
+        &self,
+        agent: EntityId,
+        tick: Tick,
+        goal: &crate::GoalKind,
+    ) -> GoalTraceStatus {
+        self.trace_at(agent, tick)
+            .map_or(GoalTraceStatus::NoTrace, |trace| trace.goal_status(goal))
+    }
+
+    #[must_use]
+    pub fn goal_history_for(
+        &self,
+        agent: EntityId,
+        goal: &crate::GoalKind,
+    ) -> Vec<GoalHistoryEntry> {
+        self.traces_for(agent)
+            .into_iter()
+            .map(|trace| trace.goal_history_entry(goal))
+            .collect()
+    }
+
     pub fn clear(&mut self) {
         self.traces.clear();
     }
@@ -375,6 +431,92 @@ impl DecisionTraceSink {
             );
         }
     }
+}
+
+impl AgentDecisionTrace {
+    #[must_use]
+    pub fn goal_status(&self, goal: &crate::GoalKind) -> GoalTraceStatus {
+        match &self.outcome {
+            DecisionOutcome::Dead => GoalTraceStatus::Dead,
+            DecisionOutcome::ActiveAction { .. } => GoalTraceStatus::ActiveAction,
+            DecisionOutcome::Planning(planning) => goal_status_in_planning(planning, goal),
+        }
+    }
+
+    #[must_use]
+    pub fn goal_history_entry(&self, goal: &crate::GoalKind) -> GoalHistoryEntry {
+        match &self.outcome {
+            DecisionOutcome::Planning(planning) => GoalHistoryEntry {
+                tick: self.tick,
+                status: goal_status_in_planning(planning, goal),
+                plan_continued: planning.plan_continued,
+                selected_plan_source: planning.selection.selected_plan_source,
+            },
+            _ => GoalHistoryEntry {
+                tick: self.tick,
+                status: self.goal_status(goal),
+                plan_continued: false,
+                selected_plan_source: None,
+            },
+        }
+    }
+}
+
+fn goal_status_in_planning(
+    planning: &PlanningPipelineTrace,
+    goal: &crate::GoalKind,
+) -> GoalTraceStatus {
+    if let Some(reason) =
+        omitted_political_reason_for_goal(&planning.candidates.omitted_political, goal)
+    {
+        return GoalTraceStatus::OmittedPolitical(reason);
+    }
+
+    let goal_key = GoalKey::from(goal);
+    if planning.candidates.suppressed.contains(&goal_key) {
+        return GoalTraceStatus::Suppressed;
+    }
+    if planning.candidates.zero_motive.contains(&goal_key) {
+        return GoalTraceStatus::ZeroMotive;
+    }
+    if let Some(rank) = planning
+        .candidates
+        .ranked
+        .iter()
+        .position(|candidate| candidate.goal == goal_key)
+    {
+        return GoalTraceStatus::Ranked {
+            rank,
+            selected: planning.selection.selected == Some(goal_key),
+        };
+    }
+    if planning.candidates.generated.contains(&goal_key) {
+        return GoalTraceStatus::GeneratedOnly;
+    }
+    GoalTraceStatus::NotGenerated
+}
+
+fn omitted_political_reason_for_goal(
+    omissions: &[PoliticalCandidateOmission],
+    goal: &crate::GoalKind,
+) -> Option<PoliticalCandidateOmissionReason> {
+    omissions.iter().find_map(|omission| match goal {
+        crate::GoalKind::ClaimOffice { office }
+            if omission.family == PoliticalGoalFamily::ClaimOffice
+                && omission.office == *office
+                && omission.candidate.is_none() =>
+        {
+            Some(omission.reason)
+        }
+        crate::GoalKind::SupportCandidateForOffice { office, candidate }
+            if omission.family == PoliticalGoalFamily::SupportCandidateForOffice
+                && omission.office == *office
+                && omission.candidate == Some(*candidate) =>
+        {
+            Some(omission.reason)
+        }
+        _ => None,
+    })
 }
 
 /// Format a `DecisionOutcome` with action name resolution via the registry.
@@ -482,7 +624,7 @@ impl Default for DecisionTraceSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_core::Tick;
+    use worldwake_core::{GoalKind, Tick};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -496,6 +638,51 @@ mod tests {
             agent,
             tick,
             outcome: DecisionOutcome::Dead,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn goal_trace(
+        tick: Tick,
+        generated: Vec<GoalKey>,
+        suppressed: Vec<GoalKey>,
+        zero_motive: Vec<GoalKey>,
+        ranked: Vec<RankedGoalSummary>,
+        selected: Option<GoalKey>,
+        selected_plan_source: Option<SelectedPlanSource>,
+        plan_continued: bool,
+        omitted_political: Vec<PoliticalCandidateOmission>,
+    ) -> AgentDecisionTrace {
+        AgentDecisionTrace {
+            agent: entity(1),
+            tick,
+            outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                dirty_reasons: Vec::new(),
+                plan_continued,
+                candidates: CandidateTrace {
+                    generated,
+                    ranked,
+                    suppressed,
+                    zero_motive,
+                    omitted_political,
+                },
+                planning: PlanSearchTrace {
+                    attempts: Vec::new(),
+                },
+                selection: SelectionTrace {
+                    selected,
+                    selected_plan: None,
+                    selected_plan_source,
+                    goal_switch: None,
+                    previous_goal: None,
+                },
+                execution: ExecutionTrace {
+                    enqueued_step: None,
+                    revalidation_passed: None,
+                    failure: None,
+                },
+                action_start_failures: Vec::new(),
+            })),
         }
     }
 
@@ -547,6 +734,186 @@ mod tests {
         let agent = entity(0);
 
         assert!(sink.trace_at(agent, Tick(99)).is_none());
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn goal_status_distinguishes_omitted_suppressed_zero_motive_ranked_and_selected() {
+        let office = entity(10);
+        let rival = entity(11);
+        let omitted_goal = GoalKind::ClaimOffice { office };
+        let suppressed_goal = GoalKind::Sleep;
+        let zero_motive_goal = GoalKind::Wash;
+        let outranked_goal = GoalKind::TreatWounds { patient: entity(12) };
+        let selected_goal = GoalKind::ReduceDanger;
+        let generated_only_goal = GoalKind::Relieve;
+        let absent_goal = GoalKind::EngageHostile { target: entity(99) };
+
+        let trace = goal_trace(
+            Tick(5),
+            vec![
+                GoalKey::from(&suppressed_goal),
+                GoalKey::from(&zero_motive_goal),
+                GoalKey::from(&outranked_goal),
+                GoalKey::from(&selected_goal),
+                GoalKey::from(&generated_only_goal),
+            ],
+            vec![GoalKey::from(&suppressed_goal)],
+            vec![GoalKey::from(&zero_motive_goal)],
+            vec![
+                RankedGoalSummary {
+                    goal: GoalKey::from(&selected_goal),
+                    priority_class: GoalPriorityClass::High,
+                    motive_score: 900,
+                },
+                RankedGoalSummary {
+                    goal: GoalKey::from(&outranked_goal),
+                    priority_class: GoalPriorityClass::Medium,
+                    motive_score: 600,
+                },
+            ],
+            Some(GoalKey::from(&selected_goal)),
+            Some(SelectedPlanSource::SearchSelection),
+            false,
+            vec![PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+            }],
+        );
+
+        assert_eq!(
+            trace.goal_status(&omitted_goal),
+            GoalTraceStatus::OmittedPolitical(PoliticalCandidateOmissionReason::ForceSuccessionLaw)
+        );
+        assert_eq!(
+            trace.goal_status(&suppressed_goal),
+            GoalTraceStatus::Suppressed
+        );
+        assert_eq!(
+            trace.goal_status(&zero_motive_goal),
+            GoalTraceStatus::ZeroMotive
+        );
+        assert_eq!(
+            trace.goal_status(&outranked_goal),
+            GoalTraceStatus::Ranked {
+                rank: 1,
+                selected: false,
+            }
+        );
+        assert_eq!(
+            trace.goal_status(&selected_goal),
+            GoalTraceStatus::Ranked {
+                rank: 0,
+                selected: true,
+            }
+        );
+        assert_eq!(
+            trace.goal_status(&generated_only_goal),
+            GoalTraceStatus::GeneratedOnly
+        );
+        assert_eq!(
+            trace.goal_status(&absent_goal),
+            GoalTraceStatus::NotGenerated
+        );
+
+        let support_goal = GoalKind::SupportCandidateForOffice {
+            office,
+            candidate: rival,
+        };
+        let support_trace = goal_trace(
+            Tick(6),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            vec![PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::SupportCandidateForOffice,
+                office,
+                candidate: Some(rival),
+                reason: PoliticalCandidateOmissionReason::CandidateNotEligible,
+            }],
+        );
+        assert_eq!(
+            support_trace.goal_status(&support_goal),
+            GoalTraceStatus::OmittedPolitical(
+                PoliticalCandidateOmissionReason::CandidateNotEligible
+            )
+        );
+    }
+
+    #[test]
+    fn goal_history_helpers_are_deterministic_and_preserve_continuation_metadata() {
+        let agent = entity(1);
+        let goal = GoalKind::ClaimOffice { office: entity(20) };
+        let mut sink = DecisionTraceSink::new();
+        sink.record(goal_trace(
+            Tick(1),
+            vec![GoalKey::from(&goal)],
+            Vec::new(),
+            Vec::new(),
+            vec![RankedGoalSummary {
+                goal: GoalKey::from(&goal),
+                priority_class: GoalPriorityClass::Medium,
+                motive_score: 700,
+            }],
+            Some(GoalKey::from(&goal)),
+            Some(SelectedPlanSource::SearchSelection),
+            false,
+            Vec::new(),
+        ));
+        sink.record(goal_trace(
+            Tick(2),
+            vec![GoalKey::from(&goal)],
+            Vec::new(),
+            Vec::new(),
+            vec![RankedGoalSummary {
+                goal: GoalKey::from(&goal),
+                priority_class: GoalPriorityClass::Medium,
+                motive_score: 700,
+            }],
+            Some(GoalKey::from(&goal)),
+            Some(SelectedPlanSource::SnapshotContinuation),
+            true,
+            Vec::new(),
+        ));
+
+        let first = sink.goal_history_for(agent, &goal);
+        let second = sink.goal_history_for(agent, &goal);
+        assert_eq!(first, second, "history helpers must be deterministic");
+        assert_eq!(first.len(), 2);
+        assert_eq!(
+            first[0],
+            GoalHistoryEntry {
+                tick: Tick(1),
+                status: GoalTraceStatus::Ranked {
+                    rank: 0,
+                    selected: true,
+                },
+                plan_continued: false,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+            }
+        );
+        assert_eq!(
+            first[1],
+            GoalHistoryEntry {
+                tick: Tick(2),
+                status: GoalTraceStatus::Ranked {
+                    rank: 0,
+                    selected: true,
+                },
+                plan_continued: true,
+                selected_plan_source: Some(SelectedPlanSource::SnapshotContinuation),
+            }
+        );
+        assert_eq!(
+            sink.goal_status_at(agent, Tick(99), &goal),
+            GoalTraceStatus::NoTrace
+        );
     }
 
     #[test]

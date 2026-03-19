@@ -8,7 +8,6 @@
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
     BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind,
@@ -61,34 +60,6 @@ fn social_weighted_utility(weight: u16) -> UtilityProfile {
         social_weight: pm(weight),
         enterprise_weight: pm(0),
         ..UtilityProfile::default()
-    }
-}
-
-fn trace_generates_claim_office(
-    trace: &worldwake_ai::AgentDecisionTrace,
-    office: worldwake_core::EntityId,
-) -> bool {
-    match &trace.outcome {
-        DecisionOutcome::Planning(planning) => planning
-            .candidates
-            .generated
-            .iter()
-            .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
-        _ => false,
-    }
-}
-
-fn trace_generates_self_treat(
-    trace: &worldwake_ai::AgentDecisionTrace,
-    agent: worldwake_core::EntityId,
-) -> bool {
-    match &trace.outcome {
-        DecisionOutcome::Planning(planning) => planning
-            .candidates
-            .generated
-            .iter()
-            .any(|goal| goal.kind == GoalKind::TreatWounds { patient: agent }),
-        _ => false,
     }
 }
 
@@ -438,13 +409,13 @@ fn run_wounded_politician(
         .trace_sink()
         .expect("decision tracing should be enabled for wounded-politician scenario");
     let generated_self_treat = decision_sink
-        .traces_for(agent)
+        .goal_history_for(agent, &GoalKind::TreatWounds { patient: agent })
         .into_iter()
-        .any(|trace| trace_generates_self_treat(trace, agent));
+        .any(|entry| entry.status.is_generated());
     let generated_claim_office = decision_sink
-        .traces_for(agent)
+        .goal_history_for(agent, &GoalKind::ClaimOffice { office })
         .into_iter()
-        .any(|trace| trace_generates_claim_office(trace, office));
+        .any(|entry| entry.status.is_generated());
 
     assert!(
         generated_self_treat,
@@ -1463,13 +1434,14 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
 
     let tell_commit_tick = tell_commit_tick.expect("informant should commit a real tell action");
     let phase_one_end = tell_commit_tick.0.saturating_sub(1);
-    let generated_before_tell = (0..=phase_one_end).any(|tick| {
-        h.driver
-            .trace_sink()
-            .expect("decision tracing should be enabled for social-political emergence")
-            .trace_at(listener, Tick(tick))
-            .is_some_and(|trace| trace_generates_claim_office(trace, office))
-    });
+    let generated_before_tell = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for social-political emergence")
+        .goal_history_for(listener, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| entry.tick.0 <= phase_one_end)
+        .any(|entry| entry.status.is_generated());
     assert!(
         !generated_before_tell,
         "listener must not generate ClaimOffice before learning the office via Tell"
@@ -1501,13 +1473,14 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
     }
 
     let final_tick = h.scheduler.current_tick();
-    let generated_after_tell = ((tell_commit_tick.0 + 1)..=final_tick.0).any(|tick| {
-        h.driver
-            .trace_sink()
-            .expect("decision tracing should be enabled for social-political emergence")
-            .trace_at(listener, Tick(tick))
-            .is_some_and(|trace| trace_generates_claim_office(trace, office))
-    });
+    let generated_after_tell = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for social-political emergence")
+        .goal_history_for(listener, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| tell_commit_tick < entry.tick && entry.tick <= final_tick)
+        .any(|entry| entry.status.is_generated());
     assert!(
         generated_after_tell,
         "listener should generate ClaimOffice after receiving the told office belief"

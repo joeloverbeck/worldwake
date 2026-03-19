@@ -3,7 +3,6 @@
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, BeliefConfidencePolicy, CombatProfile,
     CommodityKind, DeadAt, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
@@ -891,28 +890,28 @@ fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, State
     }
 
     let phase_one_end = h.scheduler.current_tick().0;
-    let generated_before_update = (0..=phase_one_end).any(|tick| {
-        h.driver
+    let generated_before_update = {
+        let decision_sink = h
+            .driver
             .trace_sink()
-            .expect("decision tracing should be enabled")
-            .trace_at(agent, Tick(tick))
-            .is_some_and(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => {
-                    planning.candidates.generated.iter().any(|goal| {
-                        matches!(
-                            goal.kind,
-                            GoalKind::ClaimOffice { office: goal_office }
-                                if goal_office == office
-                        ) || matches!(
-                            goal.kind,
-                            GoalKind::SupportCandidateForOffice { office: goal_office, .. }
-                                if goal_office == office
-                        )
-                    })
-                }
-                _ => false,
-            })
-    });
+            .expect("decision tracing should be enabled");
+        decision_sink
+            .goal_history_for(agent, &GoalKind::ClaimOffice { office })
+            .into_iter()
+            .filter(|entry| entry.tick.0 <= phase_one_end)
+            .any(|entry| entry.status.is_generated())
+            || decision_sink
+                .goal_history_for(
+                    agent,
+                    &GoalKind::SupportCandidateForOffice {
+                        office,
+                        candidate: agent,
+                    },
+                )
+                .into_iter()
+                .filter(|entry| entry.tick.0 <= phase_one_end)
+                .any(|entry| entry.status.is_generated())
+    };
     assert!(
         !generated_before_update,
         "agent must not generate political goals for an unknown remote office"
@@ -959,20 +958,14 @@ fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, State
         }
     }
 
-    let generated_after_update = ((phase_one_end + 1)..=h.scheduler.current_tick().0).any(|tick| {
-        h.driver
-            .trace_sink()
-            .expect("decision tracing should be enabled")
-            .trace_at(agent, Tick(tick))
-            .is_some_and(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => planning
-                    .candidates
-                    .generated
-                    .iter()
-                    .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
-                _ => false,
-            })
-    });
+    let generated_after_update = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .goal_history_for(agent, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| entry.tick.0 > phase_one_end)
+        .any(|entry| entry.status.is_generated());
 
     assert!(
         agent_belief_about(&h.world, agent, office).is_some(),
@@ -1295,35 +1288,21 @@ fn golden_faction_eligibility_filters_office_claim() {
         .driver
         .trace_sink()
         .expect("decision tracing should be enabled");
-    let eligible_generated_claim = (0u64..=30).any(|tick| {
-        decision_sink
-            .trace_at(eligible_agent, Tick(tick))
-            .is_some_and(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => planning
-                    .candidates
-                    .generated
-                    .iter()
-                    .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
-                _ => false,
-            })
-    });
+    let eligible_generated_claim = decision_sink
+        .goal_history_for(eligible_agent, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| entry.tick.0 <= 30)
+        .any(|entry| entry.status.is_generated());
     assert!(
         eligible_generated_claim,
         "eligible agent should generate ClaimOffice while the office is visibly vacant"
     );
 
-    let ineligible_generated_claim = (0u64..=30).any(|tick| {
-        decision_sink
-            .trace_at(ineligible_agent, Tick(tick))
-            .is_some_and(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => planning
-                    .candidates
-                    .generated
-                    .iter()
-                    .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
-                _ => false,
-            })
-    });
+    let ineligible_generated_claim = decision_sink
+        .goal_history_for(ineligible_agent, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .filter(|entry| entry.tick.0 <= 30)
+        .any(|entry| entry.status.is_generated());
     assert!(
         !ineligible_generated_claim,
         "ineligible agent must never generate ClaimOffice for a faction-restricted office"

@@ -35,10 +35,10 @@ pub use decision_runtime::{
 pub use decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
-    GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,
-    PoliticalCandidateOmissionReason, PoliticalGoalFamily, RankedGoalSummary, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace,
+    GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PlanAttemptTrace,
+    PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace,
+    PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+    RankedGoalSummary, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
