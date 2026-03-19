@@ -5,6 +5,7 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
+use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact, BodyPart,
@@ -13,6 +14,7 @@ use worldwake_core::{
     MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
+use worldwake_sim::{ActionStartFailureReason, ActionTraceKind};
 
 fn production_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
@@ -736,6 +738,297 @@ fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOu
             .world
             .get_component_resource_source(workstation)
             .expect("workstation should retain resource source through scenario")
+            .available_quantity,
+    }
+}
+
+struct ContestedHarvestStartFailureOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    loser_start_failure_count: usize,
+    loser_hunger_decreased: bool,
+    local_source_final_quantity: Quantity,
+    remote_source_final_quantity: Quantity,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_contested_harvest_start_failure_remote_recovery_scenario(
+    seed: Seed,
+) -> ContestedHarvestStartFailureOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agents = [
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Aster",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Bram",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+    ];
+    for agent in agents {
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            production_perception_profile(),
+        );
+    }
+
+    let local_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(2),
+            max_quantity: Quantity(2),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let remote_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in agents {
+        seed_actor_world_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::Inference,
+        );
+    }
+
+    let initial_hunger = agents.map(|agent| h.agent_hunger(agent));
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, 6).unwrap();
+
+    h.step_once();
+
+    let trace_sink = h.driver.trace_sink().expect("decision tracing should be enabled");
+    for agent in agents {
+        let trace_tick_0 = trace_sink
+            .trace_at(agent, Tick(0))
+            .expect("each agent should have a tick 0 planning trace");
+        let planning_tick_0 = match &trace_tick_0.outcome {
+            DecisionOutcome::Planning(planning) => planning,
+            other => panic!("expected planning trace at tick 0, got {other:?}"),
+        };
+        let selected_plan = planning_tick_0
+            .selection
+            .selected_plan
+            .as_ref()
+            .expect("hungry agents should select an initial harvest plan");
+        let next_step = selected_plan
+            .next_step
+            .as_ref()
+            .expect("selected harvest plan should expose a next step");
+        assert_eq!(
+            next_step.op_kind,
+            PlannerOpKind::Harvest,
+            "initial contender plan should begin with harvest rather than a different substrate"
+        );
+        assert_eq!(
+            next_step.targets,
+            vec![local_workstation],
+            "both contenders should initially target the same local orchard from the same belief snapshot"
+        );
+    }
+
+    let action_trace = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let loser = agents
+        .into_iter()
+        .find(|agent| {
+            action_trace.events_for_at(*agent, Tick(0)).iter().any(|event| {
+                event.action_name == "harvest:Harvest Apples"
+                    && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+            })
+        })
+        .expect("one contender should lose the same-tick local harvest start");
+    let winner = agents
+        .into_iter()
+        .find(|agent| *agent != loser)
+        .expect("two-agent scenario should always have a winner");
+    let loser_initial_hunger = if loser == agents[0] {
+        initial_hunger[0]
+    } else {
+        initial_hunger[1]
+    };
+
+    let loser_tick_0_events = action_trace.events_for_at(loser, Tick(0));
+    assert_eq!(loser_tick_0_events.len(), 1);
+    assert!(matches!(
+        loser_tick_0_events[0].kind,
+        ActionTraceKind::StartFailed { .. }
+    ));
+    assert!(
+        action_trace.events_for_at(winner, Tick(0)).iter().any(|event| {
+            event.action_name == "harvest:Harvest Apples"
+                && matches!(event.kind, ActionTraceKind::Started { .. })
+        }),
+        "the winning contender should successfully start the local harvest in the same tick"
+    );
+
+    assert_eq!(h.scheduler.action_start_failures().len(), 1);
+    assert_eq!(h.scheduler.action_start_failures()[0].actor, loser);
+    assert_eq!(
+        h.scheduler.action_start_failures()[0].reason,
+        ActionStartFailureReason::ReservationUnavailable(local_workstation)
+    );
+
+    h.step_once();
+
+    let trace_tick_1 = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .trace_at(loser, Tick(1))
+        .expect("losing contender should have a tick 1 planning trace");
+    let planning_tick_1 = match &trace_tick_1.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 1, got {other:?}"),
+    };
+    assert_eq!(planning_tick_1.action_start_failures.len(), 1);
+    assert_eq!(
+        planning_tick_1.action_start_failures[0].reason,
+        ActionStartFailureReason::ReservationUnavailable(local_workstation)
+    );
+    assert!(
+        planning_tick_1.selection.selected_plan_source != Some(SelectedPlanSource::RetainedCurrentPlan),
+        "start-failure reconciliation should not keep the failed harvest step as a retained current plan"
+    );
+    assert!(
+        !h.agent_has_active_action(loser),
+        "failed same-tick harvest start should not leave the loser with an active action"
+    );
+    assert!(
+        h.world
+            .get_component_blocked_intent_memory(loser)
+            .is_some_and(|memory| memory.intents.iter().any(|intent| {
+                intent.blocking_fact == BlockingFact::ReservationConflict
+                    && intent.related_entity == Some(local_workstation)
+            })),
+        "losing contender should record a reservation-conflict blocker for the local orchard"
+    );
+    assert!(
+        h.scheduler.action_start_failures().is_empty(),
+        "tick 1 reconciliation should drain the structured start failure"
+    );
+
+    let mut winner_committed_local_harvest = false;
+    let mut loser_committed_remote_harvest = false;
+    let mut loser_hunger_decreased = false;
+
+    for _ in 0..160 {
+        h.step_once();
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        assert!(
+            authoritative_apples <= 6,
+            "authoritative apple quantity must never exceed the combined seeded source stock"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
+            .unwrap();
+
+        let local_source_quantity = h
+            .world
+            .get_component_resource_source(local_workstation)
+            .expect("local orchard should retain its source component")
+            .available_quantity;
+        let remote_source_quantity = h
+            .world
+            .get_component_resource_source(remote_workstation)
+            .expect("remote orchard should retain its source component")
+            .available_quantity;
+
+        winner_committed_local_harvest |= local_source_quantity == Quantity(0);
+        loser_committed_remote_harvest |=
+            winner_committed_local_harvest && remote_source_quantity < Quantity(4);
+        loser_hunger_decreased |= h.agent_hunger(loser) < loser_initial_hunger;
+
+        if loser_committed_remote_harvest && loser_hunger_decreased {
+            break;
+        }
+    }
+
+    assert!(
+        winner_committed_local_harvest,
+        "one contender should complete the local harvest and consume the only local orchard batch"
+    );
+    assert!(
+        loser_committed_remote_harvest,
+        "the losing contender should recover through the remote orchard rather than remaining stuck on the failed local branch"
+    );
+    assert!(
+        loser_hunger_decreased,
+        "the losing contender should eventually eat after the remote fallback branch completes"
+    );
+    assert_eq!(
+        h.world
+            .get_component_resource_source(local_workstation)
+            .expect("local orchard should retain its source component")
+            .available_quantity,
+        Quantity(0),
+        "the local orchard should end fully depleted after the winner's single lawful harvest"
+    );
+
+    let loser_start_failure_count = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(loser)
+        .into_iter()
+        .filter(|event| {
+            event.action_name == "harvest:Harvest Apples"
+                && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+        })
+        .count();
+
+    ContestedHarvestStartFailureOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        loser_start_failure_count,
+        loser_hunger_decreased,
+        local_source_final_quantity: h
+            .world
+            .get_component_resource_source(local_workstation)
+            .expect("local orchard should retain its source component through scenario end")
+            .available_quantity,
+        remote_source_final_quantity: h
+            .world
+            .get_component_resource_source(remote_workstation)
+            .expect("remote orchard should retain its source component through scenario end")
             .available_quantity,
     }
 }
@@ -1660,6 +1953,29 @@ fn golden_resource_exhaustion_race() {
 }
 
 #[test]
+fn golden_contested_harvest_start_failure_recovers_via_remote_fallback() {
+    let outcome = run_contested_harvest_start_failure_remote_recovery_scenario(Seed([30; 32]));
+
+    assert_eq!(
+        outcome.loser_start_failure_count, 1,
+        "the losing contender should record exactly one failed local harvest start before recovering remotely"
+    );
+    assert!(
+        outcome.loser_hunger_decreased,
+        "the losing contender should complete the remote recovery chain and reduce hunger"
+    );
+    assert_eq!(
+        outcome.local_source_final_quantity,
+        Quantity(0),
+        "the single-batch local orchard should be exhausted by the winning contender"
+    );
+    assert!(
+        outcome.remote_source_final_quantity < Quantity(4),
+        "the remote orchard should be the fallback source that actually gets used"
+    );
+}
+
+#[test]
 fn golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns() {
     let outcome = run_exclusive_queue_contention_scenario(Seed([18; 32]));
 
@@ -1978,6 +2294,24 @@ fn golden_resource_exhaustion_race_replays_deterministically() {
     assert_eq!(
         outcome_1.log_hash, outcome_2.log_hash,
         "Resource exhaustion race event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically()
+{
+    let seed = Seed([30; 32]);
+
+    let outcome_1 = run_contested_harvest_start_failure_remote_recovery_scenario(seed);
+    let outcome_2 = run_contested_harvest_start_failure_remote_recovery_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Contested harvest start-failure recovery should replay to the same world hash"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Contested harvest start-failure recovery should replay to the same event log hash"
     );
 }
 

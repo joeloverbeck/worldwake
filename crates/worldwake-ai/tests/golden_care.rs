@@ -598,6 +598,7 @@ fn golden_care_goal_invalidation_when_patient_heals_replays_deterministically() 
     );
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
 
@@ -661,7 +662,7 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
     }
 
     let care_goal = GoalKind::TreatWounds { patient };
-    let care_goal_key = worldwake_core::GoalKey::from(care_goal.clone());
+    let care_goal_key = worldwake_core::GoalKey::from(care_goal);
     let trace_tick_0 = h
         .driver
         .trace_sink()
