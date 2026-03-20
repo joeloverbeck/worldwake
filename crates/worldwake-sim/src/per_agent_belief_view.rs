@@ -850,8 +850,8 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
-        CommodityKind, ControlSource, EntityKind, EventLog, FactionData, FactionPurpose,
-        MerchandiseProfile, OfficeData, PerceptionProfile, Permille, Quantity,
+        CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
+        FactionPurpose, MerchandiseProfile, OfficeData, PerceptionProfile, Permille, Quantity,
         RecipientKnowledgeStatus, ResourceSource, SuccessionLaw, TellMemoryKey, Tick,
         ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
@@ -1487,6 +1487,49 @@ mod tests {
                 .unwrap()
                 .get(),
             ))
+        );
+    }
+
+    #[test]
+    fn estimate_duration_uses_actor_defend_stance_ticks_from_combat_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_combat_profile(
+                agent,
+                CombatProfile::new(
+                    Permille::new(1000).unwrap(),
+                    Permille::new(700).unwrap(),
+                    Permille::new(600).unwrap(),
+                    Permille::new(550).unwrap(),
+                    Permille::new(75).unwrap(),
+                    Permille::new(20).unwrap(),
+                    Permille::new(15).unwrap(),
+                    Permille::new(120).unwrap(),
+                    Permille::new(30).unwrap(),
+                    NonZeroU32::new(6).unwrap(),
+                    NonZeroU32::new(10).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            view.estimate_duration(
+                agent,
+                &DurationExpr::ActorDefendStance,
+                &[],
+                &ActionPayload::None,
+            ),
+            Some(ActionDuration::new(10))
         );
     }
 
