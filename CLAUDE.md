@@ -106,7 +106,7 @@ The simulation crate contains the action framework, scheduler, tick loop, and re
 | `action_def` | `ActionDef` — declarative action type definitions |
 | `action_def_registry` | Registry of all available action definitions |
 | `action_domain` | `ActionDomain` — enum categorizing actions by domain (Generic, Needs, Production, Trade, Travel, Transport, Combat, Care, Loot) |
-| `action_duration` | `ActionDuration` — resolved runtime duration for active actions (Finite or Indefinite) with tick advancement |
+| `action_duration` | `ActionDuration` — resolved runtime duration for active actions (always finite) with tick advancement |
 | `action_instance` | `ActionInstance`, `ActionInstanceId` — specific running action |
 | `action_state` | `ActionState` — action lifecycle state machine |
 | `action_status` | `ActionStatus` — outcome tracking |
