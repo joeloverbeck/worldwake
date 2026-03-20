@@ -1942,7 +1942,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
                 DecisionOutcome::Planning(planning) => planning.selection.selected.as_ref(),
                 _ => None,
             })
-            .map(|goal| goal.kind.clone()),
+            .map(|goal| goal.kind),
         Some(GoalKind::TreatWounds { patient: loser }),
         "the delayed claimant should prioritize lawful self-care first so the political request can become stale"
     );
