@@ -389,11 +389,7 @@ fn build_successor<'snapshot>(
         &candidate.authoritative_targets,
         effective_payload,
     )?;
-    let estimated_ticks = match duration {
-        ActionDuration::Finite(ticks) => ticks,
-        ActionDuration::Indefinite if semantics.may_appear_mid_plan => return None,
-        ActionDuration::Indefinite => 0,
-    };
+    let ActionDuration::Finite(estimated_ticks) = duration;
 
     let transition = apply_hypothetical_transition(
         goal,
@@ -2739,6 +2735,61 @@ mod tests {
             PlannerOpKind::Attack | PlannerOpKind::Defend
         ));
         assert_eq!(plan.terminal_kind, PlanTerminalKind::CombatCommitment);
+    }
+
+    #[test]
+    fn build_successor_estimates_defend_ticks_from_combat_profile() {
+        let actor = entity(1);
+        let attacker = entity(2);
+        let town = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, attacker, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(attacker, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(attacker, town);
+        view.entities_at.insert(town, vec![actor, attacker]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.hostiles.insert(actor, vec![attacker]);
+        view.attackers.insert(actor, vec![attacker]);
+
+        let (registry, _handlers) = build_registry();
+        let semantics_table = build_semantics_table(&registry);
+        let defend = registry.iter().find(|def| def.name == "defend").unwrap();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
+            evidence_entities: BTreeSet::from([attacker]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
+        let node = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 0,
+            heuristic_ticks: 0,
+        };
+        let candidate = SearchCandidate {
+            def_id: defend.id,
+            authoritative_targets: Vec::new(),
+            planning_targets: Vec::new(),
+            payload_override: None,
+        };
+
+        let (_, successor) =
+            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[])
+                .unwrap();
+
+        assert_eq!(successor.steps.len(), 1);
+        assert_eq!(successor.steps[0].op_kind, PlannerOpKind::Defend);
+        assert_eq!(successor.steps[0].estimated_ticks, 10);
+        assert_eq!(successor.total_estimated_ticks, 10);
     }
 
     #[test]

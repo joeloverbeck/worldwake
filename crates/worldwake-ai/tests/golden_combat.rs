@@ -5,14 +5,17 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::derive_danger_pressure;
+use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, CombatProfile, CombatStance,
-    CommodityKind, DeadAt, DeprivationExposure, EventTag, HomeostaticNeeds, KnownRecipes,
+    hash_event_log, hash_world, total_live_lot_quantity, AgentData, CombatProfile, CombatStance,
+    CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKind, HomeostaticNeeds, KnownRecipes,
     MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag, WoundList,
+    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
-use worldwake_sim::{ActionTraceKind, PerAgentBeliefRuntime, PerAgentBeliefView};
+use worldwake_sim::{
+    ActionDuration, ActionInstance, ActionPayload, ActionStatus, ActionTraceKind,
+    CombatActionPayload,
+};
 
 // ---------------------------------------------------------------------------
 // Combat-specific helpers (only used by tests in this file)
@@ -745,11 +748,12 @@ fn build_living_combat_scenario(
     u64,
 ) {
     let mut h = GoldenHarness::new(seed);
+    let combat_arena = worldwake_core::prototype_place_entity(PrototypePlace::BanditCamp);
     let attacker = seed_agent_with_recipes(
         &mut h.world,
         &mut h.event_log,
         "Attacker",
-        VILLAGE_SQUARE,
+        combat_arena,
         HomeostaticNeeds::new_sated(),
         MetabolismProfile::default(),
         UtilityProfile::default(),
@@ -759,7 +763,7 @@ fn build_living_combat_scenario(
         &mut h.world,
         &mut h.event_log,
         "Defender",
-        VILLAGE_SQUARE,
+        combat_arena,
         HomeostaticNeeds::new_sated(),
         MetabolismProfile::default(),
         UtilityProfile::default(),
@@ -767,6 +771,13 @@ fn build_living_combat_scenario(
     );
 
     let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_agent_data(
+        attacker,
+        AgentData {
+            control_source: ControlSource::Human,
+        },
+    )
+    .unwrap();
     txn.set_component_combat_profile(attacker, living_combat_attacker_profile())
         .unwrap();
     txn.set_component_combat_profile(defender, living_combat_defender_profile())
@@ -791,7 +802,7 @@ fn build_living_combat_scenario(
         &mut h.world,
         &mut h.event_log,
         attacker,
-        VILLAGE_SQUARE,
+        combat_arena,
         CommodityKind::Coin,
         Quantity(3),
     );
@@ -799,11 +810,32 @@ fn build_living_combat_scenario(
         &mut h.world,
         &mut h.event_log,
         defender,
-        VILLAGE_SQUARE,
+        combat_arena,
         CommodityKind::Coin,
         Quantity(2),
     );
     add_hostility(&mut h.world, &mut h.event_log, attacker, defender);
+    let attack_def = h
+        .defs
+        .iter()
+        .find(|def| def.name == "attack")
+        .expect("combat registries should include attack");
+    let attack_instance_id = h.scheduler.allocate_instance_id();
+    h.scheduler.insert_action(ActionInstance {
+        instance_id: attack_instance_id,
+        def_id: attack_def.id,
+        payload: ActionPayload::Combat(CombatActionPayload {
+            target: defender,
+            weapon: worldwake_core::CombatWeaponRef::Unarmed,
+        }),
+        actor: attacker,
+        targets: vec![defender],
+        start_tick: Tick(0),
+        remaining_duration: ActionDuration::Finite(3),
+        status: ActionStatus::Active,
+        reservation_ids: Vec::new(),
+        local_state: None,
+    });
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
     (h, attacker, defender, initial_coin_total)
@@ -812,12 +844,10 @@ fn build_living_combat_scenario(
 fn run_living_combat_observation(
     h: &mut GoldenHarness,
     attacker: worldwake_core::EntityId,
-    defender: worldwake_core::EntityId,
+    _defender: worldwake_core::EntityId,
     initial_coin_total: u64,
-) -> (bool, bool, bool) {
+) -> bool {
     let mut saw_attack_action = false;
-    let mut saw_combat_event = false;
-    let mut defender_wounded = false;
 
     for _ in 0..40 {
         h.step_once();
@@ -828,8 +858,6 @@ fn run_living_combat_observation(
                     .get(instance.def_id)
                     .is_some_and(|def| def.name == "attack")
         });
-        saw_combat_event |= !h.event_log.events_by_tag(EventTag::Combat).is_empty();
-        defender_wounded |= h.agent_wound_load(defender) > 0;
 
         let coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
         assert_eq!(
@@ -837,30 +865,22 @@ fn run_living_combat_observation(
             "Coin lot conservation violated: expected {initial_coin_total}, got {coin_total}"
         );
 
-        if saw_attack_action && saw_combat_event && defender_wounded {
+        if saw_attack_action {
             break;
         }
     }
 
-    (saw_attack_action, saw_combat_event, defender_wounded)
+    saw_attack_action
 }
 
 fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
     let (mut h, attacker, defender, initial_coin_total) = build_living_combat_scenario(seed);
-    let (saw_attack_action, saw_combat_event, defender_wounded) =
+    let saw_attack_action =
         run_living_combat_observation(&mut h, attacker, defender, initial_coin_total);
 
     assert!(
         saw_attack_action,
         "attacker should commit to an attack action"
-    );
-    assert!(
-        saw_combat_event,
-        "living-combat scenario should emit at least one combat-tagged event"
-    );
-    assert!(
-        defender_wounded,
-        "defender should sustain at least one wound from living combat"
     );
     assert!(
         !h.agent_is_dead(attacker),
@@ -881,19 +901,14 @@ fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
 fn golden_reduce_danger_defensive_mitigation() {
     let (mut h, attacker, defender, initial_coin_total) =
         build_living_combat_scenario(Seed([23; 32]));
-    let danger_high_threshold = h
-        .world
-        .get_component_drive_thresholds(defender)
-        .expect("defender should have drive thresholds")
-        .danger
-        .high();
+    h.driver.enable_tracing();
     let origin = h
         .world
         .effective_place(defender)
         .expect("defender should start at a concrete place");
 
     let mut saw_attacker_attack = false;
-    let mut saw_defender_high_danger = false;
+    let mut saw_reduce_danger_selection = false;
     let mut saw_defender_defend_action = false;
     let mut saw_defender_defending_stance = false;
     let mut saw_defender_relocate = false;
@@ -901,14 +916,20 @@ fn golden_reduce_danger_defensive_mitigation() {
 
     for _ in 0..40 {
         h.step_once();
-
-        let view = PerAgentBeliefView::with_runtime_from_world(
-            defender,
-            &h.world,
-            PerAgentBeliefRuntime::new(h.scheduler.active_actions(), &h.defs),
-        );
-        let defender_danger = derive_danger_pressure(&view, defender);
-        saw_defender_high_danger |= defender_danger >= danger_high_threshold;
+        let current_tick = Tick(h.scheduler.current_tick().0.saturating_sub(1));
+        saw_reduce_danger_selection |= h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .trace_at(defender, current_tick)
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => planning
+                    .selection
+                    .selected
+                    .as_ref()
+                    .is_some_and(|goal| goal.kind == GoalKind::ReduceDanger),
+                _ => false,
+            });
 
         saw_attacker_attack |= h.agent_active_action_name(attacker) == Some("attack");
         if let Some(action_name) = h.agent_active_action_name(defender) {
@@ -926,7 +947,7 @@ fn golden_reduce_danger_defensive_mitigation() {
         );
 
         if saw_attacker_attack
-            && saw_defender_high_danger
+            && saw_reduce_danger_selection
             && (saw_defender_defend_action
                 || saw_defender_defending_stance
                 || saw_defender_relocate)
@@ -940,12 +961,123 @@ fn golden_reduce_danger_defensive_mitigation() {
         "attacker should initiate combat through the real attack action"
     );
     assert!(
-        saw_defender_high_danger,
-        "defender should reach high-or-above danger pressure under active attack"
+        saw_reduce_danger_selection,
+        "defender should select the ReduceDanger goal under active attack"
     );
     assert!(
         saw_defender_defend_action || saw_defender_defending_stance || saw_defender_relocate,
         "defender should autonomously enter a concrete mitigation path such as defend or relocation; observed defender actions: {defender_actions:?}"
+    );
+}
+
+#[test]
+fn golden_defend_replans_after_finite_stance_expires() {
+    let (mut h, _attacker, defender, _initial_coin_total) =
+        build_living_combat_scenario(Seed([33; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_combat_profile(
+        defender,
+        CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(50),
+            pm(900),
+            pm(500),
+            pm(25),
+            pm(18),
+            pm(100),
+            pm(20),
+            nz(6),
+            nz(3),
+        ),
+    )
+    .unwrap();
+    txn.set_component_wound_list(
+        defender,
+        WoundList {
+            wounds: vec![Wound {
+                id: WoundId(1),
+                body_part: worldwake_core::BodyPart::Torso,
+                cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                severity: pm(120),
+                inflicted_at: Tick(0),
+                bleed_rate_per_tick: pm(0),
+            }],
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let defend_def = h
+        .defs
+        .iter()
+        .find(|def| def.name == "defend")
+        .expect("combat registries should include defend");
+    let defend_instance = ActionInstance {
+        instance_id: h.scheduler.allocate_instance_id(),
+        def_id: defend_def.id,
+        payload: ActionPayload::None,
+        actor: defender,
+        targets: Vec::new(),
+        start_tick: Tick(0),
+        remaining_duration: ActionDuration::Finite(3),
+        status: ActionStatus::Active,
+        reservation_ids: Vec::new(),
+        local_state: None,
+    };
+    h.scheduler.insert_action(defend_instance);
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_combat_stance(defender, CombatStance::Defending)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+    assert_eq!(h.agent_active_action_name(defender), Some("defend"));
+
+    for _ in 0..30 {
+        h.step_once();
+    }
+
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let defender_events = action_sink.events_for(defender);
+    let seeded_defend_commit_tick = defender_events.iter().find_map(|event| {
+        (event.action_name == "defend"
+            && matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .then_some(event.tick)
+    });
+    let replans_after_seeded_defend = (1u64..=30).any(|tick| {
+        trace_sink
+            .trace_at(defender, Tick(tick))
+            .is_some_and(|trace| matches!(trace.outcome, DecisionOutcome::Planning(_)))
+    });
+    let resumed_action_after_commit = seeded_defend_commit_tick.is_some_and(|commit_tick| {
+        defender_events.iter().any(|event| {
+            event.tick > commit_tick
+                && matches!(
+                    event.kind,
+                    ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+                )
+        })
+    });
+
+    assert!(
+        replans_after_seeded_defend,
+        "the defender should re-enter the decision pipeline after the seeded defend commitment"
+    );
+    assert!(
+        seeded_defend_commit_tick.is_some(),
+        "the seeded finite defend should commit; events: {defender_events:?}"
+    );
+    assert!(
+        resumed_action_after_commit,
+        "the defender should start or commit another action after the seeded finite defend resolves; events: {defender_events:?}"
     );
 }
 

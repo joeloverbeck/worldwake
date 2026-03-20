@@ -396,7 +396,7 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         targets: Vec::new(),
         preconditions: vec![Precondition::ActorAlive],
         reservation_requirements: Vec::new(),
-        duration: DurationExpr::Indefinite,
+        duration: DurationExpr::ActorDefendStance,
         body_cost_per_tick: BodyCostPerTick::zero(),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![Precondition::ActorAlive],
@@ -1363,11 +1363,11 @@ mod tests {
         WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
-        ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
-        DurationExpr, Interruptibility, PerAgentBeliefView, SystemExecutionContext, SystemId,
-        TickOutcome,
+        get_affordances, start_action, tick_action, ActionDuration, ActionError,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
+        ActionInstanceId, ActionPayload, ActionStatus, Affordance, CombatActionPayload,
+        DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView,
+        SystemExecutionContext, SystemId, TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1604,14 +1604,14 @@ mod tests {
     }
 
     #[test]
-    fn register_defend_action_creates_indefinite_public_defend_definition() {
+    fn register_defend_action_creates_profile_driven_public_defend_definition() {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
         let defend = defs.get(defend_id).unwrap();
 
         assert_eq!(defend.name, "defend");
-        assert_eq!(defend.duration, DurationExpr::Indefinite);
+        assert_eq!(defend.duration, DurationExpr::ActorDefendStance);
         assert_eq!(
             defend.interruptibility,
             Interruptibility::FreelyInterruptible
@@ -2839,7 +2839,7 @@ mod tests {
     }
 
     #[test]
-    fn defend_affordance_starts_and_stays_active_until_cancelled() {
+    fn defend_affordance_starts_with_finite_profile_duration_and_commits() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = spawn_guard(&mut world, 1, ControlSource::Ai);
         let mut defs = worldwake_sim::ActionDefRegistry::new();
@@ -2876,7 +2876,7 @@ mod tests {
 
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Indefinite
+            ActionDuration::Finite(10)
         );
         assert_eq!(active.get(&action_id).unwrap().status, ActionStatus::Active);
         assert_eq!(
@@ -2904,28 +2904,33 @@ mod tests {
         assert_eq!(outcome, TickOutcome::Continuing);
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Indefinite
+            ActionDuration::Finite(9)
         );
+        for tick in 7..=15 {
+            let outcome = tick_action(
+                action_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
 
-        let replan = abort_action(
-            action_id,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut world,
-                event_log: &mut log,
-                rng: &mut rng,
-            },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(7),
-            },
-            worldwake_sim::ExternalAbortReason::Other,
-        )
-        .unwrap();
+            if tick < 15 {
+                assert_eq!(outcome, TickOutcome::Continuing);
+            } else {
+                assert!(matches!(outcome, TickOutcome::Committed { .. }));
+            }
+        }
 
-        assert_eq!(replan.agent, actor);
         assert!(!active.contains_key(&action_id));
         assert_eq!(world.get_component_combat_stance(actor), None);
     }

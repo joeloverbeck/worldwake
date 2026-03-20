@@ -711,7 +711,9 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
             .map(|profile| ActionDuration::Finite(profile.negotiation_round_ticks.get())),
-        DurationExpr::Indefinite => Some(ActionDuration::Indefinite),
+        DurationExpr::ActorDefendStance => view
+            .combat_profile(actor)
+            .map(|profile| ActionDuration::Finite(profile.defend_stance_ticks.get())),
         DurationExpr::CombatWeapon => {
             let combat = payload.as_combat()?;
             match combat.weapon {

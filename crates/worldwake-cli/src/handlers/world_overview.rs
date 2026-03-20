@@ -124,7 +124,6 @@ fn find_agent_action_str(
                 .map_or("unknown", |def| def.name.as_str());
             let remaining = match action.remaining_duration {
                 ActionDuration::Finite(t) => format!(" ({t} ticks left)"),
-                ActionDuration::Indefinite => String::new(),
             };
             return format!("{action_name}{remaining}");
         }

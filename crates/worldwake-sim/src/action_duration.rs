@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ActionDuration {
     Finite(u32),
-    Indefinite,
 }
 
 impl ActionDuration {
@@ -12,7 +11,6 @@ impl ActionDuration {
     pub const fn fixed_ticks(self) -> Option<u32> {
         match self {
             Self::Finite(ticks) => Some(ticks),
-            Self::Indefinite => None,
         }
     }
 
@@ -25,7 +23,6 @@ impl ActionDuration {
                 }
                 *remaining_ticks == 0
             }
-            Self::Indefinite => false,
         }
     }
 }
@@ -54,16 +51,8 @@ mod tests {
     }
 
     #[test]
-    fn indefinite_duration_never_auto_completes() {
-        let mut duration = ActionDuration::Indefinite;
-        assert_eq!(duration.fixed_ticks(), None);
-        assert!(!duration.advance());
-        assert_eq!(duration, ActionDuration::Indefinite);
-    }
-
-    #[test]
     fn action_duration_roundtrips_through_bincode() {
-        for duration in [ActionDuration::Finite(3), ActionDuration::Indefinite] {
+        for duration in [ActionDuration::Finite(3)] {
             let bytes = bincode::serialize(&duration).unwrap();
             let roundtrip: ActionDuration = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, duration);

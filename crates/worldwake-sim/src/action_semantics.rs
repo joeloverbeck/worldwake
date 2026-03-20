@@ -106,7 +106,7 @@ pub enum DurationExpr {
         kind: MetabolismDurationKind,
     },
     ActorTradeDisposition,
-    Indefinite,
+    ActorDefendStance,
     CombatWeapon,
     TargetTreatment {
         target_index: u8,
@@ -123,7 +123,7 @@ impl DurationExpr {
             | Self::TravelToTarget { .. }
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
-            | Self::Indefinite
+            | Self::ActorDefendStance
             | Self::CombatWeapon
             | Self::TargetTreatment { .. } => None,
         }
@@ -180,7 +180,10 @@ impl DurationExpr {
                 .get_component_trade_disposition_profile(actor)
                 .map(|profile| ActionDuration::Finite(profile.negotiation_round_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
-            Self::Indefinite => Ok(ActionDuration::Indefinite),
+            Self::ActorDefendStance => world
+                .get_component_combat_profile(actor)
+                .map(|profile| ActionDuration::Finite(profile.defend_stance_ticks.get()))
+                .ok_or_else(|| format!("actor {actor} lacks combat profile")),
             Self::CombatWeapon => {
                 let combat = payload.as_combat().ok_or_else(|| {
                     "combat weapon duration requires ActionPayload::Combat".to_string()
@@ -353,7 +356,7 @@ mod tests {
             kind: MetabolismDurationKind::Wash,
         },
         DurationExpr::ActorTradeDisposition,
-        DurationExpr::Indefinite,
+        DurationExpr::ActorDefendStance,
         DurationExpr::CombatWeapon,
         DurationExpr::TargetTreatment {
             target_index: 2,
@@ -407,7 +410,7 @@ mod tests {
             None
         );
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
-        assert_eq!(DurationExpr::Indefinite.fixed_ticks(), None);
+        assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(
             DurationExpr::TargetTreatment {
@@ -638,6 +641,12 @@ mod tests {
             ActionDuration::Finite(11)
         );
         assert_eq!(
+            DurationExpr::ActorDefendStance
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::Finite(10)
+        );
+        assert_eq!(
             DurationExpr::CombatWeapon
                 .resolve_for(
                     &world,
@@ -685,10 +694,10 @@ mod tests {
         };
 
         assert_eq!(
-            DurationExpr::Indefinite
+            DurationExpr::ActorDefendStance
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
-                .unwrap(),
-            ActionDuration::Indefinite
+                .unwrap_err(),
+            format!("actor {actor} lacks combat profile")
         );
         assert_eq!(
             DurationExpr::CombatWeapon

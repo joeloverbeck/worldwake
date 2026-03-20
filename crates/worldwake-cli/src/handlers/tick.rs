@@ -100,7 +100,6 @@ pub fn handle_status(sim: &SimulationState, registries: &ActionRegistries) -> Co
                 .map_or("unknown", |def| def.name.as_str());
             let remaining = match action.remaining_duration {
                 ActionDuration::Finite(t) => format!("{t} ticks remaining"),
-                ActionDuration::Indefinite => "indefinite".to_string(),
             };
             println!("action: {action_name} ({remaining})");
             has_action = true;

@@ -523,10 +523,7 @@ mod tests {
             _targets: &[EntityId],
             _payload: &crate::ActionPayload,
         ) -> Option<crate::ActionDuration> {
-            duration
-                .fixed_ticks()
-                .map(crate::ActionDuration::Finite)
-                .or(Some(crate::ActionDuration::Indefinite))
+            duration.fixed_ticks().map(crate::ActionDuration::Finite)
         }
     }
 

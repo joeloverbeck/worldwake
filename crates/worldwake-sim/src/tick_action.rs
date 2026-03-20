@@ -500,7 +500,7 @@ mod tests {
         )
     }
 
-    fn start_indefinite_sample_action() -> (
+    fn start_dynamic_sample_action() -> (
         World,
         EventLog,
         BTreeMap<ActionInstanceId, ActionInstance>,
@@ -532,7 +532,7 @@ mod tests {
                 Precondition::TargetAtActorPlace(0),
             ],
             reservation_requirements: Vec::new(),
-            duration: DurationExpr::Indefinite,
+            duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
@@ -822,11 +822,11 @@ mod tests {
     }
 
     #[test]
-    fn tick_action_keeps_indefinite_actions_active_until_handler_completes() {
+    fn tick_action_keeps_finite_actions_active_until_duration_expires() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
-            start_indefinite_sample_action();
+            start_dynamic_sample_action();
         let mut rng = test_rng();
 
         let outcome = tick_action(
@@ -849,18 +849,18 @@ mod tests {
         assert_eq!(outcome, TickOutcome::Continuing);
         assert_eq!(
             active_actions.get(&instance_id).unwrap().remaining_duration,
-            ActionDuration::Indefinite
+            ActionDuration::Finite(2)
         );
         assert_eq!(hook_state().lock().unwrap().tick_calls, 1);
     }
 
     #[test]
-    fn tick_action_commits_indefinite_actions_when_handler_reports_completion() {
+    fn tick_action_commits_finite_actions_when_handler_reports_completion_early() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
         hook_state().lock().unwrap().complete_on_tick = true;
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
-            start_indefinite_sample_action();
+            start_dynamic_sample_action();
         let mut rng = test_rng();
 
         let outcome = tick_action(
