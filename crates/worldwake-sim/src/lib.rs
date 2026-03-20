@@ -105,8 +105,9 @@ pub use replay_execution::{
 };
 pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
 pub use request_resolution_trace::{
-    RequestBindingKind, RequestResolutionOutcome, RequestResolutionRejectionReason,
-    RequestResolutionTraceEvent, RequestResolutionTraceSink,
+    RequestAttemptTrace, RequestBindingKind, RequestResolutionOutcome,
+    RequestResolutionRejectionReason, RequestResolutionTraceEvent, RequestResolutionTraceSink,
+    ResolvedRequestTrace,
 };
 pub use save_load::{
     load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,

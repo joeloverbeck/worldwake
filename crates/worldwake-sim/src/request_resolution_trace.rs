@@ -5,8 +5,21 @@
 //! rather than replacing it.
 
 use crate::{ActionRequestMode, RequestProvenance};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId, Tick};
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RequestAttemptTrace {
+    pub input_sequence_no: u64,
+    pub provenance: RequestProvenance,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResolvedRequestTrace {
+    pub attempt: RequestAttemptTrace,
+    pub binding: RequestBindingKind,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestResolutionTraceEvent {
@@ -17,7 +30,7 @@ pub struct RequestResolutionTraceEvent {
     pub action_name: String,
     pub requested_targets: Vec<EntityId>,
     pub mode: ActionRequestMode,
-    pub provenance: RequestProvenance,
+    pub request: RequestAttemptTrace,
     pub outcome: RequestResolutionOutcome,
 }
 
@@ -33,7 +46,7 @@ pub enum RequestResolutionOutcome {
     },
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RequestBindingKind {
     ReproducedAffordance,
     BestEffortFallback,
@@ -55,22 +68,24 @@ impl RequestResolutionTraceEvent {
                 resolved_targets,
                 start_attempted,
             } => format!(
-                "tick {} seq {}: {} request '{}' {:?} via {:?}, binding={binding:?}, requested_targets={:?}, resolved_targets={resolved_targets:?}, start_attempted={start_attempted}",
+                "tick {} seq {}: {} request#{} '{}' {:?} via {:?}, binding={binding:?}, requested_targets={:?}, resolved_targets={resolved_targets:?}, start_attempted={start_attempted}",
                 self.tick.0,
                 self.sequence_in_tick,
                 self.actor,
+                self.request.input_sequence_no,
                 self.action_name,
-                self.provenance,
+                self.request.provenance,
                 self.mode,
                 self.requested_targets,
             ),
             RequestResolutionOutcome::RejectedBeforeStart { reason } => format!(
-                "tick {} seq {}: {} request '{}' {:?} via {:?} rejected before start: {reason:?}, requested_targets={:?}",
+                "tick {} seq {}: {} request#{} '{}' {:?} via {:?} rejected before start: {reason:?}, requested_targets={:?}",
                 self.tick.0,
                 self.sequence_in_tick,
                 self.actor,
+                self.request.input_sequence_no,
                 self.action_name,
-                self.provenance,
+                self.request.provenance,
                 self.mode,
                 self.requested_targets,
             ),

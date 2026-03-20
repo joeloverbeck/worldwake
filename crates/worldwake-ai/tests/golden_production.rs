@@ -15,8 +15,8 @@ use worldwake_core::{
     UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
-    ActionStartFailureReason, ActionTraceKind, RequestBindingKind, RequestProvenance,
-    RequestResolutionOutcome,
+    ActionStartFailureReason, ActionTraceKind, RequestAttemptTrace, RequestBindingKind,
+    RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace,
 };
 
 fn production_perception_profile() -> PerceptionProfile {
@@ -922,7 +922,10 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
             1,
             "each contender should emit one request-resolution event for the initial harvest attempt"
         );
-        assert_eq!(request_events[0].provenance, RequestProvenance::AiPlan);
+        assert_eq!(
+            request_events[0].request.provenance,
+            RequestProvenance::AiPlan
+        );
         assert_eq!(
             request_events[0].outcome,
             RequestResolutionOutcome::Bound {
@@ -931,6 +934,18 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
                 start_attempted: true,
             }
         );
+        if agent == loser {
+            assert_eq!(
+                h.scheduler.action_start_failures()[0].request,
+                ResolvedRequestTrace {
+                    attempt: RequestAttemptTrace {
+                        input_sequence_no: request_events[0].request.input_sequence_no,
+                        provenance: RequestProvenance::AiPlan,
+                    },
+                    binding: RequestBindingKind::ReproducedAffordance,
+                }
+            );
+        }
     }
 
     assert_eq!(h.scheduler.action_start_failures().len(), 1);

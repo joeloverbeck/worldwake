@@ -259,6 +259,10 @@ fn apply_input(
                     mode,
                 },
             );
+            let request_attempt = crate::RequestAttemptTrace {
+                input_sequence_no: sequence_no,
+                provenance,
+            };
             let resolved = match resolution {
                 Ok(resolved) => resolved,
                 Err(reason) => {
@@ -270,7 +274,7 @@ fn apply_input(
                         action_name: lookup_action_name(services.action_defs, def_id),
                         requested_targets: targets.clone(),
                         mode,
-                        provenance,
+                        request: request_attempt,
                         outcome: RequestResolutionOutcome::RejectedBeforeStart { reason },
                     });
                     return Err(TickStepError::RequestedAffordanceUnavailable {
@@ -289,7 +293,7 @@ fn apply_input(
                 action_name: lookup_action_name(services.action_defs, def_id),
                 requested_targets: targets.clone(),
                 mode,
-                provenance,
+                request: request_attempt,
                 outcome: RequestResolutionOutcome::Bound {
                     binding: resolved.binding,
                     resolved_targets: resolved.affordance.bound_targets.clone(),
@@ -317,11 +321,16 @@ fn apply_input(
                         crate::ActionStartFailureReason::from_action_error(&err).expect(
                             "recoverable BestEffort start failures must convert into structured reasons",
                         );
+                    let resolved_request = crate::ResolvedRequestTrace {
+                        attempt: request_attempt,
+                        binding: resolved.binding,
+                    };
                     runtime.scheduler.record_action_start_failure(
                         crate::scheduler::ActionStartFailure {
                             tick,
                             actor,
                             def_id,
+                            request: resolved_request,
                             reason: failure_reason.clone(),
                         },
                     );
@@ -333,6 +342,7 @@ fn apply_input(
                         action_name,
                         ActionTraceKind::StartFailed {
                             reason: failure_reason.debug_summary(),
+                            request: resolved_request,
                         },
                     ));
                     return Ok(InputOutcome::default());
@@ -1598,6 +1608,16 @@ mod tests {
         assert_eq!(scheduler.action_start_failures().len(), 1);
         assert_eq!(scheduler.action_start_failures()[0].actor, actor);
         assert_eq!(scheduler.action_start_failures()[0].def_id, ActionDefId(4));
+        assert_eq!(
+            scheduler.action_start_failures()[0].request,
+            crate::ResolvedRequestTrace {
+                attempt: crate::RequestAttemptTrace {
+                    input_sequence_no: 0,
+                    provenance: RequestProvenance::External,
+                },
+                binding: RequestBindingKind::BestEffortFallback,
+            }
+        );
         assert!(matches!(
             scheduler.action_start_failures()[0].reason,
             crate::ActionStartFailureReason::PreconditionFailed(_)
@@ -1607,12 +1627,26 @@ mod tests {
         assert_eq!(tick_events[0].action_name, "abort-start");
         assert!(matches!(
             tick_events[0].kind,
-            ActionTraceKind::StartFailed { .. }
+            ActionTraceKind::StartFailed {
+                ref request, ..
+            } if *request == crate::ResolvedRequestTrace {
+                attempt: crate::RequestAttemptTrace {
+                    input_sequence_no: 0,
+                    provenance: RequestProvenance::External,
+                },
+                binding: RequestBindingKind::BestEffortFallback,
+            }
         ));
         let request_events = request_trace.events_at(Tick(0));
         assert_eq!(request_events.len(), 1);
         assert_eq!(request_events[0].actor, actor);
-        assert_eq!(request_events[0].provenance, RequestProvenance::External);
+        assert_eq!(
+            request_events[0].request,
+            crate::RequestAttemptTrace {
+                input_sequence_no: 0,
+                provenance: RequestProvenance::External,
+            }
+        );
         assert_eq!(
             request_events[0].outcome,
             RequestResolutionOutcome::Bound {
@@ -1674,7 +1708,13 @@ mod tests {
         assert_eq!(result.inputs_processed, 1);
         let request_events = request_trace.events_at(Tick(0));
         assert_eq!(request_events.len(), 1);
-        assert_eq!(request_events[0].provenance, RequestProvenance::External);
+        assert_eq!(
+            request_events[0].request,
+            crate::RequestAttemptTrace {
+                input_sequence_no: 0,
+                provenance: RequestProvenance::External,
+            }
+        );
         assert_eq!(
             request_events[0].outcome,
             RequestResolutionOutcome::Bound {
@@ -1743,7 +1783,13 @@ mod tests {
         ));
         let request_events = request_trace.events_at(Tick(0));
         assert_eq!(request_events.len(), 1);
-        assert_eq!(request_events[0].provenance, RequestProvenance::External);
+        assert_eq!(
+            request_events[0].request,
+            crate::RequestAttemptTrace {
+                input_sequence_no: 0,
+                provenance: RequestProvenance::External,
+            }
+        );
         assert_eq!(
             request_events[0].outcome,
             RequestResolutionOutcome::RejectedBeforeStart {

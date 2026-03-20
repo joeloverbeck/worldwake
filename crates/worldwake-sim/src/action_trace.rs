@@ -4,7 +4,7 @@
 //! during `step_tick()`. Follows the same pattern as `DecisionTraceSink` in
 //! `worldwake-ai`.
 
-use crate::{ActionInstanceId, ActionPayload, CommitOutcome};
+use crate::{ActionInstanceId, ActionPayload, CommitOutcome, ResolvedRequestTrace};
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId, Tick};
 
@@ -45,7 +45,10 @@ pub enum ActionTraceKind {
         reason: String,
     },
     /// Action start was requested but failed (`BestEffort` mode).
-    StartFailed { reason: String },
+    StartFailed {
+        reason: String,
+        request: ResolvedRequestTrace,
+    },
 }
 
 impl ActionTraceEvent {
@@ -124,13 +127,16 @@ impl ActionTraceEvent {
                     detail_suffix
                 )
             }
-            ActionTraceKind::StartFailed { reason } => {
+            ActionTraceKind::StartFailed { reason, request } => {
                 format!(
-                    "tick {} seq {}: {} failed to start '{}' (reason: {}){}",
+                    "tick {} seq {}: {} failed to start '{}' (request#{}, {:?}, {:?}, reason: {}){}",
                     self.tick.0,
                     self.sequence_in_tick,
                     self.actor,
                     self.action_name,
+                    request.attempt.input_sequence_no,
+                    request.attempt.provenance,
+                    request.binding,
                     reason,
                     detail_suffix
                 )
@@ -259,7 +265,20 @@ impl Default for ActionTraceSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TellActionPayload;
+    use crate::{
+        RequestAttemptTrace, RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
+        TellActionPayload,
+    };
+
+    const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
+        ResolvedRequestTrace {
+            attempt: RequestAttemptTrace {
+                input_sequence_no,
+                provenance: RequestProvenance::AiPlan,
+            },
+            binding: RequestBindingKind::ReproducedAffordance,
+        }
+    }
 
     fn sample_event(tick: u64, kind: ActionTraceKind) -> ActionTraceEvent {
         ActionTraceEvent::new(
@@ -397,9 +416,11 @@ mod tests {
             4,
             ActionTraceKind::StartFailed {
                 reason: "precondition".to_string(),
+                request: sample_request(9),
             },
         );
         assert!(failed.summary().contains("failed to start"));
+        assert!(failed.summary().contains("request#9"));
     }
 
     #[test]
@@ -507,6 +528,7 @@ mod tests {
             "craft".to_string(),
             ActionTraceKind::StartFailed {
                 reason: "missing tool".to_string(),
+                request: sample_request(11),
             },
         ));
 

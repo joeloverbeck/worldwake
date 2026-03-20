@@ -2,8 +2,8 @@ use crate::{
     abort_action, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
     ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
     ActionInstance, ActionInstanceId, Affordance, CommitOutcome, DeterministicRng,
-    ExternalAbortReason, InputEvent, InputQueue, InterruptReason, ReplanNeeded, SystemManifest,
-    TickOutcome,
+    ExternalAbortReason, InputEvent, InputQueue, InterruptReason, ReplanNeeded,
+    ResolvedRequestTrace, SystemManifest, TickOutcome,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -60,6 +60,7 @@ pub struct ActionStartFailure {
     pub tick: Tick,
     pub actor: EntityId,
     pub def_id: ActionDefId,
+    pub request: ResolvedRequestTrace,
     pub reason: ActionStartFailureReason,
 }
 
@@ -356,7 +357,8 @@ mod tests {
     use super::{ActionStartFailure, ActionStartFailureReason, CommittedAction, Scheduler};
     use crate::{
         ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
-        CommitOutcome, InputKind, SystemManifest,
+        CommitOutcome, InputKind, RequestAttemptTrace, RequestBindingKind, RequestProvenance,
+        ResolvedRequestTrace, SystemManifest,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{ActionDefId, EntityId, ReservationId, Tick};
@@ -367,6 +369,16 @@ mod tests {
         EntityId {
             slot,
             generation: 1,
+        }
+    }
+
+    const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
+        ResolvedRequestTrace {
+            attempt: RequestAttemptTrace {
+                input_sequence_no,
+                provenance: RequestProvenance::External,
+            },
+            binding: RequestBindingKind::BestEffortFallback,
         }
     }
 
@@ -558,12 +570,14 @@ mod tests {
             tick: Tick(1),
             actor: entity(2),
             def_id: ActionDefId(3),
+            request: sample_request(7),
             reason: ActionStartFailureReason::PreconditionFailed("precondition failed".into()),
         };
         let f2 = ActionStartFailure {
             tick: Tick(1),
             actor: entity(4),
             def_id: ActionDefId(5),
+            request: sample_request(8),
             reason: ActionStartFailureReason::ReservationUnavailable(entity(11)),
         };
 
@@ -584,6 +598,7 @@ mod tests {
             tick: Tick(5),
             actor: entity(7),
             def_id: ActionDefId(9),
+            request: sample_request(9),
             reason: ActionStartFailureReason::InvalidTarget(entity(3)),
         };
         scheduler.record_action_start_failure(failure.clone());
@@ -601,12 +616,14 @@ mod tests {
             tick: Tick(5),
             actor,
             def_id: ActionDefId(9),
+            request: sample_request(10),
             reason: ActionStartFailureReason::InvalidTarget(entity(3)),
         };
         let other_failure = ActionStartFailure {
             tick: Tick(6),
             actor: other,
             def_id: ActionDefId(4),
+            request: sample_request(11),
             reason: ActionStartFailureReason::ReservationUnavailable(entity(11)),
         };
 

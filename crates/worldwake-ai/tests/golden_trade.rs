@@ -669,7 +669,7 @@ fn run_local_trade_start_failure_production_fallback_scenario(
         .events_for_at(loser, failure_tick);
     assert_eq!(loser_request_events.len(), 1);
     assert_eq!(
-        loser_request_events[0].provenance,
+        loser_request_events[0].request.provenance,
         RequestProvenance::External
     );
     assert!(matches!(

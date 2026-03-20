@@ -344,6 +344,7 @@ fn process_agent(
             .map(|f| ActionStartFailureSummary {
                 tick: f.tick,
                 def_id: f.def_id,
+                request: f.request,
                 reason: f.reason.clone(),
             })
             .collect();
@@ -5180,6 +5181,13 @@ mod tests {
                 tick: Tick(0),
                 actor: harness.actor,
                 def_id: heal_id,
+                request: worldwake_sim::ResolvedRequestTrace {
+                    attempt: worldwake_sim::RequestAttemptTrace {
+                        input_sequence_no: 17,
+                        provenance: worldwake_sim::RequestProvenance::AiPlan,
+                    },
+                    binding: worldwake_sim::RequestBindingKind::ReproducedAffordance,
+                },
                 reason: worldwake_sim::ActionStartFailureReason::AbortRequested(
                     worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
                         target: harness.actor,
@@ -5204,6 +5212,16 @@ mod tests {
         assert_eq!(planning.action_start_failures.len(), 1);
         assert_eq!(planning.action_start_failures[0].tick, Tick(0));
         assert_eq!(planning.action_start_failures[0].def_id, heal_id);
+        assert_eq!(
+            planning.action_start_failures[0].request,
+            worldwake_sim::ResolvedRequestTrace {
+                attempt: worldwake_sim::RequestAttemptTrace {
+                    input_sequence_no: 17,
+                    provenance: worldwake_sim::RequestProvenance::AiPlan,
+                },
+                binding: worldwake_sim::RequestBindingKind::ReproducedAffordance,
+            }
+        );
         assert_eq!(
             planning.action_start_failures[0].reason,
             worldwake_sim::ActionStartFailureReason::AbortRequested(

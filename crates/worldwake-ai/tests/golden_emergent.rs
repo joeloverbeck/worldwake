@@ -20,6 +20,7 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
     DeclareSupportActionPayload, InputKind, OfficeSuccessionOutcome, RequestProvenance,
+    RequestResolutionOutcome, ResolvedRequestTrace,
 };
 
 // ---------------------------------------------------------------------------
@@ -324,6 +325,7 @@ fn run_wounded_politician(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
 
     let agent = seed_agent(
         &mut h.world,
@@ -1841,6 +1843,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
 
     let herald = seed_agent(
         &mut h.world,
@@ -2028,15 +2031,16 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
     );
     h.step_once();
 
-    let loser_failure_sequence = h
+    let (loser_failure_sequence, loser_action_request) = h
         .action_trace_sink()
         .expect("action tracing should remain enabled")
         .events_for(loser)
         .iter()
-        .find_map(|event| {
-            (event.action_name == "declare_support"
-                && matches!(event.kind, ActionTraceKind::StartFailed { .. }))
-            .then_some((event.tick, event.sequence_in_tick))
+        .find_map(|event| match &event.kind {
+            ActionTraceKind::StartFailed { request, .. } if event.action_name == "declare_support" => {
+                Some(((event.tick, event.sequence_in_tick), *request))
+            }
+            _ => None,
         })
         .unwrap_or_else(|| {
             panic!(
@@ -2061,6 +2065,35 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
         .filter(|failure| failure.actor == loser)
         .collect::<Vec<_>>();
     assert_eq!(loser_failures.len(), 1);
+    let failure_tick = loser_failures[0].tick;
+    let loser_request_events = h
+        .request_resolution_trace_sink()
+        .expect("request-resolution tracing should remain enabled")
+        .events_for_at(loser, failure_tick);
+    assert_eq!(loser_request_events.len(), 1);
+    assert_eq!(
+        loser_request_events[0].request.provenance,
+        RequestProvenance::External
+    );
+    let expected_request = match loser_request_events[0].outcome {
+        RequestResolutionOutcome::Bound {
+            binding,
+            ref resolved_targets,
+            start_attempted: true,
+        } => {
+            assert!(
+                resolved_targets.is_empty(),
+                "declare_support binds through payload, not bound targets"
+            );
+            ResolvedRequestTrace {
+                attempt: loser_request_events[0].request,
+                binding,
+            }
+        }
+        ref other => panic!("expected bound request-resolution outcome, got {other:?}"),
+    };
+    assert_eq!(loser_action_request, expected_request);
+    assert_eq!(loser_failures[0].request, expected_request);
     assert!(
         matches!(
             &loser_failures[0].reason,
@@ -2069,8 +2102,6 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
         "late political failure should come from authoritative vacancy validation, got {:?}",
         loser_failures[0].reason
     );
-
-    let failure_tick = loser_failures[0].tick;
     set_control_source(&mut h, loser, ControlSource::Ai, failure_tick.0);
     h.step_once();
 
@@ -2085,6 +2116,10 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
         other => panic!("expected post-failure planning trace, got {other:?}"),
     };
     assert_eq!(loser_planning_after_failure.action_start_failures.len(), 1);
+    assert_eq!(
+        loser_planning_after_failure.action_start_failures[0].request,
+        expected_request
+    );
     assert!(
         matches!(
             &loser_planning_after_failure.action_start_failures[0].reason,

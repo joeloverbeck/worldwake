@@ -708,7 +708,8 @@ mod tests {
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
         ActionStartFailureReason, CombatActionPayload, CraftActionPayload, DurationExpr,
-        InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
+        InterruptReason, ReplanNeeded, RequestAttemptTrace, RequestBindingKind,
+        RequestProvenance, ResolvedRequestTrace, RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -950,6 +951,16 @@ mod tests {
         EntityId {
             slot,
             generation: 1,
+        }
+    }
+
+    const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
+        ResolvedRequestTrace {
+            attempt: RequestAttemptTrace {
+                input_sequence_no,
+                provenance: RequestProvenance::AiPlan,
+            },
+            binding: RequestBindingKind::ReproducedAffordance,
         }
     }
 
@@ -1254,6 +1265,7 @@ mod tests {
             tick: Tick(4),
             actor: agent,
             def_id: ActionDefId(3),
+            request: sample_request(4),
             reason: ActionStartFailureReason::ReservationUnavailable(workstation),
         };
 
@@ -1290,6 +1302,7 @@ mod tests {
             tick: Tick(4),
             actor: agent,
             def_id: ActionDefId(3),
+            request: sample_request(5),
             reason: ActionStartFailureReason::AbortRequested(
                 ActionAbortRequestReason::HolderLacksAccessibleCommodity {
                     holder: seller,
