@@ -3,8 +3,7 @@
 use worldwake_ai::AgentTickDriver;
 use worldwake_core::{drives::ThresholdBand, numerics::Permille};
 use worldwake_sim::{
-    step_tick, ActionDuration, AutonomousControllerRuntime, SimulationState, SystemDispatchTable,
-    TickStepServices,
+    step_tick, AutonomousControllerRuntime, SimulationState, SystemDispatchTable, TickStepServices,
 };
 use worldwake_systems::ActionRegistries;
 
@@ -98,9 +97,7 @@ pub fn handle_status(sim: &SimulationState, registries: &ActionRegistries) -> Co
                 .defs
                 .get(action.def_id)
                 .map_or("unknown", |def| def.name.as_str());
-            let remaining = match action.remaining_duration {
-                ActionDuration::Finite(t) => format!("{t} ticks remaining"),
-            };
+            let remaining = format!("{} ticks remaining", action.remaining_duration.ticks());
             println!("action: {action_name} ({remaining})");
             has_action = true;
             break;

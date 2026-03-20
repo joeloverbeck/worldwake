@@ -546,7 +546,7 @@ mod tests {
                 actor: agent,
                 targets: Vec::new(),
                 start_tick: Tick(6),
-                remaining_duration: ActionDuration::Finite(2),
+                remaining_duration: ActionDuration::new(2),
                 status: ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: Some(ActionState::Empty),

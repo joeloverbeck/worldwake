@@ -683,11 +683,11 @@ pub fn estimate_duration_from_beliefs(
     payload: &ActionPayload,
 ) -> Option<ActionDuration> {
     match *duration {
-        DurationExpr::Fixed(ticks) => Some(ActionDuration::Finite(ticks.get())),
+        DurationExpr::Fixed(ticks) => Some(ActionDuration::new(ticks.get())),
         DurationExpr::TargetConsumable { target_index } => {
             let target = targets.get(usize::from(target_index)).copied()?;
             let profile = view.item_lot_consumable_profile(target)?;
-            Some(ActionDuration::Finite(
+            Some(ActionDuration::new(
                 profile.consumption_ticks_per_unit.get(),
             ))
         }
@@ -697,7 +697,7 @@ pub fn estimate_duration_from_beliefs(
             view.adjacent_places_with_travel_ticks(origin)
                 .into_iter()
                 .find_map(|(adjacent, ticks)| {
-                    (adjacent == target).then_some(ActionDuration::Finite(ticks.get()))
+                    (adjacent == target).then_some(ActionDuration::new(ticks.get()))
                 })
         }
         DurationExpr::ActorMetabolism { kind } => {
@@ -706,24 +706,24 @@ pub fn estimate_duration_from_beliefs(
                 crate::MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                 crate::MetabolismDurationKind::Wash => profile.wash_ticks.get(),
             };
-            Some(ActionDuration::Finite(ticks))
+            Some(ActionDuration::new(ticks))
         }
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
-            .map(|profile| ActionDuration::Finite(profile.negotiation_round_ticks.get())),
+            .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get())),
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)
-            .map(|profile| ActionDuration::Finite(profile.defend_stance_ticks.get())),
+            .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),
         DurationExpr::CombatWeapon => {
             let combat = payload.as_combat()?;
             match combat.weapon {
                 worldwake_core::CombatWeaponRef::Unarmed => view
                     .combat_profile(actor)
-                    .map(|profile| ActionDuration::Finite(profile.unarmed_attack_ticks.get())),
+                    .map(|profile| ActionDuration::new(profile.unarmed_attack_ticks.get())),
                 worldwake_core::CombatWeaponRef::Commodity(kind) => kind
                     .spec()
                     .combat_weapon_profile
-                    .map(|profile| ActionDuration::Finite(profile.attack_duration_ticks.get())),
+                    .map(|profile| ActionDuration::new(profile.attack_duration_ticks.get())),
             }
         }
         DurationExpr::TargetTreatment {
@@ -748,7 +748,7 @@ pub fn estimate_duration_from_beliefs(
             });
             let severity_per_tick = u32::from(severity_reduction_per_tick.value()).max(1);
             let wound_ticks = wound_load.div_ceil(severity_per_tick).max(1);
-            Some(ActionDuration::Finite(
+            Some(ActionDuration::new(
                 treatment_ticks_per_unit.get().max(wound_ticks),
             ))
         }

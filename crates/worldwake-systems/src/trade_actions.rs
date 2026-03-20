@@ -908,7 +908,7 @@ mod tests {
 
         assert_eq!(
             instance.remaining_duration,
-            worldwake_sim::ActionDuration::Finite(1)
+            worldwake_sim::ActionDuration::new(1)
         );
         assert_eq!(instance.status, ActionStatus::Active);
     }

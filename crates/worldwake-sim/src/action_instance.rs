@@ -54,7 +54,7 @@ mod tests {
                 },
             ],
             start_tick: Tick(11),
-            remaining_duration: ActionDuration::Finite(4),
+            remaining_duration: ActionDuration::new(4),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(13), ReservationId(21)],
             local_state,

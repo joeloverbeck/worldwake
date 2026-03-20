@@ -137,7 +137,7 @@ impl DurationExpr {
         payload: &ActionPayload,
     ) -> Result<ActionDuration, String> {
         match self {
-            Self::Fixed(ticks) => Ok(ActionDuration::Finite(ticks.get())),
+            Self::Fixed(ticks) => Ok(ActionDuration::new(ticks.get())),
             Self::TargetConsumable { target_index } => {
                 let target = Self::target_at(targets, target_index)?;
                 let lot = world
@@ -148,7 +148,7 @@ impl DurationExpr {
                     .spec()
                     .consumable_profile
                     .ok_or_else(|| format!("target {target} commodity is not consumable"))?;
-                Ok(ActionDuration::Finite(
+                Ok(ActionDuration::new(
                     profile.consumption_ticks_per_unit.get(),
                 ))
             }
@@ -164,7 +164,7 @@ impl DurationExpr {
                     .ok_or_else(|| {
                         format!("no directed travel edge connects {origin} -> {target}")
                     })?;
-                Ok(ActionDuration::Finite(edge.travel_time_ticks()))
+                Ok(ActionDuration::new(edge.travel_time_ticks()))
             }
             Self::ActorMetabolism { kind } => {
                 let profile = world
@@ -174,15 +174,15 @@ impl DurationExpr {
                     MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                     MetabolismDurationKind::Wash => profile.wash_ticks.get(),
                 };
-                Ok(ActionDuration::Finite(ticks))
+                Ok(ActionDuration::new(ticks))
             }
             Self::ActorTradeDisposition => world
                 .get_component_trade_disposition_profile(actor)
-                .map(|profile| ActionDuration::Finite(profile.negotiation_round_ticks.get()))
+                .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
             Self::ActorDefendStance => world
                 .get_component_combat_profile(actor)
-                .map(|profile| ActionDuration::Finite(profile.defend_stance_ticks.get()))
+                .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks combat profile")),
             Self::CombatWeapon => {
                 let combat = payload.as_combat().ok_or_else(|| {
@@ -191,12 +191,12 @@ impl DurationExpr {
                 match combat.weapon {
                     CombatWeaponRef::Unarmed => world
                         .get_component_combat_profile(actor)
-                        .map(|profile| ActionDuration::Finite(profile.unarmed_attack_ticks.get()))
+                        .map(|profile| ActionDuration::new(profile.unarmed_attack_ticks.get()))
                         .ok_or_else(|| format!("actor {actor} lacks combat profile")),
                     CombatWeaponRef::Commodity(kind) => kind
                         .spec()
                         .combat_weapon_profile
-                        .map(|profile| ActionDuration::Finite(profile.attack_duration_ticks.get()))
+                        .map(|profile| ActionDuration::new(profile.attack_duration_ticks.get()))
                         .ok_or_else(|| format!("commodity {kind:?} is not a combat weapon")),
                 }
             }
@@ -227,7 +227,7 @@ impl DurationExpr {
 
                 let severity_per_tick = u32::from(severity_reduction_per_tick.value()).max(1);
                 let wound_ticks = wounds.wound_load().div_ceil(severity_per_tick).max(1);
-                Ok(ActionDuration::Finite(
+                Ok(ActionDuration::new(
                     treatment_ticks_per_unit.get().max(wound_ticks),
                 ))
             }
@@ -543,7 +543,7 @@ mod tests {
             DurationExpr::TargetConsumable { target_index: 0 }
                 .resolve_for(&world, actor, &[target], &ActionPayload::None)
                 .unwrap(),
-            ActionDuration::Finite(
+            ActionDuration::new(
                 CommodityKind::Bread
                     .spec()
                     .consumable_profile
@@ -558,7 +558,7 @@ mod tests {
             }
             .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
-            ActionDuration::Finite(7)
+            ActionDuration::new(7)
         );
         assert_eq!(
             DurationExpr::ActorMetabolism {
@@ -566,7 +566,7 @@ mod tests {
             }
             .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
-            ActionDuration::Finite(9)
+            ActionDuration::new(9)
         );
     }
 
@@ -593,7 +593,7 @@ mod tests {
             DurationExpr::TravelToTarget { target_index: 0 }
                 .resolve_for(&world, actor, &[destination], &ActionPayload::None)
                 .unwrap(),
-            ActionDuration::Finite(expected)
+            ActionDuration::new(expected)
         );
     }
 
@@ -638,13 +638,13 @@ mod tests {
             DurationExpr::ActorTradeDisposition
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
-            ActionDuration::Finite(11)
+            ActionDuration::new(11)
         );
         assert_eq!(
             DurationExpr::ActorDefendStance
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
-            ActionDuration::Finite(10)
+            ActionDuration::new(10)
         );
         assert_eq!(
             DurationExpr::CombatWeapon
@@ -658,7 +658,7 @@ mod tests {
                     }),
                 )
                 .unwrap(),
-            ActionDuration::Finite(6)
+            ActionDuration::new(6)
         );
         assert_eq!(
             DurationExpr::CombatWeapon
@@ -672,7 +672,7 @@ mod tests {
                     }),
                 )
                 .unwrap(),
-            ActionDuration::Finite(
+            ActionDuration::new(
                 CommodityKind::Sword
                     .spec()
                     .combat_weapon_profile

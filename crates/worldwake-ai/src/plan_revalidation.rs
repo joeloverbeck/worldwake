@@ -326,7 +326,7 @@ mod tests {
             _targets: &[EntityId],
             _payload: &ActionPayload,
         ) -> Option<ActionDuration> {
-            Some(ActionDuration::Finite(1))
+            Some(ActionDuration::new(1))
         }
     }
 

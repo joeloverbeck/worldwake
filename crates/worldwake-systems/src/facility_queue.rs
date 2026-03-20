@@ -476,7 +476,7 @@ mod tests {
             actor,
             targets: vec![facility],
             start_tick: Tick(5),
-            remaining_duration: ActionDuration::Finite(2),
+            remaining_duration: ActionDuration::new(2),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: Some(ActionState::Empty),

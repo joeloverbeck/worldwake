@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use worldwake_core::{entity::EntityKind, ids::EntityId, items::CommodityKind};
-use worldwake_sim::{ActionDuration, SimulationState};
+use worldwake_sim::SimulationState;
 use worldwake_systems::ActionRegistries;
 
 use crate::commands::{CommandOutcome, CommandResult};
@@ -122,9 +122,7 @@ fn find_agent_action_str(
                 .defs
                 .get(action.def_id)
                 .map_or("unknown", |def| def.name.as_str());
-            let remaining = match action.remaining_duration {
-                ActionDuration::Finite(t) => format!(" ({t} ticks left)"),
-            };
+            let remaining = format!(" ({} ticks left)", action.remaining_duration.ticks());
             return format!("{action_name}{remaining}");
         }
     }

@@ -708,8 +708,8 @@ mod tests {
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
         ActionStartFailureReason, CombatActionPayload, CraftActionPayload, DurationExpr,
-        InterruptReason, ReplanNeeded, RequestAttemptTrace, RequestBindingKind,
-        RequestProvenance, ResolvedRequestTrace, RuntimeBeliefView, TradeActionPayload,
+        InterruptReason, ReplanNeeded, RequestAttemptTrace, RequestBindingKind, RequestProvenance,
+        ResolvedRequestTrace, RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -943,7 +943,7 @@ mod tests {
             _targets: &[EntityId],
             _payload: &ActionPayload,
         ) -> Option<ActionDuration> {
-            Some(ActionDuration::Finite(1))
+            Some(ActionDuration::new(1))
         }
     }
 

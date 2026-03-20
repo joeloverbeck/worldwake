@@ -8,9 +8,9 @@ use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, AgentData, CombatProfile, CombatStance,
-    CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKind, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKind, HomeostaticNeeds,
+    KnownRecipes, MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash,
+    Tick, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionDuration, ActionInstance, ActionPayload, ActionStatus, ActionTraceKind,
@@ -831,7 +831,7 @@ fn build_living_combat_scenario(
         actor: attacker,
         targets: vec![defender],
         start_tick: Tick(0),
-        remaining_duration: ActionDuration::Finite(3),
+        remaining_duration: ActionDuration::new(3),
         status: ActionStatus::Active,
         reservation_ids: Vec::new(),
         local_state: None,
@@ -1023,7 +1023,7 @@ fn golden_defend_replans_after_finite_stance_expires() {
         actor: defender,
         targets: Vec::new(),
         start_tick: Tick(0),
-        remaining_duration: ActionDuration::Finite(3),
+        remaining_duration: ActionDuration::new(3),
         status: ActionStatus::Active,
         reservation_ids: Vec::new(),
         local_state: None,
@@ -1048,9 +1048,8 @@ fn golden_defend_replans_after_finite_stance_expires() {
         .expect("action tracing should be enabled");
     let defender_events = action_sink.events_for(defender);
     let seeded_defend_commit_tick = defender_events.iter().find_map(|event| {
-        (event.action_name == "defend"
-            && matches!(event.kind, ActionTraceKind::Committed { .. }))
-        .then_some(event.tick)
+        (event.action_name == "defend" && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some(event.tick)
     });
     let replans_after_seeded_defend = (1u64..=30).any(|tick| {
         trace_sink

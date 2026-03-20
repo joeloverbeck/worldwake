@@ -688,7 +688,7 @@ mod tests {
 
         assert_eq!(outcome, TickOutcome::Continuing);
         let instance = active_actions.get(&instance_id).unwrap();
-        assert_eq!(instance.remaining_duration, ActionDuration::Finite(2));
+        assert_eq!(instance.remaining_duration, ActionDuration::new(2));
         assert_eq!(instance.status, ActionStatus::Active);
         assert_eq!(log.len(), 1);
         assert_eq!(hook_state().lock().unwrap().tick_calls, 1);
@@ -849,7 +849,7 @@ mod tests {
         assert_eq!(outcome, TickOutcome::Continuing);
         assert_eq!(
             active_actions.get(&instance_id).unwrap().remaining_duration,
-            ActionDuration::Finite(2)
+            ActionDuration::new(2)
         );
         assert_eq!(hook_state().lock().unwrap().tick_calls, 1);
     }

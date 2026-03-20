@@ -1453,7 +1453,7 @@ mod tests {
                 targets: vec![agent],
                 payload: ActionPayload::None,
                 start_tick: Tick(3),
-                remaining_duration: ActionDuration::Finite(2),
+                remaining_duration: ActionDuration::new(2),
                 status: ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: None,
@@ -1473,7 +1473,7 @@ mod tests {
                 &[destination],
                 &ActionPayload::None,
             ),
-            Some(crate::ActionDuration::Finite(
+            Some(crate::ActionDuration::new(
                 NonZeroU32::new(
                     world
                         .topology()

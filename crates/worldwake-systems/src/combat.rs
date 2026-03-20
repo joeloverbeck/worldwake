@@ -1364,10 +1364,10 @@ mod tests {
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDuration, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionStatus, Affordance, CombatActionPayload,
-        DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView,
-        SystemExecutionContext, SystemId, TickOutcome,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
+        ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
+        DurationExpr, Interruptibility, PerAgentBeliefView, SystemExecutionContext, SystemId,
+        TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -2791,7 +2791,7 @@ mod tests {
 
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(4)
+            ActionDuration::new(4)
         );
 
         let mut outcome = TickOutcome::Continuing;
@@ -2876,7 +2876,7 @@ mod tests {
 
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(10)
+            ActionDuration::new(10)
         );
         assert_eq!(active.get(&action_id).unwrap().status, ActionStatus::Active);
         assert_eq!(
@@ -2904,7 +2904,7 @@ mod tests {
         assert_eq!(outcome, TickOutcome::Continuing);
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(9)
+            ActionDuration::new(9)
         );
         for tick in 7..=15 {
             let outcome = tick_action(

@@ -352,7 +352,7 @@ mod tests {
                 generation: 1,
             }],
             start_tick: Tick(12),
-            remaining_duration: ActionDuration::Finite(3),
+            remaining_duration: ActionDuration::new(3),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(5)],
             local_state: Some(ActionState::Empty),

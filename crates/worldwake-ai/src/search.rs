@@ -8,8 +8,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
-    get_affordances_for_defs, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
-    ActionPayload, Affordance, QueueForFacilityUsePayload, RuntimeBeliefView,
+    get_affordances_for_defs, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
+    QueueForFacilityUsePayload, RuntimeBeliefView,
 };
 
 #[derive(Clone)]
@@ -389,7 +389,7 @@ fn build_successor<'snapshot>(
         &candidate.authoritative_targets,
         effective_payload,
     )?;
-    let ActionDuration::Finite(estimated_ticks) = duration;
+    let estimated_ticks = duration.ticks();
 
     let transition = apply_hypothetical_transition(
         goal,
@@ -2783,8 +2783,7 @@ mod tests {
         };
 
         let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[])
-                .unwrap();
+            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
 
         assert_eq!(successor.steps.len(), 1);
         assert_eq!(successor.steps[0].op_kind, PlannerOpKind::Defend);

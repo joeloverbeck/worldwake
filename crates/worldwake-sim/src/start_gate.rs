@@ -186,19 +186,19 @@ fn reservation_range(
     current_tick: Tick,
     duration: ActionDuration,
 ) -> Result<Option<TickRange>, ActionError> {
-    match duration {
-        ActionDuration::Finite(0) => Ok(None),
-        ActionDuration::Finite(duration) => {
-            let end = current_tick
-                .0
-                .checked_add(u64::from(duration))
-                .ok_or_else(|| {
-                    ActionError::InternalError("reservation range overflowed".to_string())
-                })?;
-            TickRange::new(current_tick, Tick(end))
-                .map(Some)
-                .map_err(|err| ActionError::InternalError(err.to_string()))
-        }
+    let duration = duration.ticks();
+    if duration == 0 {
+        Ok(None)
+    } else {
+        let end = current_tick
+            .0
+            .checked_add(u64::from(duration))
+            .ok_or_else(|| {
+                ActionError::InternalError("reservation range overflowed".to_string())
+            })?;
+        TickRange::new(current_tick, Tick(end))
+            .map(Some)
+            .map_err(|err| ActionError::InternalError(err.to_string()))
     }
 }
 
@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(instance.actor, actor);
         assert_eq!(instance.targets, vec![target]);
         assert_eq!(instance.start_tick, Tick(5));
-        assert_eq!(instance.remaining_duration, ActionDuration::Finite(3));
+        assert_eq!(instance.remaining_duration, ActionDuration::new(3));
         assert_eq!(instance.status, crate::ActionStatus::Active);
         assert_eq!(instance.local_state, Some(ActionState::Empty));
         assert_eq!(instance.reservation_ids.len(), 1);
@@ -532,7 +532,7 @@ mod tests {
 
         assert_eq!(
             active_actions.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(
+            ActionDuration::new(
                 CommodityKind::Bow
                     .spec()
                     .combat_weapon_profile
@@ -630,7 +630,7 @@ mod tests {
 
         assert_eq!(
             active_actions.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(10)
+            ActionDuration::new(10)
         );
     }
 
@@ -689,7 +689,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             active_actions.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(1)
+            ActionDuration::new(1)
         );
     }
 
@@ -1127,7 +1127,7 @@ mod tests {
                 actor,
                 targets: Vec::new(),
                 start_tick: Tick(0),
-                remaining_duration: ActionDuration::Finite(1),
+                remaining_duration: ActionDuration::new(1),
                 status: crate::ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: None,

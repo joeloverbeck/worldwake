@@ -390,7 +390,7 @@ mod tests {
             actor: entity(2),
             targets: vec![entity(3)],
             start_tick: Tick(11),
-            remaining_duration: ActionDuration::Finite(4),
+            remaining_duration: ActionDuration::new(4),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(9)],
             local_state: Some(ActionState::Empty),
