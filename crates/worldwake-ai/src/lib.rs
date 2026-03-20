@@ -38,7 +38,7 @@ pub use decision_trace::{
     GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PlanAttemptTrace,
     PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace,
     PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-    RankedGoalSummary, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
+    RankedGoalProvenance, RankedGoalSummary, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
     SocialCandidateOmission,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
@@ -65,7 +65,7 @@ pub use planning_snapshot::{
 pub use planning_state::{
     HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
 };
-pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
+pub use pressure::{assess_danger, classify_band, DangerAssessment, derive_danger_pressure, derive_pain_pressure};
 pub use ranking::{build_decision_context, rank_candidates, RankingOutcome};
 pub use search::{search_plan, PlanSearchResult};
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};

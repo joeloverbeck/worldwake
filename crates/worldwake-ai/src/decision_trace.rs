@@ -11,6 +11,7 @@ use crate::goal_model::GoalPriorityClass;
 use crate::goal_switching::GoalSwitchKind;
 use crate::interrupts::InterruptDecision;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
+use crate::pressure::DangerAssessment;
 
 // ── Top-Level Record ────────────────────────────────────────────
 
@@ -75,8 +76,11 @@ impl DecisionOutcome {
                     .iter()
                     .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                     .count();
+                let selected_provenance = selected_ranked_goal_summary(planning)
+                    .and_then(|summary| summary.provenance.as_ref())
+                    .map_or_else(String::new, format_ranked_goal_provenance_summary);
                 format!(
-                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}"
+                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
                 )
             }
         }
@@ -170,6 +174,12 @@ pub struct RankedGoalSummary {
     pub goal: GoalKey,
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
+    pub provenance: Option<RankedGoalProvenance>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RankedGoalProvenance {
+    Danger(DangerAssessment),
 }
 
 // ── Stage 2: Plan Search ────────────────────────────────────────
@@ -563,7 +573,12 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .get(*action_def_id)
                 .map_or(action_name.as_str(), |d| d.name.as_str());
             let decision = &interrupt.decision;
-            format!("ACTIVE: {name} — interrupt: {decision:?}")
+            let challenger = interrupt
+                .top_challenger
+                .as_ref()
+                .and_then(|summary| summary.provenance.as_ref())
+                .map_or_else(String::new, format_ranked_goal_provenance_summary);
+            format!("ACTIVE: {name} — interrupt: {decision:?}{challenger}")
         }
         DecisionOutcome::Planning(planning) => {
             let selected = planning
@@ -588,8 +603,11 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .iter()
                 .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                 .count();
+            let selected_provenance = selected_ranked_goal_summary(planning)
+                .and_then(|summary| summary.provenance.as_ref())
+                .map_or_else(String::new, format_ranked_goal_provenance_summary);
             let mut out = format!(
-                "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}"
+                "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
             );
             for attempt in &planning.planning.attempts {
                 for rej in &attempt.binding_rejections {
@@ -623,6 +641,29 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             }
             out
         }
+    }
+}
+
+fn selected_ranked_goal_summary(planning: &PlanningPipelineTrace) -> Option<&RankedGoalSummary> {
+    let selected = planning.selection.selected?;
+    planning
+        .candidates
+        .ranked
+        .iter()
+        .find(|summary| summary.goal == selected)
+}
+
+fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> String {
+    match provenance {
+        RankedGoalProvenance::Danger(assessment) => format!(
+            ", danger=pressure={} attackers={:?} visible_hostiles={:?} hostile_targets={:?} wounds={} incapacitated={}",
+            assessment.pressure.value(),
+            assessment.current_attackers,
+            assessment.visible_hostiles,
+            assessment.hostile_targets,
+            assessment.has_wounds,
+            assessment.is_incapacitated,
+        ),
     }
 }
 
@@ -799,11 +840,13 @@ mod tests {
                     goal: GoalKey::from(&selected_goal),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 900,
+                    provenance: None,
                 },
                 RankedGoalSummary {
                     goal: GoalKey::from(&outranked_goal),
                     priority_class: GoalPriorityClass::Medium,
                     motive_score: 600,
+                    provenance: None,
                 },
             ],
             Some(GoalKey::from(&selected_goal)),
@@ -927,6 +970,7 @@ mod tests {
                 goal: GoalKey::from(&goal),
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
+                provenance: None,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SearchSelection),
@@ -943,6 +987,7 @@ mod tests {
                 goal: GoalKey::from(&goal),
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
+                provenance: None,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SnapshotContinuation),
@@ -1020,6 +1065,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::Sleep),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
+                    provenance: None,
                 }],
                 suppressed: vec![],
                 zero_motive: vec![],
@@ -1066,6 +1112,58 @@ mod tests {
         assert!(summary.contains("SearchSelection"));
         assert!(summary.contains("GoalSatisfied"));
         assert!(summary.contains("Sleep]") || summary.contains("path=Sleep"));
+    }
+
+    #[test]
+    fn summary_planning_includes_selected_danger_provenance() {
+        use worldwake_core::GoalKind;
+
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty_reasons: vec![DirtyReason::NoPlan],
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![GoalKey::new(GoalKind::ReduceDanger)],
+                ranked: vec![RankedGoalSummary {
+                    goal: GoalKey::new(GoalKind::ReduceDanger),
+                    priority_class: GoalPriorityClass::High,
+                    motive_score: 700,
+                    provenance: Some(RankedGoalProvenance::Danger(DangerAssessment {
+                        pressure: worldwake_core::Permille::new(600).unwrap(),
+                        thresholds_present: true,
+                        current_attackers: vec![entity(8)],
+                        visible_hostiles: vec![entity(8), entity(9)],
+                        hostile_targets: vec![entity(8), entity(9)],
+                        has_wounds: true,
+                        is_incapacitated: false,
+                    })),
+                }],
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: Some(GoalKey::new(GoalKind::ReduceDanger)),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("danger=pressure=600"));
+        assert!(summary.contains("attackers=["));
+        assert!(summary.contains("visible_hostiles=["));
+        assert!(summary.contains("hostile_targets=["));
     }
 
     #[test]

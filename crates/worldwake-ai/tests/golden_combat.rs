@@ -5,7 +5,7 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::DecisionOutcome;
+use worldwake_ai::{DecisionOutcome, RankedGoalProvenance};
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, AgentData, CombatProfile, CombatStance,
     CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKind, HomeostaticNeeds,
@@ -841,6 +841,234 @@ fn build_living_combat_scenario(
     (h, attacker, defender, initial_coin_total)
 }
 
+#[allow(clippy::too_many_lines)]
+fn build_defend_changed_conditions_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
+    let (mut h, attacker, defender, _initial_coin_total) = build_living_combat_scenario(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let combat_arena = h
+        .world
+        .effective_place(defender)
+        .expect("existing living combat scaffold should place the defender concretely");
+    let mut attacker_profile = living_combat_attacker_profile();
+    attacker_profile.wound_capacity = pm(200);
+    attacker_profile.attack_skill = pm(0);
+    attacker_profile.unarmed_wound_severity = pm(0);
+    attacker_profile.unarmed_bleed_rate = pm(0);
+    let mut defender_profile = no_recovery_combat_profile();
+    defender_profile.attack_skill = living_combat_defender_profile().attack_skill;
+    defender_profile.guard_skill = living_combat_defender_profile().guard_skill;
+    defender_profile.defend_bonus = living_combat_defender_profile().defend_bonus;
+    defender_profile.unarmed_wound_severity = living_combat_defender_profile().unarmed_wound_severity;
+    defender_profile.unarmed_bleed_rate = living_combat_defender_profile().unarmed_bleed_rate;
+    defender_profile.defend_stance_ticks = nz(3);
+
+    let defend_def = h
+        .defs
+        .iter()
+        .find(|def| def.name == "defend")
+        .expect("combat registries should include defend");
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_homeostatic_needs(
+        attacker,
+        HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+    )
+    .unwrap();
+    txn.set_component_metabolism_profile(
+        attacker,
+        MetabolismProfile::new(
+            pm(50),
+            pm(3),
+            pm(2),
+            pm(4),
+            pm(1),
+            pm(20),
+            nz(3),
+            nz(240),
+            nz(120),
+            nz(40),
+            nz(8),
+            nz(12),
+        ),
+    )
+    .unwrap();
+    txn.set_component_combat_profile(attacker, attacker_profile)
+        .unwrap();
+    txn.set_component_wound_list(attacker, stable_wound_list(150))
+        .unwrap();
+    txn.set_component_deprivation_exposure(
+        attacker,
+        DeprivationExposure {
+            hunger_critical_ticks: 2,
+            thirst_critical_ticks: 0,
+            fatigue_critical_ticks: 0,
+            bladder_critical_ticks: 0,
+        },
+    )
+    .unwrap();
+    txn.set_component_homeostatic_needs(
+        defender,
+        HomeostaticNeeds::new(pm(300), pm(0), pm(0), pm(0), pm(0)),
+    )
+    .unwrap();
+    txn.set_component_combat_profile(defender, defender_profile)
+        .unwrap();
+    txn.set_component_wound_list(defender, stable_wound_list(120))
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        defender,
+        combat_arena,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        defender,
+        combat_arena,
+        CommodityKind::Medicine,
+        Quantity(1),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        attacker,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        defender,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let defend_instance_id = h.scheduler.allocate_instance_id();
+    h.scheduler.insert_action(ActionInstance {
+        instance_id: defend_instance_id,
+        def_id: defend_def.id,
+        payload: ActionPayload::None,
+        actor: defender,
+        targets: Vec::new(),
+        start_tick: Tick(0),
+        remaining_duration: ActionDuration::new(3),
+        status: ActionStatus::Active,
+        reservation_ids: Vec::new(),
+        local_state: None,
+    });
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_combat_stance(defender, CombatStance::Defending)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+    assert_eq!(h.agent_active_action_name(defender), Some("defend"));
+
+    (h, attacker, defender)
+}
+
+fn run_defend_changed_conditions_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, attacker, defender) = build_defend_changed_conditions_scenario(seed);
+
+    let mut defend_resolution_tick = None;
+
+    for _ in 0..60 {
+        h.step_once();
+        let current_tick = Tick(h.scheduler.current_tick().0.saturating_sub(1));
+        if defend_resolution_tick.is_none()
+            && h.agent_active_action_name(defender) != Some("defend")
+            && h.agent_combat_stance(defender).is_none()
+        {
+            defend_resolution_tick = Some(current_tick);
+        }
+    }
+
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let attacker_dead_at = h
+        .world
+        .get_component_dead_at(attacker)
+        .expect("doomed attacker should die during the scenario")
+        .0;
+    let post_resolution_tick = Tick(
+        defend_resolution_tick
+            .expect("seeded defend should resolve during the scenario")
+            .0
+            .max(attacker_dead_at.0),
+    );
+    let first_post_resolution_trace = trace_sink
+        .traces_for(defender)
+        .into_iter()
+        .filter(|trace| trace.tick > post_resolution_tick)
+        .find_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => Some(planning),
+            _ => None,
+        });
+    let first_post_resolution_goal =
+        first_post_resolution_trace.and_then(|planning| planning.selection.selected.as_ref())
+            .map(|goal| goal.kind);
+
+    assert!(
+        defend_resolution_tick.is_some_and(|tick| tick.0 <= 5),
+        "seeded defend should resolve within the first five ticks"
+    );
+    assert!(
+        h.agent_is_dead(attacker),
+        "the doomed attacker should die, removing the combat-pressure branch"
+    );
+    assert!(
+        matches!(
+            first_post_resolution_goal,
+            Some(GoalKind::TreatWounds { patient }) if patient == defender
+        ) || matches!(
+            first_post_resolution_goal,
+            Some(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread
+            })
+        ),
+        "after the attacker dies and defend resolves, the defender should select a lawful non-combat goal; got {first_post_resolution_goal:?}"
+    );
+    assert_ne!(
+        first_post_resolution_goal,
+        Some(GoalKind::ReduceDanger),
+        "after the attacker dies and defend resolves, the defender should not immediately reselect ReduceDanger"
+    );
+    let post_resolution_danger_provenance = first_post_resolution_trace
+        .into_iter()
+        .flat_map(|planning| planning.candidates.ranked.iter())
+        .filter_map(|summary| match &summary.provenance {
+            Some(RankedGoalProvenance::Danger(assessment)) => Some(assessment),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        post_resolution_danger_provenance.iter().all(|assessment| {
+            assessment.pressure == pm(0)
+                && assessment.current_attackers.is_empty()
+                && assessment.visible_hostiles.is_empty()
+                && assessment.hostile_targets.is_empty()
+        }),
+        "after the attacker dies and defend resolves, danger provenance should be empty/non-contributing; got {post_resolution_danger_provenance:?}"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 fn run_living_combat_observation(
     h: &mut GoldenHarness,
     attacker: worldwake_core::EntityId,
@@ -1079,6 +1307,19 @@ fn golden_defend_replans_after_finite_stance_expires() {
         resumed_action_after_commit,
         "the defender should start or commit another action after the seeded finite defend resolves; events: {defender_events:?}"
     );
+}
+
+#[test]
+fn golden_defend_changed_conditions() {
+    let _ = run_defend_changed_conditions_scenario(Seed([50; 32]));
+}
+
+#[test]
+fn golden_defend_changed_conditions_replays_deterministically() {
+    let first = run_defend_changed_conditions_scenario(Seed([50; 32]));
+    let second = run_defend_changed_conditions_scenario(Seed([50; 32]));
+
+    assert_eq!(first, second, "changed-conditions scenario must replay deterministically");
 }
 
 #[test]

@@ -644,7 +644,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .chain(self.world.hostile_towards(agent))
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
             .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| self.believed_entity(*entity).is_some())
+            .filter(|entity| self.believed_entity(*entity).is_some_and(|belief| belief.alive))
             .collect::<BTreeSet<_>>();
         hostiles.extend(self.current_attackers_of(agent));
         hostiles.into_iter().collect()
@@ -660,7 +660,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .into_iter()
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
             .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| self.believed_entity(*entity).is_some())
+            .filter(|entity| self.believed_entity(*entity).is_some_and(|belief| belief.alive))
             .collect()
     }
 
@@ -1487,6 +1487,39 @@ mod tests {
                 .unwrap()
                 .get(),
             ))
+        );
+    }
+
+    #[test]
+    fn visible_hostiles_exclude_dead_believed_targets() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, attacker) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let attacker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(attacker, place).unwrap();
+            commit_txn(txn);
+            (agent, attacker)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(attacker, entity_belief(place, false, 0, 3));
+
+        let mut txn = new_txn(&mut world, 1);
+        txn.add_hostility(agent, attacker).unwrap();
+        commit_txn(txn);
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(
+            RuntimeBeliefView::visible_hostiles_for(&view, agent).is_empty(),
+            "dead believed hostiles should not continue to project danger"
+        );
+        assert!(
+            RuntimeBeliefView::hostile_targets_of(&view, agent).is_empty(),
+            "dead believed hostiles should not remain actionable hostile targets"
         );
     }
 

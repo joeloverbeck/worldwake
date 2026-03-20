@@ -1249,6 +1249,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     .visible_hostiles
                     .iter()
                     .copied()
+                    .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
                     .filter(|entity| {
                         !self
                             .removed_entities
@@ -1275,6 +1276,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     .hostile_targets
                     .iter()
                     .copied()
+                    .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
                     .filter(|entity| {
                         !self
                             .removed_entities
@@ -1301,6 +1303,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     .current_attackers
                     .iter()
                     .copied()
+                    .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
                     .filter(|entity| {
                         !self
                             .removed_entities
@@ -2426,6 +2429,38 @@ mod tests {
 
         assert!(RuntimeBeliefView::visible_hostiles_for(&moved, actor).is_empty());
         assert!(RuntimeBeliefView::current_attackers_of(&moved, actor).is_empty());
+    }
+
+    #[test]
+    fn dead_hostiles_are_not_visible_or_actionable_in_snapshot_state() {
+        let actor = entity(0);
+        let attacker = entity(1);
+        let town = entity(2);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(attacker, false);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(attacker, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(attacker, town);
+        view.entities_at.insert(town, vec![actor, attacker]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.hostiles.insert(actor, vec![attacker]);
+        view.attackers.insert(actor, vec![attacker]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([attacker]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(RuntimeBeliefView::visible_hostiles_for(&state, actor).is_empty());
+        assert!(RuntimeBeliefView::hostile_targets_of(&state, actor).is_empty());
+        assert!(RuntimeBeliefView::current_attackers_of(&state, actor).is_empty());
     }
 
     #[test]

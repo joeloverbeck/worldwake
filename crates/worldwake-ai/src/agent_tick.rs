@@ -3,10 +3,11 @@ use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
     GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace,
+    PlannedStepSummary, PlanningPipelineTrace, RankedGoalProvenance, RankedGoalSummary,
+    SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
 };
 use crate::failure_handling::ExecutionFailure;
+use crate::pressure::DangerAssessment;
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
@@ -290,6 +291,7 @@ fn process_agent(
             travel_horizon: budget.snapshot_travel_horizon,
             structural_block_ticks: budget.structural_block_ticks,
         },
+        tracing,
     );
     let ranked_candidates = read_result.ranked;
     let active_action = active_action_for_agent(ctx, agent);
@@ -320,11 +322,9 @@ fn process_agent(
             let action_name = action_defs
                 .get(active_action.def_id)
                 .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
-            let top_challenger = ranked_candidates.first().map(|r| RankedGoalSummary {
-                goal: r.grounded.key,
-                priority_class: r.priority_class,
-                motive_score: r.motive_score,
-            });
+            let top_challenger = ranked_candidates
+                .first()
+                .map(|r| summarize_ranked_goal(r, read_result.danger_assessment.as_ref()));
             DecisionOutcome::ActiveAction {
                 action_def_id: active_action.def_id,
                 action_name,
@@ -416,11 +416,7 @@ fn process_agent(
                 generated: read_result.generated_keys,
                 ranked: ranked_candidates
                     .iter()
-                    .map(|r| RankedGoalSummary {
-                        goal: r.grounded.key,
-                        priority_class: r.priority_class,
-                        motive_score: r.motive_score,
-                    })
+                    .map(|r| summarize_ranked_goal(r, read_result.danger_assessment.as_ref()))
                     .collect(),
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
@@ -510,6 +506,30 @@ fn summarize_selected_plan(
             .steps
             .get(current_step_index)
             .map(|step| summarize_step(step, action_defs)),
+    }
+}
+
+fn summarize_ranked_goal(
+    ranked: &RankedGoal,
+    danger_assessment: Option<&DangerAssessment>,
+) -> RankedGoalSummary {
+    RankedGoalSummary {
+        goal: ranked.grounded.key,
+        priority_class: ranked.priority_class,
+        motive_score: ranked.motive_score,
+        provenance: ranked_goal_provenance(&ranked.grounded.key.kind, danger_assessment),
+    }
+}
+
+fn ranked_goal_provenance(
+    goal: &crate::GoalKind,
+    danger_assessment: Option<&DangerAssessment>,
+) -> Option<RankedGoalProvenance> {
+    match goal {
+        crate::GoalKind::ReduceDanger | crate::GoalKind::EngageHostile { .. } => danger_assessment
+            .cloned()
+            .map(RankedGoalProvenance::Danger),
+        _ => None,
     }
 }
 
@@ -706,6 +726,7 @@ struct ReadPhaseResult {
     omitted_social: Vec<crate::SocialCandidateOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
     decision_context: DecisionContext,
+    danger_assessment: Option<DangerAssessment>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -718,6 +739,7 @@ fn refresh_runtime_for_read_phase(
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
+    tracing: bool,
 ) -> ReadPhaseResult {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
@@ -767,6 +789,7 @@ fn refresh_runtime_for_read_phase(
     );
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
     let dc = crate::build_decision_context(&view, agent);
+    let danger_assessment = tracing.then(|| crate::assess_danger(&view, agent));
     let outcome = rank_candidates(
         &candidates.candidates,
         &view,
@@ -786,6 +809,7 @@ fn refresh_runtime_for_read_phase(
         omitted_political: candidates.diagnostics.omitted_political,
         omitted_social: candidates.diagnostics.omitted_social,
         decision_context: dc,
+        danger_assessment,
     }
 }
 
@@ -2028,6 +2052,7 @@ mod tests {
         build_semantics_table, CommodityPurpose, DirtyReason, ExpectedMaterialization, GoalKey,
         GoalKind, JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlanningEntityRef, QueuedFacilityIntent, RankedGoal,
+        RankedGoalProvenance,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -2035,7 +2060,8 @@ mod tests {
     use std::path::PathBuf;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
-        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
+        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart,
+        CarryCapacity, CauseRef,
         CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
@@ -2043,7 +2069,8 @@ mod tests {
         OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
         RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
         TellProfile, Tick, ToldBeliefMemory, Topology, TravelDispositionProfile, TravelEdge,
-        TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData,
+        TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData, Wound,
+        WoundCause, WoundId, WoundList,
         WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
@@ -2574,6 +2601,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         )
         .ranked
     }
@@ -3207,6 +3235,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(runtime.dirty);
@@ -3299,6 +3328,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert_eq!(blocked.intents.len(), 1);
@@ -3376,6 +3406,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
         assert!(runtime.dirty);
 
@@ -3454,6 +3485,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert_eq!(blocked.intents.len(), 1);
@@ -3513,6 +3545,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(blocked.intents.is_empty());
@@ -4389,6 +4422,7 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
+            false,
         )
         .ranked;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
@@ -4481,6 +4515,7 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
+            false,
         )
         .ranked;
         assert!(runtime.dirty);
@@ -4553,6 +4588,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(!runtime.dirty);
@@ -4605,6 +4641,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(runtime.dirty);
@@ -4638,6 +4675,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(runtime.dirty);
@@ -5126,6 +5164,69 @@ mod tests {
     }
 
     #[test]
+    fn trace_planning_outcome_includes_danger_provenance_for_threatened_agent() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("actor should start at a concrete place");
+        let attacker = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            let attacker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(attacker, place).unwrap();
+            txn.add_hostility(harness.actor, attacker).unwrap();
+            txn.set_component_wound_list(
+                harness.actor,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                        severity: Permille::new(120).unwrap(),
+                        inflicted_at: Tick(0),
+                        bleed_rate_per_tick: Permille::new(0).unwrap(),
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            attacker
+        };
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(1));
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let planning = harness
+            .driver
+            .trace_sink()
+            .expect("tracing should be enabled")
+            .trace_at(harness.actor, Tick(0))
+            .and_then(|trace| match &trace.outcome {
+                crate::DecisionOutcome::Planning(planning) => Some(planning),
+                _ => None,
+            })
+            .expect("threatened actor should produce a planning trace");
+        let danger = planning
+            .candidates
+            .ranked
+            .iter()
+            .find(|summary| matches!(summary.goal.kind, GoalKind::ReduceDanger))
+            .and_then(|summary| summary.provenance.as_ref())
+            .map(|provenance| match provenance {
+                RankedGoalProvenance::Danger(assessment) => assessment,
+            })
+            .expect("reduce-danger candidate should carry structured danger provenance");
+
+        assert!(danger.current_attackers.is_empty());
+        assert_eq!(danger.visible_hostiles, vec![attacker]);
+        assert_eq!(danger.hostile_targets, vec![attacker]);
+        assert!(danger.has_wounds);
+        assert!(!danger.is_incapacitated);
+        assert_eq!(danger.pressure, DriveThresholds::default().danger.high());
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
         let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
@@ -5284,6 +5385,7 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
+            false,
         );
         let previous_goal = runtime.current_goal;
         let (_, initial_valid, initial_continued, _, initial_selection) =
@@ -5345,6 +5447,7 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
+            false,
         );
         assert_eq!(
             continuation_read.dirty_reasons,
