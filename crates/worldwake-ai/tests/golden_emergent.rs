@@ -11,11 +11,11 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
-    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
+    BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
     ControlSource, DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes,
     MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
     RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw, TellProfile, Tick,
-    UtilityProfile, Wound, WoundCause, WoundId, WoundList,
+    UtilityProfile,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -84,36 +84,6 @@ fn social_weighted_utility(weight: u16) -> UtilityProfile {
 /// Combat profile with zero natural recovery — wounds only decrease through
 /// medicine. Prevents `TargetHasNoWounds` race between natural recovery and
 /// the heal action.
-fn no_recovery_combat_profile() -> CombatProfile {
-    CombatProfile::new(
-        pm(1000), // wound_capacity
-        pm(700),  // incapacitation_threshold
-        pm(500),  // attack_skill
-        pm(500),  // guard_skill
-        pm(80),   // defend_bonus
-        pm(25),   // natural_clot_resistance
-        pm(0),    // natural_recovery_rate — ZERO: wounds stay until healed
-        pm(120),  // unarmed_wound_severity
-        pm(35),   // unarmed_bleed_rate
-        nz(6),    // unarmed_attack_ticks
-        nz(10),   // defend_stance_ticks
-    )
-}
-
-/// Create a wound list with a single clotted wound at given severity.
-fn stable_wound_list(severity: u16) -> WoundList {
-    WoundList {
-        wounds: vec![Wound {
-            id: WoundId(1),
-            body_part: BodyPart::Torso,
-            cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
-            severity: pm(severity),
-            inflicted_at: Tick(0),
-            bleed_rate_per_tick: pm(0), // clotted — won't escalate
-        }],
-    }
-}
-
 fn lethal_combat_attacker_profile() -> CombatProfile {
     CombatProfile::new(
         pm(1000), // wound_capacity

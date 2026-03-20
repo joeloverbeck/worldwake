@@ -14,15 +14,16 @@ use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
     to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BlockedIntentMemory,
-    BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
-    ComponentDelta, ComponentKind, ComponentValue, ControlSource, DeprivationExposure,
-    DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog, EventRecord,
-    EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille, PrototypePlace,
-    Quantity, RecipeId, RelationDelta, RelationValue, ResourceSource, Seed, StateDelta,
-    SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance,
+    CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
+    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
+    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, OfficeData,
+    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId,
+    RelationDelta, RelationValue, ResourceSource, Seed, StateDelta, SuccessionLaw,
+    TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -391,6 +392,38 @@ pub fn default_combat_profile() -> CombatProfile {
         nz(6),    // unarmed_attack_ticks
         nz(10),   // defend_stance_ticks
     )
+}
+
+/// Combat profile with zero natural recovery so wounds only decrease through
+/// medicine or other explicit treatment.
+pub fn no_recovery_combat_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(1000), // wound_capacity
+        pm(700),  // incapacitation_threshold
+        pm(500),  // attack_skill
+        pm(500),  // guard_skill
+        pm(80),   // defend_bonus
+        pm(25),   // natural_clot_resistance
+        pm(0),    // natural_recovery_rate
+        pm(120),  // unarmed_wound_severity
+        pm(35),   // unarmed_bleed_rate
+        nz(6),    // unarmed_attack_ticks
+        nz(10),   // defend_stance_ticks
+    )
+}
+
+/// Create a wound list with a single clotted wound at the requested severity.
+pub fn stable_wound_list(severity: u16) -> WoundList {
+    WoundList {
+        wounds: vec![Wound {
+            id: WoundId(1),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+            severity: pm(severity),
+            inflicted_at: Tick(0),
+            bleed_rate_per_tick: pm(0),
+        }],
+    }
 }
 
 /// Create a fully-equipped agent at a given place with specified needs.
