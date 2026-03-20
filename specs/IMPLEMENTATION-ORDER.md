@@ -65,7 +65,7 @@ All completed specs are archived under `archive/specs/`.
 ```text
 Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15 + E15b + E15c + E16 + E16d + S01 + S02 + S03 + S07 + S08 + S14: COMPLETED
 
-S09 (no unmet deps — design fix to defend action duration)
+S09 ✅ (design fix to defend action duration completed)
 S11 (no unmet deps — investigation of wound lifecycle anomaly)
 S12 (no unmet deps — planner prerequisite-aware search heuristic)
 S13 (no unmet deps post-E16d — political emergence golden coverage)
@@ -121,8 +121,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - established explicit conversation memory and lawful resend suppression
 - **S08**: Action Start Abort Resilience — ✅ COMPLETED
   - recoverable start-failure classification, structured AI/runtime failure handoff, first-effect Medicine spending, and care golden regression are in place
-- **S09**: Indefinite Action Re-Evaluation (design fix, no deps)
-  - removes `DurationExpr::Indefinite` and `ActionDuration::Indefinite` entirely; replaces defend's duration with `DurationExpr::ActorDefendStance` reading `defend_stance_ticks` from `CombatProfile`
+- **S09**: Indefinite Action Re-Evaluation — ✅ COMPLETED
+  - removed indefinite action duration paths; defend now uses profile-driven finite `ActorDefendStance` duration and re-enters normal replanning after commit
 - **S11**: Wound Lifecycle Audit (investigation, no deps)
   - diagnoses and fixes wound disappearance anomaly with zero recovery rate
 - **S12**: Planner Prerequisite-Aware Search (planner enhancement, no deps)
@@ -201,7 +201,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S09-indefinite-action-re-evaluation.md` | 3 | 11 | None (design fix) |
 | `S11-wound-lifecycle-audit.md` | 3 | 11 | None (investigation) |
 | `S12-planner-prerequisite-aware-search.md` | 3 | 11 | None (planner enhancement) |
 | `S13-political-emergence-golden-suites.md` | 3 | 11 | E14, S07, E16d (all met) |
@@ -236,6 +235,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S15 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S14, S15 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S15 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S14, S15 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

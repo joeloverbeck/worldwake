@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Indefinite Action Re-Evaluation
 
@@ -257,6 +257,24 @@ Update the `action_duration` module description in `CLAUDE.md` line 109:
 ### 10. Tests
 
 **Unit test** (worldwake-sim): `DurationExpr::ActorDefendStance` resolves to `ActionDuration::Finite(defend_stance_ticks)` when actor has `CombatProfile`, fails when actor lacks `CombatProfile`.
+
+## Outcome
+
+- **Completion date**: 2026-03-20
+- **What actually changed**:
+  - Removed `DurationExpr::Indefinite` and `ActionDuration::Indefinite` from the active code paths.
+  - Added `CombatProfile.defend_stance_ticks` and `DurationExpr::ActorDefendStance`.
+  - Switched `defend` to a profile-driven finite duration and preserved normal commit/replan behavior after the stance expires.
+  - Added and updated focused and golden coverage proving finite defend duration and post-defend replanning.
+- **Deviations from original plan**:
+  - `ActionDuration` landed as a finite-only runtime duration API rather than retaining an enum shape centered around an `Indefinite` variant.
+  - Golden proof for the original deadlock is split across existing combat goldens rather than forced into one stricter brittle scenario.
+- **Verification results**:
+  - `cargo test -p worldwake-ai --test golden_combat golden_reduce_danger_defensive_mitigation`
+  - `cargo test -p worldwake-ai --test golden_combat golden_defend_replans_after_finite_stance_expires`
+  - `cargo test -p worldwake-ai`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace`
 
 **Unit test** (worldwake-systems): Defend action with `defend_stance_ticks: nz(5)` completes after 5 ticks.
 
