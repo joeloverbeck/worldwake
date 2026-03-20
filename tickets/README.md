@@ -72,16 +72,17 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
 8. If a proposed test relies on a timing assumption, prefer the semantic invariant instead of an incidental tick-boundary assumption unless the tick boundary is itself the contract.
 9. If the scenario can lawfully produce a same-tick cross-agent chain, do not write the ticket as “actor B must act on a later tick” unless strict tick separation is the actual engine rule. In those cases, prefer the explicit action-trace ordering key `(tick, sequence_in_tick)` over incidental tick numbers.
 10. If the invariant is about AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence such as missing event-log entries.
-11. For mixed-layer scenarios, list the invariant-to-layer mapping explicitly instead of implying that one assertion surface proves the whole chain.
-12. If a golden scenario is intended to prove one specific causal branch while the current architecture lawfully permits competing affordances, document the scenario-isolation choice explicitly and explain which unrelated lawful branches were intentionally removed from setup.
-13. For stale-request, contested-affordance, or start-failure tickets, verify the shared runtime request path before assigning scope to a domain action handler or AI failure-reconciliation helper. Name the exact shared symbols you checked.
-14. For tickets in that class, map the boundary-specific proof surface explicitly:
+11. Treat `Engine Changes: None` or "tests only" as a provisional hypothesis until reassessment confirms no production contradiction, and prefer the earliest causal boundary that proves the contract instead of broad downstream behavior when both are available.
+12. For mixed-layer scenarios, list the invariant-to-layer mapping explicitly instead of implying that one assertion surface proves the whole chain.
+13. If a golden scenario is intended to prove one specific causal branch while the current architecture lawfully permits competing affordances, document the scenario-isolation choice explicitly and explain which unrelated lawful branches were intentionally removed from setup.
+14. For stale-request, contested-affordance, or start-failure tickets, verify the shared runtime request path before assigning scope to a domain action handler or AI failure-reconciliation helper. Name the exact shared symbols you checked.
+15. For tickets in that class, map the boundary-specific proof surface explicitly:
    - request resolution / affordance reproduction -> focused runtime request-resolution coverage
    - authoritative start / abort lifecycle -> action trace and/or focused authoritative runtime coverage
    - AI recovery / blocker reconciliation -> decision trace
    - golden E2E -> only when the recovery chain itself is part of the contract
-15. For political office-claim tickets, do not compress closure into vague language like "someone else got there first." State whether the proof hinges on support declaration, visible-vacancy loss, succession resolution, or office-holder mutation, and name the exact current symbols that establish that boundary.
-16. For tickets that manipulate control handoff or harness runtime state, do not assume those changes automatically clear intent. State whether the current architecture can lawfully retain or continue an already-selected plan shape, and identify the exact runtime/trace symbols checked for that claim.
+16. For political office-claim tickets, do not compress closure into vague language like "someone else got there first." State whether the proof hinges on support declaration, visible-vacancy loss, succession resolution, or office-holder mutation, and name the exact current symbols that establish that boundary.
+17. For tickets that manipulate control handoff or harness runtime state, do not assume those changes automatically clear intent. State whether the current architecture can lawfully retain or continue an already-selected plan shape, and identify the exact runtime/trace symbols checked for that claim.
 
 ## Mandatory Pre-Implementation Checks
 

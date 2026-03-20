@@ -132,6 +132,8 @@ sink.dump_agent(agent, &h.defs);
 - "Why did the agent switch goals?" → check `InterruptTrace` on `ActiveAction` outcomes
 - "Why did plan search fail?" → check `PlanSearchOutcome` variants (`BudgetExhausted`, `FrontierExhausted`, `Unsupported`)
 
+Decision traces are the first stop for AI reasoning, not the only stop. If the trace shows the selected outcome but does not expose the concrete world facts keeping that branch alive, drop to the shared lower-layer state/query tests before adding ad-hoc instrumentation. If that missing provenance is architecturally important rather than just inconvenient for one test, write a follow-up traceability ticket instead of papering over it locally.
+
 Tracing is opt-in and zero-cost when disabled. Do not leave `enable_tracing()` in committed test code unless the test explicitly asserts on trace data.
 
 ## Debugging Action Execution with Action Traces

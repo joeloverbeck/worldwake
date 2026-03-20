@@ -24,6 +24,8 @@ Prefer the strongest, most semantic assertion surface available:
    - Use when event provenance, tags, or public record visibility is itself the contract.
    - Do not default to event-log ordering when action traces or authoritative state express the behavior more directly.
 
+When multiple semantic surfaces could prove the invariant, prefer the earliest causal boundary that proves the contract. Only widen the golden to later execution or durable-state consequences when that later boundary is itself part of the promise under test.
+
 ## Ordering Rules
 
 When a test needs ordering, state explicitly which ordering is the contract:
@@ -80,6 +82,7 @@ When a scenario involves stale or retained requests, state explicitly whether th
 - proving social omission reasons such as `SpeakerHasAlreadyToldCurrentBelief` before any `tell` commit exists
 
 When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
+`archive/tickets/completed/S16S09GOLVAL-002.md` is the concrete example of this narrowing: the durable downstream outcome mattered less than the earlier changed-conditions selection boundary, so the golden was corrected to prove "first post-resolution selected goal is non-combat" instead of broad eat/heal follow-through.
 For conversation-memory crowd-out scenarios, prove the stale subject was omitted with the concrete social omission reason before claiming an untold subject survived truncation. The absence of a duplicate `tell` commit by itself is too weak because that could also arise from ranking loss, invalidation, or unrelated execution failure.
 For social scenarios, action traces and decision traces answer different questions: action traces prove that a committed `tell` happened for a specific `listener`/`subject`, while decision traces prove why another `ShareBelief` candidate was omitted, suppressed, or never generated.
 
