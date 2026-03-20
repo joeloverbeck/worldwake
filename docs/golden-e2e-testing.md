@@ -89,6 +89,16 @@ For social scenarios, action traces and decision traces answer different questio
 - `best_effort_stale_request_records_start_failure_when_affordance_no_longer_matches` in `crates/worldwake-sim/src/tick_step.rs` is the focused proof that a request can bind first and then still hit authoritative `StartFailed`.
 - `golden_care_pre_start_wound_disappearance_records_blocker` and `golden_local_trade_start_failure_recovers_via_production_fallback` in `crates/worldwake-ai/tests/` are golden examples of the later start-failure and reconciliation boundary, not proof of pre-start rejection.
 
+### Recoverable Authoritative Start Failure
+
+When the contract is "a lawful start rejection is recoverable," prove it in two steps:
+
+- use an action trace to prove the action reached authoritative start and recorded `StartFailed`
+- use the next AI tick's decision trace to prove `planning.action_start_failures` was consumed and the stale branch was cleared, blocked, or replaced
+
+Do not treat "no later commit happened" as sufficient evidence of reconciliation. That symptom is too weak because it can also come from request-resolution rejection before start, candidate omission, ranking loss, plan-search failure, or unrelated execution failure.
+Current golden examples of this proof shape include the care, production, trade, and political start-failure suites in `crates/worldwake-ai/tests/`.
+
 ### Use both when:
 
 - the AI reasoning contract and the execution contract are both under test
