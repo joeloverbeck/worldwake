@@ -122,7 +122,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S08**: Action Start Abort Resilience — ✅ COMPLETED
   - recoverable start-failure classification, structured AI/runtime failure handoff, first-effect Medicine spending, and care golden regression are in place
 - **S09**: Indefinite Action Re-Evaluation (design fix, no deps)
-  - converts defend from indefinite to finite-duration with renewal to prevent agent deadlock
+  - removes `DurationExpr::Indefinite` and `ActionDuration::Indefinite` entirely; replaces defend's duration with `DurationExpr::ActorDefendStance` reading `defend_stance_ticks` from `CombatProfile`
 - **S11**: Wound Lifecycle Audit (investigation, no deps)
   - diagnoses and fixes wound disappearance anomaly with zero recovery rate
 - **S12**: Planner Prerequisite-Aware Search (planner enhancement, no deps)
