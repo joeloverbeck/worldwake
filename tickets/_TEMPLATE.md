@@ -18,8 +18,10 @@
 4. <If the ticket depends on ordering: name the ordering layer, whether the compared branches are symmetric in the current architecture, and whether the divergence depends on priority class, motive score, suppression/filtering, delayed system resolution, or a mixed-layer combination>
 5. <If removing/weakening/bypassing a heuristic or filter: name the exact heuristic, the missing substrate it is standing in for today, whether this ticket adds that substrate, and why the change does not reopen unrelated regressions>
 6. <If this is a stale-request, contested-affordance, or start-failure ticket: name the first failure boundary and the exact shared runtime symbols checked during reassessment>
-7. <If a golden scenario isolates one intended branch from lawful competing affordances: name the isolation choice and which unrelated lawful branches were intentionally excluded from setup>
-8. <Mismatch + correction (if any)>
+7. <If this is a political office-claim ticket: name the exact closure boundary being asserted (support declaration / visible-vacancy loss / succession resolution / office-holder mutation) and the exact AI-layer + authoritative-layer symbols checked>
+8. <If the ticket manipulates ControlSource, queued inputs, driver resets, or other runtime conditions: state whether retained runtime intent can still lawfully continue and which exact runtime/trace symbols prove that>
+9. <If a golden scenario isolates one intended branch from lawful competing affordances: name the isolation choice and which unrelated lawful branches were intentionally excluded from setup>
+10. <Mismatch + correction (if any)>
 
 ## Architecture Check
 

@@ -18,9 +18,12 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
    - When claiming a coverage gap, search for existing focused/unit, runtime trace/integration, and golden/E2E coverage first; name the exact tests found or state that none were found and how you checked.
    - Distinguish missing focused/unit coverage from missing golden/E2E coverage when the ticket claims a testing gap.
    - If similarly named helpers exist in multiple layers, name the exact layer and symbol being discussed.
+   - If the ticket is about political office claims or support-law closure, name the exact office-claim closure boundary being asserted: support declaration, visible-vacancy loss, succession resolution, or office-holder mutation.
+   - For political closure claims, cite the exact current symbols checked in both the AI/belief layer and the authoritative law/action layer.
    - If the ticket depends on ordering, state whether the compared branches are symmetric in the current architecture or whether they depend on different ranking or resolution substrates.
    - If the ticket proposes removing, weakening, bypassing, or replacing a heuristic/filter, state which missing architectural substrate that heuristic is currently standing in for, whether this ticket introduces that substrate, and why the change does not reopen regressions in unrelated scenarios.
    - If the ticket involves stale requests, contested affordances, or start-failure recovery, name the first failure boundary explicitly: request resolution / affordance reproduction, authoritative start, or post-start abort / commit-time revalidation.
+   - If the ticket manipulates `ControlSource`, queued inputs, driver resets, or other harness/runtime conditions, state whether retained runtime intent can lawfully continue and cite the exact current runtime/trace symbols checked.
 2. `Architecture Check`:
    - Explain why the proposed design is cleaner than alternatives.
 3. `Verification Layers`:
@@ -77,6 +80,8 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
    - authoritative start / abort lifecycle -> action trace and/or focused authoritative runtime coverage
    - AI recovery / blocker reconciliation -> decision trace
    - golden E2E -> only when the recovery chain itself is part of the contract
+15. For political office-claim tickets, do not compress closure into vague language like "someone else got there first." State whether the proof hinges on support declaration, visible-vacancy loss, succession resolution, or office-holder mutation, and name the exact current symbols that establish that boundary.
+16. For tickets that manipulate control handoff or harness runtime state, do not assume those changes automatically clear intent. State whether the current architecture can lawfully retain or continue an already-selected plan shape, and identify the exact runtime/trace symbols checked for that claim.
 
 ## Mandatory Pre-Implementation Checks
 
