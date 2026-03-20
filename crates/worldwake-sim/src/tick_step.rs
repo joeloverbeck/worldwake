@@ -1548,6 +1548,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn best_effort_stale_request_records_start_failure_when_affordance_no_longer_matches() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();

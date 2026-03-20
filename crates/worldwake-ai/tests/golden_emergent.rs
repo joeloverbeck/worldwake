@@ -10,17 +10,17 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
-    AgentData, BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind,
-    ComponentValue, ControlSource, DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds,
-    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
-    Quantity, RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw,
-    TellProfile, Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
+    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
+    BeliefConfidencePolicy, BodyPart, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
+    ControlSource, DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw, TellProfile, Tick,
+    UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
-    DeclareSupportActionPayload, InputKind, OfficeSuccessionOutcome, RequestProvenance,
-    RequestResolutionOutcome, ResolvedRequestTrace,
+    DeclareSupportActionPayload, InputKind, OfficeAvailabilityPhase, OfficeSuccessionOutcome,
+    RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace,
 };
 
 // ---------------------------------------------------------------------------
@@ -325,6 +325,7 @@ fn run_wounded_politician(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_politics_tracing();
     h.enable_request_resolution_tracing();
 
     let agent = seed_agent(
@@ -1843,6 +1844,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_politics_tracing();
     h.enable_request_resolution_tracing();
 
     let herald = seed_agent(
@@ -2001,6 +2003,20 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
             .then_some((event.tick, event.sequence_in_tick))
         })
         .expect("winner should commit declare_support through the ordinary action path");
+    let install_trace_tick = h
+        .politics_trace_sink()
+        .expect("politics tracing should remain enabled")
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            event.trace.availability_phase == OfficeAvailabilityPhase::ClosedOccupied
+                && matches!(
+                    event.trace.outcome,
+                    OfficeSuccessionOutcome::SupportInstalled { holder, .. } if holder == winner
+                )
+        })
+        .map(|event| event.tick)
+        .expect("politics trace should expose the office closure phase once the winner installs");
 
     for _ in 0..16 {
         if !h.agent_has_active_action(loser) {
@@ -2056,6 +2072,10 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
     assert!(
         winner_install_sequence < loser_failure_sequence,
         "another lawful political action must close the opportunity before the stale request fails: winner={winner_install_sequence:?}, loser={loser_failure_sequence:?}"
+    );
+    assert!(
+        install_trace_tick <= loser_failure_sequence.0,
+        "politics trace should close the office before the stale political request fails: install_tick={install_trace_tick:?}, loser_failure={loser_failure_sequence:?}",
     );
 
     let loser_failures = h

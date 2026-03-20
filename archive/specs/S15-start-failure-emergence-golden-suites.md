@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # S15: Start-Failure Emergence Golden E2E Suites
 
@@ -258,6 +258,23 @@ If a harness helper is added, it must only compose existing setup paths. It must
 ## Component Registration
 
 No new components are introduced by S15.
+
+## Outcome
+
+- Completion date: 2026-03-20
+- What actually changed:
+  - Added production, trade, and political start-failure goldens proving the shared S08 `StartFailed` contract outside the care domain.
+  - Added deterministic replay companions for all three new S15 scenario families.
+  - Extended political trace ergonomics with direct office availability phases so the political start-failure golden can assert closure directly instead of reconstructing it from lower-level facts.
+  - Updated the golden documentation tickets called out in this spec, so S08 is no longer represented as care-only coverage.
+- Deviations from original plan:
+  - The political trace enhancement landed as `OfficeAvailabilityPhase`, a broader authoritative trace vocabulary than the original claimability-only framing, because the shared trace also needs to read cleanly for force-law offices.
+  - The political proof remained centered on the existing `declare_support` start boundary; no scheduler or request-resolution architecture changes were required.
+- Verification results:
+  - Passed `cargo test -p worldwake-ai golden_contested_harvest_start_failure_recovers_via_remote_fallback`
+  - Passed `cargo test -p worldwake-ai golden_local_trade_start_failure_recovers_via_production_fallback`
+  - Passed `cargo test -p worldwake-ai golden_remote_office_claim_start_failure_loses_gracefully`
+  - Passed `cargo test -p worldwake-ai`
 
 The scenarios should reuse existing components and records, including as needed:
 

@@ -93,8 +93,8 @@ pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
 pub use politics_trace::{
-    ForceCandidateTrace, OfficeSuccessionOutcome, OfficeSuccessionTrace, PoliticalTraceEvent,
-    PoliticalTraceSink, SupportDeclarationTrace,
+    ForceCandidateTrace, OfficeAvailabilityPhase, OfficeSuccessionOutcome, OfficeSuccessionTrace,
+    PoliticalTraceEvent, PoliticalTraceSink, SupportDeclarationTrace,
 };
 pub use recipe_def::RecipeDefinition;
 pub use recipe_registry::RecipeRegistry;

@@ -18,9 +18,19 @@ pub struct OfficeSuccessionTrace {
     pub succession_law: SuccessionLaw,
     pub holder_before: Option<EntityId>,
     pub vacancy_since_before: Option<Tick>,
+    pub availability_phase: OfficeAvailabilityPhase,
     pub outcome: OfficeSuccessionOutcome,
     pub support_declarations: Vec<SupportDeclarationTrace>,
     pub force_candidates: Vec<ForceCandidateTrace>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OfficeAvailabilityPhase {
+    VacantClaimable,
+    VacantWaitingForTimer,
+    VacantPendingResolution,
+    ClosedOccupied,
+    VacantReopenedAfterReset,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -69,12 +79,13 @@ pub struct ForceCandidateTrace {
 impl PoliticalTraceEvent {
     #[must_use]
     pub fn summary(&self) -> String {
+        let phase = self.trace.availability_phase.summary_label();
         match &self.trace.outcome {
             OfficeSuccessionOutcome::OccupiedNoAction {
                 holder,
                 cleared_stale_vacancy,
             } => format!(
-                "tick {}: office {} remains occupied by {}{}",
+                "tick {}: office {} remains occupied by {}{} [{}]",
                 self.tick.0,
                 self.office,
                 holder,
@@ -82,11 +93,12 @@ impl PoliticalTraceEvent {
                     " and clears stale vacancy_since"
                 } else {
                     ""
-                }
+                },
+                phase,
             ),
             OfficeSuccessionOutcome::VacancyActivated => format!(
-                "tick {}: office {} becomes vacant",
-                self.tick.0, self.office
+                "tick {}: office {} becomes vacant [{}]",
+                self.tick.0, self.office, phase
             ),
             OfficeSuccessionOutcome::WaitingForTimer {
                 start_tick,
@@ -94,34 +106,47 @@ impl PoliticalTraceEvent {
                 required_ticks,
                 remaining_ticks,
             } => format!(
-                "tick {}: office {} waits for succession timer (start {}, waited {}, required {}, remaining {})",
-                self.tick.0, self.office, start_tick.0, waited_ticks, required_ticks, remaining_ticks
+                "tick {}: office {} waits for succession timer (start {}, waited {}, required {}, remaining {}) [{}]",
+                self.tick.0, self.office, start_tick.0, waited_ticks, required_ticks, remaining_ticks, phase
             ),
             OfficeSuccessionOutcome::SupportInstalled { holder, support } => format!(
-                "tick {}: office {} installs {} by support with {} declarations",
-                self.tick.0, self.office, holder, support
+                "tick {}: office {} installs {} by support with {} declarations [{}]",
+                self.tick.0, self.office, holder, support, phase
             ),
             OfficeSuccessionOutcome::SupportResetNoEligibleDeclarations => format!(
-                "tick {}: office {} resets vacancy clock due to no eligible support declarations",
-                self.tick.0, self.office
+                "tick {}: office {} resets vacancy clock due to no eligible support declarations [{}]",
+                self.tick.0, self.office, phase
             ),
             OfficeSuccessionOutcome::SupportResetTie {
                 tied_candidates,
                 support,
             } => format!(
-                "tick {}: office {} resets vacancy clock due to support tie {:?} at {}",
-                self.tick.0, self.office, tied_candidates, support
+                "tick {}: office {} resets vacancy clock due to support tie {:?} at {} [{}]",
+                self.tick.0, self.office, tied_candidates, support, phase
             ),
             OfficeSuccessionOutcome::ForceInstalled { holder } => format!(
-                "tick {}: office {} installs {} by force-law uncontested succession",
-                self.tick.0, self.office, holder
+                "tick {}: office {} installs {} by force-law uncontested succession [{}]",
+                self.tick.0, self.office, holder, phase
             ),
             OfficeSuccessionOutcome::ForceBlocked {
                 eligible_contender_count,
             } => format!(
-                "tick {}: office {} force-law succession blocked by {} eligible contenders",
-                self.tick.0, self.office, eligible_contender_count
+                "tick {}: office {} force-law succession blocked by {} eligible contenders [{}]",
+                self.tick.0, self.office, eligible_contender_count, phase
             ),
+        }
+    }
+}
+
+impl OfficeAvailabilityPhase {
+    #[must_use]
+    pub fn summary_label(self) -> &'static str {
+        match self {
+            Self::VacantClaimable => "phase: vacant claimable",
+            Self::VacantWaitingForTimer => "phase: vacant waiting for timer",
+            Self::VacantPendingResolution => "phase: vacant pending resolution",
+            Self::ClosedOccupied => "phase: closed occupied",
+            Self::VacantReopenedAfterReset => "phase: vacant reopened after reset",
         }
     }
 }
@@ -226,6 +251,7 @@ mod tests {
             succession_law: SuccessionLaw::Force,
             holder_before: None,
             vacancy_since_before: Some(Tick(1)),
+            availability_phase: OfficeAvailabilityPhase::VacantPendingResolution,
             outcome: OfficeSuccessionOutcome::ForceBlocked {
                 eligible_contender_count: 2,
             },
@@ -256,5 +282,10 @@ mod tests {
         assert_eq!(sink.events_at(Tick(7)).len(), 1);
         assert!(sink.event_for_office_at(office_a, Tick(7)).is_some());
         assert!(sink.event_for_office_at(office_a, Tick(8)).is_none());
+        assert!(sink
+            .event_for_office_at(office_a, Tick(7))
+            .unwrap()
+            .summary()
+            .contains("phase: vacant pending resolution"));
     }
 }

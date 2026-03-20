@@ -278,8 +278,9 @@ mod tests {
         CauseRef, EventPayload, PendingEvent, SuccessionLaw, VisibilitySpec, WitnessData,
     };
     use worldwake_sim::{
-        ActionTraceEvent, ActionTraceKind, ActionTraceSink, OfficeSuccessionOutcome,
-        OfficeSuccessionTrace, PoliticalTraceEvent, PoliticalTraceSink, SupportDeclarationTrace,
+        ActionTraceEvent, ActionTraceKind, ActionTraceSink, OfficeAvailabilityPhase,
+        OfficeSuccessionOutcome, OfficeSuccessionTrace, PoliticalTraceEvent, PoliticalTraceSink,
+        SupportDeclarationTrace,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -339,6 +340,7 @@ mod tests {
                 succession_law: SuccessionLaw::Force,
                 holder_before: None,
                 vacancy_since_before: Some(Tick(3)),
+                availability_phase: OfficeAvailabilityPhase::VacantClaimable,
                 outcome: OfficeSuccessionOutcome::VacancyActivated,
                 support_declarations: vec![SupportDeclarationTrace {
                     supporter: entity(4),

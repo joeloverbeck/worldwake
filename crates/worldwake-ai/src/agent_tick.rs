@@ -5126,6 +5126,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
         let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
         {
