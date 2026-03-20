@@ -389,6 +389,7 @@ pub fn default_combat_profile() -> CombatProfile {
         pm(120),  // unarmed_wound_severity
         pm(35),   // unarmed_bleed_rate
         nz(6),    // unarmed_attack_ticks
+        nz(10),   // defend_stance_ticks
     )
 }
 

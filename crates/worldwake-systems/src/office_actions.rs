@@ -907,6 +907,7 @@ mod tests {
                         pm(100),
                         pm(25),
                         NonZeroU32::new(4).unwrap(),
+                        NonZeroU32::new(10).unwrap(),
                     ),
                 )
                 .unwrap();
@@ -965,6 +966,7 @@ mod tests {
                             pm(100),
                             pm(25),
                             NonZeroU32::new(4).unwrap(),
+                            NonZeroU32::new(10).unwrap(),
                         ),
                     )
                     .unwrap();

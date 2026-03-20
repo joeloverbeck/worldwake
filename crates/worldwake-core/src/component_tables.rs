@@ -170,6 +170,7 @@ mod tests {
             Permille::new(140).unwrap(),
             Permille::new(30).unwrap(),
             NonZeroU32::new(7).unwrap(),
+            NonZeroU32::new(10).unwrap(),
         )
     }
 
@@ -398,6 +399,7 @@ mod tests {
             Permille::new(120).unwrap(),
             Permille::new(35).unwrap(),
             NonZeroU32::new(6).unwrap(),
+            NonZeroU32::new(10).unwrap(),
         );
 
         assert_eq!(tables.insert_combat_profile(id, profile), None);

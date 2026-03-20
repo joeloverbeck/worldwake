@@ -515,6 +515,7 @@ fn combat_profile_with_attack_skill(attack_skill: Permille) -> CombatProfile {
         pm(120), // unarmed_wound_severity
         pm(35),  // unarmed_bleed_rate
         nz(6),   // unarmed_attack_ticks
+        nz(10),  // defend_stance_ticks
     )
 }
 

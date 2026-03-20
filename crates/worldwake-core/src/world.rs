@@ -703,6 +703,7 @@ mod tests {
             Permille::new(125).unwrap(),
             Permille::new(30).unwrap(),
             NonZeroU32::new(6).unwrap(),
+            NonZeroU32::new(10).unwrap(),
         )
     }
 

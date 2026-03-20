@@ -926,6 +926,7 @@ mod tests {
                 pm(120),
                 pm(35),
                 NonZeroU32::new(6).unwrap(),
+                NonZeroU32::new(10).unwrap(),
             ))
         }
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {

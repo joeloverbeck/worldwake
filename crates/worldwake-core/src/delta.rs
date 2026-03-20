@@ -278,6 +278,7 @@ mod tests {
                 Permille::new(130).unwrap(),
                 Permille::new(28).unwrap(),
                 std::num::NonZeroU32::new(6).unwrap(),
+                std::num::NonZeroU32::new(10).unwrap(),
             )),
             ComponentValue::DeadAt(DeadAt(Tick(18))),
             ComponentValue::CombatStance(CombatStance::Defending),

@@ -1191,6 +1191,7 @@ fn seed_fragile_queued_waiter(h: &mut GoldenHarness) -> EntityId {
             pm(120),
             pm(35),
             nz(6),
+            nz(10),
         ),
     )
     .unwrap();

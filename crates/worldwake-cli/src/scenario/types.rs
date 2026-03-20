@@ -180,6 +180,7 @@ mod tests {
                         unarmed_wound_severity: 200,
                         unarmed_bleed_rate: 100,
                         unarmed_attack_ticks: 3,
+                        defend_stance_ticks: 10,
                     ),
                     utility_profile: (
                         hunger_weight: 500,

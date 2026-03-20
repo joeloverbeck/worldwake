@@ -91,6 +91,7 @@ fn attacker_profile() -> CombatProfile {
         pm(120),
         pm(30),
         nz(6),
+        nz(10),
     )
 }
 
@@ -106,6 +107,7 @@ fn fragile_target_profile() -> CombatProfile {
         pm(80),
         pm(10),
         nz(6),
+        nz(10),
     )
 }
 

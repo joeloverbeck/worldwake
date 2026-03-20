@@ -1443,6 +1443,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(6),
+            nz(10),
         )
     }
 
@@ -2727,6 +2728,7 @@ mod tests {
                 pm(120),
                 pm(30),
                 nz(6),
+                nz(10),
             ),
         );
         let target = spawn_guard_with_profile(
@@ -2744,6 +2746,7 @@ mod tests {
                 pm(80),
                 pm(10),
                 nz(6),
+                nz(10),
             ),
         );
         arm_actor(&mut world, attacker, 3, CommodityKind::Sword, 1);
@@ -2940,6 +2943,7 @@ mod tests {
             pm(50),
             pm(10),
             nz(1),
+            nz(10),
         );
 
         assert_eq!(effective_guard_skill(profile, None, None, None), pm(200));
@@ -2962,6 +2966,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(1),
+            nz(10),
         );
         let defending_target_profile = CombatProfile::new(
             pm(1000),
@@ -2974,6 +2979,7 @@ mod tests {
             pm(80),
             pm(10),
             nz(1),
+            nz(10),
         );
         let wounds = WoundList::default();
 
@@ -3102,6 +3108,7 @@ mod tests {
             pm(90),
             pm(12),
             nz(1),
+            nz(10),
         );
         let target_profile = CombatProfile::new(
             pm(1000),
@@ -3114,6 +3121,7 @@ mod tests {
             pm(10),
             pm(0),
             nz(1),
+            nz(10),
         );
         let wounds = WoundList::default();
 
@@ -3590,6 +3598,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(6),
+            nz(10),
         );
         let fast = CombatProfile::new(
             pm(1000),
@@ -3602,6 +3611,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(6),
+            nz(10),
         );
 
         let slow_next = super::progress_wounds(

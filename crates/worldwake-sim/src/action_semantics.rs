@@ -623,6 +623,7 @@ mod tests {
                     pm(120),
                     pm(30),
                     nz(6),
+                    nz(10),
                 ),
             )
             .unwrap();

@@ -466,6 +466,7 @@ mod tests {
                     worldwake_core::Permille::new(120).unwrap(),
                     worldwake_core::Permille::new(30).unwrap(),
                     NonZeroU32::new(6).unwrap(),
+                    NonZeroU32::new(10).unwrap(),
                 ),
             )
             .unwrap();

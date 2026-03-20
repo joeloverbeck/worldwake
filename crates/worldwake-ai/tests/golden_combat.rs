@@ -56,6 +56,7 @@ fn seed_fragile_deprivation_victim(h: &mut GoldenHarness) -> worldwake_core::Ent
             pm(120),
             pm(35),
             nz(6),
+            nz(10),
         ),
     )
     .unwrap();
@@ -569,6 +570,7 @@ fn build_death_while_traveling_scenario(
             pm(120),
             pm(35),
             nz(6),
+            nz(10),
         ),
     )
     .unwrap();
@@ -714,6 +716,7 @@ fn living_combat_attacker_profile() -> CombatProfile {
         pm(160),
         pm(35),
         nz(3),
+        nz(10),
     )
 }
 
@@ -729,6 +732,7 @@ fn living_combat_defender_profile() -> CombatProfile {
         pm(100),
         pm(20),
         nz(6),
+        nz(10),
     )
 }
 

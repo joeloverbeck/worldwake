@@ -96,6 +96,7 @@ fn no_recovery_combat_profile() -> CombatProfile {
         pm(120),  // unarmed_wound_severity
         pm(35),   // unarmed_bleed_rate
         nz(6),    // unarmed_attack_ticks
+        nz(10),   // defend_stance_ticks
     )
 }
 
@@ -125,6 +126,7 @@ fn lethal_combat_attacker_profile() -> CombatProfile {
         pm(700),  // unarmed_wound_severity
         pm(300),  // unarmed_bleed_rate
         nz(2),    // unarmed_attack_ticks
+        nz(10),   // defend_stance_ticks
     )
 }
 
@@ -140,6 +142,7 @@ fn fragile_office_holder_profile() -> CombatProfile {
         pm(80),  // unarmed_wound_severity
         pm(50),  // unarmed_bleed_rate
         nz(6),   // unarmed_attack_ticks
+        nz(10),  // defend_stance_ticks
     )
 }
 
