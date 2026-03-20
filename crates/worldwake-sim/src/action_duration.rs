@@ -50,10 +50,9 @@ mod tests {
 
     #[test]
     fn action_duration_roundtrips_through_bincode() {
-        for duration in [ActionDuration::new(3)] {
-            let bytes = bincode::serialize(&duration).unwrap();
-            let roundtrip: ActionDuration = bincode::deserialize(&bytes).unwrap();
-            assert_eq!(roundtrip, duration);
-        }
+        let duration = ActionDuration::new(3);
+        let bytes = bincode::serialize(&duration).unwrap();
+        let roundtrip: ActionDuration = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, duration);
     }
 }

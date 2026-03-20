@@ -971,6 +971,7 @@ fn golden_reduce_danger_defensive_mitigation() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn golden_defend_replans_after_finite_stance_expires() {
     let (mut h, _attacker, defender, _initial_coin_total) =
         build_living_combat_scenario(Seed([33; 32]));
