@@ -1,10 +1,10 @@
-**Status**: PENDING
+**Status**: PENDING (reassessed 2026-03-21)
 
 # E16c: Institutional Beliefs & Record Consultation
 
 ## Epic Summary
 
-Introduce first-class institutional records and explicit institutional belief state so agents can know offices, faction membership, support declarations, and later legal/jurisdiction facts through witness observation, reports, and record consultation rather than through authoritative relation reads hidden behind AI-facing helpers.
+Introduce first-class institutional records and explicit institutional belief state so agents can know offices, faction membership, and support declarations through witness observation, reports, and record consultation rather than through authoritative relation reads hidden behind AI-facing helpers.
 
 This spec is the architectural completion of the E14/E16 information boundary:
 
@@ -41,7 +41,9 @@ Phase 3: Information & Politics
 
 - E14 (belief stores, witness/report model, `PublicRecord` semantics)
 - E15 (report/rumor propagation)
+- E15c (conversation memory — `ToldBeliefMemory` / `HeardBeliefMemory` / `TellMemoryKey`)
 - E16 (offices, factions, support declarations, succession, political actions)
+- S12 (prerequisite-aware planning — `prerequisite_places()` for ConsultRecord at remote locations)
 
 ## Why This Exists
 
@@ -103,7 +105,11 @@ This spec exists to satisfy the following non-negotiable principles in [FOUNDATI
 |----------------|----------|---------------|
 | `AgentBeliefStore` | E14 belief system | stores new institutional belief state alongside entity beliefs |
 | `PerceptionSource` / Tell propagation | E14/E15 | continue to carry report and rumor provenance |
+| `ToldBeliefMemory` / `HeardBeliefMemory` | E15c conversation memory | institutional claims from Tell flow through HeardBeliefMemory before projecting into institutional_beliefs |
+| `TellMemoryKey` / resend suppression | E15c | prevents redundant institutional claim re-telling |
 | `VisibilitySpec::PublicRecord` | E14 foundations alignment | defines records as consultable-at-location, not globally known |
+| `PerceptionProfile` | E14 belief system | extended with consultation fields (institutional_memory_capacity, consultation_speed_factor, contradiction_tolerance) |
+| `S12 prerequisite_places()` | S12 prerequisite-aware search | ConsultRecord at remote locations produces Travel+Consult prerequisite chains |
 | `office_holder / offices_held` | core relations | remains authoritative office-title state |
 | `member_of / members_of` | core relations | remains authoritative faction membership state |
 | `support_declarations` | core relations | remains authoritative public support state |
@@ -125,30 +131,37 @@ Records are ordinary world entities with identity, location, ownership/custody, 
 - public declaration notice
 - later accusation, warrant, tax ledger, stock ledger, or appointment record
 
-Add `RecordData`:
+Add `RecordData` (absorbs record entries — no separate `InstitutionalRecord` component):
 
 ```rust
 pub struct RecordData {
-    pub title: String,
     pub record_kind: RecordKind,
     pub home_place: EntityId,
-    pub issuer: Option<EntityId>,
+    pub issuer: EntityId,
     pub consultation_ticks: u32,
     pub max_entries_per_consult: u32,
+    pub entries: Vec<InstitutionalRecordEntry>,
+    pub next_entry_id: u64,
 }
 ```
+
+Methods on `RecordData`:
+- `append_entry(claim, tick) -> RecordEntryId` — appends new entry, increments next_entry_id
+- `supersede_entry(old_id, new_claim, tick) -> Result<RecordEntryId>` — appends entry with `supersedes: Some(old_id)`
+- `entries_newest_first() -> impl Iterator` — reverse chronological iteration
+- `active_entries() -> Vec<&InstitutionalRecordEntry>` — entries not superseded by a later entry
 
 ```rust
 pub enum RecordKind {
     OfficeRegister,
     FactionRoster,
     SupportLedger,
-    JurisdictionNotice,
-    LegalNotice,
+    // E16b adds: JurisdictionNotice
+    // E17 adds: LegalNotice
 }
 ```
 
-`consultation_ticks` and `max_entries_per_consult` are explicit record-local policy, not hidden constants.
+`consultation_ticks` and `max_entries_per_consult` are explicit record-local policy, not hidden constants. `JurisdictionNotice` and `LegalNotice` are deferred to E16b and E17 respectively — they are downstream concerns that E16c does not exercise. Adding them here would be forward-coupling to unvalidated requirements (YAGNI).
 
 ### 2. Typed Institutional Claims
 
@@ -165,12 +178,7 @@ pub enum InstitutionalClaim {
         holder: Option<EntityId>,
         effective_tick: Tick,
     },
-    OfficeController {
-        office: EntityId,
-        controller: Option<EntityId>,
-        contested: bool,
-        effective_tick: Tick,
-    },
+    // E16b adds: OfficeController { office, controller, contested, effective_tick }
     FactionMembership {
         faction: EntityId,
         member: EntityId,
@@ -186,11 +194,13 @@ pub enum InstitutionalClaim {
 }
 ```
 
-This scope is intentionally narrow to current political/institutional needs, but the type is extensible for later claims such as accusations, warrants, licenses, treasuries, and appointments.
+`OfficeController` is deferred to E16b — it represents physical force control distinct from legitimate holding, which is an E16b concept. E16c delivers only the claims its acceptance criteria exercise.
+
+This scope is intentionally narrow to current political/institutional needs, but the type is extensible for later claims such as controllers, accusations, warrants, licenses, treasuries, and appointments.
 
 ### 3. Record Entries, Not Global Truth Mirrors
 
-Add an explicit record-entry container:
+Record entries live inside `RecordData` (no separate `InstitutionalRecord` component — entries are part of the record artifact):
 
 ```rust
 pub struct InstitutionalRecordEntry {
@@ -199,14 +209,8 @@ pub struct InstitutionalRecordEntry {
     pub recorded_tick: Tick,
     pub supersedes: Option<RecordEntryId>,
 }
-```
 
-Add `InstitutionalRecord`:
-
-```rust
-pub struct InstitutionalRecord {
-    pub entries: Vec<InstitutionalRecordEntry>,
-}
+pub struct RecordEntryId(pub u64);
 ```
 
 Important rule:
@@ -225,16 +229,18 @@ Extend the belief store with institutional claims:
 pub struct AgentBeliefStore {
     pub known_entities: BTreeMap<EntityId, BelievedEntityState>,
     pub social_observations: Vec<SocialObservation>,
-    pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
+    pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,       // E15c
+    pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,     // E15c
+    pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,  // E16c
 }
 ```
 
 ```rust
 pub enum InstitutionalBeliefKey {
-    OfficeHolder { office: EntityId },
-    OfficeController { office: EntityId },
-    FactionMembership { faction: EntityId, member: EntityId },
-    SupportDeclaration { office: EntityId, supporter: EntityId },
+    OfficeHolderOf { office: EntityId },
+    // E16b adds: OfficeControllerOf { office: EntityId }
+    FactionMembersOf { faction: EntityId },
+    SupportFor { supporter: EntityId, office: EntityId },
 }
 ```
 
@@ -309,7 +315,8 @@ Examples:
 - office vacancy activation
 - office installation
 - support declaration
-- later force-claim press/yield/control/install from E16b
+- faction membership changes
+- (E16b adds: force-claim press/yield/control/install)
 
 This does not require record consultation if the agent witnessed the event. Witnessing and consulting are separate acquisition paths.
 
@@ -333,7 +340,7 @@ Suggested trait additions in `worldwake-sim`:
 
 ```rust
 fn believed_office_holder(&self, office: EntityId) -> InstitutionalBeliefRead<Option<EntityId>>;
-fn believed_office_controller(&self, office: EntityId) -> InstitutionalBeliefRead<Option<EntityId>>;
+// E16b adds: fn believed_office_controller(...)
 fn believed_membership(
     &self,
     faction: EntityId,
@@ -344,6 +351,10 @@ fn believed_support_declaration(
     office: EntityId,
     supporter: EntityId,
 ) -> InstitutionalBeliefRead<Option<EntityId>>;
+fn believed_support_declarations_for_office(
+    &self,
+    office: EntityId,
+) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)>;
 fn consultable_records_at(&self, place: EntityId) -> Vec<EntityId>;
 ```
 
@@ -353,25 +364,24 @@ Rules:
 2. public institutional facts must come from stored belief/record pathways
 3. once this spec lands, AI modules must not read live office holder / faction membership / public support truth through direct helper shims
 
-### 10. Record Consultation Profile
+### 10. PerceptionProfile Extension for Institutional Knowledge
 
-To avoid magic constants and support agent diversity, add:
+To avoid magic constants and support agent diversity (Principle 20), extend the existing `PerceptionProfile` with institutional consultation parameters rather than adding a separate component:
 
 ```rust
-pub struct RecordConsultationProfile {
-    pub max_entries_per_action_bonus: u32,
-    pub reread_patience_ticks: u32,
-    pub contradiction_tolerance: Permille,
-}
+// New fields on existing PerceptionProfile:
+pub institutional_memory_capacity: u32,       // default: 20 — how many institutional beliefs the agent retains
+pub consultation_speed_factor: Permille,      // default: Permille(500) — multiplier on record's consultation_ticks
+pub contradiction_tolerance: Permille,        // default: Permille(300) — how readily the agent acts under contradiction
 ```
 
 Use cases:
 
-- diligent clerks reread large ledgers more effectively
-- impatient agents avoid repeated consultations
+- diligent clerks read records more quickly (higher consultation_speed_factor)
+- some agents retain more institutional knowledge than others
 - some agents act under mild contradiction more readily than others
 
-`contradiction_tolerance` is an agent trait, not a world-truth score.
+`contradiction_tolerance` is an agent trait, not a world-truth score. Consultation speed/capacity is a form of perception — how effectively an agent acquires information from records.
 
 ### 11. Migration Requirement
 
@@ -389,10 +399,8 @@ Add to `with_component_schema_entries!`:
 | Component | Kind Predicate | Storage Field |
 |-----------|---------------|---------------|
 | `RecordData` | `kind == EntityKind::Record` | `record_data` |
-| `InstitutionalRecord` | `kind == EntityKind::Record` | `institutional_record` |
-| `RecordConsultationProfile` | `kind == EntityKind::Agent` | `record_consultation_profile` |
 
-`AgentBeliefStore` grows `institutional_beliefs` as an extension of existing agent belief state.
+`RecordData` absorbs record entries (no separate `InstitutionalRecord` component — entries live inside `RecordData`). Consultation parameters are per-agent fields on `PerceptionProfile` (no separate `RecordConsultationProfile`). `AgentBeliefStore` grows `institutional_beliefs` as an extension of existing agent belief state.
 
 ## SystemFn Integration
 
@@ -434,6 +442,61 @@ The interaction path must be state-mediated:
 
 No system calls another system's logic to "inform" agents out of band.
 
+## E15c Tell Integration (Reassessment Addition)
+
+E15c (completed after this spec was originally drafted) added `ToldBeliefMemory` / `HeardBeliefMemory` with `TellMemoryKey` for social information propagation. Institutional claims transmitted via Tell must flow through this existing system:
+
+1. When an agent Tells another about an institutional fact, the claim enters `HeardBeliefMemory` first (preserving provenance, chain length, and resend-suppression logic from E15c).
+2. A projection step then writes the institutional claim into the listener's `institutional_beliefs` with `InstitutionalKnowledgeSource::Report { from: speaker, chain_len }`.
+3. This unifies all social information flow through one channel — no parallel path that bypasses E15c's memory/resend-suppression.
+
+Chain length degrades through relays: direct witness → Report(chain_len=1) → Report(chain_len=2) → etc.
+
+## PlanningSnapshot Extension (Reassessment Addition)
+
+The GOAP plan search operates on `PlanningSnapshot` (immutable read-only state). For the AI to reason about institutional beliefs during planning:
+
+1. Extend `PlanningSnapshot` with `actor_institutional_beliefs: BTreeMap<InstitutionalBeliefKey, InstitutionalBeliefRead<...>>` — captured at snapshot build time from the actor's `AgentBeliefStore`.
+2. Extend `PlanningState` with `institutional_belief_overrides: BTreeMap<InstitutionalBeliefKey, InstitutionalBeliefRead<...>>` — populated by hypothetical `ConsultRecord` transitions during search (follows the existing `support_declaration_overrides` pattern).
+3. The `RuntimeBeliefView` impl on `PlanningState` reads from overrides first, then snapshot.
+
+## S12 Prerequisite-Aware Planning Integration (Reassessment Addition)
+
+S12 (completed after this spec was originally drafted) enables multi-hop travel-to-prerequisite plans. ConsultRecord integrates with this:
+
+1. When candidate generation detects `Unknown` institutional beliefs, it emits `GoalKind::ConsultRecord` candidates.
+2. If the relevant record is at a remote location, the plan search produces: `Travel(to record place) → ConsultRecord → Travel(back) → PoliticalAction`.
+3. `ConsultRecord` is registered as a `PlannerOpKind` with `may_appear_mid_plan: true` — it can serve as a prerequisite step in multi-step plans.
+4. `prerequisite_places()` for political goals returns the record's home place when the agent's institutional belief is `Unknown`.
+
+## Phased Delivery (Reassessment Addition)
+
+This spec is delivered in two phases:
+
+### Phase B1: Record Infrastructure
+- `EntityKind::Record`, `RecordData`, `RecordKind`
+- `InstitutionalClaim`, `InstitutionalRecordEntry`, `RecordEntryId`
+- `institutional_beliefs` field on `AgentBeliefStore` with capacity enforcement
+- `PerceptionProfile` extension with consultation parameters
+- `WorldTxn` record helpers (append, supersede, project belief)
+- `ConsultRecord` action (co-location required, max entries per consult)
+- Perception system projects institutional beliefs for witnesses of political events
+- Tell action projects institutional claims through HeardBeliefMemory → institutional_beliefs
+- Action handlers append record entries in same transaction as authoritative mutations
+
+### Phase B2: AI Migration
+- `InstitutionalBeliefRead` derivation helpers on `AgentBeliefStore`
+- `PerAgentBeliefView` institutional methods backed by belief store (not live world)
+- `PlanningSnapshot` + `PlanningState` institutional belief fields
+- Candidate generation emits `ConsultRecord` when beliefs are `Unknown`, suppresses political action when `Conflicted`
+- `GoalKindTag::ConsultRecord` + `PlannerOpKind::ConsultRecord` with S12 integration
+- Ranking reduces motive for Conflicted beliefs
+- Failure handling adds `BlockingFact::InstitutionalBeliefStale` / `InstitutionalBeliefConflicted`
+- Live helper seam removed (Principle 26)
+- Golden tests updated + new institutional belief scenarios
+
+Each phase is independently testable and reviewable. B1 validates infrastructure before B2 depends on it.
+
 ## FND-01 Section H
 
 ### H.1 Information-Path Analysis
@@ -444,7 +507,7 @@ No system calls another system's logic to "inform" agents out of band.
 | office installation | installation event or office register entry | same-place witness, report, or record consultation |
 | faction membership | faction roster entry or witnessed induction/removal event | direct witness, report, or roster consultation |
 | support declaration | public declaration event or support ledger entry | same-place witness, report, or ledger consultation |
-| office control/contest | E16b political event or later control ledger entry | witness, report, or consultation |
+| office control/contest | (deferred to E16b) | (deferred to E16b) |
 
 No remote institutional belief may appear without a witness, report, or consulted record.
 
@@ -474,12 +537,10 @@ No remote institutional belief may appear without a witness, report, or consulte
 ### H.4 Stored State vs Derived
 
 **Stored**
-- authoritative office/faction/support/controller state
-- record entities
-- `RecordData`
-- `InstitutionalRecord`
+- authoritative office/faction/support state
+- record entities with `RecordData` (including entries)
 - `AgentBeliefStore.institutional_beliefs`
-- `RecordConsultationProfile`
+- `PerceptionProfile` consultation fields
 
 **Derived**
 - `InstitutionalBeliefRead::{Unknown,Certain,Conflicted}`
@@ -531,22 +592,42 @@ No remote institutional belief may appear without a witness, report, or consulte
 
 ## Critical Files To Modify
 
+### Phase B1 (Infrastructure)
+
 | File | Change |
 |------|--------|
+| `crates/worldwake-core/src/institutional.rs` (NEW) | all institutional claim/record/belief types |
 | `crates/worldwake-core/src/entity.rs` | add `EntityKind::Record` |
 | `crates/worldwake-core/src/component_tables.rs` | add record component storage |
-| `crates/worldwake-core/src/component_schema.rs` | register `RecordData`, `InstitutionalRecord`, `RecordConsultationProfile` |
-| `crates/worldwake-core/src/beliefs.rs` or belief-state module | extend `AgentBeliefStore` with institutional belief storage |
-| `crates/worldwake-core/src/records.rs` or new module | add institutional claim and record-entry types |
-| `crates/worldwake-core/src/world_txn.rs` | add transactional record-entry and institutional-belief mutation helpers |
-| `crates/worldwake-sim/src/belief_view.rs` | replace live institutional helper path with institutional belief query surface |
-| `crates/worldwake-sim/src/action_payload.rs` | add `ConsultRecordActionPayload` |
-| `crates/worldwake-systems/src/office_actions.rs` | append/supersede support-declaration records on mutation |
-| `crates/worldwake-systems/src/offices.rs` | append/supersede office register entries on vacancy/install transitions |
-| `crates/worldwake-systems/src/` | add `consult_record` action handler module or integrate into record actions module |
-| `crates/worldwake-ai/src/candidate_generation.rs` | migrate institutional reads to belief-derived queries |
-| `crates/worldwake-ai/src/goal_model.rs` | migrate office satisfaction/progress checks to institutional beliefs |
-| `crates/worldwake-ai/src/ranking.rs` | consume belief-derived institutional certainty/conflict |
+| `crates/worldwake-core/src/component_schema.rs` | register `RecordData` |
+| `crates/worldwake-core/src/delta.rs` | add `ComponentKind::RecordData`, `ComponentValue::RecordData` |
+| `crates/worldwake-core/src/canonical.rs` | add hashing for new component kind |
+| `crates/worldwake-core/src/belief.rs` | extend `AgentBeliefStore` with `institutional_beliefs`, extend `PerceptionProfile` with consultation fields |
+| `crates/worldwake-core/src/world.rs` | add `create_record()` method |
+| `crates/worldwake-core/src/world_txn.rs` | add `create_record()`, `append_record_entry()`, `supersede_record_entry()`, `project_institutional_belief()` |
+| `crates/worldwake-sim/src/action_payload.rs` | add `ConsultRecord(ConsultRecordActionPayload)` |
+| `crates/worldwake-systems/src/consult_record_actions.rs` (NEW) | ConsultRecord action handler |
+| `crates/worldwake-systems/src/perception.rs` | project institutional beliefs for witnesses of political events |
+| `crates/worldwake-systems/src/tell_actions.rs` | project institutional claims via HeardBeliefMemory flow |
+| `crates/worldwake-systems/src/office_actions.rs` | append support-declaration records on mutation |
+| `crates/worldwake-systems/src/offices.rs` | append office register entries on vacancy/install |
+
+### Phase B2 (AI Migration)
+
+| File | Change |
+|------|--------|
+| `crates/worldwake-core/src/belief.rs` | add `believed_office_holder()`, `believed_factions_of()`, etc. derivation helpers |
+| `crates/worldwake-core/src/blocked_intent.rs` | add `BlockingFact::InstitutionalBeliefStale`, `InstitutionalBeliefConflicted` |
+| `crates/worldwake-sim/src/per_agent_belief_view.rs` | back institutional methods with belief store (replace `self.world.*` reads) |
+| `crates/worldwake-ai/src/planning_snapshot.rs` | add `actor_institutional_beliefs` field |
+| `crates/worldwake-ai/src/planning_state.rs` | add `institutional_belief_overrides`, implement institutional methods |
+| `crates/worldwake-ai/src/candidate_generation.rs` | emit `ConsultRecord` when Unknown, suppress when Conflicted |
+| `crates/worldwake-ai/src/goal_model.rs` | add `GoalKindTag::ConsultRecord`, implement `GoalKindPlannerExt` |
+| `crates/worldwake-ai/src/planner_ops.rs` | add `PlannerOpKind::ConsultRecord` |
+| `crates/worldwake-ai/src/ranking.rs` | consume certainty/conflict, add ConsultRecord priority |
+| `crates/worldwake-ai/src/search.rs` | register ConsultRecord planner op, S12 prerequisite chains |
+| `crates/worldwake-ai/src/failure_handling.rs` | handle stale/conflicted beliefs as failure triggers |
+| `crates/worldwake-ai/tests/golden_offices.rs` | update existing + add institutional belief scenarios |
 
 ## Spec References
 
