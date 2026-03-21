@@ -1,5 +1,7 @@
 use crate::{
     decision_trace::{
+        CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
+        CandidateEvidenceKind, CandidateEvidenceTrace,
         PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
         SocialCandidateOmission,
     },
@@ -49,6 +51,54 @@ impl Evidence {
     }
 }
 
+#[derive(Default)]
+struct EvidenceTrace {
+    contributors: BTreeSet<CandidateEvidenceContributor>,
+    exclusions: BTreeSet<CandidateEvidenceExclusion>,
+}
+
+impl EvidenceTrace {
+    fn contributor(&mut self, kind: CandidateEvidenceKind, place: EntityId, entity: EntityId) {
+        self.contributors.insert(CandidateEvidenceContributor {
+            kind,
+            place,
+            entity,
+        });
+    }
+
+    fn exclusion(
+        &mut self,
+        kind: CandidateEvidenceKind,
+        place: EntityId,
+        entity: EntityId,
+        reason: CandidateEvidenceExclusionReason,
+    ) {
+        self.exclusions.insert(CandidateEvidenceExclusion {
+            kind,
+            place,
+            entity,
+            reason,
+        });
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.contributors.extend(other.contributors);
+        self.exclusions.extend(other.exclusions);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.contributors.is_empty() && self.exclusions.is_empty()
+    }
+
+    fn into_public(self, goal: GoalKey) -> CandidateEvidenceTrace {
+        CandidateEvidenceTrace {
+            goal,
+            contributors: self.contributors.into_iter().collect(),
+            exclusions: self.exclusions.into_iter().collect(),
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 struct AcquisitionSearchOptions<'a> {
     include_recipes: bool,
@@ -70,6 +120,7 @@ struct GenerationContext<'a> {
 pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
+    pub evidence: BTreeMap<GoalKey, CandidateEvidenceTrace>,
 }
 
 pub(crate) struct CandidateGenerationResult {
@@ -121,9 +172,9 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         current_tick,
     };
 
-    emit_need_candidates(&mut candidates, &ctx, needs, thresholds);
-    emit_production_candidates(&mut candidates, &ctx, needs, thresholds);
-    emit_enterprise_candidates(&mut candidates, &ctx);
+    emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
+    emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
+    emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_combat_candidates(&mut candidates, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -136,6 +187,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
 
 fn emit_need_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
@@ -144,7 +196,7 @@ fn emit_need_candidates(
         return;
     };
 
-    emit_self_consume_candidates(candidates, ctx, needs, thresholds);
+    emit_self_consume_candidates(candidates, diagnostics, ctx, needs, thresholds);
     emit_sleep_goal(candidates, ctx, needs, thresholds);
     emit_relieve_goal(candidates, ctx, needs, thresholds);
     emit_wash_goal(candidates, ctx, needs, thresholds);
@@ -152,18 +204,20 @@ fn emit_need_candidates(
 
 fn emit_production_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
 ) {
-    emit_produce_goals(candidates, ctx, needs, thresholds);
+    emit_produce_goals(candidates, diagnostics, ctx, needs, thresholds);
 }
 
 fn emit_enterprise_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
-    emit_restock_goals(candidates, ctx);
+    emit_restock_goals(candidates, diagnostics, ctx);
     emit_move_cargo_goals(candidates, ctx);
 }
 
@@ -456,12 +510,14 @@ fn emit_engage_hostile_goals(
 
 fn emit_self_consume_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
     thresholds: DriveThresholds,
 ) {
     emit_need_driven_candidates(
         candidates,
+        diagnostics,
         ctx,
         needs.hunger,
         thresholds.hunger.low(),
@@ -469,6 +525,7 @@ fn emit_self_consume_candidates(
     );
     emit_need_driven_candidates(
         candidates,
+        diagnostics,
         ctx,
         needs.thirst,
         thresholds.thirst.low(),
@@ -478,6 +535,7 @@ fn emit_self_consume_candidates(
 
 fn emit_need_driven_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     current_need: worldwake_core::Permille,
     low_threshold: worldwake_core::Permille,
@@ -525,7 +583,7 @@ fn emit_need_driven_candidates(
             continue;
         }
 
-        if let Some(evidence) = direct_acquisition_path_evidence(
+        if let Some((evidence, evidence_trace)) = direct_acquisition_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -533,13 +591,15 @@ fn emit_need_driven_candidates(
             ctx.recipes,
             ctx.travel_horizon,
         ) {
-            emit_candidate(
+            emit_candidate_with_trace(
                 candidates,
+                diagnostics,
                 GoalKind::AcquireCommodity {
                     commodity,
                     purpose: CommodityPurpose::SelfConsume,
                 },
                 evidence,
+                evidence_trace,
                 ctx.blocked,
                 ctx.current_tick,
             );
@@ -731,6 +791,7 @@ fn social_listeners_at(
 
 fn emit_produce_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
@@ -759,7 +820,7 @@ fn emit_produce_goals(
             continue;
         }
 
-        if let Some(mut evidence) = recipe_path_evidence(
+        if let Some((mut evidence, evidence_trace)) = recipe_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -770,10 +831,12 @@ fn emit_produce_goals(
             if let Some(place) = ctx.place {
                 evidence.places.insert(place);
             }
-            emit_candidate(
+            emit_candidate_with_trace(
                 candidates,
+                diagnostics,
                 GoalKind::ProduceCommodity { recipe_id },
                 evidence,
+                evidence_trace,
                 ctx.blocked,
                 ctx.current_tick,
             );
@@ -783,6 +846,7 @@ fn emit_produce_goals(
 
 fn emit_restock_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let Some(profile) = ctx.view.merchandise_profile(ctx.agent) else {
@@ -793,7 +857,7 @@ fn emit_restock_goals(
         if ctx.enterprise.restock_gap(commodity).is_none() {
             continue;
         }
-        if let Some(evidence) = acquisition_path_evidence(
+        if let Some((evidence, evidence_trace)) = acquisition_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -801,10 +865,12 @@ fn emit_restock_goals(
             ctx.recipes,
             ctx.travel_horizon,
         ) {
-            emit_candidate(
+            emit_candidate_with_trace(
                 candidates,
+                diagnostics,
                 GoalKind::RestockCommodity { commodity },
                 evidence,
+                evidence_trace,
                 ctx.blocked,
                 ctx.current_tick,
             );
@@ -976,6 +1042,64 @@ fn emit_candidate(
     }
 }
 
+fn emit_candidate_with_trace(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    kind: GoalKind,
+    evidence: Evidence,
+    evidence_trace: EvidenceTrace,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+) {
+    if evidence.is_empty() {
+        return;
+    }
+
+    let key = GoalKey::from(kind);
+    if blocked.is_blocked(&key, current_tick) {
+        return;
+    }
+
+    match candidates.entry(key) {
+        Entry::Vacant(entry) => {
+            entry.insert(GroundedGoal {
+                key,
+                evidence_entities: evidence.entities,
+                evidence_places: evidence.places,
+            });
+        }
+        Entry::Occupied(mut entry) => {
+            entry.get_mut().evidence_entities.extend(evidence.entities);
+            entry.get_mut().evidence_places.extend(evidence.places);
+        }
+    }
+
+    let trace = evidence_trace.into_public(key);
+    diagnostics
+        .evidence
+        .entry(key)
+        .and_modify(|existing| merge_candidate_evidence_trace(existing, &trace))
+        .or_insert(trace);
+}
+
+fn merge_candidate_evidence_trace(
+    existing: &mut CandidateEvidenceTrace,
+    incoming: &CandidateEvidenceTrace,
+) {
+    for contributor in &incoming.contributors {
+        if !existing.contributors.contains(contributor) {
+            existing.contributors.push(*contributor);
+        }
+    }
+    for exclusion in &incoming.exclusions {
+        if !existing.exclusions.contains(exclusion) {
+            existing.exclusions.push(*exclusion);
+        }
+    }
+    existing.contributors.sort();
+    existing.exclusions.sort();
+}
+
 fn acquisition_path_evidence(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -983,7 +1107,7 @@ fn acquisition_path_evidence(
     commodity: CommodityKind,
     recipes: &RecipeRegistry,
     travel_horizon: u8,
-) -> Option<Evidence> {
+) -> Option<(Evidence, EvidenceTrace)> {
     acquisition_path_evidence_inner(
         view,
         agent,
@@ -1005,7 +1129,7 @@ fn direct_acquisition_path_evidence(
     commodity: CommodityKind,
     recipes: &RecipeRegistry,
     travel_horizon: u8,
-) -> Option<Evidence> {
+) -> Option<(Evidence, EvidenceTrace)> {
     acquisition_path_evidence_inner(
         view,
         agent,
@@ -1028,26 +1152,32 @@ fn acquisition_path_evidence_inner(
     recipes: &RecipeRegistry,
     travel_horizon: u8,
     options: AcquisitionSearchOptions<'_>,
-) -> Option<Evidence> {
+) -> Option<(Evidence, EvidenceTrace)> {
     let place = place?;
     let mut visited_commodities = options.visited_commodities.clone();
     if !visited_commodities.insert(commodity) {
         return None;
     }
     let mut evidence = Evidence::with_place(place);
+    let mut trace = EvidenceTrace::default();
 
     for candidate_place in reachable_places_within_horizon(view, place, travel_horizon) {
         let mut place_evidence = Evidence::default();
+        let mut place_trace = EvidenceTrace::default();
 
         for seller in view.agents_selling_at(candidate_place, commodity) {
             if seller != agent {
                 place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(seller);
+                place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
             }
         }
         if let Some(local_lots) =
             local_unpossessed_commodity_evidence(view, candidate_place, commodity)
         {
+            for lot in &local_lots.entities {
+                place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
+            }
             place_evidence.merge(local_lots);
         }
         for source in view.resource_sources_at(candidate_place, commodity) {
@@ -1057,12 +1187,25 @@ fn acquisition_path_evidence_inner(
             {
                 place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(source);
+                place_trace.contributor(
+                    CandidateEvidenceKind::ResourceSource,
+                    candidate_place,
+                    source,
+                );
+            } else {
+                place_trace.exclusion(
+                    CandidateEvidenceKind::ResourceSource,
+                    candidate_place,
+                    source,
+                    CandidateEvidenceExclusionReason::DepletedResourceSource,
+                );
             }
         }
         for corpse in view.corpse_entities_at(candidate_place) {
             if corpse_contains_commodity(view, corpse, commodity) {
                 place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(corpse);
+                place_trace.contributor(CandidateEvidenceKind::Corpse, candidate_place, corpse);
             }
         }
         if options.include_recipes {
@@ -1077,7 +1220,7 @@ fn acquisition_path_evidence_inner(
                 {
                     continue;
                 }
-                if let Some(recipe_evidence) = recipe_path_evidence_inner(
+                if let Some((recipe_evidence, recipe_trace)) = recipe_path_evidence_inner(
                     view,
                     agent,
                     Some(candidate_place),
@@ -1087,6 +1230,7 @@ fn acquisition_path_evidence_inner(
                     &visited_commodities,
                 ) {
                     place_evidence.merge(recipe_evidence);
+                    place_trace.merge(recipe_trace);
                 }
             }
         }
@@ -1094,9 +1238,12 @@ fn acquisition_path_evidence_inner(
         if !place_evidence.is_empty() {
             evidence.merge(place_evidence);
         }
+        if !place_trace.is_empty() {
+            trace.merge(place_trace);
+        }
     }
 
-    (!evidence.entities.is_empty()).then_some(evidence)
+    (!evidence.entities.is_empty()).then_some((evidence, trace))
 }
 
 fn reachable_places_within_horizon(
@@ -1148,7 +1295,7 @@ fn recipe_path_evidence(
     recipe: &RecipeDefinition,
     recipes: &RecipeRegistry,
     travel_horizon: u8,
-) -> Option<Evidence> {
+) -> Option<(Evidence, EvidenceTrace)> {
     recipe_path_evidence_inner(
         view,
         agent,
@@ -1168,13 +1315,14 @@ fn recipe_path_evidence_inner(
     recipes: &RecipeRegistry,
     travel_horizon: u8,
     visited_commodities: &BTreeSet<CommodityKind>,
-) -> Option<Evidence> {
+) -> Option<(Evidence, EvidenceTrace)> {
     let place = place?;
-    let workstation_evidence =
+    let (workstation_evidence, workstation_trace) =
         available_recipe_workstation_evidence(view, agent, Some(place), recipe, travel_horizon)?;
 
     if recipe.inputs.is_empty() {
         let mut evidence = Evidence::with_place(place);
+        let mut trace = workstation_trace;
         for workstation in &workstation_evidence.entities {
             let &(output_commodity, output_quantity) = recipe.outputs.first()?;
             let source_ok = view.resource_source(*workstation).is_some_and(|source| {
@@ -1182,19 +1330,21 @@ fn recipe_path_evidence_inner(
             });
             if source_ok {
                 evidence.entities.insert(*workstation);
+                trace.contributor(CandidateEvidenceKind::ResourceSource, place, *workstation);
             }
         }
-        return (!evidence.entities.is_empty()).then_some(evidence);
+        return (!evidence.entities.is_empty()).then_some((evidence, trace));
     }
 
     let mut evidence = workstation_evidence;
+    let mut trace = workstation_trace;
     for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
         let owned_quantity = view.commodity_quantity(agent, commodity);
         if owned_quantity >= required_quantity {
             continue;
         }
 
-        let input_evidence = acquisition_path_evidence_inner(
+        let (input_evidence, input_trace) = acquisition_path_evidence_inner(
             view,
             agent,
             Some(place),
@@ -1207,9 +1357,10 @@ fn recipe_path_evidence_inner(
             },
         )?;
         evidence.merge(input_evidence);
+        trace.merge(input_trace);
     }
 
-    Some(evidence)
+    Some((evidence, trace))
 }
 
 fn available_recipe_workstation_evidence(
@@ -1218,7 +1369,7 @@ fn available_recipe_workstation_evidence(
     place: Option<EntityId>,
     recipe: &RecipeDefinition,
     travel_horizon: u8,
-) -> Option<Evidence> {
+) -> Option<(Evidence, EvidenceTrace)> {
     let place = place?;
     let workstation_tag = recipe.required_workstation_tag?;
 
@@ -1229,6 +1380,7 @@ fn available_recipe_workstation_evidence(
     }
 
     let mut evidence = Evidence::default();
+    let mut trace = EvidenceTrace::default();
     for candidate_place in reachable_places_within_horizon(view, place, travel_horizon) {
         let available_workstations = view
             .matching_workstations_at(candidate_place, workstation_tag)
@@ -1239,9 +1391,16 @@ fn available_recipe_workstation_evidence(
             continue;
         }
         evidence.places.insert(candidate_place);
-        evidence.entities.extend(available_workstations);
+        for workstation in available_workstations {
+            evidence.entities.insert(workstation);
+            trace.contributor(
+                CandidateEvidenceKind::RecipeWorkstation,
+                candidate_place,
+                workstation,
+            );
+        }
     }
-    (!evidence.entities.is_empty()).then_some(evidence)
+    (!evidence.entities.is_empty()).then_some((evidence, trace))
 }
 
 fn aggregate_recipe_quantities(
@@ -3095,6 +3254,108 @@ mod tests {
     }
 
     #[test]
+    fn candidate_evidence_trace_records_resource_source_contributors_and_exclusions() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let orchard = entity(11);
+        let bandit_camp = entity(12);
+        let mill = entity(20);
+        let depleted_source = entity(21);
+        let stocked_source = entity(22);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([agent, mill, depleted_source, stocked_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.entity_kinds.insert(depleted_source, EntityKind::Facility);
+        view.entity_kinds.insert(stocked_source, EntityKind::Facility);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(mill, origin);
+        view.effective_places.insert(depleted_source, orchard);
+        view.effective_places.insert(stocked_source, bandit_camp);
+        view.adjacent_places
+            .insert(origin, vec![orchard, bandit_camp]);
+        view.adjacent_places
+            .insert(orchard, vec![origin, bandit_camp]);
+        view.adjacent_places
+            .insert(bandit_camp, vec![origin, orchard]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.workstations
+            .insert((origin, WorkstationTag::Mill), vec![mill]);
+        view.sources_at
+            .insert((orchard, CommodityKind::Firewood), vec![depleted_source]);
+        view.sources_at
+            .insert((bandit_camp, CommodityKind::Firewood), vec![stocked_source]);
+        view.resource_sources.insert(
+            depleted_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        view.resource_sources.insert(
+            stocked_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+            6,
+        );
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&GoalKey::from(GoalKind::ProduceCommodity { recipe_id }))
+            .expect("produce goal should record typed evidence provenance");
+
+        assert!(trace.contributors.iter().any(|contributor| {
+            contributor.kind == crate::CandidateEvidenceKind::RecipeWorkstation
+                && contributor.place == origin
+                && contributor.entity == mill
+        }));
+        assert!(trace.contributors.iter().any(|contributor| {
+            contributor.kind == crate::CandidateEvidenceKind::ResourceSource
+                && contributor.place == bandit_camp
+                && contributor.entity == stocked_source
+        }));
+        assert!(trace.exclusions.iter().any(|exclusion| {
+            exclusion.kind == crate::CandidateEvidenceKind::ResourceSource
+                && exclusion.place == orchard
+                && exclusion.entity == depleted_source
+                && exclusion.reason
+                    == crate::CandidateEvidenceExclusionReason::DepletedResourceSource
+        }));
+    }
+
+    #[test]
     fn missing_recipe_input_without_workstation_withholds_produce_goal() {
         let agent = entity(1);
         let seller = entity(2);
@@ -3309,9 +3570,10 @@ mod tests {
             current_tick: Tick(5),
         };
         let mut candidates = BTreeMap::new();
+        let mut diagnostics = CandidateGenerationDiagnostics::default();
 
-        emit_restock_goals(&mut candidates, &ctx);
-        emit_produce_goals(&mut candidates, &ctx, None, None);
+        emit_restock_goals(&mut candidates, &mut diagnostics, &ctx);
+        emit_produce_goals(&mut candidates, &mut diagnostics, &ctx, None, None);
         assert!(!contains_goal(
             &candidates.into_values().collect::<Vec<_>>(),
             GoalKind::RestockCommodity {
@@ -3324,9 +3586,10 @@ mod tests {
             ..ctx
         };
         let mut candidates = BTreeMap::new();
+        let mut diagnostics = CandidateGenerationDiagnostics::default();
 
-        emit_restock_goals(&mut candidates, &ctx);
-        emit_produce_goals(&mut candidates, &ctx, None, None);
+        emit_restock_goals(&mut candidates, &mut diagnostics, &ctx);
+        emit_produce_goals(&mut candidates, &mut diagnostics, &ctx, None, None);
         let candidates = candidates.into_values().collect::<Vec<_>>();
 
         assert!(contains_goal(

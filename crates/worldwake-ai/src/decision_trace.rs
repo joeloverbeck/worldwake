@@ -4,7 +4,7 @@
 //! and test query purposes. See spec S08 for design rationale.
 
 use std::fmt::Write as _;
-use worldwake_core::{ActionDefId, EntityId, GoalKey, RecipientKnowledgeStatus, Tick};
+use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick};
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
@@ -120,6 +120,8 @@ pub struct ActionStartFailureSummary {
 pub struct CandidateTrace {
     /// All grounded goal keys generated (before suppression/zero-motive filter).
     pub generated: Vec<GoalKey>,
+    /// Typed candidate-evidence provenance keyed by grounded goal.
+    pub evidence: Vec<CandidateEvidenceTrace>,
     /// Ranked goals after all filters (sorted by ranking order).
     pub ranked: Vec<RankedGoalSummary>,
     /// Goals suppressed by situational conditions.
@@ -175,6 +177,47 @@ pub struct RankedGoalSummary {
     pub provenance: Option<RankedGoalProvenance>,
 }
 
+/// Actionable evidence contributor kind for one generated goal.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CandidateEvidenceKind {
+    Seller,
+    LooseLot,
+    ResourceSource,
+    Corpse,
+    RecipeWorkstation,
+}
+
+/// Why a candidate evidence contributor was excluded.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CandidateEvidenceExclusionReason {
+    DepletedResourceSource,
+}
+
+/// One actionable contributor that made a candidate emittable.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CandidateEvidenceContributor {
+    pub kind: CandidateEvidenceKind,
+    pub place: EntityId,
+    pub entity: EntityId,
+}
+
+/// One actionable contributor that was considered but excluded.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CandidateEvidenceExclusion {
+    pub kind: CandidateEvidenceKind,
+    pub place: EntityId,
+    pub entity: EntityId,
+    pub reason: CandidateEvidenceExclusionReason,
+}
+
+/// Typed candidate-evidence provenance for one grounded goal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CandidateEvidenceTrace {
+    pub goal: GoalKey,
+    pub contributors: Vec<CandidateEvidenceContributor>,
+    pub exclusions: Vec<CandidateEvidenceExclusion>,
+}
+
 // ── Stage 2: Plan Search ────────────────────────────────────────
 
 /// Trace of plan search attempts across candidates.
@@ -220,6 +263,31 @@ pub struct SearchExpansionSummary {
     /// Travel-pruning facts captured before successor construction when the
     /// expansion had spatially guided travel choices.
     pub travel_pruning: Option<TravelPruningTrace>,
+    /// Concrete goal-relevant / prerequisite guidance surfaces for this
+    /// expansion boundary, when any exist.
+    pub prerequisite_guidance: Option<PrerequisiteGuidanceTrace>,
+}
+
+/// Why a prerequisite place was excluded from guidance.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum PrerequisiteExclusionReason {
+    DepletedResourceSource,
+}
+
+/// One prerequisite place excluded from guidance.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct PrerequisiteExclusionTrace {
+    pub place: EntityId,
+    pub commodity: CommodityKind,
+    pub reason: PrerequisiteExclusionReason,
+}
+
+/// Concrete guidance members used at one expansion boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PrerequisiteGuidanceTrace {
+    pub goal_relevant_places: Vec<EntityId>,
+    pub prerequisite_places: Vec<EntityId>,
+    pub exclusions: Vec<PrerequisiteExclusionTrace>,
 }
 
 /// Remaining travel distance for one travel successor considered at an
@@ -266,7 +334,7 @@ pub enum PlanSearchOutcome {
 }
 
 /// Summary of one planned step for trace output.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlannedStepSummary {
     pub action_def_id: ActionDefId,
     pub action_name: String,
@@ -290,6 +358,9 @@ pub struct SelectionTrace {
     pub goal_switch: Option<GoalSwitchSummary>,
     /// The previous goal (if any) for context.
     pub previous_goal: Option<GoalKey>,
+    /// Explicit plan replacement summary when a fresh search displaces the
+    /// current branch.
+    pub plan_replacement: Option<SelectedPlanReplacementTrace>,
 }
 
 /// Canonical summary of the final plan the agent is following after selection.
@@ -328,6 +399,23 @@ pub struct GoalSwitchSummary {
     pub from: GoalKey,
     pub to: GoalKey,
     pub kind: GoalSwitchKind,
+}
+
+/// How a fresh search replaced the current branch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedPlanReplacementKind {
+    SameGoalBranchReplanned,
+    GoalChanged,
+}
+
+/// Summary of a current-branch replacement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedPlanReplacementTrace {
+    pub previous_goal: GoalKey,
+    pub new_goal: GoalKey,
+    pub previous_next_step: Option<PlannedStepSummary>,
+    pub new_next_step: Option<PlannedStepSummary>,
+    pub kind: SelectedPlanReplacementKind,
 }
 
 // ── Stage 4: Execution Outcome ──────────────────────────────────
@@ -838,6 +926,7 @@ mod tests {
                 plan_continued,
                 candidates: CandidateTrace {
                     generated,
+                    evidence: Vec::new(),
                     ranked,
                     suppressed,
                     zero_motive,
@@ -853,6 +942,7 @@ mod tests {
                     selected_plan_source,
                     goal_switch: None,
                     previous_goal: None,
+                    plan_replacement: None,
                 },
                 execution: ExecutionTrace {
                     enqueued_step: None,
@@ -1166,6 +1256,7 @@ mod tests {
             plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![],
+                evidence: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::Sleep),
                     priority_class: GoalPriorityClass::Critical,
@@ -1217,6 +1308,7 @@ mod tests {
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
                 previous_goal: None,
+                plan_replacement: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -1247,6 +1339,7 @@ mod tests {
             plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![GoalKey::new(GoalKind::ReduceDanger)],
+                evidence: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::ReduceDanger),
                     priority_class: GoalPriorityClass::High,
@@ -1273,6 +1366,7 @@ mod tests {
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
                 previous_goal: None,
+                plan_replacement: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -1299,6 +1393,7 @@ mod tests {
                 generated: vec![GoalKey::new(GoalKind::ConsumeOwnedCommodity {
                     commodity: worldwake_core::CommodityKind::Bread,
                 })],
+                evidence: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::ConsumeOwnedCommodity {
                         commodity: worldwake_core::CommodityKind::Bread,
@@ -1336,6 +1431,7 @@ mod tests {
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
                 previous_goal: None,
+                plan_replacement: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -1427,6 +1523,7 @@ mod tests {
                     remaining_travel_ticks: 6,
                 }],
             }),
+            prerequisite_guidance: None,
         };
         assert_eq!(summary.depth, 0);
         assert_eq!(summary.remaining_travel_ticks, 4);

@@ -1,4 +1,7 @@
 use crate::{
+    decision_trace::{
+        PrerequisiteExclusionReason, PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace,
+    },
     derive_danger_pressure, enterprise::restock_gap_at_destination, pressure::DangerAssessment,
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
     PlanningState,
@@ -928,6 +931,111 @@ fn prerequisite_places_for_recipe_inputs<'a>(
         }
     }
     cap_places_by_travel_distance(state, actor, places, limit)
+}
+
+pub(crate) fn trace_prerequisite_guidance(
+    goal: &GoalKind,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+    budget: &PlanningBudget,
+) -> Option<PrerequisiteGuidanceTrace> {
+    let goal_relevant_places = goal.goal_relevant_places(state, recipes);
+    let prerequisite_places = goal.prerequisite_places(state, recipes, budget);
+    let exclusions = prerequisite_depleted_source_exclusions(goal, state, recipes);
+
+    (!goal_relevant_places.is_empty() || !prerequisite_places.is_empty() || !exclusions.is_empty())
+        .then_some(PrerequisiteGuidanceTrace {
+            goal_relevant_places,
+            prerequisite_places,
+            exclusions,
+        })
+}
+
+fn prerequisite_depleted_source_exclusions(
+    goal: &GoalKind,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+) -> Vec<PrerequisiteExclusionTrace> {
+    let actor = state.snapshot().actor();
+    let mut exclusions = BTreeSet::new();
+    match goal {
+        GoalKind::TreatWounds { .. } => {
+            exclusions.extend(depleted_source_exclusions_for_acquisition(
+                state,
+                CommodityKind::Medicine,
+            ));
+        }
+        GoalKind::ProduceCommodity { recipe_id } => {
+            let Some(recipe) = recipes.get(*recipe_id) else {
+                return Vec::new();
+            };
+            exclusions.extend(missing_input_depleted_source_exclusions(
+                state,
+                actor,
+                std::iter::once(recipe),
+            ));
+        }
+        GoalKind::RestockCommodity { commodity } => {
+            exclusions.extend(missing_input_depleted_source_exclusions(
+                state,
+                actor,
+                recipes
+                    .iter()
+                    .filter(|(_, recipe)| {
+                        recipe
+                            .outputs
+                            .iter()
+                            .any(|(output, _)| *output == *commodity)
+                    })
+                    .map(|(_, recipe)| recipe),
+            ));
+        }
+        _ => {}
+    }
+    exclusions.into_iter().collect()
+}
+
+fn missing_input_depleted_source_exclusions<'a>(
+    state: &PlanningState<'_>,
+    actor: EntityId,
+    recipes: impl Iterator<Item = &'a RecipeDefinition>,
+) -> BTreeSet<PrerequisiteExclusionTrace> {
+    let mut exclusions = BTreeSet::new();
+    for recipe in recipes {
+        for (commodity, required_quantity) in &recipe.inputs {
+            if state.commodity_quantity(actor, *commodity) >= *required_quantity {
+                continue;
+            }
+            exclusions.extend(depleted_source_exclusions_for_acquisition(state, *commodity));
+        }
+    }
+    exclusions
+}
+
+fn depleted_source_exclusions_for_acquisition(
+    state: &PlanningState<'_>,
+    commodity: CommodityKind,
+) -> BTreeSet<PrerequisiteExclusionTrace> {
+    if !places_with_loose_lots(state, commodity).is_empty() {
+        return BTreeSet::new();
+    }
+
+    let mut exclusions = BTreeSet::new();
+    for &entity_id in state.snapshot().entities.keys() {
+        if state
+            .resource_source(entity_id)
+            .is_some_and(|source| source.commodity == commodity && source.available_quantity == Quantity(0))
+        {
+            if let Some(place) = state.effective_place(entity_id) {
+                exclusions.insert(PrerequisiteExclusionTrace {
+                    place,
+                    commodity,
+                    reason: PrerequisiteExclusionReason::DepletedResourceSource,
+                });
+            }
+        }
+    }
+    exclusions
 }
 
 fn append_unique_places(existing: &mut Vec<EntityId>, new_places: Vec<EntityId>) {

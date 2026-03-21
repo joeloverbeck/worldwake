@@ -22,7 +22,8 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{
-    AgentTickDriver, DecisionOutcome, PlannerOpKind, PlanningBudget, SelectedPlanSource,
+    AgentTickDriver, CandidateEvidenceExclusionReason, CandidateEvidenceKind, DecisionOutcome,
+    PlannerOpKind, PlanningBudget, SelectedPlanReplacementKind, SelectedPlanSource,
 };
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
@@ -925,6 +926,25 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         }),
         "tick 0 plan should route through Orchard Farm from the stale prerequisite belief"
     );
+    let initial_candidate_trace = tick_zero_planning
+        .candidates
+        .evidence
+        .iter()
+        .find(|trace| {
+            matches!(
+                trace.goal.kind,
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread
+                }
+            )
+        })
+        .expect("initial stale branch should record typed candidate evidence provenance");
+    assert!(initial_candidate_trace.contributors.iter().any(|contributor| {
+        contributor.kind == CandidateEvidenceKind::ResourceSource
+            && contributor.entity == orchard_source
+            && contributor.place == ORCHARD_FARM
+    }));
+
     let fallback_replan_trace = trace_sink
         .traces_for(merchant)
         .into_iter()
@@ -966,12 +986,84 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         replan_planning.selection.selected.as_ref().map(|goal| &goal.kind),
         Some(GoalKind::RestockCommodity { commodity }) if *commodity == CommodityKind::Bread
     ));
+    let replacement = replan_planning
+        .selection
+        .plan_replacement
+        .as_ref()
+        .expect("fallback replan should expose same-goal branch replacement provenance");
+    assert_eq!(
+        replacement.kind,
+        SelectedPlanReplacementKind::SameGoalBranchReplanned
+    );
+    assert_eq!(replacement.previous_goal, replacement.new_goal);
+    assert_ne!(
+        replacement
+            .previous_next_step
+            .as_ref()
+            .expect("replacement should expose the invalidated branch step")
+            .targets,
+        replacement
+            .new_next_step
+            .as_ref()
+            .expect("replacement should expose the fresh branch step")
+            .targets
+    );
     assert!(
         replanned_plan.steps.iter().any(|step| {
             step.op_kind == PlannerOpKind::Travel && step.targets == vec![bandit_camp]
         }),
         "post-failure plan should route through the fallback firewood source"
     );
+    let fallback_candidate_trace = replan_planning
+        .candidates
+        .evidence
+        .iter()
+        .find(|trace| {
+            matches!(
+                trace.goal.kind,
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread
+                }
+            )
+        })
+        .expect("fallback replan should record typed candidate evidence provenance");
+    assert!(fallback_candidate_trace.contributors.iter().any(|contributor| {
+        contributor.kind == CandidateEvidenceKind::ResourceSource
+            && contributor.entity == bandit_source
+            && contributor.place == bandit_camp
+    }));
+    assert!(fallback_candidate_trace.exclusions.iter().any(|exclusion| {
+        exclusion.kind == CandidateEvidenceKind::ResourceSource
+            && exclusion.entity == orchard_source
+            && exclusion.place == ORCHARD_FARM
+            && exclusion.reason == CandidateEvidenceExclusionReason::DepletedResourceSource
+    }));
+    let selected_attempt = replan_planning
+        .planning
+        .attempts
+        .iter()
+        .find(|attempt| {
+            matches!(
+                attempt.goal.kind,
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread
+                }
+            )
+        })
+        .expect("fallback replan should keep the selected goal's search attempt");
+    let root_guidance = selected_attempt
+        .expansion_summaries
+        .first()
+        .and_then(|summary| summary.prerequisite_guidance.as_ref())
+        .expect("search trace should expose root prerequisite guidance");
+    assert!(
+        root_guidance.prerequisite_places.contains(&bandit_camp),
+        "fallback guidance should keep the live Bandit Camp prerequisite place"
+    );
+    assert!(root_guidance.exclusions.iter().any(|exclusion| {
+        exclusion.place == ORCHARD_FARM
+            && exclusion.commodity == CommodityKind::Firewood
+    }));
 
     assert!(
         agent_belief_about(&h.world, merchant, orchard_source)

@@ -1,3 +1,4 @@
+use crate::goal_model::trace_prerequisite_guidance;
 use crate::planner_ops::planner_only_candidates;
 use crate::{
     apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
@@ -224,6 +225,7 @@ pub fn search_plan(
                                 non_terminal_after_beam: non_terminal_before_beam, // no truncation happened yet
                                 found_goal_satisfied,
                                 travel_pruning: travel_pruning.clone(),
+                                prerequisite_guidance: combined_places.guidance_trace.clone(),
                             });
                         }
                         return PlanSearchResult::Found(PlannedPlan::new(
@@ -261,6 +263,7 @@ pub fn search_plan(
                 non_terminal_after_beam,
                 found_goal_satisfied,
                 travel_pruning,
+                prerequisite_guidance: combined_places.guidance_trace,
             });
         }
 
@@ -307,6 +310,7 @@ fn compute_heuristic(
 struct CombinedRelevantPlaces {
     places: Vec<EntityId>,
     prerequisite_places_count: u16,
+    guidance_trace: Option<crate::decision_trace::PrerequisiteGuidanceTrace>,
 }
 
 fn combined_relevant_places(
@@ -315,6 +319,7 @@ fn combined_relevant_places(
     recipes: &RecipeRegistry,
     budget: &PlanningBudget,
 ) -> CombinedRelevantPlaces {
+    let guidance_trace = trace_prerequisite_guidance(&goal.key.kind, state, recipes, budget);
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
     let base_len = places.len();
     let prerequisite_places = goal.key.kind.prerequisite_places(state, recipes, budget);
@@ -327,6 +332,7 @@ fn combined_relevant_places(
     CombinedRelevantPlaces {
         places,
         prerequisite_places_count,
+        guidance_trace,
     }
 }
 
@@ -5168,6 +5174,13 @@ mod tests {
         assert_eq!(first.depth, 0);
         assert_eq!(first.combined_places_count, 2);
         assert_eq!(first.prerequisite_places_count, 1);
+        let guidance = first
+            .prerequisite_guidance
+            .as_ref()
+            .expect("root expansion should preserve prerequisite guidance members");
+        assert_eq!(guidance.goal_relevant_places, vec![patient_place]);
+        assert_eq!(guidance.prerequisite_places, vec![medicine_place]);
+        assert!(guidance.exclusions.is_empty());
         assert!(
             first.travel_pruning.is_some(),
             "root expansion should record travel pruning context"

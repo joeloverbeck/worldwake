@@ -3,8 +3,9 @@ use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
     GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectedPlanSearchProvenance,
-    SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
+    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectedPlanReplacementKind,
+    SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
+    SelectedPlanTrace, SelectionTrace,
 };
 use crate::failure_handling::ExecutionFailure;
 use crate::search::PlanSearchResult;
@@ -411,6 +412,7 @@ fn process_agent(
         tracing.then(|| {
             let candidate_trace = CandidateTrace {
                 generated: read_result.generated_keys,
+                evidence: read_result.candidate_evidence,
                 ranked: ranked_candidates
                     .iter()
                     .map(summarize_ranked_goal)
@@ -434,6 +436,7 @@ fn process_agent(
                     selected_plan_source: None,
                     goal_switch: None,
                     previous_goal: None,
+                    plan_replacement: None,
                 }),
                 execution: execution_trace.unwrap_or(ExecutionTrace {
                     enqueued_step: None,
@@ -528,6 +531,34 @@ fn summarize_search_provenance(
         expansions_used: expansions.len() as u16,
         root_remaining_travel_ticks: root.map_or(0, |summary| summary.remaining_travel_ticks),
         root_travel_pruning: root.and_then(|summary| summary.travel_pruning.clone()),
+    })
+}
+
+fn summarize_plan_replacement(
+    runtime: &AgentDecisionRuntime,
+    selected_goal: worldwake_core::GoalKey,
+    selected_plan: &PlannedPlan,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+) -> Option<SelectedPlanReplacementTrace> {
+    let previous_goal = runtime.current_goal?;
+    let previous_next_step = current_step(runtime).map(|step| summarize_step(step, action_defs));
+    let new_next_step = selected_plan
+        .steps
+        .first()
+        .map(|step| summarize_step(step, action_defs));
+    if previous_goal == selected_goal && previous_next_step == new_next_step {
+        return None;
+    }
+    Some(SelectedPlanReplacementTrace {
+        previous_goal,
+        new_goal: selected_goal,
+        previous_next_step,
+        new_next_step,
+        kind: if previous_goal == selected_goal {
+            SelectedPlanReplacementKind::SameGoalBranchReplanned
+        } else {
+            SelectedPlanReplacementKind::GoalChanged
+        },
     })
 }
 
@@ -723,6 +754,8 @@ struct ReadPhaseResult {
     dirty_reasons: Vec<DirtyReason>,
     /// Generated candidate keys (before ranking filter).
     generated_keys: Vec<worldwake_core::GoalKey>,
+    /// Typed candidate-evidence provenance keyed by generated goal.
+    candidate_evidence: Vec<crate::CandidateEvidenceTrace>,
     /// Goals suppressed by situational conditions.
     suppressed: Vec<worldwake_core::GoalKey>,
     /// Goals with zero motive score.
@@ -794,6 +827,12 @@ fn refresh_runtime_for_read_phase(
         phase.travel_horizon,
     );
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
+    let candidate_evidence = candidates
+        .diagnostics
+        .evidence
+        .values()
+        .cloned()
+        .collect();
     let dc = crate::build_decision_context(&view, agent);
     let outcome = rank_candidates(
         &candidates.candidates,
@@ -809,6 +848,7 @@ fn refresh_runtime_for_read_phase(
         ranked: outcome.ranked,
         dirty_reasons,
         generated_keys,
+        candidate_evidence,
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,
@@ -1260,6 +1300,7 @@ fn plan_and_validate_next_step_traced(
         selected_plan_source: None,
         goal_switch: None,
         previous_goal,
+        plan_replacement: None,
     };
     let mut plan_continued = false;
 
@@ -1365,6 +1406,12 @@ fn plan_and_validate_next_step_traced(
                 search_provenance,
             ));
             selection_trace.selected_plan_source = Some(selected_plan_source);
+            selection_trace.plan_replacement = summarize_plan_replacement(
+                runtime,
+                selected_goal,
+                &selected_plan,
+                action_defs,
+            );
 
             // Detect goal switch.
             if let Some(prev) = previous_goal {
@@ -2056,16 +2103,17 @@ mod tests {
         determine_selected_plan_source, effective_goal_switch_margin,
         facility_queue_patience_exhausted, handle_recoverable_travel_step_blockage,
         persist_blocked_memory, plan_and_validate_next_step, plan_and_validate_next_step_traced,
-        refresh_runtime_for_read_phase, resolve_step_targets,
+        refresh_runtime_for_read_phase, resolve_step_targets, summarize_plan_replacement,
         update_journey_fields_for_adopted_plan, update_runtime_observation_snapshot,
         AgentTickDriver, ReadPhaseContext,
     };
     use crate::PlanningBudget;
     use crate::{
-        build_semantics_table, CommodityPurpose, DirtyReason, ExpectedMaterialization, GoalKey,
-        GoalKind, JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef, QueuedFacilityIntent, RankedGoal,
-        RankedGoalProvenance,
+        build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtyReason,
+        ExpectedMaterialization, GoalKey, GoalKind, JourneyCommitmentState,
+        JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef, QueuedFacilityIntent, RankedGoal, RankedGoalProvenance,
+        SelectedPlanReplacementKind,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -5634,6 +5682,73 @@ mod tests {
             continued_step
                 .expect("snapshot continuation should keep current step")
                 .op_kind
+        );
+    }
+
+    #[test]
+    fn summarize_plan_replacement_records_same_goal_branch_replan() {
+        let goal = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let orchard_source = entity(12);
+        let bandit_camp = entity(22);
+        let current_plan = PlannedPlan::new(
+            goal,
+            vec![
+                travel_step(1, entity(11)),
+                PlannedStep {
+                    def_id: ActionDefId(2),
+                    targets: vec![PlanningEntityRef::Authoritative(orchard_source)],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Harvest,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+            ],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let selected_plan = PlannedPlan::new(
+            goal,
+            vec![travel_step(3, bandit_camp)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(current_plan),
+            current_step_index: 1,
+            ..AgentDecisionRuntime::default()
+        };
+
+        let replacement = summarize_plan_replacement(
+            &runtime,
+            goal,
+            &selected_plan,
+            &ActionDefRegistry::new(),
+        )
+        .expect("changed same-goal branch should produce replacement provenance");
+
+        assert_eq!(
+            replacement.kind,
+            SelectedPlanReplacementKind::SameGoalBranchReplanned
+        );
+        assert_eq!(replacement.previous_goal, goal);
+        assert_eq!(replacement.new_goal, goal);
+        assert_eq!(
+            replacement
+                .previous_next_step
+                .as_ref()
+                .expect("current branch should expose its next step")
+                .targets,
+            vec![orchard_source]
+        );
+        assert_eq!(
+            replacement
+                .new_next_step
+                .as_ref()
+                .expect("fresh branch should expose its next step")
+                .targets,
+            vec![bandit_camp]
         );
     }
 

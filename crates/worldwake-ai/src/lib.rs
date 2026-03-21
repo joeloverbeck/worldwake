@@ -33,13 +33,17 @@ pub use decision_runtime::{
     JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
 };
 pub use decision_trace::{
-    ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
-    DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
-    GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PlanAttemptTrace,
-    PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace,
-    PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-    RankedGoalSummary, SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace,
-    SelectionTrace, SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace,
+    ActionStartFailureSummary, AgentDecisionTrace, BindingRejection,
+    CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
+    CandidateEvidenceKind, CandidateEvidenceTrace, CandidateTrace, DecisionOutcome,
+    DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace, GoalHistoryEntry,
+    GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome,
+    PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,
+    PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
+    PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, RankedGoalSummary,
+    SelectedPlanReplacementKind, SelectedPlanReplacementTrace, SelectedPlanSearchProvenance,
+    SelectedPlanSource, SelectedPlanTrace, SelectionTrace, SocialCandidateOmission,
+    TravelPruningTrace, TravelSuccessorTrace,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
