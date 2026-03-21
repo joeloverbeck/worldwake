@@ -4,7 +4,9 @@
 //! and test query purposes. See spec S08 for design rationale.
 
 use std::fmt::Write as _;
-use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick};
+use worldwake_core::{
+    ActionDefId, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick,
+};
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
@@ -824,10 +826,10 @@ fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
         .next_step
         .as_ref()
         .map_or_else(|| "none".to_string(), |step| format!("{:?}", step.op_kind));
-    let search = selected_plan
-        .search_provenance
-        .as_ref()
-        .map_or_else(|| "none".to_string(), format_selected_plan_search_provenance);
+    let search = selected_plan.search_provenance.as_ref().map_or_else(
+        || "none".to_string(),
+        format_selected_plan_search_provenance,
+    );
     format!(
         "{:?}[steps={}, next_index={:?}, next_step={next_step}, path={step_kinds}, search={search}]",
         selected_plan.terminal_kind,
@@ -836,9 +838,7 @@ fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
     )
 }
 
-fn format_selected_plan_search_provenance(
-    provenance: &SelectedPlanSearchProvenance,
-) -> String {
+fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvenance) -> String {
     let pruning = provenance.root_travel_pruning.as_ref().map_or_else(
         || "none".to_string(),
         |trace| {
@@ -866,10 +866,7 @@ fn format_selected_plan_search_provenance(
                 .join(",");
             format!(
                 "from={:?}@{}, kept=[{}], pruned=[{}]",
-                trace.current_place,
-                trace.current_remaining_travel_ticks,
-                retained,
-                pruned,
+                trace.current_place, trace.current_remaining_travel_ticks, retained, pruned,
             )
         },
     );

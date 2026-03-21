@@ -1,9 +1,8 @@
 use crate::{
     decision_trace::{
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-        CandidateEvidenceKind, CandidateEvidenceTrace,
-        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-        SocialCandidateOmission,
+        CandidateEvidenceKind, CandidateEvidenceTrace, PoliticalCandidateOmission,
+        PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
     },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
@@ -3169,8 +3168,10 @@ mod tests {
             .extend([agent, mill, depleted_source, stocked_source]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(mill, EntityKind::Facility);
-        view.entity_kinds.insert(depleted_source, EntityKind::Facility);
-        view.entity_kinds.insert(stocked_source, EntityKind::Facility);
+        view.entity_kinds
+            .insert(depleted_source, EntityKind::Facility);
+        view.entity_kinds
+            .insert(stocked_source, EntityKind::Facility);
         view.effective_places.insert(agent, origin);
         view.effective_places.insert(mill, origin);
         view.effective_places.insert(depleted_source, orchard);
@@ -3268,8 +3269,10 @@ mod tests {
             .extend([agent, mill, depleted_source, stocked_source]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(mill, EntityKind::Facility);
-        view.entity_kinds.insert(depleted_source, EntityKind::Facility);
-        view.entity_kinds.insert(stocked_source, EntityKind::Facility);
+        view.entity_kinds
+            .insert(depleted_source, EntityKind::Facility);
+        view.entity_kinds
+            .insert(stocked_source, EntityKind::Facility);
         view.effective_places.insert(agent, origin);
         view.effective_places.insert(mill, origin);
         view.effective_places.insert(depleted_source, orchard);

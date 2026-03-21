@@ -408,7 +408,10 @@ mod tests {
     fn find_deprivation_wound_returns_none_for_empty_list() {
         let mut wounds = WoundList::default();
 
-        assert_eq!(wounds.find_deprivation_wound(DeprivationKind::Starvation), None);
+        assert_eq!(
+            wounds.find_deprivation_wound(DeprivationKind::Starvation),
+            None
+        );
         assert_eq!(
             wounds.find_deprivation_wound_mut(DeprivationKind::Starvation),
             None

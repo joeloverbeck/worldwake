@@ -14,15 +14,14 @@ use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
     to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BlockedIntentMemory,
-    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance,
-    CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
-    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
-    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
-    HomeostaticNeeds, KnownRecipes, LoadUnits, MetabolismProfile, OfficeData,
-    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId,
-    RelationDelta, RelationValue, ResourceSource, Seed, StateDelta, SuccessionLaw,
-    TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
+    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
+    ComponentDelta, ComponentKind, ComponentValue, ControlSource, DeprivationExposure,
+    DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog, EventRecord,
+    EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
+    FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille, PrototypePlace,
+    Quantity, RecipeId, RelationDelta, RelationValue, ResourceSource, Seed, StateDelta,
+    SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
     WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{

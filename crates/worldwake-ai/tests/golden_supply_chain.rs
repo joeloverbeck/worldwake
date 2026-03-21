@@ -28,12 +28,10 @@ use worldwake_ai::{
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
-    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind,
-    DemandMemory, DemandObservation, DemandObservationReason, GoalKind, HomeostaticNeeds,
-    KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
-    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
-    UtilityProfile,
-    WorkstationTag,
+    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
+    DemandObservationReason, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::{ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
@@ -428,12 +426,14 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
 
         let firewood_authority =
             total_authoritative_commodity_quantity(&h.world, CommodityKind::Firewood);
-        let bread_authority = total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+        let bread_authority =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
         let live_firewood = total_live_lot_quantity(&h.world, CommodityKind::Firewood);
         let live_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
 
         merchant_visited_orchard |= h.world.effective_place(merchant) == Some(ORCHARD_FARM);
-        merchant_acquired_firewood |= h.agent_commodity_qty(merchant, CommodityKind::Firewood) > Quantity(0);
+        merchant_acquired_firewood |=
+            h.agent_commodity_qty(merchant, CommodityKind::Firewood) > Quantity(0);
         bread_restocked_at_home_market |= h
             .world
             .entities_effectively_at(general_store)
@@ -455,8 +455,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         );
         verify_authoritative_conservation(&h.world, CommodityKind::Firewood, firewood_authority)
             .unwrap();
-        verify_authoritative_conservation(&h.world, CommodityKind::Bread, bread_authority)
-            .unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Bread, bread_authority).unwrap();
         verify_live_lot_conservation(&h.world, CommodityKind::Firewood, live_firewood).unwrap();
         verify_live_lot_conservation(&h.world, CommodityKind::Bread, live_bread).unwrap();
 
@@ -547,16 +546,12 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         merchant_generated_and_selected_restock,
         "merchant should generate and select RestockCommodity(Bread) in the first 20 ticks"
     );
-    let saw_prerequisite_guidance = tick_zero_planning
-        .planning
-        .attempts
-        .iter()
-        .any(|attempt| {
-            attempt
-                .expansion_summaries
-                .iter()
-                .any(|summary| summary.prerequisite_places_count > 0)
-        });
+    let saw_prerequisite_guidance = tick_zero_planning.planning.attempts.iter().any(|attempt| {
+        attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.prerequisite_places_count > 0)
+    });
     assert!(
         saw_prerequisite_guidance,
         "craft-restock search should record non-empty prerequisite places in expansion summaries"
@@ -842,7 +837,8 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
 
         let firewood_authority =
             total_authoritative_commodity_quantity(&h.world, CommodityKind::Firewood);
-        let bread_authority = total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+        let bread_authority =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
         let live_firewood = total_live_lot_quantity(&h.world, CommodityKind::Firewood);
         let live_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
 
@@ -861,8 +857,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
 
         verify_authoritative_conservation(&h.world, CommodityKind::Firewood, firewood_authority)
             .unwrap();
-        verify_authoritative_conservation(&h.world, CommodityKind::Bread, bread_authority)
-            .unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Bread, bread_authority).unwrap();
         verify_live_lot_conservation(&h.world, CommodityKind::Firewood, live_firewood).unwrap();
         verify_live_lot_conservation(&h.world, CommodityKind::Bread, live_bread).unwrap();
 
@@ -939,37 +934,45 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
             )
         })
         .expect("initial stale branch should record typed candidate evidence provenance");
-    assert!(initial_candidate_trace.contributors.iter().any(|contributor| {
-        contributor.kind == CandidateEvidenceKind::ResourceSource
-            && contributor.entity == orchard_source
-            && contributor.place == ORCHARD_FARM
-    }));
+    assert!(initial_candidate_trace
+        .contributors
+        .iter()
+        .any(|contributor| {
+            contributor.kind == CandidateEvidenceKind::ResourceSource
+                && contributor.entity == orchard_source
+                && contributor.place == ORCHARD_FARM
+        }));
 
-    let fallback_replan_trace = trace_sink
-        .traces_for(merchant)
-        .into_iter()
-        .find(|trace| match &trace.outcome {
-            DecisionOutcome::Planning(planning) => {
-                trace.tick > Tick(0)
-                    && planning.selection.selected_plan_source
-                        == Some(SelectedPlanSource::SearchSelection)
-                    && planning.selection.selected.as_ref().is_some_and(|goal| {
-                        matches!(
-                            goal.kind,
-                            GoalKind::RestockCommodity {
-                                commodity: CommodityKind::Bread
-                            }
-                        )
-                    })
-                    && planning.selection.selected_plan.as_ref().is_some_and(|plan| {
-                        plan.steps.iter().any(|step| {
-                            step.op_kind == PlannerOpKind::Travel
-                                && step.targets == vec![bandit_camp]
+    let fallback_replan_trace =
+        trace_sink
+            .traces_for(merchant)
+            .into_iter()
+            .find(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => {
+                    trace.tick > Tick(0)
+                        && planning.selection.selected_plan_source
+                            == Some(SelectedPlanSource::SearchSelection)
+                        && planning.selection.selected.as_ref().is_some_and(|goal| {
+                            matches!(
+                                goal.kind,
+                                GoalKind::RestockCommodity {
+                                    commodity: CommodityKind::Bread
+                                }
+                            )
                         })
-                    })
-            }
-            _ => false,
-        });
+                        && planning
+                            .selection
+                            .selected_plan
+                            .as_ref()
+                            .is_some_and(|plan| {
+                                plan.steps.iter().any(|step| {
+                                    step.op_kind == PlannerOpKind::Travel
+                                        && step.targets == vec![bandit_camp]
+                                })
+                            })
+                }
+                _ => false,
+            });
     let replan_planning = match &fallback_replan_trace
         .expect("corrected local belief should trigger a fresh fallback replan toward Bandit Camp")
         .outcome
@@ -1027,11 +1030,14 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
             )
         })
         .expect("fallback replan should record typed candidate evidence provenance");
-    assert!(fallback_candidate_trace.contributors.iter().any(|contributor| {
-        contributor.kind == CandidateEvidenceKind::ResourceSource
-            && contributor.entity == bandit_source
-            && contributor.place == bandit_camp
-    }));
+    assert!(fallback_candidate_trace
+        .contributors
+        .iter()
+        .any(|contributor| {
+            contributor.kind == CandidateEvidenceKind::ResourceSource
+                && contributor.entity == bandit_source
+                && contributor.place == bandit_camp
+        }));
     assert!(fallback_candidate_trace.exclusions.iter().any(|exclusion| {
         exclusion.kind == CandidateEvidenceKind::ResourceSource
             && exclusion.entity == orchard_source
@@ -1061,8 +1067,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         "fallback guidance should keep the live Bandit Camp prerequisite place"
     );
     assert!(root_guidance.exclusions.iter().any(|exclusion| {
-        exclusion.place == ORCHARD_FARM
-            && exclusion.commodity == CommodityKind::Firewood
+        exclusion.place == ORCHARD_FARM && exclusion.commodity == CommodityKind::Firewood
     }));
 
     assert!(

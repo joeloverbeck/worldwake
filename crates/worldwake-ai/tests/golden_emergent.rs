@@ -352,9 +352,10 @@ fn run_deprivation_wound_worsening(seed: Seed) -> (StateHash, StateHash) {
             },
         )
         .unwrap();
-        txn.set_component_drive_thresholds(agent, thresholds).unwrap();
+        txn.set_component_drive_thresholds(agent, thresholds)
+            .unwrap();
         txn.set_component_combat_profile(agent, deprivation_worsening_combat_profile())
-        .unwrap();
+            .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -420,7 +421,10 @@ fn run_deprivation_wound_worsening(seed: Seed) -> (StateHash, StateHash) {
         "scenario should reach a second starvation threshold fire that worsens the same wound"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]

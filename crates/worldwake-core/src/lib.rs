@@ -46,6 +46,7 @@ pub mod facility_queue;
 pub mod factions;
 pub mod goal;
 pub mod ids;
+pub mod institutional;
 pub mod items;
 pub mod load;
 pub mod needs;
@@ -106,6 +107,11 @@ pub use facility_queue::{
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
+pub use institutional::{
+    BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
+    InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
+};
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
     CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,

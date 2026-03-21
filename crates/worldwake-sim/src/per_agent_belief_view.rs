@@ -644,7 +644,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .chain(self.world.hostile_towards(agent))
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
             .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| self.believed_entity(*entity).is_some_and(|belief| belief.alive))
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
+            })
             .collect::<BTreeSet<_>>();
         hostiles.extend(self.current_attackers_of(agent));
         hostiles.into_iter().collect()
@@ -660,7 +663,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .into_iter()
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
             .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| self.believed_entity(*entity).is_some_and(|belief| belief.alive))
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
+            })
             .collect()
     }
 

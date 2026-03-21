@@ -257,7 +257,10 @@ mod tests {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
         fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
-            self.hostile_targets.get(&agent).cloned().unwrap_or_default()
+            self.hostile_targets
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
         }
         fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
             Vec::new()

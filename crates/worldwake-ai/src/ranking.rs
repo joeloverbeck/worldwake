@@ -8,8 +8,7 @@ use crate::{
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, ThresholdBand, Tick,
-    UtilityProfile,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -91,7 +90,12 @@ pub fn rank_candidates(
         let provenance = goal_ranking_provenance(candidate, &context, recipes);
         let scored = RankedGoal {
             grounded: candidate.clone(),
-            priority_class: ranked_priority_class(candidate, &context, recipes, provenance.as_ref()),
+            priority_class: ranked_priority_class(
+                candidate,
+                &context,
+                recipes,
+                provenance.as_ref(),
+            ),
             motive_score: ranked_motive_score(candidate, &context, recipes, provenance.as_ref()),
             provenance,
         };
@@ -192,9 +196,9 @@ fn goal_ranking_provenance(
             false,
         )
         .map(RankedGoalProvenance::Drive),
-        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
-            Some(RankedGoalProvenance::Danger(context.danger_assessment.clone()))
-        }
+        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => Some(
+            RankedGoalProvenance::Danger(context.danger_assessment.clone()),
+        ),
         _ => None,
     }
 }
@@ -386,11 +390,8 @@ fn drive_provenance_from_inputs(
     motive_inputs: Vec<RankedDriveMotiveInput>,
 ) -> RankedDriveGoalProvenance {
     let recovery_relevant = motive_inputs.iter().any(|input| input.recovery_relevant);
-    let final_priority_class = promote_for_clotted_wound_recovery(
-        base_priority_class,
-        context,
-        recovery_relevant,
-    );
+    let final_priority_class =
+        promote_for_clotted_wound_recovery(base_priority_class, context, recovery_relevant);
     RankedDriveGoalProvenance {
         base_priority_class,
         final_priority_class,
@@ -580,9 +581,8 @@ fn self_consume_provenance(
             recovery_relevant: factor.recovery_relevant,
         })
         .collect::<Vec<_>>();
-    (!motive_inputs.is_empty()).then(|| {
-        drive_provenance_from_inputs(context, base_priority_class, motive_inputs)
-    })
+    (!motive_inputs.is_empty())
+        .then(|| drive_provenance_from_inputs(context, base_priority_class, motive_inputs))
 }
 
 fn recipe_output_provenance(
@@ -730,8 +730,8 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 mod tests {
     use super::{build_decision_context, rank_candidates};
     use crate::{
-        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind,
-        RankedGoalProvenance, RankedPriorityAdjustment,
+        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
+        RankedPriorityAdjustment,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -2068,7 +2068,10 @@ mod tests {
                 );
                 assert_eq!(provenance.motive_inputs.len(), 1);
                 assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Hunger);
-                assert_eq!(provenance.motive_inputs[0].pressure, thresholds.hunger.high());
+                assert_eq!(
+                    provenance.motive_inputs[0].pressure,
+                    thresholds.hunger.high()
+                );
                 assert_eq!(provenance.motive_inputs[0].weight, utility().hunger_weight);
                 assert_eq!(
                     provenance.motive_inputs[0].score,
@@ -2116,8 +2119,10 @@ mod tests {
         let mut view = base_view(agent);
         let thresholds = DriveThresholds::default();
         let below_high = thresholds.hunger.high().saturating_sub(pm(1));
-        view.needs
-            .insert(agent, HomeostaticNeeds::new(below_high, pm(0), pm(0), pm(0), pm(0)));
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(below_high, pm(0), pm(0), pm(0), pm(0)),
+        );
         view.wounds.insert(agent, vec![wound(200)]);
 
         let ranked = rank(
@@ -2289,7 +2294,10 @@ mod tests {
                 assert_eq!(provenance.final_priority_class, GoalPriorityClass::High);
                 assert_eq!(provenance.adjustment, None);
                 assert_eq!(provenance.motive_inputs.len(), 1);
-                assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Dirtiness);
+                assert_eq!(
+                    provenance.motive_inputs[0].drive,
+                    RankedDriveKind::Dirtiness
+                );
                 assert_eq!(provenance.motive_inputs[0].pressure, pm(860));
                 assert_eq!(provenance.motive_inputs[0].weight, utility.dirtiness_weight);
                 assert_eq!(provenance.motive_inputs[0].score, 430_000);

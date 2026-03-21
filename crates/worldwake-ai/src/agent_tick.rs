@@ -827,12 +827,7 @@ fn refresh_runtime_for_read_phase(
         phase.travel_horizon,
     );
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
-    let candidate_evidence = candidates
-        .diagnostics
-        .evidence
-        .values()
-        .cloned()
-        .collect();
+    let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
     let dc = crate::build_decision_context(&view, agent);
     let outcome = rank_candidates(
         &candidates.candidates,
@@ -1406,12 +1401,8 @@ fn plan_and_validate_next_step_traced(
                 search_provenance,
             ));
             selection_trace.selected_plan_source = Some(selected_plan_source);
-            selection_trace.plan_replacement = summarize_plan_replacement(
-                runtime,
-                selected_goal,
-                &selected_plan,
-                action_defs,
-            );
+            selection_trace.plan_replacement =
+                summarize_plan_replacement(runtime, selected_goal, &selected_plan, action_defs);
 
             // Detect goal switch.
             if let Some(prev) = previous_goal {
@@ -5720,13 +5711,9 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
 
-        let replacement = summarize_plan_replacement(
-            &runtime,
-            goal,
-            &selected_plan,
-            &ActionDefRegistry::new(),
-        )
-        .expect("changed same-goal branch should produce replacement provenance");
+        let replacement =
+            summarize_plan_replacement(&runtime, goal, &selected_plan, &ActionDefRegistry::new())
+                .expect("changed same-goal branch should produce replacement provenance");
 
         assert_eq!(
             replacement.kind,

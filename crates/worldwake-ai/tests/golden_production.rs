@@ -297,9 +297,7 @@ fn assert_remote_recipe_input_tick_zero_plan(
     tick_0_trace
 }
 
-fn assert_remote_recipe_input_action_sequence(
-    baker_events: &[&worldwake_sim::ActionTraceEvent],
-) {
+fn assert_remote_recipe_input_action_sequence(baker_events: &[&worldwake_sim::ActionTraceEvent]) {
     let mut travel_commits = baker_events
         .iter()
         .filter_map(|event| {
@@ -441,7 +439,12 @@ fn drive_remote_acquire_recipe_input_scenario(
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
         });
 
-        if visited_orchard && acquired_firewood && bread_materialized && hunger_decreased && craft_committed {
+        if visited_orchard
+            && acquired_firewood
+            && bread_materialized
+            && hunger_decreased
+            && craft_committed
+        {
             break;
         }
     }

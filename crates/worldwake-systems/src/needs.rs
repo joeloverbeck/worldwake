@@ -314,12 +314,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind,
-        ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-        DeprivationExposure, DeprivationKind, DriveThresholds, EventLog, EventTag, EventView,
-        HomeostaticNeeds, MetabolismProfile, Permille, Quantity, Seed, Tick,
-        TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause,
-        WoundId, WoundList,
+        build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
+        DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EventLog, EventTag, EventView, HomeostaticNeeds,
+        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
@@ -1095,7 +1094,9 @@ mod tests {
         assert_eq!(worsened.id, initial_wound.id);
         assert_eq!(
             worsened.severity,
-            initial_wound.severity.saturating_add(thresholds.hunger.critical())
+            initial_wound
+                .severity
+                .saturating_add(thresholds.hunger.critical())
         );
     }
 

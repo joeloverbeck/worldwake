@@ -499,8 +499,11 @@ fn build_successor<'snapshot>(
     }
     let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
     let combined_places = combined_relevant_places(goal, &transition.state, recipes, budget);
-    let heuristic_ticks =
-        compute_heuristic(node.state.snapshot(), &transition.state, &combined_places.places);
+    let heuristic_ticks = compute_heuristic(
+        node.state.snapshot(),
+        &transition.state,
+        &combined_places.places,
+    );
     let mut steps = node.steps.clone();
     steps.push(step);
 
@@ -805,13 +808,12 @@ mod tests {
         BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
         CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
         DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
-        FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, Place,
-        PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId,
+        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, Place, PrototypePlace,
+        Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile,
+        TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
@@ -970,7 +972,9 @@ mod tests {
             false
         }
         fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds.get(&entity).is_some_and(|wounds| !wounds.is_empty())
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
         }
         fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
             self.needs.get(&agent).copied()
@@ -5167,7 +5171,10 @@ mod tests {
             Some(&mut summaries),
         );
 
-        assert!(result.is_found(), "planner should find a remote medicine plan");
+        assert!(
+            result.is_found(),
+            "planner should find a remote medicine plan"
+        );
         let first = summaries
             .first()
             .expect("tracing should record at least one expansion summary");

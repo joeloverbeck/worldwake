@@ -2719,7 +2719,9 @@ mod tests {
 
         assert_eq!(
             state.load_of_entity_ref(PlanningEntityRef::Authoritative(bread)),
-            Some(LoadUnits(worldwake_core::load_per_unit(CommodityKind::Bread).0))
+            Some(LoadUnits(
+                worldwake_core::load_per_unit(CommodityKind::Bread).0
+            ))
         );
     }
 

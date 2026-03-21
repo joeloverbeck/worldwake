@@ -3746,7 +3746,10 @@ mod tests {
         )
         .expect("removing the zero-severity wound should produce an updated list");
 
-        assert_eq!(next.wounds.iter().map(|w| w.id).collect::<Vec<_>>(), vec![WoundId(1), WoundId(3)]);
+        assert_eq!(
+            next.wounds.iter().map(|w| w.id).collect::<Vec<_>>(),
+            vec![WoundId(1), WoundId(3)]
+        );
         assert_eq!(
             next.wounds.iter().map(|w| w.severity).collect::<Vec<_>>(),
             vec![pm(500), pm(100)]

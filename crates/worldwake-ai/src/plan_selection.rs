@@ -33,9 +33,11 @@ pub fn select_best_plan(
         .collect::<Vec<_>>();
     available.sort_by(compare_ranked_plans);
     let best_plan = available.first()?.2.clone();
-    let has_current_goal_plan = current
-        .current_goal
-        .is_some_and(|goal| plans.iter().any(|(key, plan)| *key == goal && plan.is_some()));
+    let has_current_goal_plan = current.current_goal.is_some_and(|goal| {
+        plans
+            .iter()
+            .any(|(key, plan)| *key == goal && plan.is_some())
+    });
 
     let Some(current_plan) = current.current_plan.clone() else {
         return Some(best_plan);
@@ -555,7 +557,10 @@ mod tests {
                 400,
             ),
         ];
-        let plans = vec![(current_goal, None), (fallback_goal, Some(fallback_plan.clone()))];
+        let plans = vec![
+            (current_goal, None),
+            (fallback_goal, Some(fallback_plan.clone())),
+        ];
         let runtime = AgentDecisionRuntime {
             current_goal: Some(current_goal),
             current_plan: Some(current_plan),

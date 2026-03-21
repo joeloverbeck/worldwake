@@ -2,7 +2,9 @@ use crate::{
     decision_trace::{
         PrerequisiteExclusionReason, PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace,
     },
-    derive_danger_pressure, enterprise::restock_gap_at_destination, pressure::DangerAssessment,
+    derive_danger_pressure,
+    enterprise::restock_gap_at_destination,
+    pressure::DangerAssessment,
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
     PlanningState,
 };
@@ -1006,7 +1008,9 @@ fn missing_input_depleted_source_exclusions<'a>(
             if state.commodity_quantity(actor, *commodity) >= *required_quantity {
                 continue;
             }
-            exclusions.extend(depleted_source_exclusions_for_acquisition(state, *commodity));
+            exclusions.extend(depleted_source_exclusions_for_acquisition(
+                state, *commodity,
+            ));
         }
     }
     exclusions
@@ -1022,10 +1026,9 @@ fn depleted_source_exclusions_for_acquisition(
 
     let mut exclusions = BTreeSet::new();
     for &entity_id in state.snapshot().entities.keys() {
-        if state
-            .resource_source(entity_id)
-            .is_some_and(|source| source.commodity == commodity && source.available_quantity == Quantity(0))
-        {
+        if state.resource_source(entity_id).is_some_and(|source| {
+            source.commodity == commodity && source.available_quantity == Quantity(0)
+        }) {
             if let Some(place) = state.effective_place(entity_id) {
                 exclusions.insert(PrerequisiteExclusionTrace {
                     place,

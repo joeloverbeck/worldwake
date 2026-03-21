@@ -597,7 +597,10 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
             assert_eq!(provenance.final_priority_class, GoalPriorityClass::High);
             assert_eq!(provenance.adjustment, None);
             assert_eq!(provenance.motive_inputs.len(), 1);
-            assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Dirtiness);
+            assert_eq!(
+                provenance.motive_inputs[0].drive,
+                RankedDriveKind::Dirtiness
+            );
             assert_eq!(provenance.motive_inputs[0].pressure, pm(860));
             assert_eq!(
                 provenance.motive_inputs[0].weight,
@@ -1107,7 +1110,8 @@ fn build_defend_changed_conditions_scenario(
     defender_profile.attack_skill = living_combat_defender_profile().attack_skill;
     defender_profile.guard_skill = living_combat_defender_profile().guard_skill;
     defender_profile.defend_bonus = living_combat_defender_profile().defend_bonus;
-    defender_profile.unarmed_wound_severity = living_combat_defender_profile().unarmed_wound_severity;
+    defender_profile.unarmed_wound_severity =
+        living_combat_defender_profile().unarmed_wound_severity;
     defender_profile.unarmed_bleed_rate = living_combat_defender_profile().unarmed_bleed_rate;
     defender_profile.defend_stance_ticks = nz(3);
 
@@ -1257,9 +1261,9 @@ fn run_defend_changed_conditions_scenario(seed: Seed) -> (StateHash, StateHash) 
             DecisionOutcome::Planning(planning) => Some(planning),
             _ => None,
         });
-    let first_post_resolution_goal =
-        first_post_resolution_trace.and_then(|planning| planning.selection.selected.as_ref())
-            .map(|goal| goal.kind);
+    let first_post_resolution_goal = first_post_resolution_trace
+        .and_then(|planning| planning.selection.selected.as_ref())
+        .map(|goal| goal.kind);
 
     assert!(
         defend_resolution_tick.is_some_and(|tick| tick.0 <= 5),
@@ -1560,7 +1564,10 @@ fn golden_defend_changed_conditions_replays_deterministically() {
     let first = run_defend_changed_conditions_scenario(Seed([50; 32]));
     let second = run_defend_changed_conditions_scenario(Seed([50; 32]));
 
-    assert_eq!(first, second, "changed-conditions scenario must replay deterministically");
+    assert_eq!(
+        first, second,
+        "changed-conditions scenario must replay deterministically"
+    );
 }
 
 #[test]
