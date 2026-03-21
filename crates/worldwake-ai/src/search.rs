@@ -153,6 +153,7 @@ pub fn search_plan(
             handlers,
             binding_rejections.as_deref_mut(),
         );
+        let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
         let mut travel_pruning = None;
         if let Some(current_place) =
             node.state
@@ -160,11 +161,10 @@ pub fn search_plan(
                     node.state.snapshot().actor(),
                 ))
         {
-            let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
             travel_pruning = prune_travel_away_from_goal(
                 &mut candidates,
                 current_place,
-                &combined_places,
+                &combined_places.places,
                 snapshot,
                 semantics_table,
             );
@@ -214,6 +214,9 @@ pub fn search_plan(
                             sink.push(crate::decision_trace::SearchExpansionSummary {
                                 depth,
                                 remaining_travel_ticks: node.heuristic_ticks,
+                                combined_places_count: combined_places.places.len() as u16,
+                                prerequisite_places_count: combined_places
+                                    .prerequisite_places_count,
                                 candidates_generated,
                                 candidates_skipped,
                                 terminal_successors: terminal_count,
@@ -249,6 +252,8 @@ pub fn search_plan(
             sink.push(crate::decision_trace::SearchExpansionSummary {
                 depth,
                 remaining_travel_ticks: node.heuristic_ticks,
+                combined_places_count: combined_places.places.len() as u16,
+                prerequisite_places_count: combined_places.prerequisite_places_count,
                 candidates_generated,
                 candidates_skipped,
                 terminal_successors: terminal_count,
@@ -299,20 +304,30 @@ fn compute_heuristic(
         .unwrap_or(0)
 }
 
+struct CombinedRelevantPlaces {
+    places: Vec<EntityId>,
+    prerequisite_places_count: u16,
+}
+
 fn combined_relevant_places(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     budget: &PlanningBudget,
-) -> Vec<EntityId> {
+) -> CombinedRelevantPlaces {
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
+    let base_len = places.len();
     let prerequisite_places = goal.key.kind.prerequisite_places(state, recipes, budget);
     for place in prerequisite_places {
         if !places.contains(&place) {
             places.push(place);
         }
     }
-    places
+    let prerequisite_places_count = (places.len() - base_len) as u16;
+    CombinedRelevantPlaces {
+        places,
+        prerequisite_places_count,
+    }
 }
 
 fn root_node<'snapshot>(
@@ -323,7 +338,7 @@ fn root_node<'snapshot>(
 ) -> SearchNode<'snapshot> {
     let state = PlanningState::new(snapshot);
     let combined_places = combined_relevant_places(goal, &state, recipes, budget);
-    let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places);
+    let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places.places);
     SearchNode {
         state,
         steps: Vec::new(),
@@ -479,7 +494,7 @@ fn build_successor<'snapshot>(
     let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
     let combined_places = combined_relevant_places(goal, &transition.state, recipes, budget);
     let heuristic_ticks =
-        compute_heuristic(node.state.snapshot(), &transition.state, &combined_places);
+        compute_heuristic(node.state.snapshot(), &transition.state, &combined_places.places);
     let mut steps = node.steps.clone();
     steps.push(step);
 
@@ -781,15 +796,16 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity,
         test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent,
-        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory, DemandObservation,
-        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-        EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        PerceptionSource, Permille, Place, PrototypePlace, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound,
+        BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
+        FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, Place,
+        PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
@@ -820,6 +836,7 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
+        wounds: BTreeMap<EntityId, Vec<Wound>>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -946,8 +963,8 @@ mod tests {
         fn is_incapacitated(&self, _entity: EntityId) -> bool {
             false
         }
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds.get(&entity).is_some_and(|wounds| !wounds.is_empty())
         }
         fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
             self.needs.get(&agent).copied()
@@ -988,8 +1005,8 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
             ))
         }
-        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
-            Vec::new()
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wounds.get(&agent).cloned().unwrap_or_default()
         }
         fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
             self.hostiles.get(&agent).cloned().unwrap_or_default()
@@ -1062,6 +1079,17 @@ mod tests {
 
     fn pm(value: u16) -> Permille {
         Permille::new(value).unwrap()
+    }
+
+    fn wound(severity: u16) -> Wound {
+        Wound {
+            id: WoundId(u64::from(severity)),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+            severity: pm(severity),
+            inflicted_at: Tick(1),
+            bleed_rate_per_tick: pm(0),
+        }
     }
 
     fn sync_all_beliefs(world: &mut World, observer: EntityId, observed_tick: Tick) {
@@ -4281,8 +4309,10 @@ mod tests {
             &PlanningBudget::default(),
         );
 
-        assert!(places.contains(&patient_place));
-        assert!(places.contains(&medicine_place));
+        assert!(places.places.contains(&patient_place));
+        assert!(places.places.contains(&medicine_place));
+        assert_eq!(places.places.len(), 2);
+        assert_eq!(places.prerequisite_places_count, 1);
     }
 
     #[test]
@@ -4337,7 +4367,8 @@ mod tests {
             &PlanningBudget::default(),
         );
 
-        assert_eq!(places, vec![patient_place]);
+        assert_eq!(places.places, vec![patient_place]);
+        assert_eq!(places.prerequisite_places_count, 0);
     }
 
     #[test]
@@ -4378,7 +4409,7 @@ mod tests {
         prune_travel_away_from_goal(
             &mut candidates,
             current_place,
-            &goal_places,
+            &goal_places.places,
             &snapshot,
             &semantics_table,
         );
@@ -5089,10 +5120,58 @@ mod tests {
             !summaries.is_empty(),
             "expansion summaries should be non-empty when tracing is enabled"
         );
+        let first = &summaries[0];
         // Depth should start at 0.
-        assert_eq!(summaries[0].depth, 0);
+        assert_eq!(first.depth, 0);
+        assert_eq!(first.combined_places_count, 0);
+        assert_eq!(first.prerequisite_places_count, 0);
         // At least one candidate was generated.
-        assert!(summaries[0].candidates_generated > 0);
+        assert!(first.candidates_generated > 0);
+    }
+
+    #[test]
+    fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds() {
+        let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        view.wounds.insert(patient, vec![wound(400)]);
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            2,
+        );
+
+        let mut summaries = Vec::new();
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            Some(&mut summaries),
+        );
+
+        assert!(result.is_found(), "planner should find a remote medicine plan");
+        let first = summaries
+            .first()
+            .expect("tracing should record at least one expansion summary");
+        assert_eq!(first.depth, 0);
+        assert_eq!(first.combined_places_count, 2);
+        assert_eq!(first.prerequisite_places_count, 1);
+        assert!(
+            first.travel_pruning.is_some(),
+            "root expansion should record travel pruning context"
+        );
     }
 
     #[test]

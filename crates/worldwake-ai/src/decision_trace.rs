@@ -200,6 +200,10 @@ pub struct SearchExpansionSummary {
     /// Heuristic travel distance remaining from this node when spatial
     /// guidance is available; otherwise zero.
     pub remaining_travel_ticks: u32,
+    /// Number of deduplicated places used to guide this expansion.
+    pub combined_places_count: u16,
+    /// Number of prerequisite-only places in the combined guidance set.
+    pub prerequisite_places_count: u16,
     /// Total search candidates generated at this expansion.
     pub candidates_generated: u16,
     /// Candidates for which `build_successor` returned `None`.
@@ -1403,6 +1407,8 @@ mod tests {
         let summary = SearchExpansionSummary {
             depth: 0,
             remaining_travel_ticks: 4,
+            combined_places_count: 3,
+            prerequisite_places_count: 1,
             candidates_generated: 12,
             candidates_skipped: 1,
             terminal_successors: 2,
@@ -1424,6 +1430,8 @@ mod tests {
         };
         assert_eq!(summary.depth, 0);
         assert_eq!(summary.remaining_travel_ticks, 4);
+        assert_eq!(summary.combined_places_count, 3);
+        assert_eq!(summary.prerequisite_places_count, 1);
         assert_eq!(summary.candidates_generated, 12);
         assert_eq!(summary.candidates_skipped, 1);
         assert_eq!(summary.terminal_successors, 2);
