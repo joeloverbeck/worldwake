@@ -2174,6 +2174,96 @@ mod tests {
     }
 
     #[test]
+    fn promoted_hunger_outranks_higher_motive_wash_when_clotted_wound_recovery_applies() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(760), pm(0), pm(0), pm(0), pm(860)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+        let utility = UtilityProfile::default();
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::Wash),
+                goal(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 2);
+        let bread = &ranked[0];
+        let wash = &ranked[1];
+
+        assert_eq!(
+            bread.grounded.key.kind,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        );
+        assert_eq!(bread.priority_class, GoalPriorityClass::Critical);
+        assert_eq!(bread.motive_score, 380_000);
+
+        assert_eq!(wash.grounded.key.kind, GoalKind::Wash);
+        assert_eq!(wash.priority_class, GoalPriorityClass::High);
+        assert_eq!(wash.motive_score, 430_000);
+        assert!(wash.motive_score > bread.motive_score);
+
+        match bread
+            .provenance
+            .as_ref()
+            .expect("bread goal should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::Critical);
+                assert_eq!(
+                    provenance.adjustment,
+                    Some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
+                );
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Hunger);
+                assert_eq!(provenance.motive_inputs[0].pressure, pm(760));
+                assert_eq!(provenance.motive_inputs[0].weight, utility.hunger_weight);
+                assert_eq!(provenance.motive_inputs[0].score, 380_000);
+                assert!(provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("bread goal should not use danger provenance")
+            }
+        }
+
+        match wash
+            .provenance
+            .as_ref()
+            .expect("wash goal should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.adjustment, None);
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Dirtiness);
+                assert_eq!(provenance.motive_inputs[0].pressure, pm(860));
+                assert_eq!(provenance.motive_inputs[0].weight, utility.dirtiness_weight);
+                assert_eq!(provenance.motive_inputs[0].score, 430_000);
+                assert!(!provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("wash goal should not use danger provenance")
+            }
+        }
+    }
+
+    #[test]
     fn no_wounds_no_boost() {
         let agent = entity(1);
         let mut view = base_view(agent);

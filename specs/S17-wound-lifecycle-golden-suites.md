@@ -140,15 +140,15 @@ Prove that an agent with clotted wounds and High-threshold hunger eats before wa
 - Thirst, fatigue, bladder at `pm(0)` — no competing needs goals. Sleep (`recovery_relevant: true`) maps to `Background` at fatigue 0, so no boost interference.
 - Custom `MetabolismProfile` with very low rates (`pm(1)` for hunger and dirtiness, `pm(0)` for everything else) — prevents significant needs drift during the test window.
 - `CombatProfile` with `natural_recovery_rate: pm(18)`, `natural_clot_resistance: pm(0)` — recovery proceeds after conditions met, no re-bleeding.
-- Default `UtilityProfile` — equal weights for hunger and dirtiness, so the ONLY differentiator between eat and wash priority is the recovery-aware promotion.
+- Default `UtilityProfile` — equal weights keep the comparison symmetric at the weight layer, but motive scores still differ because dirtiness pressure exceeds hunger pressure. In the live setup, bread motive is `500 * 760 = 380_000` while wash motive is `500 * 860 = 430_000`, so the scenario proves the stronger contract: recovery-aware class promotion overrides a higher competing wash motive.
 - `give_commodity`: Bread (quantity 3) — hunger relief per unit brings hunger well below High threshold after one eat. Directly possessed.
 - `give_commodity`: Water (quantity 1) — enables Wash affordance. Directly possessed.
 - No workstations, no other agents, no recipes
 - `seed_actor_local_beliefs` with `DirectObservation`
 
 **Emergent behavior proven**:
-- Agent selects eat-Bread first (hunger decrease is the first state-delta observed, not dirtiness decrease)
-- The recovery-aware boost is the cause: eat mapped to `High` → promoted to `Critical`; wash mapped to `High` → stayed `High`
+- Initial ranking contains both eat-Bread and `Wash`, with `Wash` carrying the higher motive score but bread promoted from `High` to `Critical`
+- Agent selects eat-Bread first because the recovery-aware boost changes class ordering: eat mapped to `High` → promoted to `Critical`; wash mapped to `High` → stayed `High`
 - After eating, hunger drops below `thresholds.hunger.high()` (pm(750))
 - `recovery_conditions_met()` becomes true (hunger < 750, thirst < 700, fatigue < 800, not in combat)
 - Wound severity begins decreasing via `natural_recovery_rate` (pm(18) per tick)
@@ -160,13 +160,14 @@ Prove that an agent with clotted wounds and High-threshold hunger eats before wa
 - This scenario uses equal utility weights and tests the `promote_for_clotted_wound_recovery` code path, then proves the downstream consequence (recovery gate opens after eating).
 
 **Assertion surface**:
-1. State-delta ordering: hunger decrease before dirtiness decrease (following S07a/b observation pattern)
-2. Wound recovery: severity decreases after hunger drops below High threshold
-3. Agent alive throughout
-4. Determinism: replay companion
+1. Decision trace: initial ranking contains both goals, `Wash` has the higher motive score, bread is promoted to `Critical`, and bread is selected
+2. Action trace: `eat` commits before any `wash` commit
+3. Authoritative world state: hunger drops below High threshold, then wound severity decreases
+4. Agent alive throughout
+5. Determinism: replay companion
 
 **Scenario-isolation choice**:
-- Default `UtilityProfile` with equal weights — ensures priority class (not motive score) determines action order
+- Default `UtilityProfile` with equal weights — keeps weights equal, but motive still differs because dirtiness pressure is higher; the intended proof is that priority class promotion beats that higher motive
 - Thirst/fatigue/bladder at 0 — eliminates competing goals that could also be recovery-boosted
 - No other agents — no social, trade, or combat interactions
 - Single location (VILLAGE_SQUARE) — no travel
