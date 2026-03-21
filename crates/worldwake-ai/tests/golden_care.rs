@@ -3,15 +3,21 @@
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, GoalKind, PlannerOpKind};
+use worldwake_ai::{
+    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
+    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlanningBudget,
+    PlanningEntityRef, PlanningState, PlannerOpKind,
+};
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, BodyPart, CommodityKind, DeprivationKind,
-    EntityId, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash,
-    Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
+    hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,
+    BlockingFact, BodyPart, CommodityKind, DeprivationKind, EntityId, GoalKey, HomeostaticNeeds,
+    MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, Tick, UtilityProfile, Wound,
+    WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
-    step_tick, ActionStartFailureReason, ActionTraceKind, AutonomousControllerRuntime,
-    TickInputContext, TickInputError, TickInputProducer, TickStepServices,
+    get_affordances, step_tick, ActionStartFailureReason, ActionTraceKind,
+    AutonomousControllerRuntime, PerAgentBeliefView, TickInputContext, TickInputError,
+    TickInputProducer, TickStepServices,
 };
 
 struct ClearPatientWoundsAfterPlanning<'a> {
@@ -101,7 +107,21 @@ fn run_healing_scenario(seed: Seed) -> (StateHash, StateHash) {
         VILLAGE_SQUARE,
         HomeostaticNeeds::new(pm(100), pm(0), pm(100), pm(0), pm(0)),
         MetabolismProfile::default(),
-        UtilityProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            care_weight: pm(800),
+            ..UtilityProfile::default()
+        },
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.clear_component_tell_profile(healer).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    assert_eq!(
+        h.world.get_component_tell_profile(healer),
+        None,
+        "scenario should explicitly remove the healer tell profile to isolate care planning"
     );
     let patient = seed_wounded_patient(&mut h);
 
@@ -236,6 +256,412 @@ fn run_healer_acquires_ground_medicine_for_patient(seed: Seed) -> (StateHash, St
     )
 }
 
+fn setup_remote_ground_medicine_care_scenario(
+    seed: Seed,
+) -> (GoldenHarness, EntityId, EntityId, EntityId) {
+    let mut h = GoldenHarness::new(seed);
+    let healer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Healer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(100), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let patient = seed_wounded_patient(&mut h);
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_combat_profile(patient, no_recovery_combat_profile())
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    let medicine =
+        place_ground_commodity(&mut h, ORCHARD_FARM, CommodityKind::Medicine, Quantity(1));
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        healer,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    let _ = seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        healer,
+        medicine,
+        Tick(0),
+        PerceptionSource::Report {
+            from: patient,
+            chain_len: 1,
+        },
+    );
+    {
+        let blocked = BlockedIntentMemory {
+            intents: vec![
+                BlockedIntent {
+                    goal_key: GoalKey::from(GoalKind::ShareBelief {
+                        listener: patient,
+                        subject: patient,
+                    }),
+                    blocking_fact: BlockingFact::Unknown,
+                    related_entity: Some(patient),
+                    related_place: Some(VILLAGE_SQUARE),
+                    related_action: None,
+                    observed_tick: Tick(0),
+                    expires_tick: Tick(200),
+                },
+                BlockedIntent {
+                    goal_key: GoalKey::from(GoalKind::ShareBelief {
+                        listener: patient,
+                        subject: medicine,
+                    }),
+                    blocking_fact: BlockingFact::Unknown,
+                    related_entity: Some(patient),
+                    related_place: Some(VILLAGE_SQUARE),
+                    related_action: None,
+                    observed_tick: Tick(0),
+                    expires_tick: Tick(200),
+                },
+            ],
+        };
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_blocked_intent_memory(healer, blocked)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    (h, healer, patient, medicine)
+}
+
+fn assert_remote_care_tick_zero_plan(
+    h: &GoldenHarness,
+    healer: EntityId,
+    patient: EntityId,
+) -> worldwake_ai::AgentDecisionTrace {
+    let tick_0_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for remote care")
+        .trace_at(healer, Tick(0))
+        .expect("healer should have a tick 0 trace")
+        .clone();
+    let tick_0_planning = match &tick_0_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace for remote care tick 0, got {other:?}"),
+    };
+    let tick_0_selected_plan = tick_0_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("remote care should select a plan on tick 0");
+    let tick_0_next_step = tick_0_selected_plan
+        .next_step
+        .as_ref()
+        .expect("remote care selected plan should expose its next step");
+
+    assert_eq!(
+        tick_0_planning.selection.selected,
+        Some(GoalKey::from(GoalKind::TreatWounds { patient })),
+        "remote care should select TreatWounds on tick 0"
+    );
+    assert_eq!(
+        tick_0_next_step.op_kind,
+        PlannerOpKind::Travel,
+        "remote care should start by traveling toward the remote medicine location"
+    );
+    assert_eq!(
+        tick_0_selected_plan
+            .steps
+            .iter()
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .map(|step| step.targets.clone())
+            .find(|targets| *targets == vec![ORCHARD_FARM]),
+        Some(vec![ORCHARD_FARM]),
+        "remote care should select a travel path that includes Orchard Farm for the reported medicine lot"
+    );
+    assert!(
+        tick_0_selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::MoveCargo),
+        "remote care selected plan should include a cargo move step for medicine pickup"
+    );
+    assert!(
+        tick_0_selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Heal),
+        "remote care selected plan should include a heal step after medicine pickup"
+    );
+
+    tick_0_trace
+}
+
+fn assert_remote_care_action_sequence(healer_events: &[&worldwake_sim::ActionTraceEvent]) {
+    let pick_up_commit = healer_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "pick_up"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("remote medicine care should have a committed pick_up event");
+    let heal_commit = healer_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "heal"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("remote medicine care should have a committed heal event");
+
+    assert!(
+        pick_up_commit < heal_commit,
+        "remote medicine care should commit pick_up before heal; events={healer_events:?}"
+    );
+}
+
+fn run_healer_acquires_remote_ground_medicine_for_patient(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, healer, patient, _medicine) = setup_remote_ground_medicine_care_scenario(seed);
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let initial_wound_load = h.agent_wound_load(patient);
+    let initial_total_medicine = total_live_lot_quantity(&h.world, CommodityKind::Medicine);
+
+    let mut visited_orchard = false;
+    let mut wound_load_decreased = false;
+    let mut heal_committed = false;
+
+    for _ in 0..120 {
+        h.step_once();
+
+        visited_orchard |= h.world.effective_place(healer) == Some(ORCHARD_FARM);
+        wound_load_decreased |= h.agent_wound_load(patient) < initial_wound_load;
+        heal_committed |= h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for remote care")
+            .events_for(healer)
+            .iter()
+            .any(|event| {
+                event.action_name == "heal"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+
+        assert!(
+            total_live_lot_quantity(&h.world, CommodityKind::Medicine) <= initial_total_medicine,
+            "medicine lots should not increase during remote care procurement"
+        );
+
+        if heal_committed {
+            break;
+        }
+    }
+
+    let healer_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for remote care")
+        .events_for(healer)
+        .clone();
+    let tick_0_trace = assert_remote_care_tick_zero_plan(&h, healer, patient);
+    assert!(
+        visited_orchard,
+        "healer should travel to Orchard Farm before remote treatment succeeds; trace={tick_0_trace:?}; events={healer_events:?}"
+    );
+    assert!(
+        wound_load_decreased,
+        "patient wound load should decrease after the healer procures remote medicine"
+    );
+    assert!(
+        heal_committed,
+        "remote medicine care should reach a committed heal step"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(healer, CommodityKind::Medicine),
+        Quantity(0),
+        "healer should not retain medicine after the successful heal"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for remote care");
+    let healer_events = action_sink.events_for(healer);
+    let travel_count = healer_events
+        .iter()
+        .filter(|event| event.action_name == "travel")
+        .count();
+    assert!(
+        travel_count >= 2,
+        "remote medicine care should require outbound and return travel; saw events: {healer_events:?}"
+    );
+    assert!(
+        healer_events.iter().any(
+            |event| event.action_name == "pick_up"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        ),
+        "remote medicine care should commit a pick_up step"
+    );
+    assert!(
+        healer_events.iter().any(
+            |event| event.action_name == "heal"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        ),
+        "remote medicine care should commit a heal step; saw events: {healer_events:?}"
+    );
+    assert_remote_care_action_sequence(&healer_events);
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn remote_treat_wounds_snapshot_supports_pick_up_transition_at_orchard() {
+    let (h, healer, patient, medicine) =
+        setup_remote_ground_medicine_care_scenario(Seed([42; 32]));
+    let view = PerAgentBeliefView::from_world(healer, &h.world);
+    let grounded = generate_candidates(
+        &view,
+        healer,
+        &BlockedIntentMemory::default(),
+        &h.recipes,
+        Tick(0),
+    )
+    .into_iter()
+    .find(|candidate| candidate.key == GoalKey::from(GoalKind::TreatWounds { patient }))
+    .expect("scenario should generate TreatWounds");
+    let snapshot = build_planning_snapshot(
+        &view,
+        healer,
+        &grounded.evidence_entities,
+        &grounded.evidence_places,
+        7,
+    );
+    let state = PlanningState::new(&snapshot).move_actor_to(ORCHARD_FARM);
+    let affordances = get_affordances(&state, healer, &h.defs, &h.handlers);
+    let pick_up = affordances
+        .iter()
+        .find(|affordance| {
+            h.defs.get(affordance.def_id).is_some_and(|def| {
+                def.name == "pick_up" && affordance.bound_targets == vec![medicine]
+            })
+        })
+        .expect("remote care planning state should expose pick_up for the reported medicine lot");
+    let semantics = build_semantics_table(&h.defs);
+    let transition = apply_hypothetical_transition(
+        &grounded,
+        semantics
+            .get(&pick_up.def_id)
+            .expect("pick_up should be classified by planner semantics"),
+        state,
+        &[PlanningEntityRef::Authoritative(medicine)],
+        pick_up.payload_override.as_ref(),
+    );
+
+    assert!(
+        transition.is_some(),
+        "pick_up transition should be hypothetically applicable for the reported medicine lot"
+    );
+}
+
+#[test]
+fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topology() {
+    let (h, healer, patient, _medicine) = setup_remote_ground_medicine_care_scenario(Seed([43; 32]));
+    let view = PerAgentBeliefView::from_world(healer, &h.world);
+    let grounded = generate_candidates(
+        &view,
+        healer,
+        &BlockedIntentMemory::default(),
+        &h.recipes,
+        Tick(0),
+    )
+    .into_iter()
+    .find(|candidate| candidate.key == GoalKey::from(GoalKind::TreatWounds { patient }))
+    .expect("scenario should generate TreatWounds");
+    let snapshot = build_planning_snapshot(
+        &view,
+        healer,
+        &grounded.evidence_entities,
+        &grounded.evidence_places,
+        7,
+    );
+    let semantics = build_semantics_table(&h.defs);
+
+    let shallow = search_plan(
+        &snapshot,
+        &grounded,
+        &semantics,
+        &h.defs,
+        &h.handlers,
+        &PlanningBudget {
+            max_plan_depth: 6,
+            ..PlanningBudget::default()
+        },
+        &[VILLAGE_SQUARE],
+        None,
+        None,
+    );
+    let deep = search_plan(
+        &snapshot,
+        &grounded,
+        &semantics,
+        &h.defs,
+        &h.handlers,
+        &PlanningBudget::default(),
+        &[VILLAGE_SQUARE],
+        None,
+        None,
+    );
+
+    assert!(
+        matches!(
+            shallow,
+            worldwake_ai::PlanSearchResult::FrontierExhausted { .. }
+        ),
+        "the previous six-step depth budget should fail specifically by frontier exhaustion under the capped depth budget"
+    );
+    let deep_plan = match deep {
+        worldwake_ai::PlanSearchResult::Found(plan) => plan,
+        other => panic!(
+            "the default depth budget should admit the lawful remote-care route through Orchard Farm, got {other:?}"
+        ),
+    };
+    assert_eq!(
+        deep_plan
+            .steps
+            .first()
+            .expect("remote-care search result should contain a first step")
+            .op_kind,
+        PlannerOpKind::Travel,
+        "the lawful remote-care route should begin with travel"
+    );
+    assert_eq!(
+        deep_plan
+            .steps
+            .iter()
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .map(|step| step.targets.clone())
+            .find(|targets| *targets == vec![PlanningEntityRef::Authoritative(ORCHARD_FARM)]),
+        Some(vec![PlanningEntityRef::Authoritative(ORCHARD_FARM)]),
+        "the lawful remote-care route should include a travel leg to Orchard Farm"
+    );
+    assert!(
+        deep_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::MoveCargo),
+        "the lawful remote-care route should include medicine pickup"
+    );
+    assert!(
+        deep_plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::Heal),
+        "the lawful remote-care route should include healing after pickup"
+    );
+}
+
 #[test]
 fn golden_healing_wounded_agent() {
     let _ = run_healing_scenario(Seed([14; 32]));
@@ -265,6 +691,22 @@ fn golden_healer_acquires_ground_medicine_for_patient_replays_deterministically(
     assert_eq!(
         first, second,
         "care medicine acquisition scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_healer_acquires_remote_ground_medicine_for_patient() {
+    let _ = run_healer_acquires_remote_ground_medicine_for_patient(Seed([18; 32]));
+}
+
+#[test]
+fn golden_healer_acquires_remote_ground_medicine_for_patient_replays_deterministically() {
+    let first = run_healer_acquires_remote_ground_medicine_for_patient(Seed([19; 32]));
+    let second = run_healer_acquires_remote_ground_medicine_for_patient(Seed([19; 32]));
+
+    assert_eq!(
+        first, second,
+        "remote care medicine acquisition scenario should replay deterministically"
     );
 }
 

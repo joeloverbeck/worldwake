@@ -95,6 +95,7 @@ const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
     GoalKindTag::AcquireCommodity,
     GoalKindTag::Wash,
+    GoalKindTag::TreatWounds,
     GoalKindTag::ProduceCommodity,
     GoalKindTag::SellCommodity,
     GoalKindTag::RestockCommodity,

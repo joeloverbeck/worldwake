@@ -1,6 +1,6 @@
 use crate::{
     derive_danger_pressure, enterprise::restock_gap_at_destination, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics, PlanningEntityRef, PlanningState,
+    PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningState,
     pressure::DangerAssessment,
 };
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,11 @@ pub trait GoalKindPlannerExt {
         &self,
         state: &PlanningState<'_>,
         recipes: &RecipeRegistry,
+    ) -> Vec<EntityId>;
+    fn prerequisite_places(
+        &self,
+        state: &PlanningState<'_>,
+        budget: &PlanningBudget,
     ) -> Vec<EntityId>;
     /// Whether the given `op_kind` acting on `authoritative_targets` satisfies
     /// this goal's target-binding requirement.
@@ -705,6 +710,39 @@ impl GoalKindPlannerExt for GoalKind {
         }
     }
 
+    fn prerequisite_places(
+        &self,
+        state: &PlanningState<'_>,
+        budget: &PlanningBudget,
+    ) -> Vec<EntityId> {
+        let actor = state.snapshot().actor();
+        match self {
+            GoalKind::TreatWounds { .. } => {
+                if state.commodity_quantity(actor, CommodityKind::Medicine) > Quantity(0) {
+                    return Vec::new();
+                }
+
+                let loose_lot_places = places_with_loose_lots(state, CommodityKind::Medicine);
+                if !loose_lot_places.is_empty() {
+                    return cap_places_by_travel_distance(
+                        state,
+                        actor,
+                        loose_lot_places,
+                        budget.max_prerequisite_locations,
+                    );
+                }
+
+                let mut places = places_with_seller_list(state, CommodityKind::Medicine);
+                append_unique_places(
+                    &mut places,
+                    places_with_resource_source(state, CommodityKind::Medicine),
+                );
+                cap_places_by_travel_distance(state, actor, places, budget.max_prerequisite_locations)
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn matches_binding(&self, authoritative_targets: &[EntityId], op_kind: PlannerOpKind) -> bool {
         // Planner-only synthetic candidates have empty targets — always pass.
         if authoritative_targets.is_empty() {
@@ -809,6 +847,65 @@ fn places_with_sellers(
             }
         }
     }
+}
+
+fn places_with_seller_list(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
+    let mut places = Vec::new();
+    places_with_sellers(state, commodity, &mut places);
+    places
+}
+
+fn places_with_loose_lots(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
+    let mut places = BTreeSet::new();
+    for &entity_id in state.snapshot().entities.keys() {
+        if state.item_lot_commodity(entity_id) != Some(commodity) {
+            continue;
+        }
+        if state.commodity_quantity(entity_id, commodity) == Quantity(0) {
+            continue;
+        }
+        if state.direct_possessor(entity_id).is_some() || state.direct_container(entity_id).is_some()
+        {
+            continue;
+        }
+        if let Some(place) = state.effective_place(entity_id) {
+            places.insert(place);
+        }
+    }
+    places.into_iter().collect()
+}
+
+fn append_unique_places(existing: &mut Vec<EntityId>, new_places: Vec<EntityId>) {
+    for place in new_places {
+        if !existing.contains(&place) {
+            existing.push(place);
+        }
+    }
+}
+
+fn cap_places_by_travel_distance(
+    state: &PlanningState<'_>,
+    actor: EntityId,
+    mut places: Vec<EntityId>,
+    limit: u8,
+) -> Vec<EntityId> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    if usize::from(limit) >= places.len() {
+        return places;
+    }
+    let actor_place = state.effective_place(actor);
+    places.sort_by_key(|place| {
+        (
+            actor_place
+                .and_then(|from| state.snapshot().min_travel_ticks(from, *place))
+                .unwrap_or(u32::MAX),
+            *place,
+        )
+    });
+    places.truncate(usize::from(limit));
+    places
 }
 
 /// Collect places with the given `PlaceTag`.
@@ -1429,6 +1526,7 @@ mod tests {
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         controlled_quantities: BTreeMap<(EntityId, EntityId, CommodityKind), Quantity>,
+        controllable: BTreeSet<(EntityId, EntityId)>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
@@ -1551,7 +1649,9 @@ mod tests {
         }
 
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            actor == entity || self.direct_possessor(entity) == Some(actor)
+            actor == entity
+                || self.direct_possessor(entity) == Some(actor)
+                || self.controllable.contains(&(actor, entity))
         }
 
         fn has_control(&self, entity: EntityId) -> bool {
@@ -2574,6 +2674,108 @@ mod tests {
     }
 
     #[test]
+    fn prerequisite_places_treat_wounds_include_remote_controllable_medicine_lot() {
+        let (mut view, actor, place_a, place_b, _place_c) = spatial_view();
+        let patient = entity(50);
+        let medicine = entity(51);
+        view.alive.extend([patient, medicine]);
+        view.kinds.insert(patient, EntityKind::Agent);
+        view.kinds.insert(medicine, EntityKind::ItemLot);
+        view.effective_places.insert(patient, place_a);
+        view.effective_places.insert(medicine, place_b);
+        view.entities_at.entry(place_a).or_default().push(patient);
+        view.entities_at.entry(place_b).or_default().push(medicine);
+        view.controllable.insert((actor, medicine));
+        view.lot_commodities.insert(medicine, CommodityKind::Medicine);
+        view.commodity_quantities
+            .insert((medicine, CommodityKind::Medicine), Quantity(1));
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::TreatWounds { patient };
+        let places = goal.prerequisite_places(&state, &PlanningBudget::default());
+
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn prerequisite_places_treat_wounds_empty_when_actor_already_has_medicine() {
+        let (mut view, actor, place_a, place_b, _place_c) = spatial_view();
+        let patient = entity(60);
+        let medicine = entity(61);
+        view.alive.extend([patient, medicine]);
+        view.kinds.insert(patient, EntityKind::Agent);
+        view.kinds.insert(medicine, EntityKind::ItemLot);
+        view.effective_places.insert(patient, place_a);
+        view.effective_places.insert(medicine, place_b);
+        view.entities_at.entry(place_a).or_default().push(patient);
+        view.entities_at.entry(place_b).or_default().push(medicine);
+        view.controllable.insert((actor, medicine));
+        view.lot_commodities.insert(medicine, CommodityKind::Medicine);
+        view.commodity_quantities
+            .insert((medicine, CommodityKind::Medicine), Quantity(1));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Medicine), Quantity(1));
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::TreatWounds { patient };
+        let places = goal.prerequisite_places(&state, &PlanningBudget::default());
+
+        assert!(places.is_empty());
+    }
+
+    #[test]
+    fn prerequisite_places_treat_wounds_prefer_loose_medicine_over_sellers_and_sources() {
+        let (mut view, actor, place_a, place_b, place_c) = spatial_view();
+        let patient = entity(70);
+        let loose_medicine = entity(71);
+        let seller = entity(72);
+        let herb_patch = entity(73);
+        view.alive
+            .extend([patient, loose_medicine, seller, herb_patch]);
+        view.kinds.insert(patient, EntityKind::Agent);
+        view.kinds.insert(loose_medicine, EntityKind::ItemLot);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(herb_patch, EntityKind::Place);
+        view.effective_places.insert(patient, place_a);
+        view.effective_places.insert(loose_medicine, place_b);
+        view.effective_places.insert(seller, place_c);
+        view.effective_places.insert(herb_patch, place_a);
+        view.entities_at.entry(place_a).or_default().extend([patient, herb_patch]);
+        view.entities_at.entry(place_b).or_default().push(loose_medicine);
+        view.entities_at.entry(place_c).or_default().push(seller);
+        view.lot_commodities
+            .insert(loose_medicine, CommodityKind::Medicine);
+        view.commodity_quantities
+            .insert((loose_medicine, CommodityKind::Medicine), Quantity(1));
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Medicine]),
+                home_market: None,
+            },
+        );
+        view.resource_sources.insert(
+            herb_patch,
+            ResourceSource {
+                commodity: CommodityKind::Medicine,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::TreatWounds { patient };
+        let places = goal.prerequisite_places(&state, &PlanningBudget::default());
+
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
     fn all_goal_kind_variants_have_goal_relevant_places_impl() {
         // This test ensures exhaustive coverage by creating all 17 variants
         // and calling goal_relevant_places. If a new variant is added without
@@ -2632,6 +2834,61 @@ mod tests {
         assert_eq!(goals.len(), 17);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
+        }
+    }
+
+    #[test]
+    fn all_goal_kind_variants_have_prerequisite_places_impl() {
+        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let budget = PlanningBudget::default();
+
+        let goals: Vec<GoalKind> = vec![
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+            },
+            GoalKind::Sleep,
+            GoalKind::Relieve,
+            GoalKind::Wash,
+            GoalKind::EngageHostile { target: place_b },
+            GoalKind::ReduceDanger,
+            GoalKind::TreatWounds { patient: place_b },
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(0),
+            },
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination: place_b,
+            },
+            GoalKind::LootCorpse { corpse: place_b },
+            GoalKind::BuryCorpse {
+                corpse: place_b,
+                burial_site: actor,
+            },
+            GoalKind::ShareBelief {
+                listener: place_b,
+                subject: actor,
+            },
+            GoalKind::ClaimOffice { office: place_b },
+            GoalKind::SupportCandidateForOffice {
+                office: place_b,
+                candidate: actor,
+            },
+        ];
+
+        for goal in goals {
+            let _ = goal.prerequisite_places(&state, &budget);
         }
     }
 

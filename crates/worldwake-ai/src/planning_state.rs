@@ -435,23 +435,21 @@ impl<'snapshot> PlanningState<'snapshot> {
         if self.removed_entities.contains(&entity) {
             return None;
         }
+        if self.entity_kind_ref(entity) == Some(EntityKind::ItemLot) {
+            let commodity = self.item_lot_commodity_ref(entity)?;
+            let quantity = self.commodity_quantity_ref(entity, commodity);
+            return quantity
+                .0
+                .checked_mul(load_per_unit(commodity).0)
+                .map(LoadUnits);
+        }
         match entity {
             PlanningEntityRef::Authoritative(entity) => self
                 .snapshot
                 .entities
                 .get(&entity)
                 .map(|snapshot| snapshot.intrinsic_load),
-            PlanningEntityRef::Hypothetical(_) => {
-                if self.entity_kind_ref(entity) != Some(EntityKind::ItemLot) {
-                    return Some(LoadUnits(0));
-                }
-                let commodity = self.item_lot_commodity_ref(entity)?;
-                let quantity = self.commodity_quantity_ref(entity, commodity);
-                quantity
-                    .0
-                    .checked_mul(load_per_unit(commodity).0)
-                    .map(LoadUnits)
-            }
+            PlanningEntityRef::Hypothetical(_) => Some(LoadUnits(0)),
         }
     }
 
@@ -2708,6 +2706,20 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::load_of_entity(&state, bread),
             Some(LoadUnits(1))
+        );
+    }
+
+    #[test]
+    fn authoritative_item_lot_load_is_derived_when_snapshot_intrinsic_load_is_missing() {
+        let (mut view, actor, _town, _field, bread) = test_view();
+        view.entity_loads.remove(&bread);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            state.load_of_entity_ref(PlanningEntityRef::Authoritative(bread)),
+            Some(LoadUnits(worldwake_core::load_per_unit(CommodityKind::Bread).0))
         );
     }
 

@@ -118,6 +118,8 @@ pub fn search_plan(
     let mut frontier = BinaryHeap::new();
     frontier.push(FrontierEntry::new(root_node(
         snapshot,
+        goal,
+        budget,
         goal_relevant_places,
     )));
     let mut expansions = 0u16;
@@ -161,10 +163,12 @@ pub fn search_plan(
                     node.state.snapshot().actor(),
                 ))
         {
+            let combined_places =
+                combined_relevant_places(goal_relevant_places, goal, &node.state, budget);
             travel_pruning = prune_travel_away_from_goal(
                 &mut candidates,
                 current_place,
-                goal_relevant_places,
+                &combined_places,
                 snapshot,
                 semantics_table,
             );
@@ -182,6 +186,7 @@ pub fn search_plan(
                 registry,
                 &node,
                 &candidate,
+                budget,
                 goal_relevant_places,
             ) else {
                 candidates_skipped += 1;
@@ -298,12 +303,31 @@ fn compute_heuristic(
         .unwrap_or(0)
 }
 
+fn combined_relevant_places(
+    goal_relevant_places: &[EntityId],
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    budget: &PlanningBudget,
+) -> Vec<EntityId> {
+    let mut places = goal_relevant_places.to_vec();
+    let prerequisite_places = goal.key.kind.prerequisite_places(state, budget);
+    for place in prerequisite_places {
+        if !places.contains(&place) {
+            places.push(place);
+        }
+    }
+    places
+}
+
 fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
+    goal: &GroundedGoal,
+    budget: &PlanningBudget,
     goal_relevant_places: &[EntityId],
 ) -> SearchNode<'snapshot> {
     let state = PlanningState::new(snapshot);
-    let heuristic_ticks = compute_heuristic(snapshot, &state, goal_relevant_places);
+    let combined_places = combined_relevant_places(goal_relevant_places, goal, &state, budget);
+    let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places);
     SearchNode {
         state,
         steps: Vec::new(),
@@ -316,10 +340,9 @@ fn root_node<'snapshot>(
 /// goal-relevant place.  Non-travel candidates are never pruned.
 /// When `goal_places` is empty, the function is a no-op.
 ///
-/// When the actor is already AT a goal-relevant place (`current_min == 0`)
-/// but the goal isn't yet satisfied (otherwise we wouldn't still be
-/// searching), pruning is skipped so the agent can leave for another
-/// goal-relevant place.
+/// When the actor is already at one goal-relevant place, pruning continues
+/// against the remaining relevant places so search can leave the current place
+/// without broadening into arbitrary detours.
 fn prune_travel_away_from_goal(
     candidates: &mut Vec<SearchCandidate>,
     current_place: EntityId,
@@ -333,12 +356,22 @@ fn prune_travel_away_from_goal(
     let current_min = snapshot
         .min_travel_ticks_to_any(current_place, goal_places)
         .unwrap_or(u32::MAX);
-    // If the actor is already at a goal-relevant place (distance 0) but the
-    // goal is unsatisfied here, allow unrestricted travel so the agent can
-    // route to an alternative goal-relevant place.
-    if current_min == 0 {
-        return None;
-    }
+    let effective_goal_places = if current_min == 0 {
+        let alternatives = goal_places
+            .iter()
+            .copied()
+            .filter(|place| *place != current_place)
+            .collect::<Vec<_>>();
+        if alternatives.is_empty() {
+            return None;
+        }
+        alternatives
+    } else {
+        goal_places.to_vec()
+    };
+    let current_min = snapshot
+        .min_travel_ticks_to_any(current_place, &effective_goal_places)
+        .unwrap_or(u32::MAX);
     let mut retained = Vec::new();
     let mut pruned = Vec::new();
     let mut kept_candidates = Vec::with_capacity(candidates.len());
@@ -358,7 +391,7 @@ fn prune_travel_away_from_goal(
         };
 
         let remaining_travel_ticks = snapshot
-            .min_travel_ticks_to_any(destination, goal_places)
+            .min_travel_ticks_to_any(destination, &effective_goal_places)
             .unwrap_or(u32::MAX);
         let successor = crate::decision_trace::TravelSuccessorTrace {
             destination,
@@ -392,6 +425,7 @@ fn build_successor<'snapshot>(
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
+    budget: &PlanningBudget,
     goal_relevant_places: &[EntityId],
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     let def = registry.get(candidate.def_id)?;
@@ -447,10 +481,12 @@ fn build_successor<'snapshot>(
         return None;
     }
     let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
+    let combined_places =
+        combined_relevant_places(goal_relevant_places, goal, &transition.state, budget);
     let heuristic_ticks = compute_heuristic(
         node.state.snapshot(),
         &transition.state,
-        goal_relevant_places,
+        &combined_places,
     );
     let mut steps = node.steps.clone();
     steps.push(step);
@@ -735,9 +771,10 @@ fn terminal_kind(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_successor, compare_search_nodes, prune_travel_away_from_goal, root_node,
-        search_candidate_from_planner, search_candidates, search_candidates_from_affordance,
-        search_plan, FrontierEntry, SearchCandidate, SearchNode,
+        build_successor, combined_relevant_places, compare_search_nodes,
+        prune_travel_away_from_goal, root_node, search_candidate_from_planner,
+        search_candidates, search_candidates_from_affordance, search_plan, FrontierEntry,
+        SearchCandidate, SearchNode,
     };
     use crate::goal_model::GoalKindPlannerExt;
     use crate::planner_ops::planner_only_candidates;
@@ -2632,7 +2669,16 @@ mod tests {
             })
             .expect("authoritative snapshot should expose cargo pick_up");
         let (terminal, after_pick_up) =
-            build_successor(&goal, &semantics, &registry, &node, pick_up, &[]).unwrap();
+            build_successor(
+                &goal,
+                &semantics,
+                &registry,
+                &node,
+                pick_up,
+                &PlanningBudget::default(),
+                &[],
+            )
+            .unwrap();
         assert_eq!(terminal, None);
         assert_eq!(
             after_pick_up.steps[0].targets,
@@ -2658,7 +2704,16 @@ mod tests {
             })
             .expect("partial cargo successor should expose travel to destination");
         let (terminal, _) =
-            build_successor(&goal, &semantics, &registry, &after_pick_up, travel, &[]).unwrap();
+            build_successor(
+                &goal,
+                &semantics,
+                &registry,
+                &after_pick_up,
+                travel,
+                &PlanningBudget::default(),
+                &[],
+            )
+            .unwrap();
 
         assert_eq!(terminal, Some(PlanTerminalKind::GoalSatisfied));
     }
@@ -2818,7 +2873,16 @@ mod tests {
         };
 
         let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
+            build_successor(
+                &goal,
+                &semantics_table,
+                &registry,
+                &node,
+                &candidate,
+                &PlanningBudget::default(),
+                &[],
+            )
+            .unwrap();
 
         assert_eq!(successor.steps.len(), 1);
         assert_eq!(successor.steps[0].op_kind, PlannerOpKind::Defend);
@@ -2841,7 +2905,16 @@ mod tests {
             payload_override: None,
         };
         let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
+            build_successor(
+                &goal,
+                &semantics_table,
+                &registry,
+                &node,
+                &candidate,
+                &PlanningBudget::default(),
+                &[],
+            )
+            .unwrap();
 
         let step = &successor.steps[0];
         assert_eq!(step.targets, vec![PlanningEntityRef::Authoritative(lot)]);
@@ -2867,7 +2940,16 @@ mod tests {
             payload_override: None,
         };
         let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
+            build_successor(
+                &goal,
+                &semantics_table,
+                &registry,
+                &node,
+                &candidate,
+                &PlanningBudget::default(),
+                &[],
+            )
+            .unwrap();
 
         let candidates = planner_only_candidates(&successor.state, &semantics_table)
             .into_iter()
@@ -3242,7 +3324,7 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot, &[]),
+            &root_node(&snapshot, &goal, &PlanningBudget::default(), &[]),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -3295,7 +3377,7 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot, &[]),
+            &root_node(&snapshot, &goal, &PlanningBudget::default(), &[]),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -3590,6 +3672,68 @@ mod tests {
         (view, actor, place_a, place_b, place_c)
     }
 
+    fn build_branching_care_view() -> (
+        TestBeliefView,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+    ) {
+        let actor = entity(1);
+        let patient = entity(2);
+        let current_place = entity(10);
+        let patient_place = entity(11);
+        let medicine_place = entity(12);
+        let medicine = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, patient, current_place, patient_place, medicine_place, medicine]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(patient, EntityKind::Agent);
+        view.kinds.insert(current_place, EntityKind::Place);
+        view.kinds.insert(patient_place, EntityKind::Place);
+        view.kinds.insert(medicine_place, EntityKind::Place);
+        view.kinds.insert(medicine, EntityKind::ItemLot);
+        view.effective_places.insert(actor, current_place);
+        view.effective_places.insert(patient, patient_place);
+        view.effective_places.insert(medicine, medicine_place);
+        view.entities_at.insert(current_place, vec![actor]);
+        view.entities_at.insert(patient_place, vec![patient]);
+        view.entities_at.insert(medicine_place, vec![medicine]);
+        view.adjacent.insert(
+            current_place,
+            vec![
+                (patient_place, NonZeroU32::new(2).unwrap()),
+                (medicine_place, NonZeroU32::new(2).unwrap()),
+            ],
+        );
+        view.adjacent
+            .insert(patient_place, vec![(current_place, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(medicine_place, vec![(current_place, NonZeroU32::new(2).unwrap())]);
+        view.controllable.insert((actor, medicine));
+        view.lot_commodities.insert(medicine, CommodityKind::Medicine);
+        view.commodity_quantities
+            .insert((medicine, CommodityKind::Medicine), Quantity(1));
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(
+            medicine,
+            LoadUnits(worldwake_core::load_per_unit(CommodityKind::Medicine).0),
+        );
+
+        (
+            view,
+            actor,
+            patient,
+            current_place,
+            patient_place,
+            medicine_place,
+        )
+    }
+
     #[test]
     fn heuristic_is_zero_when_actor_at_goal_relevant_place() {
         let (view, actor, place_a, _place_b, _place_c) = build_chain_heuristic_view();
@@ -3600,7 +3744,12 @@ mod tests {
             &BTreeSet::from([place_a]),
             3,
         );
-        let node = root_node(&snapshot, &[place_a]);
+        let node = root_node(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &PlanningBudget::default(),
+            &[place_a],
+        );
         assert_eq!(node.heuristic_ticks, 0);
     }
 
@@ -3615,7 +3764,12 @@ mod tests {
             3,
         );
         // Actor at place_a, goal at place_c: shortest path is A->B(3)+B->C(5)=8
-        let node = root_node(&snapshot, &[place_c]);
+        let node = root_node(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &PlanningBudget::default(),
+            &[place_c],
+        );
         assert_eq!(node.heuristic_ticks, 8);
     }
 
@@ -3630,7 +3784,12 @@ mod tests {
             3,
         );
         // Actor at place_a: B is 3 ticks, C is 8 ticks → min is 3
-        let node = root_node(&snapshot, &[place_b, place_c]);
+        let node = root_node(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &PlanningBudget::default(),
+            &[place_b, place_c],
+        );
         assert_eq!(node.heuristic_ticks, 3);
     }
 
@@ -3638,7 +3797,12 @@ mod tests {
     fn heuristic_is_zero_when_goal_relevant_places_empty() {
         let (view, actor, _place_a, _place_b, _place_c) = build_chain_heuristic_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 3);
-        let node = root_node(&snapshot, &[]);
+        let node = root_node(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &PlanningBudget::default(),
+            &[],
+        );
         assert_eq!(node.heuristic_ticks, 0);
     }
 
@@ -4058,10 +4222,10 @@ mod tests {
     }
 
     #[test]
-    fn prune_travel_skips_when_actor_at_goal_relevant_place() {
-        // When the actor is already at a goal-relevant place but the goal is
-        // unsatisfied (e.g. facility blocked), pruning must be skipped so the
-        // agent can leave for an alternative goal-relevant place.
+    fn prune_travel_at_goal_place_still_prunes_against_alternative_places() {
+        // When the actor is already at one goal-relevant place but needs to
+        // leave for another, pruning should keep only routes that progress
+        // toward the alternative relevant place.
         let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
         let snapshot = build_planning_snapshot(
             &view,
@@ -4086,20 +4250,146 @@ mod tests {
             make_travel_candidate(travel_north_id, north),
         ];
 
-        // Actor is at hub, and hub IS a goal-relevant place → current_min == 0
-        // → pruning is skipped, all candidates survive.
-        prune_travel_away_from_goal(
+        let pruning = prune_travel_away_from_goal(
             &mut candidates,
             hub,
             &[hub, goal_store],
             &snapshot,
             &semantics_table,
-        );
+        )
+        .expect("alternative-place pruning should produce a trace");
 
         assert_eq!(
             candidates.len(),
-            3,
-            "all travel candidates must survive when actor is at a goal-relevant place"
+            1,
+            "only the route that progresses toward the alternative relevant place should survive"
+        );
+        assert_eq!(candidates[0].def_id, travel_east_id);
+        assert_eq!(pruning.current_place, hub);
+        assert_eq!(pruning.current_remaining_travel_ticks, 7);
+    }
+
+    #[test]
+    fn combined_places_include_remote_medicine_lot_for_treat_wounds() {
+        let (view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+
+        let places = combined_relevant_places(
+            &[patient_place],
+            &goal,
+            &state,
+            &PlanningBudget::default(),
+        );
+
+        assert!(places.contains(&patient_place));
+        assert!(places.contains(&medicine_place));
+    }
+
+    #[test]
+    fn prune_travel_retains_remote_medicine_branch_for_treat_wounds() {
+        let (view, actor, patient, current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let goal_places = combined_relevant_places(
+            &[patient_place],
+            &goal,
+            &state,
+            &PlanningBudget::default(),
+        );
+
+        let travel_patient_id = ActionDefId(500);
+        let travel_medicine_id = ActionDefId(501);
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(travel_patient_id, travel_semantics());
+        semantics_table.insert(travel_medicine_id, travel_semantics());
+
+        let mut candidates = vec![
+            make_travel_candidate(travel_patient_id, patient_place),
+            make_travel_candidate(travel_medicine_id, medicine_place),
+        ];
+
+        prune_travel_away_from_goal(
+            &mut candidates,
+            current_place,
+            &goal_places,
+            &snapshot,
+            &semantics_table,
+        );
+
+        assert_eq!(candidates.len(), 2);
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.authoritative_targets == vec![medicine_place]),
+            "remote medicine travel should remain available for TreatWounds"
+        );
+    }
+
+    #[test]
+    fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
+        let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        view.effective_places.insert(actor, medicine_place);
+        view.entities_at.insert(medicine_place, vec![actor, entity(20)]);
+        view.entities_at.insert(entity(10), Vec::new());
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let node = root_node(&snapshot, &goal, &PlanningBudget::default(), &[patient_place]);
+
+        let candidates = search_candidates(
+            &goal,
+            &node,
+            &semantics,
+            &registry,
+            &handlers,
+            None,
+        );
+
+        assert!(
+            candidates.iter().any(|candidate| {
+                registry
+                    .get(candidate.def_id)
+                    .is_some_and(|def| def.name == "pick_up")
+            }),
+            "TreatWounds should consider pick_up when remote medicine is co-located"
         );
     }
 
