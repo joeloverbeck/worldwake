@@ -1,5 +1,7 @@
 # S17: Wound Lifecycle Golden E2E Suites
 
+**Status**: COMPLETED
+
 ## Summary
 
 S11 (wound lifecycle audit) delivered two cross-system behaviors tested only at the focused unit level:
@@ -350,3 +352,21 @@ No positive-feedback loops require dampening in either scenario.
 ## Implementation Order
 
 S17-001 → S17-002 → S17-003
+
+## Outcome
+
+- Completion date: 2026-03-21
+- What changed:
+  - Added Scenario 29 in `golden_emergent.rs` with a deterministic replay companion
+  - Added Scenario 30 in `golden_combat.rs` with a deterministic replay companion
+  - Updated the golden coverage docs and kept the generated inventory aligned at 133 `golden_*` tests
+  - Completed and archived the three S17 tickets
+- Deviations from original plan:
+  - The Scenario 29 live setup had to use a lower custom hunger critical threshold so the actor could lawfully survive two deprivation fires under the existing concrete wound arithmetic
+  - By the time S17-003 was reassessed, the intended docs catch-up was already present in the repository, so that ticket became a stale-completion/archive task rather than a docs-edit task
+- Verification results:
+  - `cargo test -p worldwake-ai golden_deprivation_wound_worsening_consolidates_not_duplicates -- --exact` passed
+  - `cargo test -p worldwake-ai golden_recovery_aware_boost_eats_before_wash -- --exact` passed
+  - `python3 scripts/golden_inventory.py --write --check-docs` passed
+  - `cargo test --workspace` passed
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed

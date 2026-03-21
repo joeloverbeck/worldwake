@@ -62,8 +62,8 @@ Established the delivered S09 behavioral golden coverage and aligned the archiva
 ### S11: Wound Lifecycle Audit — COMPLETED
 Established the wound lifecycle corrections and hardening planned for Phase 3: deprivation harm now worsens a stable same-kind wound instead of duplicating entries, clotted-wound recovery gates are reflected in AI self-care ranking, wound progression/pruning contracts have focused regression coverage, and the golden/workspace verification boundary passed without requiring additional hash recapture.
 
-### S17: Wound Lifecycle Golden E2E Suites
-Two golden E2E scenarios closing S11 gaps: (1) deprivation wound worsening consolidation through live needs dispatch, proving wound count stays at 1 across repeated threshold fires with preserved WoundId; (2) recovery-aware AI priority boost, proving clotted wounds + High hunger → Critical promotion → eat before wash → recovery gate opens → wound severity decreases.
+### S17: Wound Lifecycle Golden E2E Suites — COMPLETED
+Established the missing golden proof for the two S11 wound-lifecycle invariants: Scenario 29 in `golden_emergent.rs` now proves deprivation wound worsening consolidates through live needs dispatch without duplicating wounds, with a deterministic replay companion; Scenario 30 in `golden_combat.rs` now proves recovery-aware priority promotion makes the actor eat before wash so the recovery gate opens and wound severity decreases, also with deterministic replay coverage. Golden coverage docs and generated inventory were kept aligned at 133 `golden_*` tests.
 
 All completed specs are archived under `archive/specs/`.
 
@@ -76,7 +76,7 @@ Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15 + E15b + E15c + E16 + E16d + S01 +
 
 S09 ✅ (design fix to defend action duration completed)
 S11 ✅ (wound lifecycle audit completed)
-S11 ──→ S17 (wound lifecycle golden E2E coverage needs S11 worsening + recovery boost)
+S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
 S12 (no unmet deps — planner prerequisite-aware search heuristic)
 S13 (no unmet deps post-E16d — political emergence golden coverage)
 S15 ✅ (cross-system start-failure emergence golden coverage)
@@ -144,8 +144,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - production/trade/politics goldens now prove `StartFailed` plus next-tick AI recovery outside the care domain
 - **S16**: S09 Golden Validation Suite — ✅ COMPLETED
   - shipped defend changed-conditions and VillageSquare spatial-validation goldens at their canonical ownership boundaries, with deterministic replay and decision-trace-first route proof
-- **S17**: Wound Lifecycle Golden E2E Suites (deps: S11)
-  - two golden scenarios closing S11 gaps: deprivation wound worsening consolidation and recovery-aware AI priority boost
+- **S17**: Wound Lifecycle Golden E2E Suites — ✅ COMPLETED
+  - Scenario 29 in `golden_emergent.rs` proves deprivation worsening consolidates without duplicating wounds, and Scenario 30 in `golden_combat.rs` proves recovery-aware need promotion opens the wound-recovery gate; both shipped with deterministic replay companions and aligned golden docs/inventory
 
 **Step 12**:
 - **E16c**: Institutional Beliefs & Record Consultation
@@ -249,6 +249,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S17 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S14, S15, S16 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S17 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S14, S15, S16, S17 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
