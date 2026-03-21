@@ -175,8 +175,10 @@ impl World {
         record: RecordData,
         tick: Tick,
     ) -> Result<EntityId, WorldError> {
+        let home_place = record.home_place;
         self.create_entity_with(EntityKind::Record, tick, |world, entity| {
-            world.insert_component_record_data(entity, record)
+            world.insert_component_record_data(entity, record)?;
+            world.set_ground_location(entity, home_place)
         })
     }
 
@@ -811,7 +813,7 @@ mod tests {
     fn sample_record_data() -> RecordData {
         RecordData {
             record_kind: RecordKind::OfficeRegister,
-            home_place: entity(8),
+            home_place: entity(5),
             issuer: entity(9),
             consultation_ticks: 4,
             max_entries_per_consult: 6,
@@ -1156,7 +1158,7 @@ mod tests {
 
     #[test]
     fn create_record_produces_correct_entity() {
-        let mut world = World::new(Topology::new()).unwrap();
+        let mut world = World::new(test_topology()).unwrap();
         let record_data = sample_record_data();
 
         let id = world.create_record(record_data.clone(), Tick(7)).unwrap();
@@ -1164,7 +1166,8 @@ mod tests {
         assert!(world.is_alive(id));
         assert_eq!(world.entity_kind(id), Some(EntityKind::Record));
         assert_eq!(world.get_component_record_data(id), Some(&record_data));
-        assert!(world.is_in_transit(id));
+        assert_eq!(world.effective_place(id), Some(record_data.home_place));
+        assert!(!world.is_in_transit(id));
         assert_eq!(world.get_component_name(id), None);
     }
 

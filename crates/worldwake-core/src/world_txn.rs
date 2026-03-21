@@ -1,8 +1,8 @@
 use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
-    ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
-    EventId, LotOperation, Permille, Quantity, RecordData, ReservationId, Tick, TickRange,
-    UniqueItemKind, World, WorldError,
+    ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
+    EntityId, EntityKind, EventId, InstitutionalBeliefKey, LotOperation, Permille, Quantity,
+    RecordData, RecordEntryId, ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
@@ -241,6 +241,67 @@ impl<'w> WorldTxn<'w> {
         let entity = self.staged_world.create_record(record, self.tick)?;
         self.record_created_entity(entity, EntityKind::Record);
         Ok(entity)
+    }
+
+    pub fn append_record_entry(
+        &mut self,
+        record: EntityId,
+        claim: crate::InstitutionalClaim,
+    ) -> Result<RecordEntryId, WorldError> {
+        let mut record_data = self
+            .get_component_record_data(record)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: record,
+                component_type: "RecordData",
+            })?;
+        let entry_id = record_data.append_entry(claim, self.tick);
+        self.set_component_record_data(record, record_data)?;
+        Ok(entry_id)
+    }
+
+    pub fn supersede_record_entry(
+        &mut self,
+        record: EntityId,
+        old_id: RecordEntryId,
+        claim: crate::InstitutionalClaim,
+    ) -> Result<RecordEntryId, WorldError> {
+        let mut record_data = self
+            .get_component_record_data(record)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: record,
+                component_type: "RecordData",
+            })?;
+        let entry_id = record_data
+            .supersede_entry(old_id, claim, self.tick)
+            .map_err(|err| WorldError::InvalidOperation(err.to_string()))?;
+        self.set_component_record_data(record, record_data)?;
+        Ok(entry_id)
+    }
+
+    pub fn project_institutional_belief(
+        &mut self,
+        agent: EntityId,
+        key: InstitutionalBeliefKey,
+        belief: BelievedInstitutionalClaim,
+    ) -> Result<(), WorldError> {
+        let profile = self
+            .get_component_perception_profile(agent)
+            .copied()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "PerceptionProfile",
+            })?;
+        let mut store = self
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "AgentBeliefStore",
+            })?;
+        store.record_institutional_belief(key, belief, &profile);
+        self.set_component_agent_belief_store(agent, store)
     }
 
     pub fn create_item_lot(
@@ -845,12 +906,11 @@ impl<'w> WorldTxn<'w> {
             .push(StateDelta::Entity(EntityDelta::Created { entity, kind }));
         self.deltas
             .extend(self.component_deltas_after_create(entity));
-        if self.staged_world.is_in_transit(entity) {
-            self.deltas.push(StateDelta::Relation(RelationDelta::Added {
-                relation_kind: RelationKind::InTransit,
-                relation: RelationValue::InTransit { entity },
-            }));
-        }
+        self.push_placement_delta_diff(
+            entity,
+            PlacementSnapshot::default(),
+            self.placement_snapshot(entity),
+        );
     }
 
     fn component_deltas_after_create(&self, entity: EntityId) -> Vec<StateDelta> {
@@ -1487,11 +1547,12 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_travel_disposition_profile, sample_utility_profile,
         },
-        AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, DemandMemory, FactionData,
-        FactionPurpose, InstitutionalClaim, InstitutionalRecordEntry, MerchandiseProfile,
-        OfficeData, PerceptionProfile, PerceptionSource, RecordData, RecordEntryId, RecordKind,
-        SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
-        TravelDispositionProfile, UtilityProfile,
+        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
+        BlockedIntentMemory, DemandMemory, FactionData, FactionPurpose, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
+        MerchandiseProfile, OfficeData, PerceptionProfile, PerceptionSource, RecordData,
+        RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -1585,7 +1646,7 @@ mod tests {
     fn sample_record_data() -> RecordData {
         RecordData {
             record_kind: RecordKind::OfficeRegister,
-            home_place: entity(12),
+            home_place: entity(5),
             issuer: entity(13),
             consultation_ticks: 6,
             max_entries_per_consult: 9,
@@ -1600,6 +1661,22 @@ mod tests {
                 supersedes: None,
             }],
             next_entry_id: 1,
+        }
+    }
+
+    fn sample_institutional_belief(observed_tick: u64) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(50),
+                holder: Some(entity(51)),
+                effective_tick: Tick(observed_tick.saturating_sub(1)),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(52),
+                entry_id: RecordEntryId(3),
+            },
+            learned_tick: Tick(observed_tick),
+            learned_at: Some(entity(5)),
         }
     }
 
@@ -1843,6 +1920,207 @@ mod tests {
                 }) if *entity == record && value == &record_data
             )
         }));
+        assert!(txn.deltas().iter().any(|delta| {
+            matches!(
+                delta,
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::LocatedIn,
+                    relation: RelationValue::LocatedIn { entity, place },
+                }) if *entity == record && *place == record_data.home_place
+            )
+        }));
+        assert!(!txn.staged_world.is_in_transit(record));
+    }
+
+    #[test]
+    fn append_record_entry_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let record = world.create_record(sample_record_data(), Tick(1)).unwrap();
+        let claim = InstitutionalClaim::SupportDeclaration {
+            office: entity(20),
+            supporter: entity(21),
+            candidate: Some(entity(22)),
+            effective_tick: Tick(8),
+        };
+
+        let mut txn = new_txn(&mut world);
+        let entry_id = txn.append_record_entry(record, claim).unwrap();
+        let after = txn.get_component_record_data(record).cloned().unwrap();
+
+        assert_eq!(entry_id, RecordEntryId(1));
+        assert_eq!(after.entries.last().unwrap().entry_id, entry_id);
+        assert_eq!(after.entries.last().unwrap().claim, claim);
+        assert_eq!(after.entries.last().unwrap().recorded_tick, Tick(9));
+        assert!(txn.deltas().iter().any(|delta| {
+            matches!(
+                delta,
+                StateDelta::Component(ComponentDelta::Set {
+                    entity,
+                    component_kind: ComponentKind::RecordData,
+                    ..
+                }) if *entity == record
+            )
+        }));
+
+        let mut log = EventLog::new();
+        txn.commit(&mut log);
+
+        assert_eq!(
+            world
+                .get_component_record_data(record)
+                .unwrap()
+                .entries
+                .last()
+                .unwrap()
+                .entry_id,
+            entry_id
+        );
+    }
+
+    #[test]
+    fn supersede_record_entry_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let record = world.create_record(sample_record_data(), Tick(1)).unwrap();
+        let old_id = RecordEntryId(0);
+        let claim = InstitutionalClaim::OfficeHolder {
+            office: entity(14),
+            holder: None,
+            effective_tick: Tick(9),
+        };
+
+        let mut txn = new_txn(&mut world);
+        let entry_id = txn.supersede_record_entry(record, old_id, claim).unwrap();
+        let after = txn.get_component_record_data(record).cloned().unwrap();
+
+        assert_eq!(entry_id, RecordEntryId(1));
+        assert_eq!(after.entries.last().unwrap().supersedes, Some(old_id));
+        let active_ids = after
+            .active_entries()
+            .into_iter()
+            .map(|entry| entry.entry_id)
+            .collect::<Vec<_>>();
+        assert_eq!(active_ids, vec![entry_id]);
+
+        let mut log = EventLog::new();
+        txn.commit(&mut log);
+
+        assert_eq!(
+            world
+                .get_component_record_data(record)
+                .unwrap()
+                .entries
+                .last()
+                .unwrap()
+                .supersedes,
+            Some(old_id)
+        );
+    }
+
+    #[test]
+    fn supersede_record_entry_rejects_missing_entry_without_recording_partial_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let record = world.create_record(sample_record_data(), Tick(1)).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        let err = txn
+            .supersede_record_entry(
+                record,
+                RecordEntryId(99),
+                InstitutionalClaim::OfficeHolder {
+                    office: entity(14),
+                    holder: None,
+                    effective_tick: Tick(9),
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert!(txn.deltas().is_empty());
+    }
+
+    #[test]
+    fn project_institutional_belief_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let key = InstitutionalBeliefKey::OfficeHolderOf { office: entity(30) };
+        let belief = BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(30),
+                holder: Some(entity(31)),
+                effective_tick: Tick(7),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(32),
+                entry_id: RecordEntryId(4),
+            },
+            learned_tick: Tick(8),
+            learned_at: Some(entity(5)),
+        };
+
+        let mut txn = new_txn(&mut world);
+        txn.project_institutional_belief(agent, key, belief.clone())
+            .unwrap();
+
+        let after = txn.get_component_agent_belief_store(agent).unwrap();
+        assert_eq!(after.institutional_beliefs.get(&key), Some(&vec![belief.clone()]));
+        assert!(txn.deltas().iter().any(|delta| {
+            matches!(
+                delta,
+                StateDelta::Component(ComponentDelta::Set {
+                    entity,
+                    component_kind: ComponentKind::AgentBeliefStore,
+                    ..
+                }) if *entity == agent
+            )
+        }));
+
+        let mut log = EventLog::new();
+        txn.commit(&mut log);
+
+        assert_eq!(
+            world
+                .get_component_agent_belief_store(agent)
+                .unwrap()
+                .institutional_beliefs
+                .get(&key),
+            Some(&vec![belief])
+        );
+    }
+
+    #[test]
+    fn project_institutional_belief_evicts_oldest_claim_across_keys() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let mut profile = world.get_component_perception_profile(agent).copied().unwrap();
+        profile.institutional_memory_capacity = 2;
+        world.remove_component_perception_profile(agent).unwrap();
+        world
+            .insert_component_perception_profile(agent, profile)
+            .unwrap();
+
+        let first_key = InstitutionalBeliefKey::FactionMembersOf { faction: entity(40) };
+        let second_key = InstitutionalBeliefKey::SupportFor {
+            supporter: entity(41),
+            office: entity(42),
+        };
+        let third_key = InstitutionalBeliefKey::OfficeHolderOf { office: entity(43) };
+
+        let mut txn = new_txn(&mut world);
+        txn.project_institutional_belief(agent, first_key, sample_institutional_belief(4))
+            .unwrap();
+        txn.project_institutional_belief(agent, second_key, sample_institutional_belief(5))
+            .unwrap();
+        txn.project_institutional_belief(agent, third_key, sample_institutional_belief(6))
+            .unwrap();
+
+        let after = txn.get_component_agent_belief_store(agent).unwrap();
+        assert!(!after.institutional_beliefs.contains_key(&first_key));
+        assert!(after.institutional_beliefs.contains_key(&second_key));
+        assert!(after.institutional_beliefs.contains_key(&third_key));
     }
 
     #[test]

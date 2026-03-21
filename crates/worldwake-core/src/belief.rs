@@ -50,6 +50,19 @@ impl AgentBeliefStore {
         self.heard_beliefs.insert(key, memory);
     }
 
+    pub fn record_institutional_belief(
+        &mut self,
+        key: InstitutionalBeliefKey,
+        belief: BelievedInstitutionalClaim,
+        profile: &PerceptionProfile,
+    ) {
+        self.institutional_beliefs
+            .entry(key)
+            .or_default()
+            .push(belief);
+        self.enforce_institutional_capacity(profile);
+    }
+
     pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
         self.known_entities.retain(|_, state| {
             within_retention_window(
@@ -166,6 +179,51 @@ impl AgentBeliefStore {
             }
             None => RecipientKnowledgeStatus::UnknownToSpeaker,
         }
+    }
+
+    fn enforce_institutional_capacity(&mut self, profile: &PerceptionProfile) {
+        let capacity = profile.institutional_memory_capacity as usize;
+        if capacity == 0 {
+            self.institutional_beliefs.clear();
+            return;
+        }
+
+        while self.total_institutional_beliefs() > capacity {
+            let Some((key, index)) = self.oldest_institutional_belief_position() else {
+                break;
+            };
+            let remove_key = {
+                let beliefs = self
+                    .institutional_beliefs
+                    .get_mut(&key)
+                    .expect("selected institutional belief key should still exist");
+                beliefs.remove(index);
+                beliefs.is_empty()
+            };
+            if remove_key {
+                self.institutional_beliefs.remove(&key);
+            }
+        }
+    }
+
+    fn total_institutional_beliefs(&self) -> usize {
+        self.institutional_beliefs
+            .values()
+            .map(std::vec::Vec::len)
+            .sum()
+    }
+
+    fn oldest_institutional_belief_position(&self) -> Option<(InstitutionalBeliefKey, usize)> {
+        self.institutional_beliefs
+            .iter()
+            .flat_map(|(key, beliefs)| {
+                beliefs
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, belief)| (belief.learned_tick, *key, index))
+            })
+            .min()
+            .map(|(_, key, index)| (key, index))
     }
 }
 
@@ -798,6 +856,86 @@ mod tests {
         store.enforce_capacity(&profile(0, 100), Tick(12));
 
         assert!(store.known_entities.is_empty());
+    }
+
+    #[test]
+    fn record_institutional_belief_enforces_capacity_deterministically() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 2;
+
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(70) },
+            sample_institutional_belief(5),
+            &profile,
+        );
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::FactionMembersOf { faction: entity(71) },
+            sample_institutional_belief(4),
+            &profile,
+        );
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(72),
+                office: entity(73),
+            },
+            sample_institutional_belief(6),
+            &profile,
+        );
+
+        assert!(!store
+            .institutional_beliefs
+            .contains_key(&InstitutionalBeliefKey::FactionMembersOf {
+                faction: entity(71)
+            }));
+        assert_eq!(store.total_institutional_beliefs(), 2);
+        assert!(store
+            .institutional_beliefs
+            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office: entity(70) }));
+        assert!(store
+            .institutional_beliefs
+            .contains_key(&InstitutionalBeliefKey::SupportFor {
+                supporter: entity(72),
+                office: entity(73),
+            }));
+    }
+
+    #[test]
+    fn record_institutional_belief_breaks_ties_by_key_then_position() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 2;
+        let first_key = InstitutionalBeliefKey::FactionMembersOf { faction: entity(80) };
+        let second_key = InstitutionalBeliefKey::SupportFor {
+            supporter: entity(81),
+            office: entity(82),
+        };
+
+        store.record_institutional_belief(first_key, sample_institutional_belief(5), &profile);
+        store.record_institutional_belief(second_key, sample_institutional_belief(5), &profile);
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(83) },
+            sample_institutional_belief(6),
+            &profile,
+        );
+
+        assert!(!store.institutional_beliefs.contains_key(&first_key));
+        assert!(store.institutional_beliefs.contains_key(&second_key));
+    }
+
+    #[test]
+    fn record_institutional_belief_clears_all_when_capacity_is_zero() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 0;
+
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(90) },
+            sample_institutional_belief(7),
+            &profile,
+        );
+
+        assert!(store.institutional_beliefs.is_empty());
     }
 
     #[test]
