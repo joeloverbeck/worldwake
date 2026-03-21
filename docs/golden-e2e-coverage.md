@@ -1,10 +1,10 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
-**Inventory source**: The `golden_*` function inventory below was cross-checked against `cargo test -p worldwake-ai -- --list` and the current `golden_*.rs` declarations on 2026-03-19.
+**Inventory source**: The `golden_*` function inventory below was cross-checked against `cargo test -p worldwake-ai -- --list` and the current `golden_*.rs` declarations on 2026-03-21.
 
 ---
 
@@ -14,10 +14,10 @@
 crates/worldwake-ai/tests/
   golden_harness/
     mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 12 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b + trace-enabled smoke coverage)
+  golden_ai_decisions.rs      — 14 tests (scenarios 1, 2, 3b, 3c, 3f, 5, 7, 7a, 7b, 7d, 7e, S02b + trace-enabled smoke coverage)
   golden_care.rs              — 14 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + care start-abort recovery + replays)
-  golden_production.rs        — 19 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d, 26 + replays)
-  golden_combat.rs            — 20 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays + action-trace integration)
+  golden_production.rs        — 19 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d, 26 + replays)
+  golden_combat.rs            — 23 tests (living combat + wound recovery + defensive mitigation + changed-conditions defend replanning + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays + action-trace integration)
   golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
   golden_trade.rs             — 6 tests (scenarios 2b, 2d, 27 + replays)
   golden_social.rs            — 14 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, unchanged-repeat suppression, re-tell after belief change, re-tell after conversation-memory expiry, trace-visible social re-enablement, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
@@ -102,7 +102,7 @@ crates/worldwake-ai/tests/
 | SouthGate | Yes | 2d |
 | EastFieldTrail | Yes | 3b |
 
-**9/12 places are now used. Multi-hop travel is explicitly tested via both the BanditCamp→OrchardFarm route and the GeneralStore→OrchardFarm merchant restock route.**
+**9/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route, the VillageSquare→OrchardFarm branchy-hub route, and the GeneralStore→OrchardFarm merchant restock route.**
 
 ### Cross-System Interaction Coverage
 
@@ -119,6 +119,7 @@ crates/worldwake-ai/tests/
 | Corpse burial → containment-based inaccessibility | Yes |
 | Trade negotiation between two agents | Yes |
 | Multi-hop travel to distant acquisition source | Yes |
+| Default-budget branchy-hub travel selection from VillageSquare | Yes |
 | Combat between two living agents | Yes |
 | Healing a wounded agent with medicine | Yes |
 | Merchant restock → travel → acquire → return stock to home market | Yes |
@@ -186,12 +187,12 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 124 | 124 |
+| Proven tests | 129 | 129 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 66 | 66 |
+| Cross-system chains | 67 | 67 |
 
 ### Pending Backlog Summary
 

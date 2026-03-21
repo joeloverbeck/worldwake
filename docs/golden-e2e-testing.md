@@ -79,10 +79,12 @@ When a scenario involves stale or retained requests, state explicitly whether th
 - distinguishing "candidate missing" from "candidate present but filtered/suppressed"
 - proving negative AI invariants such as "this goal never appeared" or "this candidate was never generated"
 - inspecting the final selected path via `planning.selection.selected_plan` and `planning.selection.selected_plan_source` when you need the chosen plan shape, terminal semantics, or whether the trace reflects a fresh search result, retained current plan, or snapshot-only continuation
+- proving travel-led route selection when the contract is about the initial planned path rather than only eventual arrival
 - proving social omission reasons such as `SpeakerHasAlreadyToldCurrentBelief` before any `tell` commit exists
 
 When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
 `archive/tickets/completed/S16S09GOLVAL-002.md` is the concrete example of this narrowing: the durable downstream outcome mattered less than the earlier changed-conditions selection boundary, so the golden was corrected to prove "first post-resolution selected goal is non-combat" instead of broad eat/heal follow-through.
+`archive/tickets/completed/S16S09GOLVAL-004.md` is the travel-planning example of the same rule: the durable arrival/harvest outcome matters, but the ticket's actual promise starts earlier at the selected path boundary, so the golden proves both `selection.selected_plan.next_step` and the later Orchard Farm outcome instead of inferring route quality from arrival alone.
 For conversation-memory crowd-out scenarios, prove the stale subject was omitted with the concrete social omission reason before claiming an untold subject survived truncation. The absence of a duplicate `tell` commit by itself is too weak because that could also arise from ranking loss, invalidation, or unrelated execution failure.
 For social scenarios, action traces and decision traces answer different questions: action traces prove that a committed `tell` happened for a specific `listener`/`subject`, while decision traces prove why another `ShareBelief` candidate was omitted, suppressed, or never generated.
 
@@ -137,6 +139,7 @@ This guidance exists to keep goldens honest, not to stage-manage outcomes. Remov
 
 For social goldens, document whether the speaker needs an explicit belief about the intended listener for `ShareBelief` to materialize. Blind-perception or heavily isolated setups often require explicit listener-belief seeding even when the agents are co-located.
 For social goldens, also document subject choice explicitly. Agent subjects can create additional lawful `ShareBelief` branches around the subject's own changing state or location. If the contract is about resend suppression or a specific downstream office fact, prefer a non-agent subject unless the extra agent-subject branches are part of the invariant under test.
+For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 
 ## Ticket Expectations For Golden Work
 
