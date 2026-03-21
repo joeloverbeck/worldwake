@@ -1,30 +1,16 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21)
-**Scope**: `crates/worldwake-ai/tests/golden_*.rs` (10 files total; 9 currently contribute `golden_*` tests, with shared harness in `golden_harness/mod.rs`)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21)
+**Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
-**Inventory source**: The `golden_*` function inventory below was cross-checked against `cargo test -p worldwake-ai -- --list` and the current `golden_*.rs` declarations on 2026-03-21.
+**Inventory source**: The canonical mechanical inventory now lives in [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) and is regenerated/validated with `python3 scripts/golden_inventory.py --write --check-docs`. That command cross-checks the current `golden_*.rs` declarations against `cargo test -p worldwake-ai -- --list`.
 
 ---
 
 ## File Layout
 
-```
-crates/worldwake-ai/tests/
-  golden_harness/
-    mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 14 tests (scenarios 1, 2, 3b, 3c, 3f, 5, 7, 7a, 7b, 7d, 7e, S02b + trace-enabled smoke coverage)
-  golden_care.rs              — 14 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + care start-abort recovery + replays)
-  golden_production.rs        — 19 tests (scenarios 3, 3d, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d, 26 + replays)
-  golden_combat.rs            — 23 tests (living combat + wound recovery + defensive mitigation + changed-conditions defend replanning + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays + action-trace integration)
-  golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
-  golden_trade.rs             — 6 tests (scenarios 2b, 2d, 27 + replays)
-  golden_social.rs            — 14 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, unchanged-repeat suppression, re-tell after belief change, re-tell after conversation-memory expiry, trace-visible social re-enablement, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
-  golden_emergent.rs          — 22 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, wounded-politician care-vs-politics ordering S13-003, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e, combat-death-to-force-succession S13-001, social-tell-to-political-claim S13-002, same-place office-fact Tell locality S14-001, pre-truncation crowd-out prevention S14-002, remote office-claim start-failure graceful loss S15-003 + replays)
-  golden_offices.rs           — 13 tests (scenario 11: simple office claim via DeclareSupport + deterministic replay, scenario 12: competing claims with loyal supporter, scenario 13: bribe -> support coalition with full-quantity transfer, scenario 14: threaten with courage diversity, scenario 15: travel to distant jurisdiction for office claim, scenario 16: political office facts remain local until belief update + deterministic replay, scenario 17: survival pressure suppresses political goals + deterministic replay, scenario 18: faction eligibility filters office claim, scenario 19: force succession sole eligible + deterministic replay)
-  golden_supply_chain.rs      — 0 `golden_*` tests (contains trace-segment supply-chain tests plus 2 ignored blocked full-chain tests)
-```
+See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for the current per-file counts and the full `golden_*` name inventory. Keep this dashboard focused on coverage interpretation rather than duplicating the mechanical inventory by hand.
 
 ---
 

@@ -1087,6 +1087,7 @@ fn golden_multi_hop_travel_plan() {
     );
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_spatial_multi_hop_plan_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
     let south_gate = prototype_place_entity(PrototypePlace::SouthGate);

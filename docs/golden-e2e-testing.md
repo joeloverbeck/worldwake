@@ -3,6 +3,7 @@
 Use this document when adding or revising tests under `crates/worldwake-ai/tests/golden_*.rs`.
 
 It exists to keep golden assertions aligned with the architecture instead of drifting into brittle scheduler-coupled checks.
+For the live mechanical inventory and docs-sync validation workflow, use `python3 scripts/golden_inventory.py --write --check-docs` and the generated artifact at `docs/generated/golden-e2e-inventory.md`.
 
 ## Assertion Hierarchy
 
@@ -162,6 +163,7 @@ Typical verification sequence:
 1. targeted test name
 2. owning golden test binary
 3. crate suite
-4. repo verification baseline via `scripts/verify.sh`
+4. docs inventory refresh/validation via `python3 scripts/golden_inventory.py --write --check-docs`
+5. repo verification baseline via `scripts/verify.sh`
 
 If a stricter lint or broader suite is required, state that explicitly in the ticket.
