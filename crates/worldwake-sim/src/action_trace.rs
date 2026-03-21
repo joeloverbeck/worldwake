@@ -154,6 +154,7 @@ impl ActionTraceDetail {
                 subject: payload.subject_entity,
             }),
             ActionPayload::None
+            | ActionPayload::ConsultRecord(_)
             | ActionPayload::Bribe(_)
             | ActionPayload::Threaten(_)
             | ActionPayload::DeclareSupport(_)

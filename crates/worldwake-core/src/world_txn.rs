@@ -248,13 +248,12 @@ impl<'w> WorldTxn<'w> {
         record: EntityId,
         claim: crate::InstitutionalClaim,
     ) -> Result<RecordEntryId, WorldError> {
-        let mut record_data = self
-            .get_component_record_data(record)
-            .cloned()
-            .ok_or(WorldError::ComponentNotFound {
+        let mut record_data = self.get_component_record_data(record).cloned().ok_or(
+            WorldError::ComponentNotFound {
                 entity: record,
                 component_type: "RecordData",
-            })?;
+            },
+        )?;
         let entry_id = record_data.append_entry(claim, self.tick);
         self.set_component_record_data(record, record_data)?;
         Ok(entry_id)
@@ -266,13 +265,12 @@ impl<'w> WorldTxn<'w> {
         old_id: RecordEntryId,
         claim: crate::InstitutionalClaim,
     ) -> Result<RecordEntryId, WorldError> {
-        let mut record_data = self
-            .get_component_record_data(record)
-            .cloned()
-            .ok_or(WorldError::ComponentNotFound {
+        let mut record_data = self.get_component_record_data(record).cloned().ok_or(
+            WorldError::ComponentNotFound {
                 entity: record,
                 component_type: "RecordData",
-            })?;
+            },
+        )?;
         let entry_id = record_data
             .supersede_entry(old_id, claim, self.tick)
             .map_err(|err| WorldError::InvalidOperation(err.to_string()))?;
@@ -1547,12 +1545,12 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_travel_disposition_profile, sample_utility_profile,
         },
-        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
-        BlockedIntentMemory, DemandMemory, FactionData, FactionPurpose, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
-        MerchandiseProfile, OfficeData, PerceptionProfile, PerceptionSource, RecordData,
-        RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
+        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+        DemandMemory, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, InstitutionalRecordEntry, MerchandiseProfile, OfficeData,
+        PerceptionProfile, PerceptionSource, RecordData, RecordEntryId, RecordKind,
+        SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
+        TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -1908,7 +1906,10 @@ mod tests {
 
         let record = txn.create_record(record_data.clone()).unwrap();
 
-        assert_eq!(txn.staged_world.entity_kind(record), Some(EntityKind::Record));
+        assert_eq!(
+            txn.staged_world.entity_kind(record),
+            Some(EntityKind::Record)
+        );
         assert!(txn.deltas().iter().any(|delta| {
             matches!(
                 delta,
@@ -2064,7 +2065,10 @@ mod tests {
             .unwrap();
 
         let after = txn.get_component_agent_belief_store(agent).unwrap();
-        assert_eq!(after.institutional_beliefs.get(&key), Some(&vec![belief.clone()]));
+        assert_eq!(
+            after.institutional_beliefs.get(&key),
+            Some(&vec![belief.clone()])
+        );
         assert!(txn.deltas().iter().any(|delta| {
             matches!(
                 delta,
@@ -2095,14 +2099,19 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let mut profile = world.get_component_perception_profile(agent).copied().unwrap();
+        let mut profile = world
+            .get_component_perception_profile(agent)
+            .copied()
+            .unwrap();
         profile.institutional_memory_capacity = 2;
         world.remove_component_perception_profile(agent).unwrap();
         world
             .insert_component_perception_profile(agent, profile)
             .unwrap();
 
-        let first_key = InstitutionalBeliefKey::FactionMembersOf { faction: entity(40) };
+        let first_key = InstitutionalBeliefKey::FactionMembersOf {
+            faction: entity(40),
+        };
         let second_key = InstitutionalBeliefKey::SupportFor {
             supporter: entity(41),
             office: entity(42),
@@ -3373,7 +3382,8 @@ mod tests {
         after.max_entries_per_consult += 1;
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_record_data(record, after.clone()).unwrap();
+        txn.set_component_record_data(record, after.clone())
+            .unwrap();
 
         assert_eq!(
             txn.deltas(),

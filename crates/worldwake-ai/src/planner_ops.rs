@@ -25,6 +25,7 @@ pub enum PlannerOpKind {
     Loot,
     Bury,
     Tell,
+    ConsultRecord,
     Attack,
     Defend,
     Bribe,
@@ -105,6 +106,7 @@ const GOALS_TREAT_WOUNDS: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKind
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
 const GOALS_BURY: &[GoalKindTag] = &[GoalKindTag::BuryCorpse];
 const GOALS_TELL: &[GoalKindTag] = &[GoalKindTag::ShareBelief];
+const GOALS_CONSULT_RECORD: &[GoalKindTag] = &[];
 const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 const GOALS_BRIBE: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
@@ -150,6 +152,9 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Corpse, "loot", _) => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury", _) => Some(PlannerOpKind::Bury),
         (ActionDomain::Social, "tell", ActionPayload::None) => Some(PlannerOpKind::Tell),
+        (ActionDomain::Social, "consult_record", ActionPayload::None) => {
+            Some(PlannerOpKind::ConsultRecord)
+        }
         (ActionDomain::Social, "bribe", ActionPayload::None) => Some(PlannerOpKind::Bribe),
         (ActionDomain::Social, "threaten", ActionPayload::None) => Some(PlannerOpKind::Threaten),
         (ActionDomain::Social, "declare_support", ActionPayload::None) => {
@@ -261,6 +266,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             GOALS_BURY,
         ),
         PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
@@ -277,6 +283,13 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             false,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_TELL,
+        ),
+        PlannerOpKind::ConsultRecord => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_CONSULT_RECORD,
         ),
         PlannerOpKind::Attack => base_semantics(
             op_kind,
@@ -1290,6 +1303,7 @@ mod tests {
             PlannerOpKind::Loot,
             PlannerOpKind::Bury,
             PlannerOpKind::Tell,
+            PlannerOpKind::ConsultRecord,
             PlannerOpKind::Attack,
             PlannerOpKind::Defend,
             PlannerOpKind::Bribe,
@@ -1297,7 +1311,7 @@ mod tests {
             PlannerOpKind::DeclareSupport,
         ];
 
-        assert_eq!(all.len(), 19);
+        assert_eq!(all.len(), 20);
     }
 
     #[test]
@@ -1314,6 +1328,7 @@ mod tests {
             .collect::<std::collections::BTreeMap<_, _>>();
         let expected_ops = [
             ("tell", PlannerOpKind::Tell),
+            ("consult_record", PlannerOpKind::ConsultRecord),
             ("eat", PlannerOpKind::Consume),
             ("drink", PlannerOpKind::Consume),
             ("sleep", PlannerOpKind::Sleep),
@@ -1387,7 +1402,10 @@ mod tests {
             .iter()
             .filter(|def| {
                 table.contains_key(&def.id)
-                    && matches!(def.name.as_str(), "attack" | "defend" | "bury" | "tell")
+                    && matches!(
+                        def.name.as_str(),
+                        "attack" | "defend" | "bury" | "tell" | "consult_record"
+                    )
             })
             .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
         assert_eq!(

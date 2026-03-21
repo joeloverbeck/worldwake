@@ -14,8 +14,7 @@ pub struct AgentBeliefStore {
     pub social_observations: Vec<SocialObservation>,
     pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
-    pub institutional_beliefs:
-        BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
+    pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
 }
 
 impl AgentBeliefStore {
@@ -604,9 +603,9 @@ mod tests {
     };
     use crate::{
         build_prototype_world, traits::Component, BelievedInstitutionalClaim, BodyPart,
-        CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity, Tick, World, Wound,
-        WoundCause, WoundId, WoundList,
+        CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, Permille, Quantity, Tick, World, Wound, WoundCause, WoundId,
+        WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -870,7 +869,9 @@ mod tests {
             &profile,
         );
         store.record_institutional_belief(
-            InstitutionalBeliefKey::FactionMembersOf { faction: entity(71) },
+            InstitutionalBeliefKey::FactionMembersOf {
+                faction: entity(71),
+            },
             sample_institutional_belief(4),
             &profile,
         );
@@ -883,11 +884,11 @@ mod tests {
             &profile,
         );
 
-        assert!(!store
-            .institutional_beliefs
-            .contains_key(&InstitutionalBeliefKey::FactionMembersOf {
+        assert!(!store.institutional_beliefs.contains_key(
+            &InstitutionalBeliefKey::FactionMembersOf {
                 faction: entity(71)
-            }));
+            }
+        ));
         assert_eq!(store.total_institutional_beliefs(), 2);
         assert!(store
             .institutional_beliefs
@@ -905,7 +906,9 @@ mod tests {
         let mut store = AgentBeliefStore::new();
         let mut profile = profile(12, 100);
         profile.institutional_memory_capacity = 2;
-        let first_key = InstitutionalBeliefKey::FactionMembersOf { faction: entity(80) };
+        let first_key = InstitutionalBeliefKey::FactionMembersOf {
+            faction: entity(80),
+        };
         let second_key = InstitutionalBeliefKey::SupportFor {
             supporter: entity(81),
             office: entity(82),
@@ -1377,7 +1380,10 @@ mod tests {
 
         assert_eq!(profile.confidence_policy, BeliefConfidencePolicy::default());
         assert_eq!(profile.institutional_memory_capacity, 20);
-        assert_eq!(profile.consultation_speed_factor, Permille::new(500).unwrap());
+        assert_eq!(
+            profile.consultation_speed_factor,
+            Permille::new(500).unwrap()
+        );
         assert_eq!(profile.contradiction_tolerance, Permille::new(300).unwrap());
     }
 

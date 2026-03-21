@@ -619,6 +619,16 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .and_then(|state| state.last_known_courage)
     }
 
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_perception_profile(agent)
+                    .map(|profile| profile.consultation_speed_factor)
+            })
+            .flatten()
+    }
+
     fn wounds(&self, agent: EntityId) -> Vec<Wound> {
         if agent == self.agent {
             return self
@@ -755,6 +765,12 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .into_iter()
             .filter(|entity| self.is_dead(*entity))
             .collect()
+    }
+
+    fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
+        (self.entity_kind(record) == Some(EntityKind::Record))
+            .then(|| self.world.get_component_record_data(record).cloned())
+            .flatten()
     }
 
     fn office_data(&self, office: EntityId) -> Option<OfficeData> {
@@ -1569,6 +1585,61 @@ mod tests {
                 &ActionPayload::None,
             ),
             Some(ActionDuration::new(10))
+        );
+    }
+
+    #[test]
+    fn estimate_duration_uses_actor_consultation_speed_for_records() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, record) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    consultation_speed_factor: Permille::new(250).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            let record = txn
+                .create_record(worldwake_core::RecordData {
+                    record_kind: worldwake_core::RecordKind::OfficeRegister,
+                    home_place: place,
+                    issuer: agent,
+                    consultation_ticks: 8,
+                    max_entries_per_consult: 4,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                })
+                .unwrap();
+            commit_txn(txn);
+            (agent, record)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            record,
+            build_believed_entity_state(
+                &world,
+                record,
+                Tick(2),
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
+            .unwrap(),
+        );
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            view.estimate_duration(
+                agent,
+                &DurationExpr::ConsultRecord { target_index: 0 },
+                &[record],
+                &ActionPayload::None,
+            ),
+            Some(ActionDuration::new(2))
         );
     }
 

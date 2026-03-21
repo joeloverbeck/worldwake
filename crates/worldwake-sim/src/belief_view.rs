@@ -1,12 +1,14 @@
-use crate::{ActionDuration, ActionPayload, DurationExpr};
+use crate::{
+    action_semantics::consultation_duration_ticks, ActionDuration, ActionPayload, DurationExpr,
+};
 use std::num::NonZeroU32;
 use worldwake_core::{
     BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile,
     CommodityKind, CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId,
     EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
+    RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick,
+    TickRange, ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
     WorkstationTag, Wound,
 };
 
@@ -249,6 +251,10 @@ pub trait RuntimeBeliefView {
         let _ = agent;
         None
     }
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
         self.visible_hostiles_for(agent)
@@ -262,6 +268,10 @@ pub trait RuntimeBeliefView {
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        let _ = record;
+        None
+    }
     fn office_data(&self, office: EntityId) -> Option<OfficeData> {
         let _ = office;
         None
@@ -684,6 +694,15 @@ pub fn estimate_duration_from_beliefs(
 ) -> Option<ActionDuration> {
     match *duration {
         DurationExpr::Fixed(ticks) => Some(ActionDuration::new(ticks.get())),
+        DurationExpr::ConsultRecord { target_index } => {
+            let target = targets.get(usize::from(target_index)).copied()?;
+            let record = view.record_data(target)?;
+            let factor = view.consultation_speed_factor(actor)?;
+            Some(ActionDuration::new(consultation_duration_ticks(
+                record.consultation_ticks,
+                factor,
+            )))
+        }
         DurationExpr::TargetConsumable { target_index } => {
             let target = targets.get(usize::from(target_index)).copied()?;
             let profile = view.item_lot_consumable_profile(target)?;

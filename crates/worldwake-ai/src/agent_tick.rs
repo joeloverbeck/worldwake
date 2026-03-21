@@ -1651,6 +1651,7 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Loot
         | crate::PlannerOpKind::Bury
         | crate::PlannerOpKind::Tell
+        | crate::PlannerOpKind::ConsultRecord
         | crate::PlannerOpKind::Attack
         | crate::PlannerOpKind::Defend
         | crate::PlannerOpKind::Bribe

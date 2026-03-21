@@ -121,7 +121,9 @@ mod tests {
         },
         components::{AgentData, Name},
         factions::{FactionData, FactionPurpose},
-        institutional::{InstitutionalClaim, InstitutionalRecordEntry, RecordData, RecordEntryId, RecordKind},
+        institutional::{
+            InstitutionalClaim, InstitutionalRecordEntry, RecordData, RecordEntryId, RecordKind,
+        },
         offices::{EligibilityRule, OfficeData, SuccessionLaw},
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,

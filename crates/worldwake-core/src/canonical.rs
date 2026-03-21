@@ -227,7 +227,9 @@ mod tests {
             }],
             next_entry_id: 1,
         };
-        let record_id = original.create_record(record.clone(), crate::Tick(1)).unwrap();
+        let record_id = original
+            .create_record(record.clone(), crate::Tick(1))
+            .unwrap();
         let mut changed = original.clone();
         let mut updated = record;
         updated.max_entries_per_consult = 7;

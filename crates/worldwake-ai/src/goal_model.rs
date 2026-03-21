@@ -539,6 +539,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Attack
             | PlannerOpKind::Defend
             | PlannerOpKind::Tell
+            | PlannerOpKind::ConsultRecord
             | PlannerOpKind::MoveCargo => state,
         }
     }
@@ -785,7 +786,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Wash
             | PlannerOpKind::Defend
             | PlannerOpKind::Bribe
-            | PlannerOpKind::Threaten => return true,
+            | PlannerOpKind::Threaten
+            | PlannerOpKind::ConsultRecord => return true,
             // Terminal ops — fall through to goal-specific binding check.
             PlannerOpKind::Attack
             | PlannerOpKind::Loot

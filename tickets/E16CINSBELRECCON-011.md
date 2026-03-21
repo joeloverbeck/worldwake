@@ -10,26 +10,27 @@
 
 For agents to autonomously seek out institutional knowledge, the AI must have a `ConsultRecord` goal kind and planner operation. The GOAP search must be able to plan multi-step sequences like "Travel to record place → ConsultRecord → Travel back → PoliticalAction". S12's prerequisite-aware planning must integrate with this so `prerequisite_places()` returns the record's home place when institutional beliefs are Unknown.
 
-## Assumption Reassessment (2026-03-21)
+## Assumption Reassessment (2026-03-22)
 
 1. `GoalKind` in `goal.rs` currently has variants through `SupportCandidateForOffice`. No `ConsultRecord` variant exists.
 2. `GoalKindTag` in `goal_model.rs` currently has tags through `SupportCandidateForOffice` (line 22+). No `ConsultRecord` tag.
-3. `PlannerOpKind` in `planner_ops.rs` currently has ops through `DeclareSupport` (line 13+). No `ConsultRecord` op.
-4. `classify_action_def()` in `planner_ops.rs` maps `(ActionDomain, name, payload)` triples to `PlannerOpKind`. Must add `(ActionDomain::Social, "consult_record", _) => Some(PlannerOpKind::ConsultRecord)`.
-5. `semantics_for()` must define `ConsultRecord` semantics: `may_appear_mid_plan: true` (it serves as a prerequisite step), relevant goal kinds: `[GoalKindTag::ConsultRecord]`.
+3. `PlannerOpKind::ConsultRecord` now already exists in `planner_ops.rs` as a minimal registry-integrity classification added by ticket `-005`, and `classify_action_def()` already recognizes `consult_record`.
+4. Mismatch + correction: this ticket no longer owns introducing the enum variant or basic action classification. It owns upgrading that placeholder semantics into the real planning surface: `GoalKind::ConsultRecord`, `GoalKindTag::ConsultRecord`, relevant-goal mapping, hypothetical transition behavior, and S12 prerequisite integration.
+5. `semantics_for()` must update the current placeholder `ConsultRecord` semantics into autonomous-planning semantics: `may_appear_mid_plan: true` (it serves as a prerequisite step), relevant goal kinds: `[GoalKindTag::ConsultRecord]`.
 6. S12 `prerequisite_places()` integration: when a political goal needs institutional belief and the belief is `Unknown`, return the record's home place.
 7. N/A — no heuristic removal.
 8. N/A.
 9. N/A.
-10. N/A.
-11. No mismatch.
+10. Search/goal-model exhaustiveness already mentions `PlannerOpKind::ConsultRecord` in multiple match sites because ticket `-005` made it a first-class registered action. This ticket must convert those placeholder/no-op paths into real consult planning behavior rather than re-adding the enum surface.
+11. The live architectural gap is not "missing action registration" anymore. It is "registered consult action is not yet an autonomous goal/planning path." That is the correct scope for this ticket.
 12. N/A.
 
 ## Architecture Check
 
 1. Follows the existing pattern: GoalKind variant → GoalKindTag → GoalKindPlannerExt → PlannerOpKind → semantics. No novel patterns.
 2. S12 prerequisite integration follows the existing `prerequisite_places()` pattern.
-3. No backward-compatibility shims.
+3. The clean path is to extend the existing placeholder `PlannerOpKind::ConsultRecord` into full planning semantics, not to add a second consult representation or fallback path.
+4. No backward-compatibility shims.
 
 ## Verification Layers
 
@@ -56,14 +57,9 @@ Add the tag variant. Implement `GoalKindPlannerExt` for the new goal kind:
 - `goal_priority_class()` — institutional consultation should be medium priority (below survival, above idle)
 - Implement grounding and terminal check methods
 
-### 3. Add `PlannerOpKind::ConsultRecord` in `planner_ops.rs`
+### 3. Upgrade `PlannerOpKind::ConsultRecord` in `planner_ops.rs`
 
-Add variant to `PlannerOpKind`. Add classification rule in `classify_action_def()`:
-```rust
-(ActionDomain::Social, "consult_record", _) => Some(PlannerOpKind::ConsultRecord),
-```
-
-Define semantics in `semantics_for()`:
+`PlannerOpKind::ConsultRecord` and basic classification already exist. Upgrade its semantics in `semantics_for()` from registry-integrity placeholder behavior to planning behavior:
 - `may_appear_mid_plan: true`
 - `relevant_goal_kinds: &[GoalKindTag::ConsultRecord]`
 - barriers: record not at current place (Travel prerequisite)
@@ -85,7 +81,7 @@ Hypothetical ConsultRecord transition in search must call `PlanningState::overri
 
 - `crates/worldwake-core/src/goal.rs` (modify — add `ConsultRecord` variant to `GoalKind`, update `GoalKey`)
 - `crates/worldwake-ai/src/goal_model.rs` (modify — add `GoalKindTag::ConsultRecord`, implement `GoalKindPlannerExt`)
-- `crates/worldwake-ai/src/planner_ops.rs` (modify — add `PlannerOpKind::ConsultRecord`, classification, semantics)
+- `crates/worldwake-ai/src/planner_ops.rs` (modify — upgrade existing `PlannerOpKind::ConsultRecord` classification/semantics for real planning use)
 - `crates/worldwake-ai/src/search.rs` (modify — hypothetical ConsultRecord transition, S12 prerequisite integration)
 
 ## Out of Scope

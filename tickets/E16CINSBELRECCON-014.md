@@ -10,7 +10,7 @@
 
 The current architecture has a narrow runtime seam where AI reads live office/faction/support truth directly through helper methods. Spec §11 (Migration Requirement) mandates: (1) remove the current planner-only live institutional helper path for public office/faction/support facts, (2) update E16 political AI to read institutional beliefs, (3) do not preserve both architectures in parallel (Principle 26). This is the capstone ticket — it cuts the old path and proves the new one works end-to-end.
 
-## Assumption Reassessment (2026-03-21)
+## Assumption Reassessment (2026-03-22)
 
 1. `per_agent_belief_view.rs` in worldwake-sim contains the `PerAgentBeliefView` that backs AI queries. It currently reads live world state for some institutional queries (office holder, faction membership, support declarations). These reads must be replaced with institutional belief reads.
 2. `PlanningSnapshot` currently captures `actor_support_declarations` and `office_support_declarations` from live world state (planning_snapshot.rs:201-204). These fields must be replaced with belief-derived fields from ticket -010.
@@ -22,8 +22,8 @@ The current architecture has a narrow runtime seam where AI reads live office/fa
 8. Closure boundary: political AI must read institutional beliefs for office holder, support declarations, faction membership. The exact symbols: `PerAgentBeliefView::office_holder()`, `PerAgentBeliefView::support_declarations_for_office()`, and any direct world queries in the AI planning path.
 9. N/A.
 10. Golden test scenarios must set up belief state (records + consultation or witness events) so agents have institutional knowledge through legitimate paths. Scenarios that previously relied on omniscient truth must be updated.
-11. No mismatch — but this is the highest-risk ticket; all Phase B1 and B2 tickets must be complete first.
-12. N/A.
+11. Additional live-code clarification after ticket `-005`: `consult_record` is now a real registered action and the AI semantics table already classifies it minimally for registry integrity, but autonomous consult-goal emission/search remains owned by tickets `-011` and `-012`.
+12. Mismatch + correction: this ticket should not invent autonomous consult behavior during cutover. It should assume `-011` and `-012` are complete first, then remove the live helper seam and migrate goldens onto the new belief/consult substrate.
 
 ## Architecture Check
 
@@ -63,6 +63,9 @@ For each golden test that exercises political behavior:
 - Ensure agents gain institutional beliefs through legitimate paths (consultation, witness, tell)
 - Remove any test setup that relied on omniscient institutional truth reaching AI
 - Verify the test still validates the intended political behavior
+
+Note:
+- Any golden that expects autonomous "Unknown institutional belief -> seek record -> consult -> act" behavior depends on tickets `-011` and `-012`. If those tickets are not landed yet, do not paper over the gap here with live truth shortcuts or bespoke test-only seeding.
 
 ### 5. Verification grep
 

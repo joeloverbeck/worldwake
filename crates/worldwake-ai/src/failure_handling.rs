@@ -121,6 +121,7 @@ fn derive_blocking_fact(
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport => {}
@@ -340,6 +341,7 @@ fn classify_input_failure(
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
@@ -374,6 +376,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Wash
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
@@ -610,6 +613,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Defend => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Bribe => step
             .payload_override
@@ -660,6 +664,7 @@ fn related_place(
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend => goal_key.place.or_else(|| view.effective_place(agent)),
         PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport => view.effective_place(agent),
