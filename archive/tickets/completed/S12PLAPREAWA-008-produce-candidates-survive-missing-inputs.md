@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `candidate_generation.rs` production-path evidence and focused/golden AI coverage
-**Deps**: specs/S12-planner-prerequisite-aware-search.md, archive/tickets/completed/S12PLAPREAWA-003-combined-places-and-search-signature.md
+**Deps**: archive/specs/S12-planner-prerequisite-aware-search.md, archive/tickets/completed/S12PLAPREAWA-003-combined-places-and-search-signature.md
 
 ## Problem
 

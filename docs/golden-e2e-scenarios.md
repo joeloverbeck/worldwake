@@ -46,19 +46,21 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 **Cross-system chain**: Need pressure → seller discovery via `MerchandiseProfile` → planner trade barrier selection → trade valuation/exchange → consumption.
 
 ### Scenario 2c: Care Domain — Third-Party, Self-Care, Observation Gate, and Goal Invalidation
-**File**: `golden_care.rs` | **Tests**: `golden_healing_wounded_agent`, `golden_healing_wounded_agent_replays_deterministically`, `golden_healer_acquires_ground_medicine_for_patient`, `golden_healer_acquires_ground_medicine_for_patient_replays_deterministically`, `golden_self_care_with_medicine`, `golden_self_care_with_medicine_replays_deterministically`, `golden_self_care_acquires_ground_medicine`, `golden_self_care_acquires_ground_medicine_replays_deterministically`, `golden_indirect_report_does_not_trigger_care`, `golden_indirect_report_does_not_trigger_care_replays_deterministically`, `golden_care_goal_invalidation_when_patient_heals`, `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`, `golden_care_pre_start_wound_disappearance_records_blocker`, `golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically`
+**File**: `golden_care.rs` | **Tests**: `golden_healing_wounded_agent`, `golden_healing_wounded_agent_replays_deterministically`, `golden_healer_acquires_ground_medicine_for_patient`, `golden_healer_acquires_ground_medicine_for_patient_replays_deterministically`, `golden_healer_acquires_remote_ground_medicine_for_patient`, `golden_healer_acquires_remote_ground_medicine_for_patient_replays_deterministically`, `golden_self_care_with_medicine`, `golden_self_care_with_medicine_replays_deterministically`, `golden_self_care_acquires_ground_medicine`, `golden_self_care_acquires_ground_medicine_replays_deterministically`, `golden_indirect_report_does_not_trigger_care`, `golden_indirect_report_does_not_trigger_care_replays_deterministically`, `golden_care_goal_invalidation_when_patient_heals`, `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`, `golden_care_pre_start_wound_disappearance_records_blocker`, `golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically`
 **Systems exercised**: AI (candidate generation, planning, `TreatWounds` goal family), Care action domain, Combat/wound treatment, Perception (direct-observation gate), Conservation, deterministic replay
-**Setup**: Seven care sub-scenarios are covered:
+**Setup**: Eight care sub-scenarios are covered:
 1. **Third-party care with medicine**: Healthy healer with medicine, co-located wounded patient. Healer directly observes wounds via passive perception and treats.
 2. **Third-party care with ground medicine**: Healer without medicine, ground medicine available beside wounded patient. Healer picks up medicine then treats.
-3. **Self-care with medicine**: Single wounded agent with own medicine. Agent emits `TreatWounds { patient: self }` and self-treats.
-4. **Self-care with ground medicine acquisition**: Single wounded agent, no medicine in inventory, ground medicine at same place. Agent picks up medicine and self-treats.
-5. **Indirect report does NOT trigger care**: Observer at Village Square with medicine. Wounded patient at Orchard Farm. Observer has Report-sourced belief about patient's wounds. Observer does NOT consume medicine and does NOT travel to patient — only `DirectObservation` triggers care.
-6. **Care goal invalidation**: Patient with medicine and healer without medicine, co-located. Patient self-treats. Healer's `TreatWounds { patient }` goal is satisfied by patient's self-healing (healer never acquires medicine).
-7. **Care pre-start wound disappearance recovery**: Healer lawfully selects `TreatWounds { patient }`, then the patient's wounds are cleared after input production but before authoritative input drain. The queued `heal` request records `StartFailed`, and the next AI tick persists blocked intent memory instead of crashing or leaving a stale in-flight step.
+3. **Third-party care with remote ground medicine**: Healer and wounded patient start at Village Square, but the only known medicine lot is on the ground at Orchard Farm. The healer must travel out, pick up medicine, return, and heal.
+4. **Self-care with medicine**: Single wounded agent with own medicine. Agent emits `TreatWounds { patient: self }` and self-treats.
+5. **Self-care with ground medicine acquisition**: Single wounded agent, no medicine in inventory, ground medicine at same place. Agent picks up medicine and self-treats.
+6. **Indirect report does NOT trigger care**: Observer at Village Square with medicine. Wounded patient at Orchard Farm. Observer has Report-sourced belief about patient's wounds. Observer does NOT consume medicine and does NOT travel to patient — only `DirectObservation` triggers care.
+7. **Care goal invalidation**: Patient with medicine and healer without medicine, co-located. Patient self-treats. Healer's `TreatWounds { patient }` goal is satisfied by patient's self-healing (healer never acquires medicine).
+8. **Care pre-start wound disappearance recovery**: Healer lawfully selects `TreatWounds { patient }`, then the patient's wounds are cleared after input production but before authoritative input drain. The queued `heal` request records `StartFailed`, and the next AI tick persists blocked intent memory instead of crashing or leaving a stale in-flight step.
 **Emergent behavior proven**:
 - Healer generates `TreatWounds { patient }` from directly-observed wounded target via passive perception.
 - When the healer lacks medicine but a wounded local target exists, candidate generation emits the care goal and the planner resolves acquisition through `pick_up` before healing.
+- When the only known medicine is remote, the same care goal survives multi-leg travel and procurement before the healer returns to treat the patient.
 - Self-care is lawful: wounded agents emit `TreatWounds { patient: self }` and consume own medicine.
 - Self-care acquisition works: wounded agents pick up ground medicine and self-treat.
 - Report-sourced wound beliefs do NOT trigger `TreatWounds` — only `PerceptionSource::DirectObservation` does (Principle 7 locality).
@@ -67,7 +69,7 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 - Planner selects the care-domain heal action through the real action registry.
 - Heal executes through the normal lifecycle: medicine is consumed and the patient's wound load decreases.
 - Two runs with the same seed produce identical world and event-log hashes for all care scenarios.
-**Cross-system chain**: Wound state → passive perception seeds `DirectObservation` belief → `TreatWounds` goal emission (self or other) → planner resolves supply (pick_up/trade) → heal action → medicine consumption → wound severity/bleed reduction. Report-sourced beliefs are filtered by the direct-observation gate. Goal invalidation propagates when patient pain reaches zero. If wounds disappear after planning but before authoritative start, the action records `StartFailed` and the next AI tick turns that structured failure into blocked-intent memory rather than a crash.
+**Cross-system chain**: Wound state → passive perception seeds `DirectObservation` belief → `TreatWounds` goal emission (self or other) → planner resolves supply (local pickup, remote pickup, or held medicine) → heal action → medicine consumption → wound severity/bleed reduction. Report-sourced beliefs are filtered by the direct-observation gate. Goal invalidation propagates when patient pain reaches zero. If wounds disappear after planning but before authoritative start, the action records `StartFailed` and the next AI tick turns that structured failure into blocked-intent memory rather than a crash.
 
 ### Scenario 2d: Merchant Restock and Return to Home Market
 **File**: `golden_trade.rs` | **Tests**: `golden_merchant_restock_return_stock`, `golden_merchant_restock_return_stock_replays_deterministically`
@@ -209,11 +211,22 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 **Systems exercised**: AI (candidate generation, ranking, planning), Transport, Production (craft), Needs, Conservation, deterministic replay
 **Setup**: Hungry baker starts at Village Square with the `Bake Bread` recipe, a local mill, and no firewood. A single unpossessed firewood lot is available locally.
 **Emergent behavior proven**:
-- Candidate generation/ranking now surfaces `AcquireCommodity { commodity: Firewood, purpose: RecipeInput(bake_bread) }` as the missing bridge for the hunger-driven bread path.
-- Baker first acquires the unpossessed firewood lot through the standard acquire path.
+- Candidate generation and ranking keep the bread-production path live even though the baker starts without recipe inputs.
+- Baker first acquires the unpossessed local firewood lot.
 - Baker then crafts bread via the normal production action and consumes it to reduce hunger.
 - Firewood is consumed exactly once, bread is produced and then consumed, and the same-seed run replays to identical world and event-log hashes.
-**Cross-system chain**: Hunger pressure → missing recipe-input acquire goal → acquire local input lot → craft progress barrier → consume crafted output.
+**Cross-system chain**: Hunger pressure → reachable local production path → local input acquisition → craft progress barrier → consume crafted output.
+
+### Scenario 6a-remote: Remote Recipe-Input Acquisition Chain
+**File**: `golden_production.rs` | **Tests**: `golden_remote_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input_replays_deterministically`
+**Systems exercised**: AI (candidate generation, ranking, prerequisite-aware planning), Travel, Transport, Production (craft), Needs, Conservation, deterministic replay
+**Setup**: Hungry baker starts at Village Square with the `Bake Bread` recipe and a local mill, but the only known firewood lot is on the ground at Orchard Farm. No direct bread seller/source is available.
+**Emergent behavior proven**:
+- Candidate generation keeps `ProduceCommodity { Bake Bread }` live as the top-level need-serving branch even when the required input and the workstation are separated across places.
+- The planner selects the full remote chain: multi-leg travel out to Orchard Farm, `pick_up` of the remote firewood lot, multi-leg return to Village Square, then `craft:Bake Bread`.
+- The real AI loop executes the full chain, then picks up and consumes the crafted bread to reduce hunger.
+- Decision traces expose prerequisite-aware search guidance on tick 0, and the same-seed run replays to identical world and event-log hashes.
+**Cross-system chain**: Hunger pressure → reachable remote production path → multi-leg travel to remote input → remote `pick_up` → multi-leg return to workstation → craft progress barrier → local output pickup → consume crafted output.
 
 ### Scenario 6b: Multi-Recipe Craft Path
 **File**: `golden_production.rs` | **Test**: `golden_multi_recipe_craft_path`

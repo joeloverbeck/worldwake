@@ -7,19 +7,19 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 9
-- Total `golden_*` tests: 133
+- Total `golden_*` tests: 137
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
 | `golden_ai_decisions.rs` | 14 |
-| `golden_care.rs` | 14 |
+| `golden_care.rs` | 16 |
 | `golden_combat.rs` | 25 |
 | `golden_determinism.rs` | 4 |
 | `golden_emergent.rs` | 24 |
 | `golden_offices.rs` | 13 |
-| `golden_production.rs` | 19 |
+| `golden_production.rs` | 21 |
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 0 |
 | `golden_trade.rs` | 6 |
@@ -47,6 +47,8 @@ Do not hand-edit it.
 - `golden_healing_wounded_agent_replays_deterministically`
 - `golden_healer_acquires_ground_medicine_for_patient`
 - `golden_healer_acquires_ground_medicine_for_patient_replays_deterministically`
+- `golden_healer_acquires_remote_ground_medicine_for_patient`
+- `golden_healer_acquires_remote_ground_medicine_for_patient_replays_deterministically`
 - `golden_self_care_with_medicine`
 - `golden_self_care_with_medicine_replays_deterministically`
 - `golden_self_care_acquires_ground_medicine`
@@ -149,6 +151,8 @@ Do not hand-edit it.
 - `golden_materialized_output_ownership_prevents_theft`
 - `golden_materialization_barrier_chain`
 - `golden_acquire_commodity_recipe_input`
+- `golden_remote_acquire_commodity_recipe_input`
+- `golden_remote_acquire_commodity_recipe_input_replays_deterministically`
 - `golden_multi_recipe_craft_path`
 - `golden_capacity_constrained_ground_lot_pickup`
 - `golden_resource_exhaustion_race_replays_deterministically`

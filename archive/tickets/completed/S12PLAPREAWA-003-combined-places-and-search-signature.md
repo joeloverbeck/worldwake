@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `search_plan()` signature change, `GoalKindPlannerExt::prerequisite_places()` contract change, focused test updates
-**Deps**: S12PLAPREAWA-001, specs/S12-planner-prerequisite-aware-search.md
+**Deps**: S12PLAPREAWA-001, archive/specs/S12-planner-prerequisite-aware-search.md
 
 ## Problem
 

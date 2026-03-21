@@ -161,7 +161,8 @@ fn goal_ranking_provenance(
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
-        } => {
+        }
+        | GoalKind::ProduceCommodity { recipe_id } => {
             recipe_output_provenance(recipe_id, context, recipes).map(RankedGoalProvenance::Drive)
         }
         GoalKind::Sleep => drive_goal_provenance(
@@ -1861,17 +1862,17 @@ mod tests {
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
-                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                sale_kinds: BTreeSet::from([CommodityKind::Firewood]),
                 home_market: Some(market),
             },
         );
         view.demand_memory
-            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+            .insert(agent, vec![demand(market, CommodityKind::Firewood, 10)]);
         let mut recipes = RecipeRegistry::new();
         let recipe_id = recipes.register(RecipeDefinition {
-            name: "Bake Bread".to_string(),
+            name: "Cut Firewood".to_string(),
             inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            outputs: vec![(CommodityKind::Firewood, Quantity(1))],
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: None,
             required_tool_kinds: Vec::new(),
@@ -1890,6 +1891,43 @@ mod tests {
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 200 * 1000);
+    }
+
+    #[test]
+    fn produce_commodity_uses_recipe_output_drive_when_recipe_serves_hunger() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
+        );
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+
+        let ranked = rank(
+            &[goal(GoalKind::ProduceCommodity { recipe_id })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &recipes,
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(ranked[0].motive_score, 900 * 900);
+        assert!(matches!(
+            ranked[0].provenance,
+            Some(RankedGoalProvenance::Drive(_))
+        ));
     }
 
     #[test]

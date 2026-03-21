@@ -48,7 +48,7 @@ Rewrite this ticket to describe the live state of the codebase: the call-site up
 
 ### 2. Verify the delivered integration instead of re-implementing it
 
-Confirm the live `agent_tick` call site, focused search behavior, and end-to-end golden behavior still match the prerequisite-aware planner design from [`specs/S12-planner-prerequisite-aware-search.md`](../specs/S12-planner-prerequisite-aware-search.md).
+Confirm the live `agent_tick` call site, focused search behavior, and end-to-end golden behavior still match the prerequisite-aware planner design from [`archive/specs/S12-planner-prerequisite-aware-search.md`](../../specs/S12-planner-prerequisite-aware-search.md).
 
 ## Files to Touch
 

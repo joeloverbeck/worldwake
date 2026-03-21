@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # Planner Prerequisite-Aware Search
 
@@ -256,3 +256,12 @@ The prerequisite-aware heuristic helps the agent find the Travel→Trade plan (m
 - **False prerequisites**: Agent may believe medicine exists somewhere it doesn't (stale belief). The plan will fail at execution, and the agent will replan. This is correct behavior under Principle 14 (ignorance and uncertainty are first-class).
 - **Increased planning time**: Per-node `combined_relevant_places()` adds a belief-state scan per expansion. With max 512 expansions and a lightweight query (~10-50 entity iterations + distance matrix lookups), the overhead is negligible compared to affordance generation which already runs per-node.
 - **Regression risk**: Goals that return empty from `prerequisite_places()` produce identical combined place sets to pre-S12 behavior. Only TreatWounds and ProduceCommodity gain new places, strictly additive.
+
+## Outcome
+
+Implemented the dynamic per-node prerequisite-aware planner described here and verified it with focused search/goal-model coverage plus canonical goldens on both promised branches.
+
+1. Remote care proof shipped in `golden_healer_acquires_remote_ground_medicine_for_patient` and its replay companion.
+2. Remote production proof shipped in `golden_remote_acquire_commodity_recipe_input` and its replay companion.
+3. The production-side golden exposed follow-on AI contradictions above the search layer, so completion also required aligning `ProduceCommodity` ranking with recipe-output drive semantics and keeping remote workstation evidence reachable across the travel horizon.
+4. The final delivered architecture keeps decomposition truthful at the top-level goal (`ProduceCommodity`) instead of falling back to proxy acquire goals or compatibility shims.

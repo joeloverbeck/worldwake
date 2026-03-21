@@ -99,6 +99,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | Metabolism → thirst escalation → drinking | Yes |
 | Bladder pressure → travel → relief | Yes |
 | Production → materialization → transport → consumption | Yes |
+| Remote recipe-input procurement → multi-leg travel → craft → output pickup → consume | Yes |
 | Resource depletion → regeneration → re-harvest | Yes |
 | Deprivation → wounds → death | Yes |
 | Death → loot | Yes |
@@ -175,12 +176,12 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 133 | 133 |
+| Proven tests | 137 | 137 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 69 | 69 |
+| Cross-system chains | 70 | 70 |
 
 ### Pending Backlog Summary
 

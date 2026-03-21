@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `PlanningBudget`, `GoalKindPlannerExt`, planner semantics/state, search guidance, care golden coverage
-**Deps**: `specs/S12-planner-prerequisite-aware-search.md`
+**Deps**: `archive/specs/S12-planner-prerequisite-aware-search.md`
 
 ## Problem
 

@@ -65,6 +65,9 @@ Established the wound lifecycle corrections and hardening planned for Phase 3: d
 ### S17: Wound Lifecycle Golden E2E Suites — COMPLETED
 Established the missing golden proof for the two S11 wound-lifecycle invariants: Scenario 29 in `golden_emergent.rs` now proves deprivation wound worsening consolidates through live needs dispatch without duplicating wounds, with a deterministic replay companion; Scenario 30 in `golden_combat.rs` now proves recovery-aware priority promotion makes the actor eat before wash so the recovery gate opens and wound severity decreases, also with deterministic replay coverage. Golden coverage docs and generated inventory were kept aligned at 133 `golden_*` tests.
 
+### S12: Planner Prerequisite-Aware Search — COMPLETED
+Established dynamic per-node prerequisite-aware place guidance for planner search, focused trace/budget coverage, and canonical remote-care plus remote-production golden proof. The final completion also aligned `ProduceCommodity` ranking and candidate generation with the planner architecture so remote self-consume crafting stays truthful as `ProduceCommodity` instead of falling back to stale acquire proxies.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -77,7 +80,7 @@ Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15 + E15b + E15c + E16 + E16d + S01 +
 S09 ✅ (design fix to defend action duration completed)
 S11 ✅ (wound lifecycle audit completed)
 S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
-S12 (no unmet deps — planner prerequisite-aware search heuristic)
+S12 ✅ (planner prerequisite-aware search heuristic completed)
 S13 (no unmet deps post-E16d — political emergence golden coverage)
 S15 ✅ (cross-system start-failure emergence golden coverage)
 S16 ✅ (S09 behavioral golden validation coverage)
@@ -136,8 +139,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - removed indefinite action duration paths; defend now uses profile-driven finite `ActorDefendStance` duration and re-enters normal replanning after commit
 - **S11**: Wound Lifecycle Audit — ✅ COMPLETED
   - delivered deprivation-wound identity preservation, recovery-aware self-care ranking, wound hardening coverage, and closeout verification
-- **S12**: Planner Prerequisite-Aware Search (planner enhancement, no deps)
-  - extends A* heuristic and spatial pruning to consider prerequisite resource locations, enabling 4+ step cross-domain plans
+- **S12**: Planner Prerequisite-Aware Search — ✅ COMPLETED
+  - dynamic combined-place search guidance, focused trace/budget coverage, and canonical remote-care plus remote-production goldens are in place
 - **S13**: Political Emergence Golden E2E Suites (no unmet deps post-E16d)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
 - **S15**: Start-Failure Emergence Golden E2E Suites — ✅ COMPLETED
@@ -216,7 +219,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S12-planner-prerequisite-aware-search.md` | 3 | 11 | None (planner enhancement) |
 | `S13-political-emergence-golden-suites.md` | 3 | 11 | E14, S07, E16d (all met) |
 | `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 12 | E14, E15, E16 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
@@ -249,6 +251,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S17 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S14, S15, S16, S17 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S17 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

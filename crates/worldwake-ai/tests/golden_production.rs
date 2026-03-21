@@ -232,6 +232,287 @@ fn run_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn assert_remote_recipe_input_tick_zero_plan(
+    h: &GoldenHarness,
+    baker: EntityId,
+) -> worldwake_ai::AgentDecisionTrace {
+    let tick_0_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for remote recipe-input acquisition")
+        .trace_at(baker, Tick(0))
+        .expect("baker should have a tick 0 trace")
+        .clone();
+    let tick_0_planning = match &tick_0_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!(
+            "expected planning trace for remote recipe-input acquisition tick 0, got {other:?}"
+        ),
+    };
+    let selected_plan = tick_0_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("remote recipe-input scenario should select a plan on tick 0");
+    let next_step = selected_plan
+        .next_step
+        .as_ref()
+        .expect("selected plan should expose its next step");
+
+    assert_eq!(
+        tick_0_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "remote recipe-input scenario should start from a fresh search result"
+    );
+    assert_eq!(
+        next_step.op_kind,
+        PlannerOpKind::Travel,
+        "remote recipe-input scenario should begin by traveling toward the remote input lot"
+    );
+    assert_eq!(
+        selected_plan
+            .steps
+            .iter()
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .map(|step| step.targets.clone())
+            .find(|targets| *targets == vec![ORCHARD_FARM]),
+        Some(vec![ORCHARD_FARM]),
+        "selected plan should include travel to Orchard Farm for the remote firewood lot"
+    );
+    assert!(
+        selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::MoveCargo),
+        "selected plan should include a cargo move step for remote firewood pickup"
+    );
+    assert!(
+        selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Craft),
+        "selected plan should include a craft step after remote firewood pickup"
+    );
+
+    tick_0_trace
+}
+
+fn assert_remote_recipe_input_action_sequence(
+    baker_events: &[&worldwake_sim::ActionTraceEvent],
+) {
+    let mut travel_commits = baker_events
+        .iter()
+        .filter_map(|event| {
+            (event.action_name == "travel"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .collect::<Vec<_>>();
+    travel_commits.sort_unstable();
+
+    let pick_up_commit = baker_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "pick_up"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("remote recipe-input scenario should commit a pick_up step");
+    let craft_commit = baker_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "craft:Bake Bread"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("remote recipe-input scenario should commit a craft step");
+
+    assert!(
+        travel_commits.len() >= 2,
+        "remote recipe-input scenario should commit outbound and return travel; events={baker_events:?}"
+    );
+    assert!(
+        travel_commits.iter().any(|commit| *commit < pick_up_commit),
+        "remote recipe-input scenario should reach the remote place before pickup; events={baker_events:?}"
+    );
+    assert!(
+        travel_commits.iter().any(|commit| *commit > pick_up_commit),
+        "remote recipe-input scenario should return after picking up remote firewood; events={baker_events:?}"
+    );
+    assert!(
+        travel_commits
+            .iter()
+            .filter(|commit| **commit > pick_up_commit)
+            .all(|commit| *commit < craft_commit),
+        "remote recipe-input scenario should craft only after returning with the remote firewood; events={baker_events:?}"
+    );
+}
+
+fn setup_remote_acquire_recipe_input_harness(seed: Seed) -> (GoldenHarness, EntityId) {
+    let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    let bread_recipe = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .expect("bake bread recipe should exist");
+
+    let baker = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Baker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::with([bread_recipe]),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        baker,
+        production_perception_profile(),
+    );
+
+    place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let firewood = txn
+        .create_item_lot(CommodityKind::Firewood, Quantity(1))
+        .unwrap();
+    txn.set_ground_location(firewood, ORCHARD_FARM).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        baker,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    (h, baker)
+}
+
+fn drive_remote_acquire_recipe_input_scenario(
+    h: &mut GoldenHarness,
+    baker: EntityId,
+) -> (worldwake_core::Permille, u64, u64, bool, bool, bool, bool) {
+    let initial_hunger = h.agent_hunger(baker);
+    let initial_total_firewood = total_live_lot_quantity(&h.world, CommodityKind::Firewood);
+    let initial_total_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+
+    let mut visited_orchard = false;
+    let mut acquired_firewood = false;
+    let mut bread_materialized = false;
+    let mut hunger_decreased = false;
+
+    for _ in 0..120 {
+        h.step_once();
+
+        visited_orchard |= h.world.effective_place(baker) == Some(ORCHARD_FARM);
+        acquired_firewood |= h.agent_commodity_qty(baker, CommodityKind::Firewood) > Quantity(0);
+        bread_materialized |= total_live_lot_quantity(&h.world, CommodityKind::Bread) > 0;
+        hunger_decreased |= h.agent_hunger(baker) < initial_hunger;
+
+        assert!(
+            total_live_lot_quantity(&h.world, CommodityKind::Firewood) <= initial_total_firewood,
+            "firewood lots should never increase during remote recipe-input acquisition"
+        );
+        assert!(
+            total_live_lot_quantity(&h.world, CommodityKind::Bread) <= 1,
+            "bread lots should never exceed the single crafted output in the remote recipe-input scenario"
+        );
+
+        let baker_events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for remote recipe-input acquisition")
+            .events_for(baker);
+        let craft_committed = baker_events.iter().any(|event| {
+            event.action_name == "craft:Bake Bread"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        });
+
+        if visited_orchard && acquired_firewood && bread_materialized && hunger_decreased && craft_committed {
+            break;
+        }
+    }
+
+    (
+        initial_hunger,
+        initial_total_firewood,
+        initial_total_bread,
+        visited_orchard,
+        acquired_firewood,
+        bread_materialized,
+        hunger_decreased,
+    )
+}
+
+fn run_remote_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, baker) = setup_remote_acquire_recipe_input_harness(seed);
+    let (
+        _initial_hunger,
+        _initial_total_firewood,
+        initial_total_bread,
+        visited_orchard,
+        acquired_firewood,
+        bread_materialized,
+        hunger_decreased,
+    ) = drive_remote_acquire_recipe_input_scenario(&mut h, baker);
+
+    let tick_0_trace = assert_remote_recipe_input_tick_zero_plan(&h, baker);
+    let baker_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for remote recipe-input acquisition")
+        .events_for(baker)
+        .clone();
+    assert!(
+        visited_orchard,
+        "baker should visit Orchard Farm before remote crafting succeeds; trace={tick_0_trace:?}; events={baker_events:?}"
+    );
+    assert!(
+        acquired_firewood,
+        "baker should acquire the remote firewood lot before crafting bread"
+    );
+    assert!(
+        bread_materialized,
+        "bread should materialize after the baker returns with the remote firewood"
+    );
+    assert!(
+        hunger_decreased,
+        "baker should consume the crafted bread and reduce hunger"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(baker, CommodityKind::Firewood),
+        Quantity(0),
+        "baker should not retain firewood after the successful craft"
+    );
+    assert!(
+        total_live_lot_quantity(&h.world, CommodityKind::Bread) <= initial_total_bread,
+        "bread lots should be consumed or remain bounded after the remote craft chain completes"
+    );
+
+    let baker_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for remote recipe-input acquisition")
+        .events_for(baker);
+    assert_remote_recipe_input_action_sequence(&baker_events);
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash, StateHash) {
     let (mut h, agent) = setup_capacity_constrained_ground_lot_pickup(seed);
     let initial_hunger = h.agent_hunger(agent);
@@ -2292,6 +2573,22 @@ fn golden_acquire_commodity_recipe_input() {
     assert_eq!(
         log_hash_1, log_hash_2,
         "Recipe-input acquisition event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_remote_acquire_commodity_recipe_input() {
+    let _ = run_remote_acquire_recipe_input_scenario(Seed([31; 32]));
+}
+
+#[test]
+fn golden_remote_acquire_commodity_recipe_input_replays_deterministically() {
+    let first = run_remote_acquire_recipe_input_scenario(Seed([32; 32]));
+    let second = run_remote_acquire_recipe_input_scenario(Seed([32; 32]));
+
+    assert_eq!(
+        first, second,
+        "Remote recipe-input acquisition scenario should replay deterministically"
     );
 }
 
