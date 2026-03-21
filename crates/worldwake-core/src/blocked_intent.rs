@@ -51,7 +51,7 @@ impl BlockedIntent {
     pub const fn blocks_goal_generation(&self) -> bool {
         !matches!(
             self.blocking_fact,
-            BlockingFact::ExclusiveFacilityUnavailable
+            BlockingFact::ExclusiveFacilityUnavailable | BlockingFact::SourceDepleted
         )
     }
 }
@@ -130,6 +130,24 @@ mod tests {
 
         memory.expire(Tick(10));
         assert_eq!(memory.intents.len(), 1);
+    }
+
+    #[test]
+    fn source_depleted_does_not_block_goal_generation() {
+        let key = sample_goal_key();
+        let memory = BlockedIntentMemory {
+            intents: vec![BlockedIntent {
+                goal_key: key,
+                blocking_fact: BlockingFact::SourceDepleted,
+                related_entity: Some(entity_id(4, 0)),
+                related_place: Some(entity_id(2, 0)),
+                related_action: None,
+                observed_tick: Tick(8),
+                expires_tick: Tick(20),
+            }],
+        };
+
+        assert!(!memory.is_blocked(&key, Tick(9)));
     }
 
     #[test]

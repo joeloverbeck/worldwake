@@ -33,6 +33,9 @@ pub fn select_best_plan(
         .collect::<Vec<_>>();
     available.sort_by(compare_ranked_plans);
     let best_plan = available.first()?.2.clone();
+    let has_current_goal_plan = current
+        .current_goal
+        .is_some_and(|goal| plans.iter().any(|(key, plan)| *key == goal && plan.is_some()));
 
     let Some(current_plan) = current.current_plan.clone() else {
         return Some(best_plan);
@@ -64,6 +67,10 @@ pub fn select_best_plan(
         ) {
             return Some(challenger_plan);
         }
+    }
+
+    if !has_current_goal_plan {
+        return Some(best_plan);
     }
 
     Some(current_plan)
@@ -518,6 +525,58 @@ mod tests {
 
         assert_eq!(conservative.goal, current_goal);
         assert_eq!(permissive.goal, challenger_goal);
+    }
+
+    #[test]
+    fn stale_current_plan_is_not_retained_when_current_goal_has_no_plan() {
+        let current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let fallback_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Water,
+        });
+        let current_plan = plan(current_goal, 1, 3);
+        let fallback_plan = plan(fallback_goal, 2, 2);
+        let candidates = vec![
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_000,
+            ),
+            ranked(
+                worldwake_core::GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Water,
+                },
+                GoalPriorityClass::Medium,
+                400,
+            ),
+        ];
+        let plans = vec![(current_goal, None), (fallback_goal, Some(fallback_plan.clone()))];
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(current_goal),
+            current_plan: Some(current_plan),
+            dirty: true,
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            &runtime,
+            default_switch_margin(),
+            default_switch_margin(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            selected, fallback_plan,
+            "fresh search should not retain a stale current plan when the current goal has no viable plan"
+        );
     }
 
     #[test]

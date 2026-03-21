@@ -836,7 +836,7 @@ fn places_with_resource_source(
     for &entity_id in state.snapshot().entities.keys() {
         if state
             .resource_source(entity_id)
-            .is_some_and(|s| s.commodity == commodity)
+            .is_some_and(|s| s.commodity == commodity && s.available_quantity > Quantity(0))
         {
             if let Some(place) = state.effective_place(entity_id) {
                 places.insert(place);
@@ -2956,6 +2956,52 @@ mod tests {
         assert_eq!(
             goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
             vec![place_b]
+        );
+    }
+
+    #[test]
+    fn prerequisite_places_produce_commodity_exclude_depleted_resource_sources() {
+        let (mut view, actor, _place_a, place_b, place_c) = spatial_view();
+        let depleted_field = entity(84);
+        let stocked_field = entity(85);
+        for (field, place, quantity) in [
+            (depleted_field, place_b, Quantity(0)),
+            (stocked_field, place_c, Quantity(3)),
+        ] {
+            view.alive.insert(field);
+            view.kinds.insert(field, EntityKind::Place);
+            view.effective_places.insert(field, place);
+            view.entities_at.entry(place).or_default().push(field);
+            view.resource_sources.insert(
+                field,
+                ResourceSource {
+                    commodity: CommodityKind::Grain,
+                    available_quantity: quantity,
+                    max_quantity: Quantity(3),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            );
+        }
+
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ProduceCommodity { recipe_id };
+
+        assert_eq!(
+            goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
+            vec![place_c]
         );
     }
 

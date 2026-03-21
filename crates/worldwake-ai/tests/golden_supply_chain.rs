@@ -27,10 +27,11 @@ use worldwake_ai::{
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
-    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
+    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind,
+    DemandMemory, DemandObservation, DemandObservationReason, GoalKind, HomeostaticNeeds,
+    KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
+    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
+    UtilityProfile,
     WorkstationTag,
 };
 use worldwake_sim::{ActionTraceKind, RecipeDefinition, RecipeRegistry};
@@ -144,6 +145,8 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
         MetabolismProfile::default(),
         UtilityProfile {
             enterprise_weight: pm(900),
+            social_weight: pm(0),
+            care_weight: pm(0),
             ..UtilityProfile::default()
         },
     );
@@ -295,6 +298,10 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
 fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash, StateHash) {
     let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
     let mut h = GoldenHarness::with_recipes(seed, build_craft_restock_recipe_registry());
+    h.driver = AgentTickDriver::new(PlanningBudget {
+        max_plan_depth: 12,
+        ..PlanningBudget::default()
+    });
     let harvest_firewood_recipe = h
         .recipes
         .recipe_by_name("Harvest Firewood")
@@ -639,6 +646,376 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         Quantity(0),
         "merchant should not retain the prerequisite input after crafting"
     );
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, StateHash) {
+    let home_market = prototype_place_entity(PrototypePlace::EastFieldTrail);
+    let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
+    let mut h = GoldenHarness::with_recipes(seed, build_craft_restock_recipe_registry());
+    h.driver = AgentTickDriver::new(PlanningBudget {
+        max_plan_depth: 12,
+        max_node_expansions: 1024,
+        ..PlanningBudget::default()
+    });
+    let harvest_firewood_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Firewood")
+        .map(|(id, _)| id)
+        .expect("harvest firewood recipe should exist");
+    let bake_bread_recipe = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .expect("bake bread recipe should exist");
+
+    let orchard_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::ChoppingBlock,
+        ResourceSource {
+            commodity: CommodityKind::Firewood,
+            available_quantity: Quantity(1),
+            max_quantity: Quantity(1),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let bandit_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        bandit_camp,
+        WorkstationTag::ChoppingBlock,
+        ResourceSource {
+            commodity: CommodityKind::Firewood,
+            available_quantity: Quantity(1),
+            max_quantity: Quantity(1),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        home_market,
+        WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
+    );
+
+    let merchant = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        home_market,
+        HomeostaticNeeds::default(),
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            thirst_rate: pm(0),
+            fatigue_rate: pm(0),
+            bladder_rate: pm(0),
+            dirtiness_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
+        UtilityProfile {
+            enterprise_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+        KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(
+            merchant,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 240,
+                observation_fidelity: pm(875),
+                confidence_policy: BeliefConfidencePolicy::default(),
+            },
+        )
+        .unwrap();
+        txn.set_component_merchandise_profile(
+            merchant,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(home_market),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(merchant, enterprise_trade_disposition())
+            .unwrap();
+        txn.set_component_demand_memory(
+            merchant,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                    place: home_market,
+                    tick: Tick(0),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        orchard_source,
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        bandit_source,
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_resource_source(
+            orchard_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let initial_belief = agent_belief_about(&h.world, merchant, orchard_source)
+        .expect("merchant should retain a seeded stale belief about the orchard source");
+    assert_eq!(
+        initial_belief
+            .resource_source
+            .as_ref()
+            .map(|source| source.available_quantity),
+        Some(Quantity(1)),
+        "seeded belief should still think the orchard source is stocked"
+    );
+    assert_eq!(
+        h.world
+            .get_component_resource_source(orchard_source)
+            .expect("orchard source should remain present")
+            .available_quantity,
+        Quantity(0),
+        "authoritative orchard source should start empty so the belief is stale"
+    );
+
+    let mut visited_orchard = false;
+    let mut visited_bandit = false;
+    let mut acquired_firewood = false;
+    let mut craft_committed = false;
+    let mut bread_restocked_at_home_market = false;
+
+    for _ in 0..280 {
+        h.step_once();
+
+        let firewood_authority =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Firewood);
+        let bread_authority = total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+        let live_firewood = total_live_lot_quantity(&h.world, CommodityKind::Firewood);
+        let live_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+
+        visited_orchard |= h.world.effective_place(merchant) == Some(ORCHARD_FARM);
+        visited_bandit |= h.world.effective_place(merchant) == Some(bandit_camp);
+        acquired_firewood |= h.agent_commodity_qty(merchant, CommodityKind::Firewood) > Quantity(0);
+        bread_restocked_at_home_market |= h
+            .world
+            .entities_effectively_at(home_market)
+            .into_iter()
+            .any(|entity| {
+                h.world
+                    .get_component_item_lot(entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Bread)
+            });
+
+        verify_authoritative_conservation(&h.world, CommodityKind::Firewood, firewood_authority)
+            .unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Bread, bread_authority)
+            .unwrap();
+        verify_live_lot_conservation(&h.world, CommodityKind::Firewood, live_firewood).unwrap();
+        verify_live_lot_conservation(&h.world, CommodityKind::Bread, live_bread).unwrap();
+
+        let merchant_events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for stale-belief recovery")
+            .events_for(merchant);
+        craft_committed |= merchant_events.iter().any(|event| {
+            event.action_name == "craft:Bake Bread"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        });
+
+        if visited_orchard
+            && visited_bandit
+            && acquired_firewood
+            && craft_committed
+            && bread_restocked_at_home_market
+        {
+            break;
+        }
+    }
+
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled for stale-belief recovery");
+    let tick_zero_trace = trace_sink
+        .trace_at(merchant, Tick(0))
+        .expect("merchant should have a tick 0 trace")
+        .clone();
+    let tick_zero_planning = match &tick_zero_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+    let selected_tick_zero_plan = tick_zero_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("stale-belief scenario should select a plan at tick 0");
+    assert_eq!(
+        tick_zero_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "stale-belief scenario should start from a fresh search result"
+    );
+    assert!(matches!(
+        tick_zero_planning.selection.selected.as_ref().map(|goal| &goal.kind),
+        Some(GoalKind::RestockCommodity { commodity }) if *commodity == CommodityKind::Bread
+    ));
+    assert_eq!(
+        selected_tick_zero_plan
+            .next_step
+            .as_ref()
+            .expect("selected plan should expose a first step")
+            .op_kind,
+        PlannerOpKind::Travel,
+        "stale-belief scenario should begin by traveling toward the stale prerequisite source"
+    );
+    assert!(
+        selected_tick_zero_plan.steps.iter().any(|step| {
+            step.op_kind == PlannerOpKind::Travel && step.targets == vec![ORCHARD_FARM]
+        }),
+        "tick 0 plan should route through Orchard Farm from the stale prerequisite belief"
+    );
+    let fallback_replan_trace = trace_sink
+        .traces_for(merchant)
+        .into_iter()
+        .find(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => {
+                trace.tick > Tick(0)
+                    && planning.selection.selected_plan_source
+                        == Some(SelectedPlanSource::SearchSelection)
+                    && planning.selection.selected.as_ref().is_some_and(|goal| {
+                        matches!(
+                            goal.kind,
+                            GoalKind::RestockCommodity {
+                                commodity: CommodityKind::Bread
+                            }
+                        )
+                    })
+                    && planning.selection.selected_plan.as_ref().is_some_and(|plan| {
+                        plan.steps.iter().any(|step| {
+                            step.op_kind == PlannerOpKind::Travel
+                                && step.targets == vec![bandit_camp]
+                        })
+                    })
+            }
+            _ => false,
+        });
+    let replan_planning = match &fallback_replan_trace
+        .expect("corrected local belief should trigger a fresh fallback replan toward Bandit Camp")
+        .outcome
+    {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected fallback planning trace, got {other:?}"),
+    };
+    let replanned_plan = replan_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("fallback planning should select a bandit-camp plan");
+    assert!(matches!(
+        replan_planning.selection.selected.as_ref().map(|goal| &goal.kind),
+        Some(GoalKind::RestockCommodity { commodity }) if *commodity == CommodityKind::Bread
+    ));
+    assert!(
+        replanned_plan.steps.iter().any(|step| {
+            step.op_kind == PlannerOpKind::Travel && step.targets == vec![bandit_camp]
+        }),
+        "post-failure plan should route through the fallback firewood source"
+    );
+
+    assert!(
+        agent_belief_about(&h.world, merchant, orchard_source)
+            .and_then(|belief| belief.resource_source.as_ref())
+            .is_some_and(|source| source.available_quantity == Quantity(0)),
+        "merchant should correct the orchard-source belief to empty after local observation"
+    );
+    assert!(
+        visited_orchard,
+        "merchant should visit Orchard Farm from the stale prerequisite belief"
+    );
+    assert!(
+        visited_bandit,
+        "merchant should later visit the fallback source after the orchard branch fails"
+    );
+    assert!(
+        acquired_firewood,
+        "merchant should acquire fallback firewood before crafting bread"
+    );
+    assert!(
+        bread_restocked_at_home_market,
+        "merchant should restock bread at the home market after recovering from the stale source"
+    );
+    assert!(
+        craft_committed,
+        "stale-belief recovery should still commit craft:Bake Bread"
+    );
+    assert_eq!(
+        h.world
+            .get_component_resource_source(orchard_source)
+            .expect("orchard source should remain present")
+            .available_quantity,
+        Quantity(0),
+        "stale orchard source should remain depleted after the failed branch"
+    );
+    assert_eq!(
+        h.world
+            .get_component_resource_source(bandit_source)
+            .expect("fallback source should remain present")
+            .available_quantity,
+        Quantity(0),
+        "fallback source should be depleted by the successful recovery chain"
+    );
+
     (
         hash_world(&h.world).unwrap(),
         hash_event_log(&h.event_log).unwrap(),
@@ -1094,6 +1471,22 @@ fn golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministical
     assert_eq!(
         first, second,
         "craft-restock scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_stale_prerequisite_belief_discovery_replan() {
+    let _ = run_stale_prerequisite_belief_discovery_replan(Seed([108; 32]));
+}
+
+#[test]
+fn golden_stale_prerequisite_belief_discovery_replan_replays_deterministically() {
+    let first = run_stale_prerequisite_belief_discovery_replan(Seed([109; 32]));
+    let second = run_stale_prerequisite_belief_discovery_replan(Seed([109; 32]));
+
+    assert_eq!(
+        first, second,
+        "stale-belief prerequisite recovery scenario should replay deterministically"
     );
 }
 

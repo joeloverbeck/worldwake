@@ -1037,10 +1037,11 @@ fn acquisition_path_evidence_inner(
     let mut evidence = Evidence::with_place(place);
 
     for candidate_place in reachable_places_within_horizon(view, place, travel_horizon) {
-        let mut place_evidence = Evidence::with_place(candidate_place);
+        let mut place_evidence = Evidence::default();
 
         for seller in view.agents_selling_at(candidate_place, commodity) {
             if seller != agent {
+                place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(seller);
             }
         }
@@ -1050,10 +1051,17 @@ fn acquisition_path_evidence_inner(
             place_evidence.merge(local_lots);
         }
         for source in view.resource_sources_at(candidate_place, commodity) {
-            place_evidence.entities.insert(source);
+            if view
+                .resource_source(source)
+                .is_some_and(|resource| resource.available_quantity > Quantity(0))
+            {
+                place_evidence.places.insert(candidate_place);
+                place_evidence.entities.insert(source);
+            }
         }
         for corpse in view.corpse_entities_at(candidate_place) {
             if corpse_contains_commodity(view, corpse, commodity) {
+                place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(corpse);
             }
         }
@@ -2985,6 +2993,105 @@ mod tests {
                 purpose: CommodityPurpose::SelfConsume,
             }
         ));
+    }
+
+    #[test]
+    fn depleted_resource_sources_are_excluded_from_produce_goal_evidence() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let orchard = entity(11);
+        let bandit_camp = entity(12);
+        let mill = entity(20);
+        let depleted_source = entity(21);
+        let stocked_source = entity(22);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([agent, mill, depleted_source, stocked_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.entity_kinds.insert(depleted_source, EntityKind::Facility);
+        view.entity_kinds.insert(stocked_source, EntityKind::Facility);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(mill, origin);
+        view.effective_places.insert(depleted_source, orchard);
+        view.effective_places.insert(stocked_source, bandit_camp);
+        view.adjacent_places
+            .insert(origin, vec![orchard, bandit_camp]);
+        view.adjacent_places
+            .insert(orchard, vec![origin, bandit_camp]);
+        view.adjacent_places
+            .insert(bandit_camp, vec![origin, orchard]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.workstations
+            .insert((origin, WorkstationTag::Mill), vec![mill]);
+        view.sources_at
+            .insert((orchard, CommodityKind::Firewood), vec![depleted_source]);
+        view.sources_at
+            .insert((bandit_camp, CommodityKind::Firewood), vec![stocked_source]);
+        view.resource_sources.insert(
+            depleted_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        view.resource_sources.insert(
+            stocked_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+        let produce = candidates
+            .iter()
+            .find(|candidate| candidate.key.kind == GoalKind::ProduceCommodity { recipe_id })
+            .expect("reachable stocked source should keep the produce goal emittable");
+
+        assert!(
+            produce.evidence_places.contains(&bandit_camp),
+            "stocked fallback source should remain in the produce-goal evidence"
+        );
+        assert!(
+            !produce.evidence_places.contains(&orchard),
+            "depleted source place should be removed from the produce-goal evidence"
+        );
+        assert!(
+            produce.evidence_entities.contains(&stocked_source),
+            "stocked fallback source should remain in the produce-goal evidence entities"
+        );
+        assert!(
+            !produce.evidence_entities.contains(&depleted_source),
+            "depleted source entity should be removed from the produce-goal evidence entities"
+        );
     }
 
     #[test]
