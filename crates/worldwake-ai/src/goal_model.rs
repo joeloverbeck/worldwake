@@ -11,7 +11,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, CombatActionPayload, DeclareSupportActionPayload, LootActionPayload,
-    RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
+    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
     TransportActionPayload,
 };
 
@@ -735,28 +735,27 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(recipe) = recipes.get(*recipe_id) else {
                     return Vec::new();
                 };
-                let mut places = Vec::new();
-                for (commodity, required_quantity) in &recipe.inputs {
-                    if state.commodity_quantity(actor, *commodity) >= *required_quantity {
-                        continue;
-                    }
-                    append_unique_places(
-                        &mut places,
-                        acquisition_places_for_commodity(
-                            state,
-                            actor,
-                            *commodity,
-                            budget.max_prerequisite_locations,
-                        ),
-                    );
-                }
-                cap_places_by_travel_distance(
+                prerequisite_places_for_recipe_inputs(
                     state,
                     actor,
-                    places,
+                    std::iter::once(recipe),
                     budget.max_prerequisite_locations,
                 )
             }
+            GoalKind::RestockCommodity { commodity } => prerequisite_places_for_recipe_inputs(
+                state,
+                actor,
+                recipes
+                    .iter()
+                    .filter(|(_, recipe)| {
+                        recipe
+                            .outputs
+                            .iter()
+                            .any(|(output, _)| *output == *commodity)
+                    })
+                    .map(|(_, recipe)| recipe),
+                budget.max_prerequisite_locations,
+            ),
             _ => Vec::new(),
         }
     }
@@ -907,6 +906,27 @@ fn acquisition_places_for_commodity(
 
     let mut places = places_with_seller_list(state, commodity);
     append_unique_places(&mut places, places_with_resource_source(state, commodity));
+    cap_places_by_travel_distance(state, actor, places, limit)
+}
+
+fn prerequisite_places_for_recipe_inputs<'a>(
+    state: &PlanningState<'_>,
+    actor: EntityId,
+    recipes: impl Iterator<Item = &'a RecipeDefinition>,
+    limit: u8,
+) -> Vec<EntityId> {
+    let mut places = Vec::new();
+    for recipe in recipes {
+        for (commodity, required_quantity) in &recipe.inputs {
+            if state.commodity_quantity(actor, *commodity) >= *required_quantity {
+                continue;
+            }
+            append_unique_places(
+                &mut places,
+                acquisition_places_for_commodity(state, actor, *commodity, limit),
+            );
+        }
+    }
     cap_places_by_travel_distance(state, actor, places, limit)
 }
 
@@ -2937,6 +2957,125 @@ mod tests {
             goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
             vec![place_b]
         );
+    }
+
+    #[test]
+    fn prerequisite_places_restock_commodity_include_missing_recipe_input_places() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let wheat_field = entity(82);
+        view.alive.insert(wheat_field);
+        view.kinds.insert(wheat_field, EntityKind::Place);
+        view.effective_places.insert(wheat_field, place_b);
+        view.entities_at
+            .entry(place_b)
+            .or_default()
+            .push(wheat_field);
+        view.resource_sources.insert(
+            wheat_field,
+            ResourceSource {
+                commodity: CommodityKind::Grain,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(3),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        };
+
+        assert_eq!(
+            goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
+            vec![place_b]
+        );
+    }
+
+    #[test]
+    fn prerequisite_places_restock_commodity_empty_when_no_recipe_matches_output() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let wheat_field = entity(83);
+        view.alive.insert(wheat_field);
+        view.kinds.insert(wheat_field, EntityKind::Place);
+        view.effective_places.insert(wheat_field, place_b);
+        view.entities_at
+            .entry(place_b)
+            .or_default()
+            .push(wheat_field);
+        view.resource_sources.insert(
+            wheat_field,
+            ResourceSource {
+                commodity: CommodityKind::Grain,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(3),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        };
+
+        assert!(goal
+            .prerequisite_places(&state, &recipes, &PlanningBudget::default())
+            .is_empty());
+    }
+
+    #[test]
+    fn prerequisite_places_restock_commodity_empty_when_all_recipe_inputs_are_owned() {
+        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot).with_commodity_quantity(
+            actor,
+            CommodityKind::Grain,
+            Quantity(2),
+        );
+        let goal = GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        };
+
+        assert!(goal
+            .prerequisite_places(&state, &recipes, &PlanningBudget::default())
+            .is_empty());
     }
 
     #[test]
