@@ -21,7 +21,7 @@ The spec requires worsening existing deprivation wounds instead of creating dupl
 7. N/A — not a political office-claim ticket.
 8. N/A — no `ControlSource`, queued-input, or runtime-intent manipulation.
 9. No scenario isolation choice is needed because this is focused unit coverage in `worldwake-core`, not a golden scenario.
-10. Mismatch corrected: `specs/S11-wound-lifecycle-audit.md` is broader than this ticket and contains at least one stale assumption relative to the current codebase. In particular, the spec claims the `no_recovery_combat_profile()` workaround no longer exists, but it is still present in `crates/worldwake-ai/tests/golden_harness/mod.rs` and used by `crates/worldwake-ai/tests/golden_emergent.rs`. This ticket should therefore stay narrowly scoped to the core `WoundList` helper required by the deprivation-worsening work, not claim that the broader spec narrative fully matches current code.
+10. Mismatch corrected: `archive/specs/S11-wound-lifecycle-audit.md` is broader than this ticket and contains at least one stale assumption relative to the current codebase. In particular, the spec claims the `no_recovery_combat_profile()` workaround no longer exists, but it is still present in `crates/worldwake-ai/tests/golden_harness/mod.rs` and used by `crates/worldwake-ai/tests/golden_emergent.rs`. This ticket should therefore stay narrowly scoped to the core `WoundList` helper required by the deprivation-worsening work, not claim that the broader spec narrative fully matches current code.
 
 ## Architecture Check
 
@@ -70,7 +70,7 @@ Add focused coverage for immutable lookup, mutable lookup preserving identity, a
 - Changing `append_deprivation_wound` / introducing `worsen_or_create_deprivation_wound` in `crates/worldwake-systems/src/needs.rs` (that is the downstream deprivation-worsening work, not this prerequisite helper ticket)
 - Any changes to combat.rs wound progression
 - Any AI/ranking changes
-- Refreshing or correcting the broader `specs/S11-wound-lifecycle-audit.md` narrative beyond what is necessary to scope this ticket accurately
+- Refreshing or correcting the broader `archive/specs/S11-wound-lifecycle-audit.md` narrative beyond what is necessary to scope this ticket accurately
 - Adding or modifying golden tests
 
 ## Acceptance Criteria

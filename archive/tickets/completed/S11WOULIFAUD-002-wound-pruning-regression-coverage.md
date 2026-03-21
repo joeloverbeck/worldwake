@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: `specs/S11-wound-lifecycle-audit.md`, `crates/worldwake-systems/src/combat.rs`, `crates/worldwake-ai/tests/golden_combat.rs`, `crates/worldwake-ai/tests/golden_care.rs`
+**Deps**: `archive/specs/S11-wound-lifecycle-audit.md`, `crates/worldwake-systems/src/combat.rs`, `crates/worldwake-ai/tests/golden_combat.rs`, `crates/worldwake-ai/tests/golden_care.rs`
 
 ## Problem
 

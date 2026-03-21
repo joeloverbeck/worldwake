@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — needs system wound creation logic
-**Deps**: `archive/tickets/completed/S11WOULIFAUD-001-woundlist-deprivation-lookup-methods.md`, `specs/S11-wound-lifecycle-audit.md`
+**Deps**: `archive/tickets/completed/S11WOULIFAUD-001-woundlist-deprivation-lookup-methods.md`, `archive/specs/S11-wound-lifecycle-audit.md`
 
 ## Problem
 
@@ -86,7 +86,7 @@ Add the helper-level cases from acceptance criteria plus one `needs_system` regr
 - Changing `WoundList` API in `worldwake-core` (already completed in `archive/tickets/completed/S11WOULIFAUD-001-woundlist-deprivation-lookup-methods.md`)
 - Changing wound progression/pruning in `combat.rs` (already covered by `archive/tickets/completed/S11WOULIFAUD-002-wound-pruning-regression-coverage.md`)
 - Any AI/ranking changes (`tickets/S11WOULIFAUD-004.md`)
-- Golden hash recapture or broader golden-scenario updates (`tickets/S11WOULIFAUD-005.md`)
+- Golden hash recapture or broader golden-scenario updates (`archive/tickets/completed/S11WOULIFAUD-005.md`)
 - Changing deprivation threshold logic or `MetabolismProfile`
 - Changing `DeprivationExposure` counter reset behavior
 

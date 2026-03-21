@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — AI ranking logic in `worldwake-ai`
-**Deps**: `specs/S11-wound-lifecycle-audit.md`
+**Deps**: `archive/specs/S11-wound-lifecycle-audit.md`
 
 ## Problem
 

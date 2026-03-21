@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # Wound Lifecycle Overhaul
 
@@ -282,3 +282,20 @@ Run all golden tests. Deprivation worsening changes may shift deterministic hash
 Low-to-moderate. The investigation and pruning hardening are risk-free (adding tests to existing code). Deprivation worsening changes wound accumulation behavior, which may shift golden test hashes. The AI priority boost is a small, well-bounded change to ranking logic.
 
 No architectural changes — all modifications use existing types, traits, and patterns. The `WoundList` API additions are pure extensions. The ranking changes add a parameter to existing functions.
+
+## Outcome
+
+- Completion date: 2026-03-21
+- What actually changed:
+  - added `WoundList::find_deprivation_wound()` and `find_deprivation_wound_mut()` in `worldwake-core`
+  - hardened wound progression/pruning coverage in `worldwake-systems::combat`, including zero-recovery persistence and pruning-at-zero-only checks
+  - replaced duplicate deprivation wound creation with in-place worsening in `worldwake-systems::needs`
+  - added recovery-aware clotted-wound promotion for hunger/thirst/fatigue ranking in `worldwake-ai::ranking`
+  - verified the relevant golden suites and workspace checks without needing additional golden hash recapture
+- Deviations from original plan:
+  - the originally suspected zero-recovery "wound disappearance" anomaly was not reproduced as a live engine bug; the shipped work focused on contract hardening and adjacent architectural gaps instead of a speculative hotfix
+  - the spec's planned golden recapture step closed out as verification-only because current goldens already passed after the delivered changes
+- Verification results:
+  - `cargo test -p worldwake-ai` ✅
+  - `cargo test --workspace` ✅
+  - `cargo clippy --workspace` ✅
