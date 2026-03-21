@@ -10,7 +10,7 @@
 
 The AI candidate generation layer must emit `GoalKind::ConsultRecord` candidates when an agent has `Unknown` institutional beliefs that are relevant to its potential goals. It must also suppress institution-sensitive political goals (ClaimOffice, SupportCandidateForOffice) when the relevant institutional belief is `Conflicted`. Without this, agents will either never seek out institutional knowledge or act on contradictory information.
 
-## Assumption Reassessment (2026-03-21)
+## Assumption Reassessment (2026-03-22)
 
 1. `candidate_generation.rs` in worldwake-ai generates goal candidates from agent beliefs. It currently generates `ClaimOffice` and `SupportCandidateForOffice` candidates based on political signals.
 2. Current political candidate generation reads support declarations and office state. After E16c, these must come from institutional beliefs (PlanningSnapshot), not live truth.
@@ -22,7 +22,7 @@ The AI candidate generation layer must emit `GoalKind::ConsultRecord` candidates
 8. Closure boundary: candidate generation for ClaimOffice and SupportCandidateForOffice. The exact symbols are `generate_candidates()` and the political subsection within it.
 9. N/A.
 10. ConsultRecord candidates should only be emitted when: (a) the agent has a plausible political goal, (b) the required institutional belief is Unknown, (c) a record of the right kind is known to exist. This prevents agents from randomly consulting records they have no use for.
-11. No mismatch.
+11. Mismatch + correction: current code in `crates/worldwake-ai/src/candidate_generation.rs` still calls `ctx.view.office_holder()` and `ctx.view.support_declaration()` in the political candidate path. This ticket should migrate those candidate-generation reads onto the new institutional-belief-backed planning/snapshot queries as soon as tickets `-009` and `-010` land; it must not add more logic on top of the legacy live-helper path.
 12. N/A.
 
 ## Architecture Check
@@ -43,7 +43,7 @@ The AI candidate generation layer must emit `GoalKind::ConsultRecord` candidates
 
 Before emitting `ClaimOffice` or `SupportCandidateForOffice` candidates:
 
-1. Query `believed_office_holder(office)` from the planning snapshot
+1. Query `believed_office_holder(office)` from the new belief-backed planning/snapshot surface, not the legacy live `ctx.view.office_holder()` seam
 2. If `Unknown`:
    - Emit `GoalKind::ConsultRecord { record }` for the relevant office register
    - Do NOT emit the political goal (agent doesn't know enough to act)
@@ -59,7 +59,7 @@ A function that, given an `InstitutionalBeliefKey` that is `Unknown`, looks up w
 
 ### 3. Update support declaration candidate generation
 
-`SupportCandidateForOffice` candidates currently use `actor_support_declarations` from the snapshot. These must be sourced from institutional beliefs instead (read via `believed_support_declaration()`).
+`SupportCandidateForOffice` candidates currently use the old office/support read path. These must be sourced from institutional beliefs instead (read via `believed_support_declaration()` and the belief-backed planning/snapshot surface), so this ticket reduces the remaining migration surface before `-014` cuts the seam entirely.
 
 ## Files to Touch
 

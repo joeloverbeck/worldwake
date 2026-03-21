@@ -23,7 +23,8 @@ The current architecture has a narrow runtime seam where AI reads live office/fa
 9. N/A.
 10. Golden test scenarios must set up belief state (records + consultation or witness events) so agents have institutional knowledge through legitimate paths. Scenarios that previously relied on omniscient truth must be updated.
 11. Additional live-code clarification after ticket `-005`: `consult_record` is now a real registered action and the AI semantics table already classifies it minimally for registry integrity, but autonomous consult-goal emission/search remains owned by tickets `-011` and `-012`.
-12. Mismatch + correction: this ticket should not invent autonomous consult behavior during cutover. It should assume `-011` and `-012` are complete first, then remove the live helper seam and migrate goldens onto the new belief/consult substrate.
+12. Additional live-code clarification after ticket `-006`: witness acquisition now exists in `crates/worldwake-systems/src/perception.rs`, so the remaining architecture gap is no longer acquisition for visible political events; it is the AI-side cutover off the live helper seam.
+13. Mismatch + correction: this ticket should not invent autonomous consult behavior during cutover. It should assume `-011` and `-012` are complete first, then remove the live helper seam and migrate goldens onto the new belief/consult substrate.
 
 ## Architecture Check
 
@@ -45,8 +46,15 @@ Replace implementations of institutional query methods to read from `AgentBelief
 
 Methods to migrate:
 - `office_holder(office)` → `believed_office_holder(office)` from belief store
+- `factions_of(member)` → belief-derived membership read / aggregation from belief store
 - `support_declarations_for_office(office)` → `believed_support_declarations_for_office(office)` from belief store
+- `support_declaration(supporter, office)` → belief-derived support read from belief store
 - Any other institutional queries that currently read live truth
+
+Current live seam to remove, verified during reassessment:
+- `crates/worldwake-sim/src/per_agent_belief_view.rs:782-789`
+- `crates/worldwake-sim/src/per_agent_belief_view.rs:792-797`
+- `crates/worldwake-sim/src/per_agent_belief_view.rs:811-822`
 
 ### 2. Remove old snapshot fields in `planning_snapshot.rs`
 
@@ -73,6 +81,10 @@ After all changes, run a workspace-wide grep for direct live institutional reads
 - `world.office_holder` / `world.offices_held` in AI/belief-view context
 - `world.member_of` / `world.members_of` in AI/belief-view context
 - `world.support_declarations` in AI/belief-view context
+
+Also verify the legacy planning snapshot fields are gone:
+- `actor_support_declarations`
+- `office_support_declarations`
 
 ## Files to Touch
 
@@ -101,7 +113,7 @@ After all changes, run a workspace-wide grep for direct live institutional reads
 4. New golden test: agent with conflicted institutional belief suppresses political action
 5. New golden test: agent with Unknown belief seeks ConsultRecord before political action
 6. Workspace grep for live institutional reads in AI modules returns zero hits
-7. `PerAgentBeliefView` institutional methods return belief-derived results, not live truth
+7. `PerAgentBeliefView` institutional methods return belief-derived results, not live truth, for office holder, faction membership, and support declarations
 8. Existing suite: `cargo test --workspace`
 
 ### Invariants

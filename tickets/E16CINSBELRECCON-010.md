@@ -10,7 +10,7 @@
 
 The GOAP plan search operates on `PlanningSnapshot` (immutable read-only state) and `PlanningState` (mutable hypothetical state). For the AI to reason about institutional beliefs during planning, both must carry institutional belief data. Without this, the planner cannot evaluate goals that depend on institutional knowledge (e.g., "who holds the office?") or hypothesize the result of consulting a record.
 
-## Assumption Reassessment (2026-03-21)
+## Assumption Reassessment (2026-03-22)
 
 1. `PlanningSnapshot` (planning_snapshot.rs:193-211) currently has `actor_support_declarations`, `office_support_declarations`. These are live truth reads — the migration will replace them with belief-derived data.
 2. `PlanningState` (planning_state.rs:36-52) has `support_declaration_overrides` — the pattern for institutional_belief_overrides follows this.
@@ -23,7 +23,7 @@ The GOAP plan search operates on `PlanningSnapshot` (immutable read-only state) 
 9. N/A.
 10. N/A.
 11. `actor_support_declarations` and `office_support_declarations` currently read live truth. This ticket replaces them with belief-derived data. The old fields remain temporarily until ticket -014 removes the live helper seam.
-12. N/A.
+12. Additional migration note: current live fields still exist at `crates/worldwake-ai/src/planning_snapshot.rs:201-204`. This ticket should add the belief-derived substrate without introducing any new consumers of those legacy fields. The remaining live-field deletion stays owned by ticket `-014`.
 
 ## Architecture Check
 
@@ -47,6 +47,8 @@ pub(crate) actor_institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Institu
 ```
 
 Populate at snapshot build time by calling `AgentBeliefStore` derivation helpers for all institutional belief keys the actor has.
+
+Important: new call sites added in this ticket should read from `actor_institutional_beliefs`, not from the legacy live-truth fields. If a caller cannot migrate yet, leave that caller for ticket `-014` rather than threading the old fields further through the new path.
 
 ### 2. Extend `PlanningState` in `planning_state.rs`
 

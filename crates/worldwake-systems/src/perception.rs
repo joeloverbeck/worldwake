@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    build_believed_entity_state, AgentBeliefStore, CauseRef, EntityId, EntityKind, EventLog,
-    EventPayload, EventTag, EventView, EvidenceRef, MismatchKind, PendingEvent, PerceptionSource,
-    SocialObservation, SocialObservationKind, VisibilitySpec, WitnessData, World, WorldTxn,
+    build_believed_entity_state, AgentBeliefStore, BelievedInstitutionalClaim, CauseRef, EntityId,
+    EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
+    PendingEvent, PerceptionSource, RelationDelta, RelationValue, SocialObservation,
+    SocialObservationKind, StateDelta, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -34,6 +36,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
             continue;
         };
         let social_observations = social_observations_for_event(world, &record, tick);
+        let institutional_claims = institutional_claims_for_event(&record);
 
         for witness in resolve_witnesses(world, &record) {
             let Some(profile) = world.get_component_perception_profile(witness).copied() else {
@@ -69,6 +72,19 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
 
             for observation in &social_observations {
                 store.record_social_observation(observation.clone());
+            }
+
+            for (key, claim) in &institutional_claims {
+                store.record_institutional_belief(
+                    *key,
+                    BelievedInstitutionalClaim {
+                        claim: *claim,
+                        source: InstitutionalKnowledgeSource::WitnessedEvent,
+                        learned_tick: record.tick(),
+                        learned_at: record.place_id(),
+                    },
+                    &profile,
+                );
             }
 
             store.enforce_capacity(&profile, tick);
@@ -450,6 +466,107 @@ fn social_kind(record: &impl EventView) -> Option<SocialObservationKind> {
     None
 }
 
+fn institutional_claims_for_event(
+    record: &impl EventView,
+) -> Vec<(InstitutionalBeliefKey, InstitutionalClaim)> {
+    if !record.tags().contains(&EventTag::Political) {
+        return Vec::new();
+    }
+
+    let mut normalized = BTreeMap::new();
+    for delta in record.state_deltas() {
+        let Some((key, claim)) = institutional_claim_from_delta(delta, record.tick()) else {
+            continue;
+        };
+        normalized.insert(key, claim);
+    }
+
+    normalized.into_iter().collect()
+}
+
+fn institutional_claim_from_delta(
+    delta: &StateDelta,
+    effective_tick: worldwake_core::Tick,
+) -> Option<(InstitutionalBeliefKey, InstitutionalClaim)> {
+    let StateDelta::Relation(relation_delta) = delta else {
+        return None;
+    };
+
+    match relation_delta {
+        RelationDelta::Added {
+            relation:
+                RelationValue::OfficeHolder {
+                    office,
+                    holder,
+                },
+            ..
+        } => Some((
+            InstitutionalBeliefKey::OfficeHolderOf { office: *office },
+            InstitutionalClaim::OfficeHolder {
+                office: *office,
+                holder: Some(*holder),
+                effective_tick,
+            },
+        )),
+        RelationDelta::Removed {
+            relation:
+                RelationValue::OfficeHolder {
+                    office,
+                    ..
+                },
+            ..
+        } => Some((
+            InstitutionalBeliefKey::OfficeHolderOf { office: *office },
+            InstitutionalClaim::OfficeHolder {
+                office: *office,
+                holder: None,
+                effective_tick,
+            },
+        )),
+        RelationDelta::Added {
+            relation:
+                RelationValue::SupportDeclaration {
+                    supporter,
+                    office,
+                    candidate,
+                },
+            ..
+        } => Some((
+            InstitutionalBeliefKey::SupportFor {
+                supporter: *supporter,
+                office: *office,
+            },
+            InstitutionalClaim::SupportDeclaration {
+                office: *office,
+                supporter: *supporter,
+                candidate: Some(*candidate),
+                effective_tick,
+            },
+        )),
+        RelationDelta::Removed {
+            relation:
+                RelationValue::SupportDeclaration {
+                    supporter,
+                    office,
+                    ..
+                },
+            ..
+        } => Some((
+            InstitutionalBeliefKey::SupportFor {
+                supporter: *supporter,
+                office: *office,
+            },
+            InstitutionalClaim::SupportDeclaration {
+                office: *office,
+                supporter: *supporter,
+                candidate: None,
+                effective_tick,
+            },
+        )),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{perception_system, resolve_witnesses, social_kind, social_observations_for_event};
@@ -458,11 +575,12 @@ mod tests {
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
-        DeadAt, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef, MismatchKind,
+        DeadAt, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
         ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed,
-        SocialObservationKind, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, RelationDelta,
+        RelationKind, RelationValue, ResourceSource, Seed, SocialObservationKind, StateDelta,
+        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -527,6 +645,29 @@ mod tests {
             wounds: Vec::new(),
             courage: None,
         }
+    }
+
+    fn emit_political_relation_event(
+        event_log: &mut EventLog,
+        tick: Tick,
+        place: worldwake_core::EntityId,
+        actor: Option<worldwake_core::EntityId>,
+        targets: Vec<worldwake_core::EntityId>,
+        deltas: Vec<StateDelta>,
+    ) {
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick,
+            cause: CauseRef::Bootstrap,
+            actor_id: actor,
+            target_ids: targets,
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: deltas,
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
+        }));
     }
 
     #[test]
@@ -1616,6 +1757,288 @@ mod tests {
         .unwrap();
 
         assert!(discovery_records(&event_log).is_empty());
+    }
+
+    #[test]
+    fn political_event_projects_office_installation_claim_for_witness() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, holder, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Holder", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Steward").unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, holder, office)
+        };
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(3),
+            place,
+            None,
+            vec![office, holder],
+            vec![StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OfficeHolder,
+                relation: RelationValue::OfficeHolder { office, holder },
+            })],
+        );
+        let mut rng = DeterministicRng::new(Seed([31; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let store = world.get_component_agent_belief_store(observer).unwrap();
+        let beliefs = store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .expect("office-holder belief should be projected for the witness");
+        assert_eq!(beliefs.len(), 1);
+        assert_eq!(
+            beliefs[0].claim,
+            InstitutionalClaim::OfficeHolder {
+                office,
+                holder: Some(holder),
+                effective_tick: Tick(3),
+            }
+        );
+        assert_eq!(
+            beliefs[0].source,
+            InstitutionalKnowledgeSource::WitnessedEvent
+        );
+        assert_eq!(beliefs[0].learned_tick, Tick(3));
+        assert_eq!(beliefs[0].learned_at, Some(place));
+    }
+
+    #[test]
+    fn political_event_projects_office_vacancy_claim_for_witness() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, holder, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("FormerHolder", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Steward").unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, holder, office)
+        };
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(4),
+            place,
+            None,
+            vec![office],
+            vec![StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: RelationKind::OfficeHolder,
+                relation: RelationValue::OfficeHolder { office, holder },
+            })],
+        );
+        let mut rng = DeterministicRng::new(Seed([32; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            tick: Tick(4),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let store = world.get_component_agent_belief_store(observer).unwrap();
+        let beliefs = store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .expect("vacancy belief should be projected for the witness");
+        assert_eq!(beliefs.len(), 1);
+        assert_eq!(
+            beliefs[0].claim,
+            InstitutionalClaim::OfficeHolder {
+                office,
+                holder: None,
+                effective_tick: Tick(4),
+            }
+        );
+        assert_eq!(
+            beliefs[0].source,
+            InstitutionalKnowledgeSource::WitnessedEvent
+        );
+        assert_eq!(beliefs[0].learned_tick, Tick(4));
+        assert_eq!(beliefs[0].learned_at, Some(place));
+    }
+
+    #[test]
+    fn political_event_support_overwrite_projects_only_final_claim() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, supporter, old_candidate, new_candidate, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let supporter = txn.create_agent("Supporter", ControlSource::Ai).unwrap();
+            let old_candidate = txn.create_agent("OldCandidate", ControlSource::Ai).unwrap();
+            let new_candidate = txn.create_agent("NewCandidate", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Steward").unwrap();
+            for entity in [observer, supporter, old_candidate, new_candidate] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, supporter, old_candidate, new_candidate, office)
+        };
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(5),
+            place,
+            Some(supporter),
+            vec![office, new_candidate],
+            vec![
+                StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter,
+                        office,
+                        candidate: old_candidate,
+                    },
+                }),
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::SupportDeclaration,
+                    relation: RelationValue::SupportDeclaration {
+                        supporter,
+                        office,
+                        candidate: new_candidate,
+                    },
+                }),
+            ],
+        );
+        let mut rng = DeterministicRng::new(Seed([33; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let store = world.get_component_agent_belief_store(observer).unwrap();
+        let beliefs = store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::SupportFor { supporter, office })
+            .expect("support belief should be projected for the witness");
+        assert_eq!(beliefs.len(), 1);
+        assert_eq!(
+            beliefs[0].claim,
+            InstitutionalClaim::SupportDeclaration {
+                office,
+                supporter,
+                candidate: Some(new_candidate),
+                effective_tick: Tick(5),
+            }
+        );
+    }
+
+    #[test]
+    fn political_event_does_not_project_institutional_claim_to_remote_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let remote_place = places.get(1).copied().unwrap_or(place);
+        let (observer, remote, holder, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let remote = txn.create_agent("Remote", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Holder", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Steward").unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(remote, remote_place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            for agent in [observer, remote] {
+                txn.set_component_agent_belief_store(agent, AgentBeliefStore::new())
+                    .unwrap();
+                txn.set_component_perception_profile(agent, profile(1000))
+                    .unwrap();
+            }
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, remote, holder, office)
+        };
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(6),
+            place,
+            None,
+            vec![office, holder],
+            vec![StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OfficeHolder,
+                relation: RelationValue::OfficeHolder { office, holder },
+            })],
+        );
+        let mut rng = DeterministicRng::new(Seed([34; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            tick: Tick(6),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let local_store = world.get_component_agent_belief_store(observer).unwrap();
+        assert!(local_store
+            .institutional_beliefs
+            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office }));
+        let remote_store = world.get_component_agent_belief_store(remote).unwrap();
+        assert!(!remote_store
+            .institutional_beliefs
+            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office }));
     }
 
     #[test]
