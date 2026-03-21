@@ -1,8 +1,8 @@
 use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
     ArchiveMutationSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
-    EventId, LotOperation, Permille, Quantity, ReservationId, Tick, TickRange, UniqueItemKind,
-    World, WorldError,
+    EventId, LotOperation, Permille, Quantity, RecordData, ReservationId, Tick, TickRange,
+    UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
@@ -234,6 +234,12 @@ impl<'w> WorldTxn<'w> {
     pub fn create_faction(&mut self, name: &str) -> Result<EntityId, WorldError> {
         let entity = self.staged_world.create_faction(name, self.tick)?;
         self.record_created_entity(entity, EntityKind::Faction);
+        Ok(entity)
+    }
+
+    pub fn create_record(&mut self, record: RecordData) -> Result<EntityId, WorldError> {
+        let entity = self.staged_world.create_record(record, self.tick)?;
+        self.record_created_entity(entity, EntityKind::Record);
         Ok(entity)
     }
 
@@ -1482,7 +1488,8 @@ mod tests {
             sample_travel_disposition_profile, sample_utility_profile,
         },
         AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, DemandMemory, FactionData,
-        FactionPurpose, MerchandiseProfile, OfficeData, PerceptionProfile, PerceptionSource,
+        FactionPurpose, InstitutionalClaim, InstitutionalRecordEntry, MerchandiseProfile,
+        OfficeData, PerceptionProfile, PerceptionSource, RecordData, RecordEntryId, RecordKind,
         SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
         TravelDispositionProfile, UtilityProfile,
     };
@@ -1572,6 +1579,27 @@ mod tests {
         FactionData {
             name: "River Pact".to_string(),
             purpose: FactionPurpose::Political,
+        }
+    }
+
+    fn sample_record_data() -> RecordData {
+        RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place: entity(12),
+            issuer: entity(13),
+            consultation_ticks: 6,
+            max_entries_per_consult: 9,
+            entries: vec![InstitutionalRecordEntry {
+                entry_id: RecordEntryId(0),
+                claim: InstitutionalClaim::OfficeHolder {
+                    office: entity(14),
+                    holder: Some(entity(15)),
+                    effective_tick: Tick(4),
+                },
+                recorded_tick: Tick(5),
+                supersedes: None,
+            }],
+            next_entry_id: 1,
         }
     }
 
@@ -1793,6 +1821,28 @@ mod tests {
                 ..
             }) if entity == unique_item
         ));
+    }
+
+    #[test]
+    fn create_record_records_typed_component_delta() {
+        let mut world = World::new(test_topology()).unwrap();
+        let mut txn = new_txn(&mut world);
+        let record_data = sample_record_data();
+
+        let record = txn.create_record(record_data.clone()).unwrap();
+
+        assert_eq!(txn.staged_world.entity_kind(record), Some(EntityKind::Record));
+        assert!(txn.deltas().iter().any(|delta| {
+            matches!(
+                delta,
+                StateDelta::Component(ComponentDelta::Set {
+                    entity,
+                    component_kind: ComponentKind::RecordData,
+                    after: ComponentValue::RecordData(value),
+                    ..
+                }) if *entity == record && value == &record_data
+            )
+        }));
     }
 
     #[test]
@@ -3037,6 +3087,35 @@ mod tests {
     }
 
     #[test]
+    fn set_component_record_data_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let record = world.create_record(sample_record_data(), Tick(1)).unwrap();
+        let before = world.get_component_record_data(record).cloned().unwrap();
+        let mut after = before.clone();
+        after.max_entries_per_consult += 1;
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_record_data(record, after.clone()).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: record,
+                component_kind: ComponentKind::RecordData,
+                before: Some(ComponentValue::RecordData(before)),
+                after: ComponentValue::RecordData(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record_event = log.get(event_id).unwrap();
+
+        assert_eq!(record_event.state_deltas().len(), 1);
+        assert_eq!(world.get_component_record_data(record), Some(&after));
+    }
+
+    #[test]
     fn set_component_faction_data_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let faction = world.create_faction("River Pact", Tick(1)).unwrap();
@@ -3511,6 +3590,32 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_office_data(office), None);
+    }
+
+    #[test]
+    fn clear_component_record_data_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let record = world.create_record(sample_record_data(), Tick(1)).unwrap();
+        let before = world.get_component_record_data(record).cloned().unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_record_data(record).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: record,
+                component_kind: ComponentKind::RecordData,
+                before: ComponentValue::RecordData(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record_event = log.get(event_id).unwrap();
+
+        assert_eq!(record_event.state_deltas().len(), 1);
+        assert_eq!(world.get_component_record_data(record), None);
     }
 
     #[test]

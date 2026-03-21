@@ -8,7 +8,8 @@ use crate::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, OfficeData, PerceptionProfile, PlaceTag,
-    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RelationTables,
+    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
+    RelationTables,
     ResourceSource, SubstitutePreferences, TellProfile, Tick, Topology, TradeDispositionProfile,
     TravelDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile, WorkstationMarker,
     WorldError, WoundList,
@@ -167,6 +168,16 @@ impl World {
         tick: Tick,
     ) -> Result<EntityId, WorldError> {
         self.create_named_entity(EntityKind::Faction, name, tick)
+    }
+
+    pub(crate) fn create_record(
+        &mut self,
+        record: RecordData,
+        tick: Tick,
+    ) -> Result<EntityId, WorldError> {
+        self.create_entity_with(EntityKind::Record, tick, |world, entity| {
+            world.insert_component_record_data(entity, record)
+        })
     }
 
     pub(crate) fn create_item_lot(
@@ -475,6 +486,7 @@ impl World {
                 | EntityKind::ItemLot
                 | EntityKind::UniqueItem
                 | EntityKind::Container
+                | EntityKind::Record
         )
     }
 
@@ -579,13 +591,15 @@ mod tests {
         AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart,
         CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
         DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EventId, FactionData, FactionPurpose, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-        OfficeData, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
-        ProvenanceEntry, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        SubstitutePreferences, SuccessionLaw, TellProfile, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        EventId, FactionData, FactionPurpose, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes, LoadUnits,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
+        PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
+        ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
+        ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
+        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
+        WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -772,6 +786,27 @@ mod tests {
         FactionData {
             name: "River Pact".to_string(),
             purpose: FactionPurpose::Political,
+        }
+    }
+
+    fn sample_record_data() -> RecordData {
+        RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place: entity(8),
+            issuer: entity(9),
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: vec![InstitutionalRecordEntry {
+                entry_id: RecordEntryId(0),
+                claim: InstitutionalClaim::OfficeHolder {
+                    office: entity(10),
+                    holder: Some(entity(11)),
+                    effective_tick: Tick(3),
+                },
+                recorded_tick: Tick(4),
+                supersedes: None,
+            }],
+            next_entry_id: 1,
         }
     }
 
@@ -1098,6 +1133,20 @@ mod tests {
             Some(&Name("River Pact".to_string()))
         );
         assert_eq!(world.get_component_agent_data(id), None);
+    }
+
+    #[test]
+    fn create_record_produces_correct_entity() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let record_data = sample_record_data();
+
+        let id = world.create_record(record_data.clone(), Tick(7)).unwrap();
+
+        assert!(world.is_alive(id));
+        assert_eq!(world.entity_kind(id), Some(EntityKind::Record));
+        assert_eq!(world.get_component_record_data(id), Some(&record_data));
+        assert!(world.is_in_transit(id));
+        assert_eq!(world.get_component_name(id), None);
     }
 
     #[test]
@@ -4289,6 +4338,41 @@ mod tests {
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
         assert_eq!(world.get_component_office_data(id), None);
+    }
+
+    #[test]
+    fn record_data_component_roundtrip_on_record() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Record, Tick(1));
+        let record = sample_record_data();
+
+        world
+            .insert_component_record_data(id, record.clone())
+            .unwrap();
+        assert_eq!(world.get_component_record_data(id), Some(&record));
+        assert!(world.has_component_record_data(id));
+        assert_eq!(
+            world.query_record_data().collect::<Vec<_>>(),
+            vec![(id, &record)]
+        );
+        assert_eq!(world.count_with_record_data(), 1);
+
+        let removed = world.remove_component_record_data(id).unwrap();
+        assert_eq!(removed, Some(record));
+        assert_eq!(world.get_component_record_data(id), None);
+    }
+
+    #[test]
+    fn insert_record_data_on_non_record_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_record_data(id, sample_record_data())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.get_component_record_data(id), None);
     }
 
     #[test]

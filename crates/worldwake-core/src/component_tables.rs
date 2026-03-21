@@ -9,6 +9,7 @@ use crate::{
     drives::DriveThresholds,
     facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,
+    institutional::RecordData,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::OfficeData,
@@ -120,6 +121,7 @@ mod tests {
         },
         components::{AgentData, Name},
         factions::{FactionData, FactionPurpose},
+        institutional::{InstitutionalClaim, InstitutionalRecordEntry, RecordData, RecordEntryId, RecordKind},
         offices::{EligibilityRule, OfficeData, SuccessionLaw},
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
@@ -224,6 +226,27 @@ mod tests {
         }
     }
 
+    fn sample_record_data() -> RecordData {
+        RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place: entity(40),
+            issuer: entity(41),
+            consultation_ticks: 5,
+            max_entries_per_consult: 8,
+            entries: vec![InstitutionalRecordEntry {
+                entry_id: RecordEntryId(0),
+                claim: InstitutionalClaim::OfficeHolder {
+                    office: entity(42),
+                    holder: Some(entity(43)),
+                    effective_tick: Tick(9),
+                },
+                recorded_tick: Tick(10),
+                supersedes: None,
+            }],
+            next_entry_id: 1,
+        }
+    }
+
     fn seed_roundtrip_components(tables: &mut ComponentTables) {
         let name_id = entity(2);
         let agent_id = entity(8);
@@ -256,6 +279,7 @@ mod tests {
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
         tables.insert_office_data(entity(26), sample_office_data());
         tables.insert_faction_data(entity(27), sample_faction_data());
+        tables.insert_record_data(entity(28), sample_record_data());
         tables.insert_item_lot(
             entity(11),
             ItemLot {
@@ -321,6 +345,7 @@ mod tests {
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_office_data().count(), 0);
         assert_eq!(tables.iter_faction_data().count(), 0);
+        assert_eq!(tables.iter_record_data().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_known_recipes().count(), 0);
         assert_eq!(tables.iter_demand_memories().count(), 0);
@@ -471,6 +496,17 @@ mod tests {
         assert_eq!(tables.insert_office_data(id, office.clone()), None);
         assert_eq!(tables.get_office_data(id), Some(&office));
         assert!(tables.has_office_data(id));
+    }
+
+    #[test]
+    fn insert_and_get_record_data() {
+        let mut tables = ComponentTables::default();
+        let id = entity(48);
+        let record = sample_record_data();
+
+        assert_eq!(tables.insert_record_data(id, record.clone()), None);
+        assert_eq!(tables.get_record_data(id), Some(&record));
+        assert!(tables.has_record_data(id));
     }
 
     #[test]

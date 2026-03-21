@@ -8,8 +8,8 @@ use crate::{
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, Name, OfficeData, PerceptionProfile, Permille, ProductionJob,
     ProductionOutputOwnershipPolicy, Quantity, ReservationRecord, ResourceSource,
-    SubstitutePreferences, TellProfile, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    RecordData, SubstitutePreferences, TellProfile, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -223,12 +223,13 @@ mod tests {
         CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container, ControlSource,
         DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, ExclusiveFacilityPolicy, FacilityUseQueue, FactionData, HomeostaticNeeds,
-        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
-        OfficeData, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
+        InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes,
+        LoadUnits, LotOperation, MetabolismProfile, Name, OfficeData, PerceptionProfile,
+        PerceptionSource, Permille, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, TellProfile, Tick, TickRange,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
-        WoundCause, WoundList,
+        RecordData, RecordEntryId, RecordKind, ReservationId, ReservationRecord,
+        ResourceSource, TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -297,6 +298,24 @@ mod tests {
             ComponentValue::FactionData(FactionData {
                 name: "River Pact".to_string(),
                 purpose: crate::FactionPurpose::Political,
+            }),
+            ComponentValue::RecordData(RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: entity(33),
+                issuer: entity(34),
+                consultation_ticks: 5,
+                max_entries_per_consult: 7,
+                entries: vec![InstitutionalRecordEntry {
+                    entry_id: RecordEntryId(0),
+                    claim: InstitutionalClaim::OfficeHolder {
+                        office: entity(35),
+                        holder: Some(entity(36)),
+                        effective_tick: Tick(8),
+                    },
+                    recorded_tick: Tick(9),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
             }),
             ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
             ComponentValue::AgentBeliefStore(AgentBeliefStore {
@@ -494,6 +513,7 @@ mod tests {
                 ComponentKind::UtilityProfile,
                 ComponentKind::OfficeData,
                 ComponentKind::FactionData,
+                ComponentKind::RecordData,
                 ComponentKind::BlockedIntentMemory,
                 ComponentKind::AgentBeliefStore,
                 ComponentKind::PerceptionProfile,
