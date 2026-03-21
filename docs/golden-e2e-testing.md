@@ -26,6 +26,7 @@ Prefer the strongest, most semantic assertion surface available:
    - Do not default to event-log ordering when action traces or authoritative state express the behavior more directly.
 
 When multiple semantic surfaces could prove the invariant, prefer the earliest causal boundary that proves the contract. Only widen the golden to later execution or durable-state consequences when that later boundary is itself part of the promise under test.
+For delivery or restock scenarios, do not overstate the durable ownership boundary. If the live architecture lawfully satisfies the contract by materializing stock at the destination or home market, assert that destination-local stock exists there instead of forcing "item remains in actor inventory" as the success condition.
 
 ## Ordering Rules
 

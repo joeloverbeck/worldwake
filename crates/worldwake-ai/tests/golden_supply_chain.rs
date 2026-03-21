@@ -21,15 +21,19 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeSet;
-use worldwake_ai::{AgentTickDriver, DecisionOutcome, PlanningBudget};
+use worldwake_ai::{
+    AgentTickDriver, DecisionOutcome, PlannerOpKind, PlanningBudget, SelectedPlanSource,
+};
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind, DemandMemory,
-    DemandObservation, DemandObservationReason, GoalKind, HomeostaticNeeds, KnownRecipes,
-    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
-    Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
+    total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
+    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
+    DemandObservationReason, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
     WorkstationTag,
 };
+use worldwake_sim::{ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
 fn default_trade_disposition() -> TradeDispositionProfile {
     TradeDispositionProfile {
@@ -45,6 +49,21 @@ fn enterprise_trade_disposition() -> TradeDispositionProfile {
         demand_memory_retention_ticks: 240,
         ..default_trade_disposition()
     }
+}
+
+fn build_craft_restock_recipe_registry() -> RecipeRegistry {
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(RecipeDefinition {
+        name: "Harvest Firewood".to_string(),
+        inputs: vec![],
+        outputs: vec![(CommodityKind::Firewood, Quantity(1))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::ChoppingBlock),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+    });
+    recipes.register(build_bake_bread_recipe());
+    recipes
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +290,360 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
 // ---------------------------------------------------------------------------
 // Segment 2: Consumer Co-located Trade (with traces)
 // ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_lines)]
+fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash, StateHash) {
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let mut h = GoldenHarness::with_recipes(seed, build_craft_restock_recipe_registry());
+    let harvest_firewood_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Firewood")
+        .map(|(id, _)| id)
+        .expect("harvest firewood recipe should exist");
+    let bake_bread_recipe = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .expect("bake bread recipe should exist");
+
+    let remote_firewood_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::ChoppingBlock,
+        ResourceSource {
+            commodity: CommodityKind::Firewood,
+            available_quantity: Quantity(1),
+            max_quantity: Quantity(1),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        general_store,
+        WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
+    );
+
+    let merchant = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            thirst_rate: pm(0),
+            fatigue_rate: pm(0),
+            bladder_rate: pm(0),
+            dirtiness_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
+        UtilityProfile {
+            enterprise_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+        KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(
+            merchant,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 240,
+                observation_fidelity: pm(875),
+                confidence_policy: BeliefConfidencePolicy::default(),
+            },
+        )
+        .unwrap();
+        txn.set_component_merchandise_profile(
+            merchant,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(general_store),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(merchant, enterprise_trade_disposition())
+            .unwrap();
+        txn.set_component_demand_memory(
+            merchant,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                    place: general_store,
+                    tick: Tick(0),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        &[remote_firewood_source],
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let initial_firewood_authority =
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Firewood);
+    let initial_bread_authority =
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+    let initial_combined_authority = initial_firewood_authority + initial_bread_authority;
+
+    let mut merchant_visited_orchard = false;
+    let mut merchant_acquired_firewood = false;
+    let mut bread_restocked_at_home_market = false;
+
+    for _ in 0..200 {
+        h.step_once();
+
+        let firewood_authority =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Firewood);
+        let bread_authority = total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+        let live_firewood = total_live_lot_quantity(&h.world, CommodityKind::Firewood);
+        let live_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+
+        merchant_visited_orchard |= h.world.effective_place(merchant) == Some(ORCHARD_FARM);
+        merchant_acquired_firewood |= h.agent_commodity_qty(merchant, CommodityKind::Firewood) > Quantity(0);
+        bread_restocked_at_home_market |= h
+            .world
+            .entities_effectively_at(general_store)
+            .into_iter()
+            .any(|entity| {
+                h.world
+                    .get_component_item_lot(entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Bread)
+            });
+
+        assert_eq!(
+            firewood_authority + bread_authority,
+            initial_combined_authority,
+            "firewood-to-bread transformation should preserve combined authoritative quantity"
+        );
+        assert!(
+            live_firewood + live_bread <= initial_combined_authority,
+            "live lots should stay bounded by the single remote prerequisite chain"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Firewood, firewood_authority)
+            .unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Bread, bread_authority)
+            .unwrap();
+        verify_live_lot_conservation(&h.world, CommodityKind::Firewood, live_firewood).unwrap();
+        verify_live_lot_conservation(&h.world, CommodityKind::Bread, live_bread).unwrap();
+
+        let merchant_events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for craft restock")
+            .events_for(merchant);
+        let craft_committed = merchant_events.iter().any(|event| {
+            event.action_name == "craft:Bake Bread"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        });
+
+        if merchant_visited_orchard
+            && merchant_acquired_firewood
+            && bread_restocked_at_home_market
+            && craft_committed
+        {
+            break;
+        }
+    }
+
+    let decision_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for craft restock");
+    let tick_zero_trace = decision_trace
+        .trace_at(merchant, Tick(0))
+        .expect("merchant should have a tick 0 trace")
+        .clone();
+    let tick_zero_planning = match &tick_zero_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+    let selected_plan = tick_zero_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("merchant should select a craft-restock plan at tick 0");
+    let next_step = selected_plan
+        .next_step
+        .as_ref()
+        .expect("selected craft-restock plan should expose a next step");
+    assert_eq!(
+        tick_zero_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "craft-restock scenario should start from a fresh search result"
+    );
+    assert_eq!(
+        next_step.op_kind,
+        PlannerOpKind::Travel,
+        "craft-restock plan should begin by traveling toward the remote prerequisite source"
+    );
+    assert!(
+        selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Travel && step.targets == vec![ORCHARD_FARM]),
+        "selected craft-restock plan should include travel to Orchard Farm"
+    );
+
+    let merchant_generated_and_selected_restock = (0u64..=20).any(|tick| {
+        decision_trace
+            .trace_at(merchant, Tick(tick))
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => {
+                    let generated = planning.candidates.generated.iter().any(|goal| {
+                        matches!(
+                            goal.kind,
+                            GoalKind::RestockCommodity {
+                                commodity: CommodityKind::Bread
+                            }
+                        )
+                    });
+                    let selected = planning.selection.selected.as_ref().is_some_and(|goal| {
+                        matches!(
+                            goal.kind,
+                            GoalKind::RestockCommodity {
+                                commodity: CommodityKind::Bread
+                            }
+                        )
+                    });
+                    generated && selected
+                }
+                _ => false,
+            })
+    });
+    assert!(
+        merchant_generated_and_selected_restock,
+        "merchant should generate and select RestockCommodity(Bread) in the first 20 ticks"
+    );
+    let saw_prerequisite_guidance = tick_zero_planning
+        .planning
+        .attempts
+        .iter()
+        .any(|attempt| {
+            attempt
+                .expansion_summaries
+                .iter()
+                .any(|summary| summary.prerequisite_places_count > 0)
+        });
+    assert!(
+        saw_prerequisite_guidance,
+        "craft-restock search should record non-empty prerequisite places in expansion summaries"
+    );
+
+    let merchant_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for craft restock")
+        .events_for(merchant);
+    let mut travel_commits = merchant_events
+        .iter()
+        .filter_map(|event| {
+            (event.action_name == "travel"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .collect::<Vec<_>>();
+    travel_commits.sort_unstable();
+    let harvest_commit = merchant_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "harvest:Harvest Firewood"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("craft-restock scenario should commit Harvest Firewood");
+    let craft_commit = merchant_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "craft:Bake Bread"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("craft-restock scenario should commit Bake Bread");
+    assert!(
+        travel_commits.len() >= 2,
+        "craft-restock scenario should commit outbound and return travel; events={merchant_events:?}"
+    );
+    assert!(
+        travel_commits.iter().any(|commit| *commit < harvest_commit),
+        "merchant should travel before harvesting remote firewood; events={merchant_events:?}"
+    );
+    assert!(
+        travel_commits.iter().any(|commit| *commit > harvest_commit && *commit < craft_commit),
+        "merchant should return home after harvesting and before crafting; events={merchant_events:?}"
+    );
+    assert!(
+        merchant_visited_orchard,
+        "merchant should visit Orchard Farm before the restock craft completes"
+    );
+    assert!(
+        merchant_acquired_firewood,
+        "merchant should acquire firewood before crafting bread"
+    );
+    assert!(
+        bread_restocked_at_home_market,
+        "craft-restock scenario should leave bread stock at the home market; final_place={:?}, merchant_bread={:?}, live_bread={}, events={merchant_events:?}",
+        h.world.effective_place(merchant),
+        h.agent_commodity_qty(merchant, CommodityKind::Bread),
+        total_live_lot_quantity(&h.world, CommodityKind::Bread),
+    );
+    assert_eq!(
+        h.world
+            .get_component_resource_source(remote_firewood_source)
+            .expect("remote firewood source should remain present")
+            .available_quantity,
+        Quantity(0),
+        "remote firewood source should be depleted by the successful craft-restock chain"
+    );
+    assert_eq!(
+        h.world.effective_place(merchant),
+        Some(general_store),
+        "merchant should finish at the home market after restocking"
+    );
+    assert!(
+        h.world
+            .entities_effectively_at(general_store)
+            .into_iter()
+            .any(|entity| {
+                h.world
+                    .get_component_item_lot(entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Bread)
+            }),
+        "bread should exist at the home market after the successful craft-restock chain"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(merchant, CommodityKind::Firewood),
+        Quantity(0),
+        "merchant should not retain the prerequisite input after crafting"
+    );
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
 
 #[allow(clippy::too_many_lines)]
 fn run_consumer_trade_with_traces(seed: Seed) -> (StateHash, StateHash) {
@@ -705,6 +1078,22 @@ fn test_merchant_restock_replay() {
     assert_eq!(
         first, second,
         "Merchant restock scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_merchant_restocks_via_prerequisite_aware_craft() {
+    let _ = run_merchant_restocks_via_prerequisite_aware_craft(Seed([106; 32]));
+}
+
+#[test]
+fn golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically() {
+    let first = run_merchant_restocks_via_prerequisite_aware_craft(Seed([107; 32]));
+    let second = run_merchant_restocks_via_prerequisite_aware_craft(Seed([107; 32]));
+
+    assert_eq!(
+        first, second,
+        "craft-restock scenario should replay deterministically"
     );
 }
 

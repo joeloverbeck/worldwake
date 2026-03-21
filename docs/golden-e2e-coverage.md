@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21, S18 craft-restock supply-chain coverage added 2026-03-21)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -33,7 +33,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | ReduceDanger | Yes | 7f |
 | ProduceCommodity | Yes | 6b |
 | SellCommodity | **No** | — |
-| RestockCommodity | Yes | 2d |
+| RestockCommodity | Yes | 2d, 2d-craft |
 | MoveCargo | Yes | 2d |
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
@@ -49,7 +49,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 |--------|---------|-----|
 | Generic | Implicit | — |
 | Needs (eat, drink, sleep, relieve, wash) | Yes | eat + drink + sleep + relieve + wash |
-| Production (harvest, craft) | Yes | 4, 5, 6b, 26 |
+| Production (harvest, craft) | Yes | 2d-craft, 4, 5, 6b, 26 |
 | FacilityQueue (queue_for_facility_use) | Yes | 9 |
 | Trade | Yes | 2b, 27 |
 | Travel | Yes | 1, 3 (implicit) |
@@ -76,8 +76,8 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | Place | Used? | Scenarios |
 |-------|-------|-----------|
 | VillageSquare | Yes | All |
-| OrchardFarm | Yes | 1, 2d, 3, 3b, 4, 5 |
-| GeneralStore | Yes | 2d |
+| OrchardFarm | Yes | 1, 2d, 2d-craft, 3, 3b, 4, 5 |
+| GeneralStore | Yes | 2d, 2d-craft |
 | CommonHouse | **No** | — |
 | RulersHall | **No** | — |
 | GuardPost | **No** | — |
@@ -88,7 +88,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | SouthGate | Yes | 2d |
 | EastFieldTrail | Yes | 3b |
 
-**9/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route, the VillageSquare→OrchardFarm branchy-hub route, and the GeneralStore→OrchardFarm merchant restock route.**
+**9/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route, the VillageSquare→OrchardFarm branchy-hub route, the GeneralStore→OrchardFarm merchant harvest-restock route, and the GeneralStore→OrchardFarm prerequisite-aware craft-restock route.**
 
 ### Cross-System Interaction Coverage
 
@@ -110,6 +110,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | Combat between two living agents | Yes |
 | Healing a wounded agent with medicine | Yes |
 | Merchant restock → travel → acquire → return stock to home market | Yes |
+| Merchant restock → prerequisite-aware remote input acquisition → return → local craft → home-market stock | Yes |
 | Goal switching during multi-leg travel | Yes |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multi-agent reservation-backed resource exhaustion | Yes |
@@ -176,16 +177,16 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 137 | 137 |
+| Proven tests | 139 | 139 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 70 | 70 |
+| Cross-system chains | 71 | 71 |
 
 ### Pending Backlog Summary
 
-**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — blocked on `specs/S10-bilateral-trade-negotiation.md`. The remaining full producer→merchant→consumer golden chain is no longer blocked on S08 tracing; the archived S09 outcome confirmed the unresolved gap is trade valuation/pricing architecture, and `golden_supply_chain.rs` still contains only trace-segment tests plus ignored blocked full-chain cases.
+**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — still blocked on `specs/S10-bilateral-trade-negotiation.md` for the full producer→merchant→consumer combined chain only. The craft-restock prerequisite segment is no longer a gap: `golden_supply_chain.rs` now covers both the harvest-restock segment and the prerequisite-aware craft-restock segment, while the ignored blocked full-chain cases remain the unresolved pricing/negotiation gap.
 
 ### Recommended Implementation Order
 

@@ -1,6 +1,6 @@
 # Golden E2E Suite: Scenario Catalog
 
-**Date**: 2026-03-12 (updated 2026-03-18, locality offices added 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle scenarios aligned 2026-03-21)
+**Date**: 2026-03-12 (updated 2026-03-18, locality offices added 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle scenarios aligned 2026-03-21, S18 craft-restock supply-chain scenario added 2026-03-21)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Detailed reference for what each golden test proves. Consult when you need to understand a specific scenario or verify whether a behavior is already tested. For coverage gaps and matrices, see [golden-e2e-coverage.md](golden-e2e-coverage.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -83,6 +83,18 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 - The scenario exposed a planner-budget gap: the default search node-expansion budget was too low for the branch-heavy restock route from Village Square. Raising the default node-expansion budget fixed the real runtime path without adding special cases.
 - Two runs with the same seed produce identical world and event-log hashes for the merchant restock scenario.
 **Cross-system chain**: Demand memory at home market → enterprise restock signal → multi-leg travel → harvest/materialization → cargo return to home market.
+
+### Scenario 2d-craft: Merchant Restock via Prerequisite-Aware Craft
+**File**: `golden_supply_chain.rs` | **Tests**: `golden_merchant_restocks_via_prerequisite_aware_craft`, `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`
+**Systems exercised**: Enterprise AI signals, prerequisite-aware planning, Travel, Production (harvest + craft), action traces, decision traces, deterministic replay
+**Setup**: Merchant starts at General Store with `MerchandiseProfile` advertising bread, zero bread stock, and remembered unmet bread demand at the home market. The only firewood source is remote at Orchard Farm, and the only mill is local to the home market. The scenario uses a minimal test-local recipe registry that exposes `Harvest Firewood` and `Bake Bread` so the golden exercises a real remote `ResourceSource` path under the live action registry.
+**Emergent behavior proven**:
+- Merchant generates `RestockCommodity { Bread }` from concrete remembered demand instead of from an abstract threshold.
+- Tick-0 decision traces show the planner using prerequisite-aware spatial guidance toward Orchard Farm rather than only local search.
+- Merchant completes the full lawful chain: travel to Orchard Farm, harvest remote firewood, pick it up, return to the home market, and commit `craft:Bake Bread`.
+- The durable contract is home-market bread stock, not forced carried inventory. The golden proves that restocked bread exists at the destination market after the remote prerequisite chain completes.
+- Two runs with the same seed produce identical world and event-log hashes for the craft-restock scenario.
+**Cross-system chain**: Demand memory at home market → enterprise restock signal → prerequisite-aware route selection toward remote recipe input → remote harvest/pickup → return travel → local craft → bread stock appears at home market.
 
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 **File**: `golden_social.rs` | **Tests**: `golden_agent_autonomously_tells_colocated_peer`, `golden_survival_needs_suppress_social_goals`, `golden_rumor_chain_degrades_through_three_agents`, `golden_stale_belief_travel_reobserve_replan`, `golden_skeptical_listener_rejects_told_belief`, `golden_bystander_sees_telling_but_gets_no_belief`, `golden_entity_missing_discovery_does_not_teleport_belief`, `golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`, `golden_agent_retells_after_subject_belief_changes`, `golden_agent_retells_after_conversation_memory_expiry`, `golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`, `golden_chain_length_filtering_stops_gossip`, `golden_agent_diversity_in_social_behavior`, `golden_rumor_leads_to_wasted_trip_then_discovery`
