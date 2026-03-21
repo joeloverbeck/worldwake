@@ -12,10 +12,10 @@ use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPl
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
     BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
-    ControlSource, DeadAt, EventTag, EventView, GoalKind, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw, TellProfile, Tick,
-    UtilityProfile,
+    ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
+    EventView, GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile,
+    PerceptionSource, PrototypePlace, Quantity, RecipientKnowledgeStatus, RelationValue, Seed,
+    StateHash, SuccessionLaw, TellProfile, ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -275,6 +275,166 @@ fn golden_wound_vs_hunger_replays_deterministically() {
         (first.0, first.1),
         (second.0, second.1),
         "wound-vs-hunger scenario should replay deterministically"
+    );
+}
+
+// ===========================================================================
+// Suite 1b: deprivation_wound_worsening
+//
+// Proves: repeated deprivation threshold fires through the live needs system
+// worsen a single authoritative wound instead of duplicating it.
+// Foundation: Principle 4, Principle 9, Principle 24.
+// Cross-systems: Needs + Wounds + deterministic replay.
+// ===========================================================================
+
+fn deprivation_worsening_thresholds() -> DriveThresholds {
+    DriveThresholds {
+        hunger: ThresholdBand::new(pm(100), pm(200), pm(300), pm(400)).unwrap(),
+        ..DriveThresholds::default()
+    }
+}
+
+fn deprivation_worsening_metabolism() -> MetabolismProfile {
+    MetabolismProfile::new(
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(20),
+        nz(5),
+        nz(1000),
+        nz(1000),
+        nz(1000),
+        nz(8),
+        nz(12),
+    )
+}
+
+fn deprivation_worsening_combat_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(1000),
+        pm(700),
+        pm(500),
+        pm(500),
+        pm(80),
+        pm(0),
+        pm(0),
+        pm(120),
+        pm(35),
+        nz(6),
+        nz(10),
+    )
+}
+
+fn run_deprivation_wound_worsening(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    let thresholds = deprivation_worsening_thresholds();
+
+    let agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Starving Agent",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(420), pm(0), pm(0), pm(0), pm(0)),
+        deprivation_worsening_metabolism(),
+        UtilityProfile::default(),
+        KnownRecipes::default(),
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_deprivation_exposure(
+            agent,
+            DeprivationExposure {
+                hunger_critical_ticks: 4,
+                ..DeprivationExposure::default()
+            },
+        )
+        .unwrap();
+        txn.set_component_drive_thresholds(agent, thresholds).unwrap();
+        txn.set_component_combat_profile(agent, deprivation_worsening_combat_profile())
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let wound_capacity = u32::from(
+        h.world
+            .get_component_combat_profile(agent)
+            .expect("agent should have a combat profile")
+            .wound_capacity
+            .value(),
+    );
+
+    let mut first_fire = None;
+    let mut saw_second_fire = false;
+
+    for _ in 0..8 {
+        h.step_once();
+
+        let wounds = h
+            .world
+            .get_component_wound_list(agent)
+            .expect("agent should keep a wound list");
+        assert!(
+            wounds.wounds.len() <= 1,
+            "repeated deprivation fires must consolidate into at most one wound"
+        );
+        assert!(
+            wounds.wound_load() < wound_capacity,
+            "agent should survive long enough to prove worsening instead of death"
+        );
+        assert!(
+            !h.agent_is_dead(agent),
+            "agent should remain alive throughout the consolidation scenario"
+        );
+
+        let Some(wound) = wounds.find_deprivation_wound(DeprivationKind::Starvation) else {
+            continue;
+        };
+
+        if let Some((first_id, first_severity, first_inflicted_at)) = first_fire {
+            assert_eq!(
+                wound.id, first_id,
+                "starvation worsening must preserve wound identity"
+            );
+            if wound.inflicted_at > first_inflicted_at {
+                assert!(
+                    wound.severity > first_severity,
+                    "second starvation fire must increase severity on the existing wound"
+                );
+                saw_second_fire = true;
+                break;
+            }
+        } else {
+            first_fire = Some((wound.id, wound.severity, wound.inflicted_at));
+        }
+    }
+
+    assert!(
+        first_fire.is_some(),
+        "scenario should create the initial starvation wound on the first threshold fire"
+    );
+    assert!(
+        saw_second_fire,
+        "scenario should reach a second starvation threshold fire that worsens the same wound"
+    );
+
+    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+}
+
+#[test]
+fn golden_deprivation_wound_worsening_consolidates_not_duplicates() {
+    let _ = run_deprivation_wound_worsening(Seed([36; 32]));
+}
+
+#[test]
+fn golden_deprivation_wound_worsening_consolidates_not_duplicates_replays_deterministically() {
+    let first = run_deprivation_wound_worsening(Seed([36; 32]));
+    let second = run_deprivation_wound_worsening(Seed([36; 32]));
+    assert_eq!(
+        first, second,
+        "deprivation wound worsening scenario should replay deterministically"
     );
 }
 

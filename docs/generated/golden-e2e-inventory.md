@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 9
-- Total `golden_*` tests: 129
+- Total `golden_*` tests: 131
 
 ## Per-File Inventory
 
@@ -17,7 +17,7 @@ Do not hand-edit it.
 | `golden_care.rs` | 14 |
 | `golden_combat.rs` | 23 |
 | `golden_determinism.rs` | 4 |
-| `golden_emergent.rs` | 22 |
+| `golden_emergent.rs` | 24 |
 | `golden_offices.rs` | 13 |
 | `golden_production.rs` | 19 |
 | `golden_social.rs` | 14 |
@@ -96,6 +96,8 @@ Do not hand-edit it.
 - `golden_wound_vs_hunger_pain_first`
 - `golden_wound_vs_hunger_hunger_first`
 - `golden_wound_vs_hunger_replays_deterministically`
+- `golden_deprivation_wound_worsening_consolidates_not_duplicates`
+- `golden_deprivation_wound_worsening_consolidates_not_duplicates_replays_deterministically`
 - `golden_wounded_politician_pain_first`
 - `golden_wounded_politician_enterprise_first`
 - `golden_wounded_politician_replays_deterministically`
