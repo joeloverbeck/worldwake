@@ -411,7 +411,10 @@ fn process_agent(
         tracing.then(|| {
             let candidate_trace = CandidateTrace {
                 generated: read_result.generated_keys,
-                ranked: ranked_candidates.iter().map(summarize_ranked_goal).collect(),
+                ranked: ranked_candidates
+                    .iter()
+                    .map(summarize_ranked_goal)
+                    .collect(),
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
                 omitted_political: read_result.omitted_political,
@@ -1031,11 +1034,6 @@ fn build_candidate_plans(
     candidates_to_plan
         .into_iter()
         .map(|ranked| {
-            let goal_relevant_places = ranked
-                .grounded
-                .key
-                .kind
-                .goal_relevant_places(&crate::PlanningState::new(&snapshot), recipe_registry);
             let mut rejections = Vec::new();
             let mut expansions = Vec::new();
             let result = search_plan(
@@ -1045,7 +1043,7 @@ fn build_candidate_plans(
                 action_defs,
                 action_handlers,
                 budget,
-                &goal_relevant_places,
+                recipe_registry,
                 if collect_rejections {
                     Some(&mut rejections)
                 } else {
@@ -1355,9 +1353,10 @@ fn plan_and_validate_next_step_traced(
                 current_goal_before_selection,
                 &plans_options,
             );
-            let search_provenance = matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
-                .then(|| summarize_search_provenance(selected_goal, &plans))
-                .flatten();
+            let search_provenance =
+                matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
+                    .then(|| summarize_search_provenance(selected_goal, &plans))
+                    .flatten();
             selection_trace.selected = Some(selected_goal);
             selection_trace.selected_plan = Some(summarize_selected_plan(
                 &selected_plan,
@@ -2074,18 +2073,16 @@ mod tests {
     use std::path::PathBuf;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
-        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart,
-        CarryCapacity, CauseRef,
-        CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
+        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
+        CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
         HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
         OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
         RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
         TellProfile, Tick, ToldBeliefMemory, Topology, TravelDispositionProfile, TravelEdge,
-        TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData, Wound,
-        WoundCause, WoundId, WoundList,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -4402,7 +4399,7 @@ mod tests {
             &harness.defs,
             &harness.handlers,
             &budget,
-            &[],
+            &worldwake_sim::RecipeRegistry::new(),
             None,
             None,
         );
@@ -5318,7 +5315,10 @@ mod tests {
             .expect("bread candidate should carry drive provenance")
         {
             RankedGoalProvenance::Drive(provenance) => {
-                assert_eq!(provenance.base_priority_class, crate::GoalPriorityClass::High);
+                assert_eq!(
+                    provenance.base_priority_class,
+                    crate::GoalPriorityClass::High
+                );
                 assert_eq!(
                     provenance.final_priority_class,
                     crate::GoalPriorityClass::Critical
@@ -5328,8 +5328,14 @@ mod tests {
                     Some(crate::RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
                 );
                 assert_eq!(provenance.motive_inputs.len(), 1);
-                assert_eq!(provenance.motive_inputs[0].drive, crate::RankedDriveKind::Hunger);
-                assert_eq!(provenance.motive_inputs[0].pressure, Permille::new(760).unwrap());
+                assert_eq!(
+                    provenance.motive_inputs[0].drive,
+                    crate::RankedDriveKind::Hunger
+                );
+                assert_eq!(
+                    provenance.motive_inputs[0].pressure,
+                    Permille::new(760).unwrap()
+                );
                 assert_eq!(
                     provenance.motive_inputs[0].weight,
                     UtilityProfile::default().hunger_weight

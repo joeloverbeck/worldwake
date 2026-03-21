@@ -5,8 +5,8 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
-    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlanningBudget,
-    PlanningEntityRef, PlanningState, PlannerOpKind,
+    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlannerOpKind, PlanningBudget,
+    PlanningEntityRef, PlanningState,
 };
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,
@@ -411,9 +411,8 @@ fn assert_remote_care_action_sequence(healer_events: &[&worldwake_sim::ActionTra
     let heal_commit = healer_events
         .iter()
         .find_map(|event| {
-            (event.action_name == "heal"
-                && matches!(event.kind, ActionTraceKind::Committed { .. }))
-            .then_some((event.tick, event.sequence_in_tick))
+            (event.action_name == "heal" && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some((event.tick, event.sequence_in_tick))
         })
         .expect("remote medicine care should have a committed heal event");
 
@@ -498,17 +497,15 @@ fn run_healer_acquires_remote_ground_medicine_for_patient(seed: Seed) -> (StateH
         "remote medicine care should require outbound and return travel; saw events: {healer_events:?}"
     );
     assert!(
-        healer_events.iter().any(
-            |event| event.action_name == "pick_up"
-                && matches!(event.kind, ActionTraceKind::Committed { .. })
-        ),
+        healer_events
+            .iter()
+            .any(|event| event.action_name == "pick_up"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })),
         "remote medicine care should commit a pick_up step"
     );
     assert!(
-        healer_events.iter().any(
-            |event| event.action_name == "heal"
-                && matches!(event.kind, ActionTraceKind::Committed { .. })
-        ),
+        healer_events.iter().any(|event| event.action_name == "heal"
+            && matches!(event.kind, ActionTraceKind::Committed { .. })),
         "remote medicine care should commit a heal step; saw events: {healer_events:?}"
     );
     assert_remote_care_action_sequence(&healer_events);
@@ -521,8 +518,7 @@ fn run_healer_acquires_remote_ground_medicine_for_patient(seed: Seed) -> (StateH
 
 #[test]
 fn remote_treat_wounds_snapshot_supports_pick_up_transition_at_orchard() {
-    let (h, healer, patient, medicine) =
-        setup_remote_ground_medicine_care_scenario(Seed([42; 32]));
+    let (h, healer, patient, medicine) = setup_remote_ground_medicine_care_scenario(Seed([42; 32]));
     let view = PerAgentBeliefView::from_world(healer, &h.world);
     let grounded = generate_candidates(
         &view,
@@ -570,7 +566,8 @@ fn remote_treat_wounds_snapshot_supports_pick_up_transition_at_orchard() {
 
 #[test]
 fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topology() {
-    let (h, healer, patient, _medicine) = setup_remote_ground_medicine_care_scenario(Seed([43; 32]));
+    let (h, healer, patient, _medicine) =
+        setup_remote_ground_medicine_care_scenario(Seed([43; 32]));
     let view = PerAgentBeliefView::from_world(healer, &h.world);
     let grounded = generate_candidates(
         &view,
@@ -601,7 +598,7 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
             max_plan_depth: 6,
             ..PlanningBudget::default()
         },
-        &[VILLAGE_SQUARE],
+        &h.recipes,
         None,
         None,
     );
@@ -612,7 +609,7 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &h.defs,
         &h.handlers,
         &PlanningBudget::default(),
-        &[VILLAGE_SQUARE],
+        &h.recipes,
         None,
         None,
     );
@@ -657,7 +654,10 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         "the lawful remote-care route should include medicine pickup"
     );
     assert!(
-        deep_plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::Heal),
+        deep_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Heal),
         "the lawful remote-care route should include healing after pickup"
     );
 }

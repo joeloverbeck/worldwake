@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
     get_affordances_for_defs, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
-    QueueForFacilityUsePayload, RuntimeBeliefView,
+    QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView,
 };
 
 #[derive(Clone)]
@@ -107,7 +107,7 @@ pub fn search_plan(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
     budget: &PlanningBudget,
-    goal_relevant_places: &[EntityId],
+    recipes: &RecipeRegistry,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
 ) -> PlanSearchResult {
@@ -117,10 +117,7 @@ pub fn search_plan(
 
     let mut frontier = BinaryHeap::new();
     frontier.push(FrontierEntry::new(root_node(
-        snapshot,
-        goal,
-        budget,
-        goal_relevant_places,
+        snapshot, goal, recipes, budget,
     )));
     let mut expansions = 0u16;
     let mut best_barrier: Option<PlannedPlan> = None;
@@ -163,8 +160,7 @@ pub fn search_plan(
                     node.state.snapshot().actor(),
                 ))
         {
-            let combined_places =
-                combined_relevant_places(goal_relevant_places, goal, &node.state, budget);
+            let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
             travel_pruning = prune_travel_away_from_goal(
                 &mut candidates,
                 current_place,
@@ -186,8 +182,8 @@ pub fn search_plan(
                 registry,
                 &node,
                 &candidate,
+                recipes,
                 budget,
-                goal_relevant_places,
             ) else {
                 candidates_skipped += 1;
                 continue;
@@ -304,13 +300,13 @@ fn compute_heuristic(
 }
 
 fn combined_relevant_places(
-    goal_relevant_places: &[EntityId],
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
     budget: &PlanningBudget,
 ) -> Vec<EntityId> {
-    let mut places = goal_relevant_places.to_vec();
-    let prerequisite_places = goal.key.kind.prerequisite_places(state, budget);
+    let mut places = goal.key.kind.goal_relevant_places(state, recipes);
+    let prerequisite_places = goal.key.kind.prerequisite_places(state, recipes, budget);
     for place in prerequisite_places {
         if !places.contains(&place) {
             places.push(place);
@@ -322,11 +318,11 @@ fn combined_relevant_places(
 fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
     goal: &GroundedGoal,
+    recipes: &RecipeRegistry,
     budget: &PlanningBudget,
-    goal_relevant_places: &[EntityId],
 ) -> SearchNode<'snapshot> {
     let state = PlanningState::new(snapshot);
-    let combined_places = combined_relevant_places(goal_relevant_places, goal, &state, budget);
+    let combined_places = combined_relevant_places(goal, &state, recipes, budget);
     let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places);
     SearchNode {
         state,
@@ -425,8 +421,8 @@ fn build_successor<'snapshot>(
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
+    recipes: &RecipeRegistry,
     budget: &PlanningBudget,
-    goal_relevant_places: &[EntityId],
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     let def = registry.get(candidate.def_id)?;
     let semantics = semantics_table.get(&candidate.def_id)?;
@@ -481,13 +477,9 @@ fn build_successor<'snapshot>(
         return None;
     }
     let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
-    let combined_places =
-        combined_relevant_places(goal_relevant_places, goal, &transition.state, budget);
-    let heuristic_ticks = compute_heuristic(
-        node.state.snapshot(),
-        &transition.state,
-        &combined_places,
-    );
+    let combined_places = combined_relevant_places(goal, &transition.state, recipes, budget);
+    let heuristic_ticks =
+        compute_heuristic(node.state.snapshot(), &transition.state, &combined_places);
     let mut steps = node.steps.clone();
     steps.push(step);
 
@@ -771,10 +763,9 @@ fn terminal_kind(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_successor, combined_relevant_places, compare_search_nodes,
-        prune_travel_away_from_goal, root_node, search_candidate_from_planner,
-        search_candidates, search_candidates_from_affordance, search_plan, FrontierEntry,
-        SearchCandidate, SearchNode,
+        build_successor, combined_relevant_places, compare_search_nodes, compute_heuristic,
+        prune_travel_away_from_goal, root_node, search_candidate_from_planner, search_candidates,
+        search_candidates_from_affordance, search_plan, FrontierEntry, SearchCandidate, SearchNode,
     };
     use crate::goal_model::GoalKindPlannerExt;
     use crate::planner_ops::planner_only_candidates;
@@ -1344,7 +1335,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -1454,7 +1445,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -1501,7 +1492,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -1570,7 +1561,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -1656,7 +1647,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -1727,7 +1718,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -1787,7 +1778,7 @@ mod tests {
             &registry,
             &handlers,
             &budget,
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -1839,7 +1830,7 @@ mod tests {
             &registry,
             &handlers,
             &budget,
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -1887,7 +1878,7 @@ mod tests {
                 beam_width: 1,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -1901,7 +1892,7 @@ mod tests {
                 beam_width: 2,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -1967,7 +1958,7 @@ mod tests {
                 beam_width: 2,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -1981,7 +1972,7 @@ mod tests {
                 beam_width: 3,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2046,7 +2037,7 @@ mod tests {
                 max_node_expansions: 2,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -2061,7 +2052,7 @@ mod tests {
                 max_node_expansions: 6,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2105,7 +2096,7 @@ mod tests {
                 max_plan_depth: 0,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -2172,7 +2163,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -2229,7 +2220,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2282,7 +2273,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2343,7 +2334,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2430,7 +2421,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2519,7 +2510,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2668,17 +2659,16 @@ mod tests {
                     .is_some_and(|def| def.name == "pick_up")
             })
             .expect("authoritative snapshot should expose cargo pick_up");
-        let (terminal, after_pick_up) =
-            build_successor(
-                &goal,
-                &semantics,
-                &registry,
-                &node,
-                pick_up,
-                &PlanningBudget::default(),
-                &[],
-            )
-            .unwrap();
+        let (terminal, after_pick_up) = build_successor(
+            &goal,
+            &semantics,
+            &registry,
+            &node,
+            pick_up,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
         assert_eq!(terminal, None);
         assert_eq!(
             after_pick_up.steps[0].targets,
@@ -2703,17 +2693,16 @@ mod tests {
                     && candidate.authoritative_targets == vec![destination]
             })
             .expect("partial cargo successor should expose travel to destination");
-        let (terminal, _) =
-            build_successor(
-                &goal,
-                &semantics,
-                &registry,
-                &after_pick_up,
-                travel,
-                &PlanningBudget::default(),
-                &[],
-            )
-            .unwrap();
+        let (terminal, _) = build_successor(
+            &goal,
+            &semantics,
+            &registry,
+            &after_pick_up,
+            travel,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
 
         assert_eq!(terminal, Some(PlanTerminalKind::GoalSatisfied));
     }
@@ -2761,7 +2750,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2813,7 +2802,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -2872,17 +2861,16 @@ mod tests {
             payload_override: None,
         };
 
-        let (_, successor) =
-            build_successor(
-                &goal,
-                &semantics_table,
-                &registry,
-                &node,
-                &candidate,
-                &PlanningBudget::default(),
-                &[],
-            )
-            .unwrap();
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
 
         assert_eq!(successor.steps.len(), 1);
         assert_eq!(successor.steps[0].op_kind, PlannerOpKind::Defend);
@@ -2904,17 +2892,16 @@ mod tests {
             planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
             payload_override: None,
         };
-        let (_, successor) =
-            build_successor(
-                &goal,
-                &semantics_table,
-                &registry,
-                &node,
-                &candidate,
-                &PlanningBudget::default(),
-                &[],
-            )
-            .unwrap();
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
 
         let step = &successor.steps[0];
         assert_eq!(step.targets, vec![PlanningEntityRef::Authoritative(lot)]);
@@ -2939,17 +2926,16 @@ mod tests {
             planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
             payload_override: None,
         };
-        let (_, successor) =
-            build_successor(
-                &goal,
-                &semantics_table,
-                &registry,
-                &node,
-                &candidate,
-                &PlanningBudget::default(),
-                &[],
-            )
-            .unwrap();
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
 
         let candidates = planner_only_candidates(&successor.state, &semantics_table)
             .into_iter()
@@ -3047,7 +3033,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -3218,7 +3204,7 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -3269,7 +3255,7 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -3324,7 +3310,12 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot, &goal, &PlanningBudget::default(), &[]),
+            &root_node(
+                &snapshot,
+                &goal,
+                &RecipeRegistry::new(),
+                &PlanningBudget::default(),
+            ),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -3377,7 +3368,12 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot, &goal, &PlanningBudget::default(), &[]),
+            &root_node(
+                &snapshot,
+                &goal,
+                &RecipeRegistry::new(),
+                &PlanningBudget::default(),
+            ),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -3472,7 +3468,7 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -3688,8 +3684,14 @@ mod tests {
         let medicine = entity(20);
 
         let mut view = TestBeliefView::default();
-        view.alive
-            .extend([actor, patient, current_place, patient_place, medicine_place, medicine]);
+        view.alive.extend([
+            actor,
+            patient,
+            current_place,
+            patient_place,
+            medicine_place,
+            medicine,
+        ]);
         view.kinds.insert(actor, EntityKind::Agent);
         view.kinds.insert(patient, EntityKind::Agent);
         view.kinds.insert(current_place, EntityKind::Place);
@@ -3709,12 +3711,17 @@ mod tests {
                 (medicine_place, NonZeroU32::new(2).unwrap()),
             ],
         );
-        view.adjacent
-            .insert(patient_place, vec![(current_place, NonZeroU32::new(2).unwrap())]);
-        view.adjacent
-            .insert(medicine_place, vec![(current_place, NonZeroU32::new(2).unwrap())]);
+        view.adjacent.insert(
+            patient_place,
+            vec![(current_place, NonZeroU32::new(2).unwrap())],
+        );
+        view.adjacent.insert(
+            medicine_place,
+            vec![(current_place, NonZeroU32::new(2).unwrap())],
+        );
         view.controllable.insert((actor, medicine));
-        view.lot_commodities.insert(medicine, CommodityKind::Medicine);
+        view.lot_commodities
+            .insert(medicine, CommodityKind::Medicine);
         view.commodity_quantities
             .insert((medicine, CommodityKind::Medicine), Quantity(1));
         view.carry_capacities.insert(actor, LoadUnits(10));
@@ -3744,13 +3751,8 @@ mod tests {
             &BTreeSet::from([place_a]),
             3,
         );
-        let node = root_node(
-            &snapshot,
-            &consume_goal(CommodityKind::Bread),
-            &PlanningBudget::default(),
-            &[place_a],
-        );
-        assert_eq!(node.heuristic_ticks, 0);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[place_a]), 0);
     }
 
     #[test]
@@ -3764,13 +3766,8 @@ mod tests {
             3,
         );
         // Actor at place_a, goal at place_c: shortest path is A->B(3)+B->C(5)=8
-        let node = root_node(
-            &snapshot,
-            &consume_goal(CommodityKind::Bread),
-            &PlanningBudget::default(),
-            &[place_c],
-        );
-        assert_eq!(node.heuristic_ticks, 8);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[place_c]), 8);
     }
 
     #[test]
@@ -3784,26 +3781,16 @@ mod tests {
             3,
         );
         // Actor at place_a: B is 3 ticks, C is 8 ticks → min is 3
-        let node = root_node(
-            &snapshot,
-            &consume_goal(CommodityKind::Bread),
-            &PlanningBudget::default(),
-            &[place_b, place_c],
-        );
-        assert_eq!(node.heuristic_ticks, 3);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[place_b, place_c]), 3);
     }
 
     #[test]
     fn heuristic_is_zero_when_goal_relevant_places_empty() {
         let (view, actor, _place_a, _place_b, _place_c) = build_chain_heuristic_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 3);
-        let node = root_node(
-            &snapshot,
-            &consume_goal(CommodityKind::Bread),
-            &PlanningBudget::default(),
-            &[],
-        );
-        assert_eq!(node.heuristic_ticks, 0);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[]), 0);
     }
 
     #[test]
@@ -4288,14 +4275,69 @@ mod tests {
         };
 
         let places = combined_relevant_places(
-            &[patient_place],
             &goal,
             &state,
+            &RecipeRegistry::new(),
             &PlanningBudget::default(),
         );
 
         assert!(places.contains(&patient_place));
         assert!(places.contains(&medicine_place));
+    }
+
+    #[test]
+    fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
+        let (view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let node = SearchNode {
+            state: PlanningState::new(&snapshot).move_actor_to(medicine_place),
+            steps: Vec::new(),
+            total_estimated_ticks: 0,
+            heuristic_ticks: 0,
+        };
+
+        let pick_up = search_candidates(&goal, &node, &semantics, &registry, &handlers, None)
+            .into_iter()
+            .find(|candidate| {
+                registry
+                    .get(candidate.def_id)
+                    .is_some_and(|def| def.name == "pick_up")
+            })
+            .expect("moved actor should expose a medicine pick_up candidate");
+
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics,
+            &registry,
+            &node,
+            &pick_up,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .expect("hypothetical pick_up should build a successor");
+
+        let places = combined_relevant_places(
+            &goal,
+            &successor.state,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        );
+
+        assert_eq!(places, vec![patient_place]);
     }
 
     #[test]
@@ -4316,9 +4358,9 @@ mod tests {
             evidence_places: BTreeSet::from([patient_place, medicine_place]),
         };
         let goal_places = combined_relevant_places(
-            &[patient_place],
             &goal,
             &state,
+            &RecipeRegistry::new(),
             &PlanningBudget::default(),
         );
 
@@ -4355,7 +4397,8 @@ mod tests {
         let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
             build_branching_care_view();
         view.effective_places.insert(actor, medicine_place);
-        view.entities_at.insert(medicine_place, vec![actor, entity(20)]);
+        view.entities_at
+            .insert(medicine_place, vec![actor, entity(20)]);
         view.entities_at.insert(entity(10), Vec::new());
 
         let snapshot = build_planning_snapshot(
@@ -4372,16 +4415,14 @@ mod tests {
             evidence_entities: BTreeSet::from([patient]),
             evidence_places: BTreeSet::from([patient_place, medicine_place]),
         };
-        let node = root_node(&snapshot, &goal, &PlanningBudget::default(), &[patient_place]);
-
-        let candidates = search_candidates(
+        let node = root_node(
+            &snapshot,
             &goal,
-            &node,
-            &semantics,
-            &registry,
-            &handlers,
-            None,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
         );
+
+        let candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
 
         assert!(
             candidates.iter().any(|candidate| {
@@ -4442,7 +4483,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
             None,
         );
@@ -4523,7 +4564,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
             None,
         );
@@ -4596,7 +4637,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
             None,
         );
@@ -4655,7 +4696,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
             None,
         );
@@ -4762,7 +4803,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[market],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -4843,7 +4884,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         )
@@ -4931,7 +4972,7 @@ mod tests {
             &registry,
             &handlers,
             &tight_budget,
-            &[],
+            &RecipeRegistry::new(),
             None,
             None,
         );
@@ -5038,7 +5079,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             Some(&mut summaries),
         );
@@ -5086,7 +5127,7 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
             None,
             None, // tracing disabled
         );
@@ -5139,7 +5180,7 @@ mod tests {
                 beam_width: 1,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
             None,
             Some(&mut summaries),
         );
