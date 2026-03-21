@@ -98,6 +98,25 @@ impl WoundList {
             .iter()
             .any(|wound| wound.bleed_rate_per_tick.value() > 0)
     }
+
+    #[must_use]
+    pub fn find_deprivation_wound(&self, kind: DeprivationKind) -> Option<&Wound> {
+        self.wounds.iter().find(|wound| {
+            matches!(
+                wound.cause,
+                WoundCause::Deprivation(existing_kind) if existing_kind == kind
+            )
+        })
+    }
+
+    pub fn find_deprivation_wound_mut(&mut self, kind: DeprivationKind) -> Option<&mut Wound> {
+        self.wounds.iter_mut().find(|wound| {
+            matches!(
+                wound.cause,
+                WoundCause::Deprivation(existing_kind) if existing_kind == kind
+            )
+        })
+    }
 }
 
 #[must_use]
@@ -333,6 +352,67 @@ mod tests {
             wounds: vec![sample_wound(), sample_combat_wound()]
         }
         .has_bleeding_wounds());
+    }
+
+    #[test]
+    fn find_deprivation_wound_returns_match() {
+        let wound_list = WoundList {
+            wounds: vec![
+                sample_combat_wound(),
+                sample_wound(),
+                Wound {
+                    id: WoundId(3),
+                    body_part: BodyPart::LeftLeg,
+                    cause: WoundCause::Deprivation(DeprivationKind::Dehydration),
+                    severity: Permille::new(400).unwrap(),
+                    inflicted_at: Tick(12),
+                    bleed_rate_per_tick: Permille::new(0).unwrap(),
+                },
+            ],
+        };
+
+        let starvation = wound_list.find_deprivation_wound(DeprivationKind::Starvation);
+        let dehydration = wound_list.find_deprivation_wound(DeprivationKind::Dehydration);
+
+        assert_eq!(starvation.map(|wound| wound.id), Some(WoundId(1)));
+        assert_eq!(dehydration.map(|wound| wound.id), Some(WoundId(3)));
+        assert_eq!(
+            WoundList {
+                wounds: vec![sample_combat_wound()],
+            }
+            .find_deprivation_wound(DeprivationKind::Starvation),
+            None
+        );
+    }
+
+    #[test]
+    fn find_deprivation_wound_mut_updates_severity() {
+        let mut wound_list = WoundList {
+            wounds: vec![sample_combat_wound(), sample_wound()],
+        };
+
+        let wound = wound_list
+            .find_deprivation_wound_mut(DeprivationKind::Starvation)
+            .expect("starvation wound should exist");
+        let wound_id = wound.id;
+        wound.severity = wound.severity.saturating_add(Permille::new(200).unwrap());
+
+        let updated = wound_list
+            .find_deprivation_wound(DeprivationKind::Starvation)
+            .expect("updated starvation wound should remain present");
+        assert_eq!(updated.id, wound_id);
+        assert_eq!(updated.severity, Permille::new(850).unwrap());
+    }
+
+    #[test]
+    fn find_deprivation_wound_returns_none_for_empty_list() {
+        let mut wounds = WoundList::default();
+
+        assert_eq!(wounds.find_deprivation_wound(DeprivationKind::Starvation), None);
+        assert_eq!(
+            wounds.find_deprivation_wound_mut(DeprivationKind::Starvation),
+            None
+        );
     }
 
     #[test]
