@@ -18,6 +18,7 @@ All precision rules for technical claims — ordering, layer naming, coverage ga
    - Explicitly call out mismatches and corrected scope.
    - Cite exact files, symbols, or tests for any non-trivial architectural claim.
    - Apply all domain-specific precision requirements from `docs/precision-rules.md` (ordering, political claims, stale requests, ControlSource, heuristic removal, cumulative arithmetic, scenario isolation, coverage gaps, layer precision).
+   - For ranking-sensitive tickets, validate the live ranking arithmetic before claiming branch symmetry, equal motive scores, or "priority-class only" divergence. Equal weights alone are not enough; check the full active substrate such as pressure, weights, promotions, and caps.
 2. `Architecture Check`:
    - Explain why the proposed design is cleaner than alternatives.
 3. `Verification Layers`:
@@ -43,6 +44,7 @@ All precision rules for technical claims — ordering, layer naming, coverage ga
 6. Claimed helper/function usage is verified against the exact current symbol location, not inferred from a similarly named helper elsewhere in the repo.
 7. For AI-test tickets, use `cargo test -p worldwake-ai -- --list` or an equivalently narrow real command to confirm the current test names/targets before writing verification steps.
 8. For stale-request, contested-affordance, or start-failure tickets, verify whether the first live rejection occurs in the shared runtime request layer before assigning scope to domain-specific handlers.
+9. For ranking-sensitive golden or AI tickets, verify any claimed tie, neutrality, or branch symmetry against the current live arithmetic and cite the exact compared tests, scenarios, or symbols rather than inferring symmetry from equal utility weights alone.
 
 ## Archival Reminder
 

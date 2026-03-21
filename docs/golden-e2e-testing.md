@@ -52,6 +52,7 @@ The first pair encodes the architectural rule. The second overfits to scheduler 
 Do not use delayed authoritative installation as a proxy for earlier political-action ordering when succession or another lawful system can add delay between the action commit and the final office-holder mutation. In that case, prove the earlier ordering with action traces and prove the later durable consequence with authoritative world state.
 
 Do not claim a "same-state, weight-only divergence" unless both compared branches are driven by comparable ranking substrates in the current architecture. If one branch depends on a pressure-scaled or priority-derived substrate and the other uses a flat motive or later system resolution, name that asymmetry explicitly in the ticket and in the test rationale.
+Equal utility weights do not imply equal motive scores. Before claiming branch symmetry, a tie, or "priority-class only" divergence, validate the live arithmetic for the compared branches and name the concrete substrate that actually differs or stays equal: pressure, weight, promotions, caps, or other ranking inputs.
 
 ## Trace Guidance
 

@@ -12,11 +12,12 @@ After S17WOULIFGOLSUI-001 and S17WOULIFGOLSUI-002 land, the golden E2E documenta
 
 ## Assumption Reassessment (2026-03-21)
 
-1. `docs/golden-e2e-coverage.md` contains the coverage matrix (GoalKind coverage, system coverage, cross-system chains). Scenarios 29 and 30 are not present — confirmed by reading the file.
-2. `docs/golden-e2e-scenarios.md` contains detailed scenario descriptions. Scenarios 29 and 30 are not present — confirmed by reading the file.
-3. `scripts/golden_inventory.py` exists and generates `docs/generated/golden-e2e-inventory.md`. The `--write --check-docs` flag regenerates the inventory and validates it against the docs.
-4. Not an AI regression, ordering, heuristic, stale-request, political, or ControlSource ticket.
-5. No mismatch found.
+1. `crates/worldwake-ai/tests/golden_emergent.rs` already contains `golden_deprivation_wound_worsening_consolidates_not_duplicates` and its deterministic replay companion. `crates/worldwake-ai/tests/golden_combat.rs` already contains `golden_recovery_aware_boost_eats_before_wash` and its deterministic replay companion. The ticket therefore starts from docs drift, not missing test implementation.
+2. `docs/golden-e2e-coverage.md` and `docs/golden-e2e-scenarios.md` both exist, contrary to older ticket drift elsewhere. The generated inventory path is also real: `docs/generated/golden-e2e-inventory.md`.
+3. `docs/generated/golden-e2e-inventory.md` already lists both Scenario 29/30 tests, and `python3 scripts/golden_inventory.py --write --check-docs` currently passes. The remaining gap is the hand-maintained dashboard/catalog text, not the generated inventory pipeline.
+4. The current hand-written docs are only partially aligned: the scenario catalog does not yet describe Scenarios 29 and 30, and the coverage dashboard summary counts still lag the current 133-test inventory.
+5. Not an AI-runtime behavior ticket. Verification is documentation review plus docs-sync validation, with the real target tests named to prove the scenarios already exist.
+6. Mismatch corrected: this ticket should not describe the docs as nonexistent or imply that Scenarios 29 and 30 still need test implementation.
 
 ## Architecture Check
 
@@ -27,21 +28,15 @@ After S17WOULIFGOLSUI-001 and S17WOULIFGOLSUI-002 land, the golden E2E documenta
 
 1. Coverage matrix includes Scenarios 29 and 30 → manual doc review
 2. Scenario catalog describes both new tests → manual doc review
-3. Generated inventory matches reality → `python3 scripts/golden_inventory.py --write --check-docs`
-4. Single-layer ticket (documentation); no additional verification layers applicable.
+3. Generated inventory remains in sync with real `golden_*` declarations → `python3 scripts/golden_inventory.py --write --check-docs`
+4. Single-layer ticket (documentation); no additional runtime verification layers applicable.
 
 ## What to Change
 
 ### 1. Update `docs/golden-e2e-coverage.md`
 
-- Add Scenario 29 to relevant GoalKind and system coverage rows:
-  - Cross-system chain: Needs (deprivation exposure) → Wounds (consolidation) → Identity preservation
-  - System coverage: Needs system (deprivation firing), WoundList (worsening), DeprivationExposure
-- Add Scenario 30 to relevant rows:
-  - GoalKind: ConsumeOwnedCommodity (eat), Wash — already covered, but add Scenario 30 reference
-  - Cross-system chain: AI ranking (recovery-aware promotion) → Eat action → Recovery gate → Wound healing
-  - System coverage: AI ranking (`promote_for_clotted_wound_recovery`), Combat (recovery gate)
-- Update the date stamp in the header
+- Add Scenario 29 and Scenario 30 to the relevant cross-system coverage rows and update any stale counts or dates so the dashboard matches the current 133-test inventory.
+- Keep the dashboard interpretive rather than duplicating the generated inventory by hand.
 
 ### 2. Update `docs/golden-e2e-scenarios.md`
 
@@ -61,13 +56,13 @@ Update the date stamp in the header.
 
 ### 3. Regenerate `docs/generated/golden-e2e-inventory.md`
 
-Run `python3 scripts/golden_inventory.py --write --check-docs` to regenerate the generated inventory and validate it matches the updated docs.
+Run `python3 scripts/golden_inventory.py --write --check-docs` to validate docs against the generated inventory and rewrite the artifact only if it changed.
 
 ## Files to Touch
 
 - `docs/golden-e2e-coverage.md` (modify — add Scenarios 29, 30 to coverage matrix)
 - `docs/golden-e2e-scenarios.md` (modify — add Scenario 29, 30 descriptions)
-- `docs/generated/golden-e2e-inventory.md` (regenerate via script)
+- `docs/generated/golden-e2e-inventory.md` (validate via script; regenerate only if changed)
 
 ## Out of Scope
 
@@ -81,8 +76,10 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` to regenerate the
 
 ### Tests That Must Pass
 
-1. `python3 scripts/golden_inventory.py --write --check-docs` — inventory regeneration succeeds and docs validation passes
-2. `cargo test --workspace` — no regressions (sanity check, no code changes expected)
+1. `cargo test -p worldwake-ai golden_deprivation_wound_worsening_consolidates_not_duplicates -- --exact`
+2. `cargo test -p worldwake-ai golden_recovery_aware_boost_eats_before_wash -- --exact`
+3. `python3 scripts/golden_inventory.py --write --check-docs`
+4. `cargo test --workspace`
 
 ### Invariants
 
@@ -99,5 +96,7 @@ None — documentation-only ticket; verification is command-based and existing r
 
 ### Commands
 
-1. `python3 scripts/golden_inventory.py --write --check-docs`
-2. `cargo test --workspace` (sanity check)
+1. `cargo test -p worldwake-ai golden_deprivation_wound_worsening_consolidates_not_duplicates -- --exact`
+2. `cargo test -p worldwake-ai golden_recovery_aware_boost_eats_before_wash -- --exact`
+3. `python3 scripts/golden_inventory.py --write --check-docs`
+4. `cargo test --workspace`

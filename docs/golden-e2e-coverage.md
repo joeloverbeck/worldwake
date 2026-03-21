@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -20,7 +20,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 
 | GoalKind | Tested? | Scenarios |
 |----------|---------|-----------|
-| ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a |
+| ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a, 30 |
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | Yes | 2d |
 | AcquireCommodity (RecipeInput) | Yes | 6a |
@@ -28,7 +28,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | TreatWounds (other) | Yes | 2c |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
-| Wash | Yes | 7e |
+| Wash | Yes | 7e, 30 |
 | EngageHostile | Yes | 7c |
 | ReduceDanger | Yes | 7f |
 | ProduceCommodity | Yes | 6b |
@@ -123,6 +123,8 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | Materialized output theft → fresh replanning to distant fallback | Yes |
 | Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
 | Wound bleed → clotting → natural recovery | Yes |
+| Critical deprivation fires consolidate into one persistent starvation wound instead of duplicating wounds | Yes |
+| Recovery-aware promotion raises eat above a higher wash motive and opens the wound-recovery gate | Yes |
 | Loot/bury suppression under self-care pressure → relief → suppression lift | Yes |
 | Multi-corpse loot binding → sequential target selection via matches_binding | Yes |
 | Bury suppression under hunger stress → eat → suppression lift → burial | Yes |
@@ -173,12 +175,12 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 129 | 129 |
+| Proven tests | 133 | 133 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 67 | 67 |
+| Cross-system chains | 69 | 69 |
 
 ### Pending Backlog Summary
 
