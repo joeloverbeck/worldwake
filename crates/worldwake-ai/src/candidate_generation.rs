@@ -753,7 +753,14 @@ fn emit_produce_goals(
             continue;
         }
 
-        if let Some(mut evidence) = recipe_path_evidence(ctx.view, ctx.agent, ctx.place, recipe) {
+        if let Some(mut evidence) = recipe_path_evidence(
+            ctx.view,
+            ctx.agent,
+            ctx.place,
+            recipe,
+            ctx.recipes,
+            ctx.travel_horizon,
+        ) {
             if let Some(place) = ctx.place {
                 evidence.places.insert(place);
             }
@@ -764,10 +771,7 @@ fn emit_produce_goals(
                 ctx.blocked,
                 ctx.current_tick,
             );
-            continue;
         }
-
-        emit_missing_recipe_input_goals(candidates, ctx, recipe_id, recipe);
     }
 }
 
@@ -974,7 +978,31 @@ fn acquisition_path_evidence(
     recipes: &RecipeRegistry,
     travel_horizon: u8,
 ) -> Option<Evidence> {
+    acquisition_path_evidence_inner(
+        view,
+        agent,
+        place,
+        commodity,
+        recipes,
+        travel_horizon,
+        &BTreeSet::new(),
+    )
+}
+
+fn acquisition_path_evidence_inner(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    visited_commodities: &BTreeSet<CommodityKind>,
+) -> Option<Evidence> {
     let place = place?;
+    let mut visited_commodities = visited_commodities.clone();
+    if !visited_commodities.insert(commodity) {
+        return None;
+    }
     let mut evidence = Evidence::with_place(place);
 
     for candidate_place in reachable_places_within_horizon(view, place, travel_horizon) {
@@ -1009,9 +1037,15 @@ fn acquisition_path_evidence(
             {
                 continue;
             }
-            if let Some(recipe_evidence) =
-                recipe_path_evidence(view, agent, Some(candidate_place), recipe)
-            {
+            if let Some(recipe_evidence) = recipe_path_evidence_inner(
+                view,
+                agent,
+                Some(candidate_place),
+                recipe,
+                recipes,
+                travel_horizon,
+                &visited_commodities,
+            ) {
                 place_evidence.merge(recipe_evidence);
             }
         }
@@ -1071,82 +1105,66 @@ fn recipe_path_evidence(
     agent: EntityId,
     place: Option<EntityId>,
     recipe: &RecipeDefinition,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+) -> Option<Evidence> {
+    recipe_path_evidence_inner(
+        view,
+        agent,
+        place,
+        recipe,
+        recipes,
+        travel_horizon,
+        &BTreeSet::new(),
+    )
+}
+
+fn recipe_path_evidence_inner(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    recipe: &RecipeDefinition,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    visited_commodities: &BTreeSet<CommodityKind>,
 ) -> Option<Evidence> {
     let place = place?;
-    let workstation_tag = recipe.required_workstation_tag?;
-
-    for required_tool in &recipe.required_tool_kinds {
-        if view.unique_item_count(agent, *required_tool) == 0 {
-            return None;
-        }
-    }
-
-    let workstations = view.matching_workstations_at(place, workstation_tag);
-    if workstations.is_empty() {
-        return None;
-    }
+    let workstation_evidence = available_recipe_workstation_evidence(view, agent, Some(place), recipe)?;
 
     if recipe.inputs.is_empty() {
         let mut evidence = Evidence::with_place(place);
-        for workstation in workstations {
+        for workstation in &workstation_evidence.entities {
             let &(output_commodity, output_quantity) = recipe.outputs.first()?;
-            let source_ok = view.resource_source(workstation).is_some_and(|source| {
+            let source_ok = view.resource_source(*workstation).is_some_and(|source| {
                 source.commodity == output_commodity && source.available_quantity >= output_quantity
             });
             if source_ok {
-                evidence.entities.insert(workstation);
+                evidence.entities.insert(*workstation);
             }
         }
         return (!evidence.entities.is_empty()).then_some(evidence);
     }
 
+    let mut evidence = workstation_evidence;
     for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
-        if view.commodity_quantity(agent, commodity) < required_quantity {
-            return None;
-        }
-    }
-
-    available_recipe_workstation_evidence(view, agent, Some(place), recipe)
-}
-
-fn emit_missing_recipe_input_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
-    ctx: &GenerationContext<'_>,
-    recipe_id: worldwake_core::RecipeId,
-    recipe: &RecipeDefinition,
-) {
-    if recipe.inputs.is_empty() {
-        return;
-    }
-    if available_recipe_workstation_evidence(ctx.view, ctx.agent, ctx.place, recipe).is_none() {
-        return;
-    }
-
-    for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
-        if ctx.view.commodity_quantity(ctx.agent, commodity) >= required_quantity {
+        let owned_quantity = view.commodity_quantity(agent, commodity);
+        if owned_quantity >= required_quantity {
             continue;
         }
-        let Some(evidence) = acquisition_path_evidence(
-            ctx.view,
-            ctx.agent,
-            ctx.place,
+
+        let input_evidence = acquisition_path_evidence_inner(
+            view,
+            agent,
+            Some(place),
             commodity,
-            ctx.recipes,
-            ctx.travel_horizon,
-        ) else {
-            continue;
-        };
-        emit_candidate(
-            candidates,
-            GoalKind::AcquireCommodity {
-                commodity,
-                purpose: CommodityPurpose::RecipeInput(recipe_id),
-            },
-            evidence,
-            ctx.blocked,
-            ctx.current_tick,
-        );
+            recipes,
+            travel_horizon,
+            visited_commodities,
+        )?;
+        evidence.merge(input_evidence);
     }
+
+    Some(evidence)
 }
 
 fn available_recipe_workstation_evidence(
@@ -2803,7 +2821,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_recipe_input_emits_acquire_goal_and_suppresses_produce_goal() {
+    fn missing_recipe_input_emits_produce_goal_without_recipe_input_proxy() {
         let agent = entity(1);
         let seller = entity(2);
         let place = entity(10);
@@ -2847,14 +2865,128 @@ mod tests {
 
         assert!(contains_goal(
             &candidates,
+            GoalKind::ProduceCommodity { recipe_id }
+        ));
+        assert!(!contains_goal(
+            &candidates,
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::RecipeInput(recipe_id),
             }
         ));
+    }
+
+    #[test]
+    fn missing_recipe_input_without_workstation_withholds_produce_goal() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.sellers
+            .insert((place, CommodityKind::Firewood), vec![seller]);
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+
         assert!(!contains_goal(
             &candidates,
             GoalKind::ProduceCommodity { recipe_id }
+        ));
+    }
+
+    #[test]
+    fn missing_recipe_input_reachable_via_known_subrecipe_emits_produce_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let mill = entity(20);
+        let grain_source = entity(21);
+        let bread_recipe_id = RecipeId(0);
+        let grain_recipe_id = RecipeId(1);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.entity_kinds.insert(grain_source, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(mill, place);
+        view.effective_places.insert(grain_source, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes
+            .insert(agent, vec![bread_recipe_id, grain_recipe_id]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::Mill), vec![mill]);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![grain_source]);
+        view.resource_sources.insert(
+            grain_source,
+            ResourceSource {
+                commodity: CommodityKind::Grain,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Bread, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(2))],
+            WorkstationTag::Mill,
+        ));
+        recipes.register(RecipeDefinition {
+            name: "Harvest Grain".to_string(),
+            inputs: Vec::new(),
+            outputs: vec![(CommodityKind::Grain, Quantity(2))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::OrchardRow),
+            required_tool_kinds: vec![UniqueItemKind::SimpleTool],
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ProduceCommodity {
+                recipe_id: bread_recipe_id
+            }
         ));
     }
 
