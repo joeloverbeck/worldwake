@@ -4,7 +4,7 @@ use crate::decision_trace::{
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
     GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
     PlannedStepSummary, PlanningPipelineTrace, RankedGoalProvenance, RankedGoalSummary,
-    SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
+    SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
 };
 use crate::failure_handling::ExecutionFailure;
 use crate::pressure::DangerAssessment;
@@ -493,6 +493,7 @@ fn summarize_selected_plan(
     plan: &PlannedPlan,
     current_step_index: usize,
     action_defs: &worldwake_sim::ActionDefRegistry,
+    search_provenance: Option<SelectedPlanSearchProvenance>,
 ) -> SelectedPlanTrace {
     SelectedPlanTrace {
         steps: plan
@@ -506,7 +507,31 @@ fn summarize_selected_plan(
             .steps
             .get(current_step_index)
             .map(|step| summarize_step(step, action_defs)),
+        search_provenance,
     }
+}
+
+fn summarize_search_provenance(
+    selected_goal: worldwake_core::GoalKey,
+    plans: &[(
+        crate::GoalKey,
+        PlanSearchResult,
+        Vec<BindingRejection>,
+        Vec<crate::decision_trace::SearchExpansionSummary>,
+    )],
+) -> Option<SelectedPlanSearchProvenance> {
+    let (_, result, _, expansions) = plans
+        .iter()
+        .find(|(goal, _, _, _)| *goal == selected_goal)?;
+    if !matches!(result, PlanSearchResult::Found(_)) {
+        return None;
+    }
+    let root = expansions.first();
+    Some(SelectedPlanSearchProvenance {
+        expansions_used: expansions.len() as u16,
+        root_remaining_travel_ticks: root.map_or(0, |summary| summary.remaining_travel_ticks),
+        root_travel_pruning: root.and_then(|summary| summary.travel_pruning.clone()),
+    })
 }
 
 fn summarize_ranked_goal(
@@ -1288,7 +1313,12 @@ fn plan_and_validate_next_step_traced(
                         plan_continued = true;
                         selection_trace.selected = runtime.current_goal;
                         selection_trace.selected_plan = runtime.current_plan.as_ref().map(|plan| {
-                            summarize_selected_plan(plan, runtime.current_step_index, action_defs)
+                            summarize_selected_plan(
+                                plan,
+                                runtime.current_step_index,
+                                action_defs,
+                                None,
+                            )
                         });
                         selection_trace.selected_plan_source =
                             Some(SelectedPlanSource::SnapshotContinuation);
@@ -1344,14 +1374,22 @@ fn plan_and_validate_next_step_traced(
             journey_switch_margin,
         ) {
             let selected_goal = selected_plan.goal;
-            selection_trace.selected = Some(selected_goal);
-            selection_trace.selected_plan =
-                Some(summarize_selected_plan(&selected_plan, 0, action_defs));
-            selection_trace.selected_plan_source = Some(determine_selected_plan_source(
+            let selected_plan_source = determine_selected_plan_source(
                 selected_goal,
                 current_goal_before_selection,
                 &plans_options,
+            );
+            let search_provenance = matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
+                .then(|| summarize_search_provenance(selected_goal, &plans))
+                .flatten();
+            selection_trace.selected = Some(selected_goal);
+            selection_trace.selected_plan = Some(summarize_selected_plan(
+                &selected_plan,
+                0,
+                action_defs,
+                search_provenance,
             ));
+            selection_trace.selected_plan_source = Some(selected_plan_source);
 
             // Detect goal switch.
             if let Some(prev) = previous_goal {
@@ -5410,12 +5448,24 @@ mod tests {
             );
         assert_eq!(initial_valid, Some(true));
         assert!(!initial_continued);
+        let initial_selection = initial_selection.expect("initial traced selection should exist");
         assert_eq!(
-            initial_selection
-                .expect("initial traced selection should exist")
-                .selected_plan_source,
+            initial_selection.selected_plan_source,
             Some(crate::SelectedPlanSource::SearchSelection)
         );
+        let initial_selected_plan = initial_selection
+            .selected_plan
+            .as_ref()
+            .expect("initial search selection should expose a selected plan");
+        let initial_search_provenance = initial_selected_plan
+            .search_provenance
+            .as_ref()
+            .expect("fresh search selection should expose compact search provenance");
+        assert!(
+            initial_search_provenance.expansions_used > 0,
+            "fresh search provenance should report at least one expansion for this harness setup"
+        );
+        assert_eq!(initial_search_provenance.root_travel_pruning, None);
 
         let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, runtime);
@@ -5487,6 +5537,10 @@ mod tests {
             Some(crate::SelectedPlanSource::SnapshotContinuation)
         );
         assert_eq!(selected_plan.next_step_index, Some(0));
+        assert_eq!(
+            selected_plan.search_provenance, None,
+            "snapshot continuation should not fabricate fresh search provenance"
+        );
         assert_eq!(
             selected_plan
                 .next_step

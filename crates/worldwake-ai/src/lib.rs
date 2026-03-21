@@ -38,8 +38,9 @@ pub use decision_trace::{
     GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PlanAttemptTrace,
     PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace,
     PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-    RankedGoalProvenance, RankedGoalSummary, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
-    SocialCandidateOmission,
+    RankedGoalProvenance, RankedGoalSummary, SelectedPlanSearchProvenance, SelectedPlanSource,
+    SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
+    TravelSuccessorTrace,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{

@@ -1121,6 +1121,10 @@ fn run_spatial_multi_hop_plan_scenario(seed: Seed) -> (worldwake_core::StateHash
         .selected_plan
         .as_ref()
         .expect("spatial golden should select an initial plan at tick 0");
+    let search_provenance = selected_plan
+        .search_provenance
+        .as_ref()
+        .expect("fresh spatial search selection should expose compact planner provenance");
     let next_step = selected_plan
         .next_step
         .as_ref()
@@ -1140,6 +1144,36 @@ fn run_spatial_multi_hop_plan_scenario(seed: Seed) -> (worldwake_core::StateHash
         next_step.targets,
         vec![south_gate],
         "the initial spatial plan should choose SouthGate as the first hop toward Orchard Farm"
+    );
+    assert!(
+        search_provenance.expansions_used > 0,
+        "the winning spatial search should report how much search budget it consumed"
+    );
+    assert_eq!(
+        search_provenance.root_remaining_travel_ticks, 7,
+        "VillageSquare should start seven travel ticks away from Orchard Farm"
+    );
+    let root_pruning = search_provenance
+        .root_travel_pruning
+        .as_ref()
+        .expect("branchy VillageSquare root expansion should capture travel pruning");
+    assert_eq!(
+        root_pruning.current_place, village_square,
+        "the root pruning summary should describe the VillageSquare branch point"
+    );
+    assert!(
+        root_pruning.retained.iter().any(|successor| {
+            successor.destination == south_gate
+                && successor.remaining_travel_ticks < root_pruning.current_remaining_travel_ticks
+        }),
+        "SouthGate should be retained as the goal-ward hop in the root pruning summary"
+    );
+    assert!(
+        root_pruning
+            .pruned
+            .iter()
+            .all(|successor| successor.remaining_travel_ticks > root_pruning.current_remaining_travel_ticks),
+        "any pruned root travel successors should be farther from Orchard Farm than VillageSquare itself"
     );
     assert!(
         selected_plan

@@ -204,6 +204,9 @@ pub struct BindingRejection {
 pub struct SearchExpansionSummary {
     /// Depth (number of steps already in the node being expanded).
     pub depth: u8,
+    /// Heuristic travel distance remaining from this node when spatial
+    /// guidance is available; otherwise zero.
+    pub remaining_travel_ticks: u32,
     /// Total search candidates generated at this expansion.
     pub candidates_generated: u16,
     /// Candidates for which `build_successor` returned `None`.
@@ -217,6 +220,26 @@ pub struct SearchExpansionSummary {
     /// Whether a `GoalSatisfied` terminal was found at this expansion
     /// (search returns immediately in this case).
     pub found_goal_satisfied: bool,
+    /// Travel-pruning facts captured before successor construction when the
+    /// expansion had spatially guided travel choices.
+    pub travel_pruning: Option<TravelPruningTrace>,
+}
+
+/// Remaining travel distance for one travel successor considered at an
+/// expansion boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelSuccessorTrace {
+    pub destination: EntityId,
+    pub remaining_travel_ticks: u32,
+}
+
+/// Structured summary of spatial pruning at one expansion boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelPruningTrace {
+    pub current_place: EntityId,
+    pub current_remaining_travel_ticks: u32,
+    pub retained: Vec<TravelSuccessorTrace>,
+    pub pruned: Vec<TravelSuccessorTrace>,
 }
 
 /// Trace of a single plan search attempt for one goal.
@@ -281,6 +304,17 @@ pub struct SelectedPlanTrace {
     pub next_step_index: Option<usize>,
     /// The next step on the selected path before execution/revalidation outcome.
     pub next_step: Option<PlannedStepSummary>,
+    /// Compact summary of the winning fresh search when this selected plan came
+    /// from `SearchSelection`.
+    pub search_provenance: Option<SelectedPlanSearchProvenance>,
+}
+
+/// Compact planner-owned provenance for the selected fresh search result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedPlanSearchProvenance {
+    pub expansions_used: u16,
+    pub root_remaining_travel_ticks: u32,
+    pub root_travel_pruning: Option<TravelPruningTrace>,
 }
 
 /// Provenance for the final selected plan surface.
@@ -678,11 +712,58 @@ fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
         .next_step
         .as_ref()
         .map_or_else(|| "none".to_string(), |step| format!("{:?}", step.op_kind));
+    let search = selected_plan
+        .search_provenance
+        .as_ref()
+        .map_or_else(|| "none".to_string(), format_selected_plan_search_provenance);
     format!(
-        "{:?}[steps={}, next_index={:?}, next_step={next_step}, path={step_kinds}]",
+        "{:?}[steps={}, next_index={:?}, next_step={next_step}, path={step_kinds}, search={search}]",
         selected_plan.terminal_kind,
         selected_plan.steps.len(),
         selected_plan.next_step_index,
+    )
+}
+
+fn format_selected_plan_search_provenance(
+    provenance: &SelectedPlanSearchProvenance,
+) -> String {
+    let pruning = provenance.root_travel_pruning.as_ref().map_or_else(
+        || "none".to_string(),
+        |trace| {
+            let retained = trace
+                .retained
+                .iter()
+                .map(|successor| {
+                    format!(
+                        "{:?}@{}",
+                        successor.destination, successor.remaining_travel_ticks
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let pruned = trace
+                .pruned
+                .iter()
+                .map(|successor| {
+                    format!(
+                        "{:?}@{}",
+                        successor.destination, successor.remaining_travel_ticks
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "from={:?}@{}, kept=[{}], pruned=[{}]",
+                trace.current_place,
+                trace.current_remaining_travel_ticks,
+                retained,
+                pruned,
+            )
+        },
+    );
+    format!(
+        "expansions={}, root_remaining={}, pruning={pruning}",
+        provenance.expansions_used, provenance.root_remaining_travel_ticks
     )
 }
 
@@ -1092,6 +1173,22 @@ mod tests {
                         targets: vec![],
                         estimated_ticks: 2,
                     }),
+                    search_provenance: Some(SelectedPlanSearchProvenance {
+                        expansions_used: 3,
+                        root_remaining_travel_ticks: 7,
+                        root_travel_pruning: Some(TravelPruningTrace {
+                            current_place: entity(11),
+                            current_remaining_travel_ticks: 7,
+                            retained: vec![TravelSuccessorTrace {
+                                destination: entity(12),
+                                remaining_travel_ticks: 5,
+                            }],
+                            pruned: vec![TravelSuccessorTrace {
+                                destination: entity(13),
+                                remaining_travel_ticks: 9,
+                            }],
+                        }),
+                    }),
                 }),
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
@@ -1112,6 +1209,9 @@ mod tests {
         assert!(summary.contains("SearchSelection"));
         assert!(summary.contains("GoalSatisfied"));
         assert!(summary.contains("Sleep]") || summary.contains("path=Sleep"));
+        assert!(summary.contains("expansions=3"));
+        assert!(summary.contains("root_remaining=7"));
+        assert!(summary.contains("pruned=["));
     }
 
     #[test]
@@ -1220,20 +1320,35 @@ mod tests {
     fn expansion_summary_default_and_debug_format() {
         let summary = SearchExpansionSummary {
             depth: 0,
+            remaining_travel_ticks: 4,
             candidates_generated: 12,
             candidates_skipped: 1,
             terminal_successors: 2,
             non_terminal_before_beam: 11,
             non_terminal_after_beam: 8,
             found_goal_satisfied: false,
+            travel_pruning: Some(TravelPruningTrace {
+                current_place: entity(1),
+                current_remaining_travel_ticks: 4,
+                retained: vec![TravelSuccessorTrace {
+                    destination: entity(2),
+                    remaining_travel_ticks: 2,
+                }],
+                pruned: vec![TravelSuccessorTrace {
+                    destination: entity(3),
+                    remaining_travel_ticks: 6,
+                }],
+            }),
         };
         assert_eq!(summary.depth, 0);
+        assert_eq!(summary.remaining_travel_ticks, 4);
         assert_eq!(summary.candidates_generated, 12);
         assert_eq!(summary.candidates_skipped, 1);
         assert_eq!(summary.terminal_successors, 2);
         assert_eq!(summary.non_terminal_before_beam, 11);
         assert_eq!(summary.non_terminal_after_beam, 8);
         assert!(!summary.found_goal_satisfied);
+        assert!(summary.travel_pruning.is_some());
 
         // Verify Debug is derived and non-empty.
         let debug = format!("{summary:?}");

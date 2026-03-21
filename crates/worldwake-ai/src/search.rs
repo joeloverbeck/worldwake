@@ -154,13 +154,14 @@ pub fn search_plan(
             handlers,
             binding_rejections.as_deref_mut(),
         );
+        let mut travel_pruning = None;
         if let Some(current_place) =
             node.state
                 .effective_place_ref(PlanningEntityRef::Authoritative(
                     node.state.snapshot().actor(),
                 ))
         {
-            prune_travel_away_from_goal(
+            travel_pruning = prune_travel_away_from_goal(
                 &mut candidates,
                 current_place,
                 goal_relevant_places,
@@ -211,12 +212,14 @@ pub fn search_plan(
                         if let Some(ref mut sink) = expansion_summaries {
                             sink.push(crate::decision_trace::SearchExpansionSummary {
                                 depth,
+                                remaining_travel_ticks: node.heuristic_ticks,
                                 candidates_generated,
                                 candidates_skipped,
                                 terminal_successors: terminal_count,
                                 non_terminal_before_beam,
                                 non_terminal_after_beam: non_terminal_before_beam, // no truncation happened yet
                                 found_goal_satisfied,
+                                travel_pruning: travel_pruning.clone(),
                             });
                         }
                         return PlanSearchResult::Found(PlannedPlan::new(
@@ -244,12 +247,14 @@ pub fn search_plan(
         if let Some(ref mut sink) = expansion_summaries {
             sink.push(crate::decision_trace::SearchExpansionSummary {
                 depth,
+                remaining_travel_ticks: node.heuristic_ticks,
                 candidates_generated,
                 candidates_skipped,
                 terminal_successors: terminal_count,
                 non_terminal_before_beam,
                 non_terminal_after_beam,
                 found_goal_satisfied,
+                travel_pruning,
             });
         }
 
@@ -321,9 +326,9 @@ fn prune_travel_away_from_goal(
     goal_places: &[EntityId],
     snapshot: &PlanningSnapshot,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
-) {
+) -> Option<crate::decision_trace::TravelPruningTrace> {
     if goal_places.is_empty() {
-        return;
+        return None;
     }
     let current_min = snapshot
         .min_travel_ticks_to_any(current_place, goal_places)
@@ -332,23 +337,53 @@ fn prune_travel_away_from_goal(
     // goal is unsatisfied here, allow unrestricted travel so the agent can
     // route to an alternative goal-relevant place.
     if current_min == 0 {
-        return;
+        return None;
     }
-    candidates.retain(|c| {
-        let Some(sem) = semantics_table.get(&c.def_id) else {
-            return true;
+    let mut retained = Vec::new();
+    let mut pruned = Vec::new();
+    let mut kept_candidates = Vec::with_capacity(candidates.len());
+
+    for candidate in candidates.drain(..) {
+        let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+            kept_candidates.push(candidate);
+            continue;
         };
-        if sem.op_kind != PlannerOpKind::Travel {
-            return true;
+        if semantics.op_kind != PlannerOpKind::Travel {
+            kept_candidates.push(candidate);
+            continue;
         }
-        let Some(dest) = c.authoritative_targets.first() else {
-            return true;
+        let Some(destination) = candidate.authoritative_targets.first().copied() else {
+            kept_candidates.push(candidate);
+            continue;
         };
-        let dest_min = snapshot
-            .min_travel_ticks_to_any(*dest, goal_places)
+
+        let remaining_travel_ticks = snapshot
+            .min_travel_ticks_to_any(destination, goal_places)
             .unwrap_or(u32::MAX);
-        dest_min <= current_min
-    });
+        let successor = crate::decision_trace::TravelSuccessorTrace {
+            destination,
+            remaining_travel_ticks,
+        };
+        if remaining_travel_ticks <= current_min {
+            retained.push(successor);
+            kept_candidates.push(candidate);
+        } else {
+            pruned.push(successor);
+        }
+    }
+
+    *candidates = kept_candidates;
+    if retained.is_empty() && pruned.is_empty() {
+        return None;
+    }
+    retained.sort_by_key(|successor| successor.destination);
+    pruned.sort_by_key(|successor| successor.destination);
+    Some(crate::decision_trace::TravelPruningTrace {
+        current_place,
+        current_remaining_travel_ticks: current_min,
+        retained,
+        pruned,
+    })
 }
 
 fn build_successor<'snapshot>(
@@ -3820,18 +3855,41 @@ mod tests {
             make_travel_candidate(travel_north_id, north),
         ];
 
-        prune_travel_away_from_goal(
+        let pruning = prune_travel_away_from_goal(
             &mut candidates,
             hub,
             &[goal_store],
             &snapshot,
             &semantics_table,
-        );
+        )
+        .expect("deterministic hub pruning should return a structured pruning summary");
 
         // Only travel to east should survive (dest_min=2 < current_min=7).
         // south and north are dead-ends farther from goal.
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].def_id, travel_east_id);
+        assert_eq!(pruning.current_place, hub);
+        assert_eq!(pruning.current_remaining_travel_ticks, 7);
+        assert_eq!(
+            pruning.retained,
+            vec![crate::decision_trace::TravelSuccessorTrace {
+                destination: east,
+                remaining_travel_ticks: 2,
+            }]
+        );
+        assert_eq!(
+            pruning.pruned,
+            vec![
+                crate::decision_trace::TravelSuccessorTrace {
+                    destination: south,
+                    remaining_travel_ticks: 11,
+                },
+                crate::decision_trace::TravelSuccessorTrace {
+                    destination: north,
+                    remaining_travel_ticks: 10,
+                },
+            ]
+        );
     }
 
     #[test]
