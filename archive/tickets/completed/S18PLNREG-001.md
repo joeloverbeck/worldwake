@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: No additional production or test changes required
-**Deps**: `docs/FOUNDATIONS.md`, `docs/golden-e2e-testing.md`, `tickets/README.md`, `specs/S18-prerequisite-aware-emergent-chain-goldens.md`, `archive/tickets/completed/S18PREAWAEME-003.md`
+**Deps**: `docs/FOUNDATIONS.md`, `docs/golden-e2e-testing.md`, `tickets/README.md`, `archive/specs/S18-prerequisite-aware-emergent-chain-goldens.md`, `archive/tickets/completed/S18PREAWAEME-003.md`
 
 ## Problem
 

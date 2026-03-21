@@ -1,6 +1,6 @@
 # S18TICKETDOC-001: Tighten ticket and golden authoring rules for live planner contracts
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -17,11 +17,12 @@ That gap allows tickets to be precise in wording while still being architectural
 1. `tickets/README.md` already requires reassessment, exact symbol naming, verification-layer mapping, and explicit correction when ticket assumptions diverge from current code.
 2. `docs/golden-e2e-testing.md` already requires earliest-causal-boundary assertions, scenario-isolation disclosure, and avoidance of using broad downstream effects as a proxy for earlier planner behavior.
 3. `docs/precision-rules.md` already requires phase distinction, layer precision, stale-request boundary naming, and divergence-first correction.
-4. The current doc set does not yet explicitly require planner/golden tickets to validate the live goal family and operator surface they rely on before describing the scenario. The `S18PREAWAEME-003` confusion came from assuming `ProduceCommodity` covered a harvest-backed stale-source recovery when the live operator surface that lawfully supported that branch was `RestockCommodity`.
-5. The current doc set also does not explicitly require a follow-up traceability ticket when decision traces expose the selected outcome but not the concrete planner provenance needed to explain that outcome architecturally.
-6. This is a documentation/process ticket. Additional verification-layer mapping is not applicable beyond ensuring the guidance cites the correct existing architectural layers and trace surfaces.
-7. Mismatch + correction: current documentation is directionally correct but missing two specific authoring guardrails that would have prevented the stale ticket model from surviving reassessment.
-8. No arithmetic or start-failure contract is being changed here.
+4. `tickets/_TEMPLATE.md` already mirrors many of those reassessment requirements, but it does not yet force planner/golden ticket authors to name the live goal kind and the live operator/prerequisite surface they validated before writing the scenario.
+5. The current doc set does not yet explicitly require planner/golden tickets to validate the live goal family and operator surface they rely on before describing the scenario. The `S18PREAWAEME-003` confusion came from assuming `ProduceCommodity` covered a harvest-backed stale-source recovery when the live operator surface that lawfully supported that branch was `RestockCommodity`.
+6. The current doc set also does not yet state in repository docs that architecturally important missing planner provenance should become a follow-up traceability ticket after lower-layer confirmation. `AGENTS.md` says this for debugging, but the persistent ticket/golden authoring docs do not.
+7. This remains a documentation/process ticket. Additional runtime-layer mapping is not applicable beyond ensuring the touched guidance points authors to the correct existing planner, trace, and focused-test surfaces.
+8. Mismatch + correction: current documentation is directionally correct and already stronger than the ticket initially implied, but it is still missing two narrow authoring guardrails that would likely have prevented the stale ticket model from surviving reassessment.
+9. No arithmetic, request-resolution, or start-failure contract is being changed here.
 
 ## Architecture Check
 
@@ -31,9 +32,9 @@ That gap allows tickets to be precise in wording while still being architectural
 
 ## Verification Layers
 
-1. ticket authors must validate the actual goal family/operator surface before specifying a planner scenario -> documentation contract in `tickets/README.md` and `tickets/_TEMPLATE.md`
-2. golden docs must state that missing planner provenance should trigger a traceability follow-up ticket when it matters architecturally -> `docs/golden-e2e-testing.md` and `docs/precision-rules.md`
-3. documentation stays internally consistent with the current planner/testing guidance -> docs inventory / repository verification commands
+1. planner/golden ticket authors must validate the actual goal family/operator surface before specifying a scenario -> documentation contract in `tickets/README.md` and `tickets/_TEMPLATE.md`
+2. golden/precision docs must state that missing planner provenance should trigger a traceability follow-up ticket when it matters architecturally -> `docs/golden-e2e-testing.md` and `docs/precision-rules.md`
+3. documentation stays internally consistent with the current golden inventory and repo verification workflow -> `python3 scripts/golden_inventory.py --write --check-docs` and `scripts/verify.sh`
 4. single-layer documentation ticket; no additional runtime-layer mapping is applicable
 
 ## What to Change
@@ -101,3 +102,17 @@ Keep the example concise and architectural, not historical.
 
 1. `python3 scripts/golden_inventory.py --write --check-docs`
 2. `scripts/verify.sh`
+
+## Outcome
+
+- Completion date: 2026-03-21
+- What actually changed:
+  - `tickets/README.md` now requires planner- and golden-driven tickets to name the live `GoalKind` and the exact current operator, affordance, or prerequisite surface they rely on.
+  - `tickets/_TEMPLATE.md` now prompts for that same reassessment at ticket creation time.
+  - `docs/golden-e2e-testing.md` now states that missing planner provenance should escalate to focused lower-layer proof plus a follow-up traceability ticket when architecturally important, and it records the `S18PREAWAEME-003` planner-surface correction as the concrete example.
+  - `docs/precision-rules.md` now requires divergence checks for the live planner surface and adds an explicit traceability-escalation rule.
+- Deviations from original plan:
+  - none in scope; the ticket remained documentation-only after reassessment, but its assumptions were narrowed because the existing docs already covered more of the contract than the original ticket implied
+- Verification results:
+  - `python3 scripts/golden_inventory.py --write --check-docs` passed
+  - `scripts/verify.sh` passed, including `cargo test --workspace`, `cargo clippy --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`

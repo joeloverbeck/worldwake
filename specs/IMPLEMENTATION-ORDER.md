@@ -68,6 +68,9 @@ Established the missing golden proof for the two S11 wound-lifecycle invariants:
 ### S12: Planner Prerequisite-Aware Search — COMPLETED
 Established dynamic per-node prerequisite-aware place guidance for planner search, focused trace/budget coverage, and canonical remote-care plus remote-production golden proof. The final completion also aligned `ProduceCommodity` ranking and candidate generation with the planner architecture so remote self-consume crafting stays truthful as `ProduceCommodity` instead of falling back to stale acquire proxies.
 
+### S18: Prerequisite-Aware Emergent Chain Goldens — COMPLETED
+Established the missing Phase 3 golden proof for craft-restock and stale prerequisite-belief recovery, and closed the archival loop on the live planner contract after the stale `ProduceCommodity` narrative was corrected to the lawful `RestockCommodity` surface.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -149,6 +152,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - shipped defend changed-conditions and VillageSquare spatial-validation goldens at their canonical ownership boundaries, with deterministic replay and decision-trace-first route proof
 - **S17**: Wound Lifecycle Golden E2E Suites — ✅ COMPLETED
   - Scenario 29 in `golden_emergent.rs` proves deprivation worsening consolidates without duplicating wounds, and Scenario 30 in `golden_combat.rs` proves recovery-aware need promotion opens the wound-recovery gate; both shipped with deterministic replay companions and aligned golden docs/inventory
+- **S18**: Prerequisite-Aware Emergent Chain Goldens — ✅ COMPLETED
+  - craft-restock and stale prerequisite-belief recovery goldens are shipped, and the stale planner-surface narrative was corrected to the live `RestockCommodity` contract before archival
 
 **Step 12**:
 - **E16c**: Institutional Beliefs & Record Consultation
@@ -251,6 +256,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S17 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S18 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

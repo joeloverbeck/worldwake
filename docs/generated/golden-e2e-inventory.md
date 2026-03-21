@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 10
-- Total `golden_*` tests: 139
+- Total `golden_*` tests: 141
 
 ## Per-File Inventory
 
@@ -21,7 +21,7 @@ Do not hand-edit it.
 | `golden_offices.rs` | 13 |
 | `golden_production.rs` | 21 |
 | `golden_social.rs` | 14 |
-| `golden_supply_chain.rs` | 2 |
+| `golden_supply_chain.rs` | 4 |
 | `golden_trade.rs` | 6 |
 
 ### `golden_ai_decisions.rs`
@@ -183,6 +183,8 @@ Do not hand-edit it.
 
 - `golden_merchant_restocks_via_prerequisite_aware_craft`
 - `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`
+- `golden_stale_prerequisite_belief_discovery_replan`
+- `golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`
 
 ### `golden_trade.rs`
 

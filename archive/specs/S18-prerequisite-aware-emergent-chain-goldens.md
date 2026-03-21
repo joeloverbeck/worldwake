@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # Prerequisite-Aware Emergent Chain Goldens
 
@@ -192,9 +192,9 @@ N/A — no positive feedback loops identified.
 
 ## Implementation Checklist
 
-- [ ] **S18-001**: Extend `prerequisite_places()` for `RestockCommodity` in `goal_model.rs`. When the restock commodity has a matching recipe, delegate to `ProduceCommodity`-style prerequisite discovery for missing recipe inputs. Unit test: `RestockCommodity` with a recipe commodity returns non-empty prerequisite places including the input source location.
-- [ ] **S18-002**: Golden test `golden_merchant_restocks_via_prerequisite_aware_craft` + deterministic replay companion in `golden_supply_chain.rs`. Proves the full enterprise restock → prerequisite-aware craft chain.
-- [ ] **S18-003**: Golden test `golden_stale_prerequisite_belief_discovery_replan` + deterministic replay companion in `golden_supply_chain.rs`. Proves stale belief → wasted trip → perception correction → replan → successful alternative acquisition.
+- [x] **S18-001**: Extend `prerequisite_places()` for `RestockCommodity` in `goal_model.rs`. When the restock commodity has a matching recipe, delegate to `ProduceCommodity`-style prerequisite discovery for missing recipe inputs. Unit test: `RestockCommodity` with a recipe commodity returns non-empty prerequisite places including the input source location.
+- [x] **S18-002**: Golden test `golden_merchant_restocks_via_prerequisite_aware_craft` + deterministic replay companion in `golden_supply_chain.rs`. Proves the full enterprise restock → prerequisite-aware craft chain.
+- [x] **S18-003**: Golden test `golden_stale_prerequisite_belief_discovery_replan` + deterministic replay companion in `golden_supply_chain.rs`. Proves stale belief → wasted trip → perception correction → replan → successful alternative acquisition.
 
 ## Cross-References
 
@@ -202,3 +202,19 @@ N/A — no positive feedback loops identified.
 - `specs/S10-bilateral-trade-negotiation.md` — blocks the full combined supply chain (restock→trade→consumption); this spec's Test 1 exercises the restock-via-craft segment independently
 - `crates/worldwake-ai/tests/golden_supply_chain.rs` — existing harvest-based restock and consumer trade tests; new tests extend this file
 - `docs/golden-e2e-coverage.md` — coverage tracking for golden E2E suites
+
+## Outcome
+
+- Completion date: 2026-03-21
+- What actually changed:
+  - `GoalKind::RestockCommodity` prerequisite discovery and the craft-restock golden were delivered.
+  - the stale prerequisite-belief chain was delivered in `golden_supply_chain.rs` with deterministic replay coverage.
+  - follow-up doc work tightened ticket and golden authoring rules so future planner tickets must validate the live goal and operator surface before writing scenarios.
+- Deviations from original plan:
+  - the `RestockCommodity` prerequisite discovery work had already landed by the time the later stale-belief ticket was reassessed; the spec text remained behind the live code until archival closeout.
+  - the stale-belief recovery path did not finish as a `ProduceCommodity` plus forced `StartFailed` narrative. The live architecture corrected it into a `RestockCommodity` stale-belief fallback with fresh replanning after local perception.
+  - the clean final implementation used a narrower, more architecturally faithful stale-belief scenario than the broader original draft.
+- Verification results:
+  - the focused and golden coverage shipped under `archive/tickets/completed/S18PREAWAEME-001.md`, `archive/tickets/completed/S18PREAWAEME-002.md`, and `archive/tickets/completed/S18PREAWAEME-003.md`
+  - `python3 scripts/golden_inventory.py --write --check-docs` passed during archival closeout
+  - `scripts/verify.sh` passed during archival closeout

@@ -129,6 +129,8 @@ If current code and ticket/spec assumptions diverge, update the document first b
 
 Do not leave a ticket marked `Engine Changes: None` or "tests only" when the requested invariant actually exposes an architectural contradiction in production code. Correct the scope first.
 
+For planner- or golden-driven tickets, divergence checking must include the live goal family and the exact operator, affordance, or prerequisite surface the scenario depends on. Do not keep a narrative framed around `ProduceCommodity`, `RestockCommodity`, or any other goal family unless reassessment confirmed that the live planner still routes the scenario through that exact surface.
+
 ## 14. Timing vs Semantics
 
 If a proposed test relies on a timing assumption, prefer the semantic invariant instead of an incidental tick-boundary assumption unless the tick boundary is itself the contract.
@@ -136,3 +138,12 @@ If a proposed test relies on a timing assumption, prefer the semantic invariant 
 If the scenario can lawfully produce a same-tick cross-agent chain, do not write the claim as "actor B must act on a later tick" unless strict tick separation is the actual engine rule. In those cases, prefer the explicit action-trace ordering key `(tick, sequence_in_tick)` over incidental tick numbers.
 
 If the ordering claim depends on ordering, state whether the compared branches are symmetric in the current architecture or whether they depend on different ranking or resolution substrates.
+
+## 15. Traceability Escalation
+
+When decision traces prove the selected outcome but do not expose enough planner provenance to explain the behavior architecturally, do not weaken the claim with broad downstream assertions or ad-hoc debug output.
+
+Instead:
+
+1. prove the immediate behavior with the strongest available lower-layer test or trace surface
+2. open a follow-up traceability ticket if the missing provenance matters to the architecture or future debugging contract

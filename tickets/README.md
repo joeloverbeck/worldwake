@@ -18,6 +18,7 @@ All precision rules for technical claims — ordering, layer naming, coverage ga
    - Explicitly call out mismatches and corrected scope.
    - Cite exact files, symbols, or tests for any non-trivial architectural claim.
    - Apply all domain-specific precision requirements from `docs/precision-rules.md` (ordering, political claims, stale requests, ControlSource, heuristic removal, cumulative arithmetic, scenario isolation, coverage gaps, layer precision).
+   - For planner- or golden-driven tickets, name the live `GoalKind` under test and the exact current operator, affordance, or prerequisite surface the scenario depends on. If reassessment shows the live goal family or operator surface differs from the original narrative, correct the ticket scope before implementation.
    - For ranking-sensitive tickets, validate the live ranking arithmetic before claiming branch symmetry, equal motive scores, or "priority-class only" divergence. Equal weights alone are not enough; check the full active substrate such as pressure, weights, promotions, and caps.
 2. `Architecture Check`:
    - Explain why the proposed design is cleaner than alternatives.

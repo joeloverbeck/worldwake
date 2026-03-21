@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — planner prerequisite-source filtering, candidate-evidence filtering, blocked-intent generation semantics, and stale-plan retention
-**Deps**: `specs/S18-prerequisite-aware-emergent-chain-goldens.md`
+**Deps**: `archive/specs/S18-prerequisite-aware-emergent-chain-goldens.md`
 
 ## Problem
 
