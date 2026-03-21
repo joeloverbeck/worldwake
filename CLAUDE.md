@@ -14,11 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Ticket Expectations
 
 - Reassess every ticket against current code, focused tests, golden coverage, and harness setup before implementation. If current code and ticket assumptions diverge, update the ticket first.
-- Do not leave a ticket marked `Engine Changes: None` or "tests only" when the requested invariant actually exposes an architectural contradiction in production code. Correct the scope first.
-- When a ticket claims a testing gap, distinguish missing focused/unit coverage from missing golden/E2E coverage.
-- Name the exact layer and symbol for non-trivial claims. Do not collapse AI/planning behavior, authoritative action validation, and system resolution into one vague statement.
-- If a test relies on timing, state whether the contract is action-lifecycle ordering, event-log ordering, or authoritative world-state ordering.
-- Prefer decision-trace assertions for AI candidate absence, suppression, or planner behavior rather than relying only on missing events or missing committed actions.
+- Follow `docs/precision-rules.md` for all technical claims in tickets, specs, and golden test rationale.
 
 ## Foundational Principles
 

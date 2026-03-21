@@ -146,20 +146,10 @@ For social goldens, document whether the speaker needs an explicit belief about 
 For social goldens, also document subject choice explicitly. Agent subjects can create additional lawful `ShareBelief` branches around the subject's own changing state or location. If the contract is about resend suppression or a specific downstream office fact, prefer a non-agent subject unless the extra agent-subject branches are part of the invariant under test.
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 
-## Ticket Expectations For Golden Work
+## Ticket Precision
 
-Golden-related tickets should:
-
-1. name the exact scenario gap
-2. state whether the gap is missing focused coverage, missing golden coverage, or both
-3. identify the exact assertion surface to use
-4. avoid stale command examples
-5. distinguish candidate generation, ranking/suppression, execution, and authoritative outcome
-6. name the exact layer when similar helpers exist in both AI/planning code and authoritative/system code
-7. document scenario-isolation choices when lawful competing affordances exist and the golden is intended to prove one branch
-8. when cumulative mechanics or authoritative arithmetic drive the scenario, state the concrete delta/cadence/threshold/capacity math and the survival/failure envelope that make the branch reachable
-9. if the ticket depends on ordering, state whether the compared branches are symmetric in the current architecture or whether the divergence depends on priority class, motive score, suppression, delayed system resolution, or a mixed-layer combination
-10. if the ticket involves stale or retained requests, state whether the contract is request-resolution rejection before start, authoritative `StartFailed`, or post-start abort
+Golden-related tickets must follow `docs/precision-rules.md` for all technical claims.
+Additionally, golden tickets should name the exact scenario gap and state whether it is missing focused coverage, missing golden coverage, or both.
 
 ## Verification Commands
 
