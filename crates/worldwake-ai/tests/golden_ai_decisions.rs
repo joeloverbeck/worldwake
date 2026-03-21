@@ -1041,15 +1041,8 @@ fn golden_multi_hop_travel_plan() {
     let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
     let (mut h, agent) = setup_multi_hop_travel_scenario(Seed([79; 32]), bandit_camp, "Rook");
     let initial_hunger = h.agent_hunger(agent);
-    let mut observation = MultiHopTravelObservation::new();
-    observation.visited_places.push(bandit_camp);
-
-    for _ in 0..150 {
-        h.step_once();
-        if observe_multi_hop_travel_step(&h, agent, initial_hunger, &mut observation) {
-            break;
-        }
-    }
+    let observation =
+        run_multi_hop_travel_observation(&mut h, agent, initial_hunger, bandit_camp, 150);
 
     assert!(
         observation
@@ -1087,150 +1080,40 @@ fn golden_multi_hop_travel_plan() {
     );
 }
 
-#[allow(clippy::too_many_lines)]
-fn run_spatial_multi_hop_plan_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+fn run_spatial_multi_hop_plan_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let run = execute_spatial_multi_hop_plan_scenario(seed);
+    assert_spatial_multi_hop_initial_selection(&run.harness, run.agent);
+    assert_spatial_multi_hop_execution_outcomes(&run.harness, run.agent, &run.observation);
+
+    (
+        worldwake_core::hash_world(&run.harness.world).unwrap(),
+        worldwake_core::hash_event_log(&run.harness.event_log).unwrap(),
+    )
+}
+
+struct SpatialMultiHopScenarioRun {
+    harness: GoldenHarness,
+    agent: worldwake_core::EntityId,
+    observation: MultiHopTravelObservation,
+}
+
+fn execute_spatial_multi_hop_plan_scenario(seed: Seed) -> SpatialMultiHopScenarioRun {
     let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
-    let south_gate = prototype_place_entity(PrototypePlace::SouthGate);
     let (mut h, agent) = setup_multi_hop_travel_scenario(seed, village_square, "Scout");
     h.driver.enable_tracing();
     h.enable_action_tracing();
 
     let initial_hunger = h.agent_hunger(agent);
-    let mut observation = MultiHopTravelObservation::new();
-    observation.visited_places.push(village_square);
+    let observation =
+        run_multi_hop_travel_observation(&mut h, agent, initial_hunger, village_square, 150);
 
-    for _ in 0..150 {
-        h.step_once();
-        if observe_multi_hop_travel_step(&h, agent, initial_hunger, &mut observation) {
-            break;
-        }
+    SpatialMultiHopScenarioRun {
+        harness: h,
+        agent,
+        observation,
     }
-
-    let trace_sink = h
-        .driver
-        .trace_sink()
-        .expect("decision tracing should be enabled for the spatial golden");
-    let trace_tick_0 = trace_sink
-        .trace_at(agent, worldwake_core::Tick(0))
-        .expect("spatial golden should record a tick 0 planning trace");
-    let planning_tick_0 = match &trace_tick_0.outcome {
-        DecisionOutcome::Planning(planning) => planning,
-        other => panic!("expected planning outcome at tick 0, got {other:?}"),
-    };
-    let selected_plan = planning_tick_0
-        .selection
-        .selected_plan
-        .as_ref()
-        .expect("spatial golden should select an initial plan at tick 0");
-    let search_provenance = selected_plan
-        .search_provenance
-        .as_ref()
-        .expect("fresh spatial search selection should expose compact planner provenance");
-    let next_step = selected_plan
-        .next_step
-        .as_ref()
-        .expect("selected spatial plan should expose its next step");
-
-    assert_eq!(
-        planning_tick_0.selection.selected_plan_source,
-        Some(SelectedPlanSource::SearchSelection),
-        "the initial VillageSquare route should come from a fresh search selection"
-    );
-    assert_eq!(
-        next_step.op_kind,
-        PlannerOpKind::Travel,
-        "the initial spatial plan should begin with travel from VillageSquare"
-    );
-    assert_eq!(
-        next_step.targets,
-        vec![south_gate],
-        "the initial spatial plan should choose SouthGate as the first hop toward Orchard Farm"
-    );
-    assert!(
-        search_provenance.expansions_used > 0,
-        "the winning spatial search should report how much search budget it consumed"
-    );
-    assert_eq!(
-        search_provenance.root_remaining_travel_ticks, 7,
-        "VillageSquare should start seven travel ticks away from Orchard Farm"
-    );
-    let root_pruning = search_provenance
-        .root_travel_pruning
-        .as_ref()
-        .expect("branchy VillageSquare root expansion should capture travel pruning");
-    assert_eq!(
-        root_pruning.current_place, village_square,
-        "the root pruning summary should describe the VillageSquare branch point"
-    );
-    assert!(
-        root_pruning.retained.iter().any(|successor| {
-            successor.destination == south_gate
-                && successor.remaining_travel_ticks < root_pruning.current_remaining_travel_ticks
-        }),
-        "SouthGate should be retained as the goal-ward hop in the root pruning summary"
-    );
-    assert!(
-        root_pruning
-            .pruned
-            .iter()
-            .all(|successor| successor.remaining_travel_ticks > root_pruning.current_remaining_travel_ticks),
-        "any pruned root travel successors should be farther from Orchard Farm than VillageSquare itself"
-    );
-    assert!(
-        selected_plan
-            .steps
-            .iter()
-            .any(|step| step.op_kind == PlannerOpKind::Harvest),
-        "the initial selected path should include a remote harvest step"
-    );
-
-    let action_sink = h
-        .action_trace_sink()
-        .expect("action tracing should be enabled for the spatial golden");
-    let saw_harvest_lifecycle = action_sink.events_for(agent).iter().any(|event| {
-        event.action_name == "harvest:Harvest Apples"
-            && matches!(
-                event.kind,
-                ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
-            )
-    });
-
-    assert!(
-        observation
-            .milestones
-            .contains(&MultiHopTravelMilestone::LeftOrigin),
-        "Agent should leave VillageSquare to pursue distant food"
-    );
-    assert!(
-        observation
-            .milestones
-            .contains(&MultiHopTravelMilestone::SawInTransit),
-        "VillageSquare multi-hop travel should place the agent in transit before arrival"
-    );
-    assert!(
-        observation
-            .milestones
-            .contains(&MultiHopTravelMilestone::ReachedOrchardFarm),
-        "Agent should eventually reach Orchard Farm from Village Square; visited={:?}, final_place={:?}, blocked={:?}",
-        observation.visited_places,
-        h.world.effective_place(agent),
-        h.world.get_component_blocked_intent_memory(agent),
-    );
-    assert!(
-        saw_harvest_lifecycle,
-        "Agent should start or commit the remote harvest action after reaching Orchard Farm"
-    );
-    assert!(
-        observation
-            .milestones
-            .contains(&MultiHopTravelMilestone::HungerDecreasedAfterArrival),
-        "Agent should reduce hunger after the remote Orchard Farm acquisition chain"
-    );
-
-    (
-        worldwake_core::hash_world(&h.world).unwrap(),
-        worldwake_core::hash_event_log(&h.event_log).unwrap(),
-    )
 }
 
 #[test]
@@ -1269,6 +1152,26 @@ impl MultiHopTravelObservation {
             visited_places: Vec::new(),
         }
     }
+}
+
+fn run_multi_hop_travel_observation(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    initial_hunger: worldwake_core::Permille,
+    origin: worldwake_core::EntityId,
+    max_ticks: u32,
+) -> MultiHopTravelObservation {
+    let mut observation = MultiHopTravelObservation::new();
+    observation.visited_places.push(origin);
+
+    for _ in 0..max_ticks {
+        h.step_once();
+        if observe_multi_hop_travel_step(h, agent, initial_hunger, &mut observation) {
+            break;
+        }
+    }
+
+    observation
 }
 
 fn setup_multi_hop_travel_scenario(
@@ -1388,6 +1291,137 @@ fn orchard_has_apple_lot(h: &GoldenHarness) -> bool {
                 .get_component_item_lot(entity)
                 .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
         })
+}
+
+fn assert_spatial_multi_hop_initial_selection(h: &GoldenHarness, agent: worldwake_core::EntityId) {
+    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+    let south_gate = prototype_place_entity(PrototypePlace::SouthGate);
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for the spatial golden");
+    let trace_tick_0 = trace_sink
+        .trace_at(agent, worldwake_core::Tick(0))
+        .expect("spatial golden should record a tick 0 planning trace");
+    let planning_tick_0 = match &trace_tick_0.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning outcome at tick 0, got {other:?}"),
+    };
+    let selected_plan = planning_tick_0
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("spatial golden should select an initial plan at tick 0");
+    let search_provenance = selected_plan
+        .search_provenance
+        .as_ref()
+        .expect("fresh spatial search selection should expose compact planner provenance");
+    let next_step = selected_plan
+        .next_step
+        .as_ref()
+        .expect("selected spatial plan should expose its next step");
+
+    assert_eq!(
+        planning_tick_0.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "the initial VillageSquare route should come from a fresh search selection"
+    );
+    assert_eq!(
+        next_step.op_kind,
+        PlannerOpKind::Travel,
+        "the initial spatial plan should begin with travel from VillageSquare"
+    );
+    assert_eq!(
+        next_step.targets,
+        vec![south_gate],
+        "the initial spatial plan should choose SouthGate as the first hop toward Orchard Farm"
+    );
+    assert!(
+        search_provenance.expansions_used > 0,
+        "the winning spatial search should report how much search budget it consumed"
+    );
+    assert_eq!(
+        search_provenance.root_remaining_travel_ticks, 7,
+        "VillageSquare should start seven travel ticks away from Orchard Farm"
+    );
+
+    let root_pruning = search_provenance
+        .root_travel_pruning
+        .as_ref()
+        .expect("branchy VillageSquare root expansion should capture travel pruning");
+    assert_eq!(
+        root_pruning.current_place, village_square,
+        "the root pruning summary should describe the VillageSquare branch point"
+    );
+    assert!(
+        root_pruning.retained.iter().any(|successor| {
+            successor.destination == south_gate
+                && successor.remaining_travel_ticks < root_pruning.current_remaining_travel_ticks
+        }),
+        "SouthGate should be retained as the goal-ward hop in the root pruning summary"
+    );
+    assert!(
+        root_pruning.pruned.iter().all(|successor| {
+            successor.remaining_travel_ticks > root_pruning.current_remaining_travel_ticks
+        }),
+        "any pruned root travel successors should be farther from Orchard Farm than VillageSquare itself"
+    );
+    assert!(
+        selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Harvest),
+        "the initial selected path should include a remote harvest step"
+    );
+}
+
+fn assert_spatial_multi_hop_execution_outcomes(
+    h: &GoldenHarness,
+    agent: worldwake_core::EntityId,
+    observation: &MultiHopTravelObservation,
+) {
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for the spatial golden");
+    let saw_harvest_lifecycle = action_sink.events_for(agent).iter().any(|event| {
+        event.action_name == "harvest:Harvest Apples"
+            && matches!(
+                event.kind,
+                ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+            )
+    });
+
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::LeftOrigin),
+        "Agent should leave VillageSquare to pursue distant food"
+    );
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::SawInTransit),
+        "VillageSquare multi-hop travel should place the agent in transit before arrival"
+    );
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::ReachedOrchardFarm),
+        "Agent should eventually reach Orchard Farm from Village Square; visited={:?}, final_place={:?}, blocked={:?}",
+        observation.visited_places,
+        h.world.effective_place(agent),
+        h.world.get_component_blocked_intent_memory(agent),
+    );
+    assert!(
+        saw_harvest_lifecycle,
+        "Agent should start or commit the remote harvest action after reaching Orchard Farm"
+    );
+    assert!(
+        observation
+            .milestones
+            .contains(&MultiHopTravelMilestone::HungerDecreasedAfterArrival),
+        "Agent should reduce hunger after the remote Orchard Farm acquisition chain"
+    );
 }
 
 // ---------------------------------------------------------------------------
