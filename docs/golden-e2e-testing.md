@@ -138,6 +138,10 @@ State all of the following in the owning ticket/spec:
 
 This guidance exists to keep goldens honest, not to stage-manage outcomes. Remove unrelated lawful affordances only when they would obscure the invariant you are trying to prove. If the competing branch is part of the architecture contract, keep it and assert the branching behavior directly instead.
 
+When the intended branch depends on authoritative arithmetic or cumulative mechanics, the owning ticket/spec must also state the concrete setup math that makes the branch reachable: the relevant delta, cadence, threshold, tolerance window, capacity, or other live formula inputs. Do not write these scenarios as narrative expectations alone.
+For repeated threshold firing, wound accumulation, resource depletion, recovery gating, or similar cumulative mechanics, document the survival/failure envelope explicitly. If the intended branch is impossible under current formulas, correct the scenario numbers in the ticket/spec instead of weakening production behavior or papering over the mismatch with weaker assertions.
+`archive/tickets/completed/S17WOULIFGOLSUI-001.md` is the concrete deprivation example: the clean fix was to adjust the scenario thresholds and above-critical hunger values so two lawful deprivation fires could occur under live arithmetic, not to weaken `worsen_or_create_deprivation_wound`.
+
 For social goldens, document whether the speaker needs an explicit belief about the intended listener for `ShareBelief` to materialize. Blind-perception or heavily isolated setups often require explicit listener-belief seeding even when the agents are co-located.
 For social goldens, also document subject choice explicitly. Agent subjects can create additional lawful `ShareBelief` branches around the subject's own changing state or location. If the contract is about resend suppression or a specific downstream office fact, prefer a non-agent subject unless the extra agent-subject branches are part of the invariant under test.
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
@@ -153,8 +157,9 @@ Golden-related tickets should:
 5. distinguish candidate generation, ranking/suppression, execution, and authoritative outcome
 6. name the exact layer when similar helpers exist in both AI/planning code and authoritative/system code
 7. document scenario-isolation choices when lawful competing affordances exist and the golden is intended to prove one branch
-8. if the ticket depends on ordering, state whether the compared branches are symmetric in the current architecture or whether the divergence depends on priority class, motive score, suppression, delayed system resolution, or a mixed-layer combination
-9. if the ticket involves stale or retained requests, state whether the contract is request-resolution rejection before start, authoritative `StartFailed`, or post-start abort
+8. when cumulative mechanics or authoritative arithmetic drive the scenario, state the concrete delta/cadence/threshold/capacity math and the survival/failure envelope that make the branch reachable
+9. if the ticket depends on ordering, state whether the compared branches are symmetric in the current architecture or whether the divergence depends on priority class, motive score, suppression, delayed system resolution, or a mixed-layer combination
+10. if the ticket involves stale or retained requests, state whether the contract is request-resolution rejection before start, authoritative `StartFailed`, or post-start abort
 
 ## Verification Commands
 

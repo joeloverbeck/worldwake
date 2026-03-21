@@ -22,6 +22,7 @@
 8. <If the ticket manipulates ControlSource, queued inputs, driver resets, or other runtime conditions: state whether retained runtime intent can still lawfully continue and which exact runtime/trace symbols prove that>
 9. <If a golden scenario isolates one intended branch from lawful competing affordances: name the isolation choice and which unrelated lawful branches were intentionally excluded from setup>
 10. <Mismatch + correction (if any)>
+11. <If the scenario depends on authoritative arithmetic or cumulative state: state the concrete delta/cadence/threshold/capacity math that makes it reachable under current code, plus the survivability or failure envelope when repeated accumulation is material>
 
 ## Architecture Check
 

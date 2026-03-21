@@ -83,6 +83,8 @@ To keep architecture clean, robust, and extensible, every new ticket must be cre
    - golden E2E -> only when the recovery chain itself is part of the contract
 16. For political office-claim tickets, do not compress closure into vague language like "someone else got there first." State whether the proof hinges on support declaration, visible-vacancy loss, succession resolution, or office-holder mutation, and name the exact current symbols that establish that boundary.
 17. For tickets that manipulate control handoff or harness runtime state, do not assume those changes automatically clear intent. State whether the current architecture can lawfully retain or continue an already-selected plan shape, and identify the exact runtime/trace symbols checked for that claim.
+18. If a ticket/spec scenario depends on authoritative arithmetic or cumulative state, do not write it in purely narrative terms. State the concrete delta, cadence, threshold, capacity, or other live formula inputs that make the scenario reachable under current code.
+19. For threshold/load/capacity-driven scenarios, validate survivability or non-survivability explicitly when repeated damage, depletion, recovery, or accumulation is part of the contract. If the current numbers make the intended branch impossible, correct the ticket before implementation instead of weakening production semantics.
 
 ## Mandatory Pre-Implementation Checks
 
