@@ -113,6 +113,7 @@ mod tests {
             },
             priority_class: class,
             motive_score: motive,
+            provenance: None,
         }
     }
 

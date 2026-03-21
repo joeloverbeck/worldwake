@@ -38,13 +38,14 @@ pub use decision_trace::{
     GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PlanAttemptTrace,
     PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace,
     PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-    RankedGoalProvenance, RankedGoalSummary, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
-    TravelSuccessorTrace,
+    RankedGoalSummary, SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace,
+    SelectionTrace, SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace,
 };
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
-    GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
+    GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
+    RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
+    RankedPriorityAdjustment,
 };
 pub use goal_policy::{
     evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,

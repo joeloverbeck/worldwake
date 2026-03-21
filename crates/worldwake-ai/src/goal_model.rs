@@ -1,6 +1,7 @@
 use crate::{
     derive_danger_pressure, enterprise::restock_gap_at_destination, PlannedStep, PlannerOpKind,
     PlannerOpSemantics, PlanningEntityRef, PlanningState,
+    pressure::DangerAssessment,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -943,6 +944,43 @@ pub enum GoalPriorityClass {
     Critical,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RankedDriveKind {
+    Hunger,
+    Thirst,
+    Fatigue,
+    Bladder,
+    Dirtiness,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RankedPriorityAdjustment {
+    ClottedWoundRecoveryPromotion,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RankedDriveMotiveInput {
+    pub drive: RankedDriveKind,
+    pub pressure: Permille,
+    pub weight: Permille,
+    pub score: u32,
+    pub recovery_relevant: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RankedDriveGoalProvenance {
+    pub base_priority_class: GoalPriorityClass,
+    pub final_priority_class: GoalPriorityClass,
+    pub adjustment: Option<RankedPriorityAdjustment>,
+    pub motive_inputs: Vec<RankedDriveMotiveInput>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RankedGoalProvenance {
+    Danger(DangerAssessment),
+    Drive(RankedDriveGoalProvenance),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GroundedGoal {
     pub key: GoalKey,
@@ -955,6 +993,7 @@ pub struct RankedGoal {
     pub grounded: GroundedGoal,
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
+    pub provenance: Option<RankedGoalProvenance>,
 }
 
 #[cfg(test)]
@@ -1042,6 +1081,7 @@ mod tests {
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 900,
+            provenance: None,
         };
 
         let bytes = bincode::serialize(&goal).unwrap();

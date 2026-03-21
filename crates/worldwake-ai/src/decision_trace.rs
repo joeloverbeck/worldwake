@@ -7,12 +7,10 @@ use std::fmt::Write as _;
 use worldwake_core::{ActionDefId, EntityId, GoalKey, RecipientKnowledgeStatus, Tick};
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
-use crate::goal_model::GoalPriorityClass;
+use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
 use crate::interrupts::InterruptDecision;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
-use crate::pressure::DangerAssessment;
-
 // ── Top-Level Record ────────────────────────────────────────────
 
 /// One complete decision record for one agent at one tick.
@@ -175,11 +173,6 @@ pub struct RankedGoalSummary {
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RankedGoalProvenance {
-    Danger(DangerAssessment),
 }
 
 // ── Stage 2: Plan Search ────────────────────────────────────────
@@ -698,6 +691,33 @@ fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> S
             assessment.has_wounds,
             assessment.is_incapacitated,
         ),
+        RankedGoalProvenance::Drive(provenance) => {
+            let motive_inputs = provenance
+                .motive_inputs
+                .iter()
+                .map(|input| {
+                    format!(
+                        "{:?}(pressure={}, weight={}, score={}, recovery_relevant={})",
+                        input.drive,
+                        input.pressure.value(),
+                        input.weight.value(),
+                        input.score,
+                        input.recovery_relevant,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let adjustment = provenance
+                .adjustment
+                .map_or_else(|| "none".to_string(), |adjustment| format!("{adjustment:?}"));
+            format!(
+                ", drive=base={:?} final={:?} adjustment={} motive_inputs=[{}]",
+                provenance.base_priority_class,
+                provenance.final_priority_class,
+                adjustment,
+                motive_inputs,
+            )
+        }
     }
 }
 
@@ -1227,7 +1247,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::ReduceDanger),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 700,
-                    provenance: Some(RankedGoalProvenance::Danger(DangerAssessment {
+                    provenance: Some(RankedGoalProvenance::Danger(crate::DangerAssessment {
                         pressure: worldwake_core::Permille::new(600).unwrap(),
                         thresholds_present: true,
                         current_attackers: vec![entity(8)],
@@ -1264,6 +1284,68 @@ mod tests {
         assert!(summary.contains("attackers=["));
         assert!(summary.contains("visible_hostiles=["));
         assert!(summary.contains("hostile_targets=["));
+    }
+
+    #[test]
+    fn summary_planning_includes_selected_drive_provenance() {
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty_reasons: vec![DirtyReason::NoPlan],
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                    commodity: worldwake_core::CommodityKind::Bread,
+                })],
+                ranked: vec![RankedGoalSummary {
+                    goal: GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                        commodity: worldwake_core::CommodityKind::Bread,
+                    }),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: 380_000,
+                    provenance: Some(RankedGoalProvenance::Drive(
+                        crate::RankedDriveGoalProvenance {
+                            base_priority_class: GoalPriorityClass::High,
+                            final_priority_class: GoalPriorityClass::Critical,
+                            adjustment: Some(
+                                crate::RankedPriorityAdjustment::ClottedWoundRecoveryPromotion,
+                            ),
+                            motive_inputs: vec![crate::RankedDriveMotiveInput {
+                                drive: crate::RankedDriveKind::Hunger,
+                                pressure: worldwake_core::Permille::new(760).unwrap(),
+                                weight: worldwake_core::Permille::new(500).unwrap(),
+                                score: 380_000,
+                                recovery_relevant: true,
+                            }],
+                        },
+                    )),
+                }],
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: Some(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                    commodity: worldwake_core::CommodityKind::Bread,
+                })),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("drive=base=High final=Critical"));
+        assert!(summary.contains("ClottedWoundRecoveryPromotion"));
+        assert!(summary.contains("Hunger(pressure=760, weight=500, score=380000"));
     }
 
     #[test]

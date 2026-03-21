@@ -1,13 +1,15 @@
 use crate::{
-    classify_band, derive_danger_pressure, derive_pain_pressure,
+    assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression, DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
-    RankedGoal,
+    RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
+    RankedGoalProvenance, RankedPriorityAdjustment,
 };
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, Tick, UtilityProfile,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, ThresholdBand, Tick,
+    UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -86,10 +88,12 @@ pub fn rank_candidates(
             suppressed.push(candidate.key);
             continue;
         }
+        let provenance = goal_ranking_provenance(candidate, &context, recipes);
         let scored = RankedGoal {
             grounded: candidate.clone(),
-            priority_class: priority_class(candidate, &context, recipes),
-            motive_score: motive_score(candidate, &context, recipes),
+            priority_class: ranked_priority_class(candidate, &context, recipes, provenance.as_ref()),
+            motive_score: ranked_motive_score(candidate, &context, recipes, provenance.as_ref()),
+            provenance,
         };
         if scored.motive_score == 0 {
             zero_motive.push(candidate.key);
@@ -106,6 +110,94 @@ pub fn rank_candidates(
     }
 }
 
+fn ranked_priority_class(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+    provenance: Option<&RankedGoalProvenance>,
+) -> GoalPriorityClass {
+    provenance.cloned().map_or_else(
+        || priority_class(candidate, context, recipes),
+        |provenance| match provenance {
+            RankedGoalProvenance::Danger(_) => context.decision_context.danger_class,
+            RankedGoalProvenance::Drive(provenance) => provenance.final_priority_class,
+        },
+    )
+}
+
+fn ranked_motive_score(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+    provenance: Option<&RankedGoalProvenance>,
+) -> u32 {
+    provenance.cloned().map_or_else(
+        || motive_score(candidate, context, recipes),
+        |provenance| match provenance {
+            RankedGoalProvenance::Danger(_) => {
+                score_product(context.utility.danger_weight, context.danger_pressure)
+            }
+            RankedGoalProvenance::Drive(provenance) => provenance
+                .motive_inputs
+                .iter()
+                .map(|input| input.score)
+                .max()
+                .unwrap_or(0),
+        },
+    )
+}
+
+fn goal_ranking_provenance(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> Option<RankedGoalProvenance> {
+    match candidate.key.kind {
+        GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::AcquireCommodity {
+            commodity,
+            purpose: CommodityPurpose::SelfConsume,
+        } => self_consume_provenance(commodity, context).map(RankedGoalProvenance::Drive),
+        GoalKind::AcquireCommodity {
+            commodity: _,
+            purpose: CommodityPurpose::RecipeInput(recipe_id),
+        } => {
+            recipe_output_provenance(recipe_id, context, recipes).map(RankedGoalProvenance::Drive)
+        }
+        GoalKind::Sleep => drive_goal_provenance(
+            context,
+            RankedDriveKind::Fatigue,
+            |needs| needs.fatigue,
+            |thresholds| thresholds.fatigue,
+            |utility| utility.fatigue_weight,
+            true,
+        )
+        .map(RankedGoalProvenance::Drive),
+        GoalKind::Relieve => drive_goal_provenance(
+            context,
+            RankedDriveKind::Bladder,
+            |needs| needs.bladder,
+            |thresholds| thresholds.bladder,
+            |utility| utility.bladder_weight,
+            false,
+        )
+        .map(RankedGoalProvenance::Drive),
+        GoalKind::Wash => drive_goal_provenance(
+            context,
+            RankedDriveKind::Dirtiness,
+            |needs| needs.dirtiness,
+            |thresholds| thresholds.dirtiness,
+            |utility| utility.dirtiness_weight,
+            false,
+        )
+        .map(RankedGoalProvenance::Drive),
+        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
+            Some(RankedGoalProvenance::Danger(context.danger_assessment.clone()))
+        }
+        _ => None,
+    }
+}
+
 struct RankingContext<'a> {
     view: &'a dyn GoalBeliefView,
     agent: EntityId,
@@ -114,6 +206,7 @@ struct RankingContext<'a> {
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
     has_clotted_wounds: bool,
+    danger_assessment: crate::DangerAssessment,
     danger_pressure: Permille,
     decision_context: DecisionContext,
 }
@@ -126,6 +219,7 @@ impl<'a> RankingContext<'a> {
         utility: &'a UtilityProfile,
         decision_context: DecisionContext,
     ) -> Self {
+        let danger_assessment = assess_danger(view, agent);
         Self {
             view,
             agent,
@@ -134,10 +228,20 @@ impl<'a> RankingContext<'a> {
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
             has_clotted_wounds: has_clotted_wounds(view, agent),
-            danger_pressure: derive_danger_pressure(view, agent),
+            danger_pressure: danger_assessment.pressure,
+            danger_assessment,
             decision_context,
         }
     }
+}
+
+#[derive(Copy, Clone)]
+struct DriveFactor {
+    drive: RankedDriveKind,
+    pressure: Permille,
+    weight: Permille,
+    band: ThresholdBand,
+    recovery_relevant: bool,
 }
 
 fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
@@ -209,11 +313,11 @@ fn self_consume_priority(
 ) -> GoalPriorityClass {
     relevant_self_consume_factors(commodity, context)
         .into_iter()
-        .map(|(pressure, _, band, recovery_relevant)| {
+        .map(|factor| {
             promote_for_clotted_wound_recovery(
-                classify_band(pressure, &band),
+                classify_band(factor.pressure, &factor.band),
                 context,
-                recovery_relevant,
+                factor.recovery_relevant,
             )
         })
         .max()
@@ -223,7 +327,7 @@ fn self_consume_priority(
 fn drive_priority(
     context: &RankingContext<'_>,
     pressure: impl Fn(HomeostaticNeeds) -> Permille,
-    band: impl Fn(DriveThresholds) -> worldwake_core::ThresholdBand,
+    band: impl Fn(DriveThresholds) -> ThresholdBand,
     recovery_relevant: bool,
 ) -> GoalPriorityClass {
     let base = match (context.needs, context.thresholds) {
@@ -232,6 +336,33 @@ fn drive_priority(
     };
 
     promote_for_clotted_wound_recovery(base, context, recovery_relevant)
+}
+
+fn drive_goal_provenance(
+    context: &RankingContext<'_>,
+    drive: RankedDriveKind,
+    pressure: impl Fn(HomeostaticNeeds) -> Permille,
+    band: impl Fn(DriveThresholds) -> ThresholdBand,
+    weight: impl Fn(&UtilityProfile) -> Permille,
+    recovery_relevant: bool,
+) -> Option<RankedDriveGoalProvenance> {
+    let (Some(needs), Some(thresholds)) = (context.needs, context.thresholds) else {
+        return None;
+    };
+    let pressure = pressure(needs);
+    let weight = weight(context.utility);
+    let base_priority_class = classify_band(pressure, &band(thresholds));
+    Some(drive_provenance_from_inputs(
+        context,
+        base_priority_class,
+        vec![RankedDriveMotiveInput {
+            drive,
+            pressure,
+            weight,
+            score: score_product(weight, pressure),
+            recovery_relevant,
+        }],
+    ))
 }
 
 fn promote_for_clotted_wound_recovery(
@@ -248,6 +379,26 @@ fn promote_for_clotted_wound_recovery(
     }
 }
 
+fn drive_provenance_from_inputs(
+    context: &RankingContext<'_>,
+    base_priority_class: GoalPriorityClass,
+    motive_inputs: Vec<RankedDriveMotiveInput>,
+) -> RankedDriveGoalProvenance {
+    let recovery_relevant = motive_inputs.iter().any(|input| input.recovery_relevant);
+    let final_priority_class = promote_for_clotted_wound_recovery(
+        base_priority_class,
+        context,
+        recovery_relevant,
+    );
+    RankedDriveGoalProvenance {
+        base_priority_class,
+        final_priority_class,
+        adjustment: (final_priority_class != base_priority_class)
+            .then_some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion),
+        motive_inputs,
+    }
+}
+
 fn motive_score(
     candidate: &GroundedGoal,
     context: &RankingContext<'_>,
@@ -260,7 +411,7 @@ fn motive_score(
             purpose: CommodityPurpose::SelfConsume,
         } => relevant_self_consume_factors(commodity, context)
             .into_iter()
-            .map(|(pressure, weight, _, _)| score_product(weight, pressure))
+            .map(|factor| score_product(factor.weight, factor.pressure))
             .max()
             .unwrap_or(0),
         GoalKind::AcquireCommodity {
@@ -408,6 +559,52 @@ fn commodity_goal_priority(
     }
 }
 
+fn self_consume_provenance(
+    commodity: CommodityKind,
+    context: &RankingContext<'_>,
+) -> Option<RankedDriveGoalProvenance> {
+    let factors = relevant_self_consume_factors(commodity, context);
+    let base_priority_class = factors
+        .iter()
+        .map(|factor| classify_band(factor.pressure, &factor.band))
+        .max()
+        .unwrap_or(GoalPriorityClass::Background);
+    let motive_inputs = factors
+        .into_iter()
+        .map(|factor| RankedDriveMotiveInput {
+            drive: factor.drive,
+            pressure: factor.pressure,
+            weight: factor.weight,
+            score: score_product(factor.weight, factor.pressure),
+            recovery_relevant: factor.recovery_relevant,
+        })
+        .collect::<Vec<_>>();
+    (!motive_inputs.is_empty()).then(|| {
+        drive_provenance_from_inputs(context, base_priority_class, motive_inputs)
+    })
+}
+
+fn recipe_output_provenance(
+    recipe_id: worldwake_core::RecipeId,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> Option<RankedDriveGoalProvenance> {
+    recipes.get(recipe_id).and_then(|recipe| {
+        recipe
+            .outputs
+            .iter()
+            .filter_map(|(commodity, _)| self_consume_provenance(*commodity, context))
+            .max_by_key(|provenance| {
+                provenance
+                    .motive_inputs
+                    .iter()
+                    .map(|input| input.score)
+                    .max()
+                    .unwrap_or(0)
+            })
+    })
+}
+
 fn recipe_output_motive_score(
     recipe_id: worldwake_core::RecipeId,
     context: &RankingContext<'_>,
@@ -426,7 +623,7 @@ fn recipe_output_motive_score(
 fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
     let self_consume = relevant_self_consume_factors(commodity, context)
         .into_iter()
-        .map(|(pressure, weight, _, _)| score_product(weight, pressure))
+        .map(|factor| score_product(factor.weight, factor.pressure))
         .max()
         .unwrap_or(0);
     if self_consume > 0 {
@@ -439,7 +636,7 @@ fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContex
 fn relevant_self_consume_factors(
     commodity: CommodityKind,
     context: &RankingContext<'_>,
-) -> Vec<(Permille, Permille, worldwake_core::ThresholdBand, bool)> {
+) -> Vec<DriveFactor> {
     let Some(needs) = context.needs else {
         return Vec::new();
     };
@@ -453,20 +650,22 @@ fn relevant_self_consume_factors(
 
     let mut factors = Vec::new();
     if profile.hunger_relief_per_unit.value() > 0 {
-        factors.push((
-            needs.hunger,
-            context.utility.hunger_weight,
-            thresholds.hunger,
-            true,
-        ));
+        factors.push(DriveFactor {
+            drive: RankedDriveKind::Hunger,
+            pressure: needs.hunger,
+            weight: context.utility.hunger_weight,
+            band: thresholds.hunger,
+            recovery_relevant: true,
+        });
     }
     if profile.thirst_relief_per_unit.value() > 0 {
-        factors.push((
-            needs.thirst,
-            context.utility.thirst_weight,
-            thresholds.thirst,
-            true,
-        ));
+        factors.push(DriveFactor {
+            drive: RankedDriveKind::Thirst,
+            pressure: needs.thirst,
+            weight: context.utility.thirst_weight,
+            band: thresholds.thirst,
+            recovery_relevant: true,
+        });
     }
     factors
 }
@@ -529,7 +728,10 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{build_decision_context, rank_candidates};
-    use crate::{GoalKey, GoalKind, GoalPriorityClass, GroundedGoal};
+    use crate::{
+        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind,
+        RankedGoalProvenance, RankedPriorityAdjustment,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1814,6 +2016,33 @@ mod tests {
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        match ranked[0]
+            .provenance
+            .as_ref()
+            .expect("hunger candidate should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::Critical);
+                assert_eq!(
+                    provenance.adjustment,
+                    Some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
+                );
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Hunger);
+                assert_eq!(provenance.motive_inputs[0].pressure, thresholds.hunger.high());
+                assert_eq!(provenance.motive_inputs[0].weight, utility().hunger_weight);
+                assert_eq!(
+                    provenance.motive_inputs[0].score,
+                    u32::from(utility().hunger_weight.value())
+                        * u32::from(thresholds.hunger.high().value())
+                );
+                assert!(provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("hunger candidate should not use danger provenance")
+            }
+        }
     }
 
     #[test]
@@ -1924,6 +2153,24 @@ mod tests {
         assert_eq!(ranked.len(), 2);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::High);
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::High);
+        for goal in &ranked {
+            match goal
+                .provenance
+                .as_ref()
+                .expect("drive goals should carry drive provenance")
+            {
+                RankedGoalProvenance::Drive(provenance) => {
+                    assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                    assert_eq!(provenance.final_priority_class, GoalPriorityClass::High);
+                    assert_eq!(provenance.adjustment, None);
+                    assert_eq!(provenance.motive_inputs.len(), 1);
+                    assert!(!provenance.motive_inputs[0].recovery_relevant);
+                }
+                RankedGoalProvenance::Danger(_) => {
+                    panic!("relieve/wash should not use danger provenance")
+                }
+            }
+        }
     }
 
     #[test]

@@ -3,11 +3,10 @@ use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
     GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, RankedGoalProvenance, RankedGoalSummary,
-    SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
+    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectedPlanSearchProvenance,
+    SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
 };
 use crate::failure_handling::ExecutionFailure;
-use crate::pressure::DangerAssessment;
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
@@ -322,9 +321,7 @@ fn process_agent(
             let action_name = action_defs
                 .get(active_action.def_id)
                 .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
-            let top_challenger = ranked_candidates
-                .first()
-                .map(|r| summarize_ranked_goal(r, read_result.danger_assessment.as_ref()));
+            let top_challenger = ranked_candidates.first().map(summarize_ranked_goal);
             DecisionOutcome::ActiveAction {
                 action_def_id: active_action.def_id,
                 action_name,
@@ -414,10 +411,7 @@ fn process_agent(
         tracing.then(|| {
             let candidate_trace = CandidateTrace {
                 generated: read_result.generated_keys,
-                ranked: ranked_candidates
-                    .iter()
-                    .map(|r| summarize_ranked_goal(r, read_result.danger_assessment.as_ref()))
-                    .collect(),
+                ranked: ranked_candidates.iter().map(summarize_ranked_goal).collect(),
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
                 omitted_political: read_result.omitted_political,
@@ -534,27 +528,12 @@ fn summarize_search_provenance(
     })
 }
 
-fn summarize_ranked_goal(
-    ranked: &RankedGoal,
-    danger_assessment: Option<&DangerAssessment>,
-) -> RankedGoalSummary {
+fn summarize_ranked_goal(ranked: &RankedGoal) -> RankedGoalSummary {
     RankedGoalSummary {
         goal: ranked.grounded.key,
         priority_class: ranked.priority_class,
         motive_score: ranked.motive_score,
-        provenance: ranked_goal_provenance(&ranked.grounded.key.kind, danger_assessment),
-    }
-}
-
-fn ranked_goal_provenance(
-    goal: &crate::GoalKind,
-    danger_assessment: Option<&DangerAssessment>,
-) -> Option<RankedGoalProvenance> {
-    match goal {
-        crate::GoalKind::ReduceDanger | crate::GoalKind::EngageHostile { .. } => danger_assessment
-            .cloned()
-            .map(RankedGoalProvenance::Danger),
-        _ => None,
+        provenance: ranked.provenance.clone(),
     }
 }
 
@@ -751,7 +730,6 @@ struct ReadPhaseResult {
     omitted_social: Vec<crate::SocialCandidateOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
     decision_context: DecisionContext,
-    danger_assessment: Option<DangerAssessment>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -764,7 +742,7 @@ fn refresh_runtime_for_read_phase(
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
-    tracing: bool,
+    _tracing: bool,
 ) -> ReadPhaseResult {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
@@ -814,7 +792,6 @@ fn refresh_runtime_for_read_phase(
     );
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
     let dc = crate::build_decision_context(&view, agent);
-    let danger_assessment = tracing.then(|| crate::assess_danger(&view, agent));
     let outcome = rank_candidates(
         &candidates.candidates,
         &view,
@@ -834,7 +811,6 @@ fn refresh_runtime_for_read_phase(
         omitted_political: candidates.diagnostics.omitted_political,
         omitted_social: candidates.diagnostics.omitted_social,
         decision_context: dc,
-        danger_assessment,
     }
 }
 
@@ -2951,6 +2927,7 @@ mod tests {
             },
             priority_class: crate::GoalPriorityClass::Medium,
             motive_score: 500,
+            provenance: None,
         }
     }
 
@@ -5253,6 +5230,9 @@ mod tests {
             .and_then(|summary| summary.provenance.as_ref())
             .map(|provenance| match provenance {
                 RankedGoalProvenance::Danger(assessment) => assessment,
+                RankedGoalProvenance::Drive(_) => {
+                    panic!("reduce-danger candidate should not carry drive provenance")
+                }
             })
             .expect("reduce-danger candidate should carry structured danger provenance");
 
@@ -5262,6 +5242,104 @@ mod tests {
         assert!(danger.has_wounds);
         assert!(!danger.is_incapacitated);
         assert_eq!(danger.pressure, DriveThresholds::default().danger.high());
+    }
+
+    #[test]
+    fn trace_planning_outcome_includes_drive_provenance_for_recovery_boost() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("actor should start at a concrete place");
+        {
+            let mut txn = new_txn(&mut harness.world, 3);
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(1))
+                .expect("water lot should be created");
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_possessor(water, harness.actor).unwrap();
+            txn.set_component_homeostatic_needs(
+                harness.actor,
+                HomeostaticNeeds::new(
+                    Permille::new(760).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(860).unwrap(),
+                ),
+            )
+            .unwrap();
+            txn.set_component_wound_list(
+                harness.actor,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                        severity: Permille::new(200).unwrap(),
+                        inflicted_at: Tick(0),
+                        bleed_rate_per_tick: Permille::new(0).unwrap(),
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(1));
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let planning = harness
+            .driver
+            .trace_sink()
+            .expect("tracing should be enabled")
+            .trace_at(harness.actor, Tick(0))
+            .and_then(|trace| match &trace.outcome {
+                crate::DecisionOutcome::Planning(planning) => Some(planning),
+                _ => None,
+            })
+            .expect("recovery-boost scenario should produce a planning trace");
+        let bread = planning
+            .candidates
+            .ranked
+            .iter()
+            .find(|summary| {
+                summary.goal.kind
+                    == GoalKind::ConsumeOwnedCommodity {
+                        commodity: CommodityKind::Bread,
+                    }
+            })
+            .expect("bread candidate should be ranked");
+
+        match bread
+            .provenance
+            .as_ref()
+            .expect("bread candidate should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, crate::GoalPriorityClass::High);
+                assert_eq!(
+                    provenance.final_priority_class,
+                    crate::GoalPriorityClass::Critical
+                );
+                assert_eq!(
+                    provenance.adjustment,
+                    Some(crate::RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
+                );
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(provenance.motive_inputs[0].drive, crate::RankedDriveKind::Hunger);
+                assert_eq!(provenance.motive_inputs[0].pressure, Permille::new(760).unwrap());
+                assert_eq!(
+                    provenance.motive_inputs[0].weight,
+                    UtilityProfile::default().hunger_weight
+                );
+                assert!(provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("bread candidate should not carry danger provenance")
+            }
+        }
     }
 
     #[test]

@@ -1,8 +1,9 @@
 use crate::GoalPriorityClass;
+use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, Permille, ThresholdBand};
 use worldwake_sim::GoalBeliefView;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DangerAssessment {
     pub pressure: Permille,
     pub thresholds_present: bool,

@@ -5,7 +5,10 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, GoalPriorityClass, RankedGoalProvenance};
+use worldwake_ai::{
+    DecisionOutcome, GoalPriorityClass, RankedDriveKind, RankedGoalProvenance,
+    RankedPriorityAdjustment,
+};
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, AgentData, CombatProfile, CombatStance,
     CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKind, HomeostaticNeeds,
@@ -560,6 +563,51 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         }),
         "tick 0 should select eating bread over washing because the recovery-aware boost elevates it above wash"
     );
+    match bread_goal
+        .provenance
+        .as_ref()
+        .expect("bread goal should carry canonical drive provenance")
+    {
+        RankedGoalProvenance::Drive(provenance) => {
+            assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+            assert_eq!(provenance.final_priority_class, GoalPriorityClass::Critical);
+            assert_eq!(
+                provenance.adjustment,
+                Some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
+            );
+            assert_eq!(provenance.motive_inputs.len(), 1);
+            assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Hunger);
+            assert_eq!(provenance.motive_inputs[0].pressure, pm(760));
+            assert_eq!(
+                provenance.motive_inputs[0].weight,
+                UtilityProfile::default().hunger_weight
+            );
+        }
+        RankedGoalProvenance::Danger(_) => {
+            panic!("bread goal should not use danger provenance")
+        }
+    }
+    match wash_goal
+        .provenance
+        .as_ref()
+        .expect("wash goal should carry canonical drive provenance")
+    {
+        RankedGoalProvenance::Drive(provenance) => {
+            assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+            assert_eq!(provenance.final_priority_class, GoalPriorityClass::High);
+            assert_eq!(provenance.adjustment, None);
+            assert_eq!(provenance.motive_inputs.len(), 1);
+            assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Dirtiness);
+            assert_eq!(provenance.motive_inputs[0].pressure, pm(860));
+            assert_eq!(
+                provenance.motive_inputs[0].weight,
+                UtilityProfile::default().dirtiness_weight
+            );
+        }
+        RankedGoalProvenance::Danger(_) => {
+            panic!("wash goal should not use danger provenance")
+        }
+    }
 
     let mut eat_commit_order = None;
     let mut wash_commit_order = None;
