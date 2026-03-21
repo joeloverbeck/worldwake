@@ -25,6 +25,9 @@ fn production_perception_profile() -> PerceptionProfile {
         memory_retention_ticks: 100,
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
     }
 }
 
@@ -772,6 +775,9 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -1858,6 +1864,9 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -2032,6 +2041,9 @@ fn run_grant_expiry_before_intended_action_scenario(
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();

@@ -110,6 +110,9 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
         },
     );
     {
@@ -166,6 +169,9 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -363,6 +369,9 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -734,6 +743,9 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -1301,6 +1313,9 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
         },
     );
     {
@@ -1365,6 +1380,9 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -1440,6 +1458,9 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
                 memory_retention_ticks: 480,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();

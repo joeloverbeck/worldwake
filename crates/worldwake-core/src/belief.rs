@@ -1,8 +1,8 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
-    CommodityKind, Component, EntityId, Permille, Quantity, ResourceSource, Tick, WorkstationTag,
-    World, Wound,
+    BelievedInstitutionalClaim, CommodityKind, Component, EntityId, InstitutionalBeliefKey,
+    Permille, Quantity, ResourceSource, Tick, WorkstationTag, World, Wound,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -14,6 +14,8 @@ pub struct AgentBeliefStore {
     pub social_observations: Vec<SocialObservation>,
     pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
+    pub institutional_beliefs:
+        BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
 }
 
 impl AgentBeliefStore {
@@ -455,6 +457,9 @@ pub struct PerceptionProfile {
     pub memory_retention_ticks: u64,
     pub observation_fidelity: Permille,
     pub confidence_policy: BeliefConfidencePolicy,
+    pub institutional_memory_capacity: u32,
+    pub consultation_speed_factor: Permille,
+    pub contradiction_tolerance: Permille,
 }
 
 impl Component for PerceptionProfile {}
@@ -466,6 +471,9 @@ impl Default for PerceptionProfile {
             memory_retention_ticks: 48,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: Permille::new(500).unwrap(),
+            contradiction_tolerance: Permille::new(300).unwrap(),
         }
     }
 }
@@ -537,8 +545,10 @@ mod tests {
         TellProfile, ToldBeliefMemory,
     };
     use crate::{
-        build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
-        EntityId, Permille, Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
+        build_prototype_world, traits::Component, BelievedInstitutionalClaim, BodyPart,
+        CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity, Tick, World, Wound,
+        WoundCause, WoundId, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -556,6 +566,25 @@ mod tests {
             memory_retention_ticks,
             observation_fidelity: Permille::new(750).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 9,
+            consultation_speed_factor: Permille::new(650).unwrap(),
+            contradiction_tolerance: Permille::new(275).unwrap(),
+        }
+    }
+
+    fn sample_institutional_belief(observed_tick: u64) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(50),
+                holder: Some(entity(51)),
+                effective_tick: Tick(observed_tick.saturating_sub(1)),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(52),
+                entry_id: crate::RecordEntryId(3),
+            },
+            learned_tick: Tick(observed_tick),
+            learned_at: Some(entity(53)),
         }
     }
 
@@ -666,6 +695,7 @@ mod tests {
         assert!(store.social_observations.is_empty());
         assert!(store.told_beliefs.is_empty());
         assert!(store.heard_beliefs.is_empty());
+        assert!(store.institutional_beliefs.is_empty());
     }
 
     #[test]
@@ -892,6 +922,21 @@ mod tests {
         let roundtrip: PerceptionProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn agent_belief_store_roundtrips_through_bincode_with_institutional_beliefs() {
+        let mut store = AgentBeliefStore::new();
+        store.update_entity(entity(1), sample_state(7, 2));
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(50) },
+            vec![sample_institutional_belief(12)],
+        );
+
+        let bytes = bincode::serialize(&store).unwrap();
+        let roundtrip: AgentBeliefStore = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, store);
     }
 
     #[test]
@@ -1190,10 +1235,12 @@ mod tests {
 
     #[test]
     fn default_perception_profile_carries_default_confidence_policy() {
-        assert_eq!(
-            PerceptionProfile::default().confidence_policy,
-            BeliefConfidencePolicy::default()
-        );
+        let profile = PerceptionProfile::default();
+
+        assert_eq!(profile.confidence_policy, BeliefConfidencePolicy::default());
+        assert_eq!(profile.institutional_memory_capacity, 20);
+        assert_eq!(profile.consultation_speed_factor, Permille::new(500).unwrap());
+        assert_eq!(profile.contradiction_tolerance, Permille::new(300).unwrap());
     }
 
     #[test]

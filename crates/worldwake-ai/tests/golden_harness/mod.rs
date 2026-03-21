@@ -1066,6 +1066,9 @@ mod tests {
             memory_retention_ticks: 17,
             observation_fidelity: pm(600),
             confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
         };
 
         set_agent_tell_profile(&mut h.world, &mut h.event_log, agent, tell_profile);

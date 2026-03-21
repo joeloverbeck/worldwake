@@ -50,6 +50,9 @@ fn build_simple_office_claim_scenario(
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
         },
     );
 
@@ -166,6 +169,9 @@ fn default_perception_profile() -> PerceptionProfile {
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
     }
 }
 

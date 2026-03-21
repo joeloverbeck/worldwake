@@ -484,6 +484,9 @@ mod tests {
             memory_retention_ticks: 32,
             observation_fidelity: Permille::new(fidelity).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: Permille::new(500).unwrap(),
+            contradiction_tolerance: Permille::new(300).unwrap(),
         }
     }
 
@@ -1197,6 +1200,9 @@ mod tests {
                     memory_retention_ticks: 32,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
+                    institutional_memory_capacity: 20,
+                    consultation_speed_factor: Permille::new(500).unwrap(),
+                    contradiction_tolerance: Permille::new(300).unwrap(),
                 },
             )
             .unwrap();

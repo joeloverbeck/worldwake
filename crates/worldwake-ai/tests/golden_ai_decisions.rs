@@ -854,6 +854,9 @@ fn golden_goal_switching_during_multi_leg_travel() {
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -1197,6 +1200,9 @@ fn setup_multi_hop_travel_scenario(
             memory_retention_ticks: 64,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
         },
     )
     .unwrap();
@@ -1513,6 +1519,9 @@ fn golden_utility_weight_diversity_in_need_selection() {
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();

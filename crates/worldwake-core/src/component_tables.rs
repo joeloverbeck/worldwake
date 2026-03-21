@@ -195,6 +195,22 @@ mod tests {
             social_observations: Vec::new(),
             told_beliefs: BTreeMap::new(),
             heard_beliefs: BTreeMap::new(),
+            institutional_beliefs: BTreeMap::from([(
+                crate::InstitutionalBeliefKey::OfficeHolderOf { office: entity(24) },
+                vec![crate::BelievedInstitutionalClaim {
+                    claim: crate::InstitutionalClaim::OfficeHolder {
+                        office: entity(24),
+                        holder: Some(entity(25)),
+                        effective_tick: Tick(8),
+                    },
+                    source: crate::InstitutionalKnowledgeSource::RecordConsultation {
+                        record: entity(26),
+                        entry_id: crate::RecordEntryId(2),
+                    },
+                    learned_tick: Tick(9),
+                    learned_at: Some(entity(27)),
+                }],
+            )]),
         }
     }
 
@@ -271,6 +287,9 @@ mod tests {
                 memory_retention_ticks: 20,
                 observation_fidelity: Permille::new(900).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 18,
+                consultation_speed_factor: Permille::new(550).unwrap(),
+                contradiction_tolerance: Permille::new(325).unwrap(),
             },
         );
         tables.insert_tell_profile(entity(25), sample_roundtrip_tell_profile());

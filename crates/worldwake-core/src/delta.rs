@@ -197,6 +197,9 @@ pub enum ReservationDelta {
     Released { reservation: ReservationRecord },
 }
 
+// Component deltas are intentionally stored inline so event-log deltas remain
+// value-semantic and allocation-free on the hot commit path.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StateDelta {
     Entity(EntityDelta),
@@ -339,12 +342,31 @@ mod tests {
                 social_observations: Vec::new(),
                 told_beliefs: BTreeMap::new(),
                 heard_beliefs: BTreeMap::new(),
+                institutional_beliefs: BTreeMap::from([(
+                    crate::InstitutionalBeliefKey::OfficeHolderOf { office: entity(20) },
+                    vec![crate::BelievedInstitutionalClaim {
+                        claim: crate::InstitutionalClaim::OfficeHolder {
+                            office: entity(20),
+                            holder: Some(entity(21)),
+                            effective_tick: Tick(15),
+                        },
+                        source: crate::InstitutionalKnowledgeSource::RecordConsultation {
+                            record: entity(22),
+                            entry_id: crate::RecordEntryId(4),
+                        },
+                        learned_tick: Tick(16),
+                        learned_at: Some(entity(23)),
+                    }],
+                )]),
             }),
             ComponentValue::PerceptionProfile(PerceptionProfile {
                 memory_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(920).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 24,
+                consultation_speed_factor: Permille::new(600).unwrap(),
+                contradiction_tolerance: Permille::new(350).unwrap(),
             }),
             ComponentValue::TellProfile(TellProfile {
                 max_tell_candidates: 4,
