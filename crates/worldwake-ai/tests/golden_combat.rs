@@ -5,7 +5,7 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, RankedGoalProvenance};
+use worldwake_ai::{DecisionOutcome, GoalPriorityClass, RankedGoalProvenance};
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, AgentData, CombatProfile, CombatStance,
     CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKind, HomeostaticNeeds,
@@ -426,6 +426,199 @@ fn run_wound_bleed_clotting_natural_recovery_scenario(seed: Seed) -> (StateHash,
     assert!(
         wound_pruned,
         "recovered wound should be pruned from WoundList"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(1),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(1),
+        pm(20),
+        nz(480),
+        nz(240),
+        nz(120),
+        nz(40),
+        nz(8),
+        nz(12),
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Recovery Prioritizer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(760), pm(0), pm(0), pm(0), pm(860)),
+        metabolism,
+        UtilityProfile::default(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let mut combat = default_combat_profile();
+    combat.natural_clot_resistance = pm(0);
+    combat.natural_recovery_rate = pm(18);
+    txn.set_component_combat_profile(agent, combat).unwrap();
+    txn.set_component_wound_list(agent, stable_wound_list(200))
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Water,
+        Quantity(1),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let hunger_high = h
+        .world
+        .get_component_drive_thresholds(agent)
+        .expect("agent should have drive thresholds")
+        .hunger
+        .high();
+    let initial_wound_load = h.agent_wound_load(agent);
+
+    h.step_once();
+
+    let planning_tick_0 = {
+        let trace_sink = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should be enabled");
+        let trace = trace_sink
+            .trace_at(agent, Tick(0))
+            .expect("scenario should record a tick 0 planning trace");
+        match &trace.outcome {
+            DecisionOutcome::Planning(planning) => planning,
+            other => panic!("expected planning trace at tick 0, got {other:?}"),
+        }
+    };
+    let bread_goal = planning_tick_0
+        .candidates
+        .ranked
+        .iter()
+        .find(|goal| {
+            goal.goal.kind
+                == GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                }
+        })
+        .expect("tick 0 ranking should include ConsumeOwnedCommodity(Bread)");
+    let wash_goal = planning_tick_0
+        .candidates
+        .ranked
+        .iter()
+        .find(|goal| goal.goal.kind == GoalKind::Wash)
+        .expect("tick 0 ranking should include Wash");
+
+    assert_eq!(
+        bread_goal.priority_class,
+        GoalPriorityClass::Critical,
+        "clotted wound recovery should promote bread consumption to Critical"
+    );
+    assert_eq!(
+        wash_goal.priority_class,
+        GoalPriorityClass::High,
+        "wash should remain an unpromoted High-priority hygiene goal"
+    );
+    assert!(
+        wash_goal.motive_score > bread_goal.motive_score,
+        "the setup should leave wash with the higher motive score so the test proves class promotion, not a motive tie; bread={bread_goal:?}, wash={wash_goal:?}"
+    );
+    assert_eq!(
+        planning_tick_0.selection.selected.map(|goal| goal.kind),
+        Some(GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        "tick 0 should select eating bread over washing because the recovery-aware boost elevates it above wash"
+    );
+
+    let mut eat_commit_order = None;
+    let mut wash_commit_order = None;
+    let mut hunger_relieved = false;
+    let mut wound_recovered = false;
+
+    for _ in 0..80 {
+        h.step_once();
+
+        {
+            let action_sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled");
+            if eat_commit_order.is_none() {
+                eat_commit_order = action_sink.events_for(agent).iter().find_map(|event| {
+                    (event.action_name == "eat"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                    .then_some((event.tick, event.sequence_in_tick))
+                });
+            }
+            if wash_commit_order.is_none() {
+                wash_commit_order = action_sink.events_for(agent).iter().find_map(|event| {
+                    (event.action_name == "wash"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                    .then_some((event.tick, event.sequence_in_tick))
+                });
+            }
+        }
+
+        hunger_relieved |= h.agent_hunger(agent) < hunger_high;
+        wound_recovered |= h.agent_wound_load(agent) < initial_wound_load;
+
+        if wash_commit_order.is_some() && wound_recovered {
+            break;
+        }
+    }
+
+    let eat_commit_order =
+        eat_commit_order.expect("agent should commit eat before the scenario ends");
+    let wash_commit_order =
+        wash_commit_order.expect("agent should eventually commit wash after eating");
+
+    assert!(
+        eat_commit_order < wash_commit_order,
+        "eat should commit before wash; eat={eat_commit_order:?}, wash={wash_commit_order:?}"
+    );
+    assert!(
+        hunger_relieved,
+        "eating bread should reduce hunger below the High threshold; hunger={}, high={hunger_high}",
+        h.agent_hunger(agent)
+    );
+    assert!(
+        wound_recovered,
+        "wound severity should decrease after the recovery gate opens; initial_load={initial_wound_load}, final_load={}",
+        h.agent_wound_load(agent)
+    );
+    assert!(
+        !h.agent_is_dead(agent),
+        "agent must stay alive throughout the recovery-priority scenario"
     );
 
     (
@@ -1335,6 +1528,22 @@ fn golden_wound_bleed_clotting_natural_recovery_replays_deterministically() {
     assert_eq!(
         first, second,
         "wound bleed/clot/recovery scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_recovery_aware_boost_eats_before_wash() {
+    let _ = run_recovery_aware_boost_eats_before_wash_scenario(Seed([34; 32]));
+}
+
+#[test]
+fn golden_recovery_aware_boost_eats_before_wash_replays_deterministically() {
+    let first = run_recovery_aware_boost_eats_before_wash_scenario(Seed([35; 32]));
+    let second = run_recovery_aware_boost_eats_before_wash_scenario(Seed([35; 32]));
+
+    assert_eq!(
+        first, second,
+        "recovery-aware boost scenario should replay deterministically"
     );
 }
 

@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 9
-- Total `golden_*` tests: 131
+- Total `golden_*` tests: 133
 
 ## Per-File Inventory
 
@@ -15,7 +15,7 @@ Do not hand-edit it.
 |------|------------------|
 | `golden_ai_decisions.rs` | 14 |
 | `golden_care.rs` | 14 |
-| `golden_combat.rs` | 23 |
+| `golden_combat.rs` | 25 |
 | `golden_determinism.rs` | 4 |
 | `golden_emergent.rs` | 24 |
 | `golden_offices.rs` | 13 |
@@ -67,6 +67,8 @@ Do not hand-edit it.
 - `golden_defend_changed_conditions_replays_deterministically`
 - `golden_wound_bleed_clotting_natural_recovery`
 - `golden_wound_bleed_clotting_natural_recovery_replays_deterministically`
+- `golden_recovery_aware_boost_eats_before_wash`
+- `golden_recovery_aware_boost_eats_before_wash_replays_deterministically`
 - `golden_death_cascade_and_opportunistic_loot`
 - `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
 - `golden_loot_suppressed_under_self_care_pressure`
