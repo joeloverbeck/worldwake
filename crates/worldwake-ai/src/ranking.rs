@@ -113,6 +113,7 @@ struct RankingContext<'a> {
     utility: &'a UtilityProfile,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
+    has_clotted_wounds: bool,
     danger_pressure: Permille,
     decision_context: DecisionContext,
 }
@@ -132,10 +133,17 @@ impl<'a> RankingContext<'a> {
             utility,
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
+            has_clotted_wounds: has_clotted_wounds(view, agent),
             danger_pressure: derive_danger_pressure(view, agent),
             decision_context,
         }
     }
+}
+
+fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
+    view.wounds(agent)
+        .into_iter()
+        .any(|wound| wound.severity.value() > 0 && wound.bleed_rate_per_tick.value() == 0)
 }
 
 fn priority_class(
@@ -163,16 +171,19 @@ fn priority_class(
             context,
             |needs| needs.fatigue,
             |thresholds| thresholds.fatigue,
+            true,
         ),
         GoalKind::Relieve => drive_priority(
             context,
             |needs| needs.bladder,
             |thresholds| thresholds.bladder,
+            false,
         ),
         GoalKind::Wash => drive_priority(
             context,
             |needs| needs.dirtiness,
             |thresholds| thresholds.dirtiness,
+            false,
         ),
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             context.decision_context.danger_class
@@ -198,7 +209,13 @@ fn self_consume_priority(
 ) -> GoalPriorityClass {
     relevant_self_consume_factors(commodity, context)
         .into_iter()
-        .map(|(pressure, _, band)| classify_band(pressure, &band))
+        .map(|(pressure, _, band, recovery_relevant)| {
+            promote_for_clotted_wound_recovery(
+                classify_band(pressure, &band),
+                context,
+                recovery_relevant,
+            )
+        })
         .max()
         .unwrap_or(GoalPriorityClass::Background)
 }
@@ -207,10 +224,27 @@ fn drive_priority(
     context: &RankingContext<'_>,
     pressure: impl Fn(HomeostaticNeeds) -> Permille,
     band: impl Fn(DriveThresholds) -> worldwake_core::ThresholdBand,
+    recovery_relevant: bool,
 ) -> GoalPriorityClass {
-    match (context.needs, context.thresholds) {
+    let base = match (context.needs, context.thresholds) {
         (Some(needs), Some(thresholds)) => classify_band(pressure(needs), &band(thresholds)),
         _ => GoalPriorityClass::Background,
+    };
+
+    promote_for_clotted_wound_recovery(base, context, recovery_relevant)
+}
+
+fn promote_for_clotted_wound_recovery(
+    base: GoalPriorityClass,
+    context: &RankingContext<'_>,
+    recovery_relevant: bool,
+) -> GoalPriorityClass {
+    // Keep ranking aligned with combat recovery_conditions_met(): hunger, thirst, and fatigue
+    // at High block recovery for clotted wounds until the agent resolves that need.
+    if recovery_relevant && context.has_clotted_wounds && base == GoalPriorityClass::High {
+        GoalPriorityClass::Critical
+    } else {
+        base
     }
 }
 
@@ -226,7 +260,7 @@ fn motive_score(
             purpose: CommodityPurpose::SelfConsume,
         } => relevant_self_consume_factors(commodity, context)
             .into_iter()
-            .map(|(pressure, weight, _)| score_product(weight, pressure))
+            .map(|(pressure, weight, _, _)| score_product(weight, pressure))
             .max()
             .unwrap_or(0),
         GoalKind::AcquireCommodity {
@@ -392,7 +426,7 @@ fn recipe_output_motive_score(
 fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
     let self_consume = relevant_self_consume_factors(commodity, context)
         .into_iter()
-        .map(|(pressure, weight, _)| score_product(weight, pressure))
+        .map(|(pressure, weight, _, _)| score_product(weight, pressure))
         .max()
         .unwrap_or(0);
     if self_consume > 0 {
@@ -405,7 +439,7 @@ fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContex
 fn relevant_self_consume_factors(
     commodity: CommodityKind,
     context: &RankingContext<'_>,
-) -> Vec<(Permille, Permille, worldwake_core::ThresholdBand)> {
+) -> Vec<(Permille, Permille, worldwake_core::ThresholdBand, bool)> {
     let Some(needs) = context.needs else {
         return Vec::new();
     };
@@ -423,6 +457,7 @@ fn relevant_self_consume_factors(
             needs.hunger,
             context.utility.hunger_weight,
             thresholds.hunger,
+            true,
         ));
     }
     if profile.thirst_relief_per_unit.value() > 0 {
@@ -430,6 +465,7 @@ fn relevant_self_consume_factors(
             needs.thirst,
             context.utility.thirst_weight,
             thresholds.thirst,
+            true,
         ));
     }
     factors
@@ -762,15 +798,19 @@ mod tests {
         }
     }
 
-    fn wound(severity: u16) -> Wound {
+    fn wound_with_bleed(severity: u16, bleed_rate: u16) -> Wound {
         Wound {
             id: WoundId(u64::from(severity)),
             body_part: BodyPart::Torso,
             cause: WoundCause::Deprivation(DeprivationKind::Starvation),
             severity: pm(severity),
             inflicted_at: Tick(1),
-            bleed_rate_per_tick: pm(0),
+            bleed_rate_per_tick: pm(bleed_rate),
         }
+    }
+
+    fn wound(severity: u16) -> Wound {
+        wound_with_bleed(severity, 0)
     }
 
     fn goal(kind: GoalKind) -> GroundedGoal {
@@ -1747,6 +1787,196 @@ mod tests {
             }
         ));
         assert!(matches!(ranked[2].grounded.key.kind, GoalKind::Sleep));
+    }
+
+    #[test]
+    fn clotted_wound_boosts_hunger_high_to_critical() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+    }
+
+    #[test]
+    fn bleeding_wound_no_boost() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound_with_bleed(200, 10)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::High);
+    }
+
+    #[test]
+    fn clotted_wound_no_boost_below_high() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        let below_high = thresholds.hunger.high().saturating_sub(pm(1));
+        view.needs
+            .insert(agent, HomeostaticNeeds::new(below_high, pm(0), pm(0), pm(0), pm(0)));
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_ne!(ranked[0].priority_class, GoalPriorityClass::Critical);
+    }
+
+    #[test]
+    fn clotted_wound_boosts_sleep_high_to_critical() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), thresholds.fatigue.high(), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::Sleep)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+    }
+
+    #[test]
+    fn clotted_wound_no_boost_relieve_or_wash() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                pm(0),
+                pm(0),
+                pm(0),
+                thresholds.bladder.high(),
+                thresholds.dirtiness.high(),
+            ),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::Relieve), goal(GoalKind::Wash)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::High);
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::High);
+    }
+
+    #[test]
+    fn no_wounds_no_boost() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::High);
+    }
+
+    #[test]
+    fn critical_stays_critical() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
     }
 
     #[test]
