@@ -2776,6 +2776,32 @@ mod tests {
     }
 
     #[test]
+    fn prerequisite_places_produce_commodity_stays_empty_when_inputs_are_missing() {
+        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
+
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ProduceCommodity { recipe_id };
+
+        assert!(
+            goal.prerequisite_places(&state, &PlanningBudget::default())
+                .is_empty(),
+            "production should not absorb procurement; missing inputs are modeled as AcquireCommodity"
+        );
+    }
+
+    #[test]
     fn all_goal_kind_variants_have_goal_relevant_places_impl() {
         // This test ensures exhaustive coverage by creating all 17 variants
         // and calling goal_relevant_places. If a new variant is added without
