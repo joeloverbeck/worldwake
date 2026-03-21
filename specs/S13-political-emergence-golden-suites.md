@@ -8,7 +8,7 @@ Add 3 cross-system emergence golden tests to `golden_emergent.rs` that prove the
 
 ## Phase
 
-Phase 3: Information & Politics (post-E16d)
+Phase 3: Information & Politics (post-E16c)
 
 ## Crate
 
@@ -16,10 +16,11 @@ Phase 3: Information & Politics (post-E16d)
 
 ## Dependencies
 
+- E16c (institutional beliefs — provides `InstitutionalClaim` types, institutional belief storage in `AgentBeliefStore`, belief-based `office_holder()` and `office_data()` queries; replaces the pre-E16c runtime seam where `PerAgentBeliefView::office_holder()` reads live world state)
 - E16d (political planning, bribe/threaten semantics, golden harness office helpers)
 - E12 (combat, wounds, death)
 - S07 (care golden tests — establishes the emergent test patterns)
-- E14 (social/Tell system — for Scenario 22)
+- E14 (perception/belief system — belief boundary, social observation, Tell)
 
 ## Scenarios
 
@@ -52,25 +53,27 @@ Phase 3: Information & Politics (post-E16d)
 - Scenario 19 pre-kills the holder via `DeadAt(Tick(0))`. The death is setup, not emergent.
 - Scenario 21 has the death **emerge from simulated combat**. The combat system, wound system, and politics system interact through shared state without any coupling.
 
+**E16c requirement**: The succession system itself reads authoritative world state (it is a world-state system, not belief-dependent). However, if A's autonomous ClaimOffice candidate generation participates (e.g., under support-law variant), that path must read institutional beliefs from E16c's `AgentBeliefStore` institutional claim storage, not from the pre-E16c runtime seam in `PerAgentBeliefView::office_holder()`. Even under force-law where succession resolution is world-state-driven, the golden test should verify that any political AI candidate generation that fires uses the E16c belief path.
+
 ---
 
 ### Scenario 22: Social Tell Propagates Political Knowledge and Triggers Office Claim
 
 **File**: `golden_emergent.rs`
-**Systems exercised**: Social (autonomous Tell), Belief store (political entity beliefs), AI (ClaimOffice candidate generation from received belief), Political actions (DeclareSupport), Succession
+**Systems exercised**: Social (autonomous Tell), Institutional belief store (E16c `InstitutionalClaim` transfer via Tell), AI (ClaimOffice candidate generation from institutional belief), Political actions (DeclareSupport), Succession
 **Principles proven**: P7 (information locality — political knowledge arrives via social channel at finite speed), P1 (maximal emergence — Tell → belief → political action is emergent), P13 (knowledge acquisition path matters)
 
 **Setup**:
 - Vacant office ("Village Elder") at VillageSquare with `SuccessionLaw::Support`, succession_period=5, no eligibility rules
-- Agent A ("Informant"): at VillageSquare, has DirectObservation belief about the office, social_weight=pm(600), low enterprise_weight (won't claim office). Perception profile. Tell profile for sending.
-- Agent B ("Ambitious Listener"): at VillageSquare, enterprise_weight=pm(800), NO belief about the office initially. Perception profile. Tell profile for reception.
+- Agent A ("Informant"): at VillageSquare, has DirectObservation institutional belief about the office vacancy (E16c `InstitutionalClaim` in institutional belief state), social_weight=pm(600), low enterprise_weight (won't claim office). Perception profile. Tell profile for sending.
+- Agent B ("Ambitious Listener"): at VillageSquare, enterprise_weight=pm(800), NO institutional belief about the office initially (no `InstitutionalClaim` for this office in belief state). Perception profile. Tell profile for reception.
 - Both co-located so Tell can occur.
 
 **Emergent behavior proven**:
-- Phase 1 (no office knowledge): B generates no ClaimOffice candidates. Decision trace proves negative: no political candidate in B's traces.
-- A autonomously generates ShareBelief goal and tells B about the office entity.
-- Phase 2 (after Tell): B's belief store now contains office knowledge. B generates ClaimOffice. B declares support for self. Succession installs B.
-- The political goal emergence is caused by social information transfer, not manual belief injection.
+- Phase 1 (no office knowledge): B generates no ClaimOffice candidates because B has no institutional belief about the office. Decision trace proves negative: no political candidate in B's traces. The absence is caused by missing institutional belief state (E16c), not by missing entity belief.
+- A autonomously generates ShareBelief goal and tells B about the office entity. The Tell system transfers institutional belief state (E16c `InstitutionalClaim`) alongside the entity belief, giving B knowledge of the office vacancy.
+- Phase 2 (after Tell): B's institutional belief store now contains the office claim. B generates ClaimOffice. B declares support for self. Succession installs B.
+- The political goal emergence is caused by social institutional belief transfer, not manual belief injection or runtime-seam shortcuts.
 
 **Assertion surface**:
 1. Decision traces: B has no political candidates before Tell; B has ClaimOffice after Tell
@@ -82,7 +85,7 @@ Phase 3: Information & Politics (post-E16d)
 - Scenario 16/20 manually injects a `PerceptionSource::Report` belief via test setup. The information transfer is artificial.
 - Scenario 22 has the information arrive through the **autonomous Tell system**. The social system, belief store, and political AI interact through shared state without coupling.
 
-**Note**: The Tell system transfers any belief entity (confirmed via `commit_tell` in `tell_actions.rs` which clones `speaker_belief` for any `subject_entity`), so office entity beliefs are transferable.
+**E16c requirement**: The current Tell system transfers `BelievedEntityState` which contains no institutional fields (no office-holder, no faction, no support data). E16c must extend the belief transfer mechanism so that institutional claims about an office entity can be transferred via Tell. This scenario validates that the E16c institutional belief transfer works end-to-end through the autonomous social system.
 
 ---
 
@@ -96,12 +99,12 @@ Phase 3: Information & Politics (post-E16d)
 
 **Variant A (pain-first)**:
 - Agent with pain_weight=pm(800), enterprise_weight=pm(400)
-- Wounded (stable wound, no natural recovery), has medicine + office knowledge
+- Wounded (stable wound, no natural recovery), has medicine + institutional belief about the office vacancy (E16c `InstitutionalClaim` in institutional belief state)
 - Vacant office at same location
 
 **Variant B (enterprise-first)**:
 - Agent with pain_weight=pm(300), enterprise_weight=pm(800)
-- Same wounds, same medicine, same office knowledge
+- Same wounds, same medicine, same institutional belief about the office vacancy
 
 **Emergent behavior proven**:
 - Variant A: Agent self-heals first (wound load decreases), then claims office (DeclareSupport)
@@ -118,6 +121,68 @@ Phase 3: Information & Politics (post-E16d)
 **Why this is distinct from Scenario 17** (survival suppresses politics):
 - Scenario 17 tests hunger suppression — a binary gate (suppressed or not).
 - Scenario 23 tests **priority ordering** between two non-survival domains (care vs enterprise) resolved by concrete utility weights, proving Principle 20 diversity across the political domain.
+
+**E16c requirement**: Pre-E16c, the AI reads office data through the runtime seam in `PerAgentBeliefView::office_holder()` which queries live world state. Post-E16c, agents must read institutional beliefs from their own belief store. This scenario validates that priority ordering between care and enterprise goals works correctly when political knowledge arrives through proper institutional beliefs rather than the runtime seam.
+
+## FND-01 Section H
+
+### H.1 Information-Path Analysis
+
+| Information | Source | Path Validated | Scenario |
+|-------------|--------|----------------|----------|
+| Office vacancy after combat death | Combat system sets `DeadAt` | `DeadAt` → succession system detects → vacancy mutation → institutional belief observation (DirectObservation or institutional event witness) → AI candidate generation | 21 |
+| Office vacancy (remote agent via Tell) | Office world state | Speaker DirectObservation → E16c institutional belief in speaker's store → Tell action transfers `InstitutionalClaim` → listener institutional belief store → ClaimOffice candidate generation | 22 |
+| Office vacancy (local agent) | Office world state | DirectObservation → E16c institutional belief in agent's store → enterprise candidate generation → ranking against care goals | 23 |
+| Wound state for care priority | Combat/needs systems | `WoundList` component → belief view reads wounds → care candidate generation → ranking | 23 |
+
+**Key validation**: All three scenarios prove political knowledge travels through E16c institutional beliefs, not through the pre-E16c runtime seam.
+
+### H.2 Positive-Feedback Analysis
+
+**Loop 1: Combat death → political vacancy → political ambition → more combat**. An agent kills an office holder, gains the office, becomes a target. Bounded by combat duration, succession delay, wound accumulation, and hostility requirement. Scenario 21 exercises one iteration only.
+
+**Loop 2: Tell → office knowledge → office claim → new Tell subjects**. An agent learns of an office via Tell, claims it, the outcome becomes a new Tell subject. Bounded by Tell duration, co-location requirement, conversation memory retention, succession delay, and enterprise motivation threshold. Scenario 22 exercises one iteration only.
+
+**Loop 3 (negative/stabilizing): Wound pressure → care action → reduced wound → reduced care pressure**. Scenario 23 exercises this alongside enterprise pressure.
+
+No positive-feedback loops require additional dampening beyond existing systems.
+
+### H.3 Concrete Dampeners
+
+- Combat action duration and wound accumulation (physical time and health cost)
+- Succession period delay (physical time gate on office installation)
+- Tell action duration and co-location requirement (physical proximity and time cost)
+- Conversation memory retention window (prevents Tell spam)
+- Enterprise weight and utility profile variation (agent-specific motivation thresholds)
+- Office eligibility rules (physical precondition gate)
+- Travel time for remote offices (physical distance cost)
+
+### H.4 Stored State vs Derived
+
+**Stored (authoritative)**: `DeadAt` component, office-holder relation, `OfficeData` component, `WoundList` component, `HomeostaticNeeds` component, `AgentBeliefStore` institutional claims (E16c), conversation memory (told/heard)
+
+**Derived (transient)**: vacancy detection (from office-holder + DeadAt), ClaimOffice candidate presence (from institutional beliefs), goal priority ordering (from utility weights + needs + wounds), Tell candidate selection (from belief store + conversation memory), final office-holder outcome (consequence of prior changes)
+
+## Cross-System Interactions (Principle 24)
+
+### Scenario 21 chain
+1. Combat system reads `CombatProfile` + wounds → attack action resolves → wounds accumulate
+2. Needs/wound system detects wound_load >= wound_capacity → sets `DeadAt`
+3. Succession system reads office-holder relation + `DeadAt` → clears holder → starts succession period
+4. After succession delay, succession installs sole eligible contender under force-law
+
+### Scenario 22 chain
+1. Speaker holds E16c institutional belief about vacant office (DirectObservation)
+2. Social candidate generation reads speaker's beliefs → ShareBelief goal
+3. Tell action commits → `InstitutionalClaim` transferred to listener's belief store
+4. Political candidate generation reads listener's institutional beliefs → ClaimOffice candidate
+5. Listener declares support → succession installs listener
+
+### Scenario 23 chain
+1. Agent has E16c institutional belief about vacant office AND wounds AND medicine
+2. Candidate generation produces both TreatWounds and ClaimOffice goals
+3. Ranking resolves priority based on utility weights: pain_weight vs enterprise_weight
+4. Variant A: care wins → treat → then claim. Variant B: enterprise wins → claim → then treat.
 
 ## Tickets
 

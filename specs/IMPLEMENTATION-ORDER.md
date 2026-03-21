@@ -84,7 +84,7 @@ S09 ✅ (design fix to defend action duration completed)
 S11 ✅ (wound lifecycle audit completed)
 S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
 S12 ✅ (planner prerequisite-aware search heuristic completed)
-S13 (no unmet deps post-E16d — political emergence golden coverage)
+E16c ──→ S13 (political emergence golden coverage needs institutional beliefs)
 S15 ✅ (cross-system start-failure emergence golden coverage)
 S16 ✅ (S09 behavioral golden validation coverage)
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
@@ -144,8 +144,6 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - delivered deprivation-wound identity preservation, recovery-aware self-care ranking, wound hardening coverage, and closeout verification
 - **S12**: Planner Prerequisite-Aware Search — ✅ COMPLETED
   - dynamic combined-place search guidance, focused trace/budget coverage, and canonical remote-care plus remote-production goldens are in place
-- **S13**: Political Emergence Golden E2E Suites (no unmet deps post-E16d)
-  - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
 - **S15**: Start-Failure Emergence Golden E2E Suites — ✅ COMPLETED
   - production/trade/politics goldens now prove `StartFailed` plus next-tick AI recovery outside the care domain
 - **S16**: S09 Golden Validation Suite — ✅ COMPLETED
@@ -164,6 +162,9 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - needs E16, E16c
 - **E17**: Crime, Theft & Justice
   - needs E15, S01, S03, E16c
+- **S13**: Political Emergence Golden E2E Suites
+  - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
+  - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
 
 #### Phase 3 Gate
 - [ ] `OmniscientBeliefView` fully replaced — no code path uses it
@@ -224,7 +225,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S13-political-emergence-golden-suites.md` | 3 | 11 | E14, S07, E16d (all met) |
+| `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
 | `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 12 | E14, E15, E16 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
