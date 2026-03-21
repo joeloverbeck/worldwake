@@ -1,94 +1,284 @@
 **Status**: PENDING
 
-# Wound Lifecycle Audit
+# Wound Lifecycle Overhaul
 
 ## Summary
 
-Investigate and fix an observed wound lifecycle anomaly: wounds with `natural_recovery_rate: pm(0)` on the agent's `CombatProfile` were observed to disappear (wound_load drops to 0, wound pruned from `WoundList`) when they should have persisted indefinitely. This either indicates an undocumented pruning mechanism, an arithmetic edge case in the bleed→clot→recovery pipeline, or a component-override ordering issue.
+Expand the wound lifecycle from its current minimal implementation to a robust, well-tested subsystem with three improvements:
 
-This is an investigation-first spec. The deliverables are diagnostic tests that reproduce the anomaly and a targeted fix once the root cause is identified.
+1. **Investigation & pruning hardening**: Diagnose an observed wound disappearance anomaly (wounds with `natural_recovery_rate: pm(0)` vanishing), harden pruning contract with explicit tests.
+2. **Deprivation wound worsening**: When a deprivation threshold fires and the agent already has a wound of the same `DeprivationKind`, worsen that wound instead of creating a duplicate.
+3. **Recovery-aware AI priority boost**: When an agent has clotted (non-bleeding) wounds and a recovery-relevant need (hunger, thirst, fatigue) is at or above the `high` threshold — blocking natural wound recovery — boost that need goal's priority class from `High` to `Critical`.
+
+Originally an investigation-only spec (wound disappearance anomaly). Expanded after codebase reassessment revealed the anomaly's `no_recovery_combat_profile()` workaround has been removed, and architectural gaps exist in how wounds interact with deprivation accumulation and AI decision-making.
 
 ## Discovered Via
 
 Golden E2E emergent tests (S07 care interaction coverage). A fighter wounded during combat had `natural_recovery_rate: pm(0)` set via combat profile override, yet `wound_load` returned to 0 within ~100 ticks. The wound was observed (`fighter_wounded=true`) at an intermediate tick but absent at the scenario's end.
 
+Codebase reassessment (2026-03-21) identified additional gaps:
+- Deprivation wounds stack as duplicates instead of worsening, cluttering the wound list
+- AI has zero awareness of `recovery_conditions_met()` — wound recovery is an accidental side-effect of satisfying needs
+
 ## Foundation Alignment
 
-- **Principle 3** (Concrete State Over Abstract Scores): Wounds are concrete state. If wound state evolves unpredictably — disappearing despite zero recovery rate — agents cannot make reliable decisions about care, danger, or retreat. The wound system must be fully deterministic and traceable.
-- **Principle 9** (Outcomes Are Granular and Leave Aftermath): Combat wounds are aftermath. If they silently vanish, the aftermath is lost and downstream emergence (care goals, danger pressure, loot priority) breaks.
+- **Principle 3** (Concrete State Over Abstract Scores): Wounds are concrete state. Pruning, worsening, and recovery must be fully deterministic and traceable. The AI recovery boost derives from concrete wound state (bleed rates, severities), not abstract scores.
+- **Principle 9** (Outcomes Are Granular and Leave Aftermath): Combat and deprivation wounds are aftermath. If they silently vanish or stack as duplicates, the aftermath is lost or cluttered. Worsening a single wound preserves identity while accumulating consequences.
+- **Principle 12** (World State Is Not Belief State): The AI recovery boost reads wounds from the belief view, not world state. The agent's perceived wound state drives its care priority.
+- **Principle 20** (Agent Diversity Through Concrete Variation): Recovery boost emerges differently per agent through their individual `DriveThresholds`, metabolisms, and wound states. No new uniform personality parameter is needed.
+- **Principle 4** (Persistent Identity): Worsened deprivation wounds preserve their `WoundId`. Identity is stable across severity increases.
 
 ## Phase
 
-Phase 3: Information & Politics (investigation, no phase dependency)
+Phase 3: Information & Politics (investigation + targeted enhancements, no phase dependency)
 
 ## Crates
 
-- `worldwake-core` (wound types, `WoundList`)
-- `worldwake-systems` (wound processing in `needs_system`, combat wound creation)
+- `worldwake-core` (wound types, `WoundList`, `WoundCause`)
+- `worldwake-systems` (wound processing in `needs_system`, wound progression in `combat_system`)
+- `worldwake-ai` (ranking priority boost in `ranking.rs`)
 
 ## Dependencies
 
-None. This is an investigation of existing code.
+None. All required infrastructure exists: `WoundList`, `CombatProfile`, `GoalBeliefView::wounds()`, `DriveThresholds`, `UtilityProfile`, `classify_band()`.
 
-## Hypotheses
+## Engine Changes
 
-### H1: Wound pruning has a severity floor
+### A. Investigation & Pruning Hardening
 
-The wound system may prune wounds when severity reaches 0 or falls below some epsilon, even if `natural_recovery_rate` is 0. If the bleed→clot cycle causes severity to transiently reach 0 through arithmetic (e.g., severity starts at 150, bleeds for 2 ticks adding ~35, clots, then... somehow decreases), the wound could be pruned.
+#### Root Cause Analysis
 
-**Test**: Create a wound with severity pm(200), bleed_rate pm(0) (already clotted), recovery_rate pm(0). Tick 50 times. Assert severity unchanged and wound not pruned.
+The `progress_wounds()` function in `crates/worldwake-systems/src/combat.rs` (line 192):
+- Bleeding: `severity += bleed_rate`, then `bleed_rate -= clot_resistance`, skip recovery
+- Recovery: if `can_recover` AND `severity > 0`: `severity -= recovery_rate`
+- Pruning (line 224): `next.wounds.retain(|w| w.severity.value() > 0)`
 
-### H2: Bleed/clot arithmetic underflow
+With `natural_recovery_rate: pm(0)`, `Permille::saturating_sub(pm(0))` is a no-op — severity cannot reach 0 through the recovery path. The anomaly likely came from a test setup issue (e.g., combat profile override ordering) or code that has since been refactored. The `no_recovery_combat_profile()` workaround referenced in the original spec no longer exists in the codebase.
 
-The bleed rate decreases by `natural_clot_resistance` per tick. If clot resistance is applied to severity instead of bleed_rate, or if there's a subtraction ordering issue, severity could decrease when it shouldn't.
+#### Four Hypotheses (retained from original spec)
 
-**Test**: Create a wound with severity pm(100), bleed_rate pm(50), clot_resistance pm(25), recovery_rate pm(0). Tick until bleed_rate reaches 0. Assert severity equals initial + total_bleed_accumulated. Assert severity does not decrease after clotting.
+**H1: Wound pruning has a severity floor** — Wounds may be pruned when severity reaches 0 or epsilon, even with recovery_rate pm(0). Test: wound with severity pm(200), bleed_rate pm(0), recovery_rate pm(0). Tick 50 times. Assert severity unchanged and wound not pruned.
 
-### H3: Combat profile override not taking effect
+**H2: Bleed/clot arithmetic underflow** — Clot resistance applied to severity instead of bleed_rate, or subtraction ordering issue. Test: wound with severity pm(100), bleed_rate pm(50), clot_resistance pm(25), recovery_rate pm(0). Tick until clotted. Assert severity = initial + total accumulated bleed.
 
-`seed_agent_with_recipes` sets `default_combat_profile()` (recovery_rate pm(18)). The test then calls `set_component_combat_profile` in a separate transaction to override. If the component table merge has ordering issues, the override might not persist.
+**H3: Combat profile override not taking effect** — Component table merge ordering drops the override. Test: override profile in transaction, read back immediately, assert recovery_rate matches override.
 
-**Test**: Set combat profile via override transaction, then read it back immediately. Assert recovery_rate equals the overridden value.
+**H4: Wound system has minimum recovery rate** — Recovery code clamps to minimum of 1 or applies recovery regardless of profile value. Test: inspect `progress_wounds()` source for any floor on recovery_rate.
 
-### H4: Wound system has minimum recovery rate
+#### Pruning Contract
 
-The wound processing code may clamp `natural_recovery_rate` to a minimum of 1 or apply recovery regardless of the profile value.
+Harden the pruning contract: a wound is pruned if and only if its `severity` reaches `Permille(0)`. Add `#[cfg(debug_assertions)]` contract check before the retain line in `progress_wounds()` to catch contract violations during testing.
 
-**Test**: Inspect wound system source code for recovery application logic. Verify it respects pm(0) as "no recovery."
+### B. Deprivation Wound Worsening
+
+#### Current Behavior
+
+`append_deprivation_wound()` in `crates/worldwake-systems/src/needs.rs` (line 272) unconditionally creates a NEW `Wound` each time a deprivation threshold fires. An agent starving repeatedly accumulates multiple starvation wounds with independent severities.
+
+#### New Behavior
+
+If the agent already has a deprivation wound of the same `DeprivationKind` (checked via a new `WoundList::find_deprivation_wound_mut()` lookup), increase that wound's severity via `saturating_add` instead of creating a duplicate.
+
+**WoundList API additions** (`crates/worldwake-core/src/wounds.rs`):
+
+```rust
+/// Returns an immutable reference to the first wound caused by the given DeprivationKind.
+pub fn find_deprivation_wound(&self, kind: DeprivationKind) -> Option<&Wound>
+
+/// Returns a mutable reference to the first wound caused by the given DeprivationKind.
+pub fn find_deprivation_wound_mut(&mut self, kind: DeprivationKind) -> Option<&mut Wound>
+```
+
+**Replacement function** (`crates/worldwake-systems/src/needs.rs`):
+
+Replace `append_deprivation_wound` with `worsen_or_create_deprivation_wound`:
+
+```rust
+fn worsen_or_create_deprivation_wound(
+    wound_list: &mut Option<WoundList>,
+    existing: Option<&WoundList>,
+    kind: DeprivationKind,
+    severity_increase: Permille,
+    tick: Tick,
+) {
+    let list = wound_list.get_or_insert_with(|| existing.cloned().unwrap_or_default());
+    if let Some(wound) = list.find_deprivation_wound_mut(kind) {
+        wound.severity = wound.severity.saturating_add(severity_increase);
+        wound.inflicted_at = tick;
+    } else {
+        let wound_id = list.next_wound_id();
+        list.wounds.push(Wound {
+            id: wound_id,
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Deprivation(kind),
+            severity: severity_increase,
+            inflicted_at: tick,
+            bleed_rate_per_tick: Permille::new(0).expect("zero is a valid permille"),
+        });
+    }
+}
+```
+
+**Design decisions**:
+- **`inflicted_at` updated to current tick**: Records when last worsened. More useful for AI reasoning and display than the original creation time.
+- **WoundId preserved**: The existing wound keeps its original ID. Identity is stable (Principle 4).
+- **`saturating_add` caps at 1000**: A single wound cannot exceed `Permille` maximum.
+- **Handles partially-healed wounds**: If wound was at severity 100 (recovered from 400) and worsening adds 800, result is `saturating_add(100, 800) = 900`.
+
+### C. Recovery-Aware AI Priority Boost
+
+#### Problem
+
+The combat system recovers clotted wounds only when `recovery_conditions_met()` (`crates/worldwake-systems/src/combat.rs`, line 230): not in combat AND `hunger < thresholds.hunger.high()` AND `thirst < thresholds.thirst.high()` AND `fatigue < thresholds.fatigue.high()`. The AI ranking system has zero awareness of these conditions — wound recovery is an accidental side-effect of satisfying needs independently.
+
+#### Solution
+
+When ranking need goals (eat, drink, sleep), if the agent has clotted wounds AND the corresponding need is at or above the `high` threshold (the recovery-blocking level), boost the priority class from `High` to `Critical`.
+
+**File: `crates/worldwake-ai/src/ranking.rs`**
+
+1. Add helper to detect clotted wounds from beliefs:
+```rust
+fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
+    view.wounds(agent).iter().any(|w| w.bleed_rate_per_tick.value() == 0 && w.severity.value() > 0)
+}
+```
+
+2. Add `has_clotted_wounds: bool` field to `RankingContext`. Compute in `RankingContext::new()`.
+
+3. Add `recovery_relevant: bool` parameter to `drive_priority()`:
+```rust
+fn drive_priority(
+    context: &RankingContext<'_>,
+    pressure: impl Fn(HomeostaticNeeds) -> Permille,
+    band: impl Fn(DriveThresholds) -> ThresholdBand,
+    recovery_relevant: bool,
+) -> GoalPriorityClass {
+    let base = match (context.needs, context.thresholds) {
+        (Some(needs), Some(thresholds)) => classify_band(pressure(needs), &band(thresholds)),
+        _ => GoalPriorityClass::Background,
+    };
+    if recovery_relevant && context.has_clotted_wounds && base == GoalPriorityClass::High {
+        GoalPriorityClass::Critical
+    } else {
+        base
+    }
+}
+```
+
+4. Update call sites in `priority_class()`:
+   - `GoalKind::Sleep` → `recovery_relevant: true`
+   - `GoalKind::Relieve` → `recovery_relevant: false` (bladder is not a recovery condition)
+   - `GoalKind::Wash` → `recovery_relevant: false` (dirtiness is not a recovery condition)
+
+5. Update `relevant_self_consume_factors()` return type to include a 4th `bool` element:
+   - Hunger factors (food) → `true`
+   - Thirst factors (water) → `true`
+
+6. Update `self_consume_priority()` to apply the boost when the 4th element is `true`, `context.has_clotted_wounds`, and base class is `High`.
+
+7. Add comment referencing `recovery_conditions_met()` in `combat.rs` to document the coupling.
+
+**No changes needed elsewhere**:
+- `UtilityProfile` — no new field. The boost is a logical consequence ("my wound cannot heal until I eat"), not a personality trait. Per-agent diversity already comes from different thresholds and metabolisms.
+- `GoalBeliefView` — `wounds()` already returns `Vec<Wound>` with full `bleed_rate_per_tick` data.
+- No new `GoalKind`.
+
+## FND-01 Section H Analysis
+
+### 1. Information-Path Analysis
+
+- **Wound worsening**: Needs system reads `HomeostaticNeeds`, `DeprivationExposure`, `MetabolismProfile`, `WoundList` from `World`. Writes updated `WoundList` via `WorldTxn`. All per-agent, local. No cross-agent information flow.
+- **Wound progression**: Combat system reads `WoundList`, `CombatProfile`, `HomeostaticNeeds`, `DriveThresholds`, active actions. Writes updated `WoundList` via `WorldTxn`. Per-agent, local.
+- **AI recovery boost**: Reads wounds from belief view (Principle 12 — not world state directly). Reads needs from beliefs. Per-agent, local.
+- **No new information channels**: All data paths already exist. The spec adds logic that operates on existing per-agent state.
+
+### 2. Positive-Feedback Analysis
+
+**Identified amplifying loop**: Deprivation wound worsening:
+hunger high → deprivation wound created/worsened → wound_load increases → if approaching incapacitation, agent cannot act → cannot eat → hunger stays high → further worsening
+
+This loop existed before (with new wound creation per threshold hit), but worsening concentrates damage in a single wound rather than spreading it across duplicates. The quantitative dynamics are similar — total wound_load accumulates at the same rate.
+
+### 3. Concrete Dampeners
+
+- **Tolerance period**: `starvation_tolerance_ticks` / `dehydration_tolerance_ticks` in `MetabolismProfile` (`NonZeroU32`, minimum 1) ensures a minimum delay between worsening events. The exposure counter resets to 0 after each firing. Physical analogue: the body takes time to deteriorate further.
+- **Recovery gate**: When an agent is fed, hydrated, and rested (needs below `high` threshold) and not in combat, wounds recover at `natural_recovery_rate` per tick. Physical process that counteracts the worsening.
+- **Permille ceiling**: `saturating_add` caps severity at 1000. A single wound cannot exceed this. Physical limit: a wound cannot be "more than maximally severe."
+- **Death**: `wound_load >= wound_capacity` terminates the agent. Ultimate dampener — the feedback loop ends.
+
+### 4. Stored State vs. Derived Read-Model
+
+**Stored (authoritative)**:
+- `WoundList` component — `Vec<Wound>` per agent (id, body_part, cause, severity, inflicted_at, bleed_rate_per_tick)
+- `DeprivationExposure` component — per-agent tick counters (hunger_critical_ticks, thirst_critical_ticks, bladder_critical_ticks)
+- `CombatProfile` component — per-agent recovery/clot/capacity parameters
+- `HomeostaticNeeds` component — per-agent need levels
+- `DriveThresholds` component — per-agent threshold bands
+
+**Derived (transient, never stored)**:
+- `wound_load()` — sum of wound severities, computed on demand
+- `is_incapacitated()` — wound_load vs profile threshold
+- `is_wound_load_fatal()` — wound_load vs profile capacity
+- `has_bleeding_wounds()` — iterates wounds
+- `recovery_conditions_met()` — needs vs thresholds + combat state
+- `has_clotted_wounds()` — iterates wounds (new, AI-side)
+- Pain pressure, danger pressure — derived from wounds in belief view
+
+No derived value is stored as authoritative state.
 
 ## Deliverables
 
-### 1. Diagnostic Unit Tests
+### 1. Core API: WoundList Lookup Methods
 
-Add focused unit tests in `crates/worldwake-systems/tests/` (or inline in `needs.rs`) that isolate each hypothesis:
+Add `find_deprivation_wound()` and `find_deprivation_wound_mut()` to `WoundList` in `crates/worldwake-core/src/wounds.rs`.
 
-- **`wound_persists_with_zero_recovery_rate`**: Clotted wound, pm(0) recovery. Tick N times. Assert wound unchanged.
-- **`wound_bleed_clot_arithmetic_is_exact`**: Bleeding wound, known parameters. Assert severity after clotting equals expected value.
-- **`combat_profile_override_takes_effect`**: Override profile in separate transaction. Read back. Assert match.
-- **`wound_pruning_threshold_is_zero_severity`**: Wound at severity pm(1), recovery pm(1). After 1 tick, severity should be pm(0) and wound pruned. Wound at severity pm(1), recovery pm(0) — wound should NOT be pruned.
+**Tests** (in `wounds.rs`):
+- `find_deprivation_wound_returns_match` — starvation + combat wound list, find starvation, miss dehydration
+- `find_deprivation_wound_mut_updates_severity` — find and modify, assert list reflects change
+- `find_deprivation_wound_returns_none_for_empty_list`
 
-### 2. Root Cause Fix
+### 2. Investigation & Pruning Hardening Tests
 
-Once a hypothesis is confirmed, apply the minimal fix:
+Add focused tests in `crates/worldwake-systems/` that isolate each hypothesis:
 
-- **H1 confirmed**: If pruning triggers at severity > 0, fix the pruning threshold to be exactly `severity == pm(0)`.
-- **H2 confirmed**: Fix the arithmetic ordering in the wound tick processing.
-- **H3 confirmed**: Document or fix the component override ordering guarantee.
-- **H4 confirmed**: Remove the minimum recovery floor, or if it exists for a valid reason, document it and adjust `CombatProfile` semantics.
+- `zero_recovery_rate_wound_persists` — Clotted wound, pm(0) recovery, tick 50 times, assert unchanged
+- `wound_bleed_clot_arithmetic_exact` — Known bleed/clot parameters, assert severity = initial + total bleed
+- `pruning_only_at_severity_zero` — Mixed-severity list, assert only severity-0 wounds pruned
+- `progress_wounds_returns_none_when_no_change` — Non-bleeding, pm(0) recovery, assert `None` return
 
-### 3. Golden Test Cleanup
+Add `#[cfg(debug_assertions)]` pruning contract check in `progress_wounds()`.
 
-If the root cause is fixed, update `golden_emergent.rs` to remove the `no_recovery_combat_profile()` workaround where it was applied solely to avoid this anomaly (vs. where it serves the test's design intent of ensuring wounds only heal through medicine).
+### 3. Deprivation Wound Worsening
+
+Replace `append_deprivation_wound` with `worsen_or_create_deprivation_wound` in `crates/worldwake-systems/src/needs.rs`.
+
+**Tests**:
+- `worsen_creates_new_when_no_existing` — empty list, assert 1 wound created
+- `worsen_increases_existing_severity` — existing wound at pm(200), trigger with pm(500), assert pm(700), same WoundId
+- `worsen_caps_at_permille_max` — existing at pm(800), worsen by pm(500), assert pm(1000)
+- `different_kinds_create_separate_wounds` — starvation exists, trigger dehydration, assert 2 wounds
+- `worsen_updates_inflicted_at` — existing at Tick(5), worsen at Tick(50), assert Tick(50)
+
+### 4. Recovery-Aware AI Priority Boost
+
+Modify `crates/worldwake-ai/src/ranking.rs`: add `has_clotted_wounds` to `RankingContext`, add `recovery_relevant` parameter to `drive_priority()`, update `relevant_self_consume_factors()` and `self_consume_priority()`.
+
+**Tests** (in `ranking.rs` test module):
+- `clotted_wound_boosts_hunger_high_to_critical`
+- `bleeding_wound_no_boost`
+- `clotted_wound_no_boost_below_high`
+- `clotted_wound_boosts_sleep_high_to_critical`
+- `clotted_wound_no_boost_relieve_or_wash`
+- `no_wounds_no_boost`
+- `critical_stays_critical`
+
+### 5. Golden Test Verification
+
+Run all golden tests. Deprivation worsening changes may shift deterministic hashes in scenarios where agents accumulate deprivation wounds. Recapture hashes for any affected golden tests.
 
 ## Risks
 
-Low. This is an investigation with targeted fixes. No architectural changes required — the wound system's design is sound, only its implementation may have an edge case.
+Low-to-moderate. The investigation and pruning hardening are risk-free (adding tests to existing code). Deprivation worsening changes wound accumulation behavior, which may shift golden test hashes. The AI priority boost is a small, well-bounded change to ranking logic.
 
-## Information-Path Analysis (FND-01 Section H)
-
-Not applicable — wound processing is local per-agent state manipulation, not information flow.
-
-## Stored State vs. Derived
-
-- **Stored**: `WoundList` (authoritative per-agent wound state), `CombatProfile` (authoritative per-agent combat parameters)
-- **Derived**: `wound_load()` (sum of wound severities — derived read-only accessor)
+No architectural changes — all modifications use existing types, traits, and patterns. The `WoundList` API additions are pure extensions. The ranking changes add a parameter to existing functions.
