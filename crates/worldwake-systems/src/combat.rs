@@ -3641,6 +3641,149 @@ mod tests {
     }
 
     #[test]
+    fn zero_recovery_rate_wound_persists() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(20),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let wounds = WoundList {
+            wounds: vec![deprivation_wound(1, 200, 0, 2)],
+        };
+
+        for _ in 0..50 {
+            let next = super::progress_wounds(
+                &wounds,
+                profile,
+                Some(HomeostaticNeeds::new_sated()),
+                Some(DriveThresholds::default()),
+                false,
+            );
+            assert_eq!(
+                next, None,
+                "zero natural recovery should not emit passive wound updates"
+            );
+            assert_eq!(wounds.wounds.len(), 1);
+            assert_eq!(wounds.wounds[0].severity, pm(200));
+            assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(0));
+        }
+    }
+
+    #[test]
+    fn wound_bleed_clot_arithmetic_exact() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(25),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let mut wounds = WoundList {
+            wounds: vec![deprivation_wound(1, 100, 50, 2)],
+        };
+        let expected = [(150, 25), (175, 0)];
+
+        for (severity, bleed_rate) in expected {
+            wounds = super::progress_wounds(
+                &wounds,
+                profile,
+                Some(HomeostaticNeeds::new_sated()),
+                Some(DriveThresholds::default()),
+                false,
+            )
+            .expect("bleeding wound should progress until clotting reaches zero");
+            assert_eq!(wounds.wounds[0].severity, pm(severity));
+            assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(bleed_rate));
+        }
+
+        assert_eq!(wounds.wounds[0].severity, pm(175));
+        assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(0));
+    }
+
+    #[test]
+    fn pruning_only_at_severity_zero() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(20),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let wounds = WoundList {
+            wounds: vec![
+                deprivation_wound(1, 500, 0, 2),
+                deprivation_wound(2, 0, 0, 2),
+                deprivation_wound(3, 100, 0, 2),
+            ],
+        };
+
+        let next = super::progress_wounds(
+            &wounds,
+            profile,
+            Some(HomeostaticNeeds::new_sated()),
+            Some(DriveThresholds::default()),
+            false,
+        )
+        .expect("removing the zero-severity wound should produce an updated list");
+
+        assert_eq!(next.wounds.iter().map(|w| w.id).collect::<Vec<_>>(), vec![WoundId(1), WoundId(3)]);
+        assert_eq!(
+            next.wounds.iter().map(|w| w.severity).collect::<Vec<_>>(),
+            vec![pm(500), pm(100)]
+        );
+    }
+
+    #[test]
+    fn progress_wounds_returns_none_when_no_change() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(20),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let wounds = WoundList {
+            wounds: vec![deprivation_wound(1, 200, 0, 2)],
+        };
+
+        let next = super::progress_wounds(
+            &wounds,
+            profile,
+            Some(HomeostaticNeeds::new_sated()),
+            Some(DriveThresholds::default()),
+            false,
+        );
+
+        assert_eq!(next, None);
+    }
+
+    #[test]
     fn non_bleeding_wounds_recover_when_physiology_is_tolerable() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let guard = spawn_guard(&mut world, 1, ControlSource::Ai);
