@@ -61,20 +61,13 @@ pub enum OfficeSuccessionOutcome {
         cleared_stale_vacancy: bool,
     },
     VacancyActivated,
-    WaitingForTimer {
-        start_tick: Tick,
-        waited_ticks: u64,
-        required_ticks: u64,
-        remaining_ticks: u64,
-    },
+    WaitingForTimer,
     SupportInstalled {
         holder: EntityId,
-        support: usize,
     },
     SupportResetNoEligibleDeclarations,
     SupportResetTie {
         tied_candidates: Vec<EntityId>,
-        support: usize,
     },
     ForceInstalled {
         holder: EntityId,
@@ -99,6 +92,25 @@ pub struct ForceCandidateTrace {
 }
 
 impl PoliticalTraceEvent {
+    fn support_count_for(&self, candidate: EntityId) -> Option<usize> {
+        self.trace.support_resolution.as_ref().and_then(|resolution| {
+            resolution
+                .counted_support
+                .iter()
+                .find_map(|support| (support.candidate == candidate).then_some(support.support))
+        })
+    }
+
+    fn max_support_count(&self) -> Option<usize> {
+        self.trace.support_resolution.as_ref().and_then(|resolution| {
+            resolution
+                .counted_support
+                .iter()
+                .map(|support| support.support)
+                .max()
+        })
+    }
+
     #[must_use]
     pub fn summary(&self) -> String {
         let phase = self.trace.availability_phase.summary_label();
@@ -135,29 +147,45 @@ impl PoliticalTraceEvent {
                 "tick {}: office {} becomes vacant [{}]",
                 self.tick.0, self.office, phase
             ),
-            OfficeSuccessionOutcome::WaitingForTimer {
-                start_tick,
-                waited_ticks,
-                required_ticks,
-                remaining_ticks,
-            } => format!(
-                "tick {}: office {} waits for succession timer (start {}, waited {}, required {}, remaining {}) [{}]",
-                self.tick.0, self.office, start_tick.0, waited_ticks, required_ticks, remaining_ticks, phase
-            ),
-            OfficeSuccessionOutcome::SupportInstalled { holder, support } => format!(
+            OfficeSuccessionOutcome::WaitingForTimer => {
+                let timer = self
+                    .trace
+                    .vacancy_timer
+                    .expect("waiting outcome should include vacancy_timer trace");
+                format!(
+                    "tick {}: office {} waits for succession timer (start {}, waited {}, required {}, remaining {}) [{}]",
+                    self.tick.0,
+                    self.office,
+                    timer.start_tick.0,
+                    timer.waited_ticks,
+                    timer.required_ticks,
+                    timer.remaining_ticks,
+                    phase
+                )
+            }
+            OfficeSuccessionOutcome::SupportInstalled { holder } => format!(
                 "tick {}: office {} installs {} by support with {} declarations{} [{}]",
-                self.tick.0, self.office, holder, support, timer_suffix, phase
+                self.tick.0,
+                self.office,
+                holder,
+                self.support_count_for(*holder)
+                    .expect("support install should include support_resolution count for holder"),
+                timer_suffix,
+                phase
             ),
             OfficeSuccessionOutcome::SupportResetNoEligibleDeclarations => format!(
                 "tick {}: office {} resets vacancy clock due to no eligible support declarations{} [{}]",
                 self.tick.0, self.office, timer_suffix, phase
             ),
-            OfficeSuccessionOutcome::SupportResetTie {
-                tied_candidates,
-                support,
-            } => format!(
+            OfficeSuccessionOutcome::SupportResetTie { tied_candidates } => format!(
                 "tick {}: office {} resets vacancy clock due to support tie {:?} at {}{} [{}]",
-                self.tick.0, self.office, tied_candidates, support, timer_suffix, phase
+                self.tick.0,
+                self.office,
+                tied_candidates,
+                self.max_support_count()
+                    .expect("support tie should include support_resolution counts"),
+                timer_suffix,
+                phase
             ),
             OfficeSuccessionOutcome::ForceInstalled { holder } => format!(
                 "tick {}: office {} installs {} by force-law uncontested succession [{}]",

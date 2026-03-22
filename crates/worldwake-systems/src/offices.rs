@@ -110,14 +110,7 @@ fn evaluate_office_succession(
     if waited_ticks < office_data.succession_period_ticks {
         let support_resolution = support_resolution_trace(office, office_data, world);
         let support_declarations = support_resolution.declarations;
-        let outcome = OfficeSuccessionOutcome::WaitingForTimer {
-            start_tick,
-            waited_ticks,
-            required_ticks: office_data.succession_period_ticks,
-            remaining_ticks: office_data
-                .succession_period_ticks
-                .saturating_sub(waited_ticks),
-        };
+        let outcome = OfficeSuccessionOutcome::WaitingForTimer;
         record_political_trace(
             politics_trace,
             office_trace_event(
@@ -255,7 +248,6 @@ fn resolve_support_succession(
     if winners.len() != 1 {
         let outcome = OfficeSuccessionOutcome::SupportResetTie {
             tied_candidates: winners.clone(),
-            support: max_support,
         };
         reset_vacancy_clock(world, event_log, tick, office, office_data)?;
         record_political_trace(
@@ -277,10 +269,7 @@ fn resolve_support_succession(
 
     let holder = winners[0];
     install_office_holder(world, event_log, tick, office, office_data, holder)?;
-    let outcome = OfficeSuccessionOutcome::SupportInstalled {
-        holder,
-        support: max_support,
-    };
+    let outcome = OfficeSuccessionOutcome::SupportInstalled { holder };
     record_political_trace(
         politics_trace,
         office_trace_event(
@@ -438,7 +427,7 @@ fn availability_phase_for_trace(
         | OfficeSuccessionOutcome::SupportInstalled { .. }
         | OfficeSuccessionOutcome::ForceInstalled { .. } => OfficeAvailabilityPhase::ClosedOccupied,
         OfficeSuccessionOutcome::VacancyActivated => OfficeAvailabilityPhase::VacantClaimable,
-        OfficeSuccessionOutcome::WaitingForTimer { .. } => {
+        OfficeSuccessionOutcome::WaitingForTimer => {
             if support_declarations.is_empty() {
                 OfficeAvailabilityPhase::VacantWaitingForTimer
             } else {
@@ -854,12 +843,7 @@ mod tests {
         );
         assert_eq!(
             waiting.trace.outcome,
-            OfficeSuccessionOutcome::WaitingForTimer {
-                start_tick: Tick(3),
-                waited_ticks: 1,
-                required_ticks: 3,
-                remaining_ticks: 2,
-            }
+            OfficeSuccessionOutcome::WaitingForTimer
         );
         assert_eq!(
             waiting.trace.vacancy_timer,
@@ -900,12 +884,7 @@ mod tests {
         assert!(waiting.trace.support_declarations[0].counted);
         assert_eq!(
             waiting.trace.outcome,
-            OfficeSuccessionOutcome::WaitingForTimer {
-                start_tick: Tick(3),
-                waited_ticks: 1,
-                required_ticks: 3,
-                remaining_ticks: 2,
-            }
+            OfficeSuccessionOutcome::WaitingForTimer
         );
         assert_eq!(
             waiting.trace.support_resolution,
@@ -1039,7 +1018,6 @@ mod tests {
             event.trace.outcome,
             OfficeSuccessionOutcome::SupportInstalled {
                 holder: fx.candidate_a,
-                support: 2,
             }
         );
         assert_eq!(
@@ -1090,7 +1068,6 @@ mod tests {
             event.trace.outcome,
             OfficeSuccessionOutcome::SupportResetTie {
                 tied_candidates: vec![fx.candidate_a, fx.candidate_b],
-                support: 1,
             }
         );
         assert_eq!(

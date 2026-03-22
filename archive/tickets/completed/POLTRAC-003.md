@@ -1,9 +1,9 @@
 # POLTRAC-003: Consolidate Political Trace Support/Timer Facts into Reusable Snapshots
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
-**Engine Changes**: Yes — narrow politics-trace schema cleanup in `worldwake-sim` and `worldwake-systems`, plus focused/golden assertion updates
+**Engine Changes**: Yes — narrow politics-trace schema cleanup in `worldwake-sim` and `worldwake-systems`, plus focused/mixed-layer assertion updates
 **Deps**: [`archive/tickets/POLTRAC-001-political-system-trace-sink.md`](/home/joeloverbeck/projects/worldwake/archive/tickets/POLTRAC-001-political-system-trace-sink.md), [`archive/tickets/completed/POLTRAC-002-extend-political-trace-with-timer-state-and-counted-support-snapshots.md`](/home/joeloverbeck/projects/worldwake/archive/tickets/completed/POLTRAC-002-extend-political-trace-with-timer-state-and-counted-support-snapshots.md), `docs/FOUNDATIONS.md`, `crates/worldwake-sim/src/politics_trace.rs`, `crates/worldwake-systems/src/offices.rs`
 
 ## Problem
@@ -43,7 +43,10 @@ The clean end state is:
    - [`support_succession_trace_records_tie_reset_with_resolution_snapshot()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/offices.rs)
    - [`support_succession_trace_records_no_eligible_reset_with_resolution_snapshot()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/offices.rs)
    - [`succession_trace_records_vacancy_activation_and_timer_wait()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/offices.rs)
-5. Existing mixed-layer runtime coverage already exercises the real consumer path: [`golden_knowledge_asymmetry_race_informed_wins_office`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_offices.rs#L1762) proves the timed political race and now reads the snapshot surface directly. This follow-up should update remaining assertions to prefer snapshots rather than outcome-embedded timer/support payloads.
+5. Existing mixed-layer runtime coverage already exercises two distinct consumer shapes:
+   - [`golden_knowledge_asymmetry_race_informed_wins_office`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_offices.rs#L1759) already reads `vacancy_timer` and `support_resolution` directly and only uses `OfficeSuccessionOutcome::SupportInstalled` for branch identity plus installed holder.
+   - [`golden_combat_death_triggers_force_succession`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_emergent.rs#L1471) and [`golden_remote_office_claim_start_failure_loses_gracefully`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_emergent.rs#L2394) still pattern-match the old outcome variants as mixed-layer consumers of semantic branch identity.
+   The cleanup therefore needs to preserve branch identity for those goldens while migrating only duplicated timer/support arithmetic to the snapshot structs.
 6. This is not a planner behavior ticket. The live `GoalKind` consumer remains `ClaimOffice` in Scenario 34, but that golden is only a verification surface here. No candidate generation, ranking, search, or `agent_tick` semantics are intended to change.
 7. Ordering remains mixed-layer, but the contract under this ticket is not earlier-vs-later action ordering. The contract is authoritative trace shape: timer/counting facts should be read from snapshot structs, while semantic branch selection remains in `OfficeSuccessionOutcome`. Action trace and decision trace stay relevant only as external verification that the cleanup preserved real behavior.
 8. This ticket is traceability cleanup, not heuristic removal. The missing substrate that `POLTRAC-002` introduced is already present. This follow-up pays the migration cost required by [`docs/FOUNDATIONS.md`](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md) Principle 26 instead of leaving two live authority-path representations of the same fact.
@@ -52,22 +55,23 @@ The clean end state is:
    - Principle 26: no backward compatibility in live authority paths; old outcome-embedded timer/support payloads should not coexist with the canonical snapshot path
    - Principle 27: debuggability is a product feature; consumers should have one authoritative explanation surface, not two
 10. Scenario isolation is not central here because this is not a new golden branch ticket. The relevant real-world consumer remains Scenario 34, which is already isolated to co-located sated agents and knowledge asymmetry. That scenario should remain unchanged except for assertion shape if needed.
-11. Mismatch + correction: no remaining active ticket in `tickets/` currently owns this cleanup. [`tickets/S19INSRECCON-004.md`](/home/joeloverbeck/projects/worldwake/tickets/S19INSRECCON-004.md) is a stale duplicate of already-delivered Scenario 34 work, and [`tickets/S19INSRECCON-005.md`](/home/joeloverbeck/projects/worldwake/tickets/S19INSRECCON-005.md) is docs-only. This ticket is the correct owner for the schema consolidation.
+11. Mismatch + correction: the original file list and verification scope understated the live consumer surface. `golden_offices.rs` is not the only mixed-layer consumer, and `golden_harness/timeline.rs` does not currently depend on the duplicated outcome payloads. The real downstream assertion surface includes `crates/worldwake-ai/tests/golden_emergent.rs`, while `crates/worldwake-ai/tests/golden_harness/timeline.rs` should stay out of scope unless a compile-only fixture adjustment becomes mechanically necessary.
 
 ## Architecture Check
 
 1. Consolidating timer/support facts into reusable snapshots is cleaner than leaving those facts duplicated inside both `OfficeSuccessionOutcome` and `OfficeSuccessionTrace`. It gives consumers one canonical explanation path and makes the outcome enum describe branch identity rather than carry partially duplicated payload detail.
 2. This approach is more robust than adding helper methods that reconcile the two shapes at read time. A helper would preserve the duplication instead of removing it, which is exactly the kind of compatibility layer Principle 26 says to avoid.
-3. This cleanup aligns with the current architecture because the snapshot structs already exist and are already being populated from authoritative state in `offices.rs`. The migration cost is bounded and localized.
+3. This cleanup aligns with the current architecture because the snapshot structs already exist and are already being populated from authoritative state in `offices.rs`. The migration cost is bounded and localized, and it improves the enum design by making `OfficeSuccessionOutcome` a true branch discriminator with only irreducible branch data.
 4. No backwards-compatibility aliasing or shims should be introduced. Update all trace consumers and tests directly to the canonical snapshot surface.
 
 ## Verification Layers
 
 1. Waiting/install/tie/no-eligible support-law events still expose the same timer and counted-support facts after cleanup -> focused authoritative trace tests in `crates/worldwake-systems/src/offices.rs`
 2. `OfficeSuccessionOutcome` continues to identify the semantic branch correctly after payload removal -> focused authoritative trace tests in `crates/worldwake-systems/src/offices.rs`
-3. Real timed political race remains explainable through action ordering + canonical politics snapshots + authoritative holder mutation -> `crates/worldwake-ai/tests/golden_offices.rs`
-4. Later office-holder mutation is not being used as a proxy for trace-shape correctness; the trace data contract itself is asserted directly in focused tests, while golden authoritative state remains a separate proof surface
-5. This is not a single-layer ticket because the architecture promise includes both the authoritative trace contract and at least one real mixed-layer consumer path
+3. Real timed political race remains explainable through action ordering + canonical politics snapshots + authoritative holder mutation -> `crates/worldwake-ai/tests/golden_offices.rs::golden_knowledge_asymmetry_race_informed_wins_office`
+4. Other mixed-layer political consumers continue to read semantic branch identity without duplicated timer/support payloads -> `crates/worldwake-ai/tests/golden_emergent.rs::golden_combat_death_triggers_force_succession` and `crates/worldwake-ai/tests/golden_emergent.rs::golden_remote_office_claim_start_failure_loses_gracefully`
+5. Later office-holder mutation is not being used as a proxy for trace-shape correctness; the trace data contract itself is asserted directly in focused tests, while golden authoritative state remains a separate proof surface
+6. This is not a single-layer ticket because the architecture promise includes both the authoritative trace contract and real mixed-layer consumer paths
 
 ## What to Change
 
@@ -88,21 +92,19 @@ Adjust trace recording and `PoliticalTraceEvent::summary()` so summaries read fr
 
 ### 3. Migrate focused and golden assertions to the canonical snapshot contract
 
-Update focused offices trace tests and any golden consumers that still pattern-match on outcome-embedded timer/support payloads. The tests should assert:
+Update focused offices trace tests and any mixed-layer consumers that still rely on the old outcome payload shape. The tests should assert:
 
 - semantic branch from `OfficeSuccessionOutcome`
 - timer/counting detail from `vacancy_timer` and `support_resolution`
 
-That separation is the architecture this ticket is codifying.
+That separation is the architecture this ticket is codifying. Goldens that only need branch identity plus installed holder should keep asserting that narrower contract.
 
 ## Files to Touch
 
 - `crates/worldwake-sim/src/politics_trace.rs` (modify)
-- `crates/worldwake-sim/src/lib.rs` (modify if export surface changes)
 - `crates/worldwake-systems/src/offices.rs` (modify)
-- `crates/worldwake-ai/tests/golden_offices.rs` (modify)
-- `crates/worldwake-ai/tests/golden_emergent.rs` (modify if any outcome pattern matches require adjustment)
-- `crates/worldwake-ai/tests/golden_harness/timeline.rs` (modify if fixture trace construction needs updated outcome shape)
+- `crates/worldwake-ai/tests/golden_emergent.rs` (modify)
+- `crates/worldwake-ai/tests/golden_offices.rs` (modify only if compile fallout or assertion cleanup is actually needed)
 
 ## Out of Scope
 
@@ -121,9 +123,11 @@ That separation is the architecture this ticket is codifying.
 4. `cargo test -p worldwake-systems support_succession_trace_records_no_eligible_reset_with_resolution_snapshot`
 5. `cargo test -p worldwake-systems succession_trace_records_vacancy_activation_and_timer_wait`
 6. `cargo test -p worldwake-ai --test golden_offices golden_knowledge_asymmetry_race_informed_wins_office`
-7. `cargo test -p worldwake-ai`
-8. `cargo test --workspace`
-9. `cargo clippy --workspace --all-targets -- -D warnings`
+7. `cargo test -p worldwake-ai --test golden_emergent golden_combat_death_triggers_force_succession`
+8. `cargo test -p worldwake-ai --test golden_emergent golden_remote_office_claim_start_failure_loses_gracefully`
+9. `cargo test -p worldwake-ai`
+10. `cargo test --workspace`
+11. `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Invariants
 
@@ -140,7 +144,9 @@ That separation is the architecture this ticket is codifying.
 2. `crates/worldwake-systems/src/offices.rs::support_succession_trace_records_install_with_resolution_snapshot` — updated to assert install-branch identity separately from canonical `support_resolution`
 3. `crates/worldwake-systems/src/offices.rs::support_succession_trace_records_tie_reset_with_resolution_snapshot` — updated to assert tie-branch identity separately from canonical `support_resolution`
 4. `crates/worldwake-systems/src/offices.rs::support_succession_trace_records_no_eligible_reset_with_resolution_snapshot` — updated to assert no-eligible branch identity separately from canonical empty `support_resolution`
-5. `crates/worldwake-ai/tests/golden_offices.rs::golden_knowledge_asymmetry_race_informed_wins_office` — updated if needed so the real consumer asserts canonical politics snapshots rather than any outcome-embedded support/timer payloads
+5. `crates/worldwake-ai/tests/golden_emergent.rs::golden_combat_death_triggers_force_succession` — updated to assert waiting-branch presence without depending on outcome-embedded timer arithmetic
+6. `crates/worldwake-ai/tests/golden_emergent.rs::golden_remote_office_claim_start_failure_loses_gracefully` — updated to keep asserting support-install branch identity after the duplicated support payload is removed
+7. `crates/worldwake-ai/tests/golden_offices.rs::golden_knowledge_asymmetry_race_informed_wins_office` — modified only if needed to keep the mixed-layer consumer aligned with the canonical snapshot contract
 
 ### Commands
 
@@ -149,6 +155,31 @@ That separation is the architecture this ticket is codifying.
 3. `cargo test -p worldwake-systems support_succession_trace_records_no_eligible_reset_with_resolution_snapshot`
 4. `cargo test -p worldwake-systems succession_trace_records_vacancy_activation_and_timer_wait`
 5. `cargo test -p worldwake-ai --test golden_offices golden_knowledge_asymmetry_race_informed_wins_office`
-6. `cargo test -p worldwake-ai`
-7. `cargo test --workspace`
-8. `cargo clippy --workspace --all-targets -- -D warnings`
+6. `cargo test -p worldwake-ai --test golden_emergent golden_combat_death_triggers_force_succession`
+7. `cargo test -p worldwake-ai --test golden_emergent golden_remote_office_claim_start_failure_loses_gracefully`
+8. `cargo test -p worldwake-ai`
+9. `cargo test --workspace`
+10. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- Completed: 2026-03-22
+- Actual changes:
+  - removed duplicated timer/support payloads from `OfficeSuccessionOutcome`
+  - kept only semantic branch data in the outcome enum (`holder` for install, `tied_candidates` for tie reset)
+  - moved politics-trace summaries to reconstruct timer/count facts from canonical `vacancy_timer` and `support_resolution` snapshots
+  - updated focused offices assertions and the mixed-layer `golden_emergent` consumers to the new outcome shape
+- Deviations from original plan:
+  - `crates/worldwake-ai/tests/golden_offices.rs` did not need changes because it was already asserting the canonical snapshot surface
+  - `crates/worldwake-ai/tests/golden_harness/timeline.rs` and `crates/worldwake-sim/src/lib.rs` did not need changes
+- Verification results:
+  - `cargo test -p worldwake-systems support_succession_trace_records_install_with_resolution_snapshot`
+  - `cargo test -p worldwake-systems support_succession_trace_records_tie_reset_with_resolution_snapshot`
+  - `cargo test -p worldwake-systems support_succession_trace_records_no_eligible_reset_with_resolution_snapshot`
+  - `cargo test -p worldwake-systems succession_trace_records_vacancy_activation_and_timer_wait`
+  - `cargo test -p worldwake-ai --test golden_offices golden_knowledge_asymmetry_race_informed_wins_office`
+  - `cargo test -p worldwake-ai --test golden_emergent golden_combat_death_triggers_force_succession`
+  - `cargo test -p worldwake-ai --test golden_emergent golden_remote_office_claim_start_failure_loses_gracefully`
+  - `cargo test -p worldwake-ai`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
