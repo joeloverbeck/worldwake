@@ -105,14 +105,9 @@ fn evaluate_office_succession(
     }
 
     match office_data.succession_law {
-        SuccessionLaw::Support => resolve_support_succession(
-            world,
-            event_log,
-            tick,
-            office,
-            office_data,
-            politics_trace,
-        ),
+        SuccessionLaw::Support => {
+            resolve_support_succession(world, event_log, tick, office, office_data, politics_trace)
+        }
         SuccessionLaw::Force => {
             resolve_force_succession(world, event_log, tick, office, office_data, politics_trace)
         }
@@ -335,14 +330,7 @@ fn resolve_force_succession(
         return Ok(());
     }
 
-    commit_force_control_update(
-        world,
-        event_log,
-        tick,
-        office,
-        &context,
-        &resolution,
-    )?;
+    commit_force_control_update(world, event_log, tick, office, &context, &resolution)?;
 
     record_political_trace(
         politics_trace,
@@ -367,7 +355,9 @@ fn build_force_succession_context(
     let profile = world
         .get_component_office_force_profile(office)
         .cloned()
-        .ok_or_else(|| SystemError::new(format!("force office {office} lacks OfficeForceProfile")))?;
+        .ok_or_else(|| {
+            SystemError::new(format!("force office {office} lacks OfficeForceProfile"))
+        })?;
     let prior_state = world
         .get_component_office_force_state(office)
         .cloned()
@@ -521,7 +511,8 @@ fn commit_force_control_update(
         .get_component_office_data(office)
         .map(|office_data| office_data.jurisdiction);
     let jurisdiction = jurisdiction.unwrap_or_else(|| {
-        world.get_component_office_data(office)
+        world
+            .get_component_office_data(office)
             .expect("office should still have OfficeData")
             .jurisdiction
     });
@@ -598,11 +589,15 @@ fn stage_force_control_record_update(
     jurisdiction: EntityId,
     claim: InstitutionalClaim,
 ) -> Result<(), SystemError> {
-    let Some(record) = unique_record_at_place(txn, jurisdiction, RecordKind::OfficeRegister)? else {
+    let Some(record) = unique_record_at_place(txn, jurisdiction, RecordKind::OfficeRegister)?
+    else {
         return Ok(());
     };
     let current = active_force_control_entry(txn, record, office)?;
-    if current.as_ref().is_some_and(|(_, existing)| *existing == claim) {
+    if current
+        .as_ref()
+        .is_some_and(|(_, existing)| *existing == claim)
+    {
         return Ok(());
     }
 
@@ -650,7 +645,8 @@ fn active_force_control_entry(
         .into_iter()
         .filter_map(|entry| match entry.claim {
             InstitutionalClaim::ForceControl {
-                office: claim_office, ..
+                office: claim_office,
+                ..
             } if claim_office == office => Some((entry.entry_id, entry.claim)),
             _ => None,
         })
@@ -664,11 +660,7 @@ fn active_force_control_entry(
     }
 }
 
-fn force_hold_complete(
-    profile: &OfficeForceProfile,
-    state: &OfficeForceState,
-    tick: Tick,
-) -> bool {
+fn force_hold_complete(profile: &OfficeForceProfile, state: &OfficeForceState, tick: Tick) -> bool {
     let Some(control_since) = state.control_since else {
         return false;
     };
@@ -931,6 +923,7 @@ mod tests {
     };
     use crate::dispatch_table;
     use std::collections::BTreeMap;
+    use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
         OfficeData, OfficeForceProfile, OfficeForceState, Permille, RecordData, RecordKind, Seed,
@@ -941,7 +934,6 @@ mod tests {
         OfficeSuccessionOutcome, PoliticalTraceSink, SupportCountTrace, SupportResolutionTrace,
         SystemExecutionContext, SystemId, VacancyTimerTrace,
     };
-    use std::num::NonZeroU32;
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
@@ -1698,7 +1690,10 @@ mod tests {
 
         run_succession(&mut departure_fx.world, &mut event_log, 5);
 
-        assert_eq!(departure_fx.world.office_controller(departure_fx.office), None);
+        assert_eq!(
+            departure_fx.world.office_controller(departure_fx.office),
+            None
+        );
         assert_eq!(
             departure_fx
                 .world

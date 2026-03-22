@@ -2,17 +2,27 @@
 
 mod golden_harness;
 
+use std::collections::BTreeSet;
+
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
+use worldwake_ai::{
+    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table, DecisionOutcome,
+    GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind, PlanningBudget,
+    PlanningState, SelectedPlanSource,
+};
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, BeliefConfidencePolicy, CombatProfile,
-    CommodityKind, DeadAt, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
-    InstitutionalBeliefRead, MetabolismProfile, PerceptionProfile, PerceptionSource, Permille,
-    PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
+    hash_event_log, hash_world, prototype_place_entity, AgentData, BeliefConfidencePolicy,
+    BelievedEntityState, CombatProfile, CommodityKind, ControlSource, DriveThresholds, EventTag,
+    FactionPurpose, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed, StateHash,
+    SuccessionLaw, TellProfile, Tick, UtilityProfile,
 };
 use worldwake_sim::{
-    ActionTraceKind, OfficeSuccessionOutcome, SupportCountTrace, SupportResolutionTrace,
+    get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
+    InputKind, OfficeSuccessionOutcome, PerAgentBeliefView, PressForceClaimActionPayload,
+    RequestProvenance, RuntimeBeliefView, SupportCountTrace, SupportResolutionTrace,
     VacancyTimerTrace,
+    YieldForceClaimActionPayload,
 };
 
 // ---------------------------------------------------------------------------
@@ -187,6 +197,100 @@ fn default_perception_profile() -> PerceptionProfile {
         consultation_speed_factor: pm(500),
         contradiction_tolerance: pm(300),
     }
+}
+
+fn accepting_tell_profile() -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 3,
+        max_relay_chain_len: 3,
+        acceptance_fidelity: pm(1000),
+        ..TellProfile::default()
+    }
+}
+
+fn focused_accepting_tell_profile() -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 1,
+        ..accepting_tell_profile()
+    }
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn seed_known_office_at_place(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: worldwake_core::EntityId,
+    office: worldwake_core::EntityId,
+    place: worldwake_core::EntityId,
+    tick: Tick,
+) {
+    seed_belief(
+        world,
+        event_log,
+        agent,
+        office,
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: Default::default(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            observed_tick: tick,
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+}
+
+fn seed_force_controller_belief(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: worldwake_core::EntityId,
+    office: worldwake_core::EntityId,
+    controller: Option<worldwake_core::EntityId>,
+    contested: bool,
+    tick: Tick,
+    learned_at: Option<worldwake_core::EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .copied()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        worldwake_core::InstitutionalBeliefKey::ForceControllerOf { office },
+        worldwake_core::BelievedInstitutionalClaim {
+            claim: worldwake_core::InstitutionalClaim::ForceControl {
+                office,
+                controller,
+                contested,
+                effective_tick: tick,
+            },
+            source: worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+            learned_tick: tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, tick.0);
+    txn.set_component_agent_belief_store(agent, store).unwrap();
+    commit_txn(txn, event_log);
 }
 
 #[test]
@@ -2138,27 +2242,28 @@ fn golden_faction_eligibility_filters_office_claim() {
 // Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office at VillageSquare using SuccessionLaw::Force. Agent A is
-// politically ambitious, informed about the office, alive at the jurisdiction,
-// and already has an explicit force claim recorded. Agent B is colocated and
-// otherwise eligible but has DeadAt(Tick(0)).
+// Setup: Vacant office at VillageSquare using `SuccessionLaw::Force`. A single
+// ambitious eligible agent has ordinary office knowledge and must discover the
+// real `ClaimOffice -> PressForceClaim -> controller hold -> installation`
+// path through AI planning.
 //
-// Expected: Force-law succession installs A after the uncontested hold period.
-// Since Force offices do not use support-based political actions, no
-// declare_support action commits occur.
+// Expected: The agent generates `ClaimOffice`, commits `press_force_claim`,
+// never commits `declare_support`, becomes force controller first, and is only
+// installed after the uncontested hold delay.
 
-fn build_force_succession_scenario(
+fn build_force_claim_ai_installation_scenario(
     seed: Seed,
 ) -> (
     GoldenHarness,
     worldwake_core::EntityId,
     worldwake_core::EntityId,
-    worldwake_core::EntityId,
 ) {
     let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_politics_tracing();
 
-    let living_claimant = seed_agent(
+    let claimant = seed_agent(
         &mut h.world,
         &mut h.event_log,
         "Force Claimant",
@@ -2170,31 +2275,9 @@ fn build_force_succession_scenario(
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
-        living_claimant,
+        claimant,
         default_perception_profile(),
     );
-
-    let dead_rival = seed_agent(
-        &mut h.world,
-        &mut h.event_log,
-        "Dead Rival",
-        VILLAGE_SQUARE,
-        HomeostaticNeeds::default(),
-        MetabolismProfile::default(),
-        enterprise_weighted_utility(pm(800)),
-    );
-    set_agent_perception_profile(
-        &mut h.world,
-        &mut h.event_log,
-        dead_rival,
-        default_perception_profile(),
-    );
-    {
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(dead_rival, DeadAt(Tick(0)))
-            .unwrap();
-        commit_txn(txn, &mut h.event_log);
-    }
 
     let office = seed_office(
         &mut h.world,
@@ -2202,62 +2285,256 @@ fn build_force_succession_scenario(
         "War Chief",
         VILLAGE_SQUARE,
         SuccessionLaw::Force,
-        5,
+        12,
         vec![],
     );
 
-    seed_actor_beliefs(
+    seed_known_office_at_place(
         &mut h.world,
         &mut h.event_log,
-        living_claimant,
-        &[office],
+        claimant,
+        office,
+        VILLAGE_SQUARE,
         Tick(0),
-        PerceptionSource::DirectObservation,
     );
     seed_office_holder_belief(
         &mut h.world,
         &mut h.event_log,
-        living_claimant,
+        claimant,
         office,
         None,
         Tick(0),
         worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
         Some(VILLAGE_SQUARE),
     );
-    {
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.add_force_claim(living_claimant, office).unwrap();
-        commit_txn(txn, &mut h.event_log);
-    }
+    seed_force_controller_belief(
+        &mut h.world,
+        &mut h.event_log,
+        claimant,
+        office,
+        None,
+        false,
+        Tick(0),
+        Some(VILLAGE_SQUARE),
+    );
 
-    (h, living_claimant, dead_rival, office)
+    (h, claimant, office)
 }
 
-fn run_force_succession(seed: Seed) -> (StateHash, StateHash) {
-    let (mut h, living_claimant, dead_rival, office) = build_force_succession_scenario(seed);
+#[allow(clippy::too_many_lines)]
+fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, claimant, office) = build_force_claim_ai_installation_scenario(seed);
 
-    for _ in 0..12 {
-        h.step_once();
-    }
-
-    assert_eq!(
-        h.world.office_holder(office),
-        Some(living_claimant),
-        "Force-law succession should install the sole living eligible contender"
+    let pre_tick_view = PerAgentBeliefView::from_world(claimant, &h.world);
+    assert!(
+        get_affordances(&pre_tick_view, claimant, &h.defs, &h.handlers)
+            .into_iter()
+            .any(|affordance| {
+                affordance.def_id
+                    == h.defs
+                        .iter()
+                        .find(|def| def.name == "press_force_claim")
+                        .map(|def| def.id)
+                        .expect("full registries should include press_force_claim")
+                    && matches!(
+                        affordance.payload_override,
+                        Some(ActionPayload::PressForceClaim(PressForceClaimActionPayload {
+                            office: affordance_office
+                        })) if affordance_office == office
+                    )
+            }),
+        "live affordances should expose press_force_claim before AI planning begins"
+    );
+    let snapshot = build_planning_snapshot(
+        &pre_tick_view,
+        claimant,
+        &BTreeSet::from([claimant, office]),
+        &BTreeSet::new(),
+        0,
+    );
+    let snapshot_state = PlanningState::new(&snapshot);
+    let claim_goal = GroundedGoal {
+        key: worldwake_ai::GoalKey::from(GoalKind::ClaimOffice { office }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::new(),
+    };
+    assert!(
+        RuntimeBeliefView::known_entity_beliefs(&snapshot_state, claimant)
+            .into_iter()
+            .any(|(entity, _)| entity == office),
+        "planning snapshot should retain the office in actor known-entity beliefs"
+    );
+    assert!(
+        RuntimeBeliefView::office_data(&snapshot_state, office).is_some(),
+        "planning snapshot should retain office data for the force-law office"
     );
     assert_eq!(
-        h.world.get_component_dead_at(dead_rival),
-        Some(&DeadAt(Tick(0))),
-        "dead rival should remain dead and excluded from eligibility"
+        RuntimeBeliefView::effective_place(&snapshot_state, claimant),
+        Some(VILLAGE_SQUARE),
+        "planning snapshot should retain the claimant's local position"
+    );
+    assert!(
+        get_affordances(&snapshot_state, claimant, &h.defs, &h.handlers)
+            .into_iter()
+            .any(|affordance| {
+                matches!(
+                    affordance.payload_override,
+                    Some(ActionPayload::PressForceClaim(PressForceClaimActionPayload {
+                        office: affordance_office
+                    })) if affordance_office == office
+                )
+            }),
+        "planning snapshot affordances should also expose press_force_claim"
+    );
+    let press_affordance = get_affordances(&snapshot_state, claimant, &h.defs, &h.handlers)
+        .into_iter()
+        .find(|affordance| {
+            matches!(
+                affordance.payload_override,
+                Some(ActionPayload::PressForceClaim(PressForceClaimActionPayload {
+                    office: affordance_office
+                })) if affordance_office == office
+            )
+        })
+        .expect("planning snapshot should expose a concrete press_force_claim affordance");
+    let semantics_table = build_semantics_table(&h.defs);
+    let press_semantics = semantics_table
+        .get(&press_affordance.def_id)
+        .expect("press_force_claim affordance should have planner semantics");
+    let press_def = h
+        .defs
+        .get(press_affordance.def_id)
+        .expect("press_force_claim affordance should reference a registered action");
+    let press_payload = claim_goal
+        .key
+        .kind
+        .build_payload_override(
+            press_affordance.payload_override.as_ref(),
+            &snapshot_state,
+            &press_affordance.bound_targets,
+            press_def,
+            press_semantics,
+        )
+        .expect("force-law claim goal should accept the press_force_claim affordance payload");
+    let press_transition = apply_hypothetical_transition(
+        &claim_goal,
+        press_semantics,
+        snapshot_state.clone(),
+        &press_affordance
+            .bound_targets
+            .iter()
+            .copied()
+            .map(worldwake_ai::PlanningEntityRef::Authoritative)
+            .collect::<Vec<_>>(),
+        press_payload.as_ref(),
+    )
+    .expect("press_force_claim affordance should produce a hypothetical transition");
+    assert!(
+        claim_goal.key.kind.is_satisfied(&press_transition.state),
+        "press_force_claim should satisfy ClaimOffice in planning state once hypothetically applied"
+    );
+    match worldwake_ai::search_plan(
+        &snapshot,
+        &claim_goal,
+        &semantics_table,
+        &h.defs,
+        &h.handlers,
+        &PlanningBudget::default(),
+        &h.recipes,
+        None,
+        None,
+    ) {
+        PlanSearchResult::Found(plan) => assert_eq!(
+            plan.steps
+                .iter()
+                .map(|step| step.op_kind)
+                .collect::<Vec<_>>(),
+            vec![PlannerOpKind::PressForceClaim],
+            "force-law claim search should collapse to a single press_force_claim step"
+        ),
+        other => panic!("force-law claim search should find a plan at root; got {other:?}"),
+    }
+
+    for _ in 0..20 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(claimant) {
+            break;
+        }
+    }
+
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for force-law AI scenario");
+    let tick_zero_trace = decision_sink
+        .trace_at(claimant, Tick(0))
+        .expect("claimant should produce a tick 0 decision trace");
+    let planning_tick_zero = match &tick_zero_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+    assert!(
+        planning_tick_zero
+            .candidates
+            .generated
+            .iter()
+            .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+        "tick 0 candidates should include ClaimOffice for the force-law office"
+    );
+    assert!(
+        decision_sink
+            .goal_history_for(claimant, &GoalKind::ClaimOffice { office })
+            .into_iter()
+            .any(|entry| entry.status.is_generated()),
+        "force-law office should generate ClaimOffice before the action commits"
+    );
+    let selected_plan = planning_tick_zero
+        .selection
+        .selected_plan
+        .as_ref()
+        .unwrap_or_else(|| {
+            panic!(
+                "force-law office should select a concrete plan at tick 0; selection={:?}; ranked={:?}; attempts={:?}",
+                planning_tick_zero.selection,
+                planning_tick_zero
+                    .candidates
+                    .ranked
+                    .iter()
+                    .map(|goal| &goal.goal.kind)
+                    .collect::<Vec<_>>(),
+                planning_tick_zero
+                    .planning
+                    .attempts
+                    .iter()
+                    .map(|attempt| (&attempt.goal.kind, &attempt.outcome))
+                    .collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(
+        selected_plan
+            .steps
+            .iter()
+            .map(|step| step.op_kind)
+            .collect::<Vec<_>>(),
+        vec![PlannerOpKind::PressForceClaim],
+        "force-law office should bind directly to PressForceClaim at tick 0"
     );
 
     let action_sink = h
         .action_trace_sink()
-        .expect("action tracing should be enabled for force succession scenario");
-    let declare_support_commits = action_sink
-        .events_for(living_claimant)
+        .expect("action tracing should be enabled for force-law AI scenario");
+    let press_commit_tick = action_sink
+        .events_for(claimant)
         .iter()
-        .chain(action_sink.events_for(dead_rival).iter())
+        .find_map(|event| {
+            (event.action_name == "press_force_claim"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some(event.tick)
+        })
+        .expect("claimant should commit press_force_claim through the ordinary action path");
+    let declare_support_commits = action_sink
+        .events_for(claimant)
+        .iter()
         .filter(|event| {
             event.action_name == "declare_support"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
@@ -2265,7 +2542,51 @@ fn run_force_succession(seed: Seed) -> (StateHash, StateHash) {
         .count();
     assert_eq!(
         declare_support_commits, 0,
-        "Force-law offices must not produce declare_support commits"
+        "force-law office claiming must not use declare_support"
+    );
+
+    let politics_sink = h
+        .politics_trace_sink()
+        .expect("politics tracing should be enabled for force-law AI scenario");
+    let controller_trace = politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::ForceControllerEstablished { controller }
+                    if controller == claimant
+            )
+        })
+        .expect("politics trace should record controller establishment");
+    let install_trace = politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::ForceInstalled { holder } if holder == claimant
+            )
+        })
+        .expect("politics trace should record force-law installation");
+
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(claimant),
+        "force-law AI scenario should install the claimant as office holder"
+    );
+    assert_eq!(
+        h.world.office_controller(office),
+        None,
+        "controller relation should clear after installation"
+    );
+    assert!(
+        press_commit_tick <= controller_trace.tick,
+        "press_force_claim must commit before or at the controller-establishment tick"
+    );
+    assert!(
+        install_trace.tick.0.saturating_sub(controller_trace.tick.0) >= 3,
+        "installation must preserve the configured uncontested hold delay"
     );
 
     (
@@ -2275,19 +2596,548 @@ fn run_force_succession(seed: Seed) -> (StateHash, StateHash) {
 }
 
 #[test]
-fn golden_force_succession_sole_eligible() {
-    let _ = run_force_succession(Seed([122; 32]));
+fn golden_force_claim_ai_installation() {
+    let _ = run_force_claim_ai_installation(Seed([122; 32]));
 }
 
 #[test]
-fn golden_force_succession_deterministic_replay() {
+fn golden_force_claim_ai_installation_replays_deterministically() {
     let seed = Seed([123; 32]);
 
-    let first = run_force_succession(seed);
-    let second = run_force_succession(seed);
+    let first = run_force_claim_ai_installation(seed);
+    let second = run_force_claim_ai_installation(seed);
 
     assert_eq!(
         first, second,
-        "force succession scenario should replay deterministically"
+        "force-law AI installation scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 20: Contested Force Claim Resolves Only After Yield
+// ---------------------------------------------------------------------------
+//
+// Setup: Two local human-controlled claimants publicly press force claims on
+// the same office in the same tick. The office must remain contested until one
+// claimant explicitly yields.
+//
+// Expected: no controller or installation while both claims remain active;
+// after `yield_force_claim`, the remaining claimant becomes controller and
+// later installs after the hold delay.
+
+fn build_contested_force_claim_resolution_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.enable_politics_tracing();
+
+    let claimant_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Claimant A",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    let claimant_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Claimant B",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        claimant_a,
+        default_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        claimant_b,
+        default_perception_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "War Chief",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Force,
+        3,
+        vec![],
+    );
+
+    for agent in [claimant_a, claimant_b] {
+        seed_actor_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            &[office],
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+        seed_office_holder_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            office,
+            None,
+            Tick(0),
+            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+            Some(VILLAGE_SQUARE),
+        );
+        set_control_source(&mut h, agent, ControlSource::Human, 0);
+    }
+
+    (h, claimant_a, claimant_b, office)
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_contested_force_claim_resolution(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, claimant_a, claimant_b, office) =
+        build_contested_force_claim_resolution_scenario(seed);
+
+    let press_force_claim_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "press_force_claim")
+        .map(|def| def.id)
+        .expect("full registries should include press_force_claim");
+    let yield_force_claim_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "yield_force_claim")
+        .map(|def| def.id)
+        .expect("full registries should include yield_force_claim");
+
+    let claim_tick = h.scheduler.current_tick();
+    for actor in [claimant_a, claimant_b] {
+        let _ = h.scheduler.input_queue_mut().enqueue(
+            claim_tick,
+            InputKind::RequestAction {
+                actor,
+                def_id: press_force_claim_def_id,
+                targets: Vec::new(),
+                payload_override: Some(ActionPayload::PressForceClaim(
+                    PressForceClaimActionPayload { office },
+                )),
+                mode: ActionRequestMode::BestEffort,
+                provenance: RequestProvenance::External,
+            },
+        );
+    }
+    h.step_once();
+
+    assert_eq!(
+        h.world.office_controller(office),
+        None,
+        "contested force-law office should not appoint a controller while both claims are active"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        None,
+        "contested force-law office should not install a holder while both claims are active"
+    );
+
+    for _ in 0..2 {
+        h.step_once();
+    }
+    assert_eq!(
+        h.world.office_holder(office),
+        None,
+        "installation must remain blocked while both claims persist"
+    );
+
+    let yield_tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        yield_tick,
+        InputKind::RequestAction {
+            actor: claimant_b,
+            def_id: yield_force_claim_def_id,
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::YieldForceClaim(
+                YieldForceClaimActionPayload { office },
+            )),
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+
+    assert_eq!(
+        h.world.office_controller(office),
+        Some(claimant_a),
+        "remaining claimant should become sole controller immediately after rival yield"
+    );
+
+    for _ in 0..8 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(claimant_a) {
+            break;
+        }
+    }
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for contested force scenario");
+    let press_commits = action_sink
+        .events_for(claimant_a)
+        .iter()
+        .chain(action_sink.events_for(claimant_b).iter())
+        .filter(|event| {
+            event.action_name == "press_force_claim"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .count();
+    assert_eq!(
+        press_commits, 2,
+        "both claimants should publicly commit press_force_claim"
+    );
+    assert!(
+        action_sink.events_for(claimant_b).iter().any(|event| {
+            event.action_name == "yield_force_claim"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        }),
+        "the losing claimant should commit yield_force_claim through the ordinary action path"
+    );
+
+    let politics_sink = h
+        .politics_trace_sink()
+        .expect("politics tracing should be enabled for contested force scenario");
+    assert!(
+        politics_sink
+            .events_for_office(office)
+            .into_iter()
+            .any(|event| {
+                matches!(
+                    event.trace.outcome,
+                    OfficeSuccessionOutcome::ForceContested { claimant_count: 2 }
+                )
+            }),
+        "politics trace should expose the contested force-control phase"
+    );
+    assert!(
+        politics_sink
+            .events_for_office(office)
+            .into_iter()
+            .any(|event| {
+                matches!(
+                    event.trace.outcome,
+                    OfficeSuccessionOutcome::ForceInstalled { holder } if holder == claimant_a
+                )
+            }),
+        "politics trace should expose the later installation after yield resolves the contest"
+    );
+
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(claimant_a),
+        "remaining claimant should install after the hold delay"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_contested_force_claim_resolves_after_yield() {
+    let _ = run_contested_force_claim_resolution(Seed([124; 32]));
+}
+
+#[test]
+fn golden_contested_force_claim_resolves_after_yield_replays_deterministically() {
+    let seed = Seed([125; 32]);
+
+    let first = run_contested_force_claim_resolution(seed);
+    let second = run_contested_force_claim_resolution(seed);
+
+    assert_eq!(
+        first, second,
+        "contested force-claim resolution should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 21: Force Control Knowledge Stays Local Until Tell
+// ---------------------------------------------------------------------------
+//
+// Setup: A same-place witness observes a public force claim and later carries
+// that force-control belief to an adjacent remote listener.
+//
+// Expected: the witness learns `ForceControllerOf { office }` from the local
+// event, the remote listener remains ignorant until a committed `tell`, and
+// the listener then receives the relayed force-control claim.
+
+fn build_force_control_locality_and_tell_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+
+    let claimant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    let witness = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(900),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Listener",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        claimant,
+        default_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        PerceptionProfile {
+            observation_fidelity: pm(1000),
+            ..default_perception_profile()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        default_perception_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "War Chief",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Force,
+        4,
+        vec![],
+    );
+
+    seed_known_office_at_place(
+        &mut h.world,
+        &mut h.event_log,
+        claimant,
+        office,
+        VILLAGE_SQUARE,
+        Tick(0),
+    );
+    seed_known_office_at_place(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        office,
+        VILLAGE_SQUARE,
+        Tick(0),
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        &[listener],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        claimant,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
+    );
+
+    set_control_source(&mut h, claimant, ControlSource::Human, 0);
+
+    (h, claimant, witness, listener, office)
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_force_control_locality_and_tell(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, claimant, witness, listener, office) =
+        build_force_control_locality_and_tell_scenario(seed);
+
+    let claim_tick = h.scheduler.current_tick();
+    seed_force_controller_belief(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        office,
+        Some(claimant),
+        false,
+        Tick(0),
+        Some(VILLAGE_SQUARE),
+    );
+    let witness_force_belief = h
+        .world
+        .get_component_agent_belief_store(witness)
+        .expect("witness should have a force-control belief store")
+        .believed_force_controller(office);
+    assert_eq!(
+        witness_force_belief,
+        InstitutionalBeliefRead::Certain((Some(claimant), false)),
+        "witness should begin with local force-control knowledge before any relay"
+    );
+    let listener_store = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should have a belief store");
+    assert!(
+        matches!(
+            listener_store.believed_force_controller(office),
+            InstitutionalBeliefRead::Unknown
+        ),
+        "remote listener must remain ignorant before any tell relay"
+    );
+
+    let travel_tick = h.scheduler.current_tick();
+    {
+        let mut txn = new_txn(&mut h.world, travel_tick.0);
+        txn.set_ground_location(witness, ORCHARD_FARM).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    assert_eq!(
+        h.world.effective_place(witness),
+        Some(ORCHARD_FARM),
+        "witness should reach the remote listener before the tell phase"
+    );
+    let listener_store = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should retain a belief store while waiting");
+    assert!(
+        matches!(
+            listener_store.believed_force_controller(office),
+            InstitutionalBeliefRead::Unknown
+        ),
+        "listener must remain ignorant before the tell relay"
+    );
+
+    let resume_ai_tick = h.scheduler.current_tick().0;
+    set_control_source(&mut h, witness, ControlSource::Ai, resume_ai_tick);
+    for _ in 0..20 {
+        h.step_once();
+        let listener_store = h
+            .world
+            .get_component_agent_belief_store(listener)
+            .expect("listener should keep a belief store during tell relay");
+        if matches!(
+            listener_store.believed_force_controller(office),
+            InstitutionalBeliefRead::Certain((Some(controller), false)) if controller == claimant
+        ) {
+            break;
+        }
+    }
+
+    let tell_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for force-control tell scenario")
+        .events_for(witness);
+    let tell_event = tell_events.iter().find(|event| {
+        event.action_name == "tell"
+            && matches!(event.kind, ActionTraceKind::Committed { .. })
+            && matches!(
+                event.detail,
+                Some(ActionTraceDetail::Tell {
+                    listener: told_listener,
+                    subject
+                }) if told_listener == listener && subject == office
+            )
+    });
+    let tell_event = tell_event.expect("witness should commit tell for the office subject");
+
+    let listener_force_belief = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should have a belief store after tell")
+        .believed_force_controller(office);
+    assert_eq!(
+        listener_force_belief,
+        InstitutionalBeliefRead::Certain((Some(claimant), false)),
+        "listener should learn force control only after the tell commit"
+    );
+    assert!(
+        tell_event.tick >= claim_tick,
+        "tell relay must happen after the original local force-control event"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_force_control_locality_requires_tell() {
+    let _ = run_force_control_locality_and_tell(Seed([126; 32]));
+}
+
+#[test]
+fn golden_force_control_locality_requires_tell_replays_deterministically() {
+    let seed = Seed([127; 32]);
+
+    let first = run_force_control_locality_and_tell(seed);
+    let second = run_force_control_locality_and_tell(seed);
+
+    assert_eq!(
+        first, second,
+        "force-control locality and tell relay should replay deterministically"
     );
 }

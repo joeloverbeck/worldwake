@@ -1863,7 +1863,8 @@ mod tests {
             }],
         );
         let mut txn = new_txn(&mut world, 1);
-        txn.set_component_agent_belief_store(agent, beliefs).unwrap();
+        txn.set_component_agent_belief_store(agent, beliefs)
+            .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
 

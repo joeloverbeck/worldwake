@@ -715,10 +715,8 @@ macro_rules! impl_goal_belief_view {
             fn believed_force_controller(
                 &self,
                 office: worldwake_core::EntityId,
-            ) -> worldwake_core::InstitutionalBeliefRead<(
-                Option<worldwake_core::EntityId>,
-                bool,
-            )> {
+            ) -> worldwake_core::InstitutionalBeliefRead<(Option<worldwake_core::EntityId>, bool)>
+            {
                 $crate::RuntimeBeliefView::believed_force_controller(self, office)
             }
 

@@ -4,10 +4,10 @@ use worldwake_core::{
     ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory, BlockingFact,
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, PlaceTag,
-    Quantity, RecipeId, RecordData, ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-    Wound,
+    InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SuccessionLaw,
+    TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -56,10 +56,8 @@ pub(crate) struct SnapshotEntity {
     pub(crate) merchandise_profile: Option<MerchandiseProfile>,
     pub(crate) reservation_ranges: Vec<TickRange>,
     pub(crate) facility_queue: Option<SnapshotFacilityQueue>,
-    /// For Office entities: the jurisdiction place. Captured from `OfficeData.jurisdiction`.
-    pub(crate) jurisdiction: Option<EntityId>,
-    /// For Office entities: the succession law. Captured from `OfficeData.succession_law`.
-    pub(crate) succession_law: Option<SuccessionLaw>,
+    /// For Office entities: authoritative office metadata preserved for planning.
+    pub(crate) office_data: Option<OfficeData>,
 }
 
 impl Default for SnapshotEntity {
@@ -98,8 +96,7 @@ impl Default for SnapshotEntity {
             merchandise_profile: None,
             reservation_ranges: Vec::new(),
             facility_queue: None,
-            jurisdiction: None,
-            succession_law: None,
+            office_data: None,
         }
     }
 }
@@ -339,7 +336,8 @@ impl PlanningSnapshot {
     pub(crate) fn jurisdiction(&self, office: EntityId) -> Option<EntityId> {
         self.entities
             .get(&office)
-            .and_then(|snapshot| snapshot.jurisdiction)
+            .and_then(|snapshot| snapshot.office_data.as_ref())
+            .map(|office_data| office_data.jurisdiction)
     }
 
     /// Base support declarations for an office, captured at snapshot build time.
@@ -374,7 +372,15 @@ impl PlanningSnapshot {
     pub(crate) fn succession_law(&self, office: EntityId) -> Option<SuccessionLaw> {
         self.entities
             .get(&office)
-            .and_then(|snapshot| snapshot.succession_law.clone())
+            .and_then(|snapshot| snapshot.office_data.as_ref())
+            .map(|office_data| office_data.succession_law.clone())
+    }
+
+    #[must_use]
+    pub(crate) fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+        self.entities
+            .get(&office)
+            .and_then(|snapshot| snapshot.office_data.clone())
     }
 
     #[must_use]
@@ -524,8 +530,7 @@ fn build_snapshot_entity(
         merchandise_profile: view.merchandise_profile(entity),
         reservation_ranges: view.reservation_ranges(entity),
         facility_queue: snapshot_facility_queue(view, actor, entity),
-        jurisdiction: view.office_data(entity).map(|d| d.jurisdiction),
-        succession_law: view.office_data(entity).map(|d| d.succession_law),
+        office_data: view.office_data(entity),
     }
 }
 

@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CombatProfile, CommodityKind, EntityId, EntityKind, EventTag,
-    EligibilityRule, InstitutionalBeliefRead, Permille, Quantity, SuccessionLaw,
+    ActionDefId, BodyCostPerTick, CombatProfile, CommodityKind, EligibilityRule, EntityId,
+    EntityKind, EventTag, InstitutionalBeliefRead, Permille, Quantity, SuccessionLaw,
     VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
@@ -430,10 +430,14 @@ fn enumerate_press_force_claim_payloads(
     let Some(actor_place) = view.effective_place(actor) else {
         return Vec::new();
     };
-    let contested = view.offices_contested_by(actor).into_iter().collect::<BTreeSet<_>>();
-
-    view.entities_at(actor_place)
+    let contested = view
+        .offices_contested_by(actor)
         .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    view.known_entity_beliefs(actor)
+        .into_iter()
+        .map(|(entity, _)| entity)
         .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
         .filter_map(|office| {
             let office_data = view.office_data(office)?;
@@ -450,9 +454,9 @@ fn enumerate_press_force_claim_payloads(
             ) {
                 return None;
             }
-            Some(ActionPayload::PressForceClaim(PressForceClaimActionPayload {
-                office,
-            }))
+            Some(ActionPayload::PressForceClaim(
+                PressForceClaimActionPayload { office },
+            ))
         })
         .collect()
 }
@@ -471,9 +475,9 @@ fn enumerate_yield_force_claim_payloads(
         .into_iter()
         .filter_map(|office| {
             let office_data = view.office_data(office)?;
-            (office_data.jurisdiction == actor_place).then_some(
-                ActionPayload::YieldForceClaim(YieldForceClaimActionPayload { office }),
-            )
+            (office_data.jurisdiction == actor_place).then_some(ActionPayload::YieldForceClaim(
+                YieldForceClaimActionPayload { office },
+            ))
         })
         .collect()
 }
@@ -1190,11 +1194,11 @@ mod tests {
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
+        get_affordances, AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
         BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, ExternalAbortReason,
         PerAgentBeliefView, PressForceClaimActionPayload, SystemExecutionContext, SystemId,
-        ThreatenActionPayload, YieldForceClaimActionPayload, get_affordances,
+        ThreatenActionPayload, YieldForceClaimActionPayload,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1508,7 +1512,8 @@ mod tests {
             },
         );
         let mut txn = new_txn(world, tick);
-        txn.set_component_agent_belief_store(agent, beliefs).unwrap();
+        txn.set_component_agent_belief_store(agent, beliefs)
+            .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
     }
@@ -1605,9 +1610,55 @@ mod tests {
 
         assert_eq!(
             payloads,
-            vec![ActionPayload::PressForceClaim(PressForceClaimActionPayload {
-                office: fx.office,
-            })]
+            vec![ActionPayload::PressForceClaim(
+                PressForceClaimActionPayload { office: fx.office }
+            )]
+        );
+    }
+
+    #[test]
+    fn press_force_claim_affordance_uses_office_jurisdiction_not_believed_office_place() {
+        let (defs, handlers, ids) = setup_registries();
+        let mut fx = SocialFixture::new();
+        {
+            let mut beliefs = fx
+                .world
+                .get_component_agent_belief_store(fx.actor)
+                .cloned()
+                .unwrap_or_else(AgentBeliefStore::new);
+            beliefs.update_entity(
+                fx.office,
+                BelievedEntityState {
+                    last_known_place: None,
+                    last_known_inventory: Default::default(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    observed_tick: Tick(2),
+                    source: PerceptionSource::DirectObservation,
+                },
+            );
+            let mut txn = new_txn(&mut fx.world, 2);
+            txn.set_component_agent_belief_store(fx.actor, beliefs)
+                .unwrap();
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.succession_law = SuccessionLaw::Force;
+            office.eligibility_rules = Vec::new();
+            txn.set_component_office_data(fx.office, office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let payloads = affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]);
+
+        assert_eq!(
+            payloads,
+            vec![ActionPayload::PressForceClaim(
+                PressForceClaimActionPayload { office: fx.office }
+            )],
+            "force-claim affordance should key off office jurisdiction even when the office belief lacks a place"
         );
     }
 
@@ -1625,7 +1676,10 @@ mod tests {
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
-        assert_eq!(affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]).len(), 1);
+        assert_eq!(
+            affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]).len(),
+            1
+        );
 
         let other_place = fx
             .world
@@ -1647,7 +1701,10 @@ mod tests {
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
-        assert_eq!(affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]).len(), 1);
+        assert_eq!(
+            affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]).len(),
+            1
+        );
 
         {
             let mut txn = new_txn(&mut fx.world, 5);
@@ -1677,9 +1734,9 @@ mod tests {
 
         assert_eq!(
             payloads,
-            vec![ActionPayload::YieldForceClaim(YieldForceClaimActionPayload {
-                office: fx.office,
-            })]
+            vec![ActionPayload::YieldForceClaim(
+                YieldForceClaimActionPayload { office: fx.office }
+            )]
         );
     }
 
@@ -2174,7 +2231,9 @@ mod tests {
         };
 
         let log = commit_action(&mut fx.world, &defs, &handlers, ids[3], &instance, 14, 3);
-        let record = log.get(log.events_by_tag(EventTag::ActionCommitted)[0]).unwrap();
+        let record = log
+            .get(log.events_by_tag(EventTag::ActionCommitted)[0])
+            .unwrap();
 
         assert_eq!(fx.world.offices_contested_by(fx.actor), vec![fx.office]);
         assert_eq!(fx.world.hostile_towards(fx.target), vec![fx.actor]);
@@ -2190,9 +2249,8 @@ mod tests {
         let mut fx = SocialFixture::new();
         let def = defs.get(ids[3]).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let payload = ActionPayload::PressForceClaim(PressForceClaimActionPayload {
-            office: fx.office,
-        });
+        let payload =
+            ActionPayload::PressForceClaim(PressForceClaimActionPayload { office: fx.office });
 
         let err = (handler.authoritative_payload_is_valid)(
             def,
@@ -2285,9 +2343,8 @@ mod tests {
         }
         let def = defs.get(ids[3]).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let payload = ActionPayload::PressForceClaim(PressForceClaimActionPayload {
-            office: fx.office,
-        });
+        let payload =
+            ActionPayload::PressForceClaim(PressForceClaimActionPayload { office: fx.office });
 
         let err = (handler.authoritative_payload_is_valid)(
             def,
@@ -2330,7 +2387,9 @@ mod tests {
         };
 
         let log = commit_action(&mut fx.world, &defs, &handlers, ids[4], &instance, 15, 3);
-        let record = log.get(log.events_by_tag(EventTag::ActionCommitted)[0]).unwrap();
+        let record = log
+            .get(log.events_by_tag(EventTag::ActionCommitted)[0])
+            .unwrap();
 
         assert!(fx.world.offices_contested_by(fx.actor).is_empty());
         assert!(record.tags().contains(&EventTag::Political));
@@ -2339,9 +2398,8 @@ mod tests {
 
         let def = defs.get(ids[4]).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let payload = ActionPayload::YieldForceClaim(YieldForceClaimActionPayload {
-            office: fx.office,
-        });
+        let payload =
+            ActionPayload::YieldForceClaim(YieldForceClaimActionPayload { office: fx.office });
         let err = (handler.authoritative_payload_is_valid)(
             def,
             &defs,

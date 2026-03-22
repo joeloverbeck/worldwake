@@ -4,8 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     load_per_unit, ActionDefId, BelievedEntityState, CombatProfile, CommodityKind,
     DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile, Permille, PlaceTag,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SuccessionLaw,
+    InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource,
+    SuccessionLaw,
     TellMemoryKey, TellProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
     UniqueItemKind, WorkstationTag, Wound,
 };
@@ -1505,6 +1506,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
 
     fn record_data(&self, record: EntityId) -> Option<RecordData> {
         PlanningState::record_data(self, record)
+    }
+
+    fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+        self.snapshot.office_data(office)
     }
 
     fn believed_office_holder(

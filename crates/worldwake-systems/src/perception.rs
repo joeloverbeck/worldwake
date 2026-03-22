@@ -648,8 +648,8 @@ mod tests {
         InstitutionalKnowledgeSource, MismatchKind, ObservedEntitySnapshot, OfficeForceState,
         PendingEvent, PerceptionProfile, PerceptionSource, Permille, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, Quantity, RelationDelta, RelationKind, RelationValue,
-        ResourceSource, Seed, SocialObservationKind, StateDelta, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ResourceSource, Seed, SocialObservationKind, StateDelta, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 

@@ -17,8 +17,9 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
-    DeclareSupportActionPayload, LootActionPayload, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
+    DeclareSupportActionPayload, LootActionPayload, PressForceClaimActionPayload, RecipeDefinition,
+    RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
+    TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -229,6 +230,17 @@ fn build_declare_support_payload_override(
                 candidate: *candidate,
             }),
         )),
+        _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+    }
+}
+
+fn build_press_force_claim_payload_override(
+    goal: &GoalKind,
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    match goal {
+        GoalKind::ClaimOffice { office } => Ok(Some(ActionPayload::PressForceClaim(
+            PressForceClaimActionPayload { office: *office },
+        ))),
         _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
     }
 }
@@ -494,7 +506,25 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::DeclareSupport => build_declare_support_payload_override(self, actor),
+            PlannerOpKind::DeclareSupport => match self {
+                GoalKind::ClaimOffice { office }
+                    if office_succession_law(state, *office) != Some(SuccessionLaw::Support) =>
+                {
+                    Err(GoalPayloadOverrideError::UnsupportedGoal)
+                }
+                GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. } => {
+                    build_declare_support_payload_override(self, actor)
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
+            PlannerOpKind::PressForceClaim => match self {
+                GoalKind::ClaimOffice { office }
+                    if office_succession_law(state, *office) == Some(SuccessionLaw::Force) =>
+                {
+                    build_press_force_claim_payload_override(self)
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::Loot => build_loot_payload_override(targets),
             PlannerOpKind::MoveCargo => match self {
                 GoalKind::MoveCargo {
@@ -725,8 +755,7 @@ impl GoalKindPlannerExt for GoalKind {
         ) && matches!(
             step.op_kind,
             PlannerOpKind::DeclareSupport | PlannerOpKind::PressForceClaim
-        )
-        {
+        ) {
             return true;
         }
 
@@ -1477,6 +1506,7 @@ mod tests {
         SuccessionLaw, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
         WorkstationTag, Wound,
     };
+    use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,
         ActionHandlerId, ActionPayload, BribeActionPayload, ConsultRecordActionPayload,
@@ -2965,6 +2995,84 @@ mod tests {
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
         }));
+    }
+
+    #[test]
+    fn claim_office_force_law_rejects_declare_support_payload_override() {
+        let (state, _actor, office) =
+            force_claim_office_state(InstitutionalBeliefRead::Certain((None, false)));
+        let goal = GoalKind::ClaimOffice { office };
+        let def = ActionDef {
+            id: ActionDefId(88),
+            name: "declare_support".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::NonInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::DeclareSupport,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[GoalKindTag::ClaimOffice],
+        };
+
+        assert_eq!(
+            goal.build_payload_override(None, &state, &[], &def, &semantics),
+            Err(GoalPayloadOverrideError::UnsupportedGoal),
+            "force-law ClaimOffice must not synthesize declare_support payloads"
+        );
+    }
+
+    #[test]
+    fn claim_office_force_law_builds_press_force_claim_payload_override() {
+        let (state, _actor, office) =
+            force_claim_office_state(InstitutionalBeliefRead::Certain((None, false)));
+        let goal = GoalKind::ClaimOffice { office };
+        let def = ActionDef {
+            id: ActionDefId(89),
+            name: "press_force_claim".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::NonInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::PressForceClaim,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[GoalKindTag::ClaimOffice],
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[], &def, &semantics)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            payload.as_press_force_claim(),
+            Some(&PressForceClaimActionPayload { office }),
+            "force-law ClaimOffice should synthesize press_force_claim payloads"
+        );
     }
 
     // ── goal_relevant_places tests ─────────────────────────────────────

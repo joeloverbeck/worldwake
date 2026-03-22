@@ -166,12 +166,8 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Social, "declare_support", ActionPayload::None) => {
             Some(PlannerOpKind::DeclareSupport)
         }
-        (ActionDomain::Social, "press_force_claim", ActionPayload::PressForceClaim(_)) => {
-            Some(PlannerOpKind::PressForceClaim)
-        }
-        (ActionDomain::Social, "yield_force_claim", ActionPayload::YieldForceClaim(_)) => {
-            Some(PlannerOpKind::YieldForceClaim)
-        }
+        (ActionDomain::Social, "press_force_claim", _) => Some(PlannerOpKind::PressForceClaim),
+        (ActionDomain::Social, "yield_force_claim", _) => Some(PlannerOpKind::YieldForceClaim),
         (ActionDomain::Combat, "attack", _) => Some(PlannerOpKind::Attack),
         (ActionDomain::Combat, "defend", _) => Some(PlannerOpKind::Defend),
         _ => None,
@@ -347,9 +343,13 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             PlannerTransitionKind::GoalModelFallback,
             GOALS_PRESS_FORCE_CLAIM,
         ),
-        PlannerOpKind::YieldForceClaim => {
-            base_semantics(op_kind, false, false, PlannerTransitionKind::GoalModelFallback, &[])
-        }
+        PlannerOpKind::YieldForceClaim => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            &[],
+        ),
         _ => return None,
     })
 }
@@ -1388,11 +1388,19 @@ mod tests {
             .map(|def| def.name.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(unclassified, vec!["press_force_claim", "yield_force_claim"]);
+        assert!(unclassified.is_empty(), "all registered actions should classify");
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);
         }
+        assert_eq!(
+            semantics_by_name.get("press_force_claim").unwrap().op_kind,
+            PlannerOpKind::PressForceClaim
+        );
+        assert_eq!(
+            semantics_by_name.get("yield_force_claim").unwrap().op_kind,
+            PlannerOpKind::YieldForceClaim
+        );
         for (name, transition_kind) in expected_transitions {
             assert_eq!(
                 semantics_by_name.get(name).unwrap().transition_kind,

@@ -5862,6 +5862,20 @@ mod tests {
                     }),
                     "Force-law support-candidate goals must not enter political plan search in agent_tick"
                 );
+                let selected_plan = planning
+                    .selection
+                    .selected_plan
+                    .as_ref()
+                    .expect("force-law ClaimOffice should select a concrete executable plan");
+                assert_eq!(
+                    selected_plan
+                        .steps
+                        .iter()
+                        .map(|step| step.op_kind)
+                        .collect::<Vec<_>>(),
+                    vec![PlannerOpKind::PressForceClaim],
+                    "force-law ClaimOffice should bind directly to PressForceClaim when already local"
+                );
                 assert!(
                     planning.candidates.omitted_political.iter().any(|omission| {
                         omission.family

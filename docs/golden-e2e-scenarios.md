@@ -1,6 +1,6 @@
 # Golden E2E Suite: Scenario Catalog
 
-**Date**: 2026-03-12 (updated 2026-03-18, locality offices added 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle scenarios aligned 2026-03-21, S18 craft-restock supply-chain scenario added 2026-03-21)
+**Date**: 2026-03-12 (updated 2026-03-18, locality offices added 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle scenarios aligned 2026-03-21, S18 craft-restock supply-chain scenario added 2026-03-21, E16b force-law scenarios aligned 2026-03-22)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Detailed reference for what each golden test proves. Consult when you need to understand a specific scenario or verify whether a behavior is already tested. For coverage gaps and matrices, see [golden-e2e-coverage.md](golden-e2e-coverage.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -774,24 +774,43 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 **Foundation alignment**: Principle 10 (agents plan from beliefs, not omniscient world shortcuts), Principle 20 (shared ambition still respects concrete eligibility constraints), Principle 24 (AI filtering and authoritative validation coordinate through state rather than special-case cross-calls).
 **Cross-system chain**: Faction membership state + believed vacant office → AI eligibility gate on `ClaimOffice` candidate generation → only lawful claimant plans `DeclareSupport` → succession resolves to eligible office holder.
 
-### Scenario 19: Force Succession Installs Sole Living Eligible Contender
-**File**: `golden_offices.rs` | **Test**: `golden_force_succession_sole_eligible`
-**Systems exercised**: Succession (force-law installation), death-state filtering via `DeadAt`, AI/action suppression for support-law political paths, action tracing
-**Setup**: Vacant office ("War Chief") at Village Square with `SuccessionLaw::Force`. Agent A ("Force Claimant") is sated, politically ambitious, and has a direct belief about the office. Agent B ("Dead Rival") is colocated and otherwise similar but already has `DeadAt(Tick(0))`.
+### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
+**File**: `golden_offices.rs` | **Tests**: `golden_force_claim_ai_installation`, `golden_force_claim_ai_installation_replays_deterministically`
+**Systems exercised**: AI (`ClaimOffice` generation, plan search, force-law plan selection), office force-claim actions, force-control succession resolution, action tracing, politics tracing, deterministic replay
+**Setup**: Vacant office ("War Chief") at Village Square with `SuccessionLaw::Force`. A single ambitious eligible claimant is local, alive, and informed about the office, but no force claim is pre-seeded out of band.
 **Emergent behavior proven**:
-- The force-law succession path installs the sole living eligible contender after the succession period without relying on support counting.
-- Dead contenders are filtered out of the eligibility set.
-- Even when the live contender is informed and politically ambitious, no `declare_support` commit occurs for the Force-law office.
-**Foundation alignment**: Principle 3 (office succession follows concrete alive/dead state rather than abstract weighting), Principle 8 (office resolution still follows explicit preconditions and timing), Principle 24 (AI/political behavior is constrained by office state rather than cross-system special cases).
-**Cross-system chain**: visible vacant Force-law office + colocated contenders + one contender marked dead → AI suppresses support-law office goals → succession system resolves sole living eligible contender → office holder relation updates deterministically.
+- The ordinary AI path generates `ClaimOffice { office }` for the force-law office and selects a concrete `press_force_claim` plan instead of falling back to support-law political actions.
+- The claimant commits `press_force_claim`, becomes the explicit `office_controller`, and only later installs as `office_holder` after the uncontested hold delay.
+- No `declare_support` commit occurs for the force-law office.
+- Two runs with the same seed produce identical world and event-log hashes for the full AI-driven force-claim scenario.
+**Foundation alignment**: Principle 3 (force control is concrete controller state, not abstract support), Principle 8 (installation remains gated by explicit timing and state transitions), Principle 10 (belief-only planning), Principle 24 (AI, actions, and succession interact through shared state).
+**Cross-system chain**: believed vacant Force-law office → `ClaimOffice` candidate generation → `press_force_claim` action execution → `office_controller` establishment → uncontested hold delay → office installation.
 
-### Scenario 19b: Force Succession Deterministic Replay
-**File**: `golden_offices.rs` | **Test**: `golden_force_succession_deterministic_replay`
-**Systems exercised**: Same as Scenario 18 + deterministic replay verification.
-**Setup**: Same as Scenario 19, run twice with identical seed.
-**Assertion focus**: Both runs produce identical world and event-log hashes while still yielding a non-trivial office-holder transition.
+### Scenario 20: Contested Force Claim Resolves Only After Yield
+**File**: `golden_offices.rs` | **Tests**: `golden_contested_force_claim_resolves_after_yield`, `golden_contested_force_claim_resolves_after_yield_replays_deterministically`
+**Systems exercised**: Force-claim actions, contested-controller resolution, succession timing, action tracing, politics tracing, deterministic replay
+**Setup**: Two eligible colocated claimants publicly press force claims for the same vacant `SuccessionLaw::Force` office. One later yields explicitly through `yield_force_claim`.
+**Emergent behavior proven**:
+- Concurrent public force claims move the office into contested state and block installation while both claims remain active.
+- `yield_force_claim` is the explicit resolution path: once one claimant yields, the remaining claimant becomes the uncontested controller.
+- Installation still waits on the configured uncontested hold delay after contest resolution.
+- Two runs with the same seed produce identical world and event-log hashes for the contested-resolution scenario.
+**Foundation alignment**: Principle 3 (contestation is explicit state), Principle 8 (resolution is action-driven and timed), Principle 24 (no hidden tie-breaker or shortcut path).
+**Cross-system chain**: two `press_force_claim` commits → contested force-control state with no holder → one claimant yields → sole controller established → delayed installation.
 
-### Scenario 21: Combat Death Triggers Force-Law Succession
+### Scenario 21: Force Control Knowledge Stays Local Until Tell
+**File**: `golden_offices.rs` | **Tests**: `golden_force_control_locality_requires_tell`, `golden_force_control_locality_requires_tell_replays_deterministically`
+**Systems exercised**: Force-control political projection, institutional belief storage, Tell, action tracing, deterministic replay
+**Setup**: A claimant publicly establishes force control in the presence of a same-place witness, while a remote listener remains elsewhere until the witness later tells them.
+**Emergent behavior proven**:
+- Same-place witnesses acquire `InstitutionalBeliefKey::ForceControllerOf { office }` from the public force-control event.
+- Remote agents do not learn the force-control fact from scheduler progression or shared world existence alone.
+- A committed `tell` relays the force-control belief to the remote listener through the ordinary information path.
+- Two runs with the same seed produce identical world and event-log hashes for the locality/Tell scenario.
+**Foundation alignment**: Principle 7 (knowledge stays local until relayed), Principle 10 (agents plan from beliefs), Principle 13 (knowledge-acquisition path matters), Principle 24 (politics and social relay compose through shared belief state).
+**Cross-system chain**: public force-control event → witness institutional belief update → remote ignorance preserved → `tell` commit → remote institutional belief update.
+
+### Scenario 22: Combat Death Triggers Force-Law Succession
 **File**: `golden_emergent.rs` | **Tests**: `golden_combat_death_triggers_force_succession`, `golden_combat_death_triggers_force_succession_replays_deterministically`
 **Systems exercised**: Combat (`attack` lifecycle, wound/death), Politics (`succession_system`, vacancy mutation, force-law installation), action tracing, event-log delta inspection, deterministic replay
 **Setup**: Occupied office ("War Chief") at Village Square with `SuccessionLaw::Force` and succession period 5. The incumbent office holder starts alive and assigned to the office. A colocated hostile challenger has a lethal combat profile; the incumbent has a fragile combat profile. Both have perception profiles, and hostility is seeded so the real `EngageHostile` path produces attack execution.

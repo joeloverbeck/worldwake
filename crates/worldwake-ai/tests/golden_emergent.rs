@@ -1374,13 +1374,16 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         })
         .expect("politics trace should record when force control is first established");
     assert!(
-        politics_sink.events_for_office(office).into_iter().any(|event| {
-            matches!(
-                event.trace.outcome,
-                OfficeSuccessionOutcome::ForceControllerMaintained { controller }
-                    if controller == challenger
-            )
-        }),
+        politics_sink
+            .events_for_office(office)
+            .into_iter()
+            .any(|event| {
+                matches!(
+                    event.trace.outcome,
+                    OfficeSuccessionOutcome::ForceControllerMaintained { controller }
+                        if controller == challenger
+                )
+            }),
         "politics trace should preserve uncontested control before installation"
     );
     assert!(
