@@ -2195,7 +2195,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
         .events_for_office(office)
         .into_iter()
         .find(|event| {
-                event.trace.availability_phase == OfficeAvailabilityPhase::ClosedOccupied
+            event.trace.availability_phase == OfficeAvailabilityPhase::ClosedOccupied
                 && matches!(
                     event.trace.outcome,
                     OfficeSuccessionOutcome::SupportInstalled { holder } if holder == winner

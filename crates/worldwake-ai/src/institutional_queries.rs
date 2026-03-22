@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
-use worldwake_core::{EntityId, InstitutionalBeliefRead, InstitutionalClaim, RecordData, RecordKind};
+use worldwake_core::{
+    EntityId, InstitutionalBeliefRead, InstitutionalClaim, RecordData, RecordKind,
+};
 
 pub(crate) fn consulted_office_holder_read_for_record_data(
     record_data: &RecordData,

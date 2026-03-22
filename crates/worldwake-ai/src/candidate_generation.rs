@@ -473,7 +473,8 @@ fn emit_support_candidate_goals(
     office_data: &OfficeData,
     office_evidence: &Evidence,
 ) {
-    let current_declaration_conflicted = support_declaration_conflicted(ctx.view, office, ctx.agent);
+    let current_declaration_conflicted =
+        support_declaration_conflicted(ctx.view, office, ctx.agent);
     for (candidate, _) in ctx.view.known_entity_beliefs(ctx.agent) {
         if candidate == ctx.agent {
             continue;
@@ -1631,12 +1632,12 @@ mod tests {
         BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, InstitutionalClaim, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity, RecordData,
-        RecordEntryId, RecordKind, RecipeId, RecipientKnowledgeStatus, ResourceSource,
-        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        InstitutionalClaim, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordEntryId, RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
+        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -2293,7 +2294,11 @@ mod tests {
         }
     }
 
-    fn office_register_record(issuer: EntityId, home_place: EntityId, office: EntityId) -> RecordData {
+    fn office_register_record(
+        issuer: EntityId,
+        home_place: EntityId,
+        office: EntityId,
+    ) -> RecordData {
         RecordData {
             record_kind: RecordKind::OfficeRegister,
             home_place,
@@ -4952,8 +4957,10 @@ mod tests {
         view.factions_by_member.insert(agent, vec![faction]);
         view.factions_by_member.insert(candidate, vec![faction]);
         view.loyalties.insert((agent, candidate), pm(650));
-        view.beliefs
-            .insert(agent, vec![known_entity(office, town), known_entity(candidate, town)]);
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
 
         let no_record = generate_candidates_with_travel_horizon(
             &view,
@@ -5008,7 +5015,8 @@ mod tests {
         view.effective_places.insert(agent, town);
         view.effective_places.insert(candidate, town);
         view.effective_places.insert(incumbent, town);
-        view.entities_at.insert(town, vec![agent, candidate, incumbent]);
+        view.entities_at
+            .insert(town, vec![agent, candidate, incumbent]);
         view.office_data
             .insert(office, vacant_office("Captain", town, faction));
         view.office_holders.insert(office, incumbent);

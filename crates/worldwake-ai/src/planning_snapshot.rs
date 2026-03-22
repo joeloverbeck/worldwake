@@ -207,8 +207,7 @@ pub struct PlanningSnapshot {
     /// Baseline believed-certain support declarations per office: (supporter, candidate) pairs.
     pub(crate) office_certain_support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     /// Belief-derived support declaration reads per office.
-    pub(crate) office_support_declaration_beliefs:
-        BTreeMap<EntityId, OfficeSupportBeliefReads>,
+    pub(crate) office_support_declaration_beliefs: BTreeMap<EntityId, OfficeSupportBeliefReads>,
     pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
     pub(crate) actor_tell_profile: Option<TellProfile>,
     pub(crate) actor_consultation_speed_factor: Option<Permille>,
@@ -304,7 +303,12 @@ impl PlanningSnapshot {
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
-                .map(|office| (office, view.believed_support_declarations_for_office(office)))
+                .map(|office| {
+                    (
+                        office,
+                        view.believed_support_declarations_for_office(office),
+                    )
+                })
                 .collect(),
             actor_confidence_policy: view.belief_confidence_policy(actor),
             actor_tell_profile: view.tell_profile(actor),
@@ -339,10 +343,7 @@ impl PlanningSnapshot {
     }
 
     #[must_use]
-    pub(crate) fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> SupportBeliefRead {
+    pub(crate) fn believed_office_holder(&self, office: EntityId) -> SupportBeliefRead {
         self.actor_office_holder_beliefs
             .get(&office)
             .cloned()
@@ -442,8 +443,8 @@ fn build_snapshot_entity(
     evidence_entities: &BTreeSet<EntityId>,
     included_places: &BTreeSet<EntityId>,
 ) -> SnapshotEntity {
-        SnapshotEntity {
-            kind: view.entity_kind(entity),
+    SnapshotEntity {
+        kind: view.entity_kind(entity),
         effective_place: view.effective_place(entity),
         in_transit_state: view.in_transit_state(entity),
         direct_container: view.direct_container(entity),
@@ -485,11 +486,11 @@ fn build_snapshot_entity(
         homeostatic_needs: view.homeostatic_needs(entity),
         drive_thresholds: view.drive_thresholds(entity),
         metabolism_profile: view.metabolism_profile(entity),
-            trade_disposition_profile: view.trade_disposition_profile(entity),
-            combat_profile: view.combat_profile(entity),
-            courage: view.courage(entity),
-            record_data: view.record_data(entity),
-            hostile_targets: view.hostile_targets_of(entity),
+        trade_disposition_profile: view.trade_disposition_profile(entity),
+        combat_profile: view.combat_profile(entity),
+        courage: view.courage(entity),
+        record_data: view.record_data(entity),
+        hostile_targets: view.hostile_targets_of(entity),
         visible_hostiles: view.visible_hostiles_for(entity),
         current_attackers: view.current_attackers_of(entity),
         demand_memory: view.demand_memory(entity),
@@ -691,10 +692,10 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
-        EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille,
-        Quantity, RecipeId, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId,
+        ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
@@ -1567,17 +1568,15 @@ mod tests {
         view.effective_places.insert(actor, town);
         view.effective_places.insert(supporter, town);
         view.effective_places.insert(office, town);
-        view.entities_at.insert(town, vec![actor, supporter, office]);
+        view.entities_at
+            .insert(town, vec![actor, supporter, office]);
         view.carry_capacities.insert(actor, LoadUnits(10));
         view.entity_loads.insert(actor, LoadUnits(0));
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(actor)));
         view.support_declaration_beliefs.insert(
             office,
-            vec![(
-                supporter,
-                InstitutionalBeliefRead::Certain(Some(actor)),
-            )],
+            vec![(supporter, InstitutionalBeliefRead::Certain(Some(actor)))],
         );
 
         let mut evidence = BTreeSet::new();

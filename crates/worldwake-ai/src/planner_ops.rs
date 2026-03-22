@@ -1405,10 +1405,7 @@ mod tests {
             .iter()
             .filter(|def| {
                 table.contains_key(&def.id)
-                    && matches!(
-                        def.name.as_str(),
-                        "attack" | "defend" | "bury" | "tell"
-                    )
+                    && matches!(def.name.as_str(), "attack" | "defend" | "bury" | "tell")
             })
             .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
         assert!(defs

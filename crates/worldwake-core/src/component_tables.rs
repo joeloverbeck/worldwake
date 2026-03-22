@@ -547,7 +547,10 @@ mod tests {
         let id = entity(34);
         let profile = sample_office_force_profile();
 
-        assert_eq!(tables.insert_office_force_profile(id, profile.clone()), None);
+        assert_eq!(
+            tables.insert_office_force_profile(id, profile.clone()),
+            None
+        );
         assert_eq!(tables.get_office_force_profile(id), Some(&profile));
         assert!(tables.has_office_force_profile(id));
     }

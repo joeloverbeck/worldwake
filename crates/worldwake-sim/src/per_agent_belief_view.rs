@@ -875,11 +875,10 @@ mod tests {
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
         CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile,
-        Permille, Quantity, RecordData, RecordKind, RecipientKnowledgeStatus, ResourceSource,
-        SuccessionLaw, TellMemoryKey, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId,
+        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile, Permille,
+        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
+        TellMemoryKey, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1866,10 +1865,7 @@ mod tests {
         );
         assert_eq!(
             RuntimeBeliefView::believed_support_declarations_for_office(&view, office),
-            vec![(
-                supporter,
-                InstitutionalBeliefRead::Certain(Some(candidate)),
-            )]
+            vec![(supporter, InstitutionalBeliefRead::Certain(Some(candidate)),)]
         );
     }
 

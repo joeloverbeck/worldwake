@@ -13,6 +13,8 @@ pub enum ActionPayload {
     Bribe(BribeActionPayload),
     Threaten(ThreatenActionPayload),
     DeclareSupport(DeclareSupportActionPayload),
+    PressForceClaim(PressForceClaimActionPayload),
+    YieldForceClaim(YieldForceClaimActionPayload),
     Transport(TransportActionPayload),
     Harvest(HarvestActionPayload),
     Craft(CraftActionPayload),
@@ -32,6 +34,8 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -51,6 +55,8 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -70,6 +76,8 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -90,6 +98,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Craft(_)
             | Self::Trade(_)
@@ -109,6 +119,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Harvest(_)
             | Self::Craft(_)
             | Self::Trade(_)
@@ -128,6 +140,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Trade(_)
@@ -147,6 +161,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -166,6 +182,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -185,6 +203,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -204,6 +224,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -222,6 +244,8 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -241,6 +265,50 @@ impl ActionPayload {
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_press_force_claim(&self) -> Option<&PressForceClaimActionPayload> {
+        match self {
+            Self::PressForceClaim(payload) => Some(payload),
+            Self::None
+            | Self::ConsultRecord(_)
+            | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
+            | Self::YieldForceClaim(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_yield_force_claim(&self) -> Option<&YieldForceClaimActionPayload> {
+        match self {
+            Self::YieldForceClaim(payload) => Some(payload),
+            Self::None
+            | Self::ConsultRecord(_)
+            | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
             | Self::Transport(_)
             | Self::Harvest(_)
             | Self::Craft(_)
@@ -279,6 +347,16 @@ pub struct ThreatenActionPayload {
 pub struct DeclareSupportActionPayload {
     pub office: EntityId,
     pub candidate: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct PressForceClaimActionPayload {
+    pub office: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct YieldForceClaimActionPayload {
+    pub office: EntityId,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -334,8 +412,9 @@ mod tests {
     use super::{
         ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
         CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
-        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload,
+        PressForceClaimActionPayload, QueueForFacilityUsePayload, TellActionPayload,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
@@ -410,6 +489,24 @@ mod tests {
         }
     }
 
+    fn sample_press_force_claim_payload() -> PressForceClaimActionPayload {
+        PressForceClaimActionPayload {
+            office: EntityId {
+                slot: 18,
+                generation: 0,
+            },
+        }
+    }
+
+    fn sample_yield_force_claim_payload() -> YieldForceClaimActionPayload {
+        YieldForceClaimActionPayload {
+            office: EntityId {
+                slot: 19,
+                generation: 1,
+            },
+        }
+    }
+
     fn sample_craft_payload() -> CraftActionPayload {
         CraftActionPayload {
             recipe_id: RecipeId(7),
@@ -466,6 +563,8 @@ mod tests {
         assert_traits::<BribeActionPayload>();
         assert_traits::<ThreatenActionPayload>();
         assert_traits::<DeclareSupportActionPayload>();
+        assert_traits::<PressForceClaimActionPayload>();
+        assert_traits::<YieldForceClaimActionPayload>();
         assert_traits::<TransportActionPayload>();
         assert_traits::<HarvestActionPayload>();
         assert_traits::<CraftActionPayload>();
@@ -488,6 +587,8 @@ mod tests {
         let bribe = ActionPayload::Bribe(sample_bribe_payload());
         let threaten = ActionPayload::Threaten(sample_threaten_payload());
         let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
+        let press_force_claim = ActionPayload::PressForceClaim(sample_press_force_claim_payload());
+        let yield_force_claim = ActionPayload::YieldForceClaim(sample_yield_force_claim_payload());
 
         assert_eq!(
             consult.as_consult_record(),
@@ -497,6 +598,8 @@ mod tests {
         assert_eq!(consult.as_bribe(), None);
         assert_eq!(consult.as_threaten(), None);
         assert_eq!(consult.as_declare_support(), None);
+        assert_eq!(consult.as_press_force_claim(), None);
+        assert_eq!(consult.as_yield_force_claim(), None);
         assert_eq!(consult.as_harvest(), None);
         assert_eq!(consult.as_transport(), None);
         assert_eq!(consult.as_craft(), None);
@@ -510,6 +613,8 @@ mod tests {
         assert_eq!(tell.as_bribe(), None);
         assert_eq!(tell.as_threaten(), None);
         assert_eq!(tell.as_declare_support(), None);
+        assert_eq!(tell.as_press_force_claim(), None);
+        assert_eq!(tell.as_yield_force_claim(), None);
         assert_eq!(tell.as_harvest(), None);
         assert_eq!(tell.as_transport(), None);
         assert_eq!(tell.as_craft(), None);
@@ -523,6 +628,8 @@ mod tests {
         assert_eq!(bribe.as_bribe(), Some(&sample_bribe_payload()));
         assert_eq!(bribe.as_threaten(), None);
         assert_eq!(bribe.as_declare_support(), None);
+        assert_eq!(bribe.as_press_force_claim(), None);
+        assert_eq!(bribe.as_yield_force_claim(), None);
         assert_eq!(bribe.as_harvest(), None);
         assert_eq!(bribe.as_transport(), None);
         assert_eq!(bribe.as_craft(), None);
@@ -533,6 +640,8 @@ mod tests {
         assert_eq!(threaten.as_bribe(), None);
         assert_eq!(threaten.as_threaten(), Some(&sample_threaten_payload()));
         assert_eq!(threaten.as_declare_support(), None);
+        assert_eq!(threaten.as_press_force_claim(), None);
+        assert_eq!(threaten.as_yield_force_claim(), None);
         assert_eq!(threaten.as_harvest(), None);
         assert_eq!(threaten.as_transport(), None);
         assert_eq!(threaten.as_craft(), None);
@@ -546,6 +655,8 @@ mod tests {
             declare_support.as_declare_support(),
             Some(&sample_declare_support_payload())
         );
+        assert_eq!(declare_support.as_press_force_claim(), None);
+        assert_eq!(declare_support.as_yield_force_claim(), None);
         assert_eq!(declare_support.as_harvest(), None);
         assert_eq!(declare_support.as_transport(), None);
         assert_eq!(declare_support.as_craft(), None);
@@ -556,6 +667,32 @@ mod tests {
         assert_eq!(harvest.as_bribe(), None);
         assert_eq!(harvest.as_threaten(), None);
         assert_eq!(harvest.as_declare_support(), None);
+        assert_eq!(harvest.as_press_force_claim(), None);
+        assert_eq!(harvest.as_yield_force_claim(), None);
+
+        assert_eq!(press_force_claim.as_consult_record(), None);
+        assert_eq!(press_force_claim.as_tell(), None);
+        assert_eq!(press_force_claim.as_bribe(), None);
+        assert_eq!(press_force_claim.as_threaten(), None);
+        assert_eq!(press_force_claim.as_declare_support(), None);
+        assert_eq!(
+            press_force_claim.as_press_force_claim(),
+            Some(&sample_press_force_claim_payload())
+        );
+        assert_eq!(press_force_claim.as_yield_force_claim(), None);
+        assert_eq!(press_force_claim.as_harvest(), None);
+
+        assert_eq!(yield_force_claim.as_consult_record(), None);
+        assert_eq!(yield_force_claim.as_tell(), None);
+        assert_eq!(yield_force_claim.as_bribe(), None);
+        assert_eq!(yield_force_claim.as_threaten(), None);
+        assert_eq!(yield_force_claim.as_declare_support(), None);
+        assert_eq!(yield_force_claim.as_press_force_claim(), None);
+        assert_eq!(
+            yield_force_claim.as_yield_force_claim(),
+            Some(&sample_yield_force_claim_payload())
+        );
+        assert_eq!(yield_force_claim.as_harvest(), None);
     }
 
     #[test]
@@ -577,6 +714,8 @@ mod tests {
         assert_eq!(transport.as_bribe(), None);
         assert_eq!(transport.as_threaten(), None);
         assert_eq!(transport.as_declare_support(), None);
+        assert_eq!(transport.as_press_force_claim(), None);
+        assert_eq!(transport.as_yield_force_claim(), None);
         assert_eq!(transport.as_harvest(), None);
         assert_eq!(transport.as_craft(), None);
         assert_eq!(transport.as_trade(), None);
@@ -586,6 +725,8 @@ mod tests {
         assert_eq!(harvest.as_bribe(), None);
         assert_eq!(harvest.as_threaten(), None);
         assert_eq!(harvest.as_declare_support(), None);
+        assert_eq!(harvest.as_press_force_claim(), None);
+        assert_eq!(harvest.as_yield_force_claim(), None);
         assert_eq!(harvest.as_transport(), None);
         assert_eq!(harvest.as_craft(), None);
         assert_eq!(harvest.as_trade(), None);
@@ -595,6 +736,8 @@ mod tests {
         assert_eq!(craft.as_bribe(), None);
         assert_eq!(craft.as_threaten(), None);
         assert_eq!(craft.as_declare_support(), None);
+        assert_eq!(craft.as_press_force_claim(), None);
+        assert_eq!(craft.as_yield_force_claim(), None);
         assert_eq!(craft.as_transport(), None);
         assert_eq!(craft.as_craft(), Some(&sample_craft_payload()));
         assert_eq!(craft.as_trade(), None);
@@ -604,6 +747,8 @@ mod tests {
         assert_eq!(trade.as_bribe(), None);
         assert_eq!(trade.as_threaten(), None);
         assert_eq!(trade.as_declare_support(), None);
+        assert_eq!(trade.as_press_force_claim(), None);
+        assert_eq!(trade.as_yield_force_claim(), None);
         assert_eq!(trade.as_transport(), None);
         assert_eq!(trade.as_craft(), None);
         assert_eq!(trade.as_trade(), Some(&sample_trade_payload()));
@@ -621,6 +766,8 @@ mod tests {
         assert_eq!(combat.as_bribe(), None);
         assert_eq!(combat.as_threaten(), None);
         assert_eq!(combat.as_declare_support(), None);
+        assert_eq!(combat.as_press_force_claim(), None);
+        assert_eq!(combat.as_yield_force_claim(), None);
         assert_eq!(combat.as_transport(), None);
         assert_eq!(combat.as_craft(), None);
         assert_eq!(combat.as_trade(), None);
@@ -632,6 +779,8 @@ mod tests {
         assert_eq!(loot.as_bribe(), None);
         assert_eq!(loot.as_threaten(), None);
         assert_eq!(loot.as_declare_support(), None);
+        assert_eq!(loot.as_press_force_claim(), None);
+        assert_eq!(loot.as_yield_force_claim(), None);
         assert_eq!(loot.as_transport(), None);
         assert_eq!(loot.as_craft(), None);
         assert_eq!(loot.as_trade(), None);
@@ -644,6 +793,8 @@ mod tests {
         assert_eq!(queue.as_bribe(), None);
         assert_eq!(queue.as_threaten(), None);
         assert_eq!(queue.as_declare_support(), None);
+        assert_eq!(queue.as_press_force_claim(), None);
+        assert_eq!(queue.as_yield_force_claim(), None);
         assert_eq!(queue.as_transport(), None);
         assert_eq!(queue.as_craft(), None);
         assert_eq!(queue.as_trade(), None);
@@ -665,6 +816,8 @@ mod tests {
         assert_eq!(none.as_bribe(), None);
         assert_eq!(none.as_threaten(), None);
         assert_eq!(none.as_declare_support(), None);
+        assert_eq!(none.as_press_force_claim(), None);
+        assert_eq!(none.as_yield_force_claim(), None);
         assert_eq!(none.as_transport(), None);
         assert_eq!(none.as_craft(), None);
         assert_eq!(none.as_trade(), None);
@@ -726,6 +879,26 @@ mod tests {
     #[test]
     fn declare_support_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::DeclareSupport(sample_declare_support_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn press_force_claim_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::PressForceClaim(sample_press_force_claim_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn yield_force_claim_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::YieldForceClaim(sample_yield_force_claim_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

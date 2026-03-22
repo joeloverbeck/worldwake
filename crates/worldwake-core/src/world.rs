@@ -7,11 +7,10 @@ use crate::{
     DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-    MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
-    OfficeForceState, PerceptionProfile, PlaceTag, ProductionJob,
-    ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData, RelationTables,
-    ResourceSource, SubstitutePreferences, TellProfile, Tick, Topology,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
+    MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
+    PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
+    Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick,
+    Topology, TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -595,13 +594,13 @@ mod tests {
         DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, FactionData, FactionPurpose, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-        OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource, Permille,
-        Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, RecordData, RecordEntryId,
-        RecordKind, ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences,
-        SuccessionLaw, TellProfile, Tick, TickRange, Topology, TradeDispositionProfile,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
-        Wound, WoundCause, WoundList,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
+        OfficeForceState, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
+        ProductionJob, ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind,
+        ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw,
+        TellProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
+        WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3789,9 +3788,15 @@ mod tests {
         world.add_force_claim(claimant_a, office_b).unwrap();
         world.add_force_claim(claimant_a, office_a).unwrap();
 
-        assert_eq!(world.force_claimants_for_office(office_a), vec![claimant_a, claimant_b]);
+        assert_eq!(
+            world.force_claimants_for_office(office_a),
+            vec![claimant_a, claimant_b]
+        );
         assert_eq!(world.force_claimants_for_office(office_b), vec![claimant_a]);
-        assert_eq!(world.offices_contested_by(claimant_a), vec![office_a, office_b]);
+        assert_eq!(
+            world.offices_contested_by(claimant_a),
+            vec![office_a, office_b]
+        );
         assert_eq!(world.offices_contested_by(claimant_b), vec![office_a]);
 
         world.remove_force_claim(claimant_a, office_a).unwrap();
@@ -3825,8 +3830,14 @@ mod tests {
 
         assert_eq!(world.office_controller(office_a), Some(second_controller));
         assert_eq!(world.office_controller(office_b), Some(first_controller));
-        assert_eq!(world.offices_controlled_by(first_controller), vec![office_b]);
-        assert_eq!(world.offices_controlled_by(second_controller), vec![office_a]);
+        assert_eq!(
+            world.offices_controlled_by(first_controller),
+            vec![office_b]
+        );
+        assert_eq!(
+            world.offices_controlled_by(second_controller),
+            vec![office_a]
+        );
 
         world.clear_office_controller(office_a).unwrap();
         world.clear_office_controller(office_a).unwrap();
@@ -3991,7 +4002,10 @@ mod tests {
         );
         assert_eq!(world.office_holder(office), None);
         assert_eq!(world.offices_held_by(member), Vec::<EntityId>::new());
-        assert_eq!(world.force_claimants_for_office(office), Vec::<EntityId>::new());
+        assert_eq!(
+            world.force_claimants_for_office(office),
+            Vec::<EntityId>::new()
+        );
         assert_eq!(world.offices_contested_by(member), Vec::<EntityId>::new());
         assert_eq!(world.office_controller(office), None);
         assert_eq!(world.offices_controlled_by(member), Vec::<EntityId>::new());

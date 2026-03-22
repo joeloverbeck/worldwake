@@ -265,12 +265,12 @@ mod tests {
         PerceptionSource, RecordData, RecordEntryId, RecordKind, Seed, Tick, WitnessData,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionExecutionContext, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
-        ActionTraceSink, ControllerState, ExternalAbortReason, InputKind,
-        InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
+        abort_action, get_affordances, start_action, step_tick, tick_action,
+        ActionExecutionAuthority, ActionExecutionContext, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionState, ActionTraceSink, ControllerState, ExternalAbortReason,
+        InputKind, InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
         InstitutionalKnowledgeTraceSink, InstitutionalKnowledgeTraceSource, PerAgentBeliefView,
-        Scheduler, SystemDispatchTable, SystemManifest, TickOutcome, TickStepServices, step_tick,
+        Scheduler, SystemDispatchTable, SystemManifest, TickOutcome, TickStepServices,
     };
 
     fn entity(slot: u32) -> EntityId {

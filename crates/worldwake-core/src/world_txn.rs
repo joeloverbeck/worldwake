@@ -765,7 +765,8 @@ impl<'w> WorldTxn<'w> {
 
     pub fn assign_office(&mut self, office: EntityId, holder: EntityId) -> Result<(), WorldError> {
         let before = self.staged_world.authoritative_office_holder(office);
-        let record_update = self.prepare_office_holder_record_update(office, Some(holder), before)?;
+        let record_update =
+            self.prepare_office_holder_record_update(office, Some(holder), before)?;
         self.staged_world.assign_office(office, holder)?;
         let after = self.staged_world.authoritative_office_holder(office);
         self.push_single_target_relation_delta(
@@ -851,7 +852,8 @@ impl<'w> WorldTxn<'w> {
         controller: EntityId,
     ) -> Result<(), WorldError> {
         let before = self.staged_world.authoritative_office_controller(office);
-        self.staged_world.set_office_controller(office, controller)?;
+        self.staged_world
+            .set_office_controller(office, controller)?;
         let after = self.staged_world.authoritative_office_controller(office);
         self.push_single_target_relation_delta(
             office,
@@ -1660,10 +1662,8 @@ impl<'w> WorldTxn<'w> {
             holder,
             effective_tick: self.tick,
         };
-        let record = self.require_unique_record_at_place(
-            office_data.jurisdiction,
-            RecordKind::OfficeRegister,
-        )?;
+        let record = self
+            .require_unique_record_at_place(office_data.jurisdiction, RecordKind::OfficeRegister)?;
         let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
             matches!(
                 existing,
@@ -1690,22 +1690,20 @@ impl<'w> WorldTxn<'w> {
         if before == Some(candidate) {
             return Ok(None);
         }
-        let office_data = self
-            .get_component_office_data(office)
-            .ok_or(WorldError::ComponentNotFound {
-                entity: office,
-                component_type: "OfficeData",
-            })?;
+        let office_data =
+            self.get_component_office_data(office)
+                .ok_or(WorldError::ComponentNotFound {
+                    entity: office,
+                    component_type: "OfficeData",
+                })?;
         let claim = InstitutionalClaim::SupportDeclaration {
             office,
             supporter,
             candidate: Some(candidate),
             effective_tick: self.tick,
         };
-        let record = self.require_unique_record_at_place(
-            office_data.jurisdiction,
-            RecordKind::SupportLedger,
-        )?;
+        let record = self
+            .require_unique_record_at_place(office_data.jurisdiction, RecordKind::SupportLedger)?;
         let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
             matches!(
                 existing,
@@ -1723,7 +1721,10 @@ impl<'w> WorldTxn<'w> {
         }))
     }
 
-    fn apply_record_update(&mut self, update: Option<PendingRecordUpdate>) -> Result<(), WorldError> {
+    fn apply_record_update(
+        &mut self,
+        update: Option<PendingRecordUpdate>,
+    ) -> Result<(), WorldError> {
         let Some(update) = update else {
             return Ok(());
         };
@@ -1762,12 +1763,12 @@ impl<'w> WorldTxn<'w> {
         record: EntityId,
         predicate: impl Fn(&InstitutionalClaim) -> bool,
     ) -> Result<Option<RecordEntryId>, WorldError> {
-        let record_data = self
-            .get_component_record_data(record)
-            .ok_or(WorldError::ComponentNotFound {
-                entity: record,
-                component_type: "RecordData",
-            })?;
+        let record_data =
+            self.get_component_record_data(record)
+                .ok_or(WorldError::ComponentNotFound {
+                    entity: record,
+                    component_type: "RecordData",
+                })?;
         let matches = record_data
             .active_entries()
             .into_iter()
@@ -2054,11 +2055,7 @@ mod tests {
             .unwrap()
     }
 
-    fn configure_institutional_office(
-        world: &mut World,
-        office: EntityId,
-        place: EntityId,
-    ) {
+    fn configure_institutional_office(world: &mut World, office: EntityId, place: EntityId) {
         world
             .insert_component_office_data(
                 office,
@@ -2949,7 +2946,10 @@ mod tests {
             })]
         );
         commit_txn(remove_txn);
-        assert_eq!(world.force_claimants_for_office(office), Vec::<EntityId>::new());
+        assert_eq!(
+            world.force_claimants_for_office(office),
+            Vec::<EntityId>::new()
+        );
     }
 
     #[test]
@@ -3116,7 +3116,10 @@ mod tests {
         commit_txn(overwrite_txn);
         let after_overwrite = world.get_component_record_data(support_ledger).unwrap();
         assert_eq!(after_overwrite.entries.len(), 2);
-        assert_eq!(after_overwrite.entries[1].supersedes, Some(RecordEntryId(0)));
+        assert_eq!(
+            after_overwrite.entries[1].supersedes,
+            Some(RecordEntryId(0))
+        );
         assert_eq!(
             after_overwrite
                 .active_entries()
@@ -4024,7 +4027,10 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas().len(), 1);
-        assert_eq!(world.get_component_office_force_profile(office), Some(&after));
+        assert_eq!(
+            world.get_component_office_force_profile(office),
+            Some(&after)
+        );
     }
 
     #[test]

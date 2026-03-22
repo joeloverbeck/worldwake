@@ -37,11 +37,21 @@ pub struct InstitutionalBeliefTransitionTrace {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InstitutionalBeliefReadSummary {
     Unknown,
-    OfficeHolderCertain { holder: Option<EntityId> },
-    OfficeHolderConflicted { holders: Vec<Option<EntityId>> },
-    FactionMembershipClaims { claims: Vec<FactionMembershipClaimSummary> },
-    SupportDeclarationCertain { candidate: Option<EntityId> },
-    SupportDeclarationConflicted { candidates: Vec<Option<EntityId>> },
+    OfficeHolderCertain {
+        holder: Option<EntityId>,
+    },
+    OfficeHolderConflicted {
+        holders: Vec<Option<EntityId>>,
+    },
+    FactionMembershipClaims {
+        claims: Vec<FactionMembershipClaimSummary>,
+    },
+    SupportDeclarationCertain {
+        candidate: Option<EntityId>,
+    },
+    SupportDeclarationConflicted {
+        candidates: Vec<Option<EntityId>>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -99,12 +109,18 @@ impl InstitutionalKnowledgeTraceSink {
 
     #[must_use]
     pub fn events_for(&self, actor: EntityId) -> Vec<&InstitutionalKnowledgeTraceEvent> {
-        self.events.iter().filter(|event| event.actor == actor).collect()
+        self.events
+            .iter()
+            .filter(|event| event.actor == actor)
+            .collect()
     }
 
     #[must_use]
     pub fn events_at(&self, tick: Tick) -> Vec<&InstitutionalKnowledgeTraceEvent> {
-        self.events.iter().filter(|event| event.tick == tick).collect()
+        self.events
+            .iter()
+            .filter(|event| event.tick == tick)
+            .collect()
     }
 
     pub fn clear(&mut self) {

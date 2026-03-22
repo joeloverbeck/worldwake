@@ -545,8 +545,11 @@ fn progress_active_actions(
             .get(&instance_id)
             .cloned()
             .expect("active action ids must correspond to active actions");
-        let before_belief_store =
-            maybe_snapshot_consult_record_beliefs(services.institutional_knowledge_trace.is_some(), runtime.world, &instance);
+        let before_belief_store = maybe_snapshot_consult_record_beliefs(
+            services.institutional_knowledge_trace.is_some(),
+            runtime.world,
+            &instance,
+        );
         match runtime
             .scheduler
             .tick_active_action(
@@ -633,7 +636,11 @@ fn maybe_snapshot_consult_record_beliefs(
     instance: &crate::ActionInstance,
 ) -> Option<worldwake_core::AgentBeliefStore> {
     (tracing_enabled && matches!(instance.payload, crate::ActionPayload::ConsultRecord(_)))
-        .then(|| world.get_component_agent_belief_store(instance.actor).cloned())
+        .then(|| {
+            world
+                .get_component_agent_belief_store(instance.actor)
+                .cloned()
+        })
         .flatten()
 }
 
@@ -1172,7 +1179,7 @@ mod tests {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
-                institutional_knowledge_trace: None,
+            institutional_knowledge_trace: None,
         }
     }
 

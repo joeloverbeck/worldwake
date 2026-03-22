@@ -48,9 +48,7 @@ pub enum EligibilityRule {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
-    };
+    use super::{EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw};
     use crate::{traits::Component, EntityId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;

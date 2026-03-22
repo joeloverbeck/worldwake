@@ -158,6 +158,8 @@ impl ActionTraceDetail {
             | ActionPayload::Bribe(_)
             | ActionPayload::Threaten(_)
             | ActionPayload::DeclareSupport(_)
+            | ActionPayload::PressForceClaim(_)
+            | ActionPayload::YieldForceClaim(_)
             | ActionPayload::Transport(_)
             | ActionPayload::Harvest(_)
             | ActionPayload::Craft(_)

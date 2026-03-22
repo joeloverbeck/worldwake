@@ -2,8 +2,8 @@
 
 use crate::{
     BelievedInstitutionalClaim, CommodityKind, Component, EntityId, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
-    Quantity, ResourceSource, Tick, WorkstationTag, World, Wound,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
+    ResourceSource, Tick, WorkstationTag, World, Wound,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1214,12 +1214,7 @@ mod tests {
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::OfficeHolderOf { office },
             vec![
-                office_holder_belief(
-                    71,
-                    None,
-                    InstitutionalKnowledgeSource::WitnessedEvent,
-                    4,
-                ),
+                office_holder_belief(71, None, InstitutionalKnowledgeSource::WitnessedEvent, 4),
                 office_holder_belief(
                     71,
                     None,
@@ -1245,7 +1240,12 @@ mod tests {
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::OfficeHolderOf { office },
             vec![
-                office_holder_belief(73, Some(74), InstitutionalKnowledgeSource::WitnessedEvent, 5),
+                office_holder_belief(
+                    73,
+                    Some(74),
+                    InstitutionalKnowledgeSource::WitnessedEvent,
+                    5,
+                ),
                 office_holder_belief(
                     73,
                     Some(75),
@@ -1294,7 +1294,10 @@ mod tests {
         let faction = entity(84);
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::FactionMembersOf { faction },
-            vec![membership_belief(84, 85, true, 2), membership_belief(84, 85, false, 5)],
+            vec![
+                membership_belief(84, 85, true, 2),
+                membership_belief(84, 85, false, 5),
+            ],
         );
 
         assert_eq!(
@@ -1343,7 +1346,10 @@ mod tests {
                 supporter: entity(102),
                 office,
             },
-            vec![support_belief(100, 102, Some(104), 4), support_belief(100, 102, None, 7)],
+            vec![
+                support_belief(100, 102, Some(104), 4),
+                support_belief(100, 102, None, 7),
+            ],
         );
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::SupportFor {
@@ -1704,7 +1710,12 @@ mod tests {
         store.update_entity(subject, current.clone());
         store.record_institutional_belief(
             InstitutionalBeliefKey::OfficeHolderOf { office: subject },
-            office_holder_belief(subject.slot, Some(11), InstitutionalKnowledgeSource::WitnessedEvent, 8),
+            office_holder_belief(
+                subject.slot,
+                Some(11),
+                InstitutionalKnowledgeSource::WitnessedEvent,
+                8,
+            ),
             &profile(8, 100),
         );
 

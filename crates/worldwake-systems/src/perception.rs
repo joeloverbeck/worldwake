@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     build_believed_entity_state, AgentBeliefStore, BelievedInstitutionalClaim, CauseRef, EntityId,
-    EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
-    PendingEvent, PerceptionSource, RelationDelta, RelationValue, SocialObservation,
-    SocialObservationKind, StateDelta, VisibilitySpec, WitnessData, World, WorldTxn,
+    EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind, PendingEvent, PerceptionSource,
+    RelationDelta, RelationValue, SocialObservation, SocialObservationKind, StateDelta,
+    VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -494,11 +494,7 @@ fn institutional_claim_from_delta(
 
     match relation_delta {
         RelationDelta::Added {
-            relation:
-                RelationValue::OfficeHolder {
-                    office,
-                    holder,
-                },
+            relation: RelationValue::OfficeHolder { office, holder },
             ..
         } => Some((
             InstitutionalBeliefKey::OfficeHolderOf { office: *office },
@@ -509,11 +505,7 @@ fn institutional_claim_from_delta(
             },
         )),
         RelationDelta::Removed {
-            relation:
-                RelationValue::OfficeHolder {
-                    office,
-                    ..
-                },
+            relation: RelationValue::OfficeHolder { office, .. },
             ..
         } => Some((
             InstitutionalBeliefKey::OfficeHolderOf { office: *office },
@@ -546,9 +538,7 @@ fn institutional_claim_from_delta(
         RelationDelta::Removed {
             relation:
                 RelationValue::SupportDeclaration {
-                    supporter,
-                    office,
-                    ..
+                    supporter, office, ..
                 },
             ..
         } => Some((
@@ -579,8 +569,8 @@ mod tests {
         InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
         ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, RelationDelta,
-        RelationKind, RelationValue, ResourceSource, Seed, SocialObservationKind, StateDelta,
-        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        RelationKind, RelationValue, ResourceSource, Seed, SocialObservationKind, StateDelta, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 

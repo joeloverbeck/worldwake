@@ -4,8 +4,8 @@ use worldwake_core::{
     ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, EntityId,
     EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, TellMemoryKey, TellProfile, ToldBeliefMemory, VisibilitySpec,
-    World, WorldTxn,
+    RecipientKnowledgeStatus, TellMemoryKey, TellProfile, ToldBeliefMemory, VisibilitySpec, World,
+    WorldTxn,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_relayable_subjects, AbortReason, ActionAbortRequestReason,
@@ -100,12 +100,10 @@ fn degrade_institutional_source(
     match source {
         InstitutionalKnowledgeSource::WitnessedEvent
         | InstitutionalKnowledgeSource::RecordConsultation { .. }
-        | InstitutionalKnowledgeSource::SelfDeclaration => {
-            InstitutionalKnowledgeSource::Report {
-                from: speaker,
-                chain_len: 1,
-            }
-        }
+        | InstitutionalKnowledgeSource::SelfDeclaration => InstitutionalKnowledgeSource::Report {
+            from: speaker,
+            chain_len: 1,
+        },
         InstitutionalKnowledgeSource::Report { chain_len, .. } => {
             InstitutionalKnowledgeSource::Report {
                 from: speaker,
@@ -137,9 +135,9 @@ fn listener_already_has_institutional_claim(
         .institutional_beliefs
         .get(&institutional_belief_key(belief.claim))
         .is_some_and(|claims| {
-            claims.iter().any(|existing| {
-                existing.claim == belief.claim && existing.source == belief.source
-            })
+            claims
+                .iter()
+                .any(|existing| existing.claim == belief.claim && existing.source == belief.source)
         })
 }
 
@@ -401,10 +399,11 @@ fn commit_tell(
         counterparty: speaker,
         subject: payload.subject_entity,
     };
-    let speaker_institutional_beliefs = speaker_beliefs.relayable_institutional_beliefs_for_subject(
-        payload.subject_entity,
-        speaker_profile.max_relay_chain_len,
-    );
+    let speaker_institutional_beliefs = speaker_beliefs
+        .relayable_institutional_beliefs_for_subject(
+            payload.subject_entity,
+            speaker_profile.max_relay_chain_len,
+        );
     let disposition = if passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng)
     {
         let mut accepted_any = false;
@@ -489,9 +488,9 @@ mod tests {
         InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
         MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource,
         Permille, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed,
-        SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
-        TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange, TradeDispositionProfile,
+        TravelDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
@@ -690,7 +689,11 @@ mod tests {
         )
     }
 
-    fn office_holder_claim(office: EntityId, holder: Option<EntityId>, tick: u64) -> InstitutionalClaim {
+    fn office_holder_claim(
+        office: EntityId,
+        holder: Option<EntityId>,
+        tick: u64,
+    ) -> InstitutionalClaim {
         InstitutionalClaim::OfficeHolder {
             office,
             holder,
@@ -1853,8 +1856,14 @@ mod tests {
             .unwrap();
         assert_eq!(heard.disposition, HeardBeliefDisposition::Accepted);
         assert_eq!(heard.heard_state.institutional_claims.len(), 1);
-        assert_eq!(heard.heard_state.institutional_claims[0].claim, vacancy.claim);
-        assert_eq!(heard.heard_state.institutional_claims[0].source, vacancy.source);
+        assert_eq!(
+            heard.heard_state.institutional_claims[0].claim,
+            vacancy.claim
+        );
+        assert_eq!(
+            heard.heard_state.institutional_claims[0].source,
+            vacancy.source
+        );
     }
 
     #[test]

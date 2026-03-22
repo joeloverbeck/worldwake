@@ -795,9 +795,9 @@ mod tests {
     use crate::planner_ops::planner_only_candidates;
     use crate::{
         build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
-        build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanTerminalKind,
-        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningBudget,
-        PlanningEntityRef, PlanningSnapshot, PlanningState, PlanSearchResult,
+        build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult,
+        PlanTerminalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
+        PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
     };
     use std::cmp::Ordering;
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -846,7 +846,8 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         office_data: BTreeMap<EntityId, worldwake_core::OfficeData>,
-        office_holder_beliefs: BTreeMap<EntityId, worldwake_core::InstitutionalBeliefRead<Option<EntityId>>>,
+        office_holder_beliefs:
+            BTreeMap<EntityId, worldwake_core::InstitutionalBeliefRead<Option<EntityId>>>,
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
     }
@@ -5337,7 +5338,8 @@ mod tests {
         let hall = entity(12);
         let record = entity(20);
         let mut view = TestBeliefView::default();
-        view.alive.extend([actor, candidate, office, record, town, archive, hall]);
+        view.alive
+            .extend([actor, candidate, office, record, town, archive, hall]);
         view.kinds.insert(actor, EntityKind::Agent);
         view.kinds.insert(candidate, EntityKind::Agent);
         view.kinds.insert(office, EntityKind::Office);
@@ -5388,10 +5390,8 @@ mod tests {
                 next_entry_id: 1,
             },
         );
-        view.adjacent.insert(
-            town,
-            vec![(archive, NonZeroU32::new(1).unwrap())],
-        );
+        view.adjacent
+            .insert(town, vec![(archive, NonZeroU32::new(1).unwrap())]);
         view.adjacent.insert(
             archive,
             vec![
@@ -5433,7 +5433,11 @@ mod tests {
             PlanSearchResult::Found(plan) => plan,
             other => panic!("expected plan, got {other:?}"),
         };
-        let op_kinds = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+        let op_kinds = plan
+            .steps
+            .iter()
+            .map(|step| step.op_kind)
+            .collect::<Vec<_>>();
         assert_eq!(
             op_kinds,
             vec![
@@ -5517,10 +5521,9 @@ mod tests {
             PlanSearchResult::Found(plan) => plan,
             other => panic!("expected plan, got {other:?}"),
         };
-        assert!(
-            plan.steps
-                .iter()
-                .all(|step| step.op_kind != PlannerOpKind::ConsultRecord)
-        );
+        assert!(plan
+            .steps
+            .iter()
+            .all(|step| step.op_kind != PlannerOpKind::ConsultRecord));
     }
 }

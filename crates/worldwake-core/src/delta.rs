@@ -6,11 +6,10 @@ use crate::{
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
-    PerceptionProfile, Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity,
-    RecordData, ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UtilityProfile,
-    WorkstationMarker, WoundList,
+    MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile,
+    Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity, RecordData,
+    ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile, TradeDispositionProfile,
+    TravelDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -246,8 +245,8 @@ mod tests {
         OfficeForceState, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
         RecordData, RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
-        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};

@@ -93,22 +93,28 @@ pub struct ForceCandidateTrace {
 
 impl PoliticalTraceEvent {
     fn support_count_for(&self, candidate: EntityId) -> Option<usize> {
-        self.trace.support_resolution.as_ref().and_then(|resolution| {
-            resolution
-                .counted_support
-                .iter()
-                .find_map(|support| (support.candidate == candidate).then_some(support.support))
-        })
+        self.trace
+            .support_resolution
+            .as_ref()
+            .and_then(|resolution| {
+                resolution
+                    .counted_support
+                    .iter()
+                    .find_map(|support| (support.candidate == candidate).then_some(support.support))
+            })
     }
 
     fn max_support_count(&self) -> Option<usize> {
-        self.trace.support_resolution.as_ref().and_then(|resolution| {
-            resolution
-                .counted_support
-                .iter()
-                .map(|support| support.support)
-                .max()
-        })
+        self.trace
+            .support_resolution
+            .as_ref()
+            .and_then(|resolution| {
+                resolution
+                    .counted_support
+                    .iter()
+                    .map(|support| support.support)
+                    .max()
+            })
     }
 
     #[must_use]

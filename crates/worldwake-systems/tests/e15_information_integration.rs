@@ -263,7 +263,7 @@ impl TellHarness {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
-            institutional_knowledge_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap()
@@ -420,7 +420,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
-            institutional_knowledge_trace: None,
+                    institutional_knowledge_trace: None,
                 },
             )
         }
@@ -500,7 +500,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
-            institutional_knowledge_trace: None,
+                    institutional_knowledge_trace: None,
                 },
             )
         }

@@ -577,8 +577,8 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
-        OfficeData, Permille, RecordData, RecordKind, Seed, Tick, UtilityProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        OfficeData, Permille, RecordData, RecordKind, Seed, Tick, UtilityProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, DeterministicRng, ForceCandidateTrace, OfficeAvailabilityPhase,
@@ -779,7 +779,10 @@ mod tests {
         assert_eq!(fx.world.office_holder(fx.office), None);
         let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
         assert_eq!(register.entries.len(), 2);
-        assert_eq!(register.entries[1].supersedes, Some(register.entries[0].entry_id));
+        assert_eq!(
+            register.entries[1].supersedes,
+            Some(register.entries[0].entry_id)
+        );
         let record = event_log
             .get(event_log.events_by_tag(EventTag::Political)[0])
             .unwrap();
@@ -912,7 +915,10 @@ mod tests {
         assert_eq!(fx.world.office_holder(fx.office), Some(fx.candidate_a));
         let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
         assert_eq!(register.entries.len(), 3);
-        assert_eq!(register.entries[2].supersedes, Some(register.entries[1].entry_id));
+        assert_eq!(
+            register.entries[2].supersedes,
+            Some(register.entries[1].entry_id)
+        );
         assert_eq!(
             fx.world
                 .get_component_office_data(fx.office)

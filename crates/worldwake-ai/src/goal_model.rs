@@ -156,8 +156,11 @@ const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Threaten,
     PlannerOpKind::DeclareSupport,
 ];
-const SUPPORT_OFFICE_OPS: &[PlannerOpKind] =
-    &[PlannerOpKind::Travel, PlannerOpKind::ConsultRecord, PlannerOpKind::DeclareSupport];
+const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::ConsultRecord,
+    PlannerOpKind::DeclareSupport,
+];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -240,8 +243,9 @@ fn build_loot_payload_override(
 
 fn office_requiring_vacancy_belief(goal: &GoalKind) -> Option<EntityId> {
     match goal {
-        GoalKind::ClaimOffice { office }
-        | GoalKind::SupportCandidateForOffice { office, .. } => Some(*office),
+        GoalKind::ClaimOffice { office } | GoalKind::SupportCandidateForOffice { office, .. } => {
+            Some(*office)
+        }
         _ => None,
     }
 }
@@ -274,7 +278,11 @@ fn consulted_office_holder_read_for_record(
 fn office_register_for_goal(
     state: &PlanningState<'_>,
     office: EntityId,
-) -> Option<(EntityId, EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+) -> Option<(
+    EntityId,
+    EntityId,
+    InstitutionalBeliefRead<Option<EntityId>>,
+)> {
     state
         .snapshot()
         .entities
@@ -1399,8 +1407,8 @@ pub struct RankedGoal {
 #[cfg(test)]
 mod tests {
     use super::{
-        GoalKindPlannerExt, GoalKindTag, GoalPayloadOverrideError, GoalPriorityClass,
-        GroundedGoal, RankedGoal,
+        GoalKindPlannerExt, GoalKindTag, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal,
+        RankedGoal,
     };
     use crate::{
         build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
@@ -1415,10 +1423,10 @@ mod tests {
         test_utils::{entity_id, sample_trade_disposition_profile},
         ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
-        RecordKind, ResourceSource, SuccessionLaw, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, Permille, Quantity, RecipeId, RecordKind, ResourceSource,
+        SuccessionLaw, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,

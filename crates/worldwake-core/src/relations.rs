@@ -700,8 +700,14 @@ mod tests {
             Some(&candidate)
         );
         assert_eq!(tables.office_holder.get(&office), Some(&item));
-        assert_eq!(tables.contests_office.get(&item), Some(&BTreeSet::from([office])));
-        assert_eq!(tables.contested_by.get(&office), Some(&BTreeSet::from([item])));
+        assert_eq!(
+            tables.contests_office.get(&item),
+            Some(&BTreeSet::from([office]))
+        );
+        assert_eq!(
+            tables.contested_by.get(&office),
+            Some(&BTreeSet::from([item]))
+        );
         assert_eq!(tables.office_controller.get(&office), Some(&item));
         assert_eq!(
             tables.offices_controlled.get(&item),
@@ -820,10 +826,9 @@ mod tests {
         tables
             .contests_office
             .insert(member, [office].into_iter().collect());
-        tables.contested_by.insert(
-            office,
-            BTreeSet::from([hostile_subject, member]),
-        );
+        tables
+            .contested_by
+            .insert(office, BTreeSet::from([hostile_subject, member]));
         tables.office_controller.insert(office, member);
         tables
             .offices_controlled

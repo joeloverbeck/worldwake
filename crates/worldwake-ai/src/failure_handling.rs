@@ -1033,9 +1033,10 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(6),
             targets: Vec::new(),
-            payload_override: Some(ActionPayload::DeclareSupport(
-                DeclareSupportActionPayload { office, candidate },
-            )),
+            payload_override: Some(ActionPayload::DeclareSupport(DeclareSupportActionPayload {
+                office,
+                candidate,
+            })),
             op_kind: PlannerOpKind::DeclareSupport,
             estimated_ticks: 1,
             is_materialization_barrier: true,
@@ -1364,9 +1365,9 @@ mod tests {
             actor: agent,
             def_id: ActionDefId(6),
             request: sample_request(6),
-            reason: ActionStartFailureReason::PreconditionFailed(
-                format!("office {office} is not vacant"),
-            ),
+            reason: ActionStartFailureReason::PreconditionFailed(format!(
+                "office {office} is not vacant"
+            )),
         };
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut blocked = BlockedIntentMemory::default();

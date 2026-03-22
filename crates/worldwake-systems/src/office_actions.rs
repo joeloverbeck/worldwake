@@ -1471,7 +1471,10 @@ mod tests {
         );
         let after_second = record_at_place(&fx.world, fx.place, RecordKind::SupportLedger);
         assert_eq!(after_second.entries.len(), 2);
-        assert_eq!(after_second.entries[1].supersedes, Some(after_second.entries[0].entry_id));
+        assert_eq!(
+            after_second.entries[1].supersedes,
+            Some(after_second.entries[0].entry_id)
+        );
     }
 
     #[test]

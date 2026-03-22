@@ -1360,9 +1360,9 @@ fn run_remote_record_consultation_political_action(seed: Seed) -> (StateHash, St
         "consult_record must commit before declare_support in the remote-record path"
     );
 
-    let knowledge_sink = h
-        .institutional_knowledge_trace_sink()
-        .expect("institutional knowledge tracing should be enabled for remote-record office scenario");
+    let knowledge_sink = h.institutional_knowledge_trace_sink().expect(
+        "institutional knowledge tracing should be enabled for remote-record office scenario",
+    );
     let knowledge_events = knowledge_sink.events_for(agent);
     assert_eq!(
         knowledge_events.len(),
@@ -1694,13 +1694,14 @@ fn run_knowledge_asymmetry_race(seed: Seed) -> (StateHash, StateHash) {
         informed_declare_commit < uninformed_consult_commit,
         "informed claimant must commit declare_support before the uninformed consult finishes"
     );
-    let uninformed_declared_support = action_sink
-        .events_for(uninformed_agent)
-        .iter()
-        .any(|event| {
-            event.action_name == "declare_support"
-                && matches!(event.kind, ActionTraceKind::Committed { .. })
-        });
+    let uninformed_declared_support =
+        action_sink
+            .events_for(uninformed_agent)
+            .iter()
+            .any(|event| {
+                event.action_name == "declare_support"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
     assert!(
         !uninformed_declared_support,
         "uninformed claimant must not commit declare_support before the office is installed"
@@ -1744,8 +1745,14 @@ fn run_knowledge_asymmetry_race(seed: Seed) -> (StateHash, StateHash) {
         })
     );
     assert_eq!(install_trace.trace.support_declarations.len(), 1);
-    assert_eq!(install_trace.trace.support_declarations[0].supporter, informed_agent);
-    assert_eq!(install_trace.trace.support_declarations[0].candidate, informed_agent);
+    assert_eq!(
+        install_trace.trace.support_declarations[0].supporter,
+        informed_agent
+    );
+    assert_eq!(
+        install_trace.trace.support_declarations[0].candidate,
+        informed_agent
+    );
     assert!(install_trace.trace.support_declarations[0].candidate_eligible);
     assert!(install_trace.trace.support_declarations[0].counted);
 

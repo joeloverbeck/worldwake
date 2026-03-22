@@ -16,14 +16,13 @@ use worldwake_core::{
     to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
     CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
-    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
-    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, PerceptionProfile,
-    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind,
-    RelationDelta, RelationValue, ResourceSource, Seed, StateDelta, SuccessionLaw,
-    TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog,
+    EventRecord, EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
+    FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes, LoadUnits, MetabolismProfile,
+    OfficeData, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId,
+    RecordData, RecordKind, RelationDelta, RelationValue, ResourceSource, Seed, StateDelta,
+    SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
     WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
@@ -799,9 +798,9 @@ pub fn seed_office(
     )
     .unwrap();
     for kind in [RecordKind::OfficeRegister, RecordKind::SupportLedger] {
-        let exists = txn.query_record_data().any(|(_, record)| {
-            record.record_kind == kind && record.home_place == jurisdiction
-        });
+        let exists = txn
+            .query_record_data()
+            .any(|(_, record)| record.record_kind == kind && record.home_place == jurisdiction);
         if !exists {
             let _ = txn
                 .create_record(RecordData {
@@ -1075,7 +1074,7 @@ impl GoldenHarness {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
-                institutional_knowledge_trace: None,
+            institutional_knowledge_trace: None,
         }
     }
 
@@ -1620,8 +1619,7 @@ mod tests {
             .world
             .query_record_data()
             .filter(|(_, record)| {
-                record.record_kind == RecordKind::OfficeRegister
-                    && record.home_place == RULERS_HALL
+                record.record_kind == RecordKind::OfficeRegister && record.home_place == RULERS_HALL
             })
             .count();
         assert_eq!(remote_matches, 1);

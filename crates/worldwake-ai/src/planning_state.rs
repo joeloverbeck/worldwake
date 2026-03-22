@@ -46,8 +46,7 @@ pub struct PlanningState<'snapshot> {
     needs_overrides: BTreeMap<EntityId, HomeostaticNeeds>,
     pain_overrides: BTreeMap<EntityId, Permille>,
     support_declaration_overrides: BTreeMap<(EntityId, EntityId), Option<EntityId>>,
-    office_holder_belief_overrides:
-        BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+    office_holder_belief_overrides: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
     support_declaration_belief_overrides:
         BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
     facility_queue_membership_overrides: BTreeMap<EntityId, Option<HypotheticalQueueJoin>>,
@@ -139,7 +138,10 @@ impl<'snapshot> PlanningState<'snapshot> {
         self.support_declaration_belief_overrides
             .get(&(office, supporter))
             .cloned()
-            .unwrap_or_else(|| self.snapshot.believed_support_declaration(office, supporter))
+            .unwrap_or_else(|| {
+                self.snapshot
+                    .believed_support_declaration(office, supporter)
+            })
     }
 
     #[must_use]
@@ -1508,7 +1510,8 @@ impl RuntimeBeliefView for PlanningState<'_> {
     }
 
     fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
-        (agent == self.snapshot.actor()).then_some(self.snapshot.actor_consultation_speed_factor)
+        (agent == self.snapshot.actor())
+            .then_some(self.snapshot.actor_consultation_speed_factor)
             .flatten()
     }
 
@@ -1560,11 +1563,10 @@ mod tests {
         ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -3153,7 +3155,10 @@ mod tests {
             state.effective_support_declaration(supporter_a, office),
             Some(rival)
         );
-        assert_eq!(state.test_support_override(supporter_a, office), Some(rival));
+        assert_eq!(
+            state.test_support_override(supporter_a, office),
+            Some(rival)
+        );
         assert_eq!(
             state.test_support_belief_override(office, supporter_a),
             Some(InstitutionalBeliefRead::Conflicted(vec![
@@ -3202,7 +3207,10 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert_eq!(state.record_data(record), view.record_data.get(&record).cloned());
+        assert_eq!(
+            state.record_data(record),
+            view.record_data.get(&record).cloned()
+        );
         assert_eq!(
             RuntimeBeliefView::consultation_speed_factor(&state, actor),
             Some(Permille::new(500).unwrap())
