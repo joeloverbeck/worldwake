@@ -246,7 +246,7 @@ impl World {
         claimant: EntityId,
         office: EntityId,
     ) -> Result<(), WorldError> {
-        self.ensure_alive(claimant)?;
+        self.ensure_live_kind(claimant, EntityKind::Agent, "force claimant")?;
         self.ensure_live_kind(office, EntityKind::Office, "force claim office")?;
         Self::clear_many_to_many_relation(
             &mut self.relations.contests_office,
@@ -274,6 +274,28 @@ impl World {
                     .iter()
                     .copied()
                     .filter(|claimant| self.is_alive(*claimant))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn force_claimants_for_office_including_dead(&self, office: EntityId) -> Vec<EntityId> {
+        if self
+            .ensure_live_kind(office, EntityKind::Office, "force claim office")
+            .is_err()
+        {
+            return Vec::new();
+        }
+
+        self.relations
+            .contested_by
+            .get(&office)
+            .map(|claimants| {
+                claimants
+                    .iter()
+                    .copied()
+                    .filter(|claimant| self.entity_kind(*claimant) == Some(EntityKind::Agent))
                     .collect()
             })
             .unwrap_or_default()

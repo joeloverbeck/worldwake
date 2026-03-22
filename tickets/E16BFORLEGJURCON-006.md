@@ -18,27 +18,28 @@ Force-control state changes must propagate through the E16c institutional belief
 4. `GoalBeliefView` and `RuntimeBeliefView` in `belief_view.rs` have institutional query methods. `believed_force_controller()` does not exist on either trait.
 5. `institutional_claims_for_event()` in `perception.rs` extracts `InstitutionalClaim` from events. It already handles `OfficeHolder`, `FactionMembership`, `SupportDeclaration` — adding `ForceControl` follows the same pattern.
 6. `relayable_institutional_beliefs_for_subject()` in `AgentBeliefStore` controls Tell propagation. It must include `ForceControllerOf` keys.
-7. N/A — not an AI regression, ordering, or heuristic ticket.
-8. N/A — not a political closure ticket.
-9. N/A — no ControlSource manipulation.
-10. N/A — no golden scenario.
-11. No mismatches found.
-12. N/A — no cumulative arithmetic.
+7. Mismatch corrected after `E16BFORLEGJURCON-005`: the force-control state machine now exists, but it does not yet emit canonical `InstitutionalClaim::ForceControl` metadata for controller-established / controller-maintained / contested / controller-lost transitions. `PressForceClaim` and `YieldForceClaim` actions alone are not sufficient to reconstruct current controller belief state. This ticket must therefore own the canonical event-metadata source for force-control belief projection rather than assuming it already exists.
+8. The existing holder-installation path already emits `InstitutionalClaim::OfficeHolder` through the office register / holder relation surfaces. This ticket should add `ForceControl` alongside, not replace or duplicate holder-claim projection.
+9. N/A — not an AI regression, ordering, or heuristic ticket.
+10. N/A — not a political closure ticket.
+11. N/A — no ControlSource manipulation.
+12. N/A — no golden scenario.
+13. N/A — no cumulative arithmetic.
 
 ## Architecture Check
 
-1. Follows the exact pattern established by E16c for `OfficeHolder` claims: enum variant → belief key → belief query → perception extraction → Tell relay. No new architectural patterns needed.
+1. Follows the exact pattern established by E16c for `OfficeHolder` claims: enum variant → belief key → belief query → perception extraction → Tell relay. The only additional requirement is to ensure there is one canonical event source for force-controller state transitions before perception wiring is added.
 2. No backward-compatibility shims.
 
 ## Verification Layers
 
-1. `InstitutionalClaim::ForceControl` emitted by PressForceClaim handler → event metadata check
-2. Perception extracts `ForceControl` claim → witness `AgentBeliefStore` check
-3. `believed_force_controller()` returns correct `(controller, contested)` → focused belief query test
-4. `believed_force_controller()` returns `Unknown` when agent has no knowledge → focused test
-5. `ForceControllerOf` is relayable through Tell → focused test on `relayable_institutional_beliefs_for_subject`
-6. Belief view traits expose `believed_force_controller()` → compilation + focused test
-7. Force-control events project into witness beliefs with `InstitutionalKnowledgeSource::WitnessedEvent` → focused test
+1. Canonical force-control transition events carry `InstitutionalClaim::ForceControl` metadata -> committed event metadata check
+2. Perception extracts `ForceControl` claim -> witness `AgentBeliefStore` check
+3. `believed_force_controller()` returns correct `(controller, contested)` -> focused belief query test
+4. `believed_force_controller()` returns `Unknown` when agent has no knowledge -> focused test
+5. `ForceControllerOf` is relayable through Tell -> focused test on `relayable_institutional_beliefs_for_subject`
+6. Belief view traits expose `believed_force_controller()` -> compilation + focused test
+7. Force-control events project into witness beliefs with `InstitutionalKnowledgeSource::WitnessedEvent` -> focused test
 
 ## What to Change
 
@@ -82,6 +83,14 @@ Add `ForceControl` handling to `institutional_claims_for_event()` in `perception
 
 Ensure `relayable_institutional_beliefs_for_subject()` includes `ForceControllerOf` keys so force-control beliefs propagate through the Tell/rumor system.
 
+### 7. Add canonical `ForceControl` metadata emission at the source transitions
+
+Ensure the authoritative sources that establish, lose, or contest controller state emit `InstitutionalClaim::ForceControl` metadata in a single canonical way. At minimum this must cover:
+- `PressForceClaim` / `YieldForceClaim` action commits when they change the public contest state
+- force-office controller transitions from the office control system (`controller established`, `controller lost`, `office contested`, and force installation cleanup)
+
+Do not add a second parallel belief source that infers force controller state from unrelated holder events or direct omniscient reads.
+
 ## Files to Touch
 
 - `crates/worldwake-core/src/institutional.rs` (modify — add `ForceControl` variant and `ForceControllerOf` key)
@@ -89,6 +98,7 @@ Ensure `relayable_institutional_beliefs_for_subject()` includes `ForceController
 - `crates/worldwake-sim/src/belief_view.rs` (modify — add trait method)
 - `crates/worldwake-sim/src/omniscient_belief_view.rs` or equivalent (modify — implement trait method)
 - `crates/worldwake-systems/src/perception.rs` (modify — add `ForceControl` extraction)
+- `crates/worldwake-systems/src/office_actions.rs` and/or `crates/worldwake-systems/src/offices.rs` (modify — emit canonical `ForceControl` metadata at action/system transition sources)
 
 ## Out of Scope
 
@@ -96,7 +106,8 @@ Ensure `relayable_institutional_beliefs_for_subject()` includes `ForceController
 - AI affordance enumeration and planner ops — E16BFORLEGJURCON-007/008
 - Golden E2E tests for belief propagation — E16BFORLEGJURCON-009
 - Public order impact from contested offices — deferred to E19
-- Record integration for force-control transitions — handled by E16BFORLEGJURCON-005 (installation appends to record)
+- OfficeForceProfile grace-field semantics (`vacancy_claim_grace_ticks`, `challenger_presence_grace_ticks`) — no active owner in the current ticket set; requires a dedicated follow-up if these fields are to affect behavior
+- Historical record integration for force-controller transitions beyond existing holder-register writes — not owned here
 
 ## Acceptance Criteria
 

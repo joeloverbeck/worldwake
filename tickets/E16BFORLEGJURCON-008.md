@@ -22,8 +22,9 @@ AI agents need planner op semantics for `PressForceClaim` and `YieldForceClaim` 
 8. Closure boundary: `PressForceClaim` planner op maps to `GoalKindTag::ClaimOffice`. Terminal condition is "actor has pressed claim and is sole controller" (belief-level check via `believed_force_controller`). Barrier is "not at jurisdiction" (triggers travel prerequisite). The planner op is AI-layer only.
 9. N/A — no ControlSource manipulation.
 10. N/A — no golden scenario (that's -009).
-11. No mismatches found. Existing `ClaimOffice` candidate generation may need minor extension to also emit for force-law offices, depending on current filtering.
-12. N/A — no cumulative arithmetic.
+11. Note: after `E16BFORLEGJURCON-005`, force offices no longer auto-install on sole presence. This ticket must assume explicit force claims and controller beliefs, not preserve the old shortcut anywhere in planner semantics or candidate-generation tests.
+12. This ticket depends on `E16BFORLEGJURCON-006` providing controller-state beliefs from canonical force-control transition events, not just from `PressForceClaim` / `YieldForceClaim` action commits.
+13. N/A — no cumulative arithmetic.
 
 ## Architecture Check
 

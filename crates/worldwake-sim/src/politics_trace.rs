@@ -69,6 +69,16 @@ pub enum OfficeSuccessionOutcome {
     SupportResetTie {
         tied_candidates: Vec<EntityId>,
     },
+    ForceNoClaimants,
+    ForceControllerEstablished {
+        controller: EntityId,
+    },
+    ForceControllerMaintained {
+        controller: EntityId,
+    },
+    ForceContested {
+        claimant_count: usize,
+    },
     ForceInstalled {
         holder: EntityId,
     },
@@ -117,9 +127,44 @@ impl PoliticalTraceEvent {
             })
     }
 
+    fn force_summary(&self, phase: &str) -> Option<String> {
+        match &self.trace.outcome {
+            OfficeSuccessionOutcome::ForceNoClaimants => Some(format!(
+                "tick {}: office {} has no active force claimants [{}]",
+                self.tick.0, self.office, phase
+            )),
+            OfficeSuccessionOutcome::ForceControllerEstablished { controller } => Some(format!(
+                "tick {}: office {} recognizes {} as current force controller [{}]",
+                self.tick.0, self.office, controller, phase
+            )),
+            OfficeSuccessionOutcome::ForceControllerMaintained { controller } => Some(format!(
+                "tick {}: office {} keeps {} as uncontested force controller [{}]",
+                self.tick.0, self.office, controller, phase
+            )),
+            OfficeSuccessionOutcome::ForceContested { claimant_count } => Some(format!(
+                "tick {}: office {} remains force-contested by {} claimants [{}]",
+                self.tick.0, self.office, claimant_count, phase
+            )),
+            OfficeSuccessionOutcome::ForceInstalled { holder } => Some(format!(
+                "tick {}: office {} installs {} by force-law uncontested succession [{}]",
+                self.tick.0, self.office, holder, phase
+            )),
+            OfficeSuccessionOutcome::ForceBlocked {
+                eligible_contender_count,
+            } => Some(format!(
+                "tick {}: office {} force-law succession blocked by {} eligible contenders [{}]",
+                self.tick.0, self.office, eligible_contender_count, phase
+            )),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn summary(&self) -> String {
         let phase = self.trace.availability_phase.summary_label();
+        if let Some(force_summary) = self.force_summary(phase) {
+            return force_summary;
+        }
         let timer_suffix = self
             .trace
             .vacancy_timer
@@ -193,16 +238,14 @@ impl PoliticalTraceEvent {
                 timer_suffix,
                 phase
             ),
-            OfficeSuccessionOutcome::ForceInstalled { holder } => format!(
-                "tick {}: office {} installs {} by force-law uncontested succession [{}]",
-                self.tick.0, self.office, holder, phase
-            ),
-            OfficeSuccessionOutcome::ForceBlocked {
-                eligible_contender_count,
-            } => format!(
-                "tick {}: office {} force-law succession blocked by {} eligible contenders [{}]",
-                self.tick.0, self.office, eligible_contender_count, phase
-            ),
+            OfficeSuccessionOutcome::ForceNoClaimants
+            | OfficeSuccessionOutcome::ForceControllerEstablished { .. }
+            | OfficeSuccessionOutcome::ForceControllerMaintained { .. }
+            | OfficeSuccessionOutcome::ForceContested { .. }
+            | OfficeSuccessionOutcome::ForceInstalled { .. }
+            | OfficeSuccessionOutcome::ForceBlocked { .. } => {
+                unreachable!("force outcomes are handled by force_summary")
+            }
         }
     }
 }

@@ -20,10 +20,11 @@ use worldwake_core::{
     EventRecord, EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
     FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes, LoadUnits, MetabolismProfile,
-    OfficeData, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId,
-    RecordData, RecordKind, RelationDelta, RelationValue, ResourceSource, Seed, StateDelta,
-    SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
+    Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind, RelationDelta,
+    RelationValue, ResourceSource, Seed, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile,
+    Tick, ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -790,13 +791,37 @@ pub fn seed_office(
         OfficeData {
             title: title.to_string(),
             jurisdiction,
-            succession_law,
+            succession_law: succession_law.clone(),
             eligibility_rules,
             succession_period_ticks,
             vacancy_since: Some(Tick(0)),
         },
     )
     .unwrap();
+    if matches!(succession_law, SuccessionLaw::Force) {
+        let hold_ticks = u32::try_from(succession_period_ticks)
+            .ok()
+            .and_then(NonZeroU32::new)
+            .unwrap_or_else(|| nz(1));
+        txn.set_component_office_force_profile(
+            office,
+            OfficeForceProfile {
+                uncontested_hold_ticks: hold_ticks,
+                vacancy_claim_grace_ticks: nz(1),
+                challenger_presence_grace_ticks: nz(1),
+            },
+        )
+        .unwrap();
+        txn.set_component_office_force_state(
+            office,
+            OfficeForceState {
+                control_since: None,
+                contested_since: None,
+                last_uncontested_tick: None,
+            },
+        )
+        .unwrap();
+    }
     for kind in [RecordKind::OfficeRegister, RecordKind::SupportLedger] {
         let exists = txn
             .query_record_data()

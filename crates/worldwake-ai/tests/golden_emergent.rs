@@ -1271,6 +1271,11 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         PerceptionSource::DirectObservation,
     );
     add_hostility(&mut h.world, &mut h.event_log, challenger, incumbent);
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.add_force_claim(challenger, office).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
 
@@ -1337,7 +1342,7 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
     let politics_sink = h
         .politics_trace_sink()
         .expect("politics tracing should be enabled for combat succession scenario");
-    let vacancy_trace = politics_sink
+    let _vacancy_trace = politics_sink
         .events_for_office(office)
         .into_iter()
         .find(|event| {
@@ -1357,19 +1362,30 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
             )
         })
         .expect("politics trace should explain the force-law installation");
-    assert!(
-        politics_sink
-            .events_for_office(office)
-            .into_iter()
-            .any(|event| matches!(
+    let control_trace = politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
                 event.trace.outcome,
-                OfficeSuccessionOutcome::WaitingForTimer
-            )),
-        "politics trace should include timer-blocked waiting before installation"
+                OfficeSuccessionOutcome::ForceControllerEstablished { controller }
+                    if controller == challenger
+            )
+        })
+        .expect("politics trace should record when force control is first established");
+    assert!(
+        politics_sink.events_for_office(office).into_iter().any(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::ForceControllerMaintained { controller }
+                    if controller == challenger
+            )
+        }),
+        "politics trace should preserve uncontested control before installation"
     );
     assert!(
-        install_trace.tick.0.saturating_sub(vacancy_trace.tick.0) >= 5,
-        "politics trace should preserve the configured succession delay"
+        install_trace.tick.0.saturating_sub(control_trace.tick.0) >= 4,
+        "politics trace should preserve the configured uncontested hold delay"
     );
 
     let death_event_id =

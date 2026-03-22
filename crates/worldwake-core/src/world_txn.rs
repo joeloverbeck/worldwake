@@ -830,13 +830,13 @@ impl<'w> WorldTxn<'w> {
     ) -> Result<(), WorldError> {
         let before = self
             .staged_world
-            .offices_contested_by(claimant)
-            .contains(&office);
+            .force_claimants_for_office_including_dead(office)
+            .contains(&claimant);
         self.staged_world.remove_force_claim(claimant, office)?;
         let after = self
             .staged_world
-            .offices_contested_by(claimant)
-            .contains(&office);
+            .force_claimants_for_office_including_dead(office)
+            .contains(&claimant);
         self.push_presence_relation_delta(
             before,
             after,

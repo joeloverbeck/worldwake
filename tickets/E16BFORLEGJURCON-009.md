@@ -24,6 +24,7 @@ The full force-legitimacy lifecycle — from claim to contest to control to inst
 10. Golden scenarios isolate force-law behavior: use `SuccessionLaw::Force` offices exclusively, with eligible agents positioned for claim/contest/control scenarios.
 11. Mismatch corrected: there is already a golden around force-law succession, but it asserts the old sole-contender shortcut. This ticket owns migrating golden force coverage to the real E16b lifecycle rather than leaving the old scenario in place as a false architectural oracle.
 12. Installation arithmetic: `control_since + uncontested_hold_ticks <= current_tick`. Scenarios set `OfficeForceProfile` fields to small values (e.g., `uncontested_hold_ticks = 3..5`) for tractability and must not rely on `OfficeData.succession_period_ticks` for force-law timing anymore.
+13. Note: `vacancy_claim_grace_ticks` and `challenger_presence_grace_ticks` are still unused substrate after `E16BFORLEGJURCON-005`. This ticket should not silently invent goldens for them unless a dedicated implementation ticket lands first.
 
 ## Architecture Check
 
@@ -99,6 +100,7 @@ Each golden scenario must have a deterministic replay companion that reproduces 
 - Guard responses to coups — deferred to E19
 - Public order impact — deferred to E19
 - Support-law golden tests (already covered by E16d)
+- New semantics for currently unused `OfficeForceProfile` grace fields — requires a dedicated implementation ticket before golden coverage
 
 ## Acceptance Criteria
 

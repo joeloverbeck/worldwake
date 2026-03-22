@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_core::{
-    CauseRef, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, OfficeData, Permille,
-    SuccessionLaw, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+    CauseRef, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, OfficeData,
+    OfficeForceProfile, OfficeForceState, Permille, SuccessionLaw, Tick, VisibilitySpec,
+    WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
     ForceCandidateTrace, OfficeAvailabilityPhase, OfficeSuccessionOutcome, OfficeSuccessionTrace,
@@ -103,35 +104,15 @@ fn evaluate_office_succession(
         return Ok(());
     }
 
-    let start_tick = office_data
-        .vacancy_since
-        .expect("vacancy_since checked above to be some");
-    let waited_ticks = tick.0.saturating_sub(start_tick.0);
-    if waited_ticks < office_data.succession_period_ticks {
-        let support_resolution = support_resolution_trace(office, office_data, world);
-        let support_declarations = support_resolution.declarations;
-        let outcome = OfficeSuccessionOutcome::WaitingForTimer;
-        record_political_trace(
-            politics_trace,
-            office_trace_event(
-                tick,
-                office,
-                office_data,
-                outcome,
-                support_declarations,
-                Some(SupportResolutionTrace {
-                    counted_support: support_resolution.counted_support,
-                }),
-                force_candidate_traces(office_data, world),
-            ),
-        );
-        return Ok(());
-    }
-
     match office_data.succession_law {
-        SuccessionLaw::Support => {
-            resolve_support_succession(world, event_log, tick, office, office_data, politics_trace)
-        }
+        SuccessionLaw::Support => resolve_support_succession(
+            world,
+            event_log,
+            tick,
+            office,
+            office_data,
+            politics_trace,
+        ),
         SuccessionLaw::Force => {
             resolve_force_succession(world, event_log, tick, office, office_data, politics_trace)
         }
@@ -218,6 +199,31 @@ fn resolve_support_succession(
     office_data: &OfficeData,
     politics_trace: &mut Option<&mut PoliticalTraceSink>,
 ) -> Result<(), SystemError> {
+    let start_tick = office_data
+        .vacancy_since
+        .expect("support succession requires active vacancy_since");
+    let waited_ticks = tick.0.saturating_sub(start_tick.0);
+    if waited_ticks < office_data.succession_period_ticks {
+        let support_resolution = support_resolution_trace(office, office_data, world);
+        let support_declarations = support_resolution.declarations;
+        let outcome = OfficeSuccessionOutcome::WaitingForTimer;
+        record_political_trace(
+            politics_trace,
+            office_trace_event(
+                tick,
+                office,
+                office_data,
+                outcome,
+                support_declarations,
+                Some(SupportResolutionTrace {
+                    counted_support: support_resolution.counted_support,
+                }),
+                force_candidate_traces(office_data, world),
+            ),
+        );
+        return Ok(());
+    }
+
     let support_resolution = support_resolution_trace(office, office_data, world);
     let support_declarations = support_resolution.declarations;
     let counted_support = support_resolution.counted_support;
@@ -293,12 +299,27 @@ fn resolve_force_succession(
     office_data: &OfficeData,
     politics_trace: &mut Option<&mut PoliticalTraceSink>,
 ) -> Result<(), SystemError> {
-    let force_candidates = force_candidate_traces(office_data, world);
-    let contenders = eligible_agents_at(office, office_data.jurisdiction, world);
-    if contenders.len() != 1 {
-        let outcome = OfficeSuccessionOutcome::ForceBlocked {
-            eligible_contender_count: contenders.len(),
-        };
+    let context = build_force_succession_context(world, office, office_data)?;
+    let resolution = evaluate_force_resolution(tick, &context);
+
+    if let Some(controller) = resolution.desired_controller.filter(|controller| {
+        context
+            .live_claimants
+            .iter()
+            .all(|claimant| *claimant == *controller)
+            && force_hold_complete(&context.profile, &resolution.next_state, tick)
+            && resolution.next_state.last_uncontested_tick == Some(tick)
+    }) {
+        install_force_office_holder(
+            world,
+            event_log,
+            tick,
+            office_data,
+            office,
+            &context,
+            &resolution,
+        )?;
+        let outcome = OfficeSuccessionOutcome::ForceInstalled { holder: controller };
         record_political_trace(
             politics_trace,
             office_trace_event(
@@ -308,28 +329,127 @@ fn resolve_force_succession(
                 outcome,
                 Vec::new(),
                 None,
-                force_candidates,
+                context.force_candidates,
             ),
         );
         return Ok(());
     }
 
-    let holder = contenders[0];
-    install_office_holder(world, event_log, tick, office, office_data, holder)?;
-    let outcome = OfficeSuccessionOutcome::ForceInstalled { holder };
+    commit_force_control_update(
+        world,
+        event_log,
+        tick,
+        office,
+        &context,
+        &resolution,
+    )?;
+
     record_political_trace(
         politics_trace,
         office_trace_event(
             tick,
             office,
             office_data,
-            outcome,
+            resolution.outcome,
             Vec::new(),
             None,
-            force_candidates,
+            context.force_candidates,
         ),
     );
     Ok(())
+}
+
+fn build_force_succession_context(
+    world: &World,
+    office: EntityId,
+    office_data: &OfficeData,
+) -> Result<ForceSuccessionContext, SystemError> {
+    let profile = world
+        .get_component_office_force_profile(office)
+        .cloned()
+        .ok_or_else(|| SystemError::new(format!("force office {office} lacks OfficeForceProfile")))?;
+    let prior_state = world
+        .get_component_office_force_state(office)
+        .cloned()
+        .ok_or_else(|| SystemError::new(format!("force office {office} lacks OfficeForceState")))?;
+    let raw_claimants = world.force_claimants_for_office_including_dead(office);
+    let dead_claimants = raw_claimants
+        .iter()
+        .copied()
+        .filter(|claimant| world.get_component_dead_at(*claimant).is_some())
+        .collect::<Vec<_>>();
+    let live_claimants = raw_claimants
+        .iter()
+        .copied()
+        .filter(|claimant| world.get_component_dead_at(*claimant).is_none())
+        .collect::<Vec<_>>();
+    let present_claimants = live_claimants
+        .iter()
+        .copied()
+        .filter(|claimant| world.effective_place(*claimant) == Some(office_data.jurisdiction))
+        .filter(|claimant| candidate_is_eligible(world, office_data, *claimant))
+        .collect::<Vec<_>>();
+    let current_controller = world
+        .office_controller(office)
+        .filter(|controller| world.effective_place(*controller) == Some(office_data.jurisdiction))
+        .filter(|controller| candidate_is_eligible(world, office_data, *controller));
+
+    Ok(ForceSuccessionContext {
+        profile,
+        prior_state,
+        current_controller,
+        raw_claimants,
+        dead_claimants,
+        live_claimants,
+        present_claimants,
+        force_candidates: force_candidate_traces(office_data, world),
+    })
+}
+
+fn evaluate_force_resolution(tick: Tick, context: &ForceSuccessionContext) -> ForceResolution {
+    let mut next_state = context.prior_state.clone();
+    let mut desired_controller = context.current_controller;
+
+    let outcome = match context.present_claimants.as_slice() {
+        [] => {
+            desired_controller = None;
+            reset_force_state(&mut next_state);
+            OfficeSuccessionOutcome::ForceNoClaimants
+        }
+        [controller] => {
+            next_state.contested_since = None;
+            next_state.last_uncontested_tick = Some(tick);
+            if desired_controller == Some(*controller) {
+                if next_state.control_since.is_none() {
+                    next_state.control_since = Some(tick);
+                }
+                OfficeSuccessionOutcome::ForceControllerMaintained {
+                    controller: *controller,
+                }
+            } else {
+                desired_controller = Some(*controller);
+                next_state.control_since = Some(tick);
+                OfficeSuccessionOutcome::ForceControllerEstablished {
+                    controller: *controller,
+                }
+            }
+        }
+        claimants => {
+            desired_controller = None;
+            next_state.control_since = None;
+            next_state.last_uncontested_tick = None;
+            next_state.contested_since = next_state.contested_since.or(Some(tick));
+            OfficeSuccessionOutcome::ForceContested {
+                claimant_count: claimants.len(),
+            }
+        }
+    };
+
+    ForceResolution {
+        desired_controller,
+        next_state,
+        outcome,
+    }
 }
 
 fn install_office_holder(
@@ -341,6 +461,86 @@ fn install_office_holder(
     holder: EntityId,
 ) -> Result<(), SystemError> {
     let mut txn = new_political_txn(world, tick, Some(office_data.jurisdiction));
+    stage_office_holder_install(&mut txn, office, office_data, holder)?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+fn install_force_office_holder(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    office_data: &OfficeData,
+    office: EntityId,
+    context: &ForceSuccessionContext,
+    resolution: &ForceResolution,
+) -> Result<(), SystemError> {
+    let holder = resolution
+        .desired_controller
+        .expect("force installation requires a controller");
+    let mut txn = new_political_txn(world, tick, Some(office_data.jurisdiction));
+    stage_office_holder_install(&mut txn, office, office_data, holder)?;
+    for claimant in &context.raw_claimants {
+        txn.remove_force_claim(*claimant, office)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+    txn.clear_office_controller(office)
+        .map_err(|error| SystemError::new(error.to_string()))?;
+    let cleared_state = cleared_force_state();
+    if resolution.next_state != cleared_state {
+        txn.set_component_office_force_state(office, cleared_state)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+fn commit_force_control_update(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    office: EntityId,
+    context: &ForceSuccessionContext,
+    resolution: &ForceResolution,
+) -> Result<(), SystemError> {
+    let controller_changed = resolution.desired_controller != context.current_controller
+        || (resolution.desired_controller.is_none() && context.prior_state.control_since.is_some());
+    let state_changed = resolution.next_state != context.prior_state;
+    if !controller_changed && !state_changed && context.dead_claimants.is_empty() {
+        return Ok(());
+    }
+
+    let jurisdiction = world
+        .get_component_office_data(office)
+        .map(|office_data| office_data.jurisdiction);
+    let mut txn = new_political_txn(world, tick, jurisdiction);
+    if controller_changed {
+        if let Some(controller) = resolution.desired_controller {
+            txn.set_office_controller(office, controller)
+                .map_err(|error| SystemError::new(error.to_string()))?;
+        } else {
+            txn.clear_office_controller(office)
+                .map_err(|error| SystemError::new(error.to_string()))?;
+        }
+    }
+    if state_changed {
+        txn.set_component_office_force_state(office, resolution.next_state.clone())
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+    for claimant in &context.dead_claimants {
+        txn.remove_force_claim(*claimant, office)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+fn stage_office_holder_install(
+    txn: &mut WorldTxn<'_>,
+    office: EntityId,
+    office_data: &OfficeData,
+    holder: EntityId,
+) -> Result<(), SystemError> {
     let mut next = office_data.clone();
     next.vacancy_since = None;
     txn.set_component_office_data(office, next)
@@ -350,13 +550,53 @@ fn install_office_holder(
     txn.clear_support_declarations_for_office(office)
         .map_err(|error| SystemError::new(error.to_string()))?;
     txn.add_target(office).add_target(holder);
-    let _ = txn.commit(event_log);
     Ok(())
+}
+
+fn force_hold_complete(
+    profile: &OfficeForceProfile,
+    state: &OfficeForceState,
+    tick: Tick,
+) -> bool {
+    let Some(control_since) = state.control_since else {
+        return false;
+    };
+    let held_ticks = tick.0.saturating_sub(control_since.0) + 1;
+    held_ticks >= u64::from(profile.uncontested_hold_ticks.get())
+}
+
+fn reset_force_state(state: &mut OfficeForceState) {
+    *state = cleared_force_state();
+}
+
+fn cleared_force_state() -> OfficeForceState {
+    OfficeForceState {
+        control_since: None,
+        contested_since: None,
+        last_uncontested_tick: None,
+    }
 }
 
 struct SupportResolutionSnapshot {
     declarations: Vec<SupportDeclarationTrace>,
     counted_support: Vec<SupportCountTrace>,
+}
+
+struct ForceSuccessionContext {
+    profile: OfficeForceProfile,
+    prior_state: OfficeForceState,
+    current_controller: Option<EntityId>,
+    raw_claimants: Vec<EntityId>,
+    dead_claimants: Vec<EntityId>,
+    live_claimants: Vec<EntityId>,
+    present_claimants: Vec<EntityId>,
+    force_candidates: Vec<ForceCandidateTrace>,
+}
+
+struct ForceResolution {
+    desired_controller: Option<EntityId>,
+    next_state: OfficeForceState,
+    outcome: OfficeSuccessionOutcome,
 }
 
 fn support_resolution_trace(
@@ -426,7 +666,9 @@ fn availability_phase_for_trace(
         OfficeSuccessionOutcome::OccupiedNoAction { .. }
         | OfficeSuccessionOutcome::SupportInstalled { .. }
         | OfficeSuccessionOutcome::ForceInstalled { .. } => OfficeAvailabilityPhase::ClosedOccupied,
-        OfficeSuccessionOutcome::VacancyActivated => OfficeAvailabilityPhase::VacantClaimable,
+        OfficeSuccessionOutcome::VacancyActivated | OfficeSuccessionOutcome::ForceNoClaimants => {
+            OfficeAvailabilityPhase::VacantClaimable
+        }
         OfficeSuccessionOutcome::WaitingForTimer => {
             if support_declarations.is_empty() {
                 OfficeAvailabilityPhase::VacantWaitingForTimer
@@ -434,12 +676,15 @@ fn availability_phase_for_trace(
                 OfficeAvailabilityPhase::VacantPendingResolution
             }
         }
+        OfficeSuccessionOutcome::ForceControllerEstablished { .. }
+        | OfficeSuccessionOutcome::ForceControllerMaintained { .. }
+        | OfficeSuccessionOutcome::ForceContested { .. }
+        | OfficeSuccessionOutcome::ForceBlocked { .. } => {
+            OfficeAvailabilityPhase::VacantPendingResolution
+        }
         OfficeSuccessionOutcome::SupportResetNoEligibleDeclarations
         | OfficeSuccessionOutcome::SupportResetTie { .. } => {
             OfficeAvailabilityPhase::VacantReopenedAfterReset
-        }
-        OfficeSuccessionOutcome::ForceBlocked { .. } => {
-            OfficeAvailabilityPhase::VacantPendingResolution
         }
     }
 }
@@ -577,14 +822,15 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
-        OfficeData, Permille, RecordData, RecordKind, Seed, Tick, UtilityProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        OfficeData, OfficeForceProfile, OfficeForceState, Permille, RecordData, RecordKind, Seed,
+        Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, DeterministicRng, ForceCandidateTrace, OfficeAvailabilityPhase,
         OfficeSuccessionOutcome, PoliticalTraceSink, SupportCountTrace, SupportResolutionTrace,
         SystemExecutionContext, SystemId, VacancyTimerTrace,
     };
+    use std::num::NonZeroU32;
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
@@ -695,7 +941,7 @@ mod tests {
                     OfficeData {
                         title: "Ruler".to_string(),
                         jurisdiction: place,
-                        succession_law: law,
+                        succession_law: law.clone(),
                         eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
                             faction,
                         )],
@@ -704,6 +950,26 @@ mod tests {
                     },
                 )
                 .unwrap();
+                if matches!(law, worldwake_core::SuccessionLaw::Force) {
+                    txn.set_component_office_force_profile(
+                        office,
+                        OfficeForceProfile {
+                            uncontested_hold_ticks: NonZeroU32::new(3).unwrap(),
+                            vacancy_claim_grace_ticks: NonZeroU32::new(1).unwrap(),
+                            challenger_presence_grace_ticks: NonZeroU32::new(1).unwrap(),
+                        },
+                    )
+                    .unwrap();
+                    txn.set_component_office_force_state(
+                        office,
+                        OfficeForceState {
+                            control_since: None,
+                            contested_since: None,
+                            last_uncontested_tick: None,
+                        },
+                    )
+                    .unwrap();
+                }
                 let _ = create_record(&mut txn, place, holder, RecordKind::OfficeRegister);
                 let _ = create_record(&mut txn, place, holder, RecordKind::SupportLedger);
                 txn.assign_office(office, holder).unwrap();
@@ -740,6 +1006,28 @@ mod tests {
         fn declare_support(&mut self, supporter: EntityId, candidate: EntityId, tick: u64) {
             let mut txn = new_txn(&mut self.world, tick);
             txn.declare_support(supporter, self.office, candidate)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        fn add_force_claim(&mut self, claimant: EntityId, tick: u64) {
+            let mut txn = new_txn(&mut self.world, tick);
+            txn.add_force_claim(claimant, self.office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        fn move_agent(&mut self, agent: EntityId, place: EntityId, tick: u64) {
+            let mut txn = new_txn(&mut self.world, tick);
+            txn.set_ground_location(agent, place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        fn kill_agent(&mut self, agent: EntityId, tick: u64) {
+            let mut txn = new_txn(&mut self.world, tick);
+            txn.set_component_dead_at(agent, worldwake_core::DeadAt(Tick(tick)))
                 .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
@@ -1168,103 +1456,51 @@ mod tests {
     }
 
     #[test]
-    fn force_succession_installs_only_uncontested_eligible_present_agent() {
+    fn force_control_establishes_controller_before_installation() {
         let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
         fx.kill_holder(2);
-        let other_place = fx
-            .world
-            .topology()
-            .place_ids()
-            .find(|place| *place != fx.place)
-            .unwrap();
-        {
-            let mut txn = new_txn(&mut fx.world, 3);
-            txn.set_ground_location(fx.candidate_b, other_place)
-                .unwrap();
-            let mut log = EventLog::new();
-            let _ = txn.commit(&mut log);
-        }
         let mut event_log = EventLog::new();
         run_succession(&mut fx.world, &mut event_log, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
         event_log = EventLog::new();
 
-        run_succession(&mut fx.world, &mut event_log, 6);
+        run_succession(&mut fx.world, &mut event_log, 4);
 
-        assert_eq!(fx.world.office_holder(fx.office), Some(fx.candidate_a));
+        assert_eq!(fx.world.office_holder(fx.office), None);
+        assert_eq!(fx.world.office_controller(fx.office), Some(fx.candidate_a));
+        assert_eq!(
+            fx.world.get_component_office_force_state(fx.office),
+            Some(&OfficeForceState {
+                control_since: Some(Tick(4)),
+                contested_since: None,
+                last_uncontested_tick: Some(Tick(4)),
+            })
+        );
     }
 
     #[test]
-    fn force_succession_trace_records_install_and_blocked_cases() {
-        let mut install_fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
-        install_fx.kill_holder(2);
-        let other_place = install_fx
-            .world
-            .topology()
-            .place_ids()
-            .find(|place| *place != install_fx.place)
-            .unwrap();
-        {
-            let mut txn = new_txn(&mut install_fx.world, 3);
-            txn.set_ground_location(install_fx.candidate_b, other_place)
-                .unwrap();
-            let mut log = EventLog::new();
-            let _ = txn.commit(&mut log);
-        }
+    fn force_control_contest_clears_controller_and_sets_contested_state() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        fx.kill_holder(2);
         let mut event_log = EventLog::new();
-        run_succession(&mut install_fx.world, &mut event_log, 3);
-        let mut install_trace = PoliticalTraceSink::new();
+        run_succession(&mut fx.world, &mut event_log, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
+        event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 4);
+        fx.add_force_claim(fx.candidate_b, 5);
         event_log = EventLog::new();
 
-        run_succession_with_trace(&mut install_fx.world, &mut event_log, &mut install_trace, 6);
+        run_succession(&mut fx.world, &mut event_log, 5);
 
-        let install_event = install_trace
-            .event_for_office_at(install_fx.office, Tick(6))
-            .unwrap();
+        assert_eq!(fx.world.office_holder(fx.office), None);
+        assert_eq!(fx.world.office_controller(fx.office), None);
         assert_eq!(
-            install_event.trace.availability_phase,
-            OfficeAvailabilityPhase::ClosedOccupied
-        );
-        assert_eq!(
-            install_event.trace.outcome,
-            OfficeSuccessionOutcome::ForceInstalled {
-                holder: install_fx.candidate_a,
-            }
-        );
-        assert_eq!(
-            install_event.trace.force_candidates,
-            vec![
-                ForceCandidateTrace {
-                    candidate: install_fx.holder,
-                    eligible: false,
-                },
-                ForceCandidateTrace {
-                    candidate: install_fx.candidate_a,
-                    eligible: true,
-                },
-            ]
-        );
-
-        let mut blocked_fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
-        blocked_fx.kill_holder(2);
-        event_log = EventLog::new();
-        run_succession(&mut blocked_fx.world, &mut event_log, 3);
-        let mut blocked_trace = PoliticalTraceSink::new();
-        event_log = EventLog::new();
-
-        run_succession_with_trace(&mut blocked_fx.world, &mut event_log, &mut blocked_trace, 6);
-
-        let blocked_event = blocked_trace
-            .event_for_office_at(blocked_fx.office, Tick(6))
-            .unwrap();
-        assert_eq!(
-            blocked_event.trace.availability_phase,
-            OfficeAvailabilityPhase::VacantPendingResolution
-        );
-        assert_eq!(
-            blocked_event.trace.outcome,
-            OfficeSuccessionOutcome::ForceBlocked {
-                eligible_contender_count: 2,
-            }
+            fx.world.get_component_office_force_state(fx.office),
+            Some(&OfficeForceState {
+                control_since: None,
+                contested_since: Some(Tick(5)),
+                last_uncontested_tick: None,
+            })
         );
     }
 
@@ -1299,17 +1535,156 @@ mod tests {
     }
 
     #[test]
-    fn force_succession_blocks_when_multiple_contenders_are_present() {
+    fn force_control_departure_or_death_clears_controller_and_prunes_dead_claims() {
+        let mut departure_fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        departure_fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        run_succession(&mut departure_fx.world, &mut event_log, 3);
+        departure_fx.add_force_claim(departure_fx.candidate_a, 4);
+        event_log = EventLog::new();
+        run_succession(&mut departure_fx.world, &mut event_log, 4);
+        let other_place = departure_fx
+            .world
+            .topology()
+            .place_ids()
+            .find(|place| *place != departure_fx.place)
+            .unwrap();
+        departure_fx.move_agent(departure_fx.candidate_a, other_place, 5);
+        event_log = EventLog::new();
+
+        run_succession(&mut departure_fx.world, &mut event_log, 5);
+
+        assert_eq!(departure_fx.world.office_controller(departure_fx.office), None);
+        assert_eq!(
+            departure_fx
+                .world
+                .get_component_office_force_state(departure_fx.office),
+            Some(&OfficeForceState {
+                control_since: None,
+                contested_since: None,
+                last_uncontested_tick: None,
+            })
+        );
+
+        let mut death_fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        death_fx.kill_holder(2);
+        event_log = EventLog::new();
+        run_succession(&mut death_fx.world, &mut event_log, 3);
+        death_fx.add_force_claim(death_fx.candidate_b, 4);
+        death_fx.kill_agent(death_fx.candidate_b, 5);
+        event_log = EventLog::new();
+
+        run_succession(&mut death_fx.world, &mut event_log, 5);
+
+        assert!(death_fx
+            .world
+            .force_claimants_for_office_including_dead(death_fx.office)
+            .is_empty());
+    }
+
+    #[test]
+    fn force_control_installation_requires_uncontested_hold_and_clears_claims() {
         let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
         fx.kill_holder(2);
         let mut event_log = EventLog::new();
         run_succession(&mut fx.world, &mut event_log, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
+        for tick in [4_u64, 5, 6] {
+            event_log = EventLog::new();
+            run_succession(&mut fx.world, &mut event_log, tick);
+        }
+
+        assert_eq!(fx.world.office_holder(fx.office), Some(fx.candidate_a));
+        assert_eq!(fx.world.office_controller(fx.office), None);
+        assert_eq!(
+            fx.world.get_component_office_force_state(fx.office),
+            Some(&OfficeForceState {
+                control_since: None,
+                contested_since: None,
+                last_uncontested_tick: None,
+            })
+        );
+        assert!(fx
+            .world
+            .force_claimants_for_office_including_dead(fx.office)
+            .is_empty());
+        let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        assert_eq!(register.entries.len(), 3);
+        assert_eq!(
+            register.entries[2].supersedes,
+            Some(register.entries[1].entry_id)
+        );
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Political)[0])
+            .unwrap();
+        assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
+        assert!(record.target_ids().contains(&fx.office));
+        assert!(record.target_ids().contains(&fx.candidate_a));
+    }
+
+    #[test]
+    fn force_control_trace_reflects_controller_state_machine() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        let mut trace = PoliticalTraceSink::new();
+
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
         event_log = EventLog::new();
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 4);
+        event_log = EventLog::new();
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 5);
+        fx.add_force_claim(fx.candidate_b, 6);
+        event_log = EventLog::new();
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 6);
 
-        run_succession(&mut fx.world, &mut event_log, 6);
+        let established = trace.event_for_office_at(fx.office, Tick(4)).unwrap();
+        assert_eq!(
+            established.trace.availability_phase,
+            OfficeAvailabilityPhase::VacantPendingResolution
+        );
+        assert_eq!(
+            established.trace.outcome,
+            OfficeSuccessionOutcome::ForceControllerEstablished {
+                controller: fx.candidate_a,
+            }
+        );
 
-        assert_eq!(fx.world.office_holder(fx.office), None);
-        assert!(event_log.events_by_tag(EventTag::Political).is_empty());
+        let maintained = trace.event_for_office_at(fx.office, Tick(5)).unwrap();
+        assert_eq!(
+            maintained.trace.outcome,
+            OfficeSuccessionOutcome::ForceControllerMaintained {
+                controller: fx.candidate_a,
+            }
+        );
+
+        let contested = trace.event_for_office_at(fx.office, Tick(6)).unwrap();
+        assert_eq!(
+            contested.trace.availability_phase,
+            OfficeAvailabilityPhase::VacantPendingResolution
+        );
+        assert_eq!(
+            contested.trace.outcome,
+            OfficeSuccessionOutcome::ForceContested { claimant_count: 2 }
+        );
+        assert_eq!(
+            contested.trace.force_candidates,
+            vec![
+                ForceCandidateTrace {
+                    candidate: fx.holder,
+                    eligible: false,
+                },
+                ForceCandidateTrace {
+                    candidate: fx.candidate_a,
+                    eligible: true,
+                },
+                ForceCandidateTrace {
+                    candidate: fx.candidate_b,
+                    eligible: true,
+                },
+            ]
+        );
     }
 
     #[test]

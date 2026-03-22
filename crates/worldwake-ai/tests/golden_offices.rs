@@ -2135,17 +2135,17 @@ fn golden_faction_eligibility_filters_office_claim() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 19: Force Succession Installs Sole Living Eligible Contender
+// Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 // ---------------------------------------------------------------------------
 //
 // Setup: Vacant office at VillageSquare using SuccessionLaw::Force. Agent A is
-// politically ambitious, informed about the office, and alive at the
-// jurisdiction. Agent B is colocated and otherwise eligible but has
-// DeadAt(Tick(0)).
+// politically ambitious, informed about the office, alive at the jurisdiction,
+// and already has an explicit force claim recorded. Agent B is colocated and
+// otherwise eligible but has DeadAt(Tick(0)).
 //
-// Expected: Force-law succession installs A after the succession period. Since
-// Force offices do not use support-based political actions, no declare_support
-// action commits occur.
+// Expected: Force-law succession installs A after the uncontested hold period.
+// Since Force offices do not use support-based political actions, no
+// declare_support action commits occur.
 
 fn build_force_succession_scenario(
     seed: Seed,
@@ -2224,6 +2224,11 @@ fn build_force_succession_scenario(
         worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
         Some(VILLAGE_SQUARE),
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.add_force_claim(living_claimant, office).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
 
     (h, living_claimant, dead_rival, office)
 }
