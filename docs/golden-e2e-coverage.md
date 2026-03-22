@@ -1,26 +1,16 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18)
-**Scope**: `crates/worldwake-ai/tests/golden_*.rs` (split across domain files, shared harness in `golden_harness/mod.rs`)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21, S18 craft-restock supply-chain coverage added 2026-03-21)
+**Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
+**Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
+**Inventory source**: The canonical mechanical inventory now lives in [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) and is regenerated/validated with `python3 scripts/golden_inventory.py --write --check-docs`. That command cross-checks the current `golden_*.rs` declarations against `cargo test -p worldwake-ai -- --list`.
 
 ---
 
 ## File Layout
 
-```
-crates/worldwake-ai/tests/
-  golden_harness/
-    mod.rs                    — GoldenHarness, helpers, recipe builders, world setup
-  golden_ai_decisions.rs      — 11 tests (scenarios 1, 2, 3b, 3c, 5, 7, 7a, 7b, 7d, 7e, S02b)
-  golden_care.rs              — 12 tests (third-party care + self-care + ground medicine acquisition + indirect-report gate + care goal invalidation + replays)
-  golden_production.rs        — 17 tests (scenarios 3, 3d, 3f, 4, 6a, 6b, 6c, 6d, 9, 9b, 9c, 9d + replays)
-  golden_combat.rs            — 19 tests (living combat + wound recovery + defensive mitigation + death/loot/burial/suppression + multi-corpse binding + bury suppression + combined suppression-binding scenarios + replays)
-  golden_determinism.rs       — 4 tests (scenarios 6, 6e, S02 + replay)
-  golden_trade.rs             — 4 tests (scenarios 2b, 2d + replays)
-  golden_social.rs            — 10 tests (autonomous tell, suppression under survival pressure, rumor relay degradation, stale-belief correction, skeptical-listener rejection, bystander locality, entity-missing discovery, chain-length filtering, agent diversity, rumor-wasted-trip-discovery)
-  golden_emergent.rs          — 9 tests (cross-system emergence: wound-vs-hunger priority S07a/S07b, care-weight divergence S07c, care-travel-to-remote-patient S07d, loot-corpse-self-care S07e + replays)
-```
+See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for the current per-file counts and the full `golden_*` name inventory. Keep this dashboard focused on coverage interpretation rather than duplicating the mechanical inventory by hand.
 
 ---
 
@@ -30,26 +20,28 @@ crates/worldwake-ai/tests/
 
 | GoalKind | Tested? | Scenarios |
 |----------|---------|-----------|
-| ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a |
+| ConsumeOwnedCommodity | Yes | 1, 2, 3, 4, 5, 6b, 7, 7a, 30 |
 | AcquireCommodity (SelfConsume) | Yes | 1, 2b, 4, 5 |
 | AcquireCommodity (Restock) | Yes | 2d |
 | AcquireCommodity (RecipeInput) | Yes | 6a |
-| TreatWounds (self) | Yes | 2c |
+| TreatWounds (self) | Yes | 2c, 23 |
 | TreatWounds (other) | Yes | 2c |
 | Sleep | Yes | 2 |
 | Relieve | Yes | 7b |
-| Wash | Yes | 7e |
+| Wash | Yes | 7e, 30 |
 | EngageHostile | Yes | 7c |
 | ReduceDanger | Yes | 7f |
 | ProduceCommodity | Yes | 6b |
 | SellCommodity | **No** | — |
-| RestockCommodity | Yes | 2d |
+| RestockCommodity | Yes | 2d, 2d-craft |
 | MoveCargo | Yes | 2d |
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
-| ShareBelief | Yes | 2e |
+| ShareBelief | Yes | 2e, 22, 24, 25 |
+| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 28 |
+| SupportCandidateForOffice | Yes | 12, 13, 14 |
 
-**Coverage: 17/18 GoalKinds tested (94.4%).**
+**Coverage: 19/19 GoalKinds tested (100%).**
 
 ### ActionDomain Coverage
 
@@ -57,9 +49,9 @@ crates/worldwake-ai/tests/
 |--------|---------|-----|
 | Generic | Implicit | — |
 | Needs (eat, drink, sleep, relieve, wash) | Yes | eat + drink + sleep + relieve + wash |
-| Production (harvest, craft) | Yes | 4, 5, 6b |
+| Production (harvest, craft) | Yes | 2d-craft, 4, 5, 6b, 26 |
 | FacilityQueue (queue_for_facility_use) | Yes | 9 |
-| Trade | Yes | 2b |
+| Trade | Yes | 2b, 27 |
 | Travel | Yes | 1, 3 (implicit) |
 | Transport | Yes | pick-up/materialization (4, 6c) + destination-local cargo delivery semantics (2d) |
 | Combat (attack, defend) | Yes | 7c, 7f |
@@ -84,8 +76,8 @@ crates/worldwake-ai/tests/
 | Place | Used? | Scenarios |
 |-------|-------|-----------|
 | VillageSquare | Yes | All |
-| OrchardFarm | Yes | 1, 2d, 3, 3b, 4, 5 |
-| GeneralStore | Yes | 2d |
+| OrchardFarm | Yes | 1, 2d, 2d-craft, 3, 3b, 4, 5 |
+| GeneralStore | Yes | 2d, 2d-craft |
 | CommonHouse | **No** | — |
 | RulersHall | **No** | — |
 | GuardPost | **No** | — |
@@ -96,7 +88,7 @@ crates/worldwake-ai/tests/
 | SouthGate | Yes | 2d |
 | EastFieldTrail | Yes | 3b |
 
-**9/12 places are now used. Multi-hop travel is explicitly tested via both the BanditCamp→OrchardFarm route and the GeneralStore→OrchardFarm merchant restock route.**
+**9/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route, the VillageSquare→OrchardFarm branchy-hub route, the GeneralStore→OrchardFarm merchant harvest-restock route, and the GeneralStore→OrchardFarm prerequisite-aware craft-restock route.**
 
 ### Cross-System Interaction Coverage
 
@@ -107,15 +99,18 @@ crates/worldwake-ai/tests/
 | Metabolism → thirst escalation → drinking | Yes |
 | Bladder pressure → travel → relief | Yes |
 | Production → materialization → transport → consumption | Yes |
+| Remote recipe-input procurement → multi-leg travel → craft → output pickup → consume | Yes |
 | Resource depletion → regeneration → re-harvest | Yes |
 | Deprivation → wounds → death | Yes |
 | Death → loot | Yes |
 | Corpse burial → containment-based inaccessibility | Yes |
 | Trade negotiation between two agents | Yes |
 | Multi-hop travel to distant acquisition source | Yes |
+| Default-budget branchy-hub travel selection from VillageSquare | Yes |
 | Combat between two living agents | Yes |
 | Healing a wounded agent with medicine | Yes |
 | Merchant restock → travel → acquire → return stock to home market | Yes |
+| Merchant restock → prerequisite-aware remote input acquisition → return → local craft → home-market stock | Yes |
 | Goal switching during multi-leg travel | Yes |
 | Carry capacity exhaustion forcing inventory decisions | Yes |
 | Multi-agent reservation-backed resource exhaustion | Yes |
@@ -130,6 +125,8 @@ crates/worldwake-ai/tests/
 | Materialized output theft → fresh replanning to distant fallback | Yes |
 | Save/load round-trip with reconstructed AI runtime → identical continuation | Yes |
 | Wound bleed → clotting → natural recovery | Yes |
+| Critical deprivation fires consolidate into one persistent starvation wound instead of duplicating wounds | Yes |
+| Recovery-aware promotion raises eat above a higher wash motive and opens the wound-recovery gate | Yes |
 | Loot/bury suppression under self-care pressure → relief → suppression lift | Yes |
 | Multi-corpse loot binding → sequential target selection via matches_binding | Yes |
 | Bury suppression under hunger stress → eat → suppression lift → burial | Yes |
@@ -137,16 +134,36 @@ crates/worldwake-ai/tests/
 | Bystander witnesses telling without receiving belief payload | Yes |
 | Entity-missing discovery from violated local expectation | Yes |
 | Stale belief → travel to depleted source → passive re-observation → replan | Yes |
-| Memory retention decay → belief eviction → changed candidate generation | Focused runtime coverage |
+| Unchanged repeat tell → explicit told-memory suppression | Yes |
+| Material belief change → lawful re-tell → updated listener belief | Yes |
+| Conversation-memory expiry → lawful re-tell without belief-content change | Yes |
+| Decision traces expose social omission and re-enablement via recipient-knowledge status | Yes |
 | Pain pressure → treatment acquisition → pick-up → heal | Yes |
 | Self-care: wound → TreatWounds{self} → medicine consumption → wound reduction | Yes |
 | Self-care supply path: wound → TreatWounds{self} → ground pick-up → heal | Yes |
 | Direct-observation gate: Report-sourced wound belief does NOT trigger TreatWounds | Yes |
 | Care goal invalidation: patient self-heals → healer's TreatWounds satisfied | Yes |
+| Care pre-start wound disappearance: lawful TreatWounds selection → wounds disappear before authoritative input drain → `StartFailed` → blocked intent persisted next tick | Yes |
+| Contested harvest start failure: two agents lawfully select the same local harvest → loser records `StartFailed` at authoritative start → next AI tick clears stale branch → travel to remote orchard → harvest → eat | Yes |
+| Local trade opportunity vanishes: two buyers lawfully target one edible stock unit → loser records `StartFailed` on stale trade start → next AI tick abandons dead local trade branch → distant production fallback → eat | Yes |
 | Speaker-side chain-length filtering prevents infinite gossip propagation | Yes |
 | social_weight diversity → distinct social behavior (Principle 20) | Yes |
 | Zero-motive filter prevents execution of unmotivated goals | Yes |
 | Rumor → travel → passive observation → discovery → belief source upgrade → replan | Yes |
+| Enterprise weight → ClaimOffice → DeclareSupport → succession resolution → office installation | Yes |
+| Loyalty → SupportCandidateForOffice → DeclareSupport(other) → multi-agent support competition → decisive installation | Yes |
+| Bribe → commodity transfer → loyalty → SupportCandidateForOffice → coalition majority → office installation | Yes |
+| Threaten → courage diversity → yield/resist divergence → coalition building → office installation (Principle 20) | Yes |
+| Remote ClaimOffice belief → multi-hop travel planning (Principle 7 locality) → sequential travel → DeclareSupport → succession installation | Yes |
+| Unknown remote office fact → no political candidate generation or travel → explicit reported belief update → ClaimOffice emerges → travel → succession installation | Yes |
+| Hunger self-care pressure suppresses ClaimOffice → eat → suppression lift → DeclareSupport → succession installation | Yes |
+| Faction membership eligibility gate → ClaimOffice candidate generation allowed for member and denied for non-member → only eligible claimant installs | Yes |
+| Combat death → authoritative vacancy mutation → delayed force-law succession installation | Yes |
+| Remote office Tell → reported office belief update → ClaimOffice emerges → travel → DeclareSupport → succession installation | Yes |
+| Same-place office fact still requires Tell: co-location alone does not create office knowledge, but Tell unlocks ClaimOffice and DeclareSupport at the same place | Yes |
+| Already-told recent subject omitted before truncation → older untold office fact still told → remote ClaimOffice travel and succession still occur | Yes |
+| Remote office claim race: two informed claimants travel toward the same vacancy → winner installs first → loser records political `StartFailed` at authoritative start → next AI tick clears stale claim path and stops re-attempting the occupied office | Yes |
+| Wounded politician ordering: medium pain commits `heal` before `declare_support`, low pain commits `declare_support` before `heal`, and both converge to office-holder + reduced wounds | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
 | UtilityProfile weight divergence → different goal selection (Principle 20, survival vs enterprise) | Yes |
 | Wound vs hunger priority resolved by concrete utility weights (Principle 3, 20) | Yes |
@@ -160,20 +177,20 @@ crates/worldwake-ai/tests/
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 87 | 90 |
-| GoalKind coverage | 17/18 (94.4%) | 17/18 (94.4%) |
+| Proven tests | 139 | 139 |
+| GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 48 | 51 |
+| Cross-system chains | 71 | 71 |
 
 ### Pending Backlog Summary
 
-**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — blocked on `specs/S08-ai-decision-traceability.md`. The producer→merchant→consumer end-to-end test could not be debugged to completion without AI decision traces. Will be re-implemented after S08 lands.
+**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — still blocked on `specs/S10-bilateral-trade-negotiation.md` for the full producer→merchant→consumer combined chain only. The craft-restock prerequisite segment is no longer a gap: `golden_supply_chain.rs` now covers both the harvest-restock segment and the prerequisite-aware craft-restock segment, while the ignored blocked full-chain cases remain the unresolved pricing/negotiation gap.
 
 ### Recommended Implementation Order
 
-No remaining golden backlog items.
+1. S02c multi-role emergent supply chain
 
 ---
 

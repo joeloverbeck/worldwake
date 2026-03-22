@@ -15,6 +15,7 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
         rng: _rng,
         active_actions,
         action_defs,
+        politics_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -218,7 +219,7 @@ fn apply_deprivation_consequences(
     let mut wounds_changed = false;
 
     if exposure.hunger_critical_ticks >= profile.starvation_tolerance_ticks.get() {
-        append_deprivation_wound(
+        worsen_or_create_deprivation_wound(
             &mut wound_list,
             world.get_component_wound_list(entity),
             DeprivationKind::Starvation,
@@ -230,7 +231,7 @@ fn apply_deprivation_consequences(
     }
 
     if exposure.thirst_critical_ticks >= profile.dehydration_tolerance_ticks.get() {
-        append_deprivation_wound(
+        worsen_or_create_deprivation_wound(
             &mut wound_list,
             world.get_component_wound_list(entity),
             DeprivationKind::Dehydration,
@@ -268,20 +269,26 @@ fn apply_deprivation_consequences(
     ))
 }
 
-fn append_deprivation_wound(
+fn worsen_or_create_deprivation_wound(
     wound_list: &mut Option<WoundList>,
     existing: Option<&WoundList>,
     kind: DeprivationKind,
-    severity: worldwake_core::Permille,
+    severity_increase: worldwake_core::Permille,
     tick: Tick,
 ) {
     let list = wound_list.get_or_insert_with(|| existing.cloned().unwrap_or_default());
+    if let Some(wound) = list.find_deprivation_wound_mut(kind) {
+        wound.severity = wound.severity.saturating_add(severity_increase);
+        wound.inflicted_at = tick;
+        return;
+    }
+
     let wound_id = list.next_wound_id();
     list.wounds.push(Wound {
         id: wound_id,
         body_part: BodyPart::Torso,
         cause: WoundCause::Deprivation(kind),
-        severity,
+        severity: severity_increase,
         inflicted_at: tick,
         bleed_rate_per_tick: worldwake_core::Permille::new(0).expect("zero is a valid permille"),
     });
@@ -301,17 +308,17 @@ fn critical_ticks(
 
 #[cfg(test)]
 mod tests {
-    use super::needs_system;
+    use super::{needs_system, worsen_or_create_deprivation_wound};
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, DeadAt,
-        DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+        build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
+        DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
         DeprivationKind, DriveThresholds, EventLog, EventTag, EventView, HomeostaticNeeds,
-        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
+        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
@@ -438,6 +445,7 @@ mod tests {
             rng,
             active_actions,
             action_defs,
+            politics_trace: None,
             tick: Tick(7),
             system_id: SystemId::Needs,
         }
@@ -474,6 +482,17 @@ mod tests {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
         agent
+    }
+
+    fn deprivation_wound(id: u64, kind: DeprivationKind, severity: u16, tick: u64) -> Wound {
+        Wound {
+            id: WoundId(id),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Deprivation(kind),
+            severity: pm(severity),
+            inflicted_at: Tick(tick),
+            bleed_rate_per_tick: pm(0),
+        }
     }
 
     #[test]
@@ -544,7 +563,7 @@ mod tests {
                 actor: agent,
                 targets: Vec::new(),
                 start_tick: Tick(6),
-                remaining_duration: ActionDuration::Finite(2),
+                remaining_duration: ActionDuration::new(2),
                 status: ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: Some(ActionState::Empty),
@@ -725,6 +744,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Needs,
         })
@@ -845,6 +865,122 @@ mod tests {
     }
 
     #[test]
+    fn worsen_creates_new_when_no_existing() {
+        let mut wound_list = None;
+
+        worsen_or_create_deprivation_wound(
+            &mut wound_list,
+            None,
+            DeprivationKind::Starvation,
+            pm(500),
+            Tick(12),
+        );
+
+        let wound_list = wound_list.expect("wound list should be created");
+        assert_eq!(wound_list.wounds.len(), 1);
+        assert_eq!(
+            wound_list.wounds[0],
+            deprivation_wound(1, DeprivationKind::Starvation, 500, 12)
+        );
+    }
+
+    #[test]
+    fn worsen_increases_existing_severity() {
+        let existing = WoundList {
+            wounds: vec![deprivation_wound(7, DeprivationKind::Starvation, 200, 5)],
+        };
+        let mut wound_list = None;
+
+        worsen_or_create_deprivation_wound(
+            &mut wound_list,
+            Some(&existing),
+            DeprivationKind::Starvation,
+            pm(500),
+            Tick(12),
+        );
+
+        let wound_list = wound_list.expect("existing wound list should be cloned");
+        assert_eq!(wound_list.wounds.len(), 1);
+        assert_eq!(wound_list.wounds[0].id, WoundId(7));
+        assert_eq!(wound_list.wounds[0].severity, pm(700));
+    }
+
+    #[test]
+    fn worsen_caps_at_permille_max() {
+        let existing = WoundList {
+            wounds: vec![deprivation_wound(2, DeprivationKind::Starvation, 800, 5)],
+        };
+        let mut wound_list = None;
+
+        worsen_or_create_deprivation_wound(
+            &mut wound_list,
+            Some(&existing),
+            DeprivationKind::Starvation,
+            pm(500),
+            Tick(12),
+        );
+
+        let wound_list = wound_list.expect("existing wound list should be cloned");
+        assert_eq!(wound_list.wounds[0].severity, pm(1000));
+    }
+
+    #[test]
+    fn different_kinds_create_separate_wounds() {
+        let existing = WoundList {
+            wounds: vec![deprivation_wound(3, DeprivationKind::Starvation, 200, 5)],
+        };
+        let mut wound_list = None;
+
+        worsen_or_create_deprivation_wound(
+            &mut wound_list,
+            Some(&existing),
+            DeprivationKind::Dehydration,
+            pm(400),
+            Tick(12),
+        );
+
+        let wound_list = wound_list.expect("existing wound list should be cloned");
+        assert_eq!(wound_list.wounds.len(), 2);
+        assert_eq!(
+            wound_list
+                .find_deprivation_wound(DeprivationKind::Starvation)
+                .expect("starvation wound should remain present")
+                .id,
+            WoundId(3)
+        );
+        assert_eq!(
+            wound_list
+                .find_deprivation_wound(DeprivationKind::Dehydration)
+                .expect("dehydration wound should be appended")
+                .id,
+            WoundId(4)
+        );
+    }
+
+    #[test]
+    fn worsen_updates_inflicted_at() {
+        let existing = WoundList {
+            wounds: vec![deprivation_wound(8, DeprivationKind::Starvation, 200, 5)],
+        };
+        let mut wound_list = None;
+
+        worsen_or_create_deprivation_wound(
+            &mut wound_list,
+            Some(&existing),
+            DeprivationKind::Starvation,
+            pm(100),
+            Tick(50),
+        );
+
+        let wound = wound_list
+            .expect("existing wound list should be cloned")
+            .find_deprivation_wound(DeprivationKind::Starvation)
+            .expect("starvation wound should remain present")
+            .clone();
+        assert_eq!(wound.inflicted_at, Tick(50));
+    }
+
+    #[test]
     fn needs_system_requires_another_full_tolerance_period_before_second_wound() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let agent = spawn_agent(&mut world, 1, "Aster");
@@ -890,6 +1026,77 @@ mod tests {
                 .unwrap()
                 .hunger_critical_ticks,
             1
+        );
+    }
+
+    #[test]
+    fn needs_system_second_starvation_threshold_worsens_existing_wound() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
+            DeprivationExposure {
+                hunger_critical_ticks: 99,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            thresholds,
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([14; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        let initial_wound = world
+            .get_component_wound_list(agent)
+            .expect("first starvation wound should be recorded")
+            .find_deprivation_wound(DeprivationKind::Starvation)
+            .expect("starvation wound should exist")
+            .clone();
+
+        let mut txn = new_txn(&mut world, 8);
+        txn.set_component_deprivation_exposure(
+            agent,
+            DeprivationExposure {
+                hunger_critical_ticks: 99,
+                ..DeprivationExposure::default()
+            },
+        )
+        .unwrap();
+        let _ = txn.commit(&mut event_log);
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(agent).unwrap();
+        assert_eq!(wounds.wounds.len(), 1);
+        let worsened = wounds
+            .find_deprivation_wound(DeprivationKind::Starvation)
+            .expect("starvation wound should still exist");
+        assert_eq!(worsened.id, initial_wound.id);
+        assert_eq!(
+            worsened.severity,
+            initial_wound
+                .severity
+                .saturating_add(thresholds.hunger.critical())
         );
     }
 
@@ -994,6 +1201,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(8),
             system_id: SystemId::Trade,
         })

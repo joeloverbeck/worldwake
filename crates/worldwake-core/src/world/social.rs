@@ -194,10 +194,15 @@ impl World {
     }
 
     #[must_use]
-    pub fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+    pub(crate) fn authoritative_office_holder(&self, office: EntityId) -> Option<EntityId> {
         self.ensure_live_kind(office, EntityKind::Office, "office query target")
             .ok()?;
-        let holder = self.relations.office_holder.get(&office).copied()?;
+        self.relations.office_holder.get(&office).copied()
+    }
+
+    #[must_use]
+    pub fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+        let holder = self.authoritative_office_holder(office)?;
         self.is_alive(holder).then_some(holder)
     }
 
@@ -242,7 +247,9 @@ impl World {
     ) -> Result<(), WorldError> {
         self.ensure_alive(supporter)?;
         self.ensure_live_kind(office, EntityKind::Office, "support declaration office")?;
-        self.relations.support_declarations.remove(&(supporter, office));
+        self.relations
+            .support_declarations
+            .remove(&(supporter, office));
         Ok(())
     }
 

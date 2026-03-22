@@ -490,10 +490,7 @@ mod tests {
         };
         let policy = goal_family_policy(&enterprise_acquire);
         assert_eq!(policy.suppression, SuppressionRule::Never);
-        assert_eq!(
-            policy.penalty_interrupt,
-            PenaltyInterruptEligibility::Never
-        );
+        assert_eq!(policy.penalty_interrupt, PenaltyInterruptEligibility::Never);
         assert_eq!(policy.free_interrupt, FreeInterruptRole::Normal);
     }
 

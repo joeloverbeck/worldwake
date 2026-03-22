@@ -437,7 +437,9 @@ mod tests {
             loyal_target,
             BTreeMap::from([(item, Permille::new(650).unwrap())]),
         );
-        tables.support_declarations.insert((item, office), candidate);
+        tables
+            .support_declarations
+            .insert((item, office), candidate);
         tables.office_holder.insert(office, item);
         tables
             .offices_held
@@ -586,7 +588,9 @@ mod tests {
         tables
             .members_of
             .insert(faction, [item].into_iter().collect());
-        tables.support_declarations.insert((item, office), candidate);
+        tables
+            .support_declarations
+            .insert((item, office), candidate);
         tables.office_holder.insert(office, item);
         tables
             .offices_held
@@ -620,7 +624,10 @@ mod tests {
             tables.member_of.get(&item),
             Some(&BTreeSet::from([faction]))
         );
-        assert_eq!(tables.support_declarations.get(&(item, office)), Some(&candidate));
+        assert_eq!(
+            tables.support_declarations.get(&(item, office)),
+            Some(&candidate)
+        );
         assert_eq!(tables.office_holder.get(&office), Some(&item));
         assert_eq!(tables.hostile_to.get(&item), Some(&BTreeSet::from([enemy])));
         assert_eq!(
@@ -633,7 +640,10 @@ mod tests {
         assert!(tables.reservations_by_entity.is_empty());
         assert_eq!(tables.possessed_by.get(&item), Some(&holder));
         assert_eq!(tables.owned_by.get(&item), Some(&owner));
-        assert_eq!(tables.support_declarations.get(&(item, office)), Some(&candidate));
+        assert_eq!(
+            tables.support_declarations.get(&(item, office)),
+            Some(&candidate)
+        );
     }
 
     #[test]
@@ -662,7 +672,9 @@ mod tests {
             target,
             BTreeMap::from([(loyal_subject, Permille::new(500).unwrap())]),
         );
-        tables.support_declarations.insert((supporter, office), target);
+        tables
+            .support_declarations
+            .insert((supporter, office), target);
         tables.office_holder.insert(office, holder);
         tables
             .offices_held
@@ -702,7 +714,9 @@ mod tests {
         tables
             .offices_held
             .insert(member, [office].into_iter().collect());
-        tables.support_declarations.insert((supporter, office), member);
+        tables
+            .support_declarations
+            .insert((supporter, office), member);
 
         tables.remove_all(office);
         assert!(tables.support_declarations.is_empty());

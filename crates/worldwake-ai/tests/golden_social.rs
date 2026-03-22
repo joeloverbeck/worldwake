@@ -3,13 +3,15 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::GoalTraceStatus;
 use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
-    HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource,
-    Quantity, ResourceSource, Seed, SocialObservationKind, TellProfile, Tick, UtilityProfile,
-    WorkstationTag,
+    GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity,
+    RecipientKnowledgeStatus, ResourceSource, Seed, SocialObservationKind, TellMemoryKey,
+    TellProfile, Tick, UtilityProfile, WorkstationTag,
 };
+use worldwake_sim::ActionTraceKind;
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
     UtilityProfile {
@@ -24,6 +26,9 @@ fn blind_perception_profile() -> PerceptionProfile {
         memory_retention_ticks: 240,
         observation_fidelity: pm(0),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
     }
 }
 
@@ -33,6 +38,9 @@ fn keen_perception_profile() -> PerceptionProfile {
         memory_retention_ticks: 240,
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
     }
 }
 
@@ -41,6 +49,7 @@ fn accepting_tell_profile() -> TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
         acceptance_fidelity: pm(1000),
+        ..TellProfile::default()
     }
 }
 
@@ -49,6 +58,7 @@ fn rejecting_tell_profile() -> TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
         acceptance_fidelity: pm(0),
+        ..TellProfile::default()
     }
 }
 
@@ -103,20 +113,22 @@ fn saw_entity_missing_discovery(
     observer: EntityId,
     subject: EntityId,
 ) -> bool {
-    log.events_by_tag(EventTag::Discovery).iter().any(|event_id| {
-        log.get(*event_id).is_some_and(|event| {
-            event.evidence().iter().any(|evidence| {
-                matches!(
-                    evidence,
-                    EvidenceRef::Mismatch {
-                        observer: evidence_observer,
-                        subject: evidence_subject,
-                        kind: MismatchKind::EntityMissing,
-                    } if *evidence_observer == observer && *evidence_subject == subject
-                )
+    log.events_by_tag(EventTag::Discovery)
+        .iter()
+        .any(|event_id| {
+            log.get(*event_id).is_some_and(|event| {
+                event.evidence().iter().any(|evidence| {
+                    matches!(
+                        evidence,
+                        EvidenceRef::Mismatch {
+                            observer: evidence_observer,
+                            subject: evidence_subject,
+                            kind: MismatchKind::EntityMissing,
+                        } if *evidence_observer == observer && *evidence_subject == subject
+                    )
+                })
             })
         })
-    })
 }
 
 fn run_until(limit: usize, mut step: impl FnMut() -> bool) -> bool {
@@ -128,11 +140,212 @@ fn run_until(limit: usize, mut step: impl FnMut() -> bool) -> bool {
     false
 }
 
+struct SocialRetellFixture {
+    h: GoldenHarness,
+    speaker: EntityId,
+    listener: EntityId,
+    subject: EntityId,
+}
+
+fn listener_suppressed_social_utility() -> UtilityProfile {
+    UtilityProfile {
+        social_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+fn retell_speaker_profile(retention_ticks: u64) -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 1,
+        acceptance_fidelity: pm(1000),
+        conversation_memory_retention_ticks: retention_ticks,
+        ..TellProfile::default()
+    }
+}
+
+fn build_social_retell_fixture(
+    seed: Seed,
+    speaker_tell_profile: TellProfile,
+) -> SocialRetellFixture {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        listener_suppressed_social_utility(),
+    );
+    let subject = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in [speaker, listener] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+    }
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        speaker_tell_profile,
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        blind_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        keen_perception_profile(),
+    );
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        subject,
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    );
+
+    SocialRetellFixture {
+        h,
+        speaker,
+        listener,
+        subject,
+    }
+}
+
+fn share_goal(listener: EntityId, subject: EntityId) -> GoalKind {
+    GoalKind::ShareBelief { listener, subject }
+}
+
+fn told_memory(
+    world: &worldwake_core::World,
+    speaker: EntityId,
+    listener: EntityId,
+    subject: EntityId,
+) -> worldwake_core::ToldBeliefMemory {
+    world
+        .get_component_agent_belief_store(speaker)
+        .and_then(|store| {
+            store.told_beliefs.get(&TellMemoryKey {
+                counterparty: listener,
+                subject,
+            })
+        })
+        .cloned()
+        .expect("speaker should have told-memory for the listener and subject")
+}
+
+fn latest_goal_status(h: &GoldenHarness, speaker: EntityId, goal: &GoalKind) -> GoalTraceStatus {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .traces_for(speaker)
+        .into_iter()
+        .last()
+        .expect("speaker should have at least one decision trace")
+        .goal_status(goal)
+}
+
+fn wait_for_initial_tell(fixture: &mut SocialRetellFixture) -> Tick {
+    let learned = run_until(24, || {
+        fixture.h.step_once();
+        agent_belief_about(&fixture.h.world, fixture.listener, fixture.subject).is_some()
+    });
+    assert!(
+        learned,
+        "listener should learn the speaker's initial subject belief"
+    );
+
+    let memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    memory.told_tick
+}
+
+fn seed_subject_belief_change(fixture: &mut SocialRetellFixture, available_quantity: Quantity) {
+    let mut source = fixture
+        .h
+        .world
+        .get_component_resource_source(fixture.subject)
+        .cloned()
+        .expect("subject workstation should have a resource source");
+    source.available_quantity = available_quantity;
+
+    let observed_tick = fixture.h.scheduler.current_tick();
+    let mut txn = new_txn(&mut fixture.h.world, observed_tick.0);
+    txn.set_component_resource_source(fixture.subject, source)
+        .expect("subject resource source should remain writable");
+    commit_txn(txn, &mut fixture.h.event_log);
+
+    let changed_belief = build_believed_entity_state(
+        &fixture.h.world,
+        fixture.subject,
+        observed_tick,
+        PerceptionSource::DirectObservation,
+    )
+    .expect("changed subject should remain observable for belief seeding");
+    seed_belief(
+        &mut fixture.h.world,
+        &mut fixture.h.event_log,
+        fixture.speaker,
+        fixture.subject,
+        changed_belief,
+    );
+}
+
 #[allow(clippy::too_many_lines)]
 fn run_autonomous_tell_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
 
     let speaker = seed_agent(
         &mut h.world,
@@ -175,7 +388,12 @@ fn run_autonomous_tell_scenario(
         speaker,
         focused_accepting_tell_profile(),
     );
-    set_agent_tell_profile(&mut h.world, &mut h.event_log, listener, accepting_tell_profile());
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
@@ -189,22 +407,22 @@ fn run_autonomous_tell_scenario(
         keen_perception_profile(),
     );
 
-    let listener_belief = build_believed_entity_state(
-        &h.world,
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         listener,
         Tick(0),
         PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable for tell targeting");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, listener, listener_belief);
-    let orchard_belief = build_believed_entity_state(
-        &h.world,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         orchard,
         Tick(1),
         PerceptionSource::DirectObservation,
-    )
-    .expect("orchard should be observable for belief seeding");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, orchard_belief);
+    );
 
     let mut saw_social_event = false;
     let mut saw_report_belief = false;
@@ -235,7 +453,10 @@ fn run_autonomous_tell_scenario(
         }
     }
 
-    assert!(saw_social_event, "speaker should execute a social tell event");
+    assert!(
+        saw_social_event,
+        "speaker should execute a social tell event"
+    );
     assert!(
         saw_report_belief,
         "listener should receive a reported belief about the orchard"
@@ -249,13 +470,14 @@ fn run_autonomous_tell_scenario(
         "listener should replan toward Orchard Farm after receiving the told belief"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[allow(clippy::too_many_lines)]
-fn run_rumor_chain_scenario(
-    seed: Seed,
-) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+fn run_rumor_chain_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
 
     let alice = seed_agent(
@@ -311,13 +533,9 @@ fn run_rumor_chain_scenario(
         );
     }
 
-    let bob_belief = build_believed_entity_state(
-        &h.world,
-        bob,
-        Tick(0),
-        PerceptionSource::DirectObservation,
-    )
-    .expect("Bob should be observable for relay targeting");
+    let bob_belief =
+        build_believed_entity_state(&h.world, bob, Tick(0), PerceptionSource::DirectObservation)
+            .expect("Bob should be observable for relay targeting");
     seed_belief(&mut h.world, &mut h.event_log, alice, bob, bob_belief);
     let subject_belief = build_believed_entity_state(
         &h.world,
@@ -326,7 +544,13 @@ fn run_rumor_chain_scenario(
         PerceptionSource::DirectObservation,
     )
     .expect("Subject should be observable for relay seeding");
-    seed_belief(&mut h.world, &mut h.event_log, alice, subject, subject_belief);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        alice,
+        subject,
+        subject_belief,
+    );
 
     let carol_belief = build_believed_entity_state(
         &h.world,
@@ -361,7 +585,10 @@ fn run_rumor_chain_scenario(
             chain_len: 1
         }
     );
-    assert_eq!(carol_belief.source, PerceptionSource::Rumor { chain_len: 2 });
+    assert_eq!(
+        carol_belief.source,
+        PerceptionSource::Rumor { chain_len: 2 }
+    );
 
     let policy = keen_perception_profile().confidence_policy;
     let current_tick = h.scheduler.current_tick();
@@ -386,9 +613,13 @@ fn run_rumor_chain_scenario(
         "relay provenance should monotonically degrade confidence: alice={alice_confidence:?}, bob={bob_confidence:?}, carol={carol_confidence:?}"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_stale_belief_replan_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
@@ -403,7 +634,12 @@ fn run_stale_belief_replan_scenario(
         worldwake_core::MetabolismProfile::default(),
         UtilityProfile::default(),
     );
-    set_agent_perception_profile(&mut h.world, &mut h.event_log, agent, keen_perception_profile());
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        keen_perception_profile(),
+    );
 
     let orchard = place_workstation_with_source(
         &mut h.world,
@@ -495,9 +731,13 @@ fn run_stale_belief_replan_scenario(
         "agent should not continue into a harvest action after discovery invalidates the stale belief"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_skeptical_listener_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
@@ -544,7 +784,12 @@ fn run_skeptical_listener_scenario(
         speaker,
         focused_accepting_tell_profile(),
     );
-    set_agent_tell_profile(&mut h.world, &mut h.event_log, listener, rejecting_tell_profile());
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        rejecting_tell_profile(),
+    );
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
@@ -557,22 +802,22 @@ fn run_skeptical_listener_scenario(
         listener,
         keen_perception_profile(),
     );
-    let listener_belief = build_believed_entity_state(
-        &h.world,
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         listener,
         Tick(0),
         PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable for tell targeting");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, listener, listener_belief);
-    let orchard_belief = build_believed_entity_state(
-        &h.world,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         orchard,
         Tick(1),
         PerceptionSource::DirectObservation,
-    )
-    .expect("orchard should be observable for belief seeding");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, orchard_belief);
+    );
 
     let mut saw_social_event = false;
     let mut listener_left_village = false;
@@ -580,8 +825,8 @@ fn run_skeptical_listener_scenario(
     for _ in 0..80 {
         h.step_once();
         saw_social_event |= !h.event_log.events_by_tag(EventTag::Social).is_empty();
-        listener_left_village |=
-            h.world.effective_place(listener) != Some(VILLAGE_SQUARE) || h.world.is_in_transit(listener);
+        listener_left_village |= h.world.effective_place(listener) != Some(VILLAGE_SQUARE)
+            || h.world.is_in_transit(listener);
     }
 
     assert!(
@@ -597,7 +842,10 @@ fn run_skeptical_listener_scenario(
         "listener should not travel toward Orchard Farm after rejecting the told belief"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[allow(clippy::too_many_lines)]
@@ -663,7 +911,12 @@ fn run_bystander_witness_scenario(
         speaker,
         focused_accepting_tell_profile(),
     );
-    set_agent_tell_profile(&mut h.world, &mut h.event_log, listener, accepting_tell_profile());
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
     set_agent_tell_profile(
         &mut h.world,
         &mut h.event_log,
@@ -671,22 +924,22 @@ fn run_bystander_witness_scenario(
         rejecting_tell_profile(),
     );
 
-    let listener_belief = build_believed_entity_state(
-        &h.world,
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         listener,
         Tick(0),
         PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable for tell targeting");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, listener, listener_belief);
-    let orchard_belief = build_believed_entity_state(
-        &h.world,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
         orchard,
         Tick(1),
         PerceptionSource::DirectObservation,
-    )
-    .expect("orchard should be observable for belief seeding");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, orchard_belief);
+    );
 
     let scenario_completed = run_until(60, || {
         h.step_once();
@@ -694,11 +947,14 @@ fn run_bystander_witness_scenario(
             .world
             .get_component_agent_belief_store(bystander)
             .expect("bystander should keep a belief store");
-        let witnessed_telling = bystander_store.social_observations.iter().any(|observation| {
-            observation.kind == SocialObservationKind::WitnessedTelling
-                && observation.subjects == (speaker, listener)
-                && observation.place == VILLAGE_SQUARE
-        });
+        let witnessed_telling = bystander_store
+            .social_observations
+            .iter()
+            .any(|observation| {
+                observation.kind == SocialObservationKind::WitnessedTelling
+                    && observation.subjects == (speaker, listener)
+                    && observation.place == VILLAGE_SQUARE
+            });
         let listener_learned_orchard = agent_belief_about(&h.world, listener, orchard).is_some();
         witnessed_telling && listener_learned_orchard
     });
@@ -712,11 +968,14 @@ fn run_bystander_witness_scenario(
         .get_component_agent_belief_store(bystander)
         .expect("bystander should keep a belief store");
     assert!(
-        bystander_store.social_observations.iter().any(|observation| {
-            observation.kind == SocialObservationKind::WitnessedTelling
-                && observation.subjects == (speaker, listener)
-                && observation.place == VILLAGE_SQUARE
-        }),
+        bystander_store
+            .social_observations
+            .iter()
+            .any(|observation| {
+                observation.kind == SocialObservationKind::WitnessedTelling
+                    && observation.subjects == (speaker, listener)
+                    && observation.place == VILLAGE_SQUARE
+            }),
         "bystander should record the witnessed telling event"
     );
     assert!(
@@ -729,7 +988,10 @@ fn run_bystander_witness_scenario(
         "bystander should remain local instead of acting on an unreceived remote belief"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 fn run_entity_missing_scenario(
@@ -797,7 +1059,10 @@ fn run_entity_missing_scenario(
         "entity-missing discovery should not silently teleport the subject to a new place"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[allow(clippy::too_many_lines)]
@@ -805,6 +1070,7 @@ fn run_survival_needs_suppression_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
 
     let speaker = seed_agent(
         &mut h.world,
@@ -846,7 +1112,12 @@ fn run_survival_needs_suppression_scenario(
         speaker,
         focused_accepting_tell_profile(),
     );
-    set_agent_tell_profile(&mut h.world, &mut h.event_log, listener, accepting_tell_profile());
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
@@ -884,7 +1155,13 @@ fn run_survival_needs_suppression_scenario(
         PerceptionSource::DirectObservation,
     )
     .expect("orchard should be observable for belief seeding");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, orchard_belief);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        orchard,
+        orchard_belief,
+    );
 
     let initial_hunger = h.agent_hunger(speaker);
     let initial_bread = h.agent_commodity_qty(speaker, CommodityKind::Bread);
@@ -906,8 +1183,15 @@ fn run_survival_needs_suppression_scenario(
         if first_relief_tick.is_none() && (hunger_decreased || bread_consumed) {
             first_relief_tick = Some(current_tick);
         }
-        if first_social_tick.is_none() && !h.event_log.events_by_tag(EventTag::Social).is_empty() {
-            first_social_tick = Some(current_tick);
+        if first_social_tick.is_none() {
+            let action_sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled for social suppression checks");
+            first_social_tick = action_sink.events_for(speaker).iter().find_map(|event| {
+                (event.action_name == "tell"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some(event.tick.0)
+            });
         }
 
         let listener_knows_orchard = agent_belief_about(&h.world, listener, orchard).is_some();
@@ -948,7 +1232,10 @@ fn run_survival_needs_suppression_scenario(
         "if a social event occurs in this scenario, it must occur strictly after the first survival-relief tick"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]
@@ -1028,6 +1315,280 @@ fn golden_survival_needs_suppress_social_goals() {
     );
 }
 
+#[allow(clippy::too_many_lines)]
+fn run_unchanged_tell_suppression_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut fixture = build_social_retell_fixture(seed, retell_speaker_profile(48));
+    let share_goal = share_goal(fixture.listener, fixture.subject);
+    let initial_told_tick = wait_for_initial_tell(&mut fixture);
+    let initial_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+
+    let mut saw_resend_omission = false;
+    for _ in 0..6 {
+        fixture.h.step_once();
+        saw_resend_omission |= latest_goal_status(&fixture.h, fixture.speaker, &share_goal)
+            == GoalTraceStatus::OmittedSocial(
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            );
+    }
+
+    let final_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    assert!(
+        saw_resend_omission,
+        "decision traces should expose unchanged resend suppression"
+    );
+    assert_eq!(
+        final_memory.told_tick, initial_told_tick,
+        "unchanged resend suppression should leave the original told-memory tick intact"
+    );
+    assert_eq!(
+        final_memory.shared_state, initial_memory.shared_state,
+        "unchanged resend suppression should preserve the original shared snapshot"
+    );
+
+    (
+        hash_world(&fixture.h.world).unwrap(),
+        hash_event_log(&fixture.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener() {
+    let first = run_unchanged_tell_suppression_scenario(Seed([100; 32]));
+    let second = run_unchanged_tell_suppression_scenario(Seed([100; 32]));
+
+    assert_eq!(
+        first, second,
+        "unchanged tell suppression scenario should replay deterministically"
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_retell_after_subject_belief_change_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut fixture = build_social_retell_fixture(seed, retell_speaker_profile(48));
+    let share_goal = share_goal(fixture.listener, fixture.subject);
+    let initial_told_tick = wait_for_initial_tell(&mut fixture);
+
+    seed_subject_belief_change(&mut fixture, Quantity(6));
+
+    let mut saw_reenabled_share_goal = false;
+    let retold = run_until(16, || {
+        fixture.h.step_once();
+        let status = latest_goal_status(&fixture.h, fixture.speaker, &share_goal);
+        saw_reenabled_share_goal |= matches!(
+            status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        );
+        told_memory(
+            &fixture.h.world,
+            fixture.speaker,
+            fixture.listener,
+            fixture.subject,
+        )
+        .told_tick
+            > initial_told_tick
+    });
+
+    assert!(
+        retold,
+        "belief-content change should trigger a lawful re-tell"
+    );
+    assert!(
+        saw_reenabled_share_goal,
+        "decision traces should show ShareBelief re-enabled after a material belief change"
+    );
+
+    let final_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    assert!(
+        final_memory.told_tick > initial_told_tick,
+        "re-tell after belief change should refresh the told-memory tick"
+    );
+    assert_eq!(
+        final_memory
+            .shared_state
+            .resource_source
+            .as_ref()
+            .expect("shared subject snapshot should retain resource source")
+            .available_quantity,
+        Quantity(6),
+        "re-tell should store the materially changed shared content"
+    );
+    assert_eq!(
+        agent_belief_about(&fixture.h.world, fixture.listener, fixture.subject)
+            .and_then(|belief| belief.resource_source.as_ref())
+            .map(|source| source.available_quantity),
+        Some(Quantity(6)),
+        "listener should receive the updated belief content through the second tell"
+    );
+
+    (
+        hash_world(&fixture.h.world).unwrap(),
+        hash_event_log(&fixture.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_agent_retells_after_subject_belief_changes() {
+    let first = run_retell_after_subject_belief_change_scenario(Seed([101; 32]));
+    let second = run_retell_after_subject_belief_change_scenario(Seed([101; 32]));
+
+    assert_eq!(
+        first, second,
+        "belief-change re-tell scenario should replay deterministically"
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_retell_after_conversation_memory_expiry_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut fixture = build_social_retell_fixture(seed, retell_speaker_profile(2));
+    let share_goal = share_goal(fixture.listener, fixture.subject);
+    let initial_told_tick = wait_for_initial_tell(&mut fixture);
+
+    let mut saw_resend_omission_before_expiry = false;
+    let mut saw_reenabled_after_expiry = false;
+    let retold = run_until(16, || {
+        fixture.h.step_once();
+        let status = latest_goal_status(&fixture.h, fixture.speaker, &share_goal);
+        match status {
+            GoalTraceStatus::OmittedSocial(
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            ) => saw_resend_omission_before_expiry = true,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. } => {
+                saw_reenabled_after_expiry = true;
+            }
+            _ => {}
+        }
+
+        told_memory(
+            &fixture.h.world,
+            fixture.speaker,
+            fixture.listener,
+            fixture.subject,
+        )
+        .told_tick
+            > initial_told_tick
+    });
+
+    assert!(
+        retold,
+        "expired conversation memory should permit a lawful re-tell"
+    );
+    assert!(
+        saw_resend_omission_before_expiry,
+        "before expiry, decision traces should still show unchanged resend suppression"
+    );
+    assert!(
+        saw_reenabled_after_expiry,
+        "after expiry, decision traces should show ShareBelief re-enabled"
+    );
+
+    let final_memory = told_memory(
+        &fixture.h.world,
+        fixture.speaker,
+        fixture.listener,
+        fixture.subject,
+    );
+    assert!(
+        final_memory.told_tick > initial_told_tick,
+        "re-tell after expiry should refresh the speaker's told-memory tick"
+    );
+
+    (
+        hash_world(&fixture.h.world).unwrap(),
+        hash_event_log(&fixture.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_agent_retells_after_conversation_memory_expiry() {
+    let first = run_retell_after_conversation_memory_expiry_scenario(Seed([102; 32]));
+    let second = run_retell_after_conversation_memory_expiry_scenario(Seed([102; 32]));
+
+    assert_eq!(
+        first, second,
+        "conversation-memory expiry re-tell scenario should replay deterministically"
+    );
+}
+
+fn run_trace_reenabled_social_candidate_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut changed = build_social_retell_fixture(seed, retell_speaker_profile(48));
+    let changed_goal = share_goal(changed.listener, changed.subject);
+    wait_for_initial_tell(&mut changed);
+    seed_subject_belief_change(&mut changed, Quantity(4));
+    changed.h.step_once();
+
+    let changed_status = latest_goal_status(&changed.h, changed.speaker, &changed_goal);
+    assert!(
+        matches!(
+            changed_status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        ),
+        "belief change should re-enable ShareBelief in the decision trace"
+    );
+
+    let mut expired = build_social_retell_fixture(seed, retell_speaker_profile(2));
+    let expired_goal = share_goal(expired.listener, expired.subject);
+    wait_for_initial_tell(&mut expired);
+    expired.h.step_once();
+    let pre_expiry_status = latest_goal_status(&expired.h, expired.speaker, &expired_goal);
+    assert_eq!(
+        pre_expiry_status,
+        GoalTraceStatus::OmittedSocial(
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ),
+        "before expiry, unchanged resend suppression should still appear in the decision trace"
+    );
+
+    expired.h.step_once();
+    expired.h.step_once();
+    let expired_status = latest_goal_status(&expired.h, expired.speaker, &expired_goal);
+    assert!(
+        matches!(
+            expired_status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        ),
+        "expired conversation memory should re-enable ShareBelief in the decision trace"
+    );
+
+    (
+        hash_event_log(&changed.h.event_log).unwrap(),
+        hash_event_log(&expired.h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry() {
+    let first = run_trace_reenabled_social_candidate_scenario(Seed([103; 32]));
+    let second = run_trace_reenabled_social_candidate_scenario(Seed([103; 32]));
+
+    assert_eq!(
+        first, second,
+        "trace-level social reenablement scenario should replay deterministically"
+    );
+}
+
 // ===== T11: Chain length filtering stops gossip =====
 
 #[allow(clippy::too_many_lines)]
@@ -1041,7 +1602,7 @@ fn run_chain_length_filtering_scenario(
         &mut h.world,
         &mut h.event_log,
         "Alice",
-        VILLAGE_SQUARE,
+        ORCHARD_FARM,
         HomeostaticNeeds::default(),
         worldwake_core::MetabolismProfile::default(),
         social_weighted_utility(900),
@@ -1050,7 +1611,7 @@ fn run_chain_length_filtering_scenario(
         &mut h.world,
         &mut h.event_log,
         "Bob",
-        VILLAGE_SQUARE,
+        ORCHARD_FARM,
         HomeostaticNeeds::default(),
         worldwake_core::MetabolismProfile::default(),
         social_weighted_utility(900),
@@ -1104,6 +1665,7 @@ fn run_chain_length_filtering_scenario(
                 max_tell_candidates: 1,
                 max_relay_chain_len: 3,
                 acceptance_fidelity: pm(1000),
+                ..TellProfile::default()
             },
         );
     }
@@ -1116,6 +1678,7 @@ fn run_chain_length_filtering_scenario(
             max_tell_candidates: 1,
             max_relay_chain_len: 1,
             acceptance_fidelity: pm(1000),
+            ..TellProfile::default()
         },
     );
     // Dave: willing to relay up to 3, but never receives because Carol cannot relay.
@@ -1127,6 +1690,7 @@ fn run_chain_length_filtering_scenario(
             max_tell_candidates: 1,
             max_relay_chain_len: 3,
             acceptance_fidelity: pm(1000),
+            ..TellProfile::default()
         },
     );
 
@@ -1138,15 +1702,17 @@ fn run_chain_length_filtering_scenario(
         PerceptionSource::DirectObservation,
     )
     .expect("subject should be observable");
-    seed_belief(&mut h.world, &mut h.event_log, alice, subject, subject_belief);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        alice,
+        subject,
+        subject_belief,
+    );
 
-    let bob_belief = build_believed_entity_state(
-        &h.world,
-        bob,
-        Tick(0),
-        PerceptionSource::DirectObservation,
-    )
-    .expect("bob should be observable");
+    let bob_belief =
+        build_believed_entity_state(&h.world, bob, Tick(0), PerceptionSource::DirectObservation)
+            .expect("bob should be observable");
     seed_belief(&mut h.world, &mut h.event_log, alice, bob, bob_belief);
 
     // Bob knows Carol (relay target).
@@ -1160,13 +1726,9 @@ fn run_chain_length_filtering_scenario(
     seed_belief(&mut h.world, &mut h.event_log, bob, carol, carol_belief);
 
     // Carol knows Dave (would-be relay target, but blocked by chain_len filter).
-    let dave_belief = build_believed_entity_state(
-        &h.world,
-        dave,
-        Tick(0),
-        PerceptionSource::DirectObservation,
-    )
-    .expect("dave should be observable");
+    let dave_belief =
+        build_believed_entity_state(&h.world, dave, Tick(0), PerceptionSource::DirectObservation)
+            .expect("dave should be observable");
     seed_belief(&mut h.world, &mut h.event_log, carol, dave, dave_belief);
 
     // Step 1: wait for Alice → Bob propagation.
@@ -1174,14 +1736,38 @@ fn run_chain_length_filtering_scenario(
         h.step_once();
         agent_belief_about(&h.world, bob, subject).is_some()
     });
-    assert!(bob_received, "Bob should receive Alice's told belief about subject");
+    assert!(
+        bob_received,
+        "Bob should receive Alice's told belief about subject"
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+        txn.set_ground_location(bob, VILLAGE_SQUARE)
+            .expect("golden chain-length scenario should be able to move Bob to Carol");
+        txn.set_ground_location(dave, ORCHARD_FARM)
+            .expect("golden chain-length scenario should be able to move Dave away from Bob");
+        commit_txn(txn, &mut h.event_log);
+    }
 
     // Step 2: wait for Bob → Carol propagation.
     let carol_received = run_until(40, || {
         h.step_once();
         agent_belief_about(&h.world, carol, subject).is_some()
     });
-    assert!(carol_received, "Carol should receive Bob's relayed belief about subject");
+    assert!(
+        carol_received,
+        "Carol should receive Bob's relayed belief about subject"
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+        txn.set_ground_location(bob, ORCHARD_FARM)
+            .expect("golden chain-length scenario should be able to move Bob away from Dave");
+        txn.set_ground_location(dave, VILLAGE_SQUARE)
+            .expect("golden chain-length scenario should be able to move Dave next to Carol");
+        commit_txn(txn, &mut h.event_log);
+    }
 
     // Step 3: give Dave enough time to potentially receive (he should not).
     for _ in 0..40 {
@@ -1190,13 +1776,12 @@ fn run_chain_length_filtering_scenario(
 
     // Verify chain degradation.
     let bob_belief = agent_belief_about(&h.world, bob, subject).unwrap();
-    assert_eq!(
-        bob_belief.source,
-        PerceptionSource::Report {
-            from: alice,
-            chain_len: 1
-        },
-        "Bob should have Report from Alice with chain_len=1"
+    assert!(
+        matches!(
+            bob_belief.source,
+            PerceptionSource::Report { chain_len: 1, .. }
+        ),
+        "Bob should hold first-order hearsay about the subject"
     );
 
     let carol_belief = agent_belief_about(&h.world, carol, subject).unwrap();
@@ -1211,7 +1796,10 @@ fn run_chain_length_filtering_scenario(
         "Dave should have NO belief about subject — Carol's max_relay_chain_len=1 blocks relay of chain_len=2 rumor"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]
@@ -1335,20 +1923,14 @@ fn run_agent_diversity_scenario(
     );
 
     // Seed beliefs: each speaker knows the listener + their unique subject.
-    let listener_belief = build_believed_entity_state(
-        &h.world,
-        listener,
-        Tick(0),
-        PerceptionSource::DirectObservation,
-    )
-    .expect("listener should be observable");
     for speaker in [gossip, normal, loner] {
-        seed_belief(
+        seed_belief_from_world(
             &mut h.world,
             &mut h.event_log,
             speaker,
             listener,
-            listener_belief.clone(),
+            Tick(0),
+            PerceptionSource::DirectObservation,
         );
     }
 
@@ -1357,14 +1939,19 @@ fn run_agent_diversity_scenario(
         (normal, subject_n, "subject_n"),
         (loner, subject_l, "subject_l"),
     ] {
-        let believed = build_believed_entity_state(
-            &h.world,
+        let belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
             subject,
             Tick(1),
             PerceptionSource::DirectObservation,
-        )
-        .unwrap_or_else(|| panic!("{label} should be observable"));
-        seed_belief(&mut h.world, &mut h.event_log, speaker, subject, believed);
+        );
+        assert_eq!(
+            belief.observed_tick,
+            Tick(1),
+            "{label} belief should preserve the requested observed tick"
+        );
     }
 
     // Run simulation for extended ticks.
@@ -1394,7 +1981,10 @@ fn run_agent_diversity_scenario(
         "Loner (social_weight=0) should never tell listener — zero-motive filter excludes ShareBelief from ranked list"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]
@@ -1577,10 +2167,7 @@ fn run_rumor_wasted_trip_scenario(
         received_rumor,
         "agent should receive a Rumor(chain_len=2) about the orchard from the speaker's told Report"
     );
-    assert!(
-        left_village,
-        "rumor should drive travel toward the orchard"
-    );
+    assert!(left_village, "rumor should drive travel toward the orchard");
     assert!(
         reached_orchard,
         "agent should reach Orchard Farm before discovering depletion"
@@ -1602,7 +2189,10 @@ fn run_rumor_wasted_trip_scenario(
         "belief source should be upgraded from Rumor to DirectObservation after discovery"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]

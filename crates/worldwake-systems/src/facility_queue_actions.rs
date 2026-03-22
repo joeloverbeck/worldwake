@@ -182,7 +182,7 @@ fn start_queue_for_facility_use(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_queue_for_facility_use(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {

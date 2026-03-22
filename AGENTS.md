@@ -5,7 +5,6 @@ This file provides guidance to coding agents working in this repository.
 ## Agent Workflow
 
 - Read this file before making changes.
-- Start with the GitNexus context resource and follow the matching GitNexus skill when the task calls for codebase exploration, impact analysis, debugging, or refactoring.
 - Keep edits minimal and targeted. Do not refactor unrelated code while completing the requested task.
 - If instructions, specs, or repo documentation appear incomplete or contradictory, propose an update to the relevant rules or docs files. Do not make those documentation changes unless the user asks for them.
 
@@ -16,6 +15,16 @@ This file provides guidance to coding agents working in this repository.
 - Use TDD for bug fixes. Add or adjust tests to capture the bug, then fix the behavior. Never adapt tests to preserve a bug.
 - Respect worktree boundaries. If the user asks you to work inside `.claude/worktrees/<name>/`, use that worktree root for all reads, writes, searches, moves, and archival actions.
 - Maintain ticket fidelity. Do not silently skip explicit deliverables from a spec or ticket. If a deliverable seems wrong or blocked, surface it with the 1-3-1 rule instead of deciding unilaterally.
+
+## Ticket Expectations
+
+- Follow `tickets/README.md` when creating or revising tickets. Start from `tickets/_TEMPLATE.md`.
+- Reassess every ticket against current code, focused tests, golden coverage, and harness setup before implementation. If current code and ticket assumptions diverge, update the ticket first.
+- Do not leave a ticket marked `Engine Changes: None` or “tests only” when the requested invariant actually exposes an architectural contradiction in production code. Correct the scope first.
+- When a ticket claims a testing gap, distinguish missing focused/unit coverage from missing golden/E2E coverage.
+- Name the exact layer and symbol for non-trivial claims. Do not collapse AI/planning behavior, authoritative action validation, and system resolution into one vague statement.
+- If a test relies on timing, state whether the contract is action-lifecycle ordering, event-log ordering, or authoritative world-state ordering.
+- Prefer decision-trace assertions for AI candidate absence, suppression, or planner behavior rather than relying only on missing events or missing committed actions.
 
 ## Foundational Principles
 
@@ -69,6 +78,19 @@ These design rules are intentional and should be preserved unless the user expli
 - Unique location. Every entity exists in exactly one place.
 - No backward compatibility layers. When a design changes, update or remove the old path instead of adding shims, redirects, or deprecated wrappers.
 
+## Authoritative-To-AI Impact Rule
+
+Any change to authoritative validation or control checks such as action preconditions, `validate_*` functions, or `can_exercise_control` must be verified across the full AI decision pipeline before it is considered complete:
+
+1. `get_affordances` still exposes the expected candidates.
+2. `generate_candidates` still emits the expected goal kinds.
+3. `search_plan` still finds valid plans, including terminal ordering and barrier handling.
+4. Action start in `tick_step` still handles newly rejected plans gracefully.
+5. `handle_plan_failure` still records blockers and replans correctly after rejection.
+6. Relevant golden coverage passes, and changes that touch AI behavior should normally include `cargo test -p worldwake-ai`.
+
+Golden tests that expect agents to observe produced or newly materialized output need an appropriate `PerceptionProfile`. Without it, tests can fail by never observing the new state.
+
 ## Spec Drafting Rules
 
 All new spec drafts must:
@@ -110,23 +132,48 @@ sink.dump_agent(agent, &h.defs);
 - "Why did the agent switch goals?" → check `InterruptTrace` on `ActiveAction` outcomes
 - "Why did plan search fail?" → check `PlanSearchOutcome` variants (`BudgetExhausted`, `FrontierExhausted`, `Unsupported`)
 
+Decision traces are the first stop for AI reasoning, not the only stop. If the trace shows the selected outcome but does not expose the concrete world facts keeping that branch alive, drop to the shared lower-layer state/query tests before adding ad-hoc instrumentation. If that missing provenance is architecturally important rather than just inconvenient for one test, write a follow-up traceability ticket instead of papering over it locally.
+
 Tracing is opt-in and zero-cost when disabled. Do not leave `enable_tracing()` in committed test code unless the test explicitly asserts on trace data.
 
 ## Debugging Action Execution with Action Traces
 
-For action lifecycle questions ("Did the action run?", "When did it complete?", "Why was it aborted?"), use the action execution trace system in `worldwake-sim`. Enable with `h.enable_action_tracing()` in golden tests. Query with `h.action_trace_sink().unwrap().events_for(agent)`.
+For action lifecycle questions ("Did the action run?", "When did it complete?", "Why was it aborted?"), use the action execution trace system in `worldwake-sim`.
+
+**Quick start in golden tests:**
+
+```rust
+// Enable before stepping:
+h.enable_action_tracing();
+
+// Run ticks, then query:
+let sink = h.action_trace_sink().unwrap();
+let agent_events = sink.events_for(agent);
+let tick_events = sink.events_at(Tick(5));
+let agent_tick_events = sink.events_for_at(agent, Tick(5));
+
+// Dump human-readable summary to stderr:
+sink.dump_agent(agent);
+```
 
 Key types: `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` (Started, Committed, Aborted, StartFailed).
 
-**Important**: Some actions (e.g., loot, eat) complete within a single tick. They are invisible to inter-tick `agent_active_action_name()` observation. Use action traces or state-delta checks for these.
+**When to use which trace:**
+- "Why did the agent choose this action?" -> decision trace
+- "Did the chosen action actually start or commit?" -> action trace
+- "How long did the action take?" -> action trace
+- "Why was the action aborted?" -> action trace
 
-See CLAUDE.md for detailed usage examples and the decision-trace vs action-trace guidance table.
+**Important**: Some actions (e.g., loot, eat) complete within a single tick. They are invisible to inter-tick `agent_active_action_name()` observation. Use action traces or state-delta checks for these. Multi-tick actions such as harvest, travel, and craft remain visible between ticks.
+
+When in doubt, enable action tracing and inspect `events_for_at(agent, tick)` to see exactly what happened during that tick.
+For same-tick cross-agent ordering, `events_at()` / `events_for_at()` tell you which events occurred in the tick, but the ordering contract is the explicit `ActionTraceEvent.sequence_in_tick` key. Do not rewrite that contract as "later tick" unless strict tick separation is the intended engine rule.
 
 ## Delivery Planning
 
 - The implementation plan spans 22 epics across 4 phases.
 - Phase 1 (`E01`-`E08`) and Phase 2 (`E09`-`E13`) are completed and archived under `archive/specs/`.
-- Active epic specs live in `specs/E14-*.md` through `specs/E22-*.md`.
+- Active planning material lives in `specs/` and currently includes the `S04`-`S12` specs plus active `E16b`-`E22` epic specs.
 - Phase ordering and gates live in `specs/IMPLEMENTATION-ORDER.md`.
 - Do not treat phase gates as advisory. New phase work should not begin until the prior gate conditions pass.
 
@@ -145,7 +192,7 @@ Avoid introducing a third-party ECS crate.
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Active epic specs: `specs/E14-*.md` through `specs/E22-*.md`
+- Active specs: `specs/`
 - Archived completed specs: `archive/specs/`
 - Archival workflow: `docs/archival-workflow.md`
 
@@ -171,31 +218,3 @@ PRs should include:
 - A linked issue or spec section when applicable.
 - Confirmation that references, numbering, and terminology remain consistent.
 - A concrete test plan with verification steps.
-
-## GitNexus
-
-<!-- gitnexus:start -->
-# GitNexus MCP
-
-This project is indexed by GitNexus as **worldwake** (6795 symbols, 26337 relationships, 300 execution flows).
-
-## Always Start Here
-
-1. **Read `gitnexus://repo/{name}/context`** — codebase overview + check index freshness
-2. **Match your task to a skill below** and **read that skill file**
-3. **Follow the skill's workflow and checklist**
-
-> If step 1 warns the index is stale, run `npx gitnexus analyze` in the terminal first.
-
-## Skills
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->

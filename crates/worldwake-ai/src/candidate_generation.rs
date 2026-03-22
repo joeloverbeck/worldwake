@@ -1,17 +1,27 @@
 use crate::{
+    decision_trace::{
+        CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
+        CandidateEvidenceKind, CandidateEvidenceTrace, PoliticalCandidateOmission,
+        PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
+    },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
+    institutional_queries::consulted_office_holder_read_for_record_data,
     GroundedGoal,
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
-    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, OfficeData,
-    PerceptionSource, Quantity, Tick,
+    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity, RecipientKnowledgeStatus,
+    RecordKind, Tick,
 };
-use worldwake_sim::{relayable_social_subjects, GoalBeliefView, RecipeDefinition, RecipeRegistry};
+use worldwake_sim::{
+    belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
+    RecipeRegistry,
+};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Evidence {
     entities: BTreeSet<EntityId>,
     places: BTreeSet<EntityId>,
@@ -42,6 +52,60 @@ impl Evidence {
     }
 }
 
+#[derive(Default)]
+struct EvidenceTrace {
+    contributors: BTreeSet<CandidateEvidenceContributor>,
+    exclusions: BTreeSet<CandidateEvidenceExclusion>,
+}
+
+impl EvidenceTrace {
+    fn contributor(&mut self, kind: CandidateEvidenceKind, place: EntityId, entity: EntityId) {
+        self.contributors.insert(CandidateEvidenceContributor {
+            kind,
+            place,
+            entity,
+        });
+    }
+
+    fn exclusion(
+        &mut self,
+        kind: CandidateEvidenceKind,
+        place: EntityId,
+        entity: EntityId,
+        reason: CandidateEvidenceExclusionReason,
+    ) {
+        self.exclusions.insert(CandidateEvidenceExclusion {
+            kind,
+            place,
+            entity,
+            reason,
+        });
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.contributors.extend(other.contributors);
+        self.exclusions.extend(other.exclusions);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.contributors.is_empty() && self.exclusions.is_empty()
+    }
+
+    fn into_public(self, goal: GoalKey) -> CandidateEvidenceTrace {
+        CandidateEvidenceTrace {
+            goal,
+            contributors: self.contributors.into_iter().collect(),
+            exclusions: self.exclusions.into_iter().collect(),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct AcquisitionSearchOptions<'a> {
+    include_recipes: bool,
+    visited_commodities: &'a BTreeSet<CommodityKind>,
+}
+
 struct GenerationContext<'a> {
     view: &'a dyn GoalBeliefView,
     agent: EntityId,
@@ -53,6 +117,18 @@ struct GenerationContext<'a> {
     current_tick: Tick,
 }
 
+#[derive(Default)]
+pub(crate) struct CandidateGenerationDiagnostics {
+    pub omitted_political: Vec<PoliticalCandidateOmission>,
+    pub omitted_social: Vec<SocialCandidateOmission>,
+    pub evidence: BTreeMap<GoalKey, CandidateEvidenceTrace>,
+}
+
+pub(crate) struct CandidateGenerationResult {
+    pub candidates: Vec<GroundedGoal>,
+    pub diagnostics: CandidateGenerationDiagnostics,
+}
+
 #[must_use]
 pub fn generate_candidates(
     view: &dyn GoalBeliefView,
@@ -62,22 +138,27 @@ pub fn generate_candidates(
     current_tick: Tick,
 ) -> Vec<GroundedGoal> {
     generate_candidates_with_travel_horizon(view, agent, blocked, recipes, current_tick, 6)
+        .candidates
 }
 
 #[must_use]
-pub fn generate_candidates_with_travel_horizon(
+pub(crate) fn generate_candidates_with_travel_horizon(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     blocked: &BlockedIntentMemory,
     recipes: &RecipeRegistry,
     current_tick: Tick,
     travel_horizon: u8,
-) -> Vec<GroundedGoal> {
+) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
-        return Vec::new();
+        return CandidateGenerationResult {
+            candidates: Vec::new(),
+            diagnostics: CandidateGenerationDiagnostics::default(),
+        };
     }
 
     let mut candidates = BTreeMap::new();
+    let mut diagnostics = CandidateGenerationDiagnostics::default();
     let needs = view.homeostatic_needs(agent);
     let thresholds = view.drive_thresholds(agent);
     let place = view.effective_place(agent);
@@ -92,18 +173,22 @@ pub fn generate_candidates_with_travel_horizon(
         current_tick,
     };
 
-    emit_need_candidates(&mut candidates, &ctx, needs, thresholds);
-    emit_production_candidates(&mut candidates, &ctx, needs, thresholds);
-    emit_enterprise_candidates(&mut candidates, &ctx);
+    emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
+    emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
+    emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_combat_candidates(&mut candidates, &ctx);
-    emit_social_candidates(&mut candidates, &ctx);
-    emit_political_candidates(&mut candidates, &ctx);
+    emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
 
-    candidates.into_values().collect()
+    CandidateGenerationResult {
+        candidates: candidates.into_values().collect(),
+        diagnostics,
+    }
 }
 
 fn emit_need_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
@@ -112,7 +197,7 @@ fn emit_need_candidates(
         return;
     };
 
-    emit_self_consume_candidates(candidates, ctx, needs, thresholds);
+    emit_self_consume_candidates(candidates, diagnostics, ctx, needs, thresholds);
     emit_sleep_goal(candidates, ctx, needs, thresholds);
     emit_relieve_goal(candidates, ctx, needs, thresholds);
     emit_wash_goal(candidates, ctx, needs, thresholds);
@@ -120,18 +205,20 @@ fn emit_need_candidates(
 
 fn emit_production_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
 ) {
-    emit_produce_goals(candidates, ctx, needs, thresholds);
+    emit_produce_goals(candidates, diagnostics, ctx, needs, thresholds);
 }
 
 fn emit_enterprise_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
-    emit_restock_goals(candidates, ctx);
+    emit_restock_goals(candidates, diagnostics, ctx);
     emit_move_cargo_goals(candidates, ctx);
 }
 
@@ -148,6 +235,7 @@ fn emit_combat_candidates(
 
 fn emit_social_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let Some(place) = ctx.place else {
@@ -158,22 +246,38 @@ fn emit_social_candidates(
     };
     let known_beliefs = ctx.view.known_entity_beliefs(ctx.agent);
 
-    let subjects = relayable_social_subjects(
-        known_beliefs.clone(),
-        profile.max_relay_chain_len,
-        profile.max_tell_candidates,
-    );
-    if subjects.is_empty() {
-        return;
-    }
-
     for listener in social_listeners_at(ctx.view, ctx.agent, place) {
-        for subject in subjects.iter().copied() {
-            if known_beliefs.iter().any(|(known_subject, belief)| {
-                *known_subject == subject && belief.last_known_place == Some(place)
-            }) {
+        let subjects = listener_aware_relayable_subjects(
+            known_beliefs.clone(),
+            profile.max_relay_chain_len,
+            profile.max_tell_candidates,
+            |subject, _| {
+                ctx.view
+                    .recipient_knowledge_status(ctx.agent, listener, subject)
+                    .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker)
+            },
+        );
+        let selected = subjects.iter().copied().collect::<BTreeSet<_>>();
+        for (subject, belief) in &known_beliefs {
+            if belief_chain_len(belief.source) > profile.max_relay_chain_len {
                 continue;
             }
+            let status = ctx
+                .view
+                .recipient_knowledge_status(ctx.agent, listener, *subject)
+                .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker);
+            if !selected.contains(subject)
+                && status == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+            {
+                diagnostics.omitted_social.push(SocialCandidateOmission {
+                    listener,
+                    subject: *subject,
+                    status,
+                });
+            }
+        }
+
+        for subject in subjects.iter().copied() {
             let mut evidence = Evidence::with_entity(listener);
             evidence.entities.insert(subject);
             evidence.places.insert(place);
@@ -190,6 +294,7 @@ fn emit_social_candidates(
 
 fn emit_political_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let known_entities = ctx.view.known_entity_beliefs(ctx.agent);
@@ -200,32 +305,155 @@ fn emit_political_candidates(
         let Some(office_data) = ctx.view.office_data(office) else {
             continue;
         };
-        if !office_is_visibly_vacant(ctx.view, office, &office_data) {
+        if office_data.succession_law != worldwake_core::SuccessionLaw::Support {
+            record_office_wide_political_omission(
+                diagnostics,
+                office,
+                PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+            );
             continue;
         }
+        let office_evidence = match political_office_evidence(ctx, office, &office_data) {
+            Ok(evidence) => evidence,
+            Err(reason) => {
+                record_office_wide_political_omission(diagnostics, office, reason);
+                continue;
+            }
+        };
 
-        emit_claim_office_candidate(candidates, ctx, office, &office_data);
-        emit_support_candidate_goals(candidates, ctx, office, &office_data);
+        emit_claim_office_candidate(
+            candidates,
+            diagnostics,
+            ctx,
+            office,
+            &office_data,
+            &office_evidence,
+        );
+        emit_support_candidate_goals(
+            candidates,
+            diagnostics,
+            ctx,
+            office,
+            &office_data,
+            &office_evidence,
+        );
     }
+}
+
+fn political_office_evidence(
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+    office_data: &OfficeData,
+) -> Result<Evidence, PoliticalCandidateOmissionReason> {
+    if office_data.vacancy_since.is_none() {
+        return Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant);
+    }
+
+    match ctx.view.believed_office_holder(office) {
+        InstitutionalBeliefRead::Certain(None) => Ok(Evidence::default()),
+        InstitutionalBeliefRead::Certain(Some(_)) => {
+            Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant)
+        }
+        InstitutionalBeliefRead::Unknown => known_consultable_office_register(ctx, office)
+            .ok_or(PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord),
+        InstitutionalBeliefRead::Conflicted(_) => {
+            Err(PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted)
+        }
+    }
+}
+
+fn known_consultable_office_register(
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+) -> Option<Evidence> {
+    ctx.view
+        .known_entity_beliefs(ctx.agent)
+        .into_iter()
+        .filter_map(|(entity, _)| {
+            (ctx.view.entity_kind(entity) == Some(EntityKind::Record))
+                .then_some((entity, ctx.view.record_data(entity)?))
+        })
+        .find_map(|(record, record_data)| {
+            (record_data.record_kind == RecordKind::OfficeRegister
+                && !matches!(
+                    consulted_office_holder_read_for_record_data(&record_data, office),
+                    InstitutionalBeliefRead::Unknown
+                ))
+            .then(|| {
+                let mut evidence = Evidence::with_entity(record);
+                evidence.places.insert(record_data.home_place);
+                evidence
+            })
+        })
+}
+
+fn support_declaration_conflicted(
+    view: &dyn GoalBeliefView,
+    office: EntityId,
+    supporter: EntityId,
+) -> bool {
+    matches!(
+        view.believed_support_declaration(office, supporter),
+        InstitutionalBeliefRead::Conflicted(_)
+    )
+}
+
+fn support_declaration_matches_candidate(
+    view: &dyn GoalBeliefView,
+    office: EntityId,
+    supporter: EntityId,
+    candidate: EntityId,
+) -> bool {
+    matches!(
+        view.believed_support_declaration(office, supporter),
+        InstitutionalBeliefRead::Certain(Some(current)) if current == candidate
+    )
 }
 
 fn emit_claim_office_candidate(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
     office_data: &OfficeData,
+    office_evidence: &Evidence,
 ) {
     if !candidate_is_eligible(ctx.view, office_data, ctx.agent) {
+        diagnostics
+            .omitted_political
+            .push(PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::ActorNotEligible,
+            });
         return;
     }
-    if ctx.view.office_holder(office) == Some(ctx.agent) {
+    if support_declaration_conflicted(ctx.view, office, ctx.agent) {
+        diagnostics
+            .omitted_political
+            .push(PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
+            });
         return;
     }
-    if ctx.view.support_declaration(ctx.agent, office) == Some(ctx.agent) {
+    if support_declaration_matches_candidate(ctx.view, office, ctx.agent, ctx.agent) {
+        diagnostics
+            .omitted_political
+            .push(PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::AlreadyDeclaredSupport,
+            });
         return;
     }
 
-    let mut evidence = Evidence::with_entity(office);
+    let mut evidence = office_evidence.clone();
+    evidence.entities.insert(office);
     evidence.entities.insert(ctx.agent);
     evidence.places.insert(office_data.jurisdiction);
     emit_candidate(
@@ -239,11 +467,13 @@ fn emit_claim_office_candidate(
 
 fn emit_support_candidate_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
     office_data: &OfficeData,
+    office_evidence: &Evidence,
 ) {
-    let current_declaration = ctx.view.support_declaration(ctx.agent, office);
+    let current_declaration_conflicted = support_declaration_conflicted(ctx.view, office, ctx.agent);
     for (candidate, _) in ctx.view.known_entity_beliefs(ctx.agent) {
         if candidate == ctx.agent {
             continue;
@@ -255,13 +485,41 @@ fn emit_support_candidate_goals(
             continue;
         }
         if !candidate_is_eligible(ctx.view, office_data, candidate) {
+            diagnostics
+                .omitted_political
+                .push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::SupportCandidateForOffice,
+                    office,
+                    candidate: Some(candidate),
+                    reason: PoliticalCandidateOmissionReason::CandidateNotEligible,
+                });
             continue;
         }
-        if current_declaration == Some(candidate) {
+        if current_declaration_conflicted {
+            diagnostics
+                .omitted_political
+                .push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::SupportCandidateForOffice,
+                    office,
+                    candidate: Some(candidate),
+                    reason: PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
+                });
+            continue;
+        }
+        if support_declaration_matches_candidate(ctx.view, office, ctx.agent, candidate) {
+            diagnostics
+                .omitted_political
+                .push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::SupportCandidateForOffice,
+                    office,
+                    candidate: Some(candidate),
+                    reason: PoliticalCandidateOmissionReason::AlreadyDeclaredSupport,
+                });
             continue;
         }
 
-        let mut evidence = Evidence::with_entity(office);
+        let mut evidence = office_evidence.clone();
+        evidence.entities.insert(office);
         evidence.entities.insert(candidate);
         evidence.places.insert(office_data.jurisdiction);
         emit_candidate(
@@ -274,12 +532,27 @@ fn emit_support_candidate_goals(
     }
 }
 
-fn office_is_visibly_vacant(
-    view: &dyn GoalBeliefView,
+fn record_office_wide_political_omission(
+    diagnostics: &mut CandidateGenerationDiagnostics,
     office: EntityId,
-    office_data: &OfficeData,
-) -> bool {
-    office_data.vacancy_since.is_some() && view.office_holder(office).is_none()
+    reason: PoliticalCandidateOmissionReason,
+) {
+    diagnostics
+        .omitted_political
+        .push(PoliticalCandidateOmission {
+            family: PoliticalGoalFamily::ClaimOffice,
+            office,
+            candidate: None,
+            reason,
+        });
+    diagnostics
+        .omitted_political
+        .push(PoliticalCandidateOmission {
+            family: PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            candidate: None,
+            reason,
+        });
 }
 
 fn candidate_is_eligible(
@@ -289,10 +562,14 @@ fn candidate_is_eligible(
 ) -> bool {
     view.entity_kind(candidate) == Some(EntityKind::Agent)
         && view.is_alive(candidate)
-        && office_data
-            .eligibility_rules
-            .iter()
-            .all(|rule| matches!(rule, EligibilityRule::FactionMember(faction) if view.factions_of(candidate).contains(faction)))
+        && office_data.eligibility_rules.iter().all(|rule| {
+            matches!(
+                rule,
+                EligibilityRule::FactionMember(faction)
+                    if view.believed_membership(*faction, candidate)
+                        == InstitutionalBeliefRead::Certain(true)
+            )
+        })
 }
 
 fn emit_engage_hostile_goals(
@@ -336,12 +613,14 @@ fn emit_engage_hostile_goals(
 
 fn emit_self_consume_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
     thresholds: DriveThresholds,
 ) {
     emit_need_driven_candidates(
         candidates,
+        diagnostics,
         ctx,
         needs.hunger,
         thresholds.hunger.low(),
@@ -349,6 +628,7 @@ fn emit_self_consume_candidates(
     );
     emit_need_driven_candidates(
         candidates,
+        diagnostics,
         ctx,
         needs.thirst,
         thresholds.thirst.low(),
@@ -358,6 +638,7 @@ fn emit_self_consume_candidates(
 
 fn emit_need_driven_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     current_need: worldwake_core::Permille,
     low_threshold: worldwake_core::Permille,
@@ -405,7 +686,7 @@ fn emit_need_driven_candidates(
             continue;
         }
 
-        if let Some(evidence) = acquisition_path_evidence(
+        if let Some((evidence, evidence_trace)) = direct_acquisition_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -413,13 +694,15 @@ fn emit_need_driven_candidates(
             ctx.recipes,
             ctx.travel_horizon,
         ) {
-            emit_candidate(
+            emit_candidate_with_trace(
                 candidates,
+                diagnostics,
                 GoalKind::AcquireCommodity {
                     commodity,
                     purpose: CommodityPurpose::SelfConsume,
                 },
                 evidence,
+                evidence_trace,
                 ctx.blocked,
                 ctx.current_tick,
             );
@@ -541,9 +824,7 @@ fn emit_care_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         }
         emit_candidate(
             candidates,
-            GoalKind::TreatWounds {
-                patient: ctx.agent,
-            },
+            GoalKind::TreatWounds { patient: ctx.agent },
             evidence,
             ctx.blocked,
             ctx.current_tick,
@@ -613,6 +894,7 @@ fn social_listeners_at(
 
 fn emit_produce_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
@@ -641,26 +923,33 @@ fn emit_produce_goals(
             continue;
         }
 
-        if let Some(mut evidence) = recipe_path_evidence(ctx.view, ctx.agent, ctx.place, recipe) {
+        if let Some((mut evidence, evidence_trace)) = recipe_path_evidence(
+            ctx.view,
+            ctx.agent,
+            ctx.place,
+            recipe,
+            ctx.recipes,
+            ctx.travel_horizon,
+        ) {
             if let Some(place) = ctx.place {
                 evidence.places.insert(place);
             }
-            emit_candidate(
+            emit_candidate_with_trace(
                 candidates,
+                diagnostics,
                 GoalKind::ProduceCommodity { recipe_id },
                 evidence,
+                evidence_trace,
                 ctx.blocked,
                 ctx.current_tick,
             );
-            continue;
         }
-
-        emit_missing_recipe_input_goals(candidates, ctx, recipe_id, recipe);
     }
 }
 
 fn emit_restock_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let Some(profile) = ctx.view.merchandise_profile(ctx.agent) else {
@@ -671,7 +960,7 @@ fn emit_restock_goals(
         if ctx.enterprise.restock_gap(commodity).is_none() {
             continue;
         }
-        if let Some(evidence) = acquisition_path_evidence(
+        if let Some((evidence, evidence_trace)) = acquisition_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -679,10 +968,12 @@ fn emit_restock_goals(
             ctx.recipes,
             ctx.travel_horizon,
         ) {
-            emit_candidate(
+            emit_candidate_with_trace(
                 candidates,
+                diagnostics,
                 GoalKind::RestockCommodity { commodity },
                 evidence,
+                evidence_trace,
                 ctx.blocked,
                 ctx.current_tick,
             );
@@ -854,6 +1145,64 @@ fn emit_candidate(
     }
 }
 
+fn emit_candidate_with_trace(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    kind: GoalKind,
+    evidence: Evidence,
+    evidence_trace: EvidenceTrace,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+) {
+    if evidence.is_empty() {
+        return;
+    }
+
+    let key = GoalKey::from(kind);
+    if blocked.is_blocked(&key, current_tick) {
+        return;
+    }
+
+    match candidates.entry(key) {
+        Entry::Vacant(entry) => {
+            entry.insert(GroundedGoal {
+                key,
+                evidence_entities: evidence.entities,
+                evidence_places: evidence.places,
+            });
+        }
+        Entry::Occupied(mut entry) => {
+            entry.get_mut().evidence_entities.extend(evidence.entities);
+            entry.get_mut().evidence_places.extend(evidence.places);
+        }
+    }
+
+    let trace = evidence_trace.into_public(key);
+    diagnostics
+        .evidence
+        .entry(key)
+        .and_modify(|existing| merge_candidate_evidence_trace(existing, &trace))
+        .or_insert(trace);
+}
+
+fn merge_candidate_evidence_trace(
+    existing: &mut CandidateEvidenceTrace,
+    incoming: &CandidateEvidenceTrace,
+) {
+    for contributor in &incoming.contributors {
+        if !existing.contributors.contains(contributor) {
+            existing.contributors.push(*contributor);
+        }
+    }
+    for exclusion in &incoming.exclusions {
+        if !existing.exclusions.contains(exclusion) {
+            existing.exclusions.push(*exclusion);
+        }
+    }
+    existing.contributors.sort();
+    existing.exclusions.sort();
+}
+
 fn acquisition_path_evidence(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -861,55 +1210,143 @@ fn acquisition_path_evidence(
     commodity: CommodityKind,
     recipes: &RecipeRegistry,
     travel_horizon: u8,
-) -> Option<Evidence> {
+) -> Option<(Evidence, EvidenceTrace)> {
+    acquisition_path_evidence_inner(
+        view,
+        agent,
+        place,
+        commodity,
+        recipes,
+        travel_horizon,
+        AcquisitionSearchOptions {
+            include_recipes: true,
+            visited_commodities: &BTreeSet::new(),
+        },
+    )
+}
+
+fn direct_acquisition_path_evidence(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+) -> Option<(Evidence, EvidenceTrace)> {
+    acquisition_path_evidence_inner(
+        view,
+        agent,
+        place,
+        commodity,
+        recipes,
+        travel_horizon,
+        AcquisitionSearchOptions {
+            include_recipes: false,
+            visited_commodities: &BTreeSet::new(),
+        },
+    )
+}
+
+fn acquisition_path_evidence_inner(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    options: AcquisitionSearchOptions<'_>,
+) -> Option<(Evidence, EvidenceTrace)> {
     let place = place?;
+    let mut visited_commodities = options.visited_commodities.clone();
+    if !visited_commodities.insert(commodity) {
+        return None;
+    }
     let mut evidence = Evidence::with_place(place);
+    let mut trace = EvidenceTrace::default();
 
     for candidate_place in reachable_places_within_horizon(view, place, travel_horizon) {
-        let mut place_evidence = Evidence::with_place(candidate_place);
+        let mut place_evidence = Evidence::default();
+        let mut place_trace = EvidenceTrace::default();
 
         for seller in view.agents_selling_at(candidate_place, commodity) {
             if seller != agent {
+                place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(seller);
+                place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
             }
         }
         if let Some(local_lots) =
             local_unpossessed_commodity_evidence(view, candidate_place, commodity)
         {
+            for lot in &local_lots.entities {
+                place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
+            }
             place_evidence.merge(local_lots);
         }
         for source in view.resource_sources_at(candidate_place, commodity) {
-            place_evidence.entities.insert(source);
+            if view
+                .resource_source(source)
+                .is_some_and(|resource| resource.available_quantity > Quantity(0))
+            {
+                place_evidence.places.insert(candidate_place);
+                place_evidence.entities.insert(source);
+                place_trace.contributor(
+                    CandidateEvidenceKind::ResourceSource,
+                    candidate_place,
+                    source,
+                );
+            } else {
+                place_trace.exclusion(
+                    CandidateEvidenceKind::ResourceSource,
+                    candidate_place,
+                    source,
+                    CandidateEvidenceExclusionReason::DepletedResourceSource,
+                );
+            }
         }
         for corpse in view.corpse_entities_at(candidate_place) {
             if corpse_contains_commodity(view, corpse, commodity) {
+                place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(corpse);
+                place_trace.contributor(CandidateEvidenceKind::Corpse, candidate_place, corpse);
             }
         }
-        for recipe_id in view.known_recipes(agent) {
-            let Some(recipe) = recipes.get(recipe_id) else {
-                continue;
-            };
-            if !recipe
-                .outputs
-                .iter()
-                .any(|(output, _)| *output == commodity)
-            {
-                continue;
-            }
-            if let Some(recipe_evidence) =
-                recipe_path_evidence(view, agent, Some(candidate_place), recipe)
-            {
-                place_evidence.merge(recipe_evidence);
+        if options.include_recipes {
+            for recipe_id in view.known_recipes(agent) {
+                let Some(recipe) = recipes.get(recipe_id) else {
+                    continue;
+                };
+                if !recipe
+                    .outputs
+                    .iter()
+                    .any(|(output, _)| *output == commodity)
+                {
+                    continue;
+                }
+                if let Some((recipe_evidence, recipe_trace)) = recipe_path_evidence_inner(
+                    view,
+                    agent,
+                    Some(candidate_place),
+                    recipe,
+                    recipes,
+                    travel_horizon,
+                    &visited_commodities,
+                ) {
+                    place_evidence.merge(recipe_evidence);
+                    place_trace.merge(recipe_trace);
+                }
             }
         }
 
         if !place_evidence.is_empty() {
             evidence.merge(place_evidence);
         }
+        if !place_trace.is_empty() {
+            trace.merge(place_trace);
+        }
     }
 
-    (!evidence.entities.is_empty()).then_some(evidence)
+    (!evidence.entities.is_empty()).then_some((evidence, trace))
 }
 
 fn reachable_places_within_horizon(
@@ -959,82 +1396,74 @@ fn recipe_path_evidence(
     agent: EntityId,
     place: Option<EntityId>,
     recipe: &RecipeDefinition,
-) -> Option<Evidence> {
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+) -> Option<(Evidence, EvidenceTrace)> {
+    recipe_path_evidence_inner(
+        view,
+        agent,
+        place,
+        recipe,
+        recipes,
+        travel_horizon,
+        &BTreeSet::new(),
+    )
+}
+
+fn recipe_path_evidence_inner(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    recipe: &RecipeDefinition,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    visited_commodities: &BTreeSet<CommodityKind>,
+) -> Option<(Evidence, EvidenceTrace)> {
     let place = place?;
-    let workstation_tag = recipe.required_workstation_tag?;
-
-    for required_tool in &recipe.required_tool_kinds {
-        if view.unique_item_count(agent, *required_tool) == 0 {
-            return None;
-        }
-    }
-
-    let workstations = view.matching_workstations_at(place, workstation_tag);
-    if workstations.is_empty() {
-        return None;
-    }
+    let (workstation_evidence, workstation_trace) =
+        available_recipe_workstation_evidence(view, agent, Some(place), recipe, travel_horizon)?;
 
     if recipe.inputs.is_empty() {
         let mut evidence = Evidence::with_place(place);
-        for workstation in workstations {
+        let mut trace = workstation_trace;
+        for workstation in &workstation_evidence.entities {
             let &(output_commodity, output_quantity) = recipe.outputs.first()?;
-            let source_ok = view.resource_source(workstation).is_some_and(|source| {
+            let source_ok = view.resource_source(*workstation).is_some_and(|source| {
                 source.commodity == output_commodity && source.available_quantity >= output_quantity
             });
             if source_ok {
-                evidence.entities.insert(workstation);
+                evidence.entities.insert(*workstation);
+                trace.contributor(CandidateEvidenceKind::ResourceSource, place, *workstation);
             }
         }
-        return (!evidence.entities.is_empty()).then_some(evidence);
+        return (!evidence.entities.is_empty()).then_some((evidence, trace));
     }
 
+    let mut evidence = workstation_evidence;
+    let mut trace = workstation_trace;
     for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
-        if view.commodity_quantity(agent, commodity) < required_quantity {
-            return None;
-        }
-    }
-
-    available_recipe_workstation_evidence(view, agent, Some(place), recipe)
-}
-
-fn emit_missing_recipe_input_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
-    ctx: &GenerationContext<'_>,
-    recipe_id: worldwake_core::RecipeId,
-    recipe: &RecipeDefinition,
-) {
-    if recipe.inputs.is_empty() {
-        return;
-    }
-    if available_recipe_workstation_evidence(ctx.view, ctx.agent, ctx.place, recipe).is_none() {
-        return;
-    }
-
-    for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
-        if ctx.view.commodity_quantity(ctx.agent, commodity) >= required_quantity {
+        let owned_quantity = view.commodity_quantity(agent, commodity);
+        if owned_quantity >= required_quantity {
             continue;
         }
-        let Some(evidence) = acquisition_path_evidence(
-            ctx.view,
-            ctx.agent,
-            ctx.place,
+
+        let (input_evidence, input_trace) = acquisition_path_evidence_inner(
+            view,
+            agent,
+            Some(place),
             commodity,
-            ctx.recipes,
-            ctx.travel_horizon,
-        ) else {
-            continue;
-        };
-        emit_candidate(
-            candidates,
-            GoalKind::AcquireCommodity {
-                commodity,
-                purpose: CommodityPurpose::RecipeInput(recipe_id),
+            recipes,
+            travel_horizon,
+            AcquisitionSearchOptions {
+                include_recipes: true,
+                visited_commodities,
             },
-            evidence,
-            ctx.blocked,
-            ctx.current_tick,
-        );
+        )?;
+        evidence.merge(input_evidence);
+        trace.merge(input_trace);
     }
+
+    Some((evidence, trace))
 }
 
 fn available_recipe_workstation_evidence(
@@ -1042,7 +1471,8 @@ fn available_recipe_workstation_evidence(
     agent: EntityId,
     place: Option<EntityId>,
     recipe: &RecipeDefinition,
-) -> Option<Evidence> {
+    travel_horizon: u8,
+) -> Option<(Evidence, EvidenceTrace)> {
     let place = place?;
     let workstation_tag = recipe.required_workstation_tag?;
 
@@ -1052,18 +1482,28 @@ fn available_recipe_workstation_evidence(
         }
     }
 
-    let available_workstations = view
-        .matching_workstations_at(place, workstation_tag)
-        .into_iter()
-        .filter(|workstation| !view.has_production_job(*workstation))
-        .collect::<Vec<_>>();
-    if available_workstations.is_empty() {
-        return None;
+    let mut evidence = Evidence::default();
+    let mut trace = EvidenceTrace::default();
+    for candidate_place in reachable_places_within_horizon(view, place, travel_horizon) {
+        let available_workstations = view
+            .matching_workstations_at(candidate_place, workstation_tag)
+            .into_iter()
+            .filter(|workstation| !view.has_production_job(*workstation))
+            .collect::<Vec<_>>();
+        if available_workstations.is_empty() {
+            continue;
+        }
+        evidence.places.insert(candidate_place);
+        for workstation in available_workstations {
+            evidence.entities.insert(workstation);
+            trace.contributor(
+                CandidateEvidenceKind::RecipeWorkstation,
+                candidate_place,
+                workstation,
+            );
+        }
     }
-
-    let mut evidence = Evidence::with_place(place);
-    evidence.entities.extend(available_workstations);
-    Some(evidence)
+    (!evidence.entities.is_empty()).then_some((evidence, trace))
 }
 
 fn aggregate_recipe_quantities(
@@ -1179,27 +1619,32 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
 mod tests {
     use super::{
         deliverable_quantity, emit_produce_goals, emit_restock_goals, generate_candidates,
-        GenerationContext,
+        generate_candidates_with_travel_horizon, CandidateGenerationDiagnostics, GenerationContext,
     };
-    use crate::enterprise::{analyze_candidate_enterprise, EnterpriseSignals};
+    use crate::{
+        enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
+        PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity, RecipeId,
-        ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        WorkstationTag, Wound, WoundCause, WoundId,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity, RecordData,
+        RecordEntryId, RecordKind, RecipeId, RecipientKnowledgeStatus, ResourceSource,
+        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
         RuntimeBeliefView,
     };
 
-    #[derive(Default)]
     struct TestBeliefView {
+        current_tick: Tick,
         alive: BTreeSet<EntityId>,
         dead: BTreeSet<EntityId>,
         incapacitated: BTreeSet<EntityId>,
@@ -1235,16 +1680,77 @@ mod tests {
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
+        record_data: BTreeMap<EntityId, RecordData>,
         office_data: BTreeMap<EntityId, OfficeData>,
         office_holders: BTreeMap<EntityId, EntityId>,
+        office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
+        support_declaration_beliefs:
+            BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
+    }
+
+    impl Default for TestBeliefView {
+        fn default() -> Self {
+            Self {
+                current_tick: Tick(0),
+                alive: BTreeSet::new(),
+                dead: BTreeSet::new(),
+                incapacitated: BTreeSet::new(),
+                entity_kinds: BTreeMap::new(),
+                effective_places: BTreeMap::new(),
+                entities_at: BTreeMap::new(),
+                direct_possessions: BTreeMap::new(),
+                adjacent_places: BTreeMap::new(),
+                unique_item_counts: BTreeMap::new(),
+                commodity_quantities: BTreeMap::new(),
+                carry_capacities: BTreeMap::new(),
+                entity_loads: BTreeMap::new(),
+                lot_commodities: BTreeMap::new(),
+                consumable_profiles: BTreeMap::new(),
+                direct_containers: BTreeMap::new(),
+                direct_possessors: BTreeMap::new(),
+                workstation_tags: BTreeMap::new(),
+                resource_sources: BTreeMap::new(),
+                production_jobs: BTreeSet::new(),
+                controllable: BTreeSet::new(),
+                controlled_entities: BTreeSet::new(),
+                homeostatic_needs: BTreeMap::new(),
+                drive_thresholds: BTreeMap::new(),
+                wounds: BTreeMap::new(),
+                hostiles: BTreeMap::new(),
+                attackers: BTreeMap::new(),
+                sellers: BTreeMap::new(),
+                known_recipes: BTreeMap::new(),
+                workstations: BTreeMap::new(),
+                sources_at: BTreeMap::new(),
+                demand_memory: BTreeMap::new(),
+                merchandise_profiles: BTreeMap::new(),
+                corpses_at: BTreeMap::new(),
+                beliefs: BTreeMap::new(),
+                tell_profiles: BTreeMap::new(),
+                told_beliefs: BTreeMap::new(),
+                record_data: BTreeMap::new(),
+                office_data: BTreeMap::new(),
+                office_holders: BTreeMap::new(),
+                office_holder_beliefs: BTreeMap::new(),
+                factions_by_member: BTreeMap::new(),
+                loyalties: BTreeMap::new(),
+                support_declarations: BTreeMap::new(),
+                support_declaration_beliefs: BTreeMap::new(),
+            }
+        }
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
 
     impl RuntimeBeliefView for TestBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity) && !self.dead.contains(&entity)
         }
@@ -1440,6 +1946,71 @@ mod tests {
             self.tell_profiles.get(&agent).copied()
         }
 
+        fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+            self.told_beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn told_belief_memory(
+            &self,
+            actor: EntityId,
+            counterparty: EntityId,
+            subject: EntityId,
+        ) -> Option<ToldBeliefMemory> {
+            let profile = self.tell_profile(actor)?;
+            self.told_beliefs
+                .get(&actor)
+                .and_then(|memories| {
+                    memories
+                        .iter()
+                        .find(|(key, _)| {
+                            *key == TellMemoryKey {
+                                counterparty,
+                                subject,
+                            }
+                        })
+                        .map(|(_, memory)| memory)
+                })
+                .filter(|memory| {
+                    self.current_tick.0.saturating_sub(memory.told_tick.0)
+                        <= profile.conversation_memory_retention_ticks
+                })
+                .cloned()
+        }
+
+        fn recipient_knowledge_status(
+            &self,
+            actor: EntityId,
+            counterparty: EntityId,
+            subject: EntityId,
+        ) -> Option<RecipientKnowledgeStatus> {
+            let current_belief = self
+                .beliefs
+                .get(&actor)?
+                .iter()
+                .find(|(known_subject, _)| *known_subject == subject)
+                .map(|(_, belief)| belief)?;
+            let remembered = self.told_belief_memory(actor, counterparty, subject);
+            let had_raw_memory = self.told_beliefs.get(&actor).is_some_and(|memories| {
+                memories.iter().any(|(key, _)| {
+                    *key == TellMemoryKey {
+                        counterparty,
+                        subject,
+                    }
+                })
+            });
+            self.tell_profile(actor)?;
+
+            Some(match remembered.as_ref() {
+                Some(memory) => {
+                    worldwake_core::recipient_knowledge_status(current_belief, Some(memory))
+                }
+                None if had_raw_memory => {
+                    RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+                }
+                None => RecipientKnowledgeStatus::UnknownToSpeaker,
+            })
+        }
+
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
@@ -1493,27 +2064,53 @@ mod tests {
             self.corpses_at.get(&place).cloned().unwrap_or_default()
         }
 
+        fn record_data(&self, record: EntityId) -> Option<RecordData> {
+            self.record_data.get(&record).cloned()
+        }
+
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data.get(&office).cloned()
         }
 
-        fn office_holder(&self, office: EntityId) -> Option<EntityId> {
-            self.office_holders.get(&office).copied()
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
-        fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
-            self.factions_by_member
+        fn believed_membership(
+            &self,
+            faction: EntityId,
+            member: EntityId,
+        ) -> InstitutionalBeliefRead<bool> {
+            if self
+                .factions_by_member
                 .get(&member)
-                .cloned()
-                .unwrap_or_default()
+                .is_some_and(|factions| factions.contains(&faction))
+            {
+                InstitutionalBeliefRead::Certain(true)
+            } else {
+                InstitutionalBeliefRead::Unknown
+            }
         }
 
         fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
             self.loyalties.get(&(subject, target)).copied()
         }
 
-        fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-            self.support_declarations.get(&(supporter, office)).copied()
+        fn believed_support_declaration(
+            &self,
+            office: EntityId,
+            supporter: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.support_declaration_beliefs
+                .get(&(office, supporter))
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
@@ -1612,6 +2209,37 @@ mod tests {
             .any(|candidate| candidate.key.kind == goal)
     }
 
+    fn contains_political_omission(
+        diagnostics: &CandidateGenerationDiagnostics,
+        family: PoliticalGoalFamily,
+        office: EntityId,
+        candidate: Option<EntityId>,
+        reason: PoliticalCandidateOmissionReason,
+    ) -> bool {
+        diagnostics.omitted_political.iter().any(|omission| {
+            omission.family == family
+                && omission.office == office
+                && omission.candidate == candidate
+                && omission.reason == reason
+        })
+    }
+
+    fn contains_social_omission(
+        diagnostics: &CandidateGenerationDiagnostics,
+        listener: EntityId,
+        subject: EntityId,
+        status: RecipientKnowledgeStatus,
+    ) -> bool {
+        diagnostics.omitted_social.iter().any(|omission| {
+            *omission
+                == SocialCandidateOmission {
+                    listener,
+                    subject,
+                    status,
+                }
+        })
+    }
+
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
             last_known_place: None,
@@ -1620,6 +2248,7 @@ mod tests {
             resource_source: None,
             alive: true,
             wounds: Vec::new(),
+            last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source,
         }
@@ -1635,6 +2264,24 @@ mod tests {
         )
     }
 
+    fn told_memory(
+        counterparty: EntityId,
+        subject: EntityId,
+        told_tick: u64,
+        belief: &BelievedEntityState,
+    ) -> (TellMemoryKey, ToldBeliefMemory) {
+        (
+            TellMemoryKey {
+                counterparty,
+                subject,
+            },
+            ToldBeliefMemory {
+                shared_state: worldwake_core::to_shared_belief_snapshot(belief),
+                told_tick: Tick(told_tick),
+            },
+        )
+    }
+
     fn vacant_office(title: &str, jurisdiction: EntityId, faction: EntityId) -> OfficeData {
         OfficeData {
             title: title.to_string(),
@@ -1643,6 +2290,27 @@ mod tests {
             eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
             succession_period_ticks: 8,
             vacancy_since: Some(Tick(3)),
+        }
+    }
+
+    fn office_register_record(issuer: EntityId, home_place: EntityId, office: EntityId) -> RecordData {
+        RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place,
+            issuer,
+            consultation_ticks: 4,
+            max_entries_per_consult: 2,
+            entries: vec![worldwake_core::InstitutionalRecordEntry {
+                entry_id: RecordEntryId(0),
+                claim: InstitutionalClaim::OfficeHolder {
+                    office,
+                    holder: None,
+                    effective_tick: Tick(3),
+                },
+                recorded_tick: Tick(3),
+                supersedes: None,
+            }],
+            next_entry_id: 1,
         }
     }
 
@@ -1834,7 +2502,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_harvest_source_within_travel_horizon_emits_acquire_goal() {
+    fn remote_harvest_source_within_travel_horizon_emits_produce_goal() {
         let agent = entity(1);
         let camp = entity(10);
         let crossroads = entity(11);
@@ -1887,18 +2555,24 @@ mod tests {
             2,
         );
         let goal = candidates
+            .candidates
             .iter()
             .find(|candidate| {
                 candidate.key.kind
-                    == GoalKind::AcquireCommodity {
-                        commodity: CommodityKind::Apple,
-                        purpose: CommodityPurpose::SelfConsume,
+                    == GoalKind::ProduceCommodity {
+                        recipe_id: RecipeId(0),
                     }
             })
-            .expect("reachable remote harvest source should emit acquire goal");
+            .expect("reachable remote harvest source should emit produce goal");
 
         assert!(goal.evidence_entities.contains(&workstation));
-        assert!(goal.evidence_places.contains(&orchard));
+        assert!(!contains_goal(
+            &candidates.candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
     }
 
     #[test]
@@ -2517,7 +3191,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_recipe_input_emits_acquire_goal_and_suppresses_produce_goal() {
+    fn missing_recipe_input_emits_produce_goal_without_recipe_input_proxy() {
         let agent = entity(1);
         let seller = entity(2);
         let place = entity(10);
@@ -2561,14 +3235,399 @@ mod tests {
 
         assert!(contains_goal(
             &candidates,
+            GoalKind::ProduceCommodity { recipe_id }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert!(!contains_goal(
+            &candidates,
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::RecipeInput(recipe_id),
             }
         ));
+    }
+
+    #[test]
+    fn reachable_remote_workstation_keeps_missing_input_produce_goal_emittable() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let origin = entity(10);
+        let remote = entity(11);
+        let workstation = entity(20);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(seller, remote);
+        view.effective_places.insert(workstation, remote);
+        view.adjacent_places.insert(origin, vec![remote]);
+        view.adjacent_places.insert(remote, vec![origin]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.workstations
+            .insert((remote, WorkstationTag::Mill), vec![workstation]);
+        view.sellers
+            .insert((remote, CommodityKind::Firewood), vec![seller]);
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ProduceCommodity { recipe_id }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+    }
+
+    #[test]
+    fn depleted_resource_sources_are_excluded_from_produce_goal_evidence() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let orchard = entity(11);
+        let bandit_camp = entity(12);
+        let mill = entity(20);
+        let depleted_source = entity(21);
+        let stocked_source = entity(22);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([agent, mill, depleted_source, stocked_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.entity_kinds
+            .insert(depleted_source, EntityKind::Facility);
+        view.entity_kinds
+            .insert(stocked_source, EntityKind::Facility);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(mill, origin);
+        view.effective_places.insert(depleted_source, orchard);
+        view.effective_places.insert(stocked_source, bandit_camp);
+        view.adjacent_places
+            .insert(origin, vec![orchard, bandit_camp]);
+        view.adjacent_places
+            .insert(orchard, vec![origin, bandit_camp]);
+        view.adjacent_places
+            .insert(bandit_camp, vec![origin, orchard]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.workstations
+            .insert((origin, WorkstationTag::Mill), vec![mill]);
+        view.sources_at
+            .insert((orchard, CommodityKind::Firewood), vec![depleted_source]);
+        view.sources_at
+            .insert((bandit_camp, CommodityKind::Firewood), vec![stocked_source]);
+        view.resource_sources.insert(
+            depleted_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        view.resource_sources.insert(
+            stocked_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+        let produce = candidates
+            .iter()
+            .find(|candidate| candidate.key.kind == GoalKind::ProduceCommodity { recipe_id })
+            .expect("reachable stocked source should keep the produce goal emittable");
+
+        assert!(
+            produce.evidence_places.contains(&bandit_camp),
+            "stocked fallback source should remain in the produce-goal evidence"
+        );
+        assert!(
+            !produce.evidence_places.contains(&orchard),
+            "depleted source place should be removed from the produce-goal evidence"
+        );
+        assert!(
+            produce.evidence_entities.contains(&stocked_source),
+            "stocked fallback source should remain in the produce-goal evidence entities"
+        );
+        assert!(
+            !produce.evidence_entities.contains(&depleted_source),
+            "depleted source entity should be removed from the produce-goal evidence entities"
+        );
+    }
+
+    #[test]
+    fn candidate_evidence_trace_records_resource_source_contributors_and_exclusions() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let orchard = entity(11);
+        let bandit_camp = entity(12);
+        let mill = entity(20);
+        let depleted_source = entity(21);
+        let stocked_source = entity(22);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([agent, mill, depleted_source, stocked_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.entity_kinds
+            .insert(depleted_source, EntityKind::Facility);
+        view.entity_kinds
+            .insert(stocked_source, EntityKind::Facility);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(mill, origin);
+        view.effective_places.insert(depleted_source, orchard);
+        view.effective_places.insert(stocked_source, bandit_camp);
+        view.adjacent_places
+            .insert(origin, vec![orchard, bandit_camp]);
+        view.adjacent_places
+            .insert(orchard, vec![origin, bandit_camp]);
+        view.adjacent_places
+            .insert(bandit_camp, vec![origin, orchard]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.workstations
+            .insert((origin, WorkstationTag::Mill), vec![mill]);
+        view.sources_at
+            .insert((orchard, CommodityKind::Firewood), vec![depleted_source]);
+        view.sources_at
+            .insert((bandit_camp, CommodityKind::Firewood), vec![stocked_source]);
+        view.resource_sources.insert(
+            depleted_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        view.resource_sources.insert(
+            stocked_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+            6,
+        );
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&GoalKey::from(GoalKind::ProduceCommodity { recipe_id }))
+            .expect("produce goal should record typed evidence provenance");
+
+        assert!(trace.contributors.iter().any(|contributor| {
+            contributor.kind == crate::CandidateEvidenceKind::RecipeWorkstation
+                && contributor.place == origin
+                && contributor.entity == mill
+        }));
+        assert!(trace.contributors.iter().any(|contributor| {
+            contributor.kind == crate::CandidateEvidenceKind::ResourceSource
+                && contributor.place == bandit_camp
+                && contributor.entity == stocked_source
+        }));
+        assert!(trace.exclusions.iter().any(|exclusion| {
+            exclusion.kind == crate::CandidateEvidenceKind::ResourceSource
+                && exclusion.place == orchard
+                && exclusion.entity == depleted_source
+                && exclusion.reason
+                    == crate::CandidateEvidenceExclusionReason::DepletedResourceSource
+        }));
+    }
+
+    #[test]
+    fn missing_recipe_input_without_workstation_withholds_produce_goal() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.sellers
+            .insert((place, CommodityKind::Firewood), vec![seller]);
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+
         assert!(!contains_goal(
             &candidates,
             GoalKind::ProduceCommodity { recipe_id }
+        ));
+    }
+
+    #[test]
+    fn missing_recipe_input_reachable_via_known_subrecipe_emits_produce_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let mill = entity(20);
+        let grain_source = entity(21);
+        let bread_recipe_id = RecipeId(0);
+        let grain_recipe_id = RecipeId(1);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.entity_kinds.insert(grain_source, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(mill, place);
+        view.effective_places.insert(grain_source, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes
+            .insert(agent, vec![bread_recipe_id, grain_recipe_id]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::Mill), vec![mill]);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![grain_source]);
+        view.resource_sources.insert(
+            grain_source,
+            ResourceSource {
+                commodity: CommodityKind::Grain,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Bread, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(2))],
+            WorkstationTag::Mill,
+        ));
+        recipes.register(RecipeDefinition {
+            name: "Harvest Grain".to_string(),
+            inputs: Vec::new(),
+            outputs: vec![(CommodityKind::Grain, Quantity(2))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::OrchardRow),
+            required_tool_kinds: vec![UniqueItemKind::SimpleTool],
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ProduceCommodity {
+                recipe_id: bread_recipe_id
+            }
         ));
     }
 
@@ -2673,9 +3732,10 @@ mod tests {
             current_tick: Tick(5),
         };
         let mut candidates = BTreeMap::new();
+        let mut diagnostics = CandidateGenerationDiagnostics::default();
 
-        emit_restock_goals(&mut candidates, &ctx);
-        emit_produce_goals(&mut candidates, &ctx, None, None);
+        emit_restock_goals(&mut candidates, &mut diagnostics, &ctx);
+        emit_produce_goals(&mut candidates, &mut diagnostics, &ctx, None, None);
         assert!(!contains_goal(
             &candidates.into_values().collect::<Vec<_>>(),
             GoalKind::RestockCommodity {
@@ -2688,9 +3748,10 @@ mod tests {
             ..ctx
         };
         let mut candidates = BTreeMap::new();
+        let mut diagnostics = CandidateGenerationDiagnostics::default();
 
-        emit_restock_goals(&mut candidates, &ctx);
-        emit_produce_goals(&mut candidates, &ctx, None, None);
+        emit_restock_goals(&mut candidates, &mut diagnostics, &ctx);
+        emit_produce_goals(&mut candidates, &mut diagnostics, &ctx, None, None);
         let candidates = candidates.into_values().collect::<Vec<_>>();
 
         assert!(contains_goal(
@@ -2974,15 +4035,13 @@ mod tests {
                 max_tell_candidates: 2,
                 max_relay_chain_len: 2,
                 acceptance_fidelity: pm(800),
+                ..TellProfile::default()
             },
         );
         view.beliefs.insert(
             speaker,
             vec![
-                (
-                    subject_a,
-                    believed_state(8, PerceptionSource::DirectObservation),
-                ),
+                known_entity(subject_a, place),
                 (
                     subject_b,
                     believed_state(
@@ -3106,76 +4165,269 @@ mod tests {
     }
 
     #[test]
-    fn social_candidates_skip_subjects_already_known_to_be_colocated() {
+    fn social_candidates_suppress_unchanged_repeat_tells_via_told_memory() {
         let speaker = entity(1);
         let listener = entity(2);
-        let local_subject = entity(20);
-        let remote_subject = entity(21);
+        let subject = entity(20);
         let place = entity(10);
-        let remote_place = entity(11);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([speaker, listener, local_subject, remote_subject]);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
-        view.entity_kinds.insert(local_subject, EntityKind::Agent);
-        view.entity_kinds.insert(remote_subject, EntityKind::Facility);
-        view.effective_places.insert(speaker, place);
-        view.effective_places.insert(local_subject, place);
-        view.effective_places.insert(remote_subject, remote_place);
-        view.entities_at.insert(place, vec![speaker, listener, local_subject]);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
-        view.beliefs.insert(
-            speaker,
-            vec![
-                (
-                    local_subject,
-                    BelievedEntityState {
-                        last_known_place: Some(place),
-                        last_known_inventory: BTreeMap::new(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        observed_tick: Tick(8),
-                        source: PerceptionSource::DirectObservation,
-                    },
-                ),
-                (
-                    remote_subject,
-                    BelievedEntityState {
-                        last_known_place: Some(remote_place),
-                        last_known_inventory: BTreeMap::new(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        observed_tick: Tick(9),
-                        source: PerceptionSource::DirectObservation,
-                    },
-                ),
-            ],
-        );
+        let belief = known_entity(subject, place).1;
+        view.beliefs
+            .insert(speaker, vec![(subject, belief.clone())]);
+        view.told_beliefs
+            .insert(speaker, vec![told_memory(listener, subject, 10, &belief)]);
 
-        let candidates = generate_candidates(
+        let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
+            6,
         );
 
         assert!(!contains_goal(
-            &candidates,
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_reemit_when_shared_content_changes() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let old_belief = known_entity(subject, place).1;
+        let mut new_belief = old_belief.clone();
+        new_belief
+            .last_known_inventory
+            .insert(CommodityKind::Bread, Quantity(2));
+        view.beliefs
+            .insert(speaker, vec![(subject, new_belief.clone())]);
+        view.told_beliefs.insert(
+            speaker,
+            vec![told_memory(listener, subject, 10, &old_belief)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(!contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_ignore_observed_tick_only_refreshes() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let old_belief = known_entity(subject, place).1;
+        let mut refreshed_belief = old_belief.clone();
+        refreshed_belief.observed_tick = Tick(11);
+        view.beliefs
+            .insert(speaker, vec![(subject, refreshed_belief)]);
+        view.told_beliefs.insert(
+            speaker,
+            vec![told_memory(listener, subject, 10, &old_belief)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+        );
+
+        assert!(!contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_reemit_when_tell_memory_has_expired() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(60),
+            ..Default::default()
+        };
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let belief = known_entity(subject, place).1;
+        view.beliefs
+            .insert(speaker, vec![(subject, belief.clone())]);
+        view.told_beliefs
+            .insert(speaker, vec![told_memory(listener, subject, 1, &belief)]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(60),
+            6,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief { listener, subject }
+        ));
+        assert!(!contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_listener_aware_filtering_happens_before_truncation() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let recent_subject = entity(20);
+        let older_subject = entity(21);
+        let place = entity(10);
+        let mut view = TestBeliefView {
+            current_tick: Tick(11),
+            ..Default::default()
+        };
+        view.alive
+            .extend([speaker, listener, recent_subject, older_subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(recent_subject, EntityKind::Agent);
+        view.entity_kinds.insert(older_subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (recent_subject, place),
+            (older_subject, place),
+        ]);
+        view.entities_at.insert(
+            place,
+            vec![speaker, listener, recent_subject, older_subject],
+        );
+        view.tell_profiles.insert(
+            speaker,
+            TellProfile {
+                max_tell_candidates: 1,
+                ..TellProfile::default()
+            },
+        );
+        let recent_belief = known_entity(recent_subject, place).1;
+        let mut older_belief = known_entity(older_subject, place).1;
+        older_belief.observed_tick = Tick(8);
+        view.beliefs.insert(
+            speaker,
+            vec![
+                (recent_subject, recent_belief.clone()),
+                (older_subject, older_belief),
+            ],
+        );
+        view.told_beliefs.insert(
+            speaker,
+            vec![told_memory(listener, recent_subject, 10, &recent_belief)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+        );
+
+        assert!(!contains_goal(
+            &result.candidates,
             GoalKind::ShareBelief {
                 listener,
-                subject: local_subject,
+                subject: recent_subject,
             }
         ));
         assert!(contains_goal(
-            &candidates,
+            &result.candidates,
             GoalKind::ShareBelief {
                 listener,
-                subject: remote_subject,
+                subject: older_subject,
             }
         ));
     }
@@ -3522,6 +4774,8 @@ mod tests {
         view.entities_at.insert(town, vec![agent, candidate]);
         view.office_data
             .insert(office, vacant_office("Ruler", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
         view.factions_by_member.insert(agent, vec![faction]);
         view.factions_by_member.insert(candidate, vec![faction]);
         view.loyalties.insert((agent, candidate), pm(650));
@@ -3546,42 +4800,562 @@ mod tests {
     }
 
     #[test]
-    fn political_candidates_require_visible_vacancy_and_skip_existing_declaration() {
+    fn political_candidates_use_institutional_beliefs_for_unknown_certain_and_conflicted_reads() {
         let agent = entity(1);
         let office = entity(2);
+        let candidate = entity(3);
+        let record = entity(4);
+        let town = entity(10);
+        let archive = entity(12);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate, record]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.entity_kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.effective_places.insert(record, archive);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.entities_at.insert(archive, vec![record]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![
+                known_entity(office, town),
+                known_entity(candidate, town),
+                known_entity(record, archive),
+            ],
+        );
+        view.record_data
+            .insert(record, office_register_record(agent, archive, office));
+
+        let unknown_with_record = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            contains_goal(&unknown_with_record.candidates, GoalKind::ClaimOffice { office }),
+            "unknown vacancy belief should remain emittable when a consultable office register is known"
+        );
+        assert!(
+            contains_goal(
+                &unknown_with_record.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "unknown vacancy belief should still allow support goals when a consultable office register is known"
+        );
+        for goal in &unknown_with_record.candidates {
+            if matches!(
+                goal.key.kind,
+                GoalKind::ClaimOffice { office: goal_office }
+                    | GoalKind::SupportCandidateForOffice { office: goal_office, .. }
+                    if goal_office == office
+            ) {
+                assert!(
+                    goal.evidence_entities.contains(&record),
+                    "political goals emitted through the consult path must carry record evidence"
+                );
+                assert!(
+                    goal.evidence_places.contains(&archive),
+                    "political goals emitted through the consult path must carry record home-place evidence"
+                );
+            }
+        }
+
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        let with_certain_vacancy = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+        assert!(contains_goal(
+            &with_certain_vacancy.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_goal(
+            &with_certain_vacancy.candidates,
+            GoalKind::SupportCandidateForOffice { office, candidate }
+        ));
+
+        view.office_holder_beliefs.insert(
+            office,
+            InstitutionalBeliefRead::Conflicted(vec![None, Some(candidate)]),
+        );
+        let conflicted = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+        assert!(
+            !contains_goal(&conflicted.candidates, GoalKind::ClaimOffice { office }),
+            "conflicted office-holder beliefs must suppress claim-office generation"
+        );
+        assert!(
+            !contains_goal(
+                &conflicted.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "conflicted office-holder beliefs must suppress support-office generation"
+        );
+        assert!(contains_political_omission(
+            &conflicted.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted,
+        ));
+        assert!(contains_political_omission(
+            &conflicted.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_unknown_belief_require_consultable_record_evidence() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
         let town = entity(10);
         let faction = entity(11);
         let mut view = TestBeliefView::default();
-        view.alive.insert(agent);
+        view.alive.extend([agent, candidate]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
         view.entity_kinds.insert(office, EntityKind::Office);
         view.effective_places.insert(agent, town);
-        view.entities_at.insert(town, vec![agent]);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs
+            .insert(agent, vec![known_entity(office, town), known_entity(candidate, town)]);
+
+        let no_record = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            !contains_goal(&no_record.candidates, GoalKind::ClaimOffice { office }),
+            "unknown vacancy belief without a consultable record must suppress ClaimOffice"
+        );
+        assert!(
+            !contains_goal(
+                &no_record.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "unknown vacancy belief without a consultable record must suppress support goals"
+        );
+        assert!(contains_political_omission(
+            &no_record.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord,
+        ));
+        assert!(contains_political_omission(
+            &no_record.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_do_not_fallback_to_live_support_or_holder_helpers() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let incumbent = entity(4);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate, incumbent]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(incumbent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.effective_places.insert(incumbent, town);
+        view.entities_at.insert(town, vec![agent, candidate, incumbent]);
+        view.office_data
+            .insert(office, vacant_office("Captain", town, faction));
+        view.office_holders.insert(office, incumbent);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.support_declarations.insert((agent, office), agent);
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            contains_goal(&result.candidates, GoalKind::ClaimOffice { office }),
+            "candidate generation must not fallback to live office-holder or self-support helpers once institutional beliefs are present"
+        );
+        assert!(
+            contains_goal(
+                &result.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "support-candidate emission must ignore stale live support declarations when the institutional belief read does not confirm them"
+        );
+    }
+
+    #[test]
+    fn political_candidates_require_visible_vacancy_and_skip_existing_declaration() {
+        let agent = entity(1);
+        let office = entity(2);
+        let incumbent = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, incumbent]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(incumbent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(incumbent, town);
+        view.entities_at.insert(town, vec![agent, incumbent]);
         view.factions_by_member.insert(agent, vec![faction]);
         view.beliefs.insert(agent, vec![known_entity(office, town)]);
 
         let mut office_data = vacant_office("Captain", town, faction);
-        office_data.vacancy_since = None;
+        view.office_holders.insert(office, incumbent);
         view.office_data.insert(office, office_data.clone());
-        let filled = generate_candidates(
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(incumbent)));
+        let occupied_with_stale_vacancy = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
+            6,
         );
-        assert!(!contains_goal(&filled, GoalKind::ClaimOffice { office }));
+        assert!(!contains_goal(
+            &occupied_with_stale_vacancy.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_political_omission(
+            &occupied_with_stale_vacancy.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
+        assert!(contains_political_omission(
+            &occupied_with_stale_vacancy.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
+
+        view.office_holders.clear();
+        office_data.vacancy_since = None;
+        view.office_data.insert(office, office_data.clone());
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        let filled = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+        assert!(!contains_goal(
+            &filled.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_political_omission(
+            &filled.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
+        assert!(contains_political_omission(
+            &filled.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
+        ));
 
         office_data.vacancy_since = Some(Tick(2));
         view.office_data.insert(office, office_data);
         view.support_declarations.insert((agent, office), agent);
-        let declared = generate_candidates(
+        view.support_declaration_beliefs.insert(
+            (office, agent),
+            InstitutionalBeliefRead::Certain(Some(agent)),
+        );
+        let declared = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
+            6,
         );
-        assert!(!contains_goal(&declared, GoalKind::ClaimOffice { office }));
+        assert!(!contains_goal(
+            &declared.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_political_omission(
+            &declared.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::AlreadyDeclaredSupport,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_suppress_conflicted_support_beliefs() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.office_data
+            .insert(office, vacant_office("Captain", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.support_declaration_beliefs.insert(
+            (office, agent),
+            InstitutionalBeliefRead::Conflicted(vec![Some(agent), Some(candidate)]),
+        );
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            !contains_goal(&result.candidates, GoalKind::ClaimOffice { office }),
+            "conflicted self-support belief should suppress ClaimOffice commitment"
+        );
+        assert!(
+            !contains_goal(
+                &result.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "conflicted self-support belief should suppress support commitments"
+        );
+        assert!(contains_political_omission(
+            &result.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
+        ));
+        assert!(contains_political_omission(
+            &result.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            Some(candidate),
+            PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_skip_force_law_offices() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+
+        let mut office_data = vacant_office("Warlord", town, faction);
+        office_data.succession_law = worldwake_core::SuccessionLaw::Force;
+        view.office_data.insert(office, office_data);
+
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+
+        let candidates = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            !contains_goal(&candidates.candidates, GoalKind::ClaimOffice { office }),
+            "Force-law offices should not emit support-based ClaimOffice goals"
+        );
+        assert!(
+            !contains_goal(
+                &candidates.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "Force-law offices should not emit support-based support-candidate goals"
+        );
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+        ));
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_record_ineligible_actor_and_support_target_omissions() {
+        let agent = entity(1);
+        let office = entity(2);
+        let ineligible_candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let other_faction = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, ineligible_candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds
+            .insert(ineligible_candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(ineligible_candidate, town);
+        view.entities_at
+            .insert(town, vec![agent, ineligible_candidate]);
+        view.office_data
+            .insert(office, vacant_office("Captain", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.factions_by_member.insert(agent, vec![other_faction]);
+        view.factions_by_member
+            .insert(ineligible_candidate, vec![other_faction]);
+        view.loyalties
+            .insert((agent, ineligible_candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![
+                known_entity(office, town),
+                known_entity(ineligible_candidate, town),
+            ],
+        );
+
+        let candidates = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            !contains_goal(&candidates.candidates, GoalKind::ClaimOffice { office }),
+            "ineligible actors must not emit ClaimOffice candidates"
+        );
+        assert!(
+            !contains_goal(
+                &candidates.candidates,
+                GoalKind::SupportCandidateForOffice {
+                    office,
+                    candidate: ineligible_candidate,
+                }
+            ),
+            "ineligible support targets must not emit support candidates"
+        );
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::ActorNotEligible,
+        ));
+        assert!(contains_political_omission(
+            &candidates.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            Some(ineligible_candidate),
+            PoliticalCandidateOmissionReason::CandidateNotEligible,
+        ));
     }
 }

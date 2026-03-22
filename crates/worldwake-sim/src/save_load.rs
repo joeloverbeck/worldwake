@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 2;
+pub const SAVE_FORMAT_VERSION: u32 = 4;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 
@@ -221,6 +221,7 @@ mod tests {
                 targets: vec![target],
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         );
         scheduler.insert_action(ActionInstance {
@@ -230,7 +231,7 @@ mod tests {
             actor,
             targets: vec![target],
             start_tick: Tick(2),
-            remaining_duration: ActionDuration::Finite(5),
+            remaining_duration: ActionDuration::new(5),
             status: ActionStatus::Active,
             reservation_ids: vec![reservation],
             local_state: Some(ActionState::Empty),
@@ -331,6 +332,8 @@ mod tests {
             systems,
             input_producer: None,
             action_trace: None,
+            request_resolution_trace: None,
+            politics_trace: None,
         }
     }
 

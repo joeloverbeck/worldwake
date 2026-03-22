@@ -415,7 +415,7 @@ fn start_harvest(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_harvest(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -475,7 +475,7 @@ fn start_craft(
 
 fn tick_craft(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -584,7 +584,12 @@ fn commit_harvest(
 
     let owner = resolve_output_owner(txn, instance.actor, workstation)?;
     let lot = txn
-        .create_item_lot_with_owner(payload.output_commodity, payload.output_quantity, place, owner)
+        .create_item_lot_with_owner(
+            payload.output_commodity,
+            payload.output_quantity,
+            place,
+            owner,
+        )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
     Ok(CommitOutcome::empty())
@@ -668,9 +673,9 @@ mod tests {
         CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
         EntityId, EventId, EventLog, EventView, ExclusiveFacilityPolicy, FacilityUseQueue,
         GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
-        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
-        RelationDelta, RelationKind, RelationValue, ResourceSource, Seed, StateDelta, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, RelationDelta,
+        RelationKind, RelationValue, ResourceSource, Seed, StateDelta, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -1141,7 +1146,7 @@ mod tests {
             },
             targets: Vec::new(),
             start_tick: Tick(0),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: worldwake_sim::ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1522,6 +1527,103 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
+    #[test]
+    fn harvest_second_start_failure_preserves_source_until_winner_commit() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor_a, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor_a, recipe_id);
+        let actor_b = {
+            let place = world.topology().place_ids().next().unwrap();
+            let mut txn = new_txn(&mut world, 3);
+            let actor = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([recipe_id]))
+                .unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+            actor
+        };
+        grant_facility_use(&mut world, workstation, actor_a, ids[0], 9);
+
+        let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
+        let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x84);
+        let mut next_id = ActionInstanceId(0);
+
+        let first_id = start_action(
+            &affordance_a,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        grant_facility_use(&mut world, workstation, actor_b, ids[0], 10);
+        let second_start = start_action(
+            &affordance_b,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            second_start,
+            ActionError::ReservationUnavailable(workstation)
+        );
+        assert_eq!(
+            world
+                .get_component_resource_source(workstation)
+                .unwrap()
+                .available_quantity,
+            Quantity(5),
+            "losing the contested start must not consume orchard stock"
+        );
+
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            first_id,
+            &mut active,
+            11,
+        );
+
+        assert_eq!(
+            world
+                .get_component_resource_source(workstation)
+                .unwrap()
+                .available_quantity,
+            Quantity(3),
+            "orchard stock should drop only when the winning harvest commits"
+        );
+    }
+
     #[test]
     fn harvest_body_cost_flows_through_needs_system() {
         let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
@@ -1577,6 +1679,7 @@ mod tests {
                 rng: &mut rng,
                 active_actions: &active,
                 action_defs: &defs,
+                politics_trace: None,
                 tick: Tick(tick),
                 system_id: SystemId::Needs,
             })
@@ -1683,7 +1786,7 @@ mod tests {
             },
             targets: Vec::new(),
             start_tick: Tick(0),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: worldwake_sim::ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -2088,6 +2191,7 @@ mod tests {
                 rng: &mut rng,
                 active_actions: &active,
                 action_defs: &defs,
+                politics_trace: None,
                 tick: Tick(tick),
                 system_id: SystemId::Needs,
             })
@@ -2125,7 +2229,7 @@ mod tests {
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0xA0);
         let mut next_id = ActionInstanceId(0);
-        let _instance_id = start_action(
+        let instance_id = start_action(
             &affordance,
             &defs,
             &handlers,
@@ -2148,7 +2252,7 @@ mod tests {
             &mut rng,
             &defs,
             &handlers,
-            _instance_id,
+            instance_id,
             &mut active,
             11,
         );
@@ -2276,7 +2380,11 @@ mod tests {
             .unwrap();
             commit_txn(txn);
         }
-        assert_eq!(world.owner_of(workstation), None, "workstation must be ownerless");
+        assert_eq!(
+            world.owner_of(workstation),
+            None,
+            "workstation must be ownerless"
+        );
 
         grant_recipe(&mut world, actor, recipe_id);
         grant_facility_use(&mut world, workstation, actor, ids[0], 9);
@@ -2334,10 +2442,14 @@ mod tests {
                 _ => break,
             }
         }
-        assert!(errored || !committed, "ProducerOwner on ownerless producer must fail commit");
+        assert!(
+            errored || !committed,
+            "ProducerOwner on ownerless producer must fail commit"
+        );
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn harvest_missing_policy_fails_commit() {
         // Build world manually without setting ProductionOutputOwnershipPolicy.
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -2373,8 +2485,18 @@ mod tests {
             txn.set_component_metabolism_profile(
                 actor,
                 MetabolismProfile::new(
-                    pm(1), pm(1), pm(1), pm(1), pm(1), pm(20),
-                    nz(10), nz(10), nz(10), nz(10), nz(2), nz(3),
+                    pm(1),
+                    pm(1),
+                    pm(1),
+                    pm(1),
+                    pm(1),
+                    pm(20),
+                    nz(10),
+                    nz(10),
+                    nz(10),
+                    nz(10),
+                    nz(2),
+                    nz(3),
                 ),
             )
             .unwrap();
@@ -2439,7 +2561,10 @@ mod tests {
                 _ => break,
             }
         }
-        assert!(errored || !committed, "missing policy on producer must fail commit");
+        assert!(
+            errored || !committed,
+            "missing policy on producer must fail commit"
+        );
     }
 
     #[test]
@@ -2447,8 +2572,7 @@ mod tests {
         let policy = ProductionOutputOwnershipPolicy {
             output_owner: ProductionOutputOwner::Actor,
         };
-        let (world, actor, _ws, place, event_log) =
-            run_harvest_to_completion_with_policy(policy);
+        let (world, actor, _ws, place, event_log) = run_harvest_to_completion_with_policy(policy);
         let lot = find_apple_lot(&world, place);
 
         // Find the commit event (last event with ActionCommitted tag).
@@ -2578,7 +2702,9 @@ mod tests {
         // Create a facility owner and assign ownership.
         let facility_owner = {
             let mut txn = new_txn(&mut world, 5);
-            let owner = txn.create_agent("GuildMaster", ControlSource::None).unwrap();
+            let owner = txn
+                .create_agent("GuildMaster", ControlSource::None)
+                .unwrap();
             txn.set_ground_location(owner, place).unwrap();
             txn.set_owner(workstation, owner).unwrap();
             txn.set_component_production_output_ownership_policy(
@@ -2661,7 +2787,11 @@ mod tests {
             .unwrap();
             commit_txn(txn);
         }
-        assert_eq!(world.owner_of(workstation), None, "workstation must be ownerless");
+        assert_eq!(
+            world.owner_of(workstation),
+            None,
+            "workstation must be ownerless"
+        );
 
         grant_recipe(&mut world, actor, recipe_id);
         add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 3);
@@ -2720,7 +2850,10 @@ mod tests {
                 _ => break,
             }
         }
-        assert!(errored || !committed, "ProducerOwner on ownerless producer must fail craft commit");
+        assert!(
+            errored || !committed,
+            "ProducerOwner on ownerless producer must fail craft commit"
+        );
     }
 
     #[test]
@@ -2798,8 +2931,16 @@ mod tests {
             .collect();
         assert_eq!(output_lots.len(), 2, "expected two output lots");
         for (lot_id, _lot) in &output_lots {
-            assert_eq!(world.owner_of(*lot_id), Some(actor), "all outputs must share actor ownership");
-            assert_eq!(world.possessor_of(*lot_id), None, "outputs must be unpossessed");
+            assert_eq!(
+                world.owner_of(*lot_id),
+                Some(actor),
+                "all outputs must share actor ownership"
+            );
+            assert_eq!(
+                world.possessor_of(*lot_id),
+                None,
+                "outputs must be unpossessed"
+            );
         }
     }
 

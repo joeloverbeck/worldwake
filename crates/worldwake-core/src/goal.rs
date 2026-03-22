@@ -95,9 +95,7 @@ impl From<GoalKind> for GoalKey {
                 corpse,
                 burial_site,
             } => (None, Some(corpse), Some(burial_site)),
-            GoalKind::ShareBelief { listener, subject } => {
-                (None, Some(listener), Some(subject))
-            }
+            GoalKind::ShareBelief { listener, subject } => (None, Some(listener), Some(subject)),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 (None, Some(office), Some(candidate))
             }

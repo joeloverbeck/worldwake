@@ -4,14 +4,15 @@
 //! and test query purposes. See spec S08 for design rationale.
 
 use std::fmt::Write as _;
-use worldwake_core::{ActionDefId, EntityId, GoalKey, Tick};
-use worldwake_sim::ActionDefRegistry;
+use worldwake_core::{
+    ActionDefId, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick,
+};
+use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
-use crate::goal_model::GoalPriorityClass;
+use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
 use crate::interrupts::InterruptDecision;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
-
 // ── Top-Level Record ────────────────────────────────────────────
 
 /// One complete decision record for one agent at one tick.
@@ -58,6 +59,16 @@ impl DecisionOutcome {
                     .selected
                     .as_ref()
                     .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+                let selected_plan = planning
+                    .selection
+                    .selected_plan
+                    .as_ref()
+                    .map_or_else(|| "none".to_string(), format_selected_plan);
+                let provenance = planning
+                    .selection
+                    .selected_plan_source
+                    .as_ref()
+                    .map_or_else(|| "none".to_string(), |source| format!("{source:?}"));
                 let candidates = planning.candidates.ranked.len();
                 let plans_found = planning
                     .planning
@@ -65,7 +76,12 @@ impl DecisionOutcome {
                     .iter()
                     .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                     .count();
-                format!("PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}")
+                let selected_provenance = selected_ranked_goal_summary(planning)
+                    .and_then(|summary| summary.provenance.as_ref())
+                    .map_or_else(String::new, format_ranked_goal_provenance_summary);
+                format!(
+                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
+                )
             }
         }
     }
@@ -95,7 +111,8 @@ pub struct PlanningPipelineTrace {
 pub struct ActionStartFailureSummary {
     pub tick: Tick,
     pub def_id: ActionDefId,
-    pub reason: String,
+    pub request: ResolvedRequestTrace,
+    pub reason: ActionStartFailureReason,
 }
 
 // ── Stage 1: Candidate Generation + Ranking ─────────────────────
@@ -105,12 +122,55 @@ pub struct ActionStartFailureSummary {
 pub struct CandidateTrace {
     /// All grounded goal keys generated (before suppression/zero-motive filter).
     pub generated: Vec<GoalKey>,
+    /// Typed candidate-evidence provenance keyed by grounded goal.
+    pub evidence: Vec<CandidateEvidenceTrace>,
     /// Ranked goals after all filters (sorted by ranking order).
     pub ranked: Vec<RankedGoalSummary>,
-    /// Goals that were suppressed and why.
+    /// Goals suppressed by situational conditions.
     pub suppressed: Vec<GoalKey>,
     /// Goals filtered by zero motive score.
     pub zero_motive: Vec<GoalKey>,
+    /// Political goals omitted before generation due to hard gates.
+    pub omitted_political: Vec<PoliticalCandidateOmission>,
+    /// Social goals omitted before generation due to resend suppression.
+    pub omitted_social: Vec<SocialCandidateOmission>,
+}
+
+/// Political goal families that can be omitted before candidate emission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PoliticalGoalFamily {
+    ClaimOffice,
+    SupportCandidateForOffice,
+}
+
+/// Hard pre-emission reason for a political goal omission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PoliticalCandidateOmissionReason {
+    ForceSuccessionLaw,
+    OfficeNotVisiblyVacant,
+    OfficeHolderBeliefUnknownNoConsultableRecord,
+    OfficeHolderBeliefConflicted,
+    ActorNotEligible,
+    CandidateNotEligible,
+    AlreadyDeclaredSupport,
+    SupportDeclarationBeliefConflicted,
+}
+
+/// Diagnostic record for a political goal omitted before generation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoliticalCandidateOmission {
+    pub family: PoliticalGoalFamily,
+    pub office: EntityId,
+    pub candidate: Option<EntityId>,
+    pub reason: PoliticalCandidateOmissionReason,
+}
+
+/// Diagnostic record for a social goal omitted before generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SocialCandidateOmission {
+    pub listener: EntityId,
+    pub subject: EntityId,
+    pub status: RecipientKnowledgeStatus,
 }
 
 /// Summary of a ranked goal for trace output.
@@ -119,6 +179,48 @@ pub struct RankedGoalSummary {
     pub goal: GoalKey,
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
+    pub provenance: Option<RankedGoalProvenance>,
+}
+
+/// Actionable evidence contributor kind for one generated goal.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CandidateEvidenceKind {
+    Seller,
+    LooseLot,
+    ResourceSource,
+    Corpse,
+    RecipeWorkstation,
+}
+
+/// Why a candidate evidence contributor was excluded.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CandidateEvidenceExclusionReason {
+    DepletedResourceSource,
+}
+
+/// One actionable contributor that made a candidate emittable.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CandidateEvidenceContributor {
+    pub kind: CandidateEvidenceKind,
+    pub place: EntityId,
+    pub entity: EntityId,
+}
+
+/// One actionable contributor that was considered but excluded.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CandidateEvidenceExclusion {
+    pub kind: CandidateEvidenceKind,
+    pub place: EntityId,
+    pub entity: EntityId,
+    pub reason: CandidateEvidenceExclusionReason,
+}
+
+/// Typed candidate-evidence provenance for one grounded goal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CandidateEvidenceTrace {
+    pub goal: GoalKey,
+    pub contributors: Vec<CandidateEvidenceContributor>,
+    pub exclusions: Vec<CandidateEvidenceExclusion>,
 }
 
 // ── Stage 2: Plan Search ────────────────────────────────────────
@@ -138,12 +240,86 @@ pub struct BindingRejection {
     pub required_target: Option<EntityId>,
 }
 
+/// Per-expansion summary recorded during plan search.
+#[derive(Clone, Debug)]
+pub struct SearchExpansionSummary {
+    /// Depth (number of steps already in the node being expanded).
+    pub depth: u8,
+    /// Heuristic travel distance remaining from this node when spatial
+    /// guidance is available; otherwise zero.
+    pub remaining_travel_ticks: u32,
+    /// Number of deduplicated places used to guide this expansion.
+    pub combined_places_count: u16,
+    /// Number of prerequisite-only places in the combined guidance set.
+    pub prerequisite_places_count: u16,
+    /// Total search candidates generated at this expansion.
+    pub candidates_generated: u16,
+    /// Candidates for which `build_successor` returned `None`.
+    pub candidates_skipped: u16,
+    /// Terminal successors found (`GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`).
+    pub terminal_successors: u16,
+    /// Non-terminal successors before beam truncation.
+    pub non_terminal_before_beam: u16,
+    /// Non-terminal successors after beam truncation (pushed to frontier).
+    pub non_terminal_after_beam: u16,
+    /// Whether a `GoalSatisfied` terminal was found at this expansion
+    /// (search returns immediately in this case).
+    pub found_goal_satisfied: bool,
+    /// Travel-pruning facts captured before successor construction when the
+    /// expansion had spatially guided travel choices.
+    pub travel_pruning: Option<TravelPruningTrace>,
+    /// Concrete goal-relevant / prerequisite guidance surfaces for this
+    /// expansion boundary, when any exist.
+    pub prerequisite_guidance: Option<PrerequisiteGuidanceTrace>,
+}
+
+/// Why a prerequisite place was excluded from guidance.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum PrerequisiteExclusionReason {
+    DepletedResourceSource,
+}
+
+/// One prerequisite place excluded from guidance.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct PrerequisiteExclusionTrace {
+    pub place: EntityId,
+    pub commodity: CommodityKind,
+    pub reason: PrerequisiteExclusionReason,
+}
+
+/// Concrete guidance members used at one expansion boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PrerequisiteGuidanceTrace {
+    pub goal_relevant_places: Vec<EntityId>,
+    pub prerequisite_places: Vec<EntityId>,
+    pub exclusions: Vec<PrerequisiteExclusionTrace>,
+}
+
+/// Remaining travel distance for one travel successor considered at an
+/// expansion boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelSuccessorTrace {
+    pub destination: EntityId,
+    pub remaining_travel_ticks: u32,
+}
+
+/// Structured summary of spatial pruning at one expansion boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelPruningTrace {
+    pub current_place: EntityId,
+    pub current_remaining_travel_ticks: u32,
+    pub retained: Vec<TravelSuccessorTrace>,
+    pub pruned: Vec<TravelSuccessorTrace>,
+}
+
 /// Trace of a single plan search attempt for one goal.
 #[derive(Clone, Debug)]
 pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub outcome: PlanSearchOutcome,
     pub binding_rejections: Vec<BindingRejection>,
+    /// Per-expansion summaries. Empty when tracing is disabled.
+    pub expansion_summaries: Vec<SearchExpansionSummary>,
 }
 
 /// Outcome of a plan search for one goal.
@@ -163,7 +339,7 @@ pub enum PlanSearchOutcome {
 }
 
 /// Summary of one planned step for trace output.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlannedStepSummary {
     pub action_def_id: ActionDefId,
     pub action_name: String,
@@ -179,10 +355,47 @@ pub struct PlannedStepSummary {
 pub struct SelectionTrace {
     /// The goal/plan that was selected (None if no plans available).
     pub selected: Option<GoalKey>,
+    /// Canonical summary of the final selected plan, if one exists.
+    pub selected_plan: Option<SelectedPlanTrace>,
+    /// Where the final selected plan came from.
+    pub selected_plan_source: Option<SelectedPlanSource>,
     /// Whether a goal switch occurred from the previous tick's goal.
     pub goal_switch: Option<GoalSwitchSummary>,
     /// The previous goal (if any) for context.
     pub previous_goal: Option<GoalKey>,
+    /// Explicit plan replacement summary when a fresh search displaces the
+    /// current branch.
+    pub plan_replacement: Option<SelectedPlanReplacementTrace>,
+}
+
+/// Canonical summary of the final plan the agent is following after selection.
+#[derive(Clone, Debug)]
+pub struct SelectedPlanTrace {
+    pub steps: Vec<PlannedStepSummary>,
+    pub terminal_kind: PlanTerminalKind,
+    /// Step index the runtime will execute next, if any.
+    pub next_step_index: Option<usize>,
+    /// The next step on the selected path before execution/revalidation outcome.
+    pub next_step: Option<PlannedStepSummary>,
+    /// Compact summary of the winning fresh search when this selected plan came
+    /// from `SearchSelection`.
+    pub search_provenance: Option<SelectedPlanSearchProvenance>,
+}
+
+/// Compact planner-owned provenance for the selected fresh search result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedPlanSearchProvenance {
+    pub expansions_used: u16,
+    pub root_remaining_travel_ticks: u32,
+    pub root_travel_pruning: Option<TravelPruningTrace>,
+}
+
+/// Provenance for the final selected plan surface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedPlanSource {
+    SearchSelection,
+    RetainedCurrentPlan,
+    SnapshotContinuation,
 }
 
 /// Summary of a goal switch event.
@@ -191,6 +404,23 @@ pub struct GoalSwitchSummary {
     pub from: GoalKey,
     pub to: GoalKey,
     pub kind: GoalSwitchKind,
+}
+
+/// How a fresh search replaced the current branch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedPlanReplacementKind {
+    SameGoalBranchReplanned,
+    GoalChanged,
+}
+
+/// Summary of a current-branch replacement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedPlanReplacementTrace {
+    pub previous_goal: GoalKey,
+    pub new_goal: GoalKey,
+    pub previous_next_step: Option<PlannedStepSummary>,
+    pub new_next_step: Option<PlannedStepSummary>,
+    pub kind: SelectedPlanReplacementKind,
 }
 
 // ── Stage 4: Execution Outcome ──────────────────────────────────
@@ -239,6 +469,40 @@ pub enum DirtyReason {
     QueuePatienceExhausted,
 }
 
+/// Semantic status of one goal within one recorded agent tick.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GoalTraceStatus {
+    NoTrace,
+    Dead,
+    ActiveAction,
+    OmittedPolitical(PoliticalCandidateOmissionReason),
+    OmittedSocial(RecipientKnowledgeStatus),
+    NotGenerated,
+    GeneratedOnly,
+    Suppressed,
+    ZeroMotive,
+    Ranked { rank: usize, selected: bool },
+}
+
+impl GoalTraceStatus {
+    #[must_use]
+    pub fn is_generated(self) -> bool {
+        matches!(
+            self,
+            Self::GeneratedOnly | Self::Suppressed | Self::ZeroMotive | Self::Ranked { .. }
+        )
+    }
+}
+
+/// Derived per-tick view of one goal's status and plan provenance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GoalHistoryEntry {
+    pub tick: Tick,
+    pub status: GoalTraceStatus,
+    pub plan_continued: bool,
+    pub selected_plan_source: Option<SelectedPlanSource>,
+}
+
 // ── Collection Sink ─────────────────────────────────────────────
 
 /// Append-only collection of decision traces with query helpers.
@@ -273,6 +537,29 @@ impl DecisionTraceSink {
             .find(|t| t.agent == agent && t.tick == tick)
     }
 
+    #[must_use]
+    pub fn goal_status_at(
+        &self,
+        agent: EntityId,
+        tick: Tick,
+        goal: &crate::GoalKind,
+    ) -> GoalTraceStatus {
+        self.trace_at(agent, tick)
+            .map_or(GoalTraceStatus::NoTrace, |trace| trace.goal_status(goal))
+    }
+
+    #[must_use]
+    pub fn goal_history_for(
+        &self,
+        agent: EntityId,
+        goal: &crate::GoalKind,
+    ) -> Vec<GoalHistoryEntry> {
+        self.traces_for(agent)
+            .into_iter()
+            .map(|trace| trace.goal_history_entry(goal))
+            .collect()
+    }
+
     pub fn clear(&mut self) {
         self.traces.clear();
     }
@@ -292,6 +579,110 @@ impl DecisionTraceSink {
     }
 }
 
+impl AgentDecisionTrace {
+    #[must_use]
+    pub fn goal_status(&self, goal: &crate::GoalKind) -> GoalTraceStatus {
+        match &self.outcome {
+            DecisionOutcome::Dead => GoalTraceStatus::Dead,
+            DecisionOutcome::ActiveAction { .. } => GoalTraceStatus::ActiveAction,
+            DecisionOutcome::Planning(planning) => goal_status_in_planning(planning, goal),
+        }
+    }
+
+    #[must_use]
+    pub fn goal_history_entry(&self, goal: &crate::GoalKind) -> GoalHistoryEntry {
+        match &self.outcome {
+            DecisionOutcome::Planning(planning) => GoalHistoryEntry {
+                tick: self.tick,
+                status: goal_status_in_planning(planning, goal),
+                plan_continued: planning.plan_continued,
+                selected_plan_source: planning.selection.selected_plan_source,
+            },
+            _ => GoalHistoryEntry {
+                tick: self.tick,
+                status: self.goal_status(goal),
+                plan_continued: false,
+                selected_plan_source: None,
+            },
+        }
+    }
+}
+
+fn goal_status_in_planning(
+    planning: &PlanningPipelineTrace,
+    goal: &crate::GoalKind,
+) -> GoalTraceStatus {
+    if let Some(reason) =
+        omitted_political_reason_for_goal(&planning.candidates.omitted_political, goal)
+    {
+        return GoalTraceStatus::OmittedPolitical(reason);
+    }
+    if let Some(status) = omitted_social_status_for_goal(&planning.candidates.omitted_social, goal)
+    {
+        return GoalTraceStatus::OmittedSocial(status);
+    }
+
+    let goal_key = GoalKey::from(goal);
+    if planning.candidates.suppressed.contains(&goal_key) {
+        return GoalTraceStatus::Suppressed;
+    }
+    if planning.candidates.zero_motive.contains(&goal_key) {
+        return GoalTraceStatus::ZeroMotive;
+    }
+    if let Some(rank) = planning
+        .candidates
+        .ranked
+        .iter()
+        .position(|candidate| candidate.goal == goal_key)
+    {
+        return GoalTraceStatus::Ranked {
+            rank,
+            selected: planning.selection.selected == Some(goal_key),
+        };
+    }
+    if planning.candidates.generated.contains(&goal_key) {
+        return GoalTraceStatus::GeneratedOnly;
+    }
+    GoalTraceStatus::NotGenerated
+}
+
+fn omitted_political_reason_for_goal(
+    omissions: &[PoliticalCandidateOmission],
+    goal: &crate::GoalKind,
+) -> Option<PoliticalCandidateOmissionReason> {
+    omissions.iter().find_map(|omission| match goal {
+        crate::GoalKind::ClaimOffice { office }
+            if omission.family == PoliticalGoalFamily::ClaimOffice
+                && omission.office == *office
+                && omission.candidate.is_none() =>
+        {
+            Some(omission.reason)
+        }
+        crate::GoalKind::SupportCandidateForOffice { office, candidate }
+            if omission.family == PoliticalGoalFamily::SupportCandidateForOffice
+                && omission.office == *office
+                && omission.candidate == Some(*candidate) =>
+        {
+            Some(omission.reason)
+        }
+        _ => None,
+    })
+}
+
+fn omitted_social_status_for_goal(
+    omissions: &[SocialCandidateOmission],
+    goal: &crate::GoalKind,
+) -> Option<RecipientKnowledgeStatus> {
+    omissions.iter().find_map(|omission| match goal {
+        crate::GoalKind::ShareBelief { listener, subject }
+            if omission.listener == *listener && omission.subject == *subject =>
+        {
+            Some(omission.status)
+        }
+        _ => None,
+    })
+}
+
 /// Format a `DecisionOutcome` with action name resolution via the registry.
 fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) -> String {
     match outcome {
@@ -306,7 +697,12 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .get(*action_def_id)
                 .map_or(action_name.as_str(), |d| d.name.as_str());
             let decision = &interrupt.decision;
-            format!("ACTIVE: {name} — interrupt: {decision:?}")
+            let challenger = interrupt
+                .top_challenger
+                .as_ref()
+                .and_then(|summary| summary.provenance.as_ref())
+                .map_or_else(String::new, format_ranked_goal_provenance_summary);
+            format!("ACTIVE: {name} — interrupt: {decision:?}{challenger}")
         }
         DecisionOutcome::Planning(planning) => {
             let selected = planning
@@ -314,6 +710,16 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .selected
                 .as_ref()
                 .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+            let selected_plan = planning
+                .selection
+                .selected_plan
+                .as_ref()
+                .map_or_else(|| "none".to_string(), format_selected_plan);
+            let provenance = planning
+                .selection
+                .selected_plan_source
+                .as_ref()
+                .map_or_else(|| "none".to_string(), |source| format!("{source:?}"));
             let candidates = planning.candidates.ranked.len();
             let plans_found = planning
                 .planning
@@ -321,8 +727,11 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .iter()
                 .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                 .count();
+            let selected_provenance = selected_ranked_goal_summary(planning)
+                .and_then(|summary| summary.provenance.as_ref())
+                .map_or_else(String::new, format_ranked_goal_provenance_summary);
             let mut out = format!(
-                "PLAN: selected={selected}, candidates={candidates}, plans_found={plans_found}"
+                "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
             );
             for attempt in &planning.planning.attempts {
                 for rej in &attempt.binding_rejections {
@@ -335,10 +744,139 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                         rej.rejected_targets, rej.required_target
                     );
                 }
+                for exp in &attempt.expansion_summaries {
+                    let satisfied_tag = if exp.found_goal_satisfied {
+                        " satisfied"
+                    } else {
+                        ""
+                    };
+                    let _ = write!(
+                        out,
+                        "\n  search expansion d={}: {} candidates, {} skipped, {} terminal{}, {}→{} beam",
+                        exp.depth,
+                        exp.candidates_generated,
+                        exp.candidates_skipped,
+                        exp.terminal_successors,
+                        satisfied_tag,
+                        exp.non_terminal_before_beam,
+                        exp.non_terminal_after_beam,
+                    );
+                }
             }
             out
         }
     }
+}
+
+fn selected_ranked_goal_summary(planning: &PlanningPipelineTrace) -> Option<&RankedGoalSummary> {
+    let selected = planning.selection.selected?;
+    planning
+        .candidates
+        .ranked
+        .iter()
+        .find(|summary| summary.goal == selected)
+}
+
+fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> String {
+    match provenance {
+        RankedGoalProvenance::Danger(assessment) => format!(
+            ", danger=pressure={} attackers={:?} visible_hostiles={:?} hostile_targets={:?} wounds={} incapacitated={}",
+            assessment.pressure.value(),
+            assessment.current_attackers,
+            assessment.visible_hostiles,
+            assessment.hostile_targets,
+            assessment.has_wounds,
+            assessment.is_incapacitated,
+        ),
+        RankedGoalProvenance::Drive(provenance) => {
+            let motive_inputs = provenance
+                .motive_inputs
+                .iter()
+                .map(|input| {
+                    format!(
+                        "{:?}(pressure={}, weight={}, score={}, recovery_relevant={})",
+                        input.drive,
+                        input.pressure.value(),
+                        input.weight.value(),
+                        input.score,
+                        input.recovery_relevant,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let adjustment = provenance
+                .adjustment
+                .map_or_else(|| "none".to_string(), |adjustment| format!("{adjustment:?}"));
+            format!(
+                ", drive=base={:?} final={:?} adjustment={} motive_inputs=[{}]",
+                provenance.base_priority_class,
+                provenance.final_priority_class,
+                adjustment,
+                motive_inputs,
+            )
+        }
+    }
+}
+
+fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
+    let step_kinds = selected_plan
+        .steps
+        .iter()
+        .map(|step| format!("{:?}", step.op_kind))
+        .collect::<Vec<_>>()
+        .join("->");
+    let next_step = selected_plan
+        .next_step
+        .as_ref()
+        .map_or_else(|| "none".to_string(), |step| format!("{:?}", step.op_kind));
+    let search = selected_plan.search_provenance.as_ref().map_or_else(
+        || "none".to_string(),
+        format_selected_plan_search_provenance,
+    );
+    format!(
+        "{:?}[steps={}, next_index={:?}, next_step={next_step}, path={step_kinds}, search={search}]",
+        selected_plan.terminal_kind,
+        selected_plan.steps.len(),
+        selected_plan.next_step_index,
+    )
+}
+
+fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvenance) -> String {
+    let pruning = provenance.root_travel_pruning.as_ref().map_or_else(
+        || "none".to_string(),
+        |trace| {
+            let retained = trace
+                .retained
+                .iter()
+                .map(|successor| {
+                    format!(
+                        "{:?}@{}",
+                        successor.destination, successor.remaining_travel_ticks
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let pruned = trace
+                .pruned
+                .iter()
+                .map(|successor| {
+                    format!(
+                        "{:?}@{}",
+                        successor.destination, successor.remaining_travel_ticks
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "from={:?}@{}, kept=[{}], pruned=[{}]",
+                trace.current_place, trace.current_remaining_travel_ticks, retained, pruned,
+            )
+        },
+    );
+    format!(
+        "expansions={}, root_remaining={}, pruning={pruning}",
+        provenance.expansions_used, provenance.root_remaining_travel_ticks
+    )
 }
 
 impl Default for DecisionTraceSink {
@@ -350,7 +888,7 @@ impl Default for DecisionTraceSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_core::Tick;
+    use worldwake_core::{GoalKind, Tick};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -364,6 +902,55 @@ mod tests {
             agent,
             tick,
             outcome: DecisionOutcome::Dead,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn goal_trace(
+        tick: Tick,
+        generated: Vec<GoalKey>,
+        suppressed: Vec<GoalKey>,
+        zero_motive: Vec<GoalKey>,
+        ranked: Vec<RankedGoalSummary>,
+        selected: Option<GoalKey>,
+        selected_plan_source: Option<SelectedPlanSource>,
+        plan_continued: bool,
+        omitted_political: Vec<PoliticalCandidateOmission>,
+        omitted_social: Vec<SocialCandidateOmission>,
+    ) -> AgentDecisionTrace {
+        AgentDecisionTrace {
+            agent: entity(1),
+            tick,
+            outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                dirty_reasons: Vec::new(),
+                plan_continued,
+                candidates: CandidateTrace {
+                    generated,
+                    evidence: Vec::new(),
+                    ranked,
+                    suppressed,
+                    zero_motive,
+                    omitted_political,
+                    omitted_social,
+                },
+                planning: PlanSearchTrace {
+                    attempts: Vec::new(),
+                },
+                selection: SelectionTrace {
+                    selected,
+                    selected_plan: None,
+                    selected_plan_source,
+                    goal_switch: None,
+                    previous_goal: None,
+                    plan_replacement: None,
+                },
+                execution: ExecutionTrace {
+                    enqueued_step: None,
+                    revalidation_passed: None,
+                    failure: None,
+                },
+                action_start_failures: Vec::new(),
+            })),
         }
     }
 
@@ -418,6 +1005,252 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
+    fn goal_status_distinguishes_omitted_suppressed_zero_motive_ranked_and_selected() {
+        let office = entity(10);
+        let rival = entity(11);
+        let omitted_goal = GoalKind::ClaimOffice { office };
+        let suppressed_goal = GoalKind::Sleep;
+        let zero_motive_goal = GoalKind::Wash;
+        let outranked_goal = GoalKind::TreatWounds {
+            patient: entity(12),
+        };
+        let selected_goal = GoalKind::ReduceDanger;
+        let generated_only_goal = GoalKind::Relieve;
+        let absent_goal = GoalKind::EngageHostile { target: entity(99) };
+
+        let trace = goal_trace(
+            Tick(5),
+            vec![
+                GoalKey::from(&suppressed_goal),
+                GoalKey::from(&zero_motive_goal),
+                GoalKey::from(&outranked_goal),
+                GoalKey::from(&selected_goal),
+                GoalKey::from(&generated_only_goal),
+            ],
+            vec![GoalKey::from(&suppressed_goal)],
+            vec![GoalKey::from(&zero_motive_goal)],
+            vec![
+                RankedGoalSummary {
+                    goal: GoalKey::from(&selected_goal),
+                    priority_class: GoalPriorityClass::High,
+                    motive_score: 900,
+                    provenance: None,
+                },
+                RankedGoalSummary {
+                    goal: GoalKey::from(&outranked_goal),
+                    priority_class: GoalPriorityClass::Medium,
+                    motive_score: 600,
+                    provenance: None,
+                },
+            ],
+            Some(GoalKey::from(&selected_goal)),
+            Some(SelectedPlanSource::SearchSelection),
+            false,
+            vec![PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+            }],
+            Vec::new(),
+        );
+
+        assert_eq!(
+            trace.goal_status(&omitted_goal),
+            GoalTraceStatus::OmittedPolitical(PoliticalCandidateOmissionReason::ForceSuccessionLaw)
+        );
+        assert_eq!(
+            trace.goal_status(&suppressed_goal),
+            GoalTraceStatus::Suppressed
+        );
+        assert_eq!(
+            trace.goal_status(&zero_motive_goal),
+            GoalTraceStatus::ZeroMotive
+        );
+        assert_eq!(
+            trace.goal_status(&outranked_goal),
+            GoalTraceStatus::Ranked {
+                rank: 1,
+                selected: false,
+            }
+        );
+        assert_eq!(
+            trace.goal_status(&selected_goal),
+            GoalTraceStatus::Ranked {
+                rank: 0,
+                selected: true,
+            }
+        );
+        assert_eq!(
+            trace.goal_status(&generated_only_goal),
+            GoalTraceStatus::GeneratedOnly
+        );
+        assert_eq!(
+            trace.goal_status(&absent_goal),
+            GoalTraceStatus::NotGenerated
+        );
+
+        let support_goal = GoalKind::SupportCandidateForOffice {
+            office,
+            candidate: rival,
+        };
+        let support_trace = goal_trace(
+            Tick(6),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            vec![PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::SupportCandidateForOffice,
+                office,
+                candidate: Some(rival),
+                reason: PoliticalCandidateOmissionReason::CandidateNotEligible,
+            }],
+            Vec::new(),
+        );
+        assert_eq!(
+            support_trace.goal_status(&support_goal),
+            GoalTraceStatus::OmittedPolitical(
+                PoliticalCandidateOmissionReason::CandidateNotEligible
+            )
+        );
+
+        let conflicted_goal = GoalKind::ClaimOffice { office: entity(44) };
+        let conflicted_trace = goal_trace(
+            Tick(7),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            vec![PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office: entity(44),
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted,
+            }],
+            Vec::new(),
+        );
+        assert_eq!(
+            conflicted_trace.goal_status(&conflicted_goal),
+            GoalTraceStatus::OmittedPolitical(
+                PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted
+            )
+        );
+    }
+
+    #[test]
+    fn goal_status_reports_social_omission_reason() {
+        let listener = entity(10);
+        let subject = entity(11);
+        let share_goal = GoalKind::ShareBelief { listener, subject };
+
+        let trace = goal_trace(
+            Tick(7),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            Vec::new(),
+            vec![SocialCandidateOmission {
+                listener,
+                subject,
+                status: RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            }],
+        );
+
+        assert_eq!(
+            trace.goal_status(&share_goal),
+            GoalTraceStatus::OmittedSocial(
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+            )
+        );
+    }
+
+    #[test]
+    fn goal_history_helpers_are_deterministic_and_preserve_continuation_metadata() {
+        let agent = entity(1);
+        let goal = GoalKind::ClaimOffice { office: entity(20) };
+        let mut sink = DecisionTraceSink::new();
+        sink.record(goal_trace(
+            Tick(1),
+            vec![GoalKey::from(&goal)],
+            Vec::new(),
+            Vec::new(),
+            vec![RankedGoalSummary {
+                goal: GoalKey::from(&goal),
+                priority_class: GoalPriorityClass::Medium,
+                motive_score: 700,
+                provenance: None,
+            }],
+            Some(GoalKey::from(&goal)),
+            Some(SelectedPlanSource::SearchSelection),
+            false,
+            Vec::new(),
+            Vec::new(),
+        ));
+        sink.record(goal_trace(
+            Tick(2),
+            vec![GoalKey::from(&goal)],
+            Vec::new(),
+            Vec::new(),
+            vec![RankedGoalSummary {
+                goal: GoalKey::from(&goal),
+                priority_class: GoalPriorityClass::Medium,
+                motive_score: 700,
+                provenance: None,
+            }],
+            Some(GoalKey::from(&goal)),
+            Some(SelectedPlanSource::SnapshotContinuation),
+            true,
+            Vec::new(),
+            Vec::new(),
+        ));
+
+        let first = sink.goal_history_for(agent, &goal);
+        let second = sink.goal_history_for(agent, &goal);
+        assert_eq!(first, second, "history helpers must be deterministic");
+        assert_eq!(first.len(), 2);
+        assert_eq!(
+            first[0],
+            GoalHistoryEntry {
+                tick: Tick(1),
+                status: GoalTraceStatus::Ranked {
+                    rank: 0,
+                    selected: true,
+                },
+                plan_continued: false,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+            }
+        );
+        assert_eq!(
+            first[1],
+            GoalHistoryEntry {
+                tick: Tick(2),
+                status: GoalTraceStatus::Ranked {
+                    rank: 0,
+                    selected: true,
+                },
+                plan_continued: true,
+                selected_plan_source: Some(SelectedPlanSource::SnapshotContinuation),
+            }
+        );
+        assert_eq!(
+            sink.goal_status_at(agent, Tick(99), &goal),
+            GoalTraceStatus::NoTrace
+        );
+    }
+
+    #[test]
     fn summary_dead_returns_non_empty_string() {
         let summary = DecisionOutcome::Dead.summary();
         assert!(!summary.is_empty());
@@ -448,19 +1281,59 @@ mod tests {
             plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![],
+                evidence: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::Sleep),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
+                    provenance: None,
                 }],
                 suppressed: vec![],
                 zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
                 selected: Some(GoalKey::new(GoalKind::Sleep)),
+                selected_plan: Some(SelectedPlanTrace {
+                    steps: vec![PlannedStepSummary {
+                        action_def_id: ActionDefId(1),
+                        action_name: "sleep".to_string(),
+                        op_kind: PlannerOpKind::Sleep,
+                        targets: vec![],
+                        estimated_ticks: 2,
+                    }],
+                    terminal_kind: PlanTerminalKind::GoalSatisfied,
+                    next_step_index: Some(0),
+                    next_step: Some(PlannedStepSummary {
+                        action_def_id: ActionDefId(1),
+                        action_name: "sleep".to_string(),
+                        op_kind: PlannerOpKind::Sleep,
+                        targets: vec![],
+                        estimated_ticks: 2,
+                    }),
+                    search_provenance: Some(SelectedPlanSearchProvenance {
+                        expansions_used: 3,
+                        root_remaining_travel_ticks: 7,
+                        root_travel_pruning: Some(TravelPruningTrace {
+                            current_place: entity(11),
+                            current_remaining_travel_ticks: 7,
+                            retained: vec![TravelSuccessorTrace {
+                                destination: entity(12),
+                                remaining_travel_ticks: 5,
+                            }],
+                            pruned: vec![TravelSuccessorTrace {
+                                destination: entity(13),
+                                remaining_travel_ticks: 9,
+                            }],
+                        }),
+                    }),
+                }),
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
                 previous_goal: None,
+                plan_replacement: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -474,6 +1347,130 @@ mod tests {
         assert!(summary.contains("candidates=1"));
         assert!(summary.contains("plans_found=0"));
         assert!(summary.contains("Sleep"));
+        assert!(summary.contains("SearchSelection"));
+        assert!(summary.contains("GoalSatisfied"));
+        assert!(summary.contains("Sleep]") || summary.contains("path=Sleep"));
+        assert!(summary.contains("expansions=3"));
+        assert!(summary.contains("root_remaining=7"));
+        assert!(summary.contains("pruned=["));
+    }
+
+    #[test]
+    fn summary_planning_includes_selected_danger_provenance() {
+        use worldwake_core::GoalKind;
+
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty_reasons: vec![DirtyReason::NoPlan],
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![GoalKey::new(GoalKind::ReduceDanger)],
+                evidence: vec![],
+                ranked: vec![RankedGoalSummary {
+                    goal: GoalKey::new(GoalKind::ReduceDanger),
+                    priority_class: GoalPriorityClass::High,
+                    motive_score: 700,
+                    provenance: Some(RankedGoalProvenance::Danger(crate::DangerAssessment {
+                        pressure: worldwake_core::Permille::new(600).unwrap(),
+                        thresholds_present: true,
+                        current_attackers: vec![entity(8)],
+                        visible_hostiles: vec![entity(8), entity(9)],
+                        hostile_targets: vec![entity(8), entity(9)],
+                        has_wounds: true,
+                        is_incapacitated: false,
+                    })),
+                }],
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: Some(GoalKey::new(GoalKind::ReduceDanger)),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("danger=pressure=600"));
+        assert!(summary.contains("attackers=["));
+        assert!(summary.contains("visible_hostiles=["));
+        assert!(summary.contains("hostile_targets=["));
+    }
+
+    #[test]
+    fn summary_planning_includes_selected_drive_provenance() {
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty_reasons: vec![DirtyReason::NoPlan],
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                    commodity: worldwake_core::CommodityKind::Bread,
+                })],
+                evidence: vec![],
+                ranked: vec![RankedGoalSummary {
+                    goal: GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                        commodity: worldwake_core::CommodityKind::Bread,
+                    }),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: 380_000,
+                    provenance: Some(RankedGoalProvenance::Drive(
+                        crate::RankedDriveGoalProvenance {
+                            base_priority_class: GoalPriorityClass::High,
+                            final_priority_class: GoalPriorityClass::Critical,
+                            adjustment: Some(
+                                crate::RankedPriorityAdjustment::ClottedWoundRecoveryPromotion,
+                            ),
+                            motive_inputs: vec![crate::RankedDriveMotiveInput {
+                                drive: crate::RankedDriveKind::Hunger,
+                                pressure: worldwake_core::Permille::new(760).unwrap(),
+                                weight: worldwake_core::Permille::new(500).unwrap(),
+                                score: 380_000,
+                                recovery_relevant: true,
+                            }],
+                        },
+                    )),
+                }],
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: Some(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                    commodity: worldwake_core::CommodityKind::Bread,
+                })),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("drive=base=High final=Critical"));
+        assert!(summary.contains("ClottedWoundRecoveryPromotion"));
+        assert!(summary.contains("Hunger(pressure=760, weight=500, score=380000"));
     }
 
     #[test]
@@ -519,9 +1516,55 @@ mod tests {
             goal: GoalKey::new(GoalKind::Sleep),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
             binding_rejections: rejections,
+            expansion_summaries: vec![],
         };
         assert_eq!(trace.binding_rejections.len(), 2);
         assert_eq!(trace.binding_rejections[0].def_id, ActionDefId(1));
         assert_eq!(trace.binding_rejections[1].rejected_targets[0], entity(30));
+    }
+
+    #[test]
+    fn expansion_summary_default_and_debug_format() {
+        let summary = SearchExpansionSummary {
+            depth: 0,
+            remaining_travel_ticks: 4,
+            combined_places_count: 3,
+            prerequisite_places_count: 1,
+            candidates_generated: 12,
+            candidates_skipped: 1,
+            terminal_successors: 2,
+            non_terminal_before_beam: 11,
+            non_terminal_after_beam: 8,
+            found_goal_satisfied: false,
+            travel_pruning: Some(TravelPruningTrace {
+                current_place: entity(1),
+                current_remaining_travel_ticks: 4,
+                retained: vec![TravelSuccessorTrace {
+                    destination: entity(2),
+                    remaining_travel_ticks: 2,
+                }],
+                pruned: vec![TravelSuccessorTrace {
+                    destination: entity(3),
+                    remaining_travel_ticks: 6,
+                }],
+            }),
+            prerequisite_guidance: None,
+        };
+        assert_eq!(summary.depth, 0);
+        assert_eq!(summary.remaining_travel_ticks, 4);
+        assert_eq!(summary.combined_places_count, 3);
+        assert_eq!(summary.prerequisite_places_count, 1);
+        assert_eq!(summary.candidates_generated, 12);
+        assert_eq!(summary.candidates_skipped, 1);
+        assert_eq!(summary.terminal_successors, 2);
+        assert_eq!(summary.non_terminal_before_beam, 11);
+        assert_eq!(summary.non_terminal_after_beam, 8);
+        assert!(!summary.found_goal_satisfied);
+        assert!(summary.travel_pruning.is_some());
+
+        // Verify Debug is derived and non-empty.
+        let debug = format!("{summary:?}");
+        assert!(debug.contains("SearchExpansionSummary"));
+        assert!(debug.contains("depth: 0"));
     }
 }

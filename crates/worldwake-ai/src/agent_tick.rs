@@ -3,8 +3,11 @@ use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
     GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
+    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectedPlanReplacementKind,
+    SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
+    SelectedPlanTrace, SelectionTrace,
 };
+use crate::failure_handling::ExecutionFailure;
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
@@ -22,9 +25,10 @@ use worldwake_core::{
     WorldTxn,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommitOutcome,
-    CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry,
-    ReplanNeeded, RuntimeBeliefView, Scheduler, SchedulerActionRuntime, TickInputError,
+    ActionHandlerRegistry, ActionStartFailure, AutonomousController, AutonomousControllerContext,
+    CommitOutcome, CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
+    RecipeRegistry, ReplanNeeded, RuntimeBeliefView, Scheduler, SchedulerActionRuntime,
+    TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -119,8 +123,9 @@ fn runtime_belief_view<'a>(
     scheduler: &'a Scheduler,
     action_defs: &'a worldwake_sim::ActionDefRegistry,
 ) -> PerAgentBeliefView<'a> {
-    PerAgentBeliefView::with_runtime_from_world(
+    PerAgentBeliefView::with_runtime_from_world_at_tick(
         agent,
+        scheduler.current_tick(),
         world,
         PerAgentBeliefRuntime::new(scheduler.active_actions(), action_defs),
     )
@@ -146,6 +151,13 @@ struct ReadPhaseContext<'a> {
     tick: Tick,
     travel_horizon: u8,
     structural_block_ticks: u32,
+}
+
+#[derive(Clone, Copy)]
+struct InFlightReconciliation<'a> {
+    replan_signals: &'a [&'a ReplanNeeded],
+    start_failures: &'a [ActionStartFailure],
+    committed_actions: &'a [CommittedAction],
 }
 
 impl AutonomousController for AgentTickDriver {
@@ -226,6 +238,7 @@ fn process_agent(
         .unwrap_or_default();
     let runtime = runtime_by_agent.entry(agent).or_default();
     let active_action = active_action_for_agent(ctx, agent);
+    let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
 
     // ── Dead-agent early return ──
     {
@@ -253,8 +266,11 @@ fn process_agent(
         &mut blocked_memory,
         active_action.as_ref(),
         agent,
-        replan_signals,
-        committed_actions,
+        InFlightReconciliation {
+            replan_signals,
+            start_failures: &start_failures,
+            committed_actions,
+        },
     )?;
 
     let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
@@ -275,6 +291,7 @@ fn process_agent(
             travel_horizon: budget.snapshot_travel_horizon,
             structural_block_ticks: budget.structural_block_ticks,
         },
+        tracing,
     );
     let ranked_candidates = read_result.ranked;
     let active_action = active_action_for_agent(ctx, agent);
@@ -305,11 +322,7 @@ fn process_agent(
             let action_name = action_defs
                 .get(active_action.def_id)
                 .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
-            let top_challenger = ranked_candidates.first().map(|r| RankedGoalSummary {
-                goal: r.grounded.key,
-                priority_class: r.priority_class,
-                motive_score: r.motive_score,
-            });
+            let top_challenger = ranked_candidates.first().map(summarize_ranked_goal);
             DecisionOutcome::ActiveAction {
                 action_def_id: active_action.def_id,
                 action_name,
@@ -324,14 +337,12 @@ fn process_agent(
         let previous_goal = runtime.current_goal;
 
         // Drain action start failures for this agent from the scheduler.
-        let agent_failures: Vec<ActionStartFailureSummary> = ctx
-            .scheduler
-            .action_start_failures()
+        let agent_failures: Vec<ActionStartFailureSummary> = start_failures
             .iter()
-            .filter(|f| f.actor == agent)
             .map(|f| ActionStartFailureSummary {
                 tick: f.tick,
                 def_id: f.def_id,
+                request: f.request,
                 reason: f.reason.clone(),
             })
             .collect();
@@ -401,16 +412,15 @@ fn process_agent(
         tracing.then(|| {
             let candidate_trace = CandidateTrace {
                 generated: read_result.generated_keys,
+                evidence: read_result.candidate_evidence,
                 ranked: ranked_candidates
                     .iter()
-                    .map(|r| RankedGoalSummary {
-                        goal: r.grounded.key,
-                        priority_class: r.priority_class,
-                        motive_score: r.motive_score,
-                    })
+                    .map(summarize_ranked_goal)
                     .collect(),
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
+                omitted_political: read_result.omitted_political,
+                omitted_social: read_result.omitted_social,
             };
 
             DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -422,8 +432,11 @@ fn process_agent(
                 }),
                 selection: selection_trace.unwrap_or(SelectionTrace {
                     selected: None,
+                    selected_plan: None,
+                    selected_plan_source: None,
                     goal_switch: None,
                     previous_goal: None,
+                    plan_replacement: None,
                 }),
                 execution: execution_trace.unwrap_or(ExecutionTrace {
                     enqueued_step: None,
@@ -473,6 +486,104 @@ fn summarize_step(
             .filter_map(|t| authoritative_target(*t))
             .collect(),
         estimated_ticks: step.estimated_ticks,
+    }
+}
+
+fn summarize_selected_plan(
+    plan: &PlannedPlan,
+    current_step_index: usize,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    search_provenance: Option<SelectedPlanSearchProvenance>,
+) -> SelectedPlanTrace {
+    SelectedPlanTrace {
+        steps: plan
+            .steps
+            .iter()
+            .map(|step| summarize_step(step, action_defs))
+            .collect(),
+        terminal_kind: plan.terminal_kind,
+        next_step_index: (current_step_index < plan.steps.len()).then_some(current_step_index),
+        next_step: plan
+            .steps
+            .get(current_step_index)
+            .map(|step| summarize_step(step, action_defs)),
+        search_provenance,
+    }
+}
+
+fn summarize_search_provenance(
+    selected_goal: worldwake_core::GoalKey,
+    plans: &[(
+        crate::GoalKey,
+        PlanSearchResult,
+        Vec<BindingRejection>,
+        Vec<crate::decision_trace::SearchExpansionSummary>,
+    )],
+) -> Option<SelectedPlanSearchProvenance> {
+    let (_, result, _, expansions) = plans
+        .iter()
+        .find(|(goal, _, _, _)| *goal == selected_goal)?;
+    if !matches!(result, PlanSearchResult::Found(_)) {
+        return None;
+    }
+    let root = expansions.first();
+    Some(SelectedPlanSearchProvenance {
+        expansions_used: expansions.len() as u16,
+        root_remaining_travel_ticks: root.map_or(0, |summary| summary.remaining_travel_ticks),
+        root_travel_pruning: root.and_then(|summary| summary.travel_pruning.clone()),
+    })
+}
+
+fn summarize_plan_replacement(
+    runtime: &AgentDecisionRuntime,
+    selected_goal: worldwake_core::GoalKey,
+    selected_plan: &PlannedPlan,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+) -> Option<SelectedPlanReplacementTrace> {
+    let previous_goal = runtime.current_goal?;
+    let previous_next_step = current_step(runtime).map(|step| summarize_step(step, action_defs));
+    let new_next_step = selected_plan
+        .steps
+        .first()
+        .map(|step| summarize_step(step, action_defs));
+    if previous_goal == selected_goal && previous_next_step == new_next_step {
+        return None;
+    }
+    Some(SelectedPlanReplacementTrace {
+        previous_goal,
+        new_goal: selected_goal,
+        previous_next_step,
+        new_next_step,
+        kind: if previous_goal == selected_goal {
+            SelectedPlanReplacementKind::SameGoalBranchReplanned
+        } else {
+            SelectedPlanReplacementKind::GoalChanged
+        },
+    })
+}
+
+fn summarize_ranked_goal(ranked: &RankedGoal) -> RankedGoalSummary {
+    RankedGoalSummary {
+        goal: ranked.grounded.key,
+        priority_class: ranked.priority_class,
+        motive_score: ranked.motive_score,
+        provenance: ranked.provenance.clone(),
+    }
+}
+
+fn determine_selected_plan_source(
+    selected_goal: worldwake_core::GoalKey,
+    current_goal_before_selection: Option<worldwake_core::GoalKey>,
+    plans: &[(worldwake_core::GoalKey, Option<PlannedPlan>)],
+) -> SelectedPlanSource {
+    if plans
+        .iter()
+        .any(|(goal, plan)| *goal == selected_goal && plan.is_some())
+    {
+        SelectedPlanSource::SearchSelection
+    } else {
+        debug_assert_eq!(current_goal_before_selection, Some(selected_goal));
+        SelectedPlanSource::RetainedCurrentPlan
     }
 }
 
@@ -548,6 +659,7 @@ fn enqueue_valid_step_or_handle_failure(
             targets,
             payload_override: step.payload_override.clone(),
             mode: worldwake_sim::ActionRequestMode::BestEffort,
+            provenance: worldwake_sim::RequestProvenance::AiPlan,
         },
     );
     runtime.step_in_flight = true;
@@ -642,10 +754,16 @@ struct ReadPhaseResult {
     dirty_reasons: Vec<DirtyReason>,
     /// Generated candidate keys (before ranking filter).
     generated_keys: Vec<worldwake_core::GoalKey>,
+    /// Typed candidate-evidence provenance keyed by generated goal.
+    candidate_evidence: Vec<crate::CandidateEvidenceTrace>,
     /// Goals suppressed by situational conditions.
     suppressed: Vec<worldwake_core::GoalKey>,
     /// Goals with zero motive score.
     zero_motive: Vec<worldwake_core::GoalKey>,
+    /// Political goals omitted before emission due to hard gates.
+    omitted_political: Vec<crate::PoliticalCandidateOmission>,
+    /// Social goals omitted before emission due to resend suppression.
+    omitted_social: Vec<crate::SocialCandidateOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
     decision_context: DecisionContext,
 }
@@ -660,6 +778,7 @@ fn refresh_runtime_for_read_phase(
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
+    _tracing: bool,
 ) -> ReadPhaseResult {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
@@ -707,10 +826,11 @@ fn refresh_runtime_for_read_phase(
         phase.tick,
         phase.travel_horizon,
     );
-    let generated_keys = candidates.iter().map(|c| c.key).collect();
+    let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
+    let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
     let dc = crate::build_decision_context(&view, agent);
     let outcome = rank_candidates(
-        &candidates,
+        &candidates.candidates,
         &view,
         agent,
         phase.tick,
@@ -723,8 +843,11 @@ fn refresh_runtime_for_read_phase(
         ranked: outcome.ranked,
         dirty_reasons,
         generated_keys,
+        candidate_evidence,
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
+        omitted_political: candidates.diagnostics.omitted_political,
+        omitted_social: candidates.diagnostics.omitted_social,
         decision_context: dc,
     }
 }
@@ -817,6 +940,7 @@ fn handle_active_action_phase(
             action_handlers,
             ctx.recipe_registry,
             false,
+            false,
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
@@ -849,7 +973,18 @@ fn handle_active_action_phase(
                 worldwake_sim::InterruptReason::Reprioritized,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-        reconcile_in_flight_state(ctx, runtime, blocked_memory, None, agent, &[&replan], &[])?;
+        reconcile_in_flight_state(
+            ctx,
+            runtime,
+            blocked_memory,
+            None,
+            agent,
+            InFlightReconciliation {
+                replan_signals: &[&replan],
+                start_failures: &[],
+                committed_actions: &[],
+            },
+        )?;
     }
 
     Ok(decision)
@@ -899,7 +1034,13 @@ fn build_candidate_plans(
     action_handlers: &ActionHandlerRegistry,
     recipe_registry: &RecipeRegistry,
     collect_rejections: bool,
-) -> Vec<(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>)> {
+    collect_expansion_summaries: bool,
+) -> Vec<(
+    crate::GoalKey,
+    PlanSearchResult,
+    Vec<BindingRejection>,
+    Vec<crate::decision_trace::SearchExpansionSummary>,
+)> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
@@ -928,11 +1069,8 @@ fn build_candidate_plans(
     candidates_to_plan
         .into_iter()
         .map(|ranked| {
-            let goal_relevant_places = ranked.grounded.key.kind.goal_relevant_places(
-                &crate::PlanningState::new(&snapshot),
-                recipe_registry,
-            );
             let mut rejections = Vec::new();
+            let mut expansions = Vec::new();
             let result = search_plan(
                 &snapshot,
                 &ranked.grounded,
@@ -940,10 +1078,19 @@ fn build_candidate_plans(
                 action_defs,
                 action_handlers,
                 budget,
-                &goal_relevant_places,
-                if collect_rejections { Some(&mut rejections) } else { None },
+                recipe_registry,
+                if collect_rejections {
+                    Some(&mut rejections)
+                } else {
+                    None
+                },
+                if collect_expansion_summaries {
+                    Some(&mut expansions)
+                } else {
+                    None
+                },
             );
-            (ranked.grounded.key, result, rejections)
+            (ranked.grounded.key, result, rejections, expansions)
         })
         .collect()
 }
@@ -951,11 +1098,16 @@ fn build_candidate_plans(
 /// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
 /// only care about found plans (selection, interrupt evaluation).
 fn plans_as_options(
-    plans: &[(crate::GoalKey, PlanSearchResult, Vec<BindingRejection>)],
+    plans: &[(
+        crate::GoalKey,
+        PlanSearchResult,
+        Vec<BindingRejection>,
+        Vec<crate::decision_trace::SearchExpansionSummary>,
+    )],
 ) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
     plans
         .iter()
-        .map(|(key, result, _)| (*key, result.clone().into_plan()))
+        .map(|(key, result, _, _)| (*key, result.clone().into_plan()))
         .collect()
 }
 
@@ -1022,6 +1174,7 @@ fn plan_and_validate_next_step(
             action_defs,
             action_handlers,
             recipe_registry,
+            false,
             false,
         );
         let plans_options = plans_as_options(&plans);
@@ -1138,8 +1291,11 @@ fn plan_and_validate_next_step_traced(
     };
     let mut selection_trace = SelectionTrace {
         selected: None,
+        selected_plan: None,
+        selected_plan_source: None,
         goal_switch: None,
         previous_goal,
+        plan_replacement: None,
     };
     let mut plan_continued = false;
 
@@ -1166,6 +1322,16 @@ fn plan_and_validate_next_step_traced(
                         runtime.dirty = false;
                         plan_continued = true;
                         selection_trace.selected = runtime.current_goal;
+                        selection_trace.selected_plan = runtime.current_plan.as_ref().map(|plan| {
+                            summarize_selected_plan(
+                                plan,
+                                runtime.current_step_index,
+                                action_defs,
+                                None,
+                            )
+                        });
+                        selection_trace.selected_plan_source =
+                            Some(SelectedPlanSource::SnapshotContinuation);
                         return (
                             Some(step),
                             Some(true),
@@ -1193,19 +1359,22 @@ fn plan_and_validate_next_step_traced(
             action_handlers,
             recipe_registry,
             true,
+            true,
         );
 
         // Populate PlanSearchTrace from search results.
-        for (goal_key, result, rejections) in &plans {
+        for (goal_key, result, rejections, expansions) in &plans {
             plan_search_trace.attempts.push(plan_search_result_to_trace(
                 *goal_key,
                 result,
                 action_defs,
                 rejections.clone(),
+                expansions.clone(),
             ));
         }
 
         let plans_options = plans_as_options(&plans);
+        let current_goal_before_selection = runtime.current_goal;
 
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
@@ -1215,15 +1384,31 @@ fn plan_and_validate_next_step_traced(
             journey_switch_margin,
         ) {
             let selected_goal = selected_plan.goal;
+            let selected_plan_source = determine_selected_plan_source(
+                selected_goal,
+                current_goal_before_selection,
+                &plans_options,
+            );
+            let search_provenance =
+                matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
+                    .then(|| summarize_search_provenance(selected_goal, &plans))
+                    .flatten();
             selection_trace.selected = Some(selected_goal);
+            selection_trace.selected_plan = Some(summarize_selected_plan(
+                &selected_plan,
+                0,
+                action_defs,
+                search_provenance,
+            ));
+            selection_trace.selected_plan_source = Some(selected_plan_source);
+            selection_trace.plan_replacement =
+                summarize_plan_replacement(runtime, selected_goal, &selected_plan, action_defs);
 
             // Detect goal switch.
             if let Some(prev) = previous_goal {
                 if prev != selected_goal {
                     // Determine switch kind from ranking comparison.
-                    let prev_rank = ranked_candidates
-                        .iter()
-                        .find(|c| c.grounded.key == prev);
+                    let prev_rank = ranked_candidates.iter().find(|c| c.grounded.key == prev);
                     let new_rank = ranked_candidates
                         .iter()
                         .find(|c| c.grounded.key == selected_goal);
@@ -1292,6 +1477,7 @@ fn plan_search_result_to_trace(
     result: &PlanSearchResult,
     action_defs: &worldwake_sim::ActionDefRegistry,
     binding_rejections: Vec<BindingRejection>,
+    expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
 ) -> PlanAttemptTrace {
     let outcome = match result {
         PlanSearchResult::Found(plan) => PlanSearchOutcome::Found {
@@ -1318,6 +1504,7 @@ fn plan_search_result_to_trace(
         goal,
         outcome,
         binding_rejections,
+        expansion_summaries,
     }
 }
 
@@ -1355,8 +1542,7 @@ fn reconcile_in_flight_state(
     blocked_memory: &mut BlockedIntentMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
-    replan_signals: &[&ReplanNeeded],
-    committed_actions: &[CommittedAction],
+    reconciliation: InFlightReconciliation<'_>,
 ) -> Result<(), TickInputError> {
     if !runtime.step_in_flight {
         return Ok(());
@@ -1365,19 +1551,38 @@ fn reconcile_in_flight_state(
         return Ok(());
     }
 
-    let failed_signal = replan_signals.first().copied();
+    let failed_signal = reconciliation.replan_signals.first().copied();
     let Some(step) = current_step(runtime).cloned() else {
         runtime.step_in_flight = false;
         return Ok(());
     };
 
     if let Some(signal) = failed_signal {
-        let _ = ctx.action_defs.get(signal.failed_action_def);
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, Some(signal))?;
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            blocked_memory,
+            agent,
+            &step,
+            Some(ExecutionFailure::Replan(signal)),
+        )?;
         return Ok(());
     }
 
-    let Some(committed_action) = committed_action_for_step(&step, committed_actions) else {
+    if let Some(start_failure) = matching_start_failure(&step, reconciliation.start_failures) {
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            blocked_memory,
+            agent,
+            &step,
+            Some(ExecutionFailure::Start(start_failure)),
+        )?;
+        return Ok(());
+    }
+
+    let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
+    else {
         handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
         return Ok(());
     };
@@ -1390,6 +1595,15 @@ fn reconcile_in_flight_state(
     runtime.step_in_flight = false;
     advance_completed_step(runtime, step.op_kind, ctx.tick);
     Ok(())
+}
+
+fn matching_start_failure<'a>(
+    step: &PlannedStep,
+    start_failures: &'a [ActionStartFailure],
+) -> Option<&'a ActionStartFailure> {
+    start_failures
+        .iter()
+        .find(|failure| failure.def_id == step.def_id)
 }
 
 fn reconcile_committed_facility_queue_intents(
@@ -1437,6 +1651,7 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Loot
         | crate::PlannerOpKind::Bury
         | crate::PlannerOpKind::Tell
+        | crate::PlannerOpKind::ConsultRecord
         | crate::PlannerOpKind::Attack
         | crate::PlannerOpKind::Defend
         | crate::PlannerOpKind::Bribe
@@ -1501,7 +1716,7 @@ fn handle_current_step_failure(
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     step: &PlannedStep,
-    replan_signal: Option<&ReplanNeeded>,
+    execution_failure: Option<ExecutionFailure<'_>>,
 ) -> Result<(), TickInputError> {
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
@@ -1521,7 +1736,7 @@ fn handle_current_step_failure(
             agent,
             goal_key,
             failed_step: step,
-            replan_signal,
+            execution_failure,
             current_tick: tick,
         },
         runtime,
@@ -1877,17 +2092,20 @@ mod tests {
     use super::{
         abandon_expired_facility_queues_with_limit, advance_completed_step,
         apply_step_materialization_bindings, committed_action_for_step,
-        effective_goal_switch_margin, facility_queue_patience_exhausted,
-        handle_recoverable_travel_step_blockage, persist_blocked_memory,
-        plan_and_validate_next_step, refresh_runtime_for_read_phase, resolve_step_targets,
+        determine_selected_plan_source, effective_goal_switch_margin,
+        facility_queue_patience_exhausted, handle_recoverable_travel_step_blockage,
+        persist_blocked_memory, plan_and_validate_next_step, plan_and_validate_next_step_traced,
+        refresh_runtime_for_read_phase, resolve_step_targets, summarize_plan_replacement,
         update_journey_fields_for_adopted_plan, update_runtime_observation_snapshot,
         AgentTickDriver, ReadPhaseContext,
     };
     use crate::PlanningBudget;
     use crate::{
-        build_semantics_table, CommodityPurpose, DirtyReason, ExpectedMaterialization, GoalKey,
-        GoalKind, JourneyCommitmentState, JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef, QueuedFacilityIntent, RankedGoal,
+        build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtyReason,
+        ExpectedMaterialization, GoalKey, GoalKind, JourneyCommitmentState,
+        JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef, QueuedFacilityIntent, RankedGoal, RankedGoalProvenance,
+        SelectedPlanReplacementKind,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -1895,14 +2113,16 @@ mod tests {
     use std::path::PathBuf;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
-        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef,
-        CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
+        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
+        CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PendingEvent,
-        PerceptionProfile, PerceptionSource, Permille, Place, Quantity, RecipeId, ResourceSource,
-        Seed, Tick, Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+        RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
+        TellProfile, Tick, ToldBeliefMemory, Topology, TravelDispositionProfile, TravelEdge,
+        TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -1982,6 +2202,13 @@ mod tests {
             }
         }
 
+        fn with_full_action_registries(mut self) -> Self {
+            let registries = build_full_action_registries(&self.recipes).unwrap();
+            self.defs = registries.defs;
+            self.handlers = registries.handlers;
+            self
+        }
+
         fn step_once(&mut self) -> worldwake_sim::TickStepResult {
             let mut controllers = AutonomousControllerRuntime::new(vec![&mut self.driver]);
             step_tick(
@@ -1997,6 +2224,8 @@ mod tests {
                     systems: &SystemDispatchTable::canonical_noop(),
                     input_producer: Some(&mut controllers),
                     action_trace: None,
+                    request_resolution_trace: None,
+                    politics_trace: None,
                 },
             )
             .unwrap()
@@ -2270,6 +2499,9 @@ mod tests {
                     memory_retention_ticks: 64,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
+                    institutional_memory_capacity: 20,
+                    consultation_speed_factor: Permille::new(500).unwrap(),
+                    contradiction_tolerance: Permille::new(300).unwrap(),
                 },
             )
             .unwrap();
@@ -2349,6 +2581,9 @@ mod tests {
                     memory_retention_ticks: 4,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
+                    institutional_memory_capacity: 20,
+                    consultation_speed_factor: Permille::new(500).unwrap(),
+                    contradiction_tolerance: Permille::new(300).unwrap(),
                 },
             )
             .unwrap();
@@ -2423,6 +2658,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         )
         .ranked
     }
@@ -2438,19 +2674,21 @@ mod tests {
         place: EntityId,
         observed_actor: EntityId,
     ) {
-        let _ = harness.event_log.emit(PendingEvent::from_payload(EventPayload {
-            tick,
-            cause: CauseRef::Bootstrap,
-            actor_id: Some(observed_actor),
-            target_ids: vec![observed_actor],
-            evidence: Vec::new(),
-            place_id: Some(place),
-            state_deltas: Vec::new(),
-            observed_entities: BTreeMap::new(),
-            visibility: VisibilitySpec::SamePlace,
-            witness_data: WitnessData::default(),
-            tags: BTreeSet::new(),
-        }));
+        let _ = harness
+            .event_log
+            .emit(PendingEvent::from_payload(EventPayload {
+                tick,
+                cause: CauseRef::Bootstrap,
+                actor_id: Some(observed_actor),
+                target_ids: vec![observed_actor],
+                evidence: Vec::new(),
+                place_id: Some(place),
+                state_deltas: Vec::new(),
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::SamePlace,
+                witness_data: WitnessData::default(),
+                tags: BTreeSet::new(),
+            }));
         let active_actions = std::collections::BTreeMap::new();
         perception_system(SystemExecutionContext {
             world: &mut harness.world,
@@ -2458,6 +2696,7 @@ mod tests {
             rng: &mut harness.rng,
             active_actions: &active_actions,
             action_defs: &harness.defs,
+            politics_trace: None,
             tick,
             system_id: SystemId::Perception,
         })
@@ -2472,6 +2711,7 @@ mod tests {
             rng: &mut harness.rng,
             active_actions: &active_actions,
             action_defs: &harness.defs,
+            politics_trace: None,
             tick,
             system_id: SystemId::Perception,
         })
@@ -2730,6 +2970,7 @@ mod tests {
             },
             priority_class: crate::GoalPriorityClass::Medium,
             motive_score: 500,
+            provenance: None,
         }
     }
 
@@ -3052,6 +3293,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(runtime.dirty);
@@ -3144,6 +3386,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert_eq!(blocked.intents.len(), 1);
@@ -3221,6 +3464,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
         assert!(runtime.dirty);
 
@@ -3299,6 +3543,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert_eq!(blocked.intents.len(), 1);
@@ -3358,6 +3603,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(blocked.intents.is_empty());
@@ -4199,7 +4445,8 @@ mod tests {
             &harness.defs,
             &harness.handlers,
             &budget,
-            &[],
+            &worldwake_sim::RecipeRegistry::new(),
+            None,
             None,
         );
         assert!(
@@ -4233,6 +4480,7 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
+            false,
         )
         .ranked;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
@@ -4325,6 +4573,7 @@ mod tests {
                 travel_horizon: budget.snapshot_travel_horizon,
                 structural_block_ticks: budget.structural_block_ticks,
             },
+            false,
         )
         .ranked;
         assert!(runtime.dirty);
@@ -4397,6 +4646,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(!runtime.dirty);
@@ -4449,6 +4699,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(runtime.dirty);
@@ -4482,6 +4733,7 @@ mod tests {
                 travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
                 structural_block_ticks: PlanningBudget::default().structural_block_ticks,
             },
+            false,
         );
 
         assert!(runtime.dirty);
@@ -4869,6 +5121,44 @@ mod tests {
     // ── S08AIDECTRA-002: Trace collection acceptance tests ──
 
     #[test]
+    fn determine_selected_plan_source_distinguishes_search_selection_from_retention() {
+        let current_goal = GoalKey::from(GoalKind::Sleep);
+        let challenger_goal = GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let current_plan = PlannedPlan::new(
+            current_goal,
+            vec![barrier_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let challenger_plan = PlannedPlan::new(
+            challenger_goal,
+            vec![barrier_step()],
+            PlanTerminalKind::ProgressBarrier,
+        );
+
+        assert_eq!(
+            determine_selected_plan_source(
+                challenger_goal,
+                Some(current_goal),
+                &[
+                    (current_goal, Some(current_plan.clone())),
+                    (challenger_goal, Some(challenger_plan)),
+                ],
+            ),
+            crate::SelectedPlanSource::SearchSelection
+        );
+        assert_eq!(
+            determine_selected_plan_source(
+                current_goal,
+                Some(current_goal),
+                &[(challenger_goal, None)],
+            ),
+            crate::SelectedPlanSource::RetainedCurrentPlan
+        );
+    }
+
+    #[test]
     fn trace_planning_outcome_for_hungry_agent() {
         let mut harness = Harness::new(ControlSource::Ai);
         harness.driver.enable_tracing();
@@ -4895,8 +5185,815 @@ mod tests {
                     !planning.candidates.ranked.is_empty(),
                     "hungry agent should have at least one ranked goal"
                 );
+                let selected_plan = planning
+                    .selection
+                    .selected_plan
+                    .as_ref()
+                    .expect("final trace should expose the selected plan directly");
+                assert_eq!(
+                    planning.selection.selected_plan_source,
+                    Some(crate::SelectedPlanSource::SearchSelection)
+                );
+                assert!(
+                    !selected_plan.steps.is_empty(),
+                    "selected plan trace should preserve planned steps"
+                );
+                assert_eq!(selected_plan.next_step_index, Some(0));
+                assert!(
+                    selected_plan.next_step.is_some(),
+                    "selected plan trace should preserve the immediate next step"
+                );
+                assert_eq!(
+                    selected_plan
+                        .next_step
+                        .as_ref()
+                        .expect("selected plan should expose next step")
+                        .op_kind,
+                    planning
+                        .execution
+                        .enqueued_step
+                        .as_ref()
+                        .expect("selected step should be enqueued for execution")
+                        .op_kind
+                );
             }
             other => panic!("expected Planning outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trace_planning_outcome_includes_danger_provenance_for_threatened_agent() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("actor should start at a concrete place");
+        let attacker = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            let attacker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(attacker, place).unwrap();
+            txn.add_hostility(harness.actor, attacker).unwrap();
+            txn.set_component_wound_list(
+                harness.actor,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                        severity: Permille::new(120).unwrap(),
+                        inflicted_at: Tick(0),
+                        bleed_rate_per_tick: Permille::new(0).unwrap(),
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            attacker
+        };
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(1));
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let planning = harness
+            .driver
+            .trace_sink()
+            .expect("tracing should be enabled")
+            .trace_at(harness.actor, Tick(0))
+            .and_then(|trace| match &trace.outcome {
+                crate::DecisionOutcome::Planning(planning) => Some(planning),
+                _ => None,
+            })
+            .expect("threatened actor should produce a planning trace");
+        let danger = planning
+            .candidates
+            .ranked
+            .iter()
+            .find(|summary| matches!(summary.goal.kind, GoalKind::ReduceDanger))
+            .and_then(|summary| summary.provenance.as_ref())
+            .map(|provenance| match provenance {
+                RankedGoalProvenance::Danger(assessment) => assessment,
+                RankedGoalProvenance::Drive(_) => {
+                    panic!("reduce-danger candidate should not carry drive provenance")
+                }
+            })
+            .expect("reduce-danger candidate should carry structured danger provenance");
+
+        assert!(danger.current_attackers.is_empty());
+        assert_eq!(danger.visible_hostiles, vec![attacker]);
+        assert_eq!(danger.hostile_targets, vec![attacker]);
+        assert!(danger.has_wounds);
+        assert!(!danger.is_incapacitated);
+        assert_eq!(danger.pressure, DriveThresholds::default().danger.high());
+    }
+
+    #[test]
+    fn trace_planning_outcome_includes_drive_provenance_for_recovery_boost() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("actor should start at a concrete place");
+        {
+            let mut txn = new_txn(&mut harness.world, 3);
+            let water = txn
+                .create_item_lot(CommodityKind::Water, Quantity(1))
+                .expect("water lot should be created");
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_possessor(water, harness.actor).unwrap();
+            txn.set_component_homeostatic_needs(
+                harness.actor,
+                HomeostaticNeeds::new(
+                    Permille::new(760).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(860).unwrap(),
+                ),
+            )
+            .unwrap();
+            txn.set_component_wound_list(
+                harness.actor,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                        severity: Permille::new(200).unwrap(),
+                        inflicted_at: Tick(0),
+                        bleed_rate_per_tick: Permille::new(0).unwrap(),
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(1));
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let planning = harness
+            .driver
+            .trace_sink()
+            .expect("tracing should be enabled")
+            .trace_at(harness.actor, Tick(0))
+            .and_then(|trace| match &trace.outcome {
+                crate::DecisionOutcome::Planning(planning) => Some(planning),
+                _ => None,
+            })
+            .expect("recovery-boost scenario should produce a planning trace");
+        let bread = planning
+            .candidates
+            .ranked
+            .iter()
+            .find(|summary| {
+                summary.goal.kind
+                    == GoalKind::ConsumeOwnedCommodity {
+                        commodity: CommodityKind::Bread,
+                    }
+            })
+            .expect("bread candidate should be ranked");
+
+        match bread
+            .provenance
+            .as_ref()
+            .expect("bread candidate should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(
+                    provenance.base_priority_class,
+                    crate::GoalPriorityClass::High
+                );
+                assert_eq!(
+                    provenance.final_priority_class,
+                    crate::GoalPriorityClass::Critical
+                );
+                assert_eq!(
+                    provenance.adjustment,
+                    Some(crate::RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
+                );
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(
+                    provenance.motive_inputs[0].drive,
+                    crate::RankedDriveKind::Hunger
+                );
+                assert_eq!(
+                    provenance.motive_inputs[0].pressure,
+                    Permille::new(760).unwrap()
+                );
+                assert_eq!(
+                    provenance.motive_inputs[0].weight,
+                    UtilityProfile::default().hunger_weight
+                );
+                assert!(provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("bread candidate should not carry danger provenance")
+            }
+        }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
+        let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+        {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_homeostatic_needs(
+                harness.actor,
+                HomeostaticNeeds::new(
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(0));
+        let heal_id = harness
+            .defs
+            .iter()
+            .find(|def| def.name == "heal")
+            .map(|def| def.id)
+            .expect("full registries should include heal");
+        let goal = GoalKey::from(GoalKind::TreatWounds {
+            patient: harness.actor,
+        });
+        let heal_step = PlannedStep {
+            def_id: heal_id,
+            targets: vec![PlanningEntityRef::Authoritative(harness.actor)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Heal,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+        harness.driver.runtime_by_agent.insert(
+            harness.actor,
+            crate::AgentDecisionRuntime {
+                current_goal: Some(goal),
+                current_plan: Some(PlannedPlan::new(
+                    goal,
+                    vec![heal_step],
+                    PlanTerminalKind::GoalSatisfied,
+                )),
+                step_in_flight: true,
+                ..crate::AgentDecisionRuntime::default()
+            },
+        );
+        harness
+            .scheduler
+            .record_action_start_failure(worldwake_sim::ActionStartFailure {
+                tick: Tick(0),
+                actor: harness.actor,
+                def_id: heal_id,
+                request: worldwake_sim::ResolvedRequestTrace {
+                    attempt: worldwake_sim::RequestAttemptTrace {
+                        input_sequence_no: 17,
+                        provenance: worldwake_sim::RequestProvenance::AiPlan,
+                    },
+                    binding: worldwake_sim::RequestBindingKind::ReproducedAffordance,
+                },
+                reason: worldwake_sim::ActionStartFailureReason::AbortRequested(
+                    worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
+                        target: harness.actor,
+                    },
+                ),
+            });
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let trace = harness
+            .driver
+            .trace_sink()
+            .expect("tracing should be enabled")
+            .trace_at(harness.actor, Tick(0))
+            .expect("tick 0 trace should exist");
+        let planning = match &trace.outcome {
+            crate::DecisionOutcome::Planning(planning) => planning,
+            other => panic!("expected Planning outcome, got {other:?}"),
+        };
+
+        assert_eq!(planning.action_start_failures.len(), 1);
+        assert_eq!(planning.action_start_failures[0].tick, Tick(0));
+        assert_eq!(planning.action_start_failures[0].def_id, heal_id);
+        assert_eq!(
+            planning.action_start_failures[0].request,
+            worldwake_sim::ResolvedRequestTrace {
+                attempt: worldwake_sim::RequestAttemptTrace {
+                    input_sequence_no: 17,
+                    provenance: worldwake_sim::RequestProvenance::AiPlan,
+                },
+                binding: worldwake_sim::RequestBindingKind::ReproducedAffordance,
+            }
+        );
+        assert_eq!(
+            planning.action_start_failures[0].reason,
+            worldwake_sim::ActionStartFailureReason::AbortRequested(
+                worldwake_sim::ActionAbortRequestReason::TargetHasNoWounds {
+                    target: harness.actor,
+                }
+            )
+        );
+
+        let runtime = harness
+            .runtime()
+            .expect("actor runtime should still exist after reconciliation");
+        assert!(
+            !runtime.step_in_flight,
+            "missing active action should clear in-flight state after start failure reconciliation"
+        );
+        let blocked = harness
+            .world
+            .get_component_blocked_intent_memory(harness.actor)
+            .expect("reconciled failure should persist blocked intent memory");
+        assert_eq!(blocked.intents.len(), 1);
+        assert_eq!(blocked.intents[0].goal_key, goal);
+        assert!(
+            harness.scheduler.action_start_failures().is_empty(),
+            "agent tick should consume this agent's structured start failures once they are reconciled"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn trace_snapshot_continuation_records_selected_plan_provenance() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let utility = harness
+            .world
+            .get_component_utility_profile(harness.actor)
+            .cloned()
+            .unwrap_or_default();
+        let budget = PlanningBudget::default();
+        let semantics = build_semantics_table(&harness.defs);
+        let runtime = harness
+            .driver
+            .runtime_by_agent
+            .entry(harness.actor)
+            .or_default();
+        let mut blocked = BlockedIntentMemory::default();
+
+        let initial_read = refresh_runtime_for_read_phase(
+            &harness.world,
+            &harness.scheduler,
+            &harness.defs,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(1),
+                travel_horizon: budget.snapshot_travel_horizon,
+                structural_block_ticks: budget.structural_block_ticks,
+            },
+            false,
+        );
+        let previous_goal = runtime.current_goal;
+        let (_, initial_valid, initial_continued, _, initial_selection) =
+            plan_and_validate_next_step_traced(
+                &harness.world,
+                &harness.scheduler,
+                runtime,
+                harness.actor,
+                &initial_read.ranked,
+                &blocked,
+                budget.switch_margin_permille,
+                budget.switch_margin_permille,
+                Tick(1),
+                &budget,
+                &semantics,
+                &harness.defs,
+                &harness.handlers,
+                true,
+                previous_goal,
+                &initial_read.dirty_reasons,
+                &harness.recipes,
+            );
+        assert_eq!(initial_valid, Some(true));
+        assert!(!initial_continued);
+        let initial_selection = initial_selection.expect("initial traced selection should exist");
+        assert_eq!(
+            initial_selection.selected_plan_source,
+            Some(crate::SelectedPlanSource::SearchSelection)
+        );
+        let initial_selected_plan = initial_selection
+            .selected_plan
+            .as_ref()
+            .expect("initial search selection should expose a selected plan");
+        let initial_search_provenance = initial_selected_plan
+            .search_provenance
+            .as_ref()
+            .expect("fresh search selection should expose compact search provenance");
+        assert!(
+            initial_search_provenance.expansions_used > 0,
+            "fresh search provenance should report at least one expansion for this harness setup"
+        );
+        assert_eq!(initial_search_provenance.root_travel_pruning, None);
+
+        let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+        update_runtime_observation_snapshot(&initial_view, harness.actor, runtime);
+
+        {
+            let place = harness.world.effective_place(harness.actor).unwrap();
+            let mut txn = new_txn(&mut harness.world, 2);
+            let tool = txn
+                .create_unique_item(UniqueItemKind::SimpleTool, Some("Awl"), BTreeMap::new())
+                .unwrap();
+            txn.set_ground_location(tool, place).unwrap();
+            txn.set_possessor(tool, harness.actor).unwrap();
+            commit_txn(txn);
+        }
+        sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
+
+        let continuation_read = refresh_runtime_for_read_phase(
+            &harness.world,
+            &harness.scheduler,
+            &harness.defs,
+            runtime,
+            &mut blocked,
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(2),
+                travel_horizon: budget.snapshot_travel_horizon,
+                structural_block_ticks: budget.structural_block_ticks,
+            },
+            false,
+        );
+        assert_eq!(
+            continuation_read.dirty_reasons,
+            vec![DirtyReason::SnapshotChanged]
+        );
+
+        let previous_goal = runtime.current_goal;
+        let (continued_step, continued_valid, plan_continued, _, continuation_selection) =
+            plan_and_validate_next_step_traced(
+                &harness.world,
+                &harness.scheduler,
+                runtime,
+                harness.actor,
+                &continuation_read.ranked,
+                &blocked,
+                budget.switch_margin_permille,
+                budget.switch_margin_permille,
+                Tick(2),
+                &budget,
+                &semantics,
+                &harness.defs,
+                &harness.handlers,
+                true,
+                previous_goal,
+                &continuation_read.dirty_reasons,
+                &harness.recipes,
+            );
+        let selection = continuation_selection.expect("snapshot continuation trace should exist");
+        let selected_plan = selection
+            .selected_plan
+            .expect("snapshot continuation should still expose the selected plan");
+
+        assert!(plan_continued);
+        assert_eq!(continued_valid, Some(true));
+        assert_eq!(
+            selection.selected_plan_source,
+            Some(crate::SelectedPlanSource::SnapshotContinuation)
+        );
+        assert_eq!(selected_plan.next_step_index, Some(0));
+        assert_eq!(
+            selected_plan.search_provenance, None,
+            "snapshot continuation should not fabricate fresh search provenance"
+        );
+        assert_eq!(
+            selected_plan
+                .next_step
+                .as_ref()
+                .expect("selected plan should preserve next step")
+                .op_kind,
+            continued_step
+                .expect("snapshot continuation should keep current step")
+                .op_kind
+        );
+    }
+
+    #[test]
+    fn summarize_plan_replacement_records_same_goal_branch_replan() {
+        let goal = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let orchard_source = entity(12);
+        let bandit_camp = entity(22);
+        let current_plan = PlannedPlan::new(
+            goal,
+            vec![
+                travel_step(1, entity(11)),
+                PlannedStep {
+                    def_id: ActionDefId(2),
+                    targets: vec![PlanningEntityRef::Authoritative(orchard_source)],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Harvest,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+            ],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let selected_plan = PlannedPlan::new(
+            goal,
+            vec![travel_step(3, bandit_camp)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let runtime = AgentDecisionRuntime {
+            current_goal: Some(goal),
+            current_plan: Some(current_plan),
+            current_step_index: 1,
+            ..AgentDecisionRuntime::default()
+        };
+
+        let replacement =
+            summarize_plan_replacement(&runtime, goal, &selected_plan, &ActionDefRegistry::new())
+                .expect("changed same-goal branch should produce replacement provenance");
+
+        assert_eq!(
+            replacement.kind,
+            SelectedPlanReplacementKind::SameGoalBranchReplanned
+        );
+        assert_eq!(replacement.previous_goal, goal);
+        assert_eq!(replacement.new_goal, goal);
+        assert_eq!(
+            replacement
+                .previous_next_step
+                .as_ref()
+                .expect("current branch should expose its next step")
+                .targets,
+            vec![orchard_source]
+        );
+        assert_eq!(
+            replacement
+                .new_next_step
+                .as_ref()
+                .expect("fresh branch should expose its next step")
+                .targets,
+            vec![bandit_camp]
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn trace_force_law_office_skips_political_candidates_and_planning() {
+        let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("harness actor should start at a place");
+        let enterprise = Permille::new(800).unwrap();
+        let social = Permille::new(700).unwrap();
+        let (office, rival) = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_utility_profile(
+                harness.actor,
+                UtilityProfile {
+                    enterprise_weight: enterprise,
+                    social_weight: social,
+                    ..UtilityProfile::default()
+                },
+            )
+            .unwrap();
+
+            let rival = txn.create_agent("Rival", ControlSource::Ai).unwrap();
+            txn.set_ground_location(rival, place).unwrap();
+            txn.set_component_homeostatic_needs(rival, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_deprivation_exposure(rival, DeprivationExposure::default())
+                .unwrap();
+            txn.set_component_drive_thresholds(rival, DriveThresholds::default())
+                .unwrap();
+            txn.set_component_metabolism_profile(rival, MetabolismProfile::default())
+                .unwrap();
+            txn.set_component_utility_profile(rival, UtilityProfile::default())
+                .unwrap();
+
+            let office = txn.create_office("War Chief").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "War Chief".to_string(),
+                    jurisdiction: place,
+                    succession_law: SuccessionLaw::Force,
+                    succession_period_ticks: 5,
+                    eligibility_rules: Vec::new(),
+                    vacancy_since: Some(Tick(1)),
+                },
+            )
+            .unwrap();
+            txn.set_loyalty(harness.actor, rival, Permille::new(650).unwrap())
+                .unwrap();
+            commit_txn(txn);
+            (office, rival)
+        };
+
+        sync_selected_beliefs(
+            &mut harness.world,
+            harness.actor,
+            &[office, rival],
+            Tick(2),
+            PerceptionSource::DirectObservation,
+        );
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let sink = harness.driver.trace_sink().unwrap();
+        let traces = sink.traces_for(harness.actor);
+        assert_eq!(traces.len(), 1, "expected one decision trace for the tick");
+
+        match &traces[0].outcome {
+            crate::DecisionOutcome::Planning(planning) => {
+                assert!(
+                    !planning
+                        .candidates
+                        .generated
+                        .iter()
+                        .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+                    "Force-law offices must not emit ClaimOffice candidates in agent_tick"
+                );
+                assert!(
+                    !planning.candidates.generated.iter().any(|goal| {
+                        goal.kind
+                            == GoalKind::SupportCandidateForOffice {
+                                office,
+                                candidate: rival,
+                            }
+                    }),
+                    "Force-law offices must not emit SupportCandidateForOffice candidates in agent_tick"
+                );
+                assert!(
+                    !planning.planning.attempts.iter().any(|attempt| {
+                        matches!(
+                            attempt.goal.kind,
+                            GoalKind::ClaimOffice { office: goal_office } if goal_office == office
+                        ) || matches!(
+                            attempt.goal.kind,
+                            GoalKind::SupportCandidateForOffice {
+                                office: goal_office,
+                                candidate
+                            } if goal_office == office && candidate == rival
+                        )
+                    }),
+                    "Force-law offices must not enter political plan search in agent_tick"
+                );
+                assert!(
+                    planning
+                        .candidates
+                        .omitted_political
+                        .iter()
+                        .any(|omission| {
+                            omission.family == crate::PoliticalGoalFamily::ClaimOffice
+                                && omission.office == office
+                                && omission.candidate.is_none()
+                                && omission.reason
+                                    == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
+                        }),
+                    "Force-law omission should be preserved in the decision trace for ClaimOffice"
+                );
+                assert!(
+                    planning.candidates.omitted_political.iter().any(|omission| {
+                        omission.family
+                            == crate::PoliticalGoalFamily::SupportCandidateForOffice
+                            && omission.office == office
+                            && omission.candidate.is_none()
+                            && omission.reason
+                                == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
+                    }),
+                    "Force-law omission should be preserved in the decision trace for SupportCandidateForOffice"
+                );
+            }
+            other => panic!("expected Planning outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trace_social_resend_omission_reason() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let place = harness
+            .world
+            .effective_place(harness.actor)
+            .expect("harness actor should start at a place");
+        let (listener, subject) = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::default())
+                .unwrap();
+            txn.set_component_tell_profile(harness.actor, TellProfile::default())
+                .unwrap();
+            let listener = txn.create_agent("Listener", ControlSource::Ai).unwrap();
+            let subject = txn.create_agent("Subject", ControlSource::Ai).unwrap();
+            txn.set_ground_location(listener, place).unwrap();
+            txn.set_ground_location(subject, place).unwrap();
+            commit_txn(txn);
+            (listener, subject)
+        };
+
+        sync_selected_beliefs(
+            &mut harness.world,
+            harness.actor,
+            &[listener, subject],
+            Tick(2),
+            PerceptionSource::DirectObservation,
+        );
+        {
+            let mut store = harness
+                .world
+                .get_component_agent_belief_store(harness.actor)
+                .cloned()
+                .expect("actor should have a belief store");
+            let current = store
+                .get_entity(&subject)
+                .cloned()
+                .expect("seeded subject belief should exist");
+            store.record_told_belief(
+                TellMemoryKey {
+                    counterparty: listener,
+                    subject,
+                },
+                ToldBeliefMemory {
+                    shared_state: worldwake_core::to_shared_belief_snapshot(&current),
+                    told_tick: Tick(2),
+                },
+            );
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_agent_belief_store(harness.actor, store)
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        harness.driver.enable_tracing();
+        harness.step_once();
+
+        let trace = harness
+            .driver
+            .trace_sink()
+            .unwrap()
+            .traces_for(harness.actor)
+            .into_iter()
+            .next()
+            .expect("expected one decision trace");
+        let share_goal = GoalKind::ShareBelief { listener, subject };
+
+        match &trace.outcome {
+            crate::DecisionOutcome::Planning(planning) => {
+                assert!(
+                    !planning
+                        .candidates
+                        .generated
+                        .iter()
+                        .any(|goal| goal.kind == share_goal),
+                    "unchanged told beliefs must not emit ShareBelief candidates"
+                );
+                assert!(
+                    planning.candidates.omitted_social.iter().any(|omission| {
+                        omission.listener == listener
+                            && omission.subject == subject
+                            && omission.status
+                                == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                    }),
+                    "social resend omission should be preserved in the decision trace"
+                );
+                assert_eq!(
+                    trace.goal_status(&share_goal),
+                    crate::GoalTraceStatus::OmittedSocial(
+                        RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                    )
+                );
+            }
+            other => panic!("expected Planning outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn harness_with_full_action_registries_exposes_non_needs_actions() {
+        let harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+        let action_names = harness
+            .defs
+            .iter()
+            .map(|def| def.name.as_str())
+            .collect::<Vec<_>>();
+
+        for required in ["travel", "queue_for_facility_use", "declare_support"] {
+            assert!(
+                action_names.contains(&required),
+                "full-registry harness should include {required}"
+            );
         }
     }
 
@@ -4915,7 +6012,11 @@ mod tests {
 
         let sink = harness.driver.trace_sink().unwrap();
         let traces = sink.traces_for(harness.actor);
-        assert_eq!(traces.len(), 1, "dead agent should produce exactly one trace");
+        assert_eq!(
+            traces.len(),
+            1,
+            "dead agent should produce exactly one trace"
+        );
         assert!(
             matches!(traces[0].outcome, crate::DecisionOutcome::Dead),
             "dead agent should produce Dead outcome"
@@ -4977,7 +6078,12 @@ mod tests {
         );
 
         // Traced harness should have trace data.
-        assert!(!harness_traced.driver.trace_sink().unwrap().traces().is_empty());
+        assert!(!harness_traced
+            .driver
+            .trace_sink()
+            .unwrap()
+            .traces()
+            .is_empty());
 
         // Non-traced harness should have no trace data.
         assert!(harness_no_trace.driver.trace_sink().is_none());

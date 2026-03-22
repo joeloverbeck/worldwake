@@ -713,10 +713,7 @@ mod tests {
             _targets: &[EntityId],
             _payload: &crate::ActionPayload,
         ) -> Option<crate::ActionDuration> {
-            duration
-                .fixed_ticks()
-                .map(crate::ActionDuration::Finite)
-                .or(Some(crate::ActionDuration::Indefinite))
+            duration.fixed_ticks().map(crate::ActionDuration::new)
         }
     }
 
@@ -740,7 +737,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn noop_tick(
         _def: &ActionDef,
-        _instance: &crate::ActionInstance,
+        _instance: &mut crate::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -1214,7 +1211,7 @@ mod tests {
                 },
             ],
             reservation_requirements: Vec::new(),
-            duration: DurationExpr::Indefinite,
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
@@ -1321,7 +1318,7 @@ mod tests {
                 },
             ],
             reservation_requirements: Vec::new(),
-            duration: DurationExpr::Indefinite,
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),

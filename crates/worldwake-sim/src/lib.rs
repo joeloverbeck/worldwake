@@ -30,11 +30,13 @@ pub mod input_event;
 pub mod input_queue;
 pub mod interrupt_abort;
 pub mod per_agent_belief_view;
+pub mod politics_trace;
 pub mod recipe_def;
 pub mod recipe_registry;
 pub mod replan_needed;
 pub mod replay_execution;
 pub mod replay_state;
+pub mod request_resolution_trace;
 pub mod save_load;
 pub mod scheduler;
 pub mod simulation_state;
@@ -62,8 +64,8 @@ pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
-    ActionPayload, BribeActionPayload, CombatActionPayload, CraftActionPayload,
-    DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
+    ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
+    CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
     QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
     TransportActionPayload,
 };
@@ -73,7 +75,7 @@ pub use action_semantics::{
 };
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
-pub use action_trace::{ActionTraceEvent, ActionTraceKind, ActionTraceSink};
+pub use action_trace::{ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink};
 pub use action_validation::validate_action_def_authoritatively;
 pub use affordance::Affordance;
 pub use affordance_query::{
@@ -86,10 +88,14 @@ pub use autonomous_controller::{
 pub use belief_view::{estimate_duration_from_beliefs, GoalBeliefView, RuntimeBeliefView};
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
-pub use input_event::{ActionRequestMode, InputEvent, InputKind};
+pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
+pub use politics_trace::{
+    ForceCandidateTrace, OfficeAvailabilityPhase, OfficeSuccessionOutcome, OfficeSuccessionTrace,
+    PoliticalTraceEvent, PoliticalTraceSink, SupportDeclarationTrace,
+};
 pub use recipe_def::RecipeDefinition;
 pub use recipe_registry::RecipeRegistry;
 pub use replan_needed::ReplanNeeded;
@@ -98,12 +104,22 @@ pub use replay_execution::{
     ReplayCheckpointError, ReplayError,
 };
 pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
+pub use request_resolution_trace::{
+    RequestAttemptTrace, RequestBindingKind, RequestResolutionOutcome,
+    RequestResolutionRejectionReason, RequestResolutionTraceEvent, RequestResolutionTraceSink,
+    ResolvedRequestTrace,
+};
 pub use save_load::{
     load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
 };
-pub use scheduler::{ActionStartFailure, CommittedAction, Scheduler, SchedulerActionRuntime};
+pub use scheduler::{
+    ActionStartFailure, ActionStartFailureReason, CommittedAction, Scheduler,
+    SchedulerActionRuntime,
+};
 pub use simulation_state::SimulationState;
-pub use social_relay::{belief_chain_len, relayable_social_subjects};
+pub use social_relay::{
+    belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects,
+};
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};

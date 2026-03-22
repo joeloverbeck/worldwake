@@ -466,8 +466,8 @@ mod tests {
     use crate::{
         BodyPart, CauseRef, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
         EventId, EventLog, EventPayload, EventRecord, EventTag, LoadUnits, Quantity, Tick,
-        TickRange, Topology,
-        VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause, WoundList,
+        TickRange, Topology, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause,
+        WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
 

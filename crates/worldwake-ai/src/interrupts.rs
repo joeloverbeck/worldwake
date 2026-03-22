@@ -261,6 +261,7 @@ mod tests {
             },
             priority_class,
             motive_score,
+            provenance: None,
         }
     }
 

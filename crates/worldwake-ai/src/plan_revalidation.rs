@@ -253,6 +253,7 @@ mod tests {
                 pm(120),
                 pm(35),
                 NonZeroU32::new(6).unwrap(),
+                NonZeroU32::new(10).unwrap(),
             ))
         }
 
@@ -325,7 +326,7 @@ mod tests {
             _targets: &[EntityId],
             _payload: &ActionPayload,
         ) -> Option<ActionDuration> {
-            Some(ActionDuration::Finite(1))
+            Some(ActionDuration::new(1))
         }
     }
 
@@ -353,7 +354,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn noop_tick(
         _def: &ActionDef,
-        _instance: &worldwake_sim::ActionInstance,
+        _instance: &mut worldwake_sim::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {

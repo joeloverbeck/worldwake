@@ -255,6 +255,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                record_data,
+                RecordData,
+                insert_record_data,
+                get_record_data,
+                get_record_data_mut,
+                remove_record_data,
+                has_record_data,
+                iter_record_data,
+                insert_component_record_data,
+                get_component_record_data,
+                get_component_record_data_mut,
+                remove_component_record_data,
+                has_component_record_data,
+                entities_with_record_data,
+                query_record_data,
+                count_with_record_data,
+                "RecordData",
+                |kind| kind == EntityKind::Record,
+                RecordData,
+                crate::RecordData,
+                set_component_record_data,
+                clear_component_record_data,
+                txn_simple_set
+            }
+            {
                 blocked_intent_memories,
                 BlockedIntentMemory,
                 insert_blocked_intent_memory,

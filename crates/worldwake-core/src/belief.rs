@@ -1,17 +1,21 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
-    CommodityKind, Component, EntityId, Permille, Quantity, ResourceSource, Tick, WorkstationTag,
-    World, Wound,
+    BelievedInstitutionalClaim, CommodityKind, Component, EntityId, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
+    Quantity, ResourceSource, Tick, WorkstationTag, World, Wound,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Per-agent subjective view of observed entities and social evidence.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AgentBeliefStore {
     pub known_entities: BTreeMap<EntityId, BelievedEntityState>,
     pub social_observations: Vec<SocialObservation>,
+    pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
+    pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
+    pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
 }
 
 impl AgentBeliefStore {
@@ -36,6 +40,27 @@ impl AgentBeliefStore {
 
     pub fn record_social_observation(&mut self, observation: SocialObservation) {
         self.social_observations.push(observation);
+    }
+
+    pub fn record_told_belief(&mut self, key: TellMemoryKey, memory: ToldBeliefMemory) {
+        self.told_beliefs.insert(key, memory);
+    }
+
+    pub fn record_heard_belief(&mut self, key: TellMemoryKey, memory: HeardBeliefMemory) {
+        self.heard_beliefs.insert(key, memory);
+    }
+
+    pub fn record_institutional_belief(
+        &mut self,
+        key: InstitutionalBeliefKey,
+        belief: BelievedInstitutionalClaim,
+        profile: &PerceptionProfile,
+    ) {
+        self.institutional_beliefs
+            .entry(key)
+            .or_default()
+            .push(belief);
+        self.enforce_institutional_capacity(profile);
     }
 
     pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
@@ -78,9 +103,302 @@ impl AgentBeliefStore {
             self.known_entities.remove(&entity);
         }
     }
+
+    pub fn enforce_conversation_memory(&mut self, profile: &TellProfile, current_tick: Tick) {
+        self.told_beliefs.retain(|_, memory| {
+            within_retention_window(
+                memory.told_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        });
+        self.heard_beliefs.retain(|_, memory| {
+            within_retention_window(
+                memory.heard_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        });
+
+        enforce_memory_lane_capacity(
+            &mut self.told_beliefs,
+            usize::from(profile.conversation_memory_capacity),
+            |memory| memory.told_tick,
+        );
+        enforce_memory_lane_capacity(
+            &mut self.heard_beliefs,
+            usize::from(profile.conversation_memory_capacity),
+            |memory| memory.heard_tick,
+        );
+    }
+
+    #[must_use]
+    pub fn told_belief_memory(
+        &self,
+        key: &TellMemoryKey,
+        current_tick: Tick,
+        profile: &TellProfile,
+    ) -> Option<&ToldBeliefMemory> {
+        self.told_beliefs.get(key).filter(|memory| {
+            within_retention_window(
+                memory.told_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        })
+    }
+
+    #[must_use]
+    pub fn heard_belief_memory(
+        &self,
+        key: &TellMemoryKey,
+        current_tick: Tick,
+        profile: &TellProfile,
+    ) -> Option<&HeardBeliefMemory> {
+        self.heard_beliefs.get(key).filter(|memory| {
+            within_retention_window(
+                memory.heard_tick,
+                current_tick,
+                profile.conversation_memory_retention_ticks,
+            )
+        })
+    }
+
+    #[must_use]
+    pub fn recipient_knowledge_status(
+        &self,
+        key: &TellMemoryKey,
+        current_belief: &BelievedEntityState,
+        current_tick: Tick,
+        profile: &TellProfile,
+    ) -> RecipientKnowledgeStatus {
+        match self.told_belief_memory(key, current_tick, profile) {
+            Some(memory)
+                if memory.shared_state
+                    == self.shared_belief_snapshot_for_subject(
+                        key.subject,
+                        current_belief,
+                        profile.max_relay_chain_len,
+                    ) =>
+            {
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+            }
+            Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
+            None if self.told_beliefs.contains_key(key) => {
+                RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+            }
+            None => RecipientKnowledgeStatus::UnknownToSpeaker,
+        }
+    }
+
+    #[must_use]
+    pub fn shared_belief_snapshot_for_subject(
+        &self,
+        subject: EntityId,
+        state: &BelievedEntityState,
+        max_relay_chain_len: u8,
+    ) -> SharedBeliefSnapshot {
+        let mut institutional_claims = self
+            .relayable_institutional_beliefs_for_subject(subject, max_relay_chain_len)
+            .into_iter()
+            .map(|belief| SharedInstitutionalBelief {
+                claim: belief.claim,
+                source: belief.source,
+            })
+            .collect::<Vec<_>>();
+        institutional_claims.sort_unstable();
+
+        SharedBeliefSnapshot {
+            last_known_place: state.last_known_place,
+            last_known_inventory: state.last_known_inventory.clone(),
+            workstation_tag: state.workstation_tag,
+            resource_source: state.resource_source.clone(),
+            alive: state.alive,
+            wounds: state.wounds.clone(),
+            last_known_courage: state.last_known_courage,
+            source: state.source,
+            institutional_claims,
+        }
+    }
+
+    #[must_use]
+    pub fn relayable_institutional_beliefs_for_subject(
+        &self,
+        subject: EntityId,
+        max_relay_chain_len: u8,
+    ) -> Vec<BelievedInstitutionalClaim> {
+        self.institutional_beliefs
+            .values()
+            .flat_map(|beliefs| beliefs.iter().cloned())
+            .filter(|belief| institutional_claim_subject(belief.claim) == subject)
+            .filter(|belief| institutional_chain_len(belief.source) <= max_relay_chain_len)
+            .collect()
+    }
+
+    #[must_use]
+    pub fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::OfficeHolder {
+                    office: claim_office,
+                    holder,
+                    ..
+                } if *claim_office == office => Some(*holder),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::FactionMembersOf { faction })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::FactionMembership {
+                    faction: claim_faction,
+                    member: claim_member,
+                    active,
+                    ..
+                } if *claim_faction == faction && *claim_member == member => Some(*active),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::SupportFor { supporter, office })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::SupportDeclaration {
+                    office: claim_office,
+                    supporter: claim_supporter,
+                    candidate,
+                    ..
+                } if *claim_office == office && *claim_supporter == supporter => Some(*candidate),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+        self.institutional_beliefs
+            .iter()
+            .filter_map(|(key, _)| match *key {
+                InstitutionalBeliefKey::SupportFor {
+                    supporter,
+                    office: belief_office,
+                } if belief_office == office => Some(supporter),
+                _ => None,
+            })
+            .filter_map(|supporter| {
+                let read = self.believed_support_declaration(office, supporter);
+                match read {
+                    InstitutionalBeliefRead::Unknown => None,
+                    _ => Some((supporter, read)),
+                }
+            })
+            .collect()
+    }
+
+    fn enforce_institutional_capacity(&mut self, profile: &PerceptionProfile) {
+        let capacity = profile.institutional_memory_capacity as usize;
+        if capacity == 0 {
+            self.institutional_beliefs.clear();
+            return;
+        }
+
+        while self.total_institutional_beliefs() > capacity {
+            let Some((key, index)) = self.oldest_institutional_belief_position() else {
+                break;
+            };
+            let remove_key = {
+                let beliefs = self
+                    .institutional_beliefs
+                    .get_mut(&key)
+                    .expect("selected institutional belief key should still exist");
+                beliefs.remove(index);
+                beliefs.is_empty()
+            };
+            if remove_key {
+                self.institutional_beliefs.remove(&key);
+            }
+        }
+    }
+
+    fn total_institutional_beliefs(&self) -> usize {
+        self.institutional_beliefs
+            .values()
+            .map(std::vec::Vec::len)
+            .sum()
+    }
+
+    fn oldest_institutional_belief_position(&self) -> Option<(InstitutionalBeliefKey, usize)> {
+        self.institutional_beliefs
+            .iter()
+            .flat_map(|(key, beliefs)| {
+                beliefs
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, belief)| (belief.learned_tick, *key, index))
+            })
+            .min()
+            .map(|(_, key, index)| (key, index))
+    }
 }
 
 impl Component for AgentBeliefStore {}
+
+fn derive_institutional_read<'a, T>(
+    beliefs: impl IntoIterator<Item = BelievedInstitutionalClaimRef<'a>>,
+    extract: impl Fn(&InstitutionalClaim) -> Option<T>,
+) -> InstitutionalBeliefRead<T>
+where
+    T: Copy + Ord,
+{
+    let values = beliefs
+        .into_iter()
+        .filter_map(|belief| extract(&belief.claim))
+        .collect::<BTreeSet<_>>();
+
+    match values.len() {
+        0 => InstitutionalBeliefRead::Unknown,
+        1 => InstitutionalBeliefRead::Certain(
+            *values
+                .iter()
+                .next()
+                .expect("single-value institutional belief read should contain a value"),
+        ),
+        _ => InstitutionalBeliefRead::Conflicted(values.into_iter().collect()),
+    }
+}
+
+type BelievedInstitutionalClaimRef<'a> = &'a BelievedInstitutionalClaim;
 
 /// Snapshot of what an agent believes about a specific entity.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -91,6 +409,7 @@ pub struct ObservedEntitySnapshot {
     pub resource_source: Option<ResourceSource>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
+    pub courage: Option<Permille>,
 }
 
 impl ObservedEntitySnapshot {
@@ -107,6 +426,7 @@ impl ObservedEntitySnapshot {
             resource_source: self.resource_source.clone(),
             alive: self.alive,
             wounds: self.wounds.clone(),
+            last_known_courage: self.courage,
             observed_tick,
             source,
         }
@@ -121,8 +441,117 @@ pub struct BelievedEntityState {
     pub resource_source: Option<ResourceSource>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
+    pub last_known_courage: Option<Permille>,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct TellMemoryKey {
+    pub counterparty: EntityId,
+    pub subject: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ToldBeliefMemory {
+    pub shared_state: SharedBeliefSnapshot,
+    pub told_tick: Tick,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HeardBeliefMemory {
+    pub heard_state: SharedBeliefSnapshot,
+    pub heard_tick: Tick,
+    pub disposition: HeardBeliefDisposition,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct SharedInstitutionalBelief {
+    pub claim: InstitutionalClaim,
+    pub source: InstitutionalKnowledgeSource,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum HeardBeliefDisposition {
+    Accepted,
+    Rejected,
+    AlreadyHeldEqualOrNewer,
+    NotInternalized,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SharedBeliefSnapshot {
+    pub last_known_place: Option<EntityId>,
+    pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
+    pub workstation_tag: Option<WorkstationTag>,
+    pub resource_source: Option<ResourceSource>,
+    pub alive: bool,
+    pub wounds: Vec<Wound>,
+    pub last_known_courage: Option<Permille>,
+    pub source: PerceptionSource,
+    pub institutional_claims: Vec<SharedInstitutionalBelief>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RecipientKnowledgeStatus {
+    UnknownToSpeaker,
+    SpeakerHasAlreadyToldCurrentBelief,
+    SpeakerHasOnlyToldStaleBelief,
+    SpeakerPreviouslyToldButMemoryExpired,
+}
+
+#[must_use]
+pub fn to_shared_belief_snapshot(state: &BelievedEntityState) -> SharedBeliefSnapshot {
+    SharedBeliefSnapshot {
+        last_known_place: state.last_known_place,
+        last_known_inventory: state.last_known_inventory.clone(),
+        workstation_tag: state.workstation_tag,
+        resource_source: state.resource_source.clone(),
+        alive: state.alive,
+        wounds: state.wounds.clone(),
+        last_known_courage: state.last_known_courage,
+        source: state.source,
+        institutional_claims: Vec::new(),
+    }
+}
+
+#[must_use]
+pub fn share_equivalent(
+    current_belief: &BelievedEntityState,
+    prior_shared_state: &SharedBeliefSnapshot,
+) -> bool {
+    to_shared_belief_snapshot(current_belief) == *prior_shared_state
+}
+
+fn institutional_claim_subject(claim: InstitutionalClaim) -> EntityId {
+    match claim {
+        InstitutionalClaim::OfficeHolder { office, .. }
+        | InstitutionalClaim::SupportDeclaration { office, .. } => office,
+        InstitutionalClaim::FactionMembership { faction, .. } => faction,
+    }
+}
+
+fn institutional_chain_len(source: InstitutionalKnowledgeSource) -> u8 {
+    match source {
+        InstitutionalKnowledgeSource::WitnessedEvent
+        | InstitutionalKnowledgeSource::RecordConsultation { .. }
+        | InstitutionalKnowledgeSource::SelfDeclaration => 0,
+        InstitutionalKnowledgeSource::Report { chain_len, .. } => chain_len,
+    }
+}
+
+#[must_use]
+pub fn recipient_knowledge_status(
+    current_belief: &BelievedEntityState,
+    prior_tell: Option<&ToldBeliefMemory>,
+) -> RecipientKnowledgeStatus {
+    match prior_tell {
+        None => RecipientKnowledgeStatus::UnknownToSpeaker,
+        Some(memory) if share_equivalent(current_belief, &memory.shared_state) => {
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        }
+        Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
+    }
 }
 
 #[must_use]
@@ -152,6 +581,9 @@ pub fn build_observed_entity_snapshot(
             .get_component_wound_list(entity)
             .map(|wounds| wounds.wounds.clone())
             .unwrap_or_default(),
+        courage: world
+            .get_component_utility_profile(entity)
+            .map(|p| p.courage),
     })
 }
 
@@ -279,6 +711,9 @@ pub struct PerceptionProfile {
     pub memory_retention_ticks: u64,
     pub observation_fidelity: Permille,
     pub confidence_policy: BeliefConfidencePolicy,
+    pub institutional_memory_capacity: u32,
+    pub consultation_speed_factor: Permille,
+    pub contradiction_tolerance: Permille,
 }
 
 impl Component for PerceptionProfile {}
@@ -290,6 +725,9 @@ impl Default for PerceptionProfile {
             memory_retention_ticks: 48,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: Permille::new(500).unwrap(),
+            contradiction_tolerance: Permille::new(300).unwrap(),
         }
     }
 }
@@ -300,6 +738,8 @@ pub struct TellProfile {
     pub max_tell_candidates: u8,
     pub max_relay_chain_len: u8,
     pub acceptance_fidelity: Permille,
+    pub conversation_memory_capacity: u16,
+    pub conversation_memory_retention_ticks: u64,
 }
 
 impl Component for TellProfile {}
@@ -310,7 +750,37 @@ impl Default for TellProfile {
             max_tell_candidates: 3,
             max_relay_chain_len: 3,
             acceptance_fidelity: Permille::new(800).unwrap(),
+            conversation_memory_capacity: 12,
+            conversation_memory_retention_ticks: 48,
         }
+    }
+}
+
+fn enforce_memory_lane_capacity<T, F>(
+    lane: &mut BTreeMap<TellMemoryKey, T>,
+    capacity: usize,
+    tick_of: F,
+) where
+    F: Fn(&T) -> Tick,
+{
+    if capacity == 0 {
+        lane.clear();
+        return;
+    }
+
+    let excess = lane.len().saturating_sub(capacity);
+    if excess == 0 {
+        return;
+    }
+
+    let mut eviction_order = lane
+        .iter()
+        .map(|(key, memory)| (tick_of(memory), *key))
+        .collect::<Vec<_>>();
+    eviction_order.sort_unstable();
+
+    for (_, key) in eviction_order.into_iter().take(excess) {
+        lane.remove(&key);
     }
 }
 
@@ -322,13 +792,17 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 mod tests {
     use super::{
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, MismatchKind,
-        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, SocialObservation,
-        SocialObservationKind, TellProfile,
+        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
+        BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
+        MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+        RecipientKnowledgeStatus, SocialObservation, SocialObservationKind, TellMemoryKey,
+        TellProfile, ToldBeliefMemory,
     };
     use crate::{
-        build_prototype_world, traits::Component, BodyPart, CommodityKind, ControlSource, DeadAt,
-        EntityId, Permille, Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
+        build_prototype_world, traits::Component, BelievedInstitutionalClaim, BodyPart,
+        CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
+        Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -346,6 +820,25 @@ mod tests {
             memory_retention_ticks,
             observation_fidelity: Permille::new(750).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 9,
+            consultation_speed_factor: Permille::new(650).unwrap(),
+            contradiction_tolerance: Permille::new(275).unwrap(),
+        }
+    }
+
+    fn sample_institutional_belief(observed_tick: u64) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(50),
+                holder: Some(entity(51)),
+                effective_tick: Tick(observed_tick.saturating_sub(1)),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(52),
+                entry_id: crate::RecordEntryId(3),
+            },
+            learned_tick: Tick(observed_tick),
+            learned_at: Some(entity(53)),
         }
     }
 
@@ -377,6 +870,7 @@ mod tests {
             resource_source: None,
             alive: true,
             wounds: vec![sample_wound(1, observed_tick)],
+            last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
@@ -392,6 +886,114 @@ mod tests {
         }
     }
 
+    fn tell_profile() -> TellProfile {
+        TellProfile {
+            max_tell_candidates: 3,
+            max_relay_chain_len: 2,
+            acceptance_fidelity: Permille::new(800).unwrap(),
+            conversation_memory_capacity: 2,
+            conversation_memory_retention_ticks: 5,
+        }
+    }
+
+    fn tell_memory_key(counterparty: u32, subject: u32) -> TellMemoryKey {
+        TellMemoryKey {
+            counterparty: entity(counterparty),
+            subject: entity(subject),
+        }
+    }
+
+    fn told_memory(
+        counterparty: u32,
+        subject: u32,
+        told_tick: u64,
+        state: &BelievedEntityState,
+    ) -> (TellMemoryKey, ToldBeliefMemory) {
+        (
+            tell_memory_key(counterparty, subject),
+            ToldBeliefMemory {
+                shared_state: to_shared_belief_snapshot(state),
+                told_tick: Tick(told_tick),
+            },
+        )
+    }
+
+    fn heard_memory(
+        counterparty: u32,
+        subject: u32,
+        heard_tick: u64,
+        state: &BelievedEntityState,
+        disposition: HeardBeliefDisposition,
+    ) -> (TellMemoryKey, HeardBeliefMemory) {
+        (
+            tell_memory_key(counterparty, subject),
+            HeardBeliefMemory {
+                heard_state: to_shared_belief_snapshot(state),
+                heard_tick: Tick(heard_tick),
+                disposition,
+            },
+        )
+    }
+
+    fn office_holder_belief(
+        office: u32,
+        holder: Option<u32>,
+        source: InstitutionalKnowledgeSource,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(office),
+                holder: holder.map(entity),
+                effective_tick: Tick(learned_tick),
+            },
+            source,
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(9)),
+        }
+    }
+
+    fn membership_belief(
+        faction: u32,
+        member: u32,
+        active: bool,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::FactionMembership {
+                faction: entity(faction),
+                member: entity(member),
+                active,
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::WitnessedEvent,
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(11)),
+        }
+    }
+
+    fn support_belief(
+        office: u32,
+        supporter: u32,
+        candidate: Option<u32>,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::SupportDeclaration {
+                office: entity(office),
+                supporter: entity(supporter),
+                candidate: candidate.map(entity),
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(12),
+                entry_id: crate::RecordEntryId(learned_tick),
+            },
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(13)),
+        }
+    }
+
     fn assert_component_bounds<T: Component>() {}
 
     fn assert_serde_bounds<T: Eq + Clone + Serialize + DeserializeOwned>() {}
@@ -404,6 +1006,9 @@ mod tests {
 
         assert!(store.known_entities.is_empty());
         assert!(store.social_observations.is_empty());
+        assert!(store.told_beliefs.is_empty());
+        assert!(store.heard_beliefs.is_empty());
+        assert!(store.institutional_beliefs.is_empty());
     }
 
     #[test]
@@ -509,6 +1114,261 @@ mod tests {
     }
 
     #[test]
+    fn record_institutional_belief_enforces_capacity_deterministically() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 2;
+
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(70) },
+            sample_institutional_belief(5),
+            &profile,
+        );
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::FactionMembersOf {
+                faction: entity(71),
+            },
+            sample_institutional_belief(4),
+            &profile,
+        );
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(72),
+                office: entity(73),
+            },
+            sample_institutional_belief(6),
+            &profile,
+        );
+
+        assert!(!store.institutional_beliefs.contains_key(
+            &InstitutionalBeliefKey::FactionMembersOf {
+                faction: entity(71)
+            }
+        ));
+        assert_eq!(store.total_institutional_beliefs(), 2);
+        assert!(store
+            .institutional_beliefs
+            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office: entity(70) }));
+        assert!(store
+            .institutional_beliefs
+            .contains_key(&InstitutionalBeliefKey::SupportFor {
+                supporter: entity(72),
+                office: entity(73),
+            }));
+    }
+
+    #[test]
+    fn record_institutional_belief_breaks_ties_by_key_then_position() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 2;
+        let first_key = InstitutionalBeliefKey::FactionMembersOf {
+            faction: entity(80),
+        };
+        let second_key = InstitutionalBeliefKey::SupportFor {
+            supporter: entity(81),
+            office: entity(82),
+        };
+
+        store.record_institutional_belief(first_key, sample_institutional_belief(5), &profile);
+        store.record_institutional_belief(second_key, sample_institutional_belief(5), &profile);
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(83) },
+            sample_institutional_belief(6),
+            &profile,
+        );
+
+        assert!(!store.institutional_beliefs.contains_key(&first_key));
+        assert!(store.institutional_beliefs.contains_key(&second_key));
+    }
+
+    #[test]
+    fn record_institutional_belief_clears_all_when_capacity_is_zero() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 0;
+
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(90) },
+            sample_institutional_belief(7),
+            &profile,
+        );
+
+        assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn believed_office_holder_returns_unknown_when_absent() {
+        let store = AgentBeliefStore::new();
+
+        assert_eq!(
+            store.believed_office_holder(entity(70)),
+            InstitutionalBeliefRead::Unknown
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_collapses_agreeing_claims_and_preserves_vacancy() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(71);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            vec![
+                office_holder_belief(
+                    71,
+                    None,
+                    InstitutionalKnowledgeSource::WitnessedEvent,
+                    4,
+                ),
+                office_holder_belief(
+                    71,
+                    None,
+                    InstitutionalKnowledgeSource::Report {
+                        from: entity(72),
+                        chain_len: 1,
+                    },
+                    7,
+                ),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(None)
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_returns_conflicted_for_distinct_holders() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(73);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            vec![
+                office_holder_belief(73, Some(74), InstitutionalKnowledgeSource::WitnessedEvent, 5),
+                office_holder_belief(
+                    73,
+                    Some(75),
+                    InstitutionalKnowledgeSource::SelfDeclaration,
+                    8,
+                ),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_office_holder(office),
+            InstitutionalBeliefRead::Conflicted(vec![Some(entity(74)), Some(entity(75))])
+        );
+    }
+
+    #[test]
+    fn believed_membership_filters_to_the_queried_member() {
+        let mut store = AgentBeliefStore::new();
+        let faction = entity(80);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionMembersOf { faction },
+            vec![
+                membership_belief(80, 81, true, 3),
+                membership_belief(80, 82, false, 4),
+                membership_belief(80, 81, true, 6),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_membership(faction, entity(81)),
+            InstitutionalBeliefRead::Certain(true)
+        );
+        assert_eq!(
+            store.believed_membership(faction, entity(82)),
+            InstitutionalBeliefRead::Certain(false)
+        );
+        assert_eq!(
+            store.believed_membership(faction, entity(83)),
+            InstitutionalBeliefRead::Unknown
+        );
+    }
+
+    #[test]
+    fn believed_membership_returns_conflicted_for_same_member_with_distinct_values() {
+        let mut store = AgentBeliefStore::new();
+        let faction = entity(84);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionMembersOf { faction },
+            vec![membership_belief(84, 85, true, 2), membership_belief(84, 85, false, 5)],
+        );
+
+        assert_eq!(
+            store.believed_membership(faction, entity(85)),
+            InstitutionalBeliefRead::Conflicted(vec![false, true])
+        );
+    }
+
+    #[test]
+    fn believed_support_declaration_ignores_malformed_claims_under_matching_key() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(90);
+        let supporter = entity(91);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor { supporter, office },
+            vec![
+                office_holder_belief(
+                    90,
+                    Some(99),
+                    InstitutionalKnowledgeSource::WitnessedEvent,
+                    2,
+                ),
+                support_belief(90, 91, Some(92), 6),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_support_declaration(office, supporter),
+            InstitutionalBeliefRead::Certain(Some(entity(92)))
+        );
+    }
+
+    #[test]
+    fn believed_support_declarations_for_office_groups_reads_by_supporter() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(100);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(101),
+                office,
+            },
+            vec![support_belief(100, 101, Some(103), 3)],
+        );
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(102),
+                office,
+            },
+            vec![support_belief(100, 102, Some(104), 4), support_belief(100, 102, None, 7)],
+        );
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(105),
+                office: entity(106),
+            },
+            vec![support_belief(106, 105, Some(107), 5)],
+        );
+
+        assert_eq!(
+            store.believed_support_declarations_for_office(office),
+            vec![
+                (
+                    entity(101),
+                    InstitutionalBeliefRead::Certain(Some(entity(103))),
+                ),
+                (
+                    entity(102),
+                    InstitutionalBeliefRead::Conflicted(vec![None, Some(entity(104))]),
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn believed_entity_state_roundtrips_through_bincode() {
         let state = sample_state(11, 7);
 
@@ -527,6 +1387,7 @@ mod tests {
             resource_source: None,
             alive: true,
             wounds: vec![sample_wound(1, 4)],
+            courage: None,
         };
 
         let bytes = bincode::serialize(&snapshot).unwrap();
@@ -632,6 +1493,21 @@ mod tests {
     }
 
     #[test]
+    fn agent_belief_store_roundtrips_through_bincode_with_institutional_beliefs() {
+        let mut store = AgentBeliefStore::new();
+        store.update_entity(entity(1), sample_state(7, 2));
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office: entity(50) },
+            vec![sample_institutional_belief(12)],
+        );
+
+        let bytes = bincode::serialize(&store).unwrap();
+        let roundtrip: AgentBeliefStore = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, store);
+    }
+
+    #[test]
     fn belief_confidence_policy_roundtrips_through_bincode() {
         let policy = BeliefConfidencePolicy {
             direct_observation_base: Permille::new(920).unwrap(),
@@ -657,6 +1533,8 @@ mod tests {
                 max_tell_candidates: 3,
                 max_relay_chain_len: 3,
                 acceptance_fidelity: Permille::new(800).unwrap(),
+                conversation_memory_capacity: 12,
+                conversation_memory_retention_ticks: 48,
             }
         );
     }
@@ -667,12 +1545,173 @@ mod tests {
             max_tell_candidates: 5,
             max_relay_chain_len: 2,
             acceptance_fidelity: Permille::new(650).unwrap(),
+            conversation_memory_capacity: 9,
+            conversation_memory_retention_ticks: 21,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
         let roundtrip: TellProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn shared_belief_snapshot_ignores_observed_tick_and_matches_shareable_content() {
+        let older = sample_state(3, 4);
+        let mut newer = older.clone();
+        newer.observed_tick = Tick(9);
+        let snapshot = to_shared_belief_snapshot(&older);
+
+        assert_eq!(snapshot, to_shared_belief_snapshot(&newer));
+        assert!(share_equivalent(&newer, &snapshot));
+    }
+
+    #[test]
+    fn conversation_memory_read_helpers_ignore_expired_entries_before_cleanup() {
+        let mut store = AgentBeliefStore::new();
+        let profile = tell_profile();
+        let fresh_state = sample_state(9, 3);
+        let stale_state = sample_state(1, 2);
+        let stale_key = tell_memory_key(2, 21);
+        let fresh_key = tell_memory_key(3, 22);
+
+        let stale_told = told_memory(2, 21, 1, &stale_state);
+        let fresh_told = told_memory(3, 22, 9, &fresh_state);
+        let stale_heard = heard_memory(2, 21, 1, &stale_state, HeardBeliefDisposition::Accepted);
+        let fresh_heard = heard_memory(
+            3,
+            22,
+            9,
+            &fresh_state,
+            HeardBeliefDisposition::AlreadyHeldEqualOrNewer,
+        );
+
+        store.record_told_belief(stale_told.0, stale_told.1);
+        store.record_told_belief(fresh_told.0, fresh_told.1);
+        store.record_heard_belief(stale_heard.0, stale_heard.1);
+        store.record_heard_belief(fresh_heard.0, fresh_heard.1);
+
+        assert_eq!(
+            store.told_belief_memory(&stale_key, Tick(9), &profile),
+            None
+        );
+        assert_eq!(
+            store.heard_belief_memory(&stale_key, Tick(9), &profile),
+            None
+        );
+        assert!(store.told_beliefs.contains_key(&stale_key));
+        assert!(store.heard_beliefs.contains_key(&stale_key));
+        assert_eq!(
+            store.recipient_knowledge_status(&stale_key, &fresh_state, Tick(9), &profile),
+            RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+        );
+
+        assert_eq!(
+            store
+                .told_belief_memory(&fresh_key, Tick(9), &profile)
+                .map(|_| fresh_key),
+            Some(fresh_key)
+        );
+        assert_eq!(
+            store
+                .heard_belief_memory(&fresh_key, Tick(9), &profile)
+                .map(|_| fresh_key),
+            Some(fresh_key)
+        );
+    }
+
+    #[test]
+    fn enforce_conversation_memory_evicts_oldest_told_and_heard_entries_independently() {
+        let mut store = AgentBeliefStore::new();
+        let profile = tell_profile();
+
+        let told_a = told_memory(2, 20, 4, &sample_state(4, 1));
+        let told_b = told_memory(1, 10, 4, &sample_state(4, 2));
+        let told_c = told_memory(3, 30, 6, &sample_state(6, 3));
+        let heard_a = heard_memory(
+            5,
+            50,
+            3,
+            &sample_state(3, 1),
+            HeardBeliefDisposition::Accepted,
+        );
+        let heard_b = heard_memory(
+            4,
+            40,
+            3,
+            &sample_state(3, 2),
+            HeardBeliefDisposition::Accepted,
+        );
+        let heard_c = heard_memory(
+            6,
+            60,
+            7,
+            &sample_state(7, 3),
+            HeardBeliefDisposition::Accepted,
+        );
+
+        store.record_told_belief(told_a.0, told_a.1);
+        store.record_told_belief(told_b.0, told_b.1);
+        store.record_told_belief(told_c.0, told_c.1);
+        store.record_heard_belief(heard_a.0, heard_a.1);
+        store.record_heard_belief(heard_b.0, heard_b.1);
+        store.record_heard_belief(heard_c.0, heard_c.1);
+
+        store.enforce_conversation_memory(&profile, Tick(8));
+
+        assert_eq!(
+            store.told_beliefs.keys().copied().collect::<Vec<_>>(),
+            vec![tell_memory_key(2, 20), tell_memory_key(3, 30)]
+        );
+        assert_eq!(
+            store.heard_beliefs.keys().copied().collect::<Vec<_>>(),
+            vec![tell_memory_key(5, 50), tell_memory_key(6, 60)]
+        );
+    }
+
+    #[test]
+    fn recipient_knowledge_status_distinguishes_current_and_stale_tells() {
+        let current = sample_state(8, 4);
+        let stale = sample_state(8, 9);
+        let (_, remembered) = told_memory(7, 44, 6, &current);
+
+        assert_eq!(
+            recipient_knowledge_status(&current, Some(&remembered)),
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        );
+        assert_eq!(
+            recipient_knowledge_status(&stale, Some(&remembered)),
+            RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief
+        );
+        assert_eq!(
+            recipient_knowledge_status(&current, None),
+            RecipientKnowledgeStatus::UnknownToSpeaker
+        );
+    }
+
+    #[test]
+    fn recipient_knowledge_status_treats_changed_institutional_payload_as_new_shareable_content() {
+        let tell_profile = tell_profile();
+        let key = tell_memory_key(7, 44);
+        let subject = entity(44);
+        let current = sample_state(8, 4);
+        let mut store = AgentBeliefStore::new();
+        let memory = ToldBeliefMemory {
+            shared_state: to_shared_belief_snapshot(&current),
+            told_tick: Tick(6),
+        };
+        store.record_told_belief(key, memory);
+        store.update_entity(subject, current.clone());
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: subject },
+            office_holder_belief(subject.slot, Some(11), InstitutionalKnowledgeSource::WitnessedEvent, 8),
+            &profile(8, 100),
+        );
+
+        assert_eq!(
+            store.recipient_knowledge_status(&key, &current, Tick(8), &tell_profile),
+            RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief
+        );
     }
 
     #[test]
@@ -789,10 +1828,15 @@ mod tests {
 
     #[test]
     fn default_perception_profile_carries_default_confidence_policy() {
+        let profile = PerceptionProfile::default();
+
+        assert_eq!(profile.confidence_policy, BeliefConfidencePolicy::default());
+        assert_eq!(profile.institutional_memory_capacity, 20);
         assert_eq!(
-            PerceptionProfile::default().confidence_policy,
-            BeliefConfidencePolicy::default()
+            profile.consultation_speed_factor,
+            Permille::new(500).unwrap()
         );
+        assert_eq!(profile.contradiction_tolerance, Permille::new(300).unwrap());
     }
 
     #[test]
@@ -892,6 +1936,36 @@ mod tests {
         );
         assert!(snapshot.alive);
         assert!(snapshot.wounds.is_empty());
+        assert_eq!(snapshot.courage, None); // no UtilityProfile set
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_captures_courage() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = world
+            .create_agent("Brave", ControlSource::Ai, Tick(1))
+            .unwrap();
+        world.set_ground_location(agent, place).unwrap();
+
+        let courage = Permille::new(600).unwrap();
+        world
+            .insert_component_utility_profile(
+                agent,
+                crate::UtilityProfile {
+                    courage,
+                    ..crate::UtilityProfile::default()
+                },
+            )
+            .unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, agent).unwrap();
+        assert_eq!(snapshot.courage, Some(courage));
+
+        // Verify it propagates through to_believed_entity_state
+        let believed =
+            snapshot.to_believed_entity_state(Tick(2), PerceptionSource::DirectObservation);
+        assert_eq!(believed.last_known_courage, Some(courage));
     }
 
     #[test]

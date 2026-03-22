@@ -1,8 +1,9 @@
 use crate::{
-    register_attack_action, register_bury_action, register_craft_actions, register_defend_action,
-    register_harvest_actions, register_heal_action, register_loot_action, register_needs_actions,
-    register_office_actions, register_queue_for_facility_use_action, register_tell_action,
-    register_trade_action, register_transport_actions, register_travel_actions,
+    register_attack_action, register_bury_action, register_consult_record_action,
+    register_craft_actions, register_defend_action, register_harvest_actions, register_heal_action,
+    register_loot_action, register_needs_actions, register_office_actions,
+    register_queue_for_facility_use_action, register_tell_action, register_trade_action,
+    register_transport_actions, register_travel_actions,
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
@@ -26,6 +27,7 @@ pub fn register_all_actions(
     let _ = register_craft_actions(defs, handlers, recipes);
     let _ = register_trade_action(defs, handlers);
     let _ = register_tell_action(defs, handlers);
+    let _ = register_consult_record_action(defs, handlers);
     let _ = register_office_actions(defs, handlers);
     let _ = register_travel_actions(defs, handlers);
     let _ = register_transport_actions(defs, handlers);
@@ -74,6 +76,7 @@ mod tests {
             "queue_for_facility_use",
             "trade",
             "tell",
+            "consult_record",
             "bribe",
             "threaten",
             "declare_support",

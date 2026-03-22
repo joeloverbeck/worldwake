@@ -9,6 +9,7 @@ use crate::{
     drives::DriveThresholds,
     facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,
+    institutional::RecordData,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::OfficeData,
@@ -120,6 +121,9 @@ mod tests {
         },
         components::{AgentData, Name},
         factions::{FactionData, FactionPurpose},
+        institutional::{
+            InstitutionalClaim, InstitutionalRecordEntry, RecordData, RecordEntryId, RecordKind,
+        },
         offices::{EligibilityRule, OfficeData, SuccessionLaw},
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
@@ -170,6 +174,7 @@ mod tests {
             Permille::new(140).unwrap(),
             Permille::new(30).unwrap(),
             NonZeroU32::new(7).unwrap(),
+            NonZeroU32::new(10).unwrap(),
         )
     }
 
@@ -184,11 +189,30 @@ mod tests {
                     resource_source: None,
                     alive: true,
                     wounds: Vec::new(),
+                    last_known_courage: None,
                     observed_tick: Tick(7),
                     source: PerceptionSource::DirectObservation,
                 },
             )]),
             social_observations: Vec::new(),
+            told_beliefs: BTreeMap::new(),
+            heard_beliefs: BTreeMap::new(),
+            institutional_beliefs: BTreeMap::from([(
+                crate::InstitutionalBeliefKey::OfficeHolderOf { office: entity(24) },
+                vec![crate::BelievedInstitutionalClaim {
+                    claim: crate::InstitutionalClaim::OfficeHolder {
+                        office: entity(24),
+                        holder: Some(entity(25)),
+                        effective_tick: Tick(8),
+                    },
+                    source: crate::InstitutionalKnowledgeSource::RecordConsultation {
+                        record: entity(26),
+                        entry_id: crate::RecordEntryId(2),
+                    },
+                    learned_tick: Tick(9),
+                    learned_at: Some(entity(27)),
+                }],
+            )]),
         }
     }
 
@@ -197,6 +221,8 @@ mod tests {
             max_tell_candidates: 4,
             max_relay_chain_len: 2,
             acceptance_fidelity: Permille::new(725).unwrap(),
+            conversation_memory_capacity: 10,
+            conversation_memory_retention_ticks: 32,
         }
     }
 
@@ -215,6 +241,27 @@ mod tests {
         FactionData {
             name: "River Pact".to_string(),
             purpose: FactionPurpose::Political,
+        }
+    }
+
+    fn sample_record_data() -> RecordData {
+        RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place: entity(40),
+            issuer: entity(41),
+            consultation_ticks: 5,
+            max_entries_per_consult: 8,
+            entries: vec![InstitutionalRecordEntry {
+                entry_id: RecordEntryId(0),
+                claim: InstitutionalClaim::OfficeHolder {
+                    office: entity(42),
+                    holder: Some(entity(43)),
+                    effective_tick: Tick(9),
+                },
+                recorded_tick: Tick(10),
+                supersedes: None,
+            }],
+            next_entry_id: 1,
         }
     }
 
@@ -242,6 +289,9 @@ mod tests {
                 memory_retention_ticks: 20,
                 observation_fidelity: Permille::new(900).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 18,
+                consultation_speed_factor: Permille::new(550).unwrap(),
+                contradiction_tolerance: Permille::new(325).unwrap(),
             },
         );
         tables.insert_tell_profile(entity(25), sample_roundtrip_tell_profile());
@@ -250,6 +300,7 @@ mod tests {
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
         tables.insert_office_data(entity(26), sample_office_data());
         tables.insert_faction_data(entity(27), sample_faction_data());
+        tables.insert_record_data(entity(28), sample_record_data());
         tables.insert_item_lot(
             entity(11),
             ItemLot {
@@ -315,6 +366,7 @@ mod tests {
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_office_data().count(), 0);
         assert_eq!(tables.iter_faction_data().count(), 0);
+        assert_eq!(tables.iter_record_data().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
         assert_eq!(tables.iter_known_recipes().count(), 0);
         assert_eq!(tables.iter_demand_memories().count(), 0);
@@ -325,7 +377,10 @@ mod tests {
         assert_eq!(tables.iter_exclusive_facility_policies().count(), 0);
         assert_eq!(tables.iter_facility_use_queues().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
-        assert_eq!(tables.iter_production_output_ownership_policies().count(), 0);
+        assert_eq!(
+            tables.iter_production_output_ownership_policies().count(),
+            0
+        );
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
@@ -390,6 +445,7 @@ mod tests {
             Permille::new(120).unwrap(),
             Permille::new(35).unwrap(),
             NonZeroU32::new(6).unwrap(),
+            NonZeroU32::new(10).unwrap(),
         );
 
         assert_eq!(tables.insert_combat_profile(id, profile), None);
@@ -461,6 +517,17 @@ mod tests {
         assert_eq!(tables.insert_office_data(id, office.clone()), None);
         assert_eq!(tables.get_office_data(id), Some(&office));
         assert!(tables.has_office_data(id));
+    }
+
+    #[test]
+    fn insert_and_get_record_data() {
+        let mut tables = ComponentTables::default();
+        let id = entity(48);
+        let record = sample_record_data();
+
+        assert_eq!(tables.insert_record_data(id, record.clone()), None);
+        assert_eq!(tables.get_record_data(id), Some(&record));
+        assert!(tables.has_record_data(id));
     }
 
     #[test]

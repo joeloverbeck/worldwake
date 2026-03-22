@@ -13,6 +13,7 @@ pub mod failure_handling;
 pub mod goal_explanation;
 pub mod goal_model;
 pub mod goal_policy;
+mod institutional_queries;
 mod goal_switching;
 pub mod interrupts;
 mod journey_switch_policy;
@@ -28,25 +29,34 @@ pub mod search;
 pub use agent_tick::{AgentTickDriver, JourneyDebugSnapshot, JourneySwitchMarginSource};
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
-pub use decision_trace::{
-    ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
-    DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
-    GoalSwitchSummary, InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, SelectionTrace,
-};
 pub use decision_runtime::{
     AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation,
     JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
 };
+pub use decision_trace::{
+    ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateEvidenceContributor,
+    CandidateEvidenceExclusion, CandidateEvidenceExclusionReason, CandidateEvidenceKind,
+    CandidateEvidenceTrace, CandidateTrace, DecisionOutcome, DecisionTraceSink, DirtyReason,
+    ExecutionFailureReason, ExecutionTrace, GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus,
+    InterruptTrace, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
+    PlanningPipelineTrace, PoliticalCandidateOmission, PoliticalCandidateOmissionReason,
+    PoliticalGoalFamily, PrerequisiteExclusionReason, PrerequisiteExclusionTrace,
+    PrerequisiteGuidanceTrace, RankedGoalSummary, SelectedPlanReplacementKind,
+    SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
+    SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
+    TravelSuccessorTrace,
+};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
+pub use goal_model::{
+    GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
+    RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
+    RankedPriorityAdjustment,
+};
 pub use goal_policy::{
-    evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole,
-    GoalFamilyPolicy, GoalPolicyOutcome,
+    evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,
+    GoalPolicyOutcome,
 };
 pub use goal_switching::GoalSwitchKind;
-pub use goal_model::{
-    GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal,
-};
 pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
 pub use plan_revalidation::revalidate_next_step;
 pub use plan_selection::select_best_plan;
@@ -62,7 +72,9 @@ pub use planning_snapshot::{
 pub use planning_state::{
     HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
 };
-pub use pressure::{classify_band, derive_danger_pressure, derive_pain_pressure};
+pub use pressure::{
+    assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure, DangerAssessment,
+};
 pub use ranking::{build_decision_context, rank_candidates, RankingOutcome};
 pub use search::{search_plan, PlanSearchResult};
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};

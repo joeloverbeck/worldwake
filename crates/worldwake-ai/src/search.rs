@@ -1,3 +1,4 @@
+use crate::goal_model::trace_prerequisite_guidance;
 use crate::planner_ops::planner_only_candidates;
 use crate::{
     apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
@@ -8,8 +9,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
-    get_affordances_for_defs, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
-    ActionPayload, Affordance, QueueForFacilityUsePayload, RuntimeBeliefView,
+    get_affordances_for_defs, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
+    QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView,
 };
 
 #[derive(Clone)]
@@ -99,7 +100,7 @@ impl PlanSearchResult {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn search_plan(
     snapshot: &PlanningSnapshot,
     goal: &GroundedGoal,
@@ -107,16 +108,20 @@ pub fn search_plan(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
     budget: &PlanningBudget,
-    goal_relevant_places: &[EntityId],
+    recipes: &RecipeRegistry,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
     }
 
     let mut frontier = BinaryHeap::new();
-    frontier.push(FrontierEntry::new(root_node(snapshot, goal_relevant_places)));
+    frontier.push(FrontierEntry::new(root_node(
+        snapshot, goal, recipes, budget,
+    )));
     let mut expansions = 0u16;
+    let mut best_barrier: Option<PlannedPlan> = None;
 
     while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
         if goal.key.kind.is_satisfied(&node.state) {
@@ -130,9 +135,16 @@ pub fn search_plan(
             continue;
         }
         if expansions >= budget.max_node_expansions {
-            return PlanSearchResult::BudgetExhausted { expansions_used: expansions };
+            if let Some(barrier_plan) = best_barrier {
+                return PlanSearchResult::Found(barrier_plan);
+            }
+            return PlanSearchResult::BudgetExhausted {
+                expansions_used: expansions,
+            };
         }
         expansions = expansions.saturating_add(1);
+
+        let depth = node.steps.len() as u8;
 
         let mut candidates = search_candidates(
             goal,
@@ -142,25 +154,39 @@ pub fn search_plan(
             handlers,
             binding_rejections.as_deref_mut(),
         );
-        if let Some(current_place) = node
-            .state
-            .effective_place_ref(PlanningEntityRef::Authoritative(node.state.snapshot().actor()))
+        let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
+        let mut travel_pruning = None;
+        if let Some(current_place) =
+            node.state
+                .effective_place_ref(PlanningEntityRef::Authoritative(
+                    node.state.snapshot().actor(),
+                ))
         {
-            prune_travel_away_from_goal(
+            travel_pruning = prune_travel_away_from_goal(
                 &mut candidates,
                 current_place,
-                goal_relevant_places,
+                &combined_places.places,
                 snapshot,
                 semantics_table,
             );
         }
 
+        let candidates_generated = candidates.len() as u16;
+
         let mut terminal_successors = Vec::new();
         let mut successors = Vec::new();
+        let mut candidates_skipped = 0u16;
         for candidate in candidates {
-            let Some((terminal, successor)) =
-                build_successor(goal, semantics_table, registry, &node, &candidate, goal_relevant_places)
-            else {
+            let Some((terminal, successor)) = build_successor(
+                goal,
+                semantics_table,
+                registry,
+                &node,
+                &candidate,
+                recipes,
+                budget,
+            ) else {
+                candidates_skipped += 1;
                 continue;
             };
             if let Some(terminal_kind) = terminal {
@@ -169,39 +195,96 @@ pub fn search_plan(
                 successors.push((terminal, successor));
             }
         }
+
+        let terminal_count = terminal_successors.len() as u16;
+        let non_terminal_before_beam = successors.len() as u16;
+
+        let mut found_goal_satisfied = false;
+
         if !terminal_successors.is_empty() {
-            // For consumption goals, prefer GoalSatisfied (eat) over
-            // ProgressBarrier (pick_up) when both are available — eating
-            // possessed stock is better than picking up more ground stock.
-            if matches!(goal.key.kind, GoalKind::ConsumeOwnedCommodity { .. }) {
-                terminal_successors.sort_by(|left, right| {
-                    let kind_order = |kind: &PlanTerminalKind| match kind {
-                        PlanTerminalKind::GoalSatisfied => 0,
-                        _ => 1,
-                    };
-                    kind_order(&left.0)
-                        .cmp(&kind_order(&right.0))
-                        .then_with(|| compare_search_nodes(&left.1, &right.1))
-                });
-            } else {
-                terminal_successors
-                    .sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+            // Sort by cost so the best candidate of each kind is first.
+            terminal_successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+
+            for (terminal_kind, successor) in terminal_successors {
+                match terminal_kind {
+                    // GoalSatisfied and CombatCommitment are returned immediately.
+                    PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
+                        found_goal_satisfied =
+                            matches!(terminal_kind, PlanTerminalKind::GoalSatisfied);
+                        if let Some(ref mut sink) = expansion_summaries {
+                            sink.push(crate::decision_trace::SearchExpansionSummary {
+                                depth,
+                                remaining_travel_ticks: node.heuristic_ticks,
+                                combined_places_count: combined_places.places.len() as u16,
+                                prerequisite_places_count: combined_places
+                                    .prerequisite_places_count,
+                                candidates_generated,
+                                candidates_skipped,
+                                terminal_successors: terminal_count,
+                                non_terminal_before_beam,
+                                non_terminal_after_beam: non_terminal_before_beam, // no truncation happened yet
+                                found_goal_satisfied,
+                                travel_pruning: travel_pruning.clone(),
+                                prerequisite_guidance: combined_places.guidance_trace.clone(),
+                            });
+                        }
+                        return PlanSearchResult::Found(PlannedPlan::new(
+                            goal.key,
+                            successor.steps,
+                            terminal_kind,
+                        ));
+                    }
+                    // ProgressBarrier is stored as a fallback — keep searching
+                    // for a GoalSatisfied plan across deeper expansion levels.
+                    PlanTerminalKind::ProgressBarrier => {
+                        if best_barrier.is_none() {
+                            best_barrier =
+                                Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
+                        }
+                    }
+                }
             }
-            let (terminal_kind, successor) = terminal_successors.remove(0);
-            return PlanSearchResult::Found(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
         }
         successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
         successors.truncate(usize::from(budget.beam_width));
 
+        let non_terminal_after_beam = successors.len() as u16;
+
+        if let Some(ref mut sink) = expansion_summaries {
+            sink.push(crate::decision_trace::SearchExpansionSummary {
+                depth,
+                remaining_travel_ticks: node.heuristic_ticks,
+                combined_places_count: combined_places.places.len() as u16,
+                prerequisite_places_count: combined_places.prerequisite_places_count,
+                candidates_generated,
+                candidates_skipped,
+                terminal_successors: terminal_count,
+                non_terminal_before_beam,
+                non_terminal_after_beam,
+                found_goal_satisfied,
+                travel_pruning,
+                prerequisite_guidance: combined_places.guidance_trace,
+            });
+        }
+
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
-                return PlanSearchResult::Found(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
+                return PlanSearchResult::Found(PlannedPlan::new(
+                    goal.key,
+                    successor.steps,
+                    terminal_kind,
+                ));
             }
             frontier.push(FrontierEntry::new(successor));
         }
     }
 
-    PlanSearchResult::FrontierExhausted { expansions_used: expansions }
+    if let Some(barrier_plan) = best_barrier {
+        return PlanSearchResult::Found(barrier_plan);
+    }
+    PlanSearchResult::FrontierExhausted {
+        expansions_used: expansions,
+    }
 }
 
 /// Compute the A* heuristic: minimum travel ticks from the actor's current
@@ -224,12 +307,44 @@ fn compute_heuristic(
         .unwrap_or(0)
 }
 
+struct CombinedRelevantPlaces {
+    places: Vec<EntityId>,
+    prerequisite_places_count: u16,
+    guidance_trace: Option<crate::decision_trace::PrerequisiteGuidanceTrace>,
+}
+
+fn combined_relevant_places(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+    budget: &PlanningBudget,
+) -> CombinedRelevantPlaces {
+    let guidance_trace = trace_prerequisite_guidance(&goal.key.kind, state, recipes, budget);
+    let mut places = goal.key.kind.goal_relevant_places(state, recipes);
+    let base_len = places.len();
+    let prerequisite_places = goal.key.kind.prerequisite_places(state, recipes, budget);
+    for place in prerequisite_places {
+        if !places.contains(&place) {
+            places.push(place);
+        }
+    }
+    let prerequisite_places_count = (places.len() - base_len) as u16;
+    CombinedRelevantPlaces {
+        places,
+        prerequisite_places_count,
+        guidance_trace,
+    }
+}
+
 fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
-    goal_relevant_places: &[EntityId],
+    goal: &GroundedGoal,
+    recipes: &RecipeRegistry,
+    budget: &PlanningBudget,
 ) -> SearchNode<'snapshot> {
     let state = PlanningState::new(snapshot);
-    let heuristic_ticks = compute_heuristic(snapshot, &state, goal_relevant_places);
+    let combined_places = combined_relevant_places(goal, &state, recipes, budget);
+    let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places.places);
     SearchNode {
         state,
         steps: Vec::new(),
@@ -242,44 +357,83 @@ fn root_node<'snapshot>(
 /// goal-relevant place.  Non-travel candidates are never pruned.
 /// When `goal_places` is empty, the function is a no-op.
 ///
-/// When the actor is already AT a goal-relevant place (`current_min == 0`)
-/// but the goal isn't yet satisfied (otherwise we wouldn't still be
-/// searching), pruning is skipped so the agent can leave for another
-/// goal-relevant place.
+/// When the actor is already at one goal-relevant place, pruning continues
+/// against the remaining relevant places so search can leave the current place
+/// without broadening into arbitrary detours.
 fn prune_travel_away_from_goal(
     candidates: &mut Vec<SearchCandidate>,
     current_place: EntityId,
     goal_places: &[EntityId],
     snapshot: &PlanningSnapshot,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
-) {
+) -> Option<crate::decision_trace::TravelPruningTrace> {
     if goal_places.is_empty() {
-        return;
+        return None;
     }
     let current_min = snapshot
         .min_travel_ticks_to_any(current_place, goal_places)
         .unwrap_or(u32::MAX);
-    // If the actor is already at a goal-relevant place (distance 0) but the
-    // goal is unsatisfied here, allow unrestricted travel so the agent can
-    // route to an alternative goal-relevant place.
-    if current_min == 0 {
-        return;
-    }
-    candidates.retain(|c| {
-        let Some(sem) = semantics_table.get(&c.def_id) else {
-            return true;
-        };
-        if sem.op_kind != PlannerOpKind::Travel {
-            return true;
+    let effective_goal_places = if current_min == 0 {
+        let alternatives = goal_places
+            .iter()
+            .copied()
+            .filter(|place| *place != current_place)
+            .collect::<Vec<_>>();
+        if alternatives.is_empty() {
+            return None;
         }
-        let Some(dest) = c.authoritative_targets.first() else {
-            return true;
+        alternatives
+    } else {
+        goal_places.to_vec()
+    };
+    let current_min = snapshot
+        .min_travel_ticks_to_any(current_place, &effective_goal_places)
+        .unwrap_or(u32::MAX);
+    let mut retained = Vec::new();
+    let mut pruned = Vec::new();
+    let mut kept_candidates = Vec::with_capacity(candidates.len());
+
+    for candidate in candidates.drain(..) {
+        let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+            kept_candidates.push(candidate);
+            continue;
         };
-        let dest_min = snapshot
-            .min_travel_ticks_to_any(*dest, goal_places)
+        if semantics.op_kind != PlannerOpKind::Travel {
+            kept_candidates.push(candidate);
+            continue;
+        }
+        let Some(destination) = candidate.authoritative_targets.first().copied() else {
+            kept_candidates.push(candidate);
+            continue;
+        };
+
+        let remaining_travel_ticks = snapshot
+            .min_travel_ticks_to_any(destination, &effective_goal_places)
             .unwrap_or(u32::MAX);
-        dest_min <= current_min
-    });
+        let successor = crate::decision_trace::TravelSuccessorTrace {
+            destination,
+            remaining_travel_ticks,
+        };
+        if remaining_travel_ticks <= current_min {
+            retained.push(successor);
+            kept_candidates.push(candidate);
+        } else {
+            pruned.push(successor);
+        }
+    }
+
+    *candidates = kept_candidates;
+    if retained.is_empty() && pruned.is_empty() {
+        return None;
+    }
+    retained.sort_by_key(|successor| successor.destination);
+    pruned.sort_by_key(|successor| successor.destination);
+    Some(crate::decision_trace::TravelPruningTrace {
+        current_place,
+        current_remaining_travel_ticks: current_min,
+        retained,
+        pruned,
+    })
 }
 
 fn build_successor<'snapshot>(
@@ -288,7 +442,8 @@ fn build_successor<'snapshot>(
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
-    goal_relevant_places: &[EntityId],
+    recipes: &RecipeRegistry,
+    budget: &PlanningBudget,
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     let def = registry.get(candidate.def_id)?;
     let semantics = semantics_table.get(&candidate.def_id)?;
@@ -320,11 +475,7 @@ fn build_successor<'snapshot>(
         &candidate.authoritative_targets,
         effective_payload,
     )?;
-    let estimated_ticks = match duration {
-        ActionDuration::Finite(ticks) => ticks,
-        ActionDuration::Indefinite if semantics.may_appear_mid_plan => return None,
-        ActionDuration::Indefinite => 0,
-    };
+    let estimated_ticks = duration.ticks();
 
     let transition = apply_hypothetical_transition(
         goal,
@@ -347,10 +498,11 @@ fn build_successor<'snapshot>(
         return None;
     }
     let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
+    let combined_places = combined_relevant_places(goal, &transition.state, recipes, budget);
     let heuristic_ticks = compute_heuristic(
         node.state.snapshot(),
         &transition.state,
-        goal_relevant_places,
+        &combined_places.places,
     );
     let mut steps = node.steps.clone();
     steps.push(step);
@@ -413,8 +565,10 @@ fn search_candidates(
             let Some(semantics) = semantics_table.get(&candidate.def_id) else {
                 return true;
             };
-            let passes =
-                goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind);
+            let passes = goal
+                .key
+                .kind
+                .matches_binding(&candidate.authoritative_targets, semantics.op_kind);
             if !passes {
                 let required_target = goal.key.entity.or(goal.key.place);
                 rejections.push(crate::decision_trace::BindingRejection {
@@ -430,7 +584,9 @@ fn search_candidates(
             let Some(semantics) = semantics_table.get(&candidate.def_id) else {
                 return true;
             };
-            goal.key.kind.matches_binding(&candidate.authoritative_targets, semantics.op_kind)
+            goal.key
+                .kind
+                .matches_binding(&candidate.authoritative_targets, semantics.op_kind)
         });
     }
     candidates
@@ -631,33 +787,33 @@ fn terminal_kind(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_successor, compare_search_nodes, prune_travel_away_from_goal, root_node,
-        search_candidate_from_planner, search_candidates, search_candidates_from_affordance,
-        search_plan, FrontierEntry, SearchCandidate, SearchNode,
+        build_successor, combined_relevant_places, compare_search_nodes, compute_heuristic,
+        prune_travel_away_from_goal, root_node, search_candidate_from_planner, search_candidates,
+        search_candidates_from_affordance, search_plan, FrontierEntry, SearchCandidate, SearchNode,
     };
-    use std::cmp::Ordering;
     use crate::goal_model::GoalKindPlannerExt;
     use crate::planner_ops::planner_only_candidates;
     use crate::{
         build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
         build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanTerminalKind,
         PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningBudget,
-        PlanningEntityRef, PlanningSnapshot, PlanningState,
+        PlanningEntityRef, PlanningSnapshot, PlanningState, PlanSearchResult,
     };
+    use std::cmp::Ordering;
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity,
         test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent,
-        BlockedIntentMemory, BlockingFact, BodyCostPerTick, CarryCapacity, CauseRef, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory, DemandObservation,
-        DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-        EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        PerceptionSource, Permille, Place, PrototypePlace, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound,
+        BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, Place, PrototypePlace,
+        Quantity, RecipeId, ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile,
+        TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
@@ -688,6 +844,11 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
+        wounds: BTreeMap<EntityId, Vec<Wound>>,
+        office_data: BTreeMap<EntityId, worldwake_core::OfficeData>,
+        office_holder_beliefs: BTreeMap<EntityId, worldwake_core::InstitutionalBeliefRead<Option<EntityId>>>,
+        consultation_speed_factors: BTreeMap<EntityId, Permille>,
+        record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -814,8 +975,10 @@ mod tests {
         fn is_incapacitated(&self, _entity: EntityId) -> bool {
             false
         }
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
         }
         fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
             self.needs.get(&agent).copied()
@@ -853,10 +1016,14 @@ mod tests {
                 pm(120),
                 pm(35),
                 NonZeroU32::new(6).unwrap(),
+                NonZeroU32::new(10).unwrap(),
             ))
         }
-        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
-            Vec::new()
+        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+            self.consultation_speed_factors.get(&agent).copied()
+        }
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wounds.get(&agent).cloned().unwrap_or_default()
         }
         fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
             self.hostiles.get(&agent).cloned().unwrap_or_default()
@@ -897,6 +1064,21 @@ mod tests {
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
         }
+        fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
+            self.record_data.get(&record).cloned()
+        }
+        fn office_data(&self, office: EntityId) -> Option<worldwake_core::OfficeData> {
+            self.office_data.get(&office).cloned()
+        }
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> worldwake_core::InstitutionalBeliefRead<Option<EntityId>> {
+            self.office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(worldwake_core::InstitutionalBeliefRead::Unknown)
+        }
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
@@ -929,6 +1111,17 @@ mod tests {
 
     fn pm(value: u16) -> Permille {
         Permille::new(value).unwrap()
+    }
+
+    fn wound(severity: u16) -> Wound {
+        Wound {
+            id: WoundId(u64::from(severity)),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+            severity: pm(severity),
+            inflicted_at: Tick(1),
+            bleed_rate_per_tick: pm(0),
+        }
     }
 
     fn sync_all_beliefs(world: &mut World, observer: EntityId, observed_tick: Tick) {
@@ -1181,8 +1374,7 @@ mod tests {
         view.effective_places.insert(bread, town);
         view.entities_at.insert(town, vec![actor, bread]);
         view.controllable.insert((actor, bread));
-        view.direct_possessions
-            .insert(actor, vec![bread]);
+        view.direct_possessions.insert(actor, vec![bread]);
         view.direct_possessors.insert(bread, actor);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
         view.consumable_profiles.insert(
@@ -1203,7 +1395,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1312,7 +1505,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1358,7 +1552,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
 
@@ -1426,7 +1621,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1511,7 +1707,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1581,7 +1778,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1640,7 +1838,8 @@ mod tests {
             &registry,
             &handlers,
             &budget,
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
 
@@ -1691,7 +1890,8 @@ mod tests {
             &registry,
             &handlers,
             &budget,
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
 
@@ -1738,7 +1938,8 @@ mod tests {
                 beam_width: 1,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
         let wide_beam_plan = search_plan(
@@ -1751,7 +1952,8 @@ mod tests {
                 beam_width: 2,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1816,7 +2018,8 @@ mod tests {
                 beam_width: 2,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
         let beam_three_plan = search_plan(
@@ -1829,7 +2032,8 @@ mod tests {
                 beam_width: 3,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1893,7 +2097,8 @@ mod tests {
                 max_node_expansions: 2,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
         let sufficient_budget_plan = search_plan(
@@ -1907,7 +2112,8 @@ mod tests {
                 max_node_expansions: 6,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -1950,7 +2156,8 @@ mod tests {
                 max_plan_depth: 0,
                 ..PlanningBudget::default()
             },
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
 
@@ -2016,7 +2223,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         );
 
@@ -2072,7 +2280,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2124,7 +2333,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2184,7 +2394,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2270,7 +2481,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2358,7 +2570,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2496,7 +2709,8 @@ mod tests {
             heuristic_ticks: 0,
         };
 
-        let initial_candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
+        let initial_candidates =
+            search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
         let pick_up = initial_candidates
             .iter()
             .find(|candidate| {
@@ -2505,8 +2719,16 @@ mod tests {
                     .is_some_and(|def| def.name == "pick_up")
             })
             .expect("authoritative snapshot should expose cargo pick_up");
-        let (terminal, after_pick_up) =
-            build_successor(&goal, &semantics, &registry, &node, pick_up, &[]).unwrap();
+        let (terminal, after_pick_up) = build_successor(
+            &goal,
+            &semantics,
+            &registry,
+            &node,
+            pick_up,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
         assert_eq!(terminal, None);
         assert_eq!(
             after_pick_up.steps[0].targets,
@@ -2514,8 +2736,14 @@ mod tests {
         );
         assert!(!after_pick_up.steps[0].expected_materializations.is_empty());
 
-        let follow_up_candidates =
-            search_candidates(&goal, &after_pick_up, &semantics, &registry, &handlers, None);
+        let follow_up_candidates = search_candidates(
+            &goal,
+            &after_pick_up,
+            &semantics,
+            &registry,
+            &handlers,
+            None,
+        );
         let travel = follow_up_candidates
             .iter()
             .find(|candidate| {
@@ -2525,8 +2753,16 @@ mod tests {
                     && candidate.authoritative_targets == vec![destination]
             })
             .expect("partial cargo successor should expose travel to destination");
-        let (terminal, _) =
-            build_successor(&goal, &semantics, &registry, &after_pick_up, travel, &[]).unwrap();
+        let (terminal, _) = build_successor(
+            &goal,
+            &semantics,
+            &registry,
+            &after_pick_up,
+            travel,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
 
         assert_eq!(terminal, Some(PlanTerminalKind::GoalSatisfied));
     }
@@ -2574,7 +2810,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2625,7 +2862,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2636,6 +2874,68 @@ mod tests {
             PlannerOpKind::Attack | PlannerOpKind::Defend
         ));
         assert_eq!(plan.terminal_kind, PlanTerminalKind::CombatCommitment);
+    }
+
+    #[test]
+    fn build_successor_estimates_defend_ticks_from_combat_profile() {
+        let actor = entity(1);
+        let attacker = entity(2);
+        let town = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, attacker, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(attacker, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(attacker, town);
+        view.entities_at.insert(town, vec![actor, attacker]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.hostiles.insert(actor, vec![attacker]);
+        view.attackers.insert(actor, vec![attacker]);
+
+        let (registry, _handlers) = build_registry();
+        let semantics_table = build_semantics_table(&registry);
+        let defend = registry.iter().find(|def| def.name == "defend").unwrap();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
+            evidence_entities: BTreeSet::from([attacker]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
+        let node = SearchNode {
+            state: PlanningState::new(&snapshot),
+            steps: Vec::new(),
+            total_estimated_ticks: 0,
+            heuristic_ticks: 0,
+        };
+        let candidate = SearchCandidate {
+            def_id: defend.id,
+            authoritative_targets: Vec::new(),
+            planning_targets: Vec::new(),
+            payload_override: None,
+        };
+
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
+
+        assert_eq!(successor.steps.len(), 1);
+        assert_eq!(successor.steps[0].op_kind, PlannerOpKind::Defend);
+        assert_eq!(successor.steps[0].estimated_ticks, 10);
+        assert_eq!(successor.total_estimated_ticks, 10);
     }
 
     #[test]
@@ -2652,8 +2952,16 @@ mod tests {
             planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
             payload_override: None,
         };
-        let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
 
         let step = &successor.steps[0];
         assert_eq!(step.targets, vec![PlanningEntityRef::Authoritative(lot)]);
@@ -2678,8 +2986,16 @@ mod tests {
             planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
             payload_override: None,
         };
-        let (_, successor) =
-            build_successor(&goal, &semantics_table, &registry, &node, &candidate, &[]).unwrap();
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .unwrap();
 
         let candidates = planner_only_candidates(&successor.state, &semantics_table)
             .into_iter()
@@ -2777,7 +3093,8 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2947,7 +3264,8 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -2997,7 +3315,8 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -3051,7 +3370,12 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot, &[]),
+            &root_node(
+                &snapshot,
+                &goal,
+                &RecipeRegistry::new(),
+                &PlanningBudget::default(),
+            ),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -3104,7 +3428,12 @@ mod tests {
 
         let candidates = search_candidates(
             &goal,
-            &root_node(&snapshot, &[]),
+            &root_node(
+                &snapshot,
+                &goal,
+                &RecipeRegistry::new(),
+                &PlanningBudget::default(),
+            ),
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
@@ -3199,7 +3528,8 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             &PlanningBudget::default(),
-            &[],
+            &RecipeRegistry::new(),
+            None,
             None,
         )
         .into_plan()
@@ -3366,8 +3696,8 @@ mod tests {
 
     // ── A* heuristic tests ──────────────────────────────────────────────
 
-    /// Build a 3-place chain: place_a --3--> place_b --5--> place_c
-    /// Actor starts at place_a.
+    /// Build a 3-place chain: `place_a` --3--> `place_b` --5--> `place_c`
+    /// Actor starts at `place_a`.
     fn build_chain_heuristic_view() -> (TestBeliefView, EntityId, EntityId, EntityId, EntityId) {
         let actor = entity(1);
         let place_a = entity(10);
@@ -3384,10 +3714,8 @@ mod tests {
         view.entities_at.insert(place_b, Vec::new());
         view.entities_at.insert(place_c, Vec::new());
         // A --3--> B --5--> C (bidirectional)
-        view.adjacent.insert(
-            place_a,
-            vec![(place_b, NonZeroU32::new(3).unwrap())],
-        );
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(3).unwrap())]);
         view.adjacent.insert(
             place_b,
             vec![
@@ -3395,11 +3723,82 @@ mod tests {
                 (place_c, NonZeroU32::new(5).unwrap()),
             ],
         );
-        view.adjacent.insert(
-            place_c,
-            vec![(place_b, NonZeroU32::new(5).unwrap())],
-        );
+        view.adjacent
+            .insert(place_c, vec![(place_b, NonZeroU32::new(5).unwrap())]);
         (view, actor, place_a, place_b, place_c)
+    }
+
+    fn build_branching_care_view() -> (
+        TestBeliefView,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+    ) {
+        let actor = entity(1);
+        let patient = entity(2);
+        let current_place = entity(10);
+        let patient_place = entity(11);
+        let medicine_place = entity(12);
+        let medicine = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([
+            actor,
+            patient,
+            current_place,
+            patient_place,
+            medicine_place,
+            medicine,
+        ]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(patient, EntityKind::Agent);
+        view.kinds.insert(current_place, EntityKind::Place);
+        view.kinds.insert(patient_place, EntityKind::Place);
+        view.kinds.insert(medicine_place, EntityKind::Place);
+        view.kinds.insert(medicine, EntityKind::ItemLot);
+        view.effective_places.insert(actor, current_place);
+        view.effective_places.insert(patient, patient_place);
+        view.effective_places.insert(medicine, medicine_place);
+        view.entities_at.insert(current_place, vec![actor]);
+        view.entities_at.insert(patient_place, vec![patient]);
+        view.entities_at.insert(medicine_place, vec![medicine]);
+        view.adjacent.insert(
+            current_place,
+            vec![
+                (patient_place, NonZeroU32::new(2).unwrap()),
+                (medicine_place, NonZeroU32::new(2).unwrap()),
+            ],
+        );
+        view.adjacent.insert(
+            patient_place,
+            vec![(current_place, NonZeroU32::new(2).unwrap())],
+        );
+        view.adjacent.insert(
+            medicine_place,
+            vec![(current_place, NonZeroU32::new(2).unwrap())],
+        );
+        view.controllable.insert((actor, medicine));
+        view.lot_commodities
+            .insert(medicine, CommodityKind::Medicine);
+        view.commodity_quantities
+            .insert((medicine, CommodityKind::Medicine), Quantity(1));
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(
+            medicine,
+            LoadUnits(worldwake_core::load_per_unit(CommodityKind::Medicine).0),
+        );
+
+        (
+            view,
+            actor,
+            patient,
+            current_place,
+            patient_place,
+            medicine_place,
+        )
     }
 
     #[test]
@@ -3412,8 +3811,8 @@ mod tests {
             &BTreeSet::from([place_a]),
             3,
         );
-        let node = root_node(&snapshot, &[place_a]);
-        assert_eq!(node.heuristic_ticks, 0);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[place_a]), 0);
     }
 
     #[test]
@@ -3427,8 +3826,8 @@ mod tests {
             3,
         );
         // Actor at place_a, goal at place_c: shortest path is A->B(3)+B->C(5)=8
-        let node = root_node(&snapshot, &[place_c]);
-        assert_eq!(node.heuristic_ticks, 8);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[place_c]), 8);
     }
 
     #[test]
@@ -3442,22 +3841,16 @@ mod tests {
             3,
         );
         // Actor at place_a: B is 3 ticks, C is 8 ticks → min is 3
-        let node = root_node(&snapshot, &[place_b, place_c]);
-        assert_eq!(node.heuristic_ticks, 3);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[place_b, place_c]), 3);
     }
 
     #[test]
     fn heuristic_is_zero_when_goal_relevant_places_empty() {
         let (view, actor, _place_a, _place_b, _place_c) = build_chain_heuristic_view();
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            3,
-        );
-        let node = root_node(&snapshot, &[]);
-        assert_eq!(node.heuristic_ticks, 0);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 3);
+        let state = PlanningState::new(&snapshot);
+        assert_eq!(compute_heuristic(&snapshot, &state, &[]), 0);
     }
 
     #[test]
@@ -3551,7 +3944,7 @@ mod tests {
     ///                     |
     ///                   south(12)
     ///
-    /// Actor starts at hub.  goal_store(14) is adjacent to east(11) at cost 2.
+    /// Actor starts at hub. `goal_store(14)` is adjacent to east(11) at cost 2.
     fn build_hub_pruning_view() -> (
         TestBeliefView,
         EntityId,
@@ -3673,18 +4066,41 @@ mod tests {
             make_travel_candidate(travel_north_id, north),
         ];
 
-        prune_travel_away_from_goal(
+        let pruning = prune_travel_away_from_goal(
             &mut candidates,
             hub,
             &[goal_store],
             &snapshot,
             &semantics_table,
-        );
+        )
+        .expect("deterministic hub pruning should return a structured pruning summary");
 
         // Only travel to east should survive (dest_min=2 < current_min=7).
         // south and north are dead-ends farther from goal.
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].def_id, travel_east_id);
+        assert_eq!(pruning.current_place, hub);
+        assert_eq!(pruning.current_remaining_travel_ticks, 7);
+        assert_eq!(
+            pruning.retained,
+            vec![crate::decision_trace::TravelSuccessorTrace {
+                destination: east,
+                remaining_travel_ticks: 2,
+            }]
+        );
+        assert_eq!(
+            pruning.pruned,
+            vec![
+                crate::decision_trace::TravelSuccessorTrace {
+                    destination: south,
+                    remaining_travel_ticks: 11,
+                },
+                crate::decision_trace::TravelSuccessorTrace {
+                    destination: north,
+                    remaining_travel_ticks: 10,
+                },
+            ]
+        );
     }
 
     #[test]
@@ -3710,15 +4126,13 @@ mod tests {
             make_travel_candidate(travel_south_id, south),
         ];
 
-        prune_travel_away_from_goal(
-            &mut candidates,
-            hub,
-            &[],
-            &snapshot,
-            &semantics_table,
-        );
+        prune_travel_away_from_goal(&mut candidates, hub, &[], &snapshot, &semantics_table);
 
-        assert_eq!(candidates.len(), 2, "no candidates should be pruned when goal_places is empty");
+        assert_eq!(
+            candidates.len(),
+            2,
+            "no candidates should be pruned when goal_places is empty"
+        );
     }
 
     #[test]
@@ -3761,7 +4175,11 @@ mod tests {
             &semantics_table,
         );
 
-        assert_eq!(candidates.len(), 2, "non-travel candidates must never be pruned");
+        assert_eq!(
+            candidates.len(),
+            2,
+            "non-travel candidates must never be pruned"
+        );
     }
 
     #[test]
@@ -3792,16 +4210,16 @@ mod tests {
             3,
         );
 
-        let travel_a_id = ActionDefId(100);
-        let travel_c_id = ActionDefId(101);
+        let retreat_travel_id = ActionDefId(100);
+        let goalward_travel_id = ActionDefId(101);
 
         let mut semantics_table = BTreeMap::new();
-        semantics_table.insert(travel_a_id, travel_semantics());
-        semantics_table.insert(travel_c_id, travel_semantics());
+        semantics_table.insert(retreat_travel_id, travel_semantics());
+        semantics_table.insert(goalward_travel_id, travel_semantics());
 
         let mut candidates = vec![
-            make_travel_candidate(travel_a_id, place_a),
-            make_travel_candidate(travel_c_id, place_c),
+            make_travel_candidate(retreat_travel_id, place_a),
+            make_travel_candidate(goalward_travel_id, place_c),
         ];
 
         prune_travel_away_from_goal(
@@ -3814,7 +4232,7 @@ mod tests {
 
         // Travel to C is retained (closer), travel to A is pruned (farther).
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].def_id, travel_c_id);
+        assert_eq!(candidates[0].def_id, goalward_travel_id);
     }
 
     #[test]
@@ -3851,10 +4269,10 @@ mod tests {
     }
 
     #[test]
-    fn prune_travel_skips_when_actor_at_goal_relevant_place() {
-        // When the actor is already at a goal-relevant place but the goal is
-        // unsatisfied (e.g. facility blocked), pruning must be skipped so the
-        // agent can leave for an alternative goal-relevant place.
+    fn prune_travel_at_goal_place_still_prunes_against_alternative_places() {
+        // When the actor is already at one goal-relevant place but needs to
+        // leave for another, pruning should keep only routes that progress
+        // toward the alternative relevant place.
         let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
         let snapshot = build_planning_snapshot(
             &view,
@@ -3879,20 +4297,203 @@ mod tests {
             make_travel_candidate(travel_north_id, north),
         ];
 
-        // Actor is at hub, and hub IS a goal-relevant place → current_min == 0
-        // → pruning is skipped, all candidates survive.
-        prune_travel_away_from_goal(
+        let pruning = prune_travel_away_from_goal(
             &mut candidates,
             hub,
             &[hub, goal_store],
             &snapshot,
             &semantics_table,
-        );
+        )
+        .expect("alternative-place pruning should produce a trace");
 
         assert_eq!(
             candidates.len(),
-            3,
-            "all travel candidates must survive when actor is at a goal-relevant place"
+            1,
+            "only the route that progresses toward the alternative relevant place should survive"
+        );
+        assert_eq!(candidates[0].def_id, travel_east_id);
+        assert_eq!(pruning.current_place, hub);
+        assert_eq!(pruning.current_remaining_travel_ticks, 7);
+    }
+
+    #[test]
+    fn combined_places_include_remote_medicine_lot_for_treat_wounds() {
+        let (view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+
+        let places = combined_relevant_places(
+            &goal,
+            &state,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        );
+
+        assert!(places.places.contains(&patient_place));
+        assert!(places.places.contains(&medicine_place));
+        assert_eq!(places.places.len(), 2);
+        assert_eq!(places.prerequisite_places_count, 1);
+    }
+
+    #[test]
+    fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
+        let (view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let node = SearchNode {
+            state: PlanningState::new(&snapshot).move_actor_to(medicine_place),
+            steps: Vec::new(),
+            total_estimated_ticks: 0,
+            heuristic_ticks: 0,
+        };
+
+        let pick_up = search_candidates(&goal, &node, &semantics, &registry, &handlers, None)
+            .into_iter()
+            .find(|candidate| {
+                registry
+                    .get(candidate.def_id)
+                    .is_some_and(|def| def.name == "pick_up")
+            })
+            .expect("moved actor should expose a medicine pick_up candidate");
+
+        let (_, successor) = build_successor(
+            &goal,
+            &semantics,
+            &registry,
+            &node,
+            &pick_up,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        )
+        .expect("hypothetical pick_up should build a successor");
+
+        let places = combined_relevant_places(
+            &goal,
+            &successor.state,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        );
+
+        assert_eq!(places.places, vec![patient_place]);
+        assert_eq!(places.prerequisite_places_count, 0);
+    }
+
+    #[test]
+    fn prune_travel_retains_remote_medicine_branch_for_treat_wounds() {
+        let (view, actor, patient, current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let goal_places = combined_relevant_places(
+            &goal,
+            &state,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        );
+
+        let travel_patient_id = ActionDefId(500);
+        let travel_medicine_id = ActionDefId(501);
+        let mut semantics_table = BTreeMap::new();
+        semantics_table.insert(travel_patient_id, travel_semantics());
+        semantics_table.insert(travel_medicine_id, travel_semantics());
+
+        let mut candidates = vec![
+            make_travel_candidate(travel_patient_id, patient_place),
+            make_travel_candidate(travel_medicine_id, medicine_place),
+        ];
+
+        prune_travel_away_from_goal(
+            &mut candidates,
+            current_place,
+            &goal_places.places,
+            &snapshot,
+            &semantics_table,
+        );
+
+        assert_eq!(candidates.len(), 2);
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.authoritative_targets == vec![medicine_place]),
+            "remote medicine travel should remain available for TreatWounds"
+        );
+    }
+
+    #[test]
+    fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
+        let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        view.effective_places.insert(actor, medicine_place);
+        view.entities_at
+            .insert(medicine_place, vec![actor, entity(20)]);
+        view.entities_at.insert(entity(10), Vec::new());
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([patient_place, medicine_place]),
+            2,
+        );
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let node = root_node(
+            &snapshot,
+            &goal,
+            &RecipeRegistry::new(),
+            &PlanningBudget::default(),
+        );
+
+        let candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
+
+        assert!(
+            candidates.iter().any(|candidate| {
+                registry
+                    .get(candidate.def_id)
+                    .is_some_and(|def| def.name == "pick_up")
+            }),
+            "TreatWounds should consider pick_up when remote medicine is co-located"
         );
     }
 
@@ -3945,8 +4546,9 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
+            None,
         );
 
         let plan = result.into_plan().expect("search should find a loot plan");
@@ -3957,15 +4559,17 @@ mod tests {
             .find(|s| s.op_kind == PlannerOpKind::Loot)
             .expect("plan should contain a Loot step");
         assert!(
-            loot_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_x)
-            ),
+            loot_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_x)),
             "Loot step must target corpse X"
         );
         assert!(
-            !loot_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_y)
-            ),
+            !loot_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == corpse_y)),
             "Loot step must NOT target corpse Y"
         );
         assert!(
@@ -3973,7 +4577,9 @@ mod tests {
             "wrong-target loot affordance for corpse Y should be rejected"
         );
         assert!(
-            rejections.iter().any(|r| r.rejected_targets.contains(&corpse_y)),
+            rejections
+                .iter()
+                .any(|r| r.rejected_targets.contains(&corpse_y)),
             "binding rejections must include corpse Y"
         );
     }
@@ -4021,26 +4627,31 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
+            None,
         );
 
-        let plan = result.into_plan().expect("search should find an attack plan");
+        let plan = result
+            .into_plan()
+            .expect("search should find an attack plan");
         let attack_step = plan
             .steps
             .iter()
             .find(|s| s.op_kind == PlannerOpKind::Attack)
             .expect("plan should contain an Attack step");
         assert!(
-            attack_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_a)
-            ),
+            attack_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_a)),
             "Attack step must target hostile A"
         );
         assert!(
-            !attack_step.targets.iter().any(
-                |t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_b)
-            ),
+            !attack_step
+                .targets
+                .iter()
+                .any(|t| matches!(t, PlanningEntityRef::Authoritative(id) if *id == hostile_b)),
             "Attack step must NOT target hostile B"
         );
         assert!(
@@ -4074,8 +4685,13 @@ mod tests {
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::from([town]),
         };
-        let snapshot =
-            build_planning_snapshot(&view, actor, &goal.evidence_entities, &goal.evidence_places, 0);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            0,
+        );
         let mut rejections = Vec::new();
         let result = search_plan(
             &snapshot,
@@ -4084,8 +4700,9 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
+            None,
         );
 
         let plan = result.into_plan().expect("search should find a sleep plan");
@@ -4142,8 +4759,9 @@ mod tests {
             &registry,
             &handlers,
             &PlanningBudget::default(),
-            &[town],
+            &RecipeRegistry::new(),
             Some(&mut rejections),
+            None,
         );
 
         // Verify BindingRejection fields are populated correctly.
@@ -4168,6 +4786,270 @@ mod tests {
             Some(corpse_x),
             "required_target should be the goal's canonical corpse"
         );
+    }
+
+    /// With the deferred `ProgressBarrier` mechanism, a `GoalSatisfied` plan at
+    /// depth 2 (`Travel` + `pick_up`) is preferred over a `ProgressBarrier` (`Trade`)
+    /// at depth 1.  Before the deferral change, the search would greedily
+    /// return the `Trade` `ProgressBarrier` without exploring deeper.
+    #[test]
+    fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+        let market = entity(11);
+        let bread = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town, market, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(market, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.effective_places.insert(bread, market);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.entities_at.insert(market, vec![bread]);
+        view.adjacent
+            .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(market, vec![(town, NonZeroU32::new(2).unwrap())]);
+        // Actor has coins for Trade and carry capacity for pick_up.
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.carry_capacities.insert(actor, LoadUnits(4));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(bread, LoadUnits(1));
+        // Seller has bread merchandise.
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(town),
+            },
+        );
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        // Ground bread lot at market.
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
+        // Needs/thresholds for the acquire goal context.
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller, bread]),
+            evidence_places: BTreeSet::from([town, market]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            None,
+        )
+        .into_plan()
+        .expect("should find a plan");
+
+        // The search should prefer GoalSatisfied (Travel + pick_up) over the
+        // deferred Trade ProgressBarrier.
+        assert_eq!(
+            plan.terminal_kind,
+            PlanTerminalKind::GoalSatisfied,
+            "deferred barrier should yield to GoalSatisfied at deeper level"
+        );
+        assert!(
+            plan.steps.len() >= 2,
+            "plan should include Travel + pick_up"
+        );
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+        assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
+    }
+
+    /// When only a `ProgressBarrier` exists and no `GoalSatisfied` is reachable,
+    /// the deferred barrier is returned as a fallback after the frontier is
+    /// exhausted.
+    #[test]
+    fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(town),
+            },
+        );
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            None,
+        )
+        .into_plan()
+        .expect("deferred barrier should be returned as fallback");
+
+        assert_eq!(
+            plan.terminal_kind,
+            PlanTerminalKind::ProgressBarrier,
+            "barrier fallback should be returned after frontier exhaustion"
+        );
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
+    }
+
+    /// When the node expansion budget is exhausted but a `ProgressBarrier` was
+    /// found earlier, the barrier plan is returned instead of `BudgetExhausted`.
+    #[test]
+    fn search_returns_deferred_barrier_on_budget_exhaustion() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let town = entity(10);
+        let market = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, town, market]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(market, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(seller, town);
+        view.entities_at.insert(town, vec![actor, seller]);
+        view.entities_at.insert(market, vec![]);
+        view.adjacent
+            .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(market, vec![(town, NonZeroU32::new(2).unwrap())]);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Coin), Quantity(3));
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(town),
+            },
+        );
+        view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(2));
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            1,
+        );
+
+        // Tight budget: only 2 expansions.  Expansion 1 finds the Trade
+        // ProgressBarrier (deferred).  Expansion 2 exhausts the budget.
+        let tight_budget = PlanningBudget {
+            max_node_expansions: 2,
+            ..PlanningBudget::default()
+        };
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &tight_budget,
+            &RecipeRegistry::new(),
+            None,
+            None,
+        );
+
+        // Should return the deferred barrier, not BudgetExhausted.
+        let plan = result
+            .into_plan()
+            .expect("deferred barrier should be returned on budget exhaustion");
+        assert_eq!(
+            plan.terminal_kind,
+            PlanTerminalKind::ProgressBarrier,
+            "barrier found before budget exhaustion should be returned"
+        );
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
     }
 
     #[test]
@@ -4216,12 +5098,428 @@ mod tests {
         // an exact-bound goal like LootCorpse.
         let goal = GoalKind::LootCorpse { corpse: corpse_x };
         for candidate in &planner_candidates {
-            for (_, semantics) in &semantics_table {
+            for semantics in semantics_table.values() {
                 assert!(
                     goal.matches_binding(&candidate.authoritative_targets, semantics.op_kind),
                     "empty authoritative_targets must bypass binding for any op kind"
                 );
             }
         }
+    }
+
+    // ── Expansion summary trace tests ──────────────────────────────
+
+    #[test]
+    fn search_expansion_summaries_collected_when_tracing_enabled() {
+        // Simple 1-step consume plan: actor has bread locally.
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.controllable.insert((actor, bread));
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let mut summaries = Vec::new();
+        let result = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            Some(&mut summaries),
+        );
+
+        assert!(result.is_found(), "plan should be found");
+        assert!(
+            !summaries.is_empty(),
+            "expansion summaries should be non-empty when tracing is enabled"
+        );
+        let first = &summaries[0];
+        // Depth should start at 0.
+        assert_eq!(first.depth, 0);
+        assert_eq!(first.combined_places_count, 0);
+        assert_eq!(first.prerequisite_places_count, 0);
+        // At least one candidate was generated.
+        assert!(first.candidates_generated > 0);
+    }
+
+    #[test]
+    fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds() {
+        let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
+            build_branching_care_view();
+        view.wounds.insert(patient, vec![wound(400)]);
+        let (registry, handlers) = build_registry();
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::TreatWounds { patient }),
+            evidence_entities: BTreeSet::from([patient]),
+            evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        };
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            2,
+        );
+
+        let mut summaries = Vec::new();
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            Some(&mut summaries),
+        );
+
+        assert!(
+            result.is_found(),
+            "planner should find a remote medicine plan"
+        );
+        let first = summaries
+            .first()
+            .expect("tracing should record at least one expansion summary");
+        assert_eq!(first.depth, 0);
+        assert_eq!(first.combined_places_count, 2);
+        assert_eq!(first.prerequisite_places_count, 1);
+        let guidance = first
+            .prerequisite_guidance
+            .as_ref()
+            .expect("root expansion should preserve prerequisite guidance members");
+        assert_eq!(guidance.goal_relevant_places, vec![patient_place]);
+        assert_eq!(guidance.prerequisite_places, vec![medicine_place]);
+        assert!(guidance.exclusions.is_empty());
+        assert!(
+            first.travel_pruning.is_some(),
+            "root expansion should record travel pruning context"
+        );
+    }
+
+    #[test]
+    fn search_expansion_summaries_empty_when_tracing_disabled() {
+        // Same setup as above but with tracing disabled (None).
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.controllable.insert((actor, bread));
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let result = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            None, // tracing disabled
+        );
+
+        assert!(result.is_found(), "plan should be found");
+        // No summaries collector was passed — zero-cost path.
+    }
+
+    #[test]
+    fn beam_truncation_visible_in_expansion_summary() {
+        // Setup: actor at town with 2 adjacent places (dead_end, pantry).
+        // beam_width=1 forces truncation of one non-terminal successor.
+        let actor = entity(1);
+        let town = entity(10);
+        let dead_end = entity(11);
+        let pantry = entity(12);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        let mut pantry_entities = Vec::new();
+        view.alive.extend([actor, town, dead_end, pantry]);
+        insert_hungry_actor(&mut view, actor);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(dead_end, EntityKind::Place);
+        view.kinds.insert(pantry, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(dead_end, Vec::new());
+        insert_bread_lot(&mut view, actor, bread, pantry, &mut pantry_entities);
+        view.entities_at.insert(pantry, pantry_entities);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.adjacent.insert(
+            town,
+            vec![
+                (dead_end, NonZeroU32::new(1).unwrap()),
+                (pantry, NonZeroU32::new(3).unwrap()),
+            ],
+        );
+
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let mut summaries = Vec::new();
+        let _result = search_plan(
+            &snapshot,
+            &consume_goal(CommodityKind::Bread),
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget {
+                beam_width: 1,
+                ..PlanningBudget::default()
+            },
+            &RecipeRegistry::new(),
+            None,
+            Some(&mut summaries),
+        );
+
+        // The first expansion (depth 0) should show beam truncation:
+        // at least 2 travel candidates before beam, truncated to 1.
+        assert!(
+            !summaries.is_empty(),
+            "should have at least one expansion summary"
+        );
+        let first = &summaries[0];
+        assert_eq!(first.depth, 0);
+        assert!(
+            first.non_terminal_before_beam > first.non_terminal_after_beam,
+            "beam truncation should be visible: before={} after={}",
+            first.non_terminal_before_beam,
+            first.non_terminal_after_beam,
+        );
+        assert_eq!(
+            first.non_terminal_after_beam, 1,
+            "beam_width=1 should leave exactly 1 non-terminal successor"
+        );
+    }
+
+    #[test]
+    fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belief_unknown() {
+        let actor = entity(1);
+        let candidate = entity(2);
+        let office = entity(3);
+        let town = entity(10);
+        let archive = entity(11);
+        let hall = entity(12);
+        let record = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, candidate, office, record, town, archive, hall]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(candidate, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(record, EntityKind::Record);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(archive, EntityKind::Place);
+        view.kinds.insert(hall, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(candidate, hall);
+        view.effective_places.insert(office, hall);
+        view.effective_places.insert(record, archive);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(archive, vec![record]);
+        view.entities_at.insert(hall, vec![candidate, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.consultation_speed_factors
+            .insert(actor, Permille::new(500).unwrap());
+        view.office_data.insert(
+            office,
+            worldwake_core::OfficeData {
+                title: "Steward".to_string(),
+                jurisdiction: hall,
+                succession_law: worldwake_core::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: Some(Tick(2)),
+            },
+        );
+        view.record_data.insert(
+            record,
+            worldwake_core::RecordData {
+                record_kind: worldwake_core::RecordKind::OfficeRegister,
+                home_place: archive,
+                issuer: actor,
+                consultation_ticks: 4,
+                max_entries_per_consult: 2,
+                entries: vec![worldwake_core::InstitutionalRecordEntry {
+                    entry_id: worldwake_core::RecordEntryId(0),
+                    claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(2),
+                    },
+                    recorded_tick: Tick(2),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            },
+        );
+        view.adjacent.insert(
+            town,
+            vec![(archive, NonZeroU32::new(1).unwrap())],
+        );
+        view.adjacent.insert(
+            archive,
+            vec![
+                (town, NonZeroU32::new(1).unwrap()),
+                (hall, NonZeroU32::new(1).unwrap()),
+            ],
+        );
+        view.adjacent
+            .insert(hall, vec![(archive, NonZeroU32::new(1).unwrap())]);
+
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([candidate, office, record]),
+            &BTreeSet::from([town, archive, hall]),
+            2,
+        );
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
+            evidence_entities: BTreeSet::from([candidate, office, record]),
+            evidence_places: BTreeSet::from([archive, hall]),
+        };
+
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &semantics,
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            None,
+        );
+
+        let plan = match result {
+            PlanSearchResult::Found(plan) => plan,
+            other => panic!("expected plan, got {other:?}"),
+        };
+        let op_kinds = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+        assert_eq!(
+            op_kinds,
+            vec![
+                PlannerOpKind::Travel,
+                PlannerOpKind::ConsultRecord,
+                PlannerOpKind::Travel,
+                PlannerOpKind::DeclareSupport,
+            ]
+        );
+    }
+
+    #[test]
+    fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_certain() {
+        let actor = entity(1);
+        let candidate = entity(2);
+        let office = entity(3);
+        let town = entity(10);
+        let hall = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, candidate, office, town, hall]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(candidate, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(hall, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(candidate, hall);
+        view.effective_places.insert(office, hall);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(hall, vec![candidate, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.office_holder_beliefs.insert(
+            office,
+            worldwake_core::InstitutionalBeliefRead::Certain(None),
+        );
+        view.office_data.insert(
+            office,
+            worldwake_core::OfficeData {
+                title: "Steward".to_string(),
+                jurisdiction: hall,
+                succession_law: worldwake_core::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: Some(Tick(2)),
+            },
+        );
+        view.adjacent
+            .insert(town, vec![(hall, NonZeroU32::new(1).unwrap())]);
+        view.adjacent
+            .insert(hall, vec![(town, NonZeroU32::new(1).unwrap())]);
+
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([candidate, office]),
+            &BTreeSet::from([town, hall]),
+            1,
+        );
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
+            evidence_entities: BTreeSet::from([candidate, office]),
+            evidence_places: BTreeSet::from([hall]),
+        };
+
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &semantics,
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            None,
+        );
+
+        let plan = match result {
+            PlanSearchResult::Found(plan) => plan,
+            other => panic!("expected plan, got {other:?}"),
+        };
+        assert!(
+            plan.steps
+                .iter()
+                .all(|step| step.op_kind != PlannerOpKind::ConsultRecord)
+        );
     }
 }

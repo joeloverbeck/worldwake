@@ -4,8 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     load_per_unit, ActionDefId, BelievedEntityState, CombatProfile, CommodityKind,
     DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-    InTransitOnEdge, LoadUnits, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
-    ResourceSource, TellProfile, TickRange, TradeDispositionProfile, UniqueItemKind,
+    InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile, Permille, PlaceTag,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey,
+    TellProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
     WorkstationTag, Wound,
 };
 use worldwake_sim::{
@@ -45,6 +46,10 @@ pub struct PlanningState<'snapshot> {
     needs_overrides: BTreeMap<EntityId, HomeostaticNeeds>,
     pain_overrides: BTreeMap<EntityId, Permille>,
     support_declaration_overrides: BTreeMap<(EntityId, EntityId), Option<EntityId>>,
+    office_holder_belief_overrides:
+        BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+    support_declaration_belief_overrides:
+        BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
     facility_queue_membership_overrides: BTreeMap<EntityId, Option<HypotheticalQueueJoin>>,
     facility_grant_overrides: BTreeMap<EntityId, Option<GrantedFacilityUse>>,
     hypothetical_registry: BTreeMap<HypotheticalEntityId, HypotheticalEntityMeta>,
@@ -66,6 +71,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             needs_overrides: BTreeMap::new(),
             pain_overrides: BTreeMap::new(),
             support_declaration_overrides: BTreeMap::new(),
+            office_holder_belief_overrides: BTreeMap::new(),
+            support_declaration_belief_overrides: BTreeMap::new(),
             facility_queue_membership_overrides: BTreeMap::new(),
             facility_grant_overrides: BTreeMap::new(),
             hypothetical_registry: BTreeMap::new(),
@@ -112,6 +119,95 @@ impl<'snapshot> PlanningState<'snapshot> {
         self
     }
 
+    #[must_use]
+    pub fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        self.office_holder_belief_overrides
+            .get(&office)
+            .cloned()
+            .unwrap_or_else(|| self.snapshot.believed_office_holder(office))
+    }
+
+    #[must_use]
+    pub fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        self.support_declaration_belief_overrides
+            .get(&(office, supporter))
+            .cloned()
+            .unwrap_or_else(|| self.snapshot.believed_support_declaration(office, supporter))
+    }
+
+    #[must_use]
+    pub fn effective_support_declaration(
+        &self,
+        supporter: EntityId,
+        office: EntityId,
+    ) -> Option<EntityId> {
+        self.support_declaration_overrides
+            .get(&(supporter, office))
+            .copied()
+            .flatten()
+            .or_else(|| {
+                self.snapshot
+                    .base_support_declarations_for_office(office)
+                    .iter()
+                    .find(|(base_supporter, _)| *base_supporter == supporter)
+                    .map(|(_, candidate)| *candidate)
+            })
+    }
+
+    #[must_use]
+    pub fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+        let mut combined: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>> = self
+            .snapshot
+            .believed_support_declarations_for_office(office)
+            .iter()
+            .map(|(supporter, read)| (*supporter, read.clone()))
+            .collect();
+
+        for (&(override_office, supporter), read) in &self.support_declaration_belief_overrides {
+            if override_office == office {
+                combined.insert(supporter, read.clone());
+            }
+        }
+
+        combined.into_iter().collect()
+    }
+
+    pub fn override_office_holder_belief(
+        &mut self,
+        office: EntityId,
+        value: InstitutionalBeliefRead<Option<EntityId>>,
+    ) {
+        self.office_holder_belief_overrides.insert(office, value);
+    }
+
+    pub fn override_support_declaration_belief(
+        &mut self,
+        office: EntityId,
+        supporter: EntityId,
+        value: InstitutionalBeliefRead<Option<EntityId>>,
+    ) {
+        self.support_declaration_belief_overrides
+            .insert((office, supporter), value);
+    }
+
+    #[must_use]
+    pub fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        self.snapshot
+            .entities
+            .get(&record)
+            .and_then(|snapshot| snapshot.record_data.clone())
+    }
+
     /// Count hypothetical support declarations for `candidate` at `office`,
     /// combining base snapshot declarations with planning overrides.
     #[must_use]
@@ -124,8 +220,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             let effective_candidate =
                 match self.support_declaration_overrides.get(&(supporter, office)) {
                     Some(Some(c)) => Some(*c),    // overridden to support c
-                    Some(None) => None,            // support withdrawn
-                    None => Some(base_candidate),  // no override, use base
+                    Some(None) => None,           // support withdrawn
+                    None => Some(base_candidate), // no override, use base
                 };
             if effective_candidate == Some(candidate) {
                 count += 1;
@@ -435,23 +531,21 @@ impl<'snapshot> PlanningState<'snapshot> {
         if self.removed_entities.contains(&entity) {
             return None;
         }
+        if self.entity_kind_ref(entity) == Some(EntityKind::ItemLot) {
+            let commodity = self.item_lot_commodity_ref(entity)?;
+            let quantity = self.commodity_quantity_ref(entity, commodity);
+            return quantity
+                .0
+                .checked_mul(load_per_unit(commodity).0)
+                .map(LoadUnits);
+        }
         match entity {
             PlanningEntityRef::Authoritative(entity) => self
                 .snapshot
                 .entities
                 .get(&entity)
                 .map(|snapshot| snapshot.intrinsic_load),
-            PlanningEntityRef::Hypothetical(_) => {
-                if self.entity_kind_ref(entity) != Some(EntityKind::ItemLot) {
-                    return Some(LoadUnits(0));
-                }
-                let commodity = self.item_lot_commodity_ref(entity)?;
-                let quantity = self.commodity_quantity_ref(entity, commodity);
-                quantity
-                    .0
-                    .checked_mul(load_per_unit(commodity).0)
-                    .map(LoadUnits)
-            }
+            PlanningEntityRef::Hypothetical(_) => Some(LoadUnits(0)),
         }
     }
 
@@ -781,9 +875,23 @@ impl PlanningState<'_> {
             .copied()
             .flatten()
     }
+
+    pub(crate) fn test_support_belief_override(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> Option<InstitutionalBeliefRead<Option<EntityId>>> {
+        self.support_declaration_belief_overrides
+            .get(&(office, supporter))
+            .cloned()
+    }
 }
 
 impl RuntimeBeliefView for PlanningState<'_> {
+    fn current_tick(&self) -> worldwake_core::Tick {
+        self.snapshot.current_tick
+    }
+
     fn is_alive(&self, entity: EntityId) -> bool {
         !self
             .removed_entities
@@ -1144,6 +1252,74 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .flatten()
     }
 
+    fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .actor_told_beliefs
+            .iter()
+            .map(|(key, memory)| (*key, memory.clone()))
+            .collect()
+    }
+
+    fn told_belief_memory(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<ToldBeliefMemory> {
+        if actor != self.snapshot.actor() {
+            return None;
+        }
+
+        let profile = self.tell_profile(actor)?;
+        self.snapshot
+            .actor_told_beliefs
+            .get(&TellMemoryKey {
+                counterparty,
+                subject,
+            })
+            .filter(|memory| {
+                self.snapshot
+                    .current_tick
+                    .0
+                    .saturating_sub(memory.told_tick.0)
+                    <= profile.conversation_memory_retention_ticks
+            })
+            .cloned()
+    }
+
+    fn recipient_knowledge_status(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<RecipientKnowledgeStatus> {
+        if actor != self.snapshot.actor() {
+            return None;
+        }
+
+        let current_belief = self.snapshot.actor_known_entity_beliefs.get(&subject)?;
+        let key = TellMemoryKey {
+            counterparty,
+            subject,
+        };
+        self.tell_profile(actor)?;
+        let remembered = self.told_belief_memory(actor, counterparty, subject);
+
+        Some(match remembered.as_ref() {
+            Some(memory) => {
+                worldwake_core::recipient_knowledge_status(current_belief, Some(memory))
+            }
+            None if self.snapshot.actor_told_beliefs.contains_key(&key) => {
+                RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
+            }
+            None => RecipientKnowledgeStatus::UnknownToSpeaker,
+        })
+    }
+
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         self.snapshot
             .entities
@@ -1177,6 +1353,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     .visible_hostiles
                     .iter()
                     .copied()
+                    .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
                     .filter(|entity| {
                         !self
                             .removed_entities
@@ -1203,6 +1380,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     .hostile_targets
                     .iter()
                     .copied()
+                    .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
                     .filter(|entity| {
                         !self
                             .removed_entities
@@ -1229,6 +1407,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     .current_attackers
                     .iter()
                     .copied()
+                    .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
                     .filter(|entity| {
                         !self
                             .removed_entities
@@ -1295,16 +1474,30 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .unwrap_or_default()
     }
 
-    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-        if supporter != self.snapshot.actor() {
-            return None;
-        }
+    fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        PlanningState::record_data(self, record)
+    }
 
-        self.support_declaration_overrides
-            .get(&(supporter, office))
-            .copied()
-            .flatten()
-            .or_else(|| self.snapshot.actor_support_declarations.get(&office).copied())
+    fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        PlanningState::believed_office_holder(self, office)
+    }
+
+    fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        PlanningState::believed_support_declaration(self, office, supporter)
+    }
+
+    fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+        PlanningState::believed_support_declarations_for_office(self, office)
     }
 
     fn merchandise_profile(&self, agent: EntityId) -> Option<worldwake_core::MerchandiseProfile> {
@@ -1312,6 +1505,11 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&agent)
             .and_then(|snapshot| snapshot.merchandise_profile.clone())
+    }
+
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        (agent == self.snapshot.actor()).then_some(self.snapshot.actor_consultation_speed_factor)
+            .flatten()
     }
 
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
@@ -1362,9 +1560,11 @@ mod tests {
         ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
+        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -1373,8 +1573,8 @@ mod tests {
         Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
     };
 
-    #[derive(Default)]
     struct StubBeliefView {
+        current_tick: Tick,
         alive: BTreeMap<EntityId, bool>,
         kinds: BTreeMap<EntityId, EntityKind>,
         effective_places: BTreeMap<EntityId, EntityId>,
@@ -1395,18 +1595,68 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         reservations: BTreeMap<EntityId, Vec<TickRange>>,
         durations: BTreeMap<(EntityId, ActionDefId), ActionDuration>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
+        record_data: BTreeMap<EntityId, RecordData>,
+        consultation_speed_factors: BTreeMap<EntityId, Permille>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         courages: BTreeMap<EntityId, Permille>,
-        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
+        office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+        support_declaration_beliefs:
+            BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
+    }
+
+    impl Default for StubBeliefView {
+        fn default() -> Self {
+            Self {
+                current_tick: Tick(0),
+                alive: BTreeMap::new(),
+                kinds: BTreeMap::new(),
+                effective_places: BTreeMap::new(),
+                entities_at: BTreeMap::new(),
+                beliefs: BTreeMap::new(),
+                direct_possessions: BTreeMap::new(),
+                direct_possessors: BTreeMap::new(),
+                direct_containers: BTreeMap::new(),
+                adjacent: BTreeMap::new(),
+                item_lot_commodities: BTreeMap::new(),
+                consumable_profiles: BTreeMap::new(),
+                commodity_quantities: BTreeMap::new(),
+                carry_capacities: BTreeMap::new(),
+                entity_loads: BTreeMap::new(),
+                resource_sources: BTreeMap::new(),
+                needs: BTreeMap::new(),
+                thresholds: BTreeMap::new(),
+                demand_memory: BTreeMap::new(),
+                merchandise_profiles: BTreeMap::new(),
+                tell_profiles: BTreeMap::new(),
+                told_beliefs: BTreeMap::new(),
+                reservations: BTreeMap::new(),
+                durations: BTreeMap::new(),
+                wounds: BTreeMap::new(),
+                hostiles: BTreeMap::new(),
+                attackers: BTreeMap::new(),
+                record_data: BTreeMap::new(),
+                consultation_speed_factors: BTreeMap::new(),
+                facility_queue_positions: BTreeMap::new(),
+                facility_grants: BTreeMap::new(),
+                courages: BTreeMap::new(),
+                office_holder_beliefs: BTreeMap::new(),
+                support_declaration_beliefs: BTreeMap::new(),
+            }
+        }
     }
 
     impl RuntimeBeliefView for StubBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
@@ -1616,6 +1866,10 @@ mod tests {
             self.tell_profiles.get(&agent).copied()
         }
 
+        fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+            self.told_beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
@@ -1624,11 +1878,41 @@ mod tests {
             self.courages.get(&agent).copied()
         }
 
-        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-            self.support_declarations
+        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+            self.consultation_speed_factors.get(&agent).copied()
+        }
+
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.office_holder_beliefs
                 .get(&office)
                 .cloned()
-                .unwrap_or_default()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
+
+        fn believed_support_declaration(
+            &self,
+            office: EntityId,
+            supporter: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.support_declaration_beliefs
+                .get(&(office, supporter))
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
+
+        fn believed_support_declarations_for_office(
+            &self,
+            office: EntityId,
+        ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+            self.support_declaration_beliefs
+                .iter()
+                .filter_map(|(&(belief_office, supporter), read)| {
+                    (belief_office == office).then_some((supporter, read.clone()))
+                })
+                .collect()
         }
 
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
@@ -1679,6 +1963,10 @@ mod tests {
 
         fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
             self.demand_memory.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn record_data(&self, record: EntityId) -> Option<RecordData> {
+            self.record_data.get(&record).cloned()
         }
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
@@ -1739,7 +2027,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn noop_tick(
         _def: &ActionDef,
-        _instance: &worldwake_sim::ActionInstance,
+        _instance: &mut worldwake_sim::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -2144,6 +2432,7 @@ mod tests {
                     resource_source: None,
                     alive: true,
                     wounds: Vec::new(),
+                    last_known_courage: None,
                     observed_tick: Tick(4),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -2155,6 +2444,7 @@ mod tests {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
                 acceptance_fidelity: pm(650),
+                ..TellProfile::default()
             },
         );
 
@@ -2179,6 +2469,71 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(RuntimeBeliefView::tell_profile(&state, actor), None);
+    }
+
+    #[test]
+    fn planning_state_preserves_actor_conversation_memory_from_snapshot() {
+        let (base_view, actor, town, _field, bread) = test_view();
+        let listener = entity(99);
+        let mut view = StubBeliefView {
+            current_tick: Tick(8),
+            ..base_view
+        };
+        view.beliefs.insert(
+            actor,
+            vec![(
+                bread,
+                BelievedEntityState {
+                    last_known_place: Some(town),
+                    last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(2))]),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    observed_tick: Tick(7),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.tell_profiles.insert(actor, TellProfile::default());
+        view.told_beliefs.insert(
+            actor,
+            vec![(
+                TellMemoryKey {
+                    counterparty: listener,
+                    subject: bread,
+                },
+                ToldBeliefMemory {
+                    shared_state: worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
+                        last_known_place: Some(town),
+                        last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        last_known_courage: None,
+                        observed_tick: Tick(4),
+                        source: worldwake_core::PerceptionSource::DirectObservation,
+                    }),
+                    told_tick: Tick(6),
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(RuntimeBeliefView::current_tick(&state), Tick(8));
+        assert_eq!(
+            RuntimeBeliefView::told_belief_memory(&state, actor, listener, bread)
+                .map(|m| m.told_tick),
+            Some(Tick(6))
+        );
+        assert_eq!(
+            RuntimeBeliefView::recipient_knowledge_status(&state, actor, listener, bread),
+            Some(RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief)
+        );
     }
 
     #[test]
@@ -2234,6 +2589,38 @@ mod tests {
 
         assert!(RuntimeBeliefView::visible_hostiles_for(&moved, actor).is_empty());
         assert!(RuntimeBeliefView::current_attackers_of(&moved, actor).is_empty());
+    }
+
+    #[test]
+    fn dead_hostiles_are_not_visible_or_actionable_in_snapshot_state() {
+        let actor = entity(0);
+        let attacker = entity(1);
+        let town = entity(2);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(attacker, false);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(attacker, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(attacker, town);
+        view.entities_at.insert(town, vec![actor, attacker]);
+        view.thresholds.insert(actor, DriveThresholds::default());
+        view.hostiles.insert(actor, vec![attacker]);
+        view.attackers.insert(actor, vec![attacker]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([attacker]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(RuntimeBeliefView::visible_hostiles_for(&state, actor).is_empty());
+        assert!(RuntimeBeliefView::hostile_targets_of(&state, actor).is_empty());
+        assert!(RuntimeBeliefView::current_attackers_of(&state, actor).is_empty());
     }
 
     #[test]
@@ -2485,6 +2872,22 @@ mod tests {
     }
 
     #[test]
+    fn authoritative_item_lot_load_is_derived_when_snapshot_intrinsic_load_is_missing() {
+        let (mut view, actor, _town, _field, bread) = test_view();
+        view.entity_loads.remove(&bread);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            state.load_of_entity_ref(PlanningEntityRef::Authoritative(bread)),
+            Some(LoadUnits(
+                worldwake_core::load_per_unit(CommodityKind::Bread).0
+            ))
+        );
+    }
+
+    #[test]
     fn remaining_carry_capacity_counts_nested_and_hypothetical_load() {
         let actor = entity(1);
         let town = entity(10);
@@ -2621,7 +3024,14 @@ mod tests {
 
     // ── hypothetical_support_count / has_support_majority ──────────────
 
-    fn support_test_setup() -> (StubBeliefView, EntityId, EntityId, EntityId, EntityId, EntityId) {
+    fn support_test_setup() -> (
+        StubBeliefView,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+    ) {
         let actor = entity(1);
         let rival = entity(2);
         let supporter_a = entity(3);
@@ -2646,10 +3056,8 @@ mod tests {
         view.effective_places.insert(supporter_b, town);
         view.effective_places.insert(office, town);
 
-        view.entities_at.insert(
-            town,
-            vec![actor, rival, supporter_a, supporter_b, office],
-        );
+        view.entities_at
+            .insert(town, vec![actor, rival, supporter_a, supporter_b, office]);
         view.carry_capacities.insert(actor, LoadUnits(10));
         view.entity_loads.insert(actor, LoadUnits(0));
 
@@ -2667,12 +3075,150 @@ mod tests {
     }
 
     #[test]
+    fn believed_office_holder_uses_snapshot_then_override_then_unknown() {
+        let (mut view, actor, rival, _supporter_a, _supporter_b, office) = support_test_setup();
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(actor)));
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let mut state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            state.believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(Some(actor))
+        );
+
+        state.override_office_holder_belief(office, InstitutionalBeliefRead::Certain(Some(rival)));
+
+        assert_eq!(
+            state.believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(Some(rival))
+        );
+        assert_eq!(
+            state.believed_office_holder(entity(999)),
+            InstitutionalBeliefRead::Unknown
+        );
+    }
+
+    #[test]
+    fn believed_support_declaration_uses_snapshot_then_override_then_unknown() {
+        let (mut view, actor, rival, supporter_a, _supporter_b, office) = support_test_setup();
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let mut state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            state.believed_support_declaration(office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor))
+        );
+
+        state.override_support_declaration_belief(
+            office,
+            supporter_a,
+            InstitutionalBeliefRead::Certain(Some(rival)),
+        );
+
+        assert_eq!(
+            state.believed_support_declaration(office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(rival))
+        );
+        assert_eq!(
+            state.believed_support_declaration(office, entity(999)),
+            InstitutionalBeliefRead::Unknown
+        );
+    }
+
+    #[test]
+    fn institutional_belief_overrides_do_not_touch_world_state_support_overrides() {
+        let (mut view, actor, rival, supporter_a, _supporter_b, office) = support_test_setup();
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+
+        let snapshot = build_support_snapshot(&view, actor, office);
+        let mut state =
+            PlanningState::new(&snapshot).with_support_declaration(supporter_a, office, rival);
+        state.override_support_declaration_belief(
+            office,
+            supporter_a,
+            InstitutionalBeliefRead::Conflicted(vec![Some(actor), Some(rival)]),
+        );
+
+        assert_eq!(
+            state.effective_support_declaration(supporter_a, office),
+            Some(rival)
+        );
+        assert_eq!(state.test_support_override(supporter_a, office), Some(rival));
+        assert_eq!(
+            state.test_support_belief_override(office, supporter_a),
+            Some(InstitutionalBeliefRead::Conflicted(vec![
+                Some(actor),
+                Some(rival),
+            ]))
+        );
+    }
+
+    #[test]
+    fn planning_state_uses_snapshot_record_data_and_consultation_speed_factor() {
+        let actor = entity(1);
+        let record = entity(40);
+        let town = entity(10);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(record, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(record, town);
+        view.entities_at.insert(town, vec![actor, record]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.consultation_speed_factors
+            .insert(actor, Permille::new(500).unwrap());
+        view.record_data.insert(
+            record,
+            RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: town,
+                issuer: actor,
+                consultation_ticks: 4,
+                max_entries_per_consult: 2,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([record]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(state.record_data(record), view.record_data.get(&record).cloned());
+        assert_eq!(
+            RuntimeBeliefView::consultation_speed_factor(&state, actor),
+            Some(Permille::new(500).unwrap())
+        );
+    }
+
+    #[test]
     fn hypothetical_support_count_base_only() {
         let (mut view, actor, _rival, supporter_a, supporter_b, office) = support_test_setup();
-        // supporter_a → actor, supporter_b → actor
-        view.support_declarations.insert(
-            office,
-            vec![(supporter_a, actor), (supporter_b, actor)],
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(actor)),
         );
 
         let snapshot = build_support_snapshot(&view, actor, office);
@@ -2684,16 +3230,19 @@ mod tests {
     #[test]
     fn hypothetical_support_count_with_override_changing_existing() {
         let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
-        // Base: both support actor
-        view.support_declarations.insert(
-            office,
-            vec![(supporter_a, actor), (supporter_b, actor)],
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(actor)),
         );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         // Override: supporter_b now supports rival
-        let state = PlanningState::new(&snapshot)
-            .with_support_declaration(supporter_b, office, rival);
+        let state =
+            PlanningState::new(&snapshot).with_support_declaration(supporter_b, office, rival);
 
         assert_eq!(state.hypothetical_support_count(office, actor), 1);
         assert_eq!(state.hypothetical_support_count(office, rival), 1);
@@ -2702,14 +3251,15 @@ mod tests {
     #[test]
     fn hypothetical_support_count_with_purely_hypothetical_new_declaration() {
         let (mut view, actor, _rival, supporter_a, supporter_b, office) = support_test_setup();
-        // Base: only supporter_a supports actor
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         // Hypothetical: supporter_b (not in base) now also supports actor
-        let state = PlanningState::new(&snapshot)
-            .with_support_declaration(supporter_b, office, actor);
+        let state =
+            PlanningState::new(&snapshot).with_support_declaration(supporter_b, office, actor);
 
         assert_eq!(state.hypothetical_support_count(office, actor), 2);
     }
@@ -2717,14 +3267,17 @@ mod tests {
     #[test]
     fn has_support_majority_true_when_strictly_more() {
         let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
-        // actor has 2, rival has 1
-        view.support_declarations.insert(
-            office,
-            vec![
-                (supporter_a, actor),
-                (supporter_b, actor),
-                (rival, rival),
-            ],
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, rival),
+            InstitutionalBeliefRead::Certain(Some(rival)),
         );
 
         let snapshot = build_support_snapshot(&view, actor, office);
@@ -2737,10 +3290,13 @@ mod tests {
     #[test]
     fn has_support_majority_false_on_tie() {
         let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
-        // actor has 1, rival has 1
-        view.support_declarations.insert(
-            office,
-            vec![(supporter_a, actor), (supporter_b, rival)],
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(rival)),
         );
 
         let snapshot = build_support_snapshot(&view, actor, office);
@@ -2763,9 +3319,10 @@ mod tests {
     #[test]
     fn has_support_majority_true_sole_candidate_with_one_support() {
         let (mut view, actor, _rival, supporter_a, _supporter_b, office) = support_test_setup();
-        // Only one declaration, no competitors
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         let state = PlanningState::new(&snapshot);

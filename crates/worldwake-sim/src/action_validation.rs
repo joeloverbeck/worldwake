@@ -298,6 +298,7 @@ mod tests {
                         Permille::new(120).unwrap(),
                         Permille::new(30).unwrap(),
                         std::num::NonZeroU32::new(6).unwrap(),
+                        std::num::NonZeroU32::new(10).unwrap(),
                     ),
                 )
                 .unwrap();

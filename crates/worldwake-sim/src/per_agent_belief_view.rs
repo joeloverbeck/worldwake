@@ -8,10 +8,11 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
     BelievedEntityState, CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
     ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, Permille, PlaceTag, Quantity, RecipeId, ResourceSource, TellProfile, Tick, TickRange,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, WorkstationTag, World,
-    Wound,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
+    WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -35,6 +36,7 @@ impl<'a> PerAgentBeliefRuntime<'a> {
 
 pub struct PerAgentBeliefView<'w> {
     agent: EntityId,
+    current_tick: Tick,
     world: &'w World,
     belief_store: &'w AgentBeliefStore,
     runtime: Option<PerAgentBeliefRuntime<'w>>,
@@ -47,8 +49,19 @@ impl<'w> PerAgentBeliefView<'w> {
         world: &'w World,
         belief_store: &'w AgentBeliefStore,
     ) -> Self {
+        Self::new_at_tick(agent, Tick(0), world, belief_store)
+    }
+
+    #[must_use]
+    pub const fn new_at_tick(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        belief_store: &'w AgentBeliefStore,
+    ) -> Self {
         Self {
             agent,
+            current_tick,
             world,
             belief_store,
             runtime: None,
@@ -62,8 +75,20 @@ impl<'w> PerAgentBeliefView<'w> {
         belief_store: &'w AgentBeliefStore,
         runtime: PerAgentBeliefRuntime<'w>,
     ) -> Self {
+        Self::with_runtime_at_tick(agent, Tick(0), world, belief_store, runtime)
+    }
+
+    #[must_use]
+    pub const fn with_runtime_at_tick(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        belief_store: &'w AgentBeliefStore,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
         Self {
             agent,
+            current_tick,
             world,
             belief_store,
             runtime: Some(runtime),
@@ -72,10 +97,15 @@ impl<'w> PerAgentBeliefView<'w> {
 
     #[must_use]
     pub fn from_world(agent: EntityId, world: &'w World) -> Self {
+        Self::from_world_at_tick(agent, Tick(0), world)
+    }
+
+    #[must_use]
+    pub fn from_world_at_tick(agent: EntityId, current_tick: Tick, world: &'w World) -> Self {
         let belief_store = world
             .get_component_agent_belief_store(agent)
             .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
-        Self::new(agent, world, belief_store)
+        Self::new_at_tick(agent, current_tick, world, belief_store)
     }
 
     #[must_use]
@@ -84,10 +114,20 @@ impl<'w> PerAgentBeliefView<'w> {
         world: &'w World,
         runtime: PerAgentBeliefRuntime<'w>,
     ) -> Self {
+        Self::with_runtime_from_world_at_tick(agent, Tick(0), world, runtime)
+    }
+
+    #[must_use]
+    pub fn with_runtime_from_world_at_tick(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
         let belief_store = world
             .get_component_agent_belief_store(agent)
             .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
-        Self::with_runtime(agent, world, belief_store, runtime)
+        Self::with_runtime_at_tick(agent, current_tick, world, belief_store, runtime)
     }
 
     fn believed_entity(&self, entity: EntityId) -> Option<&BelievedEntityState> {
@@ -134,6 +174,10 @@ impl<'w> PerAgentBeliefView<'w> {
 }
 
 impl RuntimeBeliefView for PerAgentBeliefView<'_> {
+    fn current_tick(&self) -> Tick {
+        self.current_tick
+    }
+
     fn is_alive(&self, entity: EntityId) -> bool {
         if entity == self.agent {
             return self.world.is_alive(entity);
@@ -306,9 +350,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
         let accessible =
             self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
-        accessible
-            .then(|| self.world.owner_of(entity))
-            .flatten()
+        accessible.then(|| self.world.owner_of(entity)).flatten()
     }
 
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
@@ -466,7 +508,9 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.world
             .get_component_perception_profile(agent)
             .map(|profile| profile.confidence_policy)
-            .expect("acting agents must have PerceptionProfile before reading belief confidence policy")
+            .expect(
+                "acting agents must have PerceptionProfile before reading belief confidence policy",
+            )
     }
 
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
@@ -501,6 +545,64 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.belief_store
+            .told_beliefs
+            .iter()
+            .map(|(key, memory)| (*key, memory.clone()))
+            .collect()
+    }
+
+    fn told_belief_memory(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<ToldBeliefMemory> {
+        if actor != self.agent {
+            return None;
+        }
+
+        let profile = self.tell_profile(actor)?;
+        self.belief_store
+            .told_belief_memory(
+                &TellMemoryKey {
+                    counterparty,
+                    subject,
+                },
+                self.current_tick,
+                &profile,
+            )
+            .cloned()
+    }
+
+    fn recipient_knowledge_status(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<RecipientKnowledgeStatus> {
+        if actor != self.agent {
+            return None;
+        }
+
+        let current_belief = self.belief_store.get_entity(&subject)?;
+        let profile = self.tell_profile(actor)?;
+        Some(self.belief_store.recipient_knowledge_status(
+            &TellMemoryKey {
+                counterparty,
+                subject,
+            },
+            current_belief,
+            self.current_tick,
+            &profile,
+        ))
+    }
+
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_combat_profile(agent).copied())
@@ -508,11 +610,22 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn courage(&self, agent: EntityId) -> Option<Permille> {
+        if agent == self.agent {
+            return self
+                .world
+                .get_component_utility_profile(agent)
+                .map(|p| p.courage);
+        }
+        self.believed_entity(agent)
+            .and_then(|state| state.last_known_courage)
+    }
+
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
         (agent == self.agent)
             .then(|| {
                 self.world
-                    .get_component_utility_profile(agent)
-                    .map(|p| p.courage)
+                    .get_component_perception_profile(agent)
+                    .map(|profile| profile.consultation_speed_factor)
             })
             .flatten()
     }
@@ -542,7 +655,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .chain(self.world.hostile_towards(agent))
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
             .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| self.believed_entity(*entity).is_some())
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
+            })
             .collect::<BTreeSet<_>>();
         hostiles.extend(self.current_attackers_of(agent));
         hostiles.into_iter().collect()
@@ -558,7 +674,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .into_iter()
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
             .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| self.believed_entity(*entity).is_some())
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
+            })
             .collect()
     }
 
@@ -649,28 +768,31 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
+    fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
+        (self.entity_kind(record) == Some(EntityKind::Record))
+            .then(|| self.world.get_component_record_data(record).cloned())
+            .flatten()
+    }
+
     fn office_data(&self, office: EntityId) -> Option<OfficeData> {
         (self.entity_kind(office) == Some(EntityKind::Office))
             .then(|| self.world.get_component_office_data(office).cloned())
             .flatten()
     }
 
-    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
-        if self.entity_kind(office) != Some(EntityKind::Office) {
-            return None;
-        }
-
-        self.world.office_holder(office).filter(|holder| {
-            *holder == self.agent || self.believed_entity(*holder).is_some()
-        })
+    fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        self.belief_store.believed_office_holder(office)
     }
 
-    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
-        if member != self.agent && self.believed_entity(member).is_none() {
-            return Vec::new();
-        }
-
-        self.world.factions_of(member)
+    fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        self.belief_store.believed_membership(faction, member)
     }
 
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<worldwake_core::Permille> {
@@ -684,18 +806,21 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.world.loyalty_to(subject, target)
     }
 
-    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-        if supporter != self.agent || self.entity_kind(office) != Some(EntityKind::Office) {
-            return None;
-        }
-
-        self.world.support_declaration(supporter, office)
+    fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        self.belief_store
+            .believed_support_declaration(office, supporter)
     }
 
-    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-        // Pre-E14: delegate to world directly, matching support_declaration() pattern.
-        // Post-E14: gate by observation (agent must have perceived each declaration).
-        self.world.support_declarations_for_office(office)
+    fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+        self.belief_store
+            .believed_support_declarations_for_office(office)
     }
 
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
@@ -748,10 +873,13 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
-        CommodityKind, ControlSource, EntityKind, EventLog, FactionData, FactionPurpose,
-        MerchandiseProfile, OfficeData, Permille, PerceptionProfile, Quantity, ResourceSource,
-        SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+        CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile,
+        Permille, Quantity, RecordData, RecordKind, RecipientKnowledgeStatus, ResourceSource,
+        SuccessionLaw, TellMemoryKey, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -776,6 +904,7 @@ mod tests {
             } else {
                 vec![sample_wound()]
             },
+            last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source: worldwake_core::PerceptionSource::DirectObservation,
         }
@@ -812,6 +941,25 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         )
+    }
+
+    fn create_record(
+        txn: &mut WorldTxn<'_>,
+        place: worldwake_core::EntityId,
+        issuer: worldwake_core::EntityId,
+        kind: RecordKind,
+    ) {
+        let _ = txn
+            .create_record(RecordData {
+                record_kind: kind,
+                home_place: place,
+                issuer,
+                consultation_ticks: 4,
+                max_entries_per_consult: 6,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
     }
 
     fn commit_txn(txn: WorldTxn<'_>) {
@@ -1007,6 +1155,116 @@ mod tests {
     }
 
     #[test]
+    fn runtime_view_exposes_retention_aware_told_belief_memory_and_recipient_status() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, listener, subject) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let listener = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let subject = txn.create_agent("Cora", ControlSource::Ai).unwrap();
+            for entity in [agent, listener, subject] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            commit_txn(txn);
+            (agent, listener, subject)
+        };
+
+        let current_belief = entity_belief(place, true, 2, 6);
+        let mut stale_belief = current_belief.clone();
+        stale_belief
+            .last_known_inventory
+            .insert(CommodityKind::Bread, Quantity(1));
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(subject, current_belief.clone());
+        beliefs.record_told_belief(
+            TellMemoryKey {
+                counterparty: listener,
+                subject,
+            },
+            ToldBeliefMemory {
+                shared_state: worldwake_core::to_shared_belief_snapshot(&stale_belief),
+                told_tick: Tick(4),
+            },
+        );
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::told_belief_memory(&view, agent, listener, subject)
+                .map(|m| m.told_tick),
+            Some(Tick(4))
+        );
+        assert_eq!(
+            RuntimeBeliefView::recipient_knowledge_status(&view, agent, listener, subject),
+            Some(RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief)
+        );
+
+        let expired_view = PerAgentBeliefView::new_at_tick(agent, Tick(60), &world, &beliefs);
+        assert_eq!(
+            RuntimeBeliefView::told_belief_memory(&expired_view, agent, listener, subject),
+            None
+        );
+        assert_eq!(
+            RuntimeBeliefView::recipient_knowledge_status(&expired_view, agent, listener, subject),
+            Some(RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired)
+        );
+    }
+
+    #[test]
+    fn runtime_view_hides_other_agents_conversation_memory() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other, listener, subject) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let listener = txn.create_agent("Cora", ControlSource::Ai).unwrap();
+            let subject = txn.create_agent("Dain", ControlSource::Ai).unwrap();
+            for entity in [agent, other, listener, subject] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            commit_txn(txn);
+            (agent, other, listener, subject)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(subject, entity_belief(place, true, 1, 4));
+        beliefs.record_told_belief(
+            TellMemoryKey {
+                counterparty: listener,
+                subject,
+            },
+            ToldBeliefMemory {
+                shared_state: worldwake_core::to_shared_belief_snapshot(&entity_belief(
+                    place, true, 1, 4,
+                )),
+                told_tick: Tick(4),
+            },
+        );
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::told_belief_memories(&view, agent).len(),
+            1
+        );
+        assert!(
+            RuntimeBeliefView::told_belief_memories(&view, other).is_empty(),
+            "conversation memory should remain actor-local"
+        );
+        assert_eq!(
+            RuntimeBeliefView::told_belief_memory(&view, other, listener, subject),
+            None
+        );
+        assert_eq!(
+            RuntimeBeliefView::recipient_knowledge_status(&view, other, listener, subject),
+            None
+        );
+    }
+
+    #[test]
     fn tell_profile_returns_none_when_component_missing() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -1056,8 +1314,14 @@ mod tests {
             .unwrap()
             .confidence_policy;
 
-        assert_eq!(RuntimeBeliefView::belief_confidence_policy(&view, agent), expected);
-        assert_eq!(GoalBeliefView::belief_confidence_policy(&view, agent), expected);
+        assert_eq!(
+            RuntimeBeliefView::belief_confidence_policy(&view, agent),
+            expected
+        );
+        assert_eq!(
+            GoalBeliefView::belief_confidence_policy(&view, agent),
+            expected
+        );
     }
 
     #[test]
@@ -1233,7 +1497,7 @@ mod tests {
                 targets: vec![agent],
                 payload: ActionPayload::None,
                 start_tick: Tick(3),
-                remaining_duration: ActionDuration::Finite(2),
+                remaining_duration: ActionDuration::new(2),
                 status: ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: None,
@@ -1253,7 +1517,7 @@ mod tests {
                 &[destination],
                 &ActionPayload::None,
             ),
-            Some(crate::ActionDuration::Finite(
+            Some(crate::ActionDuration::new(
                 NonZeroU32::new(
                     world
                         .topology()
@@ -1271,7 +1535,138 @@ mod tests {
     }
 
     #[test]
-    fn political_queries_expose_known_public_office_state_and_actor_private_relations() {
+    fn visible_hostiles_exclude_dead_believed_targets() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, attacker) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let attacker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(attacker, place).unwrap();
+            commit_txn(txn);
+            (agent, attacker)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(attacker, entity_belief(place, false, 0, 3));
+
+        let mut txn = new_txn(&mut world, 1);
+        txn.add_hostility(agent, attacker).unwrap();
+        commit_txn(txn);
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(
+            RuntimeBeliefView::visible_hostiles_for(&view, agent).is_empty(),
+            "dead believed hostiles should not continue to project danger"
+        );
+        assert!(
+            RuntimeBeliefView::hostile_targets_of(&view, agent).is_empty(),
+            "dead believed hostiles should not remain actionable hostile targets"
+        );
+    }
+
+    #[test]
+    fn estimate_duration_uses_actor_defend_stance_ticks_from_combat_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_combat_profile(
+                agent,
+                CombatProfile::new(
+                    Permille::new(1000).unwrap(),
+                    Permille::new(700).unwrap(),
+                    Permille::new(600).unwrap(),
+                    Permille::new(550).unwrap(),
+                    Permille::new(75).unwrap(),
+                    Permille::new(20).unwrap(),
+                    Permille::new(15).unwrap(),
+                    Permille::new(120).unwrap(),
+                    Permille::new(30).unwrap(),
+                    NonZeroU32::new(6).unwrap(),
+                    NonZeroU32::new(10).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            view.estimate_duration(
+                agent,
+                &DurationExpr::ActorDefendStance,
+                &[],
+                &ActionPayload::None,
+            ),
+            Some(ActionDuration::new(10))
+        );
+    }
+
+    #[test]
+    fn estimate_duration_uses_actor_consultation_speed_for_records() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, record) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    consultation_speed_factor: Permille::new(250).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            let record = txn
+                .create_record(worldwake_core::RecordData {
+                    record_kind: worldwake_core::RecordKind::OfficeRegister,
+                    home_place: place,
+                    issuer: agent,
+                    consultation_ticks: 8,
+                    max_entries_per_consult: 4,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                })
+                .unwrap();
+            commit_txn(txn);
+            (agent, record)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            record,
+            build_believed_entity_state(
+                &world,
+                record,
+                Tick(2),
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
+            .unwrap(),
+        );
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            view.estimate_duration(
+                agent,
+                &DurationExpr::ConsultRecord { target_index: 0 },
+                &[record],
+                &ActionPayload::None,
+            ),
+            Some(ActionDuration::new(2))
+        );
+    }
+
+    #[test]
+    fn political_queries_use_belief_backed_institutional_reads_and_actor_private_relations() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, holder, office, faction) = {
@@ -1284,22 +1679,24 @@ mod tests {
             txn.set_ground_location(holder, place).unwrap();
             txn.add_member(agent, faction).unwrap();
             txn.add_member(holder, faction).unwrap();
-            txn.set_loyalty(agent, holder, Permille::new(620).unwrap())
-                .unwrap();
-            txn.assign_office(office, holder).unwrap();
-            txn.declare_support(agent, office, holder).unwrap();
             txn.set_component_office_data(
                 office,
                 OfficeData {
                     title: "Steward".to_string(),
                     jurisdiction: place,
                     succession_law: SuccessionLaw::Support,
-                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
+                        faction,
+                    )],
                     succession_period_ticks: 6,
                     vacancy_since: None,
                 },
             )
             .unwrap();
+            create_record(&mut txn, place, agent, RecordKind::OfficeRegister);
+            create_record(&mut txn, place, agent, RecordKind::SupportLedger);
+            txn.set_loyalty(agent, holder, Permille::new(620).unwrap())
+                .unwrap();
             txn.set_component_faction_data(
                 faction,
                 FactionData {
@@ -1315,6 +1712,50 @@ mod tests {
         let mut beliefs = AgentBeliefStore::new();
         beliefs.update_entity(holder, entity_belief(place, true, 0, 3));
         beliefs.update_entity(office, entity_belief(place, true, 0, 3));
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::OfficeHolder {
+                    office,
+                    holder: Some(holder),
+                    effective_tick: Tick(3),
+                },
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionMembersOf { faction },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::FactionMembership {
+                    faction,
+                    member: agent,
+                    active: true,
+                    effective_tick: Tick(3),
+                },
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: agent,
+                office,
+            },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::SupportDeclaration {
+                    office,
+                    supporter: agent,
+                    candidate: Some(holder),
+                    effective_tick: Tick(3),
+                },
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
@@ -1324,15 +1765,110 @@ mod tests {
                 .jurisdiction,
             place
         );
-        assert_eq!(RuntimeBeliefView::office_holder(&view, office), Some(holder));
-        assert_eq!(RuntimeBeliefView::factions_of(&view, agent), vec![faction]);
+        assert_eq!(
+            RuntimeBeliefView::believed_office_holder(&view, office),
+            InstitutionalBeliefRead::Certain(Some(holder))
+        );
+        assert_eq!(
+            RuntimeBeliefView::believed_membership(&view, faction, agent),
+            InstitutionalBeliefRead::Certain(true)
+        );
         assert_eq!(
             RuntimeBeliefView::loyalty_to(&view, agent, holder),
             Some(Permille::new(620).unwrap())
         );
         assert_eq!(
-            RuntimeBeliefView::support_declaration(&view, agent, office),
-            Some(holder)
+            RuntimeBeliefView::believed_support_declaration(&view, office, agent),
+            InstitutionalBeliefRead::Certain(Some(holder))
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_reads_from_institutional_belief_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, holder, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            commit_txn(txn);
+            (agent, holder, office)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::OfficeHolder {
+                    office,
+                    holder: Some(holder),
+                    effective_tick: Tick(3),
+                },
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::believed_office_holder(&view, office),
+            InstitutionalBeliefRead::Certain(Some(holder))
+        );
+    }
+
+    #[test]
+    fn believed_support_declarations_for_office_reads_from_institutional_belief_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, supporter, candidate, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let supporter = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let candidate = txn.create_agent("Cora", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(supporter, place).unwrap();
+            txn.set_ground_location(candidate, place).unwrap();
+            commit_txn(txn);
+            (agent, supporter, candidate, office)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor { supporter, office },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::SupportDeclaration {
+                    office,
+                    supporter,
+                    candidate: Some(candidate),
+                    effective_tick: Tick(5),
+                },
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: office,
+                    entry_id: worldwake_core::RecordEntryId(1),
+                },
+                learned_tick: Tick(6),
+                learned_at: Some(place),
+            }],
+        );
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::believed_support_declaration(&view, office, supporter),
+            InstitutionalBeliefRead::Certain(Some(candidate))
+        );
+        assert_eq!(
+            RuntimeBeliefView::believed_support_declarations_for_office(&view, office),
+            vec![(
+                supporter,
+                InstitutionalBeliefRead::Certain(Some(candidate)),
+            )]
         );
     }
 
@@ -1394,12 +1930,7 @@ mod tests {
             let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
             txn.set_ground_location(other, place).unwrap();
             let lot = txn
-                .create_item_lot_with_owner(
-                    CommodityKind::Bread,
-                    Quantity(3),
-                    place,
-                    Some(other),
-                )
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(other))
                 .unwrap();
             commit_txn(txn);
             (agent, lot)
@@ -1438,7 +1969,7 @@ mod tests {
     }
 
     #[test]
-    fn courage_returns_profile_value_for_self_and_none_for_others() {
+    fn courage_returns_profile_value_for_self_and_believed_for_observed() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, other) = {
@@ -1467,8 +1998,11 @@ mod tests {
             (agent, other)
         };
 
+        // Beliefs include courage for the observed agent.
+        let mut belief_state = entity_belief(place, true, 0, 3);
+        belief_state.last_known_courage = Some(Permille::new(200).unwrap());
         let mut beliefs = AgentBeliefStore::new();
-        beliefs.update_entity(other, entity_belief(place, true, 0, 3));
+        beliefs.update_entity(other, belief_state);
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         // Self-authoritative: returns own courage
@@ -1476,15 +2010,64 @@ mod tests {
             RuntimeBeliefView::courage(&view, agent),
             Some(Permille::new(750).unwrap())
         );
-        // Other agent: returns None (self-authoritative read only)
-        assert_eq!(RuntimeBeliefView::courage(&view, other), None);
+        // Other agent: returns believed courage
+        assert_eq!(
+            RuntimeBeliefView::courage(&view, other),
+            Some(Permille::new(200).unwrap())
+        );
 
         // GoalBeliefView delegation matches
         assert_eq!(
             GoalBeliefView::courage(&view, agent),
             Some(Permille::new(750).unwrap())
         );
-        assert_eq!(GoalBeliefView::courage(&view, other), None);
+        assert_eq!(
+            GoalBeliefView::courage(&view, other),
+            Some(Permille::new(200).unwrap())
+        );
+    }
+
+    #[test]
+    fn courage_returns_none_for_observed_agent_without_courage_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        // Beliefs exist for other but without courage (last_known_courage = None).
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(other, entity_belief(place, true, 0, 3));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::courage(&view, other), None);
+    }
+
+    #[test]
+    fn courage_returns_none_for_unknown_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, unknown) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let unknown = txn.create_agent("Ghost", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(unknown, place).unwrap();
+            commit_txn(txn);
+            (agent, unknown)
+        };
+
+        // No beliefs about the unknown agent at all.
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::courage(&view, unknown), None);
     }
 
     #[test]
@@ -1507,86 +2090,38 @@ mod tests {
     }
 
     #[test]
-    fn support_declarations_for_office_returns_all_declarations() {
+    fn believed_membership_reads_from_institutional_belief_store() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
-        let (agent, holder, other, office) = {
+        let (agent, faction) = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
-            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
-            let other = txn.create_agent("Cora", ControlSource::Ai).unwrap();
-            let office = txn.create_office("Ledger Hall").unwrap();
             let faction = txn.create_faction("River Pact").unwrap();
             txn.set_ground_location(agent, place).unwrap();
-            txn.set_ground_location(holder, place).unwrap();
-            txn.set_ground_location(other, place).unwrap();
-            txn.add_member(agent, faction).unwrap();
-            txn.add_member(holder, faction).unwrap();
-            txn.add_member(other, faction).unwrap();
-            txn.set_component_office_data(
-                office,
-                OfficeData {
-                    title: "Steward".to_string(),
-                    jurisdiction: place,
-                    succession_law: SuccessionLaw::Support,
-                    eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
-                    succession_period_ticks: 6,
-                    vacancy_since: None,
+            commit_txn(txn);
+            (agent, faction)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionMembersOf { faction },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::FactionMembership {
+                    faction,
+                    member: agent,
+                    active: true,
+                    effective_tick: Tick(3),
                 },
-            )
-            .unwrap();
-            txn.declare_support(agent, office, holder).unwrap();
-            txn.declare_support(other, office, holder).unwrap();
-            commit_txn(txn);
-            (agent, holder, other, office)
-        };
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
 
-        let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        let declarations =
-            RuntimeBeliefView::support_declarations_for_office(&view, office);
-        assert_eq!(declarations.len(), 2);
-        assert!(declarations.contains(&(agent, holder)));
-        assert!(declarations.contains(&(other, holder)));
-    }
-
-    #[test]
-    fn support_declarations_for_office_returns_empty_when_no_declarations() {
-        let mut world = World::new(build_prototype_world()).unwrap();
-        let place = world.topology().place_ids().next().unwrap();
-        let (agent, office) = {
-            let mut txn = new_txn(&mut world, 1);
-            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
-            let office = txn.create_office("Ledger Hall").unwrap();
-            txn.set_ground_location(agent, place).unwrap();
-            commit_txn(txn);
-            (agent, office)
-        };
-
-        let beliefs = AgentBeliefStore::new();
-        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        let declarations =
-            RuntimeBeliefView::support_declarations_for_office(&view, office);
-        assert!(declarations.is_empty());
-    }
-
-    #[test]
-    fn support_declarations_for_office_returns_empty_for_non_office_entity() {
-        let mut world = World::new(build_prototype_world()).unwrap();
-        let place = world.topology().place_ids().next().unwrap();
-        let agent = {
-            let mut txn = new_txn(&mut world, 1);
-            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
-            txn.set_ground_location(agent, place).unwrap();
-            commit_txn(txn);
-            agent
-        };
-
-        // Query using the agent ID as if it were an office — should return empty.
-        let beliefs = AgentBeliefStore::new();
-        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        let declarations =
-            RuntimeBeliefView::support_declarations_for_office(&view, agent);
-        assert!(declarations.is_empty());
+        assert_eq!(
+            RuntimeBeliefView::believed_membership(&view, faction, agent),
+            InstitutionalBeliefRead::Certain(true)
+        );
     }
 }

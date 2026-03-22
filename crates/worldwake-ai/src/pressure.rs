@@ -1,6 +1,62 @@
 use crate::GoalPriorityClass;
+use serde::{Deserialize, Serialize};
 use worldwake_core::{EntityId, Permille, ThresholdBand};
 use worldwake_sim::GoalBeliefView;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DangerAssessment {
+    pub pressure: Permille,
+    pub thresholds_present: bool,
+    pub current_attackers: Vec<EntityId>,
+    pub visible_hostiles: Vec<EntityId>,
+    pub hostile_targets: Vec<EntityId>,
+    pub has_wounds: bool,
+    pub is_incapacitated: bool,
+}
+
+impl DangerAssessment {
+    fn from_view(view: &dyn GoalBeliefView, agent: EntityId) -> Self {
+        let thresholds = view.drive_thresholds(agent);
+        let current_attackers = sorted_unique_entities(view.current_attackers_of(agent));
+        let visible_hostiles = sorted_unique_entities(view.visible_hostiles_for(agent));
+        let hostile_targets = sorted_unique_entities(view.hostile_targets_of(agent));
+        let has_wounds = view.has_wounds(agent);
+        let is_incapacitated = view.is_incapacitated(agent);
+        let pressure = thresholds.map_or_else(
+            || Permille::new_unchecked(0),
+            |thresholds| {
+                if current_attackers.is_empty() && visible_hostiles.is_empty() {
+                    Permille::new_unchecked(0)
+                } else if current_attackers.len() >= 2
+                    || (!current_attackers.is_empty() && (has_wounds || is_incapacitated))
+                {
+                    thresholds.danger.critical()
+                } else if !current_attackers.is_empty()
+                    || (!visible_hostiles.is_empty() && (has_wounds || is_incapacitated))
+                {
+                    thresholds.danger.high()
+                } else {
+                    thresholds.danger.medium()
+                }
+            },
+        );
+
+        Self {
+            pressure,
+            thresholds_present: thresholds.is_some(),
+            current_attackers,
+            visible_hostiles,
+            hostile_targets,
+            has_wounds,
+            is_incapacitated,
+        }
+    }
+}
+
+#[must_use]
+pub fn assess_danger(view: &dyn GoalBeliefView, agent: EntityId) -> DangerAssessment {
+    DangerAssessment::from_view(view, agent)
+}
 
 pub fn derive_pain_pressure(view: &dyn GoalBeliefView, agent: EntityId) -> Permille {
     view.wounds(agent)
@@ -11,26 +67,7 @@ pub fn derive_pain_pressure(view: &dyn GoalBeliefView, agent: EntityId) -> Permi
 }
 
 pub fn derive_danger_pressure(view: &dyn GoalBeliefView, agent: EntityId) -> Permille {
-    let Some(thresholds) = view.drive_thresholds(agent) else {
-        return Permille::new_unchecked(0);
-    };
-
-    let attackers = view.current_attackers_of(agent);
-    let hostiles = view.visible_hostiles_for(agent);
-
-    if attackers.is_empty() && hostiles.is_empty() {
-        Permille::new_unchecked(0)
-    } else if attackers.len() >= 2
-        || (!attackers.is_empty() && (view.has_wounds(agent) || view.is_incapacitated(agent)))
-    {
-        thresholds.danger.critical()
-    } else if !attackers.is_empty()
-        || (!hostiles.is_empty() && (view.has_wounds(agent) || view.is_incapacitated(agent)))
-    {
-        thresholds.danger.high()
-    } else {
-        thresholds.danger.medium()
-    }
+    assess_danger(view, agent).pressure
 }
 
 pub fn classify_band(value: Permille, band: &ThresholdBand) -> GoalPriorityClass {
@@ -47,9 +84,15 @@ pub fn classify_band(value: Permille, band: &ThresholdBand) -> GoalPriorityClass
     }
 }
 
+fn sorted_unique_entities(mut entities: Vec<EntityId>) -> Vec<EntityId> {
+    entities.sort();
+    entities.dedup();
+    entities
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{classify_band, derive_danger_pressure, derive_pain_pressure};
+    use super::{assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure};
     use crate::GoalPriorityClass;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -67,6 +110,7 @@ mod tests {
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
+        hostile_targets: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         incapacitated: BTreeSet<EntityId>,
     }
@@ -211,6 +255,12 @@ mod tests {
         }
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
+        }
+        fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostile_targets
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
         }
         fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
             Vec::new()
@@ -381,6 +431,50 @@ mod tests {
             derive_danger_pressure(&view, agent),
             thresholds.danger.high()
         );
+    }
+
+    #[test]
+    fn assess_danger_preserves_hostility_surfaces_and_actor_state() {
+        let agent = entity(1);
+        let visible_hostile = entity(2);
+        let attacker = entity(3);
+        let target = entity(4);
+        let thresholds = DriveThresholds::default();
+        let mut view = TestBeliefView::default();
+        view.thresholds.insert(agent, thresholds);
+        view.hostiles.insert(agent, vec![visible_hostile, attacker]);
+        view.hostile_targets
+            .insert(agent, vec![target, visible_hostile, target]);
+        view.attackers.insert(agent, vec![attacker, attacker]);
+        view.wounds.insert(agent, vec![wound(100)]);
+        view.incapacitated.insert(agent);
+
+        let assessment = assess_danger(&view, agent);
+
+        assert!(assessment.thresholds_present);
+        assert_eq!(assessment.current_attackers, vec![attacker]);
+        assert_eq!(assessment.visible_hostiles, vec![visible_hostile, attacker]);
+        assert_eq!(assessment.hostile_targets, vec![visible_hostile, target]);
+        assert!(assessment.has_wounds);
+        assert!(assessment.is_incapacitated);
+        assert_eq!(assessment.pressure, thresholds.danger.critical());
+    }
+
+    #[test]
+    fn derive_danger_pressure_delegates_to_structured_assessment() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let thresholds = DriveThresholds::default();
+        let mut view = TestBeliefView::default();
+        view.thresholds.insert(agent, thresholds);
+        view.hostiles.insert(agent, vec![hostile]);
+        view.hostile_targets.insert(agent, vec![hostile]);
+        view.wounds.insert(agent, vec![wound(100)]);
+
+        let assessment = assess_danger(&view, agent);
+
+        assert_eq!(assessment.pressure, thresholds.danger.high());
+        assert_eq!(derive_danger_pressure(&view, agent), assessment.pressure);
     }
 
     #[test]

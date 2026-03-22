@@ -5,6 +5,7 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
+use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact, BodyPart,
@@ -13,6 +14,10 @@ use worldwake_core::{
     MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
+use worldwake_sim::{
+    ActionStartFailureReason, ActionTraceKind, RequestAttemptTrace, RequestBindingKind,
+    RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace,
+};
 
 fn production_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
@@ -20,6 +25,9 @@ fn production_perception_profile() -> PerceptionProfile {
         memory_retention_ticks: 100,
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
     }
 }
 
@@ -227,6 +235,290 @@ fn run_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn assert_remote_recipe_input_tick_zero_plan(
+    h: &GoldenHarness,
+    baker: EntityId,
+) -> worldwake_ai::AgentDecisionTrace {
+    let tick_0_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for remote recipe-input acquisition")
+        .trace_at(baker, Tick(0))
+        .expect("baker should have a tick 0 trace")
+        .clone();
+    let tick_0_planning = match &tick_0_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!(
+            "expected planning trace for remote recipe-input acquisition tick 0, got {other:?}"
+        ),
+    };
+    let selected_plan = tick_0_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("remote recipe-input scenario should select a plan on tick 0");
+    let next_step = selected_plan
+        .next_step
+        .as_ref()
+        .expect("selected plan should expose its next step");
+
+    assert_eq!(
+        tick_0_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "remote recipe-input scenario should start from a fresh search result"
+    );
+    assert_eq!(
+        next_step.op_kind,
+        PlannerOpKind::Travel,
+        "remote recipe-input scenario should begin by traveling toward the remote input lot"
+    );
+    assert_eq!(
+        selected_plan
+            .steps
+            .iter()
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .map(|step| step.targets.clone())
+            .find(|targets| *targets == vec![ORCHARD_FARM]),
+        Some(vec![ORCHARD_FARM]),
+        "selected plan should include travel to Orchard Farm for the remote firewood lot"
+    );
+    assert!(
+        selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::MoveCargo),
+        "selected plan should include a cargo move step for remote firewood pickup"
+    );
+    assert!(
+        selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Craft),
+        "selected plan should include a craft step after remote firewood pickup"
+    );
+
+    tick_0_trace
+}
+
+fn assert_remote_recipe_input_action_sequence(baker_events: &[&worldwake_sim::ActionTraceEvent]) {
+    let mut travel_commits = baker_events
+        .iter()
+        .filter_map(|event| {
+            (event.action_name == "travel"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .collect::<Vec<_>>();
+    travel_commits.sort_unstable();
+
+    let pick_up_commit = baker_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "pick_up"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("remote recipe-input scenario should commit a pick_up step");
+    let craft_commit = baker_events
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "craft:Bake Bread"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("remote recipe-input scenario should commit a craft step");
+
+    assert!(
+        travel_commits.len() >= 2,
+        "remote recipe-input scenario should commit outbound and return travel; events={baker_events:?}"
+    );
+    assert!(
+        travel_commits.iter().any(|commit| *commit < pick_up_commit),
+        "remote recipe-input scenario should reach the remote place before pickup; events={baker_events:?}"
+    );
+    assert!(
+        travel_commits.iter().any(|commit| *commit > pick_up_commit),
+        "remote recipe-input scenario should return after picking up remote firewood; events={baker_events:?}"
+    );
+    assert!(
+        travel_commits
+            .iter()
+            .filter(|commit| **commit > pick_up_commit)
+            .all(|commit| *commit < craft_commit),
+        "remote recipe-input scenario should craft only after returning with the remote firewood; events={baker_events:?}"
+    );
+}
+
+fn setup_remote_acquire_recipe_input_harness(seed: Seed) -> (GoldenHarness, EntityId) {
+    let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    let bread_recipe = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .map(|(id, _)| id)
+        .expect("bake bread recipe should exist");
+
+    let baker = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Baker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::with([bread_recipe]),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        baker,
+        production_perception_profile(),
+    );
+
+    place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let firewood = txn
+        .create_item_lot(CommodityKind::Firewood, Quantity(1))
+        .unwrap();
+    txn.set_ground_location(firewood, ORCHARD_FARM).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        baker,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    (h, baker)
+}
+
+fn drive_remote_acquire_recipe_input_scenario(
+    h: &mut GoldenHarness,
+    baker: EntityId,
+) -> (worldwake_core::Permille, u64, u64, bool, bool, bool, bool) {
+    let initial_hunger = h.agent_hunger(baker);
+    let initial_total_firewood = total_live_lot_quantity(&h.world, CommodityKind::Firewood);
+    let initial_total_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+
+    let mut visited_orchard = false;
+    let mut acquired_firewood = false;
+    let mut bread_materialized = false;
+    let mut hunger_decreased = false;
+
+    for _ in 0..120 {
+        h.step_once();
+
+        visited_orchard |= h.world.effective_place(baker) == Some(ORCHARD_FARM);
+        acquired_firewood |= h.agent_commodity_qty(baker, CommodityKind::Firewood) > Quantity(0);
+        bread_materialized |= total_live_lot_quantity(&h.world, CommodityKind::Bread) > 0;
+        hunger_decreased |= h.agent_hunger(baker) < initial_hunger;
+
+        assert!(
+            total_live_lot_quantity(&h.world, CommodityKind::Firewood) <= initial_total_firewood,
+            "firewood lots should never increase during remote recipe-input acquisition"
+        );
+        assert!(
+            total_live_lot_quantity(&h.world, CommodityKind::Bread) <= 1,
+            "bread lots should never exceed the single crafted output in the remote recipe-input scenario"
+        );
+
+        let baker_events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for remote recipe-input acquisition")
+            .events_for(baker);
+        let craft_committed = baker_events.iter().any(|event| {
+            event.action_name == "craft:Bake Bread"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        });
+
+        if visited_orchard
+            && acquired_firewood
+            && bread_materialized
+            && hunger_decreased
+            && craft_committed
+        {
+            break;
+        }
+    }
+
+    (
+        initial_hunger,
+        initial_total_firewood,
+        initial_total_bread,
+        visited_orchard,
+        acquired_firewood,
+        bread_materialized,
+        hunger_decreased,
+    )
+}
+
+fn run_remote_acquire_recipe_input_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, baker) = setup_remote_acquire_recipe_input_harness(seed);
+    let (
+        _initial_hunger,
+        _initial_total_firewood,
+        initial_total_bread,
+        visited_orchard,
+        acquired_firewood,
+        bread_materialized,
+        hunger_decreased,
+    ) = drive_remote_acquire_recipe_input_scenario(&mut h, baker);
+
+    let tick_0_trace = assert_remote_recipe_input_tick_zero_plan(&h, baker);
+    let baker_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for remote recipe-input acquisition")
+        .events_for(baker)
+        .clone();
+    assert!(
+        visited_orchard,
+        "baker should visit Orchard Farm before remote crafting succeeds; trace={tick_0_trace:?}; events={baker_events:?}"
+    );
+    assert!(
+        acquired_firewood,
+        "baker should acquire the remote firewood lot before crafting bread"
+    );
+    assert!(
+        bread_materialized,
+        "bread should materialize after the baker returns with the remote firewood"
+    );
+    assert!(
+        hunger_decreased,
+        "baker should consume the crafted bread and reduce hunger"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(baker, CommodityKind::Firewood),
+        Quantity(0),
+        "baker should not retain firewood after the successful craft"
+    );
+    assert!(
+        total_live_lot_quantity(&h.world, CommodityKind::Bread) <= initial_total_bread,
+        "bread lots should be consumed or remain bounded after the remote craft chain completes"
+    );
+
+    let baker_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for remote recipe-input acquisition")
+        .events_for(baker);
+    assert_remote_recipe_input_action_sequence(&baker_events);
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash, StateHash) {
     let (mut h, agent) = setup_capacity_constrained_ground_lot_pickup(seed);
     let initial_hunger = h.agent_hunger(agent);
@@ -262,6 +554,7 @@ fn run_capacity_constrained_ground_lot_pickup_scenario(seed: Seed) -> (StateHash
     )
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Default)]
 struct CapacityConstrainedPickupOutcome {
     saw_apple_materialize: bool,
@@ -283,7 +576,10 @@ fn setup_capacity_constrained_ground_lot_pickup(seed: Seed) -> (GoldenHarness, E
         UtilityProfile::default(),
     );
     set_agent_perception_profile(
-        &mut h.world, &mut h.event_log, agent, production_perception_profile(),
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        production_perception_profile(),
     );
 
     let mut txn = new_txn(&mut h.world, 0);
@@ -360,8 +656,8 @@ fn observe_capacity_constrained_pickup_step(
         outcome.hunger_decreased = true;
         // Conservation: authoritative total must be initial minus consumed units.
         // Each eat consumes 1 unit, so at the first hunger decrease, auth should be initial - 1.
-        outcome.conservation_held = authoritative_apples
-            < outcome.initial_authoritative.unwrap_or(0);
+        outcome.conservation_held =
+            authoritative_apples < outcome.initial_authoritative.unwrap_or(0);
     }
 
     outcome.hunger_decreased
@@ -396,6 +692,7 @@ struct MaterializedOutputTheftScenario {
     initial_orchard_quantity: Quantity,
 }
 
+#[allow(clippy::too_many_lines)]
 fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputTheftScenario {
     let mut harness = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
     let apple_recipe = harness
@@ -419,7 +716,10 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         KnownRecipes::with([apple_recipe]),
     );
     set_agent_perception_profile(
-        &mut harness.world, &mut harness.event_log, thief, production_perception_profile(),
+        &mut harness.world,
+        &mut harness.event_log,
+        thief,
+        production_perception_profile(),
     );
     let crafter = seed_agent_with_recipes(
         &mut harness.world,
@@ -432,7 +732,10 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         KnownRecipes::with([apple_recipe, bread_recipe]),
     );
     set_agent_perception_profile(
-        &mut harness.world, &mut harness.event_log, crafter, production_perception_profile(),
+        &mut harness.world,
+        &mut harness.event_log,
+        crafter,
+        production_perception_profile(),
     );
     give_commodity(
         &mut harness.world,
@@ -472,6 +775,9 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -612,6 +918,7 @@ struct ResourceExhaustionRaceOutcome {
     final_source_quantity: Quantity,
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOutcome {
     let mut h = GoldenHarness::new(seed);
     let agents = [
@@ -654,7 +961,10 @@ fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOu
     ];
     for agent in &agents {
         set_agent_perception_profile(
-            &mut h.world, &mut h.event_log, *agent, production_perception_profile(),
+            &mut h.world,
+            &mut h.event_log,
+            *agent,
+            production_perception_profile(),
         );
     }
 
@@ -725,6 +1035,342 @@ fn run_resource_exhaustion_race_scenario(seed: Seed) -> ResourceExhaustionRaceOu
     }
 }
 
+struct ContestedHarvestStartFailureOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    loser_start_failure_count: usize,
+    loser_hunger_decreased: bool,
+    local_source_final_quantity: Quantity,
+    remote_source_final_quantity: Quantity,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_contested_harvest_start_failure_remote_recovery_scenario(
+    seed: Seed,
+) -> ContestedHarvestStartFailureOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
+
+    let agents = [
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Aster",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Bram",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        ),
+    ];
+    for agent in agents {
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            production_perception_profile(),
+        );
+    }
+
+    let local_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(2),
+            max_quantity: Quantity(2),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let remote_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in agents {
+        seed_actor_world_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::Inference,
+        );
+    }
+
+    let initial_hunger = agents.map(|agent| h.agent_hunger(agent));
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Apple, 0).unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, 6).unwrap();
+
+    h.step_once();
+
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    for agent in agents {
+        let trace_tick_0 = trace_sink
+            .trace_at(agent, Tick(0))
+            .expect("each agent should have a tick 0 planning trace");
+        let planning_tick_0 = match &trace_tick_0.outcome {
+            DecisionOutcome::Planning(planning) => planning,
+            other => panic!("expected planning trace at tick 0, got {other:?}"),
+        };
+        let selected_plan = planning_tick_0
+            .selection
+            .selected_plan
+            .as_ref()
+            .expect("hungry agents should select an initial harvest plan");
+        let next_step = selected_plan
+            .next_step
+            .as_ref()
+            .expect("selected harvest plan should expose a next step");
+        assert_eq!(
+            next_step.op_kind,
+            PlannerOpKind::Harvest,
+            "initial contender plan should begin with harvest rather than a different substrate"
+        );
+        assert_eq!(
+            next_step.targets,
+            vec![local_workstation],
+            "both contenders should initially target the same local orchard from the same belief snapshot"
+        );
+    }
+
+    let action_trace = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let request_trace = h
+        .request_resolution_trace_sink()
+        .expect("request-resolution tracing should be enabled");
+    let loser = agents
+        .into_iter()
+        .find(|agent| {
+            action_trace
+                .events_for_at(*agent, Tick(0))
+                .iter()
+                .any(|event| {
+                    event.action_name == "harvest:Harvest Apples"
+                        && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+                })
+        })
+        .expect("one contender should lose the same-tick local harvest start");
+    let winner = agents
+        .into_iter()
+        .find(|agent| *agent != loser)
+        .expect("two-agent scenario should always have a winner");
+    let loser_initial_hunger = if loser == agents[0] {
+        initial_hunger[0]
+    } else {
+        initial_hunger[1]
+    };
+
+    let loser_tick_0_events = action_trace.events_for_at(loser, Tick(0));
+    assert_eq!(loser_tick_0_events.len(), 1);
+    assert!(matches!(
+        loser_tick_0_events[0].kind,
+        ActionTraceKind::StartFailed { .. }
+    ));
+    assert!(
+        action_trace
+            .events_for_at(winner, Tick(0))
+            .iter()
+            .any(|event| {
+                event.action_name == "harvest:Harvest Apples"
+                    && matches!(event.kind, ActionTraceKind::Started { .. })
+            }),
+        "the winning contender should successfully start the local harvest in the same tick"
+    );
+    for agent in agents {
+        let request_events = request_trace.events_for_at(agent, Tick(0));
+        assert_eq!(
+            request_events.len(),
+            1,
+            "each contender should emit one request-resolution event for the initial harvest attempt"
+        );
+        assert_eq!(
+            request_events[0].request.provenance,
+            RequestProvenance::AiPlan
+        );
+        assert_eq!(
+            request_events[0].outcome,
+            RequestResolutionOutcome::Bound {
+                binding: RequestBindingKind::ReproducedAffordance,
+                resolved_targets: vec![local_workstation],
+                start_attempted: true,
+            }
+        );
+        if agent == loser {
+            assert_eq!(
+                h.scheduler.action_start_failures()[0].request,
+                ResolvedRequestTrace {
+                    attempt: RequestAttemptTrace {
+                        input_sequence_no: request_events[0].request.input_sequence_no,
+                        provenance: RequestProvenance::AiPlan,
+                    },
+                    binding: RequestBindingKind::ReproducedAffordance,
+                }
+            );
+        }
+    }
+
+    assert_eq!(h.scheduler.action_start_failures().len(), 1);
+    assert_eq!(h.scheduler.action_start_failures()[0].actor, loser);
+    assert_eq!(
+        h.scheduler.action_start_failures()[0].reason,
+        ActionStartFailureReason::ReservationUnavailable(local_workstation)
+    );
+
+    h.step_once();
+
+    let trace_tick_1 = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .trace_at(loser, Tick(1))
+        .expect("losing contender should have a tick 1 planning trace");
+    let planning_tick_1 = match &trace_tick_1.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 1, got {other:?}"),
+    };
+    assert_eq!(planning_tick_1.action_start_failures.len(), 1);
+    assert_eq!(
+        planning_tick_1.action_start_failures[0].reason,
+        ActionStartFailureReason::ReservationUnavailable(local_workstation)
+    );
+    assert!(
+        planning_tick_1.selection.selected_plan_source != Some(SelectedPlanSource::RetainedCurrentPlan),
+        "start-failure reconciliation should not keep the failed harvest step as a retained current plan"
+    );
+    assert!(
+        !h.agent_has_active_action(loser),
+        "failed same-tick harvest start should not leave the loser with an active action"
+    );
+    assert!(
+        h.world
+            .get_component_blocked_intent_memory(loser)
+            .is_some_and(|memory| memory.intents.iter().any(|intent| {
+                intent.blocking_fact == BlockingFact::ReservationConflict
+                    && intent.related_entity == Some(local_workstation)
+            })),
+        "losing contender should record a reservation-conflict blocker for the local orchard"
+    );
+    assert!(
+        h.scheduler.action_start_failures().is_empty(),
+        "tick 1 reconciliation should drain the structured start failure"
+    );
+
+    let mut winner_committed_local_harvest = false;
+    let mut loser_committed_remote_harvest = false;
+    let mut loser_hunger_decreased = false;
+
+    for _ in 0..160 {
+        h.step_once();
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        assert!(
+            authoritative_apples <= 6,
+            "authoritative apple quantity must never exceed the combined seeded source stock"
+        );
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
+            .unwrap();
+
+        let local_source_quantity = h
+            .world
+            .get_component_resource_source(local_workstation)
+            .expect("local orchard should retain its source component")
+            .available_quantity;
+        let remote_source_quantity = h
+            .world
+            .get_component_resource_source(remote_workstation)
+            .expect("remote orchard should retain its source component")
+            .available_quantity;
+
+        winner_committed_local_harvest |= local_source_quantity == Quantity(0);
+        loser_committed_remote_harvest |=
+            winner_committed_local_harvest && remote_source_quantity < Quantity(4);
+        loser_hunger_decreased |= h.agent_hunger(loser) < loser_initial_hunger;
+
+        if loser_committed_remote_harvest && loser_hunger_decreased {
+            break;
+        }
+    }
+
+    assert!(
+        winner_committed_local_harvest,
+        "one contender should complete the local harvest and consume the only local orchard batch"
+    );
+    assert!(
+        loser_committed_remote_harvest,
+        "the losing contender should recover through the remote orchard rather than remaining stuck on the failed local branch"
+    );
+    assert!(
+        loser_hunger_decreased,
+        "the losing contender should eventually eat after the remote fallback branch completes"
+    );
+    assert_eq!(
+        h.world
+            .get_component_resource_source(local_workstation)
+            .expect("local orchard should retain its source component")
+            .available_quantity,
+        Quantity(0),
+        "the local orchard should end fully depleted after the winner's single lawful harvest"
+    );
+
+    let loser_start_failure_count = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(loser)
+        .into_iter()
+        .filter(|event| {
+            event.action_name == "harvest:Harvest Apples"
+                && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+        })
+        .count();
+
+    ContestedHarvestStartFailureOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        loser_start_failure_count,
+        loser_hunger_decreased,
+        local_source_final_quantity: h
+            .world
+            .get_component_resource_source(local_workstation)
+            .expect("local orchard should retain its source component through scenario end")
+            .available_quantity,
+        remote_source_final_quantity: h
+            .world
+            .get_component_resource_source(remote_workstation)
+            .expect("remote orchard should retain its source component through scenario end")
+            .available_quantity,
+    }
+}
+
 struct ExclusiveQueueContentionOutcome {
     world_hash: StateHash,
     log_hash: StateHash,
@@ -788,7 +1434,10 @@ fn seed_exclusive_orchard_contenders(h: &mut GoldenHarness) -> [EntityId; 4] {
     ];
     for agent in &agents {
         set_agent_perception_profile(
-            &mut h.world, &mut h.event_log, *agent, production_perception_profile(),
+            &mut h.world,
+            &mut h.event_log,
+            *agent,
+            production_perception_profile(),
         );
     }
     agents
@@ -832,6 +1481,7 @@ fn seed_fragile_queued_waiter(h: &mut GoldenHarness) -> EntityId {
             pm(120),
             pm(35),
             nz(6),
+            nz(10),
         ),
     )
     .unwrap();
@@ -1214,6 +1864,9 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -1388,6 +2041,9 @@ fn run_grant_expiry_before_intended_action_scenario(
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -1638,6 +2294,29 @@ fn golden_resource_exhaustion_race() {
     assert!(
         !outcome.agents_with_hunger_relief.is_empty(),
         "At least one agent should complete the harvest/pick-up/eat chain under contention"
+    );
+}
+
+#[test]
+fn golden_contested_harvest_start_failure_recovers_via_remote_fallback() {
+    let outcome = run_contested_harvest_start_failure_remote_recovery_scenario(Seed([30; 32]));
+
+    assert_eq!(
+        outcome.loser_start_failure_count, 1,
+        "the losing contender should record exactly one failed local harvest start before recovering remotely"
+    );
+    assert!(
+        outcome.loser_hunger_decreased,
+        "the losing contender should complete the remote recovery chain and reduce hunger"
+    );
+    assert_eq!(
+        outcome.local_source_final_quantity,
+        Quantity(0),
+        "the single-batch local orchard should be exhausted by the winning contender"
+    );
+    assert!(
+        outcome.remote_source_final_quantity < Quantity(4),
+        "the remote orchard should be the fallback source that actually gets used"
     );
 }
 
@@ -1913,6 +2592,22 @@ fn golden_acquire_commodity_recipe_input() {
 }
 
 #[test]
+fn golden_remote_acquire_commodity_recipe_input() {
+    let _ = run_remote_acquire_recipe_input_scenario(Seed([31; 32]));
+}
+
+#[test]
+fn golden_remote_acquire_commodity_recipe_input_replays_deterministically() {
+    let first = run_remote_acquire_recipe_input_scenario(Seed([32; 32]));
+    let second = run_remote_acquire_recipe_input_scenario(Seed([32; 32]));
+
+    assert_eq!(
+        first, second,
+        "Remote recipe-input acquisition scenario should replay deterministically"
+    );
+}
+
+#[test]
 fn golden_multi_recipe_craft_path() {
     let seed = Seed([6; 32]);
 
@@ -1960,6 +2655,23 @@ fn golden_resource_exhaustion_race_replays_deterministically() {
     assert_eq!(
         outcome_1.log_hash, outcome_2.log_hash,
         "Resource exhaustion race event log must replay deterministically"
+    );
+}
+
+#[test]
+fn golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically() {
+    let seed = Seed([30; 32]);
+
+    let outcome_1 = run_contested_harvest_start_failure_remote_recovery_scenario(seed);
+    let outcome_2 = run_contested_harvest_start_failure_remote_recovery_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Contested harvest start-failure recovery should replay to the same world hash"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Contested harvest start-failure recovery should replay to the same event log hash"
     );
 }
 
@@ -2157,7 +2869,11 @@ fn record_faction_ownership_milestones(
     // Check for faction-owned apple lots at ORCHARD_FARM.
     let has_faction_owned_apples = world
         .entities()
-        .filter(|e| world.get_component_item_lot(*e).is_some_and(|lot| lot.commodity == CommodityKind::Apple))
+        .filter(|e| {
+            world
+                .get_component_item_lot(*e)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Apple)
+        })
         .any(|lot| world.owner_of(lot) == Some(scenario.faction));
     if has_faction_owned_apples {
         milestones.insert(FactionOwnershipMilestone::FactionOwnedApplesMaterialized);
@@ -2165,7 +2881,10 @@ fn record_faction_ownership_milestones(
 
     // Member picked up faction apples (possesses apples).
     if milestones.contains(&FactionOwnershipMilestone::FactionOwnedApplesMaterialized)
-        && scenario.harness.agent_commodity_qty(scenario.member, CommodityKind::Apple) > Quantity(0)
+        && scenario
+            .harness
+            .agent_commodity_qty(scenario.member, CommodityKind::Apple)
+            > Quantity(0)
     {
         milestones.insert(FactionOwnershipMilestone::MemberPickedUpFactionApples);
     }

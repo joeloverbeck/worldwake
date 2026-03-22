@@ -81,7 +81,7 @@ mod tests {
             },
             targets: vec![],
             start_tick: Tick(9),
-            remaining_duration: ActionDuration::Finite(2),
+            remaining_duration: ActionDuration::new(2),
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(8)],
             local_state: None,
@@ -134,7 +134,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn tick_a(
         _def: &ActionDef,
-        _instance: &ActionInstance,
+        _instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {

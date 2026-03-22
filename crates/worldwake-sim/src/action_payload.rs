@@ -8,6 +8,7 @@ use worldwake_core::{
 pub enum ActionPayload {
     #[default]
     None,
+    ConsultRecord(ConsultRecordActionPayload),
     Tell(TellActionPayload),
     Bribe(BribeActionPayload),
     Threaten(ThreatenActionPayload),
@@ -27,6 +28,7 @@ impl ActionPayload {
         match self {
             Self::Bribe(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
@@ -45,6 +47,7 @@ impl ActionPayload {
         match self {
             Self::Threaten(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::DeclareSupport(_)
@@ -63,6 +66,7 @@ impl ActionPayload {
         match self {
             Self::DeclareSupport(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -81,6 +85,7 @@ impl ActionPayload {
         match self {
             Self::Harvest(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -99,6 +104,7 @@ impl ActionPayload {
         match self {
             Self::Transport(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -117,6 +123,7 @@ impl ActionPayload {
         match self {
             Self::Craft(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -135,6 +142,7 @@ impl ActionPayload {
         match self {
             Self::Trade(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -153,6 +161,7 @@ impl ActionPayload {
         match self {
             Self::Combat(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -171,6 +180,7 @@ impl ActionPayload {
         match self {
             Self::Loot(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -189,6 +199,7 @@ impl ActionPayload {
         match self {
             Self::QueueForFacilityUse(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
@@ -207,6 +218,7 @@ impl ActionPayload {
         match self {
             Self::Tell(payload) => Some(payload),
             Self::None
+            | Self::ConsultRecord(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
@@ -219,6 +231,30 @@ impl ActionPayload {
             | Self::QueueForFacilityUse(_) => None,
         }
     }
+
+    #[must_use]
+    pub const fn as_consult_record(&self) -> Option<&ConsultRecordActionPayload> {
+        match self {
+            Self::ConsultRecord(payload) => Some(payload),
+            Self::None
+            | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ConsultRecordActionPayload {
+    pub record: EntityId,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -296,10 +332,10 @@ pub struct QueueForFacilityUsePayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionPayload, BribeActionPayload, CombatActionPayload, CraftActionPayload,
-        DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
-        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload,
+        ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
+        CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
+        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
@@ -328,6 +364,15 @@ mod tests {
             subject_entity: EntityId {
                 slot: 8,
                 generation: 2,
+            },
+        }
+    }
+
+    fn sample_consult_record_payload() -> ConsultRecordActionPayload {
+        ConsultRecordActionPayload {
+            record: EntityId {
+                slot: 3,
+                generation: 1,
             },
         }
     }
@@ -416,6 +461,7 @@ mod tests {
     #[test]
     fn action_payload_satisfies_required_traits() {
         assert_traits::<ActionPayload>();
+        assert_traits::<ConsultRecordActionPayload>();
         assert_traits::<TellActionPayload>();
         assert_traits::<BribeActionPayload>();
         assert_traits::<ThreatenActionPayload>();
@@ -437,11 +483,29 @@ mod tests {
     #[test]
     fn typed_accessors_cover_social_payload_variants() {
         let harvest = ActionPayload::Harvest(sample_payload());
+        let consult = ActionPayload::ConsultRecord(sample_consult_record_payload());
         let tell = ActionPayload::Tell(sample_tell_payload());
         let bribe = ActionPayload::Bribe(sample_bribe_payload());
         let threaten = ActionPayload::Threaten(sample_threaten_payload());
         let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
 
+        assert_eq!(
+            consult.as_consult_record(),
+            Some(&sample_consult_record_payload())
+        );
+        assert_eq!(consult.as_tell(), None);
+        assert_eq!(consult.as_bribe(), None);
+        assert_eq!(consult.as_threaten(), None);
+        assert_eq!(consult.as_declare_support(), None);
+        assert_eq!(consult.as_harvest(), None);
+        assert_eq!(consult.as_transport(), None);
+        assert_eq!(consult.as_craft(), None);
+        assert_eq!(consult.as_trade(), None);
+        assert_eq!(consult.as_combat(), None);
+        assert_eq!(consult.as_loot(), None);
+        assert_eq!(consult.as_queue_for_facility_use(), None);
+
+        assert_eq!(tell.as_consult_record(), None);
         assert_eq!(tell.as_tell(), Some(&sample_tell_payload()));
         assert_eq!(tell.as_bribe(), None);
         assert_eq!(tell.as_threaten(), None);
@@ -454,6 +518,7 @@ mod tests {
         assert_eq!(tell.as_loot(), None);
         assert_eq!(tell.as_queue_for_facility_use(), None);
 
+        assert_eq!(bribe.as_consult_record(), None);
         assert_eq!(bribe.as_tell(), None);
         assert_eq!(bribe.as_bribe(), Some(&sample_bribe_payload()));
         assert_eq!(bribe.as_threaten(), None);
@@ -463,6 +528,7 @@ mod tests {
         assert_eq!(bribe.as_craft(), None);
         assert_eq!(bribe.as_trade(), None);
 
+        assert_eq!(threaten.as_consult_record(), None);
         assert_eq!(threaten.as_tell(), None);
         assert_eq!(threaten.as_bribe(), None);
         assert_eq!(threaten.as_threaten(), Some(&sample_threaten_payload()));
@@ -472,6 +538,7 @@ mod tests {
         assert_eq!(threaten.as_craft(), None);
         assert_eq!(threaten.as_trade(), None);
 
+        assert_eq!(declare_support.as_consult_record(), None);
         assert_eq!(declare_support.as_tell(), None);
         assert_eq!(declare_support.as_bribe(), None);
         assert_eq!(declare_support.as_threaten(), None);
@@ -484,6 +551,7 @@ mod tests {
         assert_eq!(declare_support.as_craft(), None);
         assert_eq!(declare_support.as_trade(), None);
 
+        assert_eq!(harvest.as_consult_record(), None);
         assert_eq!(harvest.as_tell(), None);
         assert_eq!(harvest.as_bribe(), None);
         assert_eq!(harvest.as_threaten(), None);
@@ -505,6 +573,7 @@ mod tests {
                 quantity: Quantity(3)
             })
         );
+        assert_eq!(transport.as_consult_record(), None);
         assert_eq!(transport.as_bribe(), None);
         assert_eq!(transport.as_threaten(), None);
         assert_eq!(transport.as_declare_support(), None);
@@ -512,6 +581,7 @@ mod tests {
         assert_eq!(transport.as_craft(), None);
         assert_eq!(transport.as_trade(), None);
 
+        assert_eq!(harvest.as_consult_record(), None);
         assert_eq!(harvest.as_harvest(), Some(&sample_payload()));
         assert_eq!(harvest.as_bribe(), None);
         assert_eq!(harvest.as_threaten(), None);
@@ -520,6 +590,7 @@ mod tests {
         assert_eq!(harvest.as_craft(), None);
         assert_eq!(harvest.as_trade(), None);
 
+        assert_eq!(craft.as_consult_record(), None);
         assert_eq!(craft.as_harvest(), None);
         assert_eq!(craft.as_bribe(), None);
         assert_eq!(craft.as_threaten(), None);
@@ -528,6 +599,7 @@ mod tests {
         assert_eq!(craft.as_craft(), Some(&sample_craft_payload()));
         assert_eq!(craft.as_trade(), None);
 
+        assert_eq!(trade.as_consult_record(), None);
         assert_eq!(trade.as_harvest(), None);
         assert_eq!(trade.as_bribe(), None);
         assert_eq!(trade.as_threaten(), None);
@@ -543,6 +615,7 @@ mod tests {
         let loot = ActionPayload::Loot(sample_loot_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
 
+        assert_eq!(combat.as_consult_record(), None);
         assert_eq!(combat.as_tell(), None);
         assert_eq!(combat.as_harvest(), None);
         assert_eq!(combat.as_bribe(), None);
@@ -553,6 +626,7 @@ mod tests {
         assert_eq!(combat.as_trade(), None);
         assert_eq!(combat.as_combat(), Some(&sample_combat_payload()));
 
+        assert_eq!(loot.as_consult_record(), None);
         assert_eq!(loot.as_tell(), None);
         assert_eq!(loot.as_harvest(), None);
         assert_eq!(loot.as_bribe(), None);
@@ -564,6 +638,7 @@ mod tests {
         assert_eq!(loot.as_combat(), None);
         assert_eq!(loot.as_loot(), Some(&sample_loot_payload()));
 
+        assert_eq!(queue.as_consult_record(), None);
         assert_eq!(queue.as_tell(), None);
         assert_eq!(queue.as_harvest(), None);
         assert_eq!(queue.as_bribe(), None);
@@ -584,6 +659,7 @@ mod tests {
     fn typed_accessors_return_none_for_action_payload_none() {
         let none = ActionPayload::None;
 
+        assert_eq!(none.as_consult_record(), None);
         assert_eq!(none.as_harvest(), None);
         assert_eq!(none.as_tell(), None);
         assert_eq!(none.as_bribe(), None);
@@ -610,6 +686,16 @@ mod tests {
     #[test]
     fn tell_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::Tell(sample_tell_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn consult_record_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::ConsultRecord(sample_consult_record_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

@@ -4,10 +4,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity, BeliefConfidencePolicy,
-    CommodityKind, HomeostaticNeeds, MetabolismProfile, PerceptionProfile,
+    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
+    BeliefConfidencePolicy, CommodityKind, HomeostaticNeeds, MetabolismProfile, PerceptionProfile,
     PrototypePlace, Quantity, ResourceSource, Seed, StateHash, UtilityProfile, WorkstationTag,
-    prototype_place_entity,
 };
 
 // ---------------------------------------------------------------------------
@@ -183,6 +182,7 @@ fn golden_save_load_round_trip_under_ai() {
 // Scenario S02: World Runs Without Observers (Principle 6)
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_lines)]
 fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     let mut h = GoldenHarness::new(seed);
     let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
@@ -206,6 +206,9 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
         },
     );
 
@@ -240,7 +243,10 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     );
     {
         use std::collections::BTreeSet;
-        use worldwake_core::{DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, Tick, TradeDispositionProfile};
+        use worldwake_core::{
+            DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, Tick,
+            TradeDispositionProfile,
+        };
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_perception_profile(
             merchant,
@@ -249,6 +255,9 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
             },
         )
         .unwrap();
@@ -339,7 +348,7 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     );
 
     // Wanderer at Village Square — thirsty + fatigued, has water.
-    let _wanderer = seed_agent(
+    let wanderer = seed_agent(
         &mut h.world,
         &mut h.event_log,
         "Wanderer",
@@ -355,7 +364,7 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
     give_commodity(
         &mut h.world,
         &mut h.event_log,
-        _wanderer,
+        wanderer,
         VILLAGE_SQUARE,
         CommodityKind::Water,
         Quantity(1),
@@ -463,10 +472,7 @@ fn run_world_runs_without_observers(seed: Seed) -> (StateHash, StateHash) {
         "At least one consumption event should have occurred over 200 ticks"
     );
 
-    (
-        final_world_hash,
-        hash_event_log(&h.event_log).unwrap(),
-    )
+    (final_world_hash, hash_event_log(&h.event_log).unwrap())
 }
 
 #[test]

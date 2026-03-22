@@ -66,8 +66,9 @@ mod tests {
         canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world, StateHash,
     };
     use crate::{
-        build_prototype_world, CauseRef, EventLog, EventTag, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        build_prototype_world, CauseRef, EventLog, EventTag, InstitutionalClaim,
+        InstitutionalRecordEntry, PrototypePlace, RecordData, RecordEntryId, RecordKind,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt;
@@ -195,6 +196,47 @@ mod tests {
             .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+
+        assert_ne!(
+            hash_world(&original).unwrap(),
+            hash_world(&changed).unwrap()
+        );
+    }
+
+    #[test]
+    fn hash_world_changes_when_record_data_changes() {
+        let mut original = World::new(build_prototype_world()).unwrap();
+        let record = RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place: crate::prototype_place_entity(PrototypePlace::VillageSquare),
+            issuer: crate::prototype_place_entity(PrototypePlace::VillageSquare),
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: vec![InstitutionalRecordEntry {
+                entry_id: RecordEntryId(0),
+                claim: InstitutionalClaim::OfficeHolder {
+                    office: crate::EntityId {
+                        slot: 1000,
+                        generation: 0,
+                    },
+                    holder: None,
+                    effective_tick: crate::Tick(2),
+                },
+                recorded_tick: crate::Tick(3),
+                supersedes: None,
+            }],
+            next_entry_id: 1,
+        };
+        let record_id = original
+            .create_record(record.clone(), crate::Tick(1))
+            .unwrap();
+        let mut changed = original.clone();
+        let mut updated = record;
+        updated.max_entries_per_consult = 7;
+        changed.remove_component_record_data(record_id).unwrap();
+        changed
+            .insert_component_record_data(record_id, updated)
+            .unwrap();
 
         assert_ne!(
             hash_world(&original).unwrap(),

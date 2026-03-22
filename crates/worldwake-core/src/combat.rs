@@ -17,6 +17,7 @@ pub struct CombatProfile {
     pub unarmed_wound_severity: Permille,
     pub unarmed_bleed_rate: Permille,
     pub unarmed_attack_ticks: NonZeroU32,
+    pub defend_stance_ticks: NonZeroU32,
 }
 
 impl CombatProfile {
@@ -33,6 +34,7 @@ impl CombatProfile {
         unarmed_wound_severity: Permille,
         unarmed_bleed_rate: Permille,
         unarmed_attack_ticks: NonZeroU32,
+        defend_stance_ticks: NonZeroU32,
     ) -> Self {
         Self {
             wound_capacity,
@@ -45,6 +47,7 @@ impl CombatProfile {
             unarmed_wound_severity,
             unarmed_bleed_rate,
             unarmed_attack_ticks,
+            defend_stance_ticks,
         }
     }
 }
@@ -93,6 +96,7 @@ mod tests {
             pm(120),
             pm(35),
             nz(6),
+            nz(10),
         )
     }
 
@@ -129,6 +133,7 @@ mod tests {
         assert_eq!(profile.unarmed_wound_severity, pm(120));
         assert_eq!(profile.unarmed_bleed_rate, pm(35));
         assert_eq!(profile.unarmed_attack_ticks, nz(6));
+        assert_eq!(profile.defend_stance_ticks, nz(10));
     }
 
     #[test]

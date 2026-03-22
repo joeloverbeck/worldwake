@@ -186,23 +186,19 @@ fn reservation_range(
     current_tick: Tick,
     duration: ActionDuration,
 ) -> Result<Option<TickRange>, ActionError> {
-    match duration {
-        ActionDuration::Finite(0) => Ok(None),
-        ActionDuration::Finite(duration) => {
-            let end = current_tick
-                .0
-                .checked_add(u64::from(duration))
-                .ok_or_else(|| {
-                    ActionError::InternalError("reservation range overflowed".to_string())
-                })?;
-            TickRange::new(current_tick, Tick(end))
-                .map(Some)
-                .map_err(|err| ActionError::InternalError(err.to_string()))
-        }
-        ActionDuration::Indefinite => Err(ActionError::PreconditionFailed(
-            "indefinite actions cannot reserve targets until reservation lifecycle support exists"
-                .to_string(),
-        )),
+    let duration = duration.ticks();
+    if duration == 0 {
+        Ok(None)
+    } else {
+        let end = current_tick
+            .0
+            .checked_add(u64::from(duration))
+            .ok_or_else(|| {
+                ActionError::InternalError("reservation range overflowed".to_string())
+            })?;
+        TickRange::new(current_tick, Tick(end))
+            .map(Some)
+            .map_err(|err| ActionError::InternalError(err.to_string()))
     }
 }
 
@@ -290,7 +286,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn tick_continue(
         _def: &ActionDef,
-        _instance: &crate::ActionInstance,
+        _instance: &mut crate::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -429,7 +425,7 @@ mod tests {
         assert_eq!(instance.actor, actor);
         assert_eq!(instance.targets, vec![target]);
         assert_eq!(instance.start_tick, Tick(5));
-        assert_eq!(instance.remaining_duration, ActionDuration::Finite(3));
+        assert_eq!(instance.remaining_duration, ActionDuration::new(3));
         assert_eq!(instance.status, crate::ActionStatus::Active);
         assert_eq!(instance.local_state, Some(ActionState::Empty));
         assert_eq!(instance.reservation_ids.len(), 1);
@@ -466,6 +462,7 @@ mod tests {
                     worldwake_core::Permille::new(120).unwrap(),
                     worldwake_core::Permille::new(30).unwrap(),
                     NonZeroU32::new(6).unwrap(),
+                    NonZeroU32::new(10).unwrap(),
                 ),
             )
             .unwrap();
@@ -535,7 +532,7 @@ mod tests {
 
         assert_eq!(
             active_actions.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(
+            ActionDuration::new(
                 CommodityKind::Bow
                     .spec()
                     .combat_weapon_profile
@@ -551,11 +548,28 @@ mod tests {
     }
 
     #[test]
-    fn start_action_supports_indefinite_duration_when_no_reservations_are_needed() {
+    fn start_action_supports_dynamic_defend_duration_when_no_reservations_are_needed() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_component_combat_profile(
+                actor,
+                worldwake_core::CombatProfile::new(
+                    worldwake_core::Permille::new(1000).unwrap(),
+                    worldwake_core::Permille::new(700).unwrap(),
+                    worldwake_core::Permille::new(600).unwrap(),
+                    worldwake_core::Permille::new(550).unwrap(),
+                    worldwake_core::Permille::new(75).unwrap(),
+                    worldwake_core::Permille::new(20).unwrap(),
+                    worldwake_core::Permille::new(15).unwrap(),
+                    worldwake_core::Permille::new(120).unwrap(),
+                    worldwake_core::Permille::new(30).unwrap(),
+                    NonZeroU32::new(6).unwrap(),
+                    NonZeroU32::new(10).unwrap(),
+                ),
+            )
+            .unwrap();
             commit_txn(txn);
             actor
         };
@@ -575,7 +589,7 @@ mod tests {
             targets: Vec::new(),
             preconditions: vec![Precondition::ActorAlive],
             reservation_requirements: Vec::new(),
-            duration: DurationExpr::Indefinite,
+            duration: DurationExpr::ActorDefendStance,
             body_cost_per_tick: BodyCostPerTick::zero(),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
@@ -616,12 +630,12 @@ mod tests {
 
         assert_eq!(
             active_actions.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Indefinite
+            ActionDuration::new(10)
         );
     }
 
     #[test]
-    fn start_action_rejects_indefinite_duration_when_reservations_are_required() {
+    fn start_action_supports_finite_duration_when_reservations_are_required() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, target, _place) = setup_actor_and_target(&mut world);
         let affordance = Affordance {
@@ -632,7 +646,7 @@ mod tests {
             explanation: None,
         };
         let mut defs = ActionDefRegistry::new();
-        let mut def = sample_def(
+        let def = sample_def(
             ActionDefId(0),
             ActionHandlerId(0),
             vec![Constraint::ActorAlive],
@@ -643,7 +657,6 @@ mod tests {
             vec![ReservationReq { target_index: 0 }],
             NonZeroU32::MIN,
         );
-        def.duration = DurationExpr::Indefinite;
         defs.register(def);
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(
@@ -657,7 +670,7 @@ mod tests {
         let mut next_instance_id = ActionInstanceId(0);
         let mut rng = test_rng();
 
-        let err = start_action(
+        let action_id = start_action(
             &affordance,
             &defs,
             &handlers,
@@ -673,14 +686,10 @@ mod tests {
                 tick: Tick(2),
             },
         )
-        .unwrap_err();
-
+        .unwrap();
         assert_eq!(
-            err,
-            ActionError::PreconditionFailed(
-                "indefinite actions cannot reserve targets until reservation lifecycle support exists"
-                    .to_string()
-            )
+            active_actions.get(&action_id).unwrap().remaining_duration,
+            ActionDuration::new(1)
         );
     }
 
@@ -1118,7 +1127,7 @@ mod tests {
                 actor,
                 targets: Vec::new(),
                 start_tick: Tick(0),
-                remaining_duration: ActionDuration::Finite(1),
+                remaining_duration: ActionDuration::new(1),
                 status: crate::ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: None,

@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, CombatProfile, CommodityKind, EntityId, EntityKind, EventTag,
-    Permille, Quantity, VisibilitySpec, World, WorldTxn,
+    Permille, Quantity, SuccessionLaw, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -42,10 +42,15 @@ fn register_threaten_action(
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
     let handler = handlers.register(
-        ActionHandler::new(start_threaten, tick_threaten, commit_threaten, abort_threaten)
-            .with_affordance_payloads(enumerate_threaten_payloads)
-            .with_payload_override_validator(validate_threaten_payload_override)
-            .with_authoritative_payload_validator(validate_threaten_payload_authoritatively),
+        ActionHandler::new(
+            start_threaten,
+            tick_threaten,
+            commit_threaten,
+            abort_threaten,
+        )
+        .with_affordance_payloads(enumerate_threaten_payloads)
+        .with_payload_override_validator(validate_threaten_payload_override)
+        .with_authoritative_payload_validator(validate_threaten_payload_authoritatively),
     );
     defs.register(threaten_action_def(ActionDefId(defs.len() as u32), handler))
 }
@@ -192,10 +197,7 @@ fn threaten_payload<'a>(
     payload: &'a ActionPayload,
 ) -> Result<&'a ThreatenActionPayload, ActionError> {
     payload.as_threaten().ok_or_else(|| {
-        ActionError::PreconditionFailed(format!(
-            "action def {} requires Threaten payload",
-            def.id
-        ))
+        ActionError::PreconditionFailed(format!("action def {} requires Threaten payload", def.id))
     })
 }
 
@@ -389,7 +391,7 @@ fn start_bribe(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_bribe(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -403,7 +405,8 @@ fn commit_bribe(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let payload = bribe_payload(def, &instance.payload)?;
-    let (target, place) = validate_agent_target_context(txn, instance.actor, &instance.targets, payload.target)?;
+    let (target, place) =
+        validate_agent_target_context(txn, instance.actor, &instance.targets, payload.target)?;
     transfer_controlled_commodity(
         txn,
         instance.actor,
@@ -446,7 +449,7 @@ fn start_threaten(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_threaten(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -460,12 +463,15 @@ fn commit_threaten(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let payload = threaten_payload(def, &instance.payload)?;
-    let (target, _) = validate_agent_target_context(txn, instance.actor, &instance.targets, payload.target)?;
+    let (target, _) =
+        validate_agent_target_context(txn, instance.actor, &instance.targets, payload.target)?;
     let actor_profile = required_combat_profile(txn, instance.actor)?;
     let courage = txn
         .get_component_utility_profile(target)
         .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("target {target} lacks UtilityProfile")))?
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("target {target} lacks UtilityProfile"))
+        })?
         .courage;
     let pressure = threat_pressure(actor_profile);
     if pressure > courage {
@@ -502,7 +508,7 @@ fn start_declare_support(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_declare_support(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -556,9 +562,11 @@ fn validate_agent_target_context(
             "actor {actor} cannot target themselves"
         )));
     }
-    let place = txn.effective_place(actor).ok_or(ActionError::AbortRequested(
-        ActionAbortRequestReason::ActorNotPlaced { actor },
-    ))?;
+    let place = txn
+        .effective_place(actor)
+        .ok_or(ActionError::AbortRequested(
+            ActionAbortRequestReason::ActorNotPlaced { actor },
+        ))?;
     if txn.effective_place(target) != Some(place) {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::TargetNotColocated { actor, target },
@@ -574,11 +582,18 @@ fn validate_declare_support_context_in_world(
 ) -> Result<(), ActionError> {
     let office_data = world
         .get_component_office_data(payload.office)
-        .ok_or_else(|| ActionError::PreconditionFailed(format!(
-            "office {} lacks OfficeData",
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
+        })?;
+    if office_data.succession_law != SuccessionLaw::Support {
+        return Err(ActionError::PreconditionFailed(format!(
+            "office {} does not use support-based succession",
             payload.office
-        )))?;
-    if world.entity_kind(payload.candidate) != Some(EntityKind::Agent) || !world.is_alive(payload.candidate) {
+        )));
+    }
+    if world.entity_kind(payload.candidate) != Some(EntityKind::Agent)
+        || !world.is_alive(payload.candidate)
+    {
         return Err(ActionError::PreconditionFailed(format!(
             "candidate {} must be a live agent",
             payload.candidate
@@ -649,7 +664,9 @@ fn transfer_controlled_commodity(
     place: EntityId,
 ) -> Result<(), ActionError> {
     ensure_accessible_quantity(txn, holder, commodity, quantity)?;
-    for (lot_id, moved_quantity) in resolve_controlled_lots(txn, holder, commodity, quantity, place)? {
+    for (lot_id, moved_quantity) in
+        resolve_controlled_lots(txn, holder, commodity, quantity, place)?
+    {
         transfer_lot(txn, lot_id, new_holder, place, moved_quantity)?;
     }
     Ok(())
@@ -763,15 +780,15 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
-        CauseRef, CombatProfile, CommodityKind, ControlSource, EligibilityRule, EntityId,
-        EventLog, EventTag, EventView, OfficeData, Permille, Quantity, Seed, SuccessionLaw, Tick,
-        UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        CauseRef, CombatProfile, CommodityKind, ControlSource, EligibilityRule, EntityId, EventLog,
+        EventTag, EventView, OfficeData, Permille, Quantity, RecordData, RecordKind, Seed,
+        SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
-        BribeActionPayload, DeclareSupportActionPayload, DeterministicRng,
-        ExternalAbortReason, SystemExecutionContext, SystemId, ThreatenActionPayload,
+        BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, ExternalAbortReason,
+        PerAgentBeliefView, SystemExecutionContext, SystemId, ThreatenActionPayload,
     };
 
     fn pm(value: u16) -> Permille {
@@ -790,11 +807,7 @@ mod tests {
         )
     }
 
-    fn new_action_txn(
-        world: &mut World,
-        actor: EntityId,
-        tick: u64,
-    ) -> WorldTxn<'_> {
+    fn new_action_txn(world: &mut World, actor: EntityId, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
             world,
             Tick(tick),
@@ -815,6 +828,33 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let ids = register_office_actions(&mut defs, &mut handlers);
         (defs, handlers, ids)
+    }
+
+    fn create_record(
+        txn: &mut WorldTxn<'_>,
+        place: EntityId,
+        issuer: EntityId,
+        kind: RecordKind,
+    ) -> EntityId {
+        txn.create_record(RecordData {
+            record_kind: kind,
+            home_place: place,
+            issuer,
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .unwrap()
+    }
+
+    fn record_at_place(world: &World, place: EntityId, kind: RecordKind) -> RecordData {
+        world
+            .query_record_data()
+            .find_map(|(_, record)| {
+                (record.home_place == place && record.record_kind == kind).then_some(record.clone())
+            })
+            .expect("fixture should provision the requested record")
     }
 
     struct SocialFixture {
@@ -840,7 +880,9 @@ mod tests {
                 let candidate = txn.create_agent("Candidate", ControlSource::Ai).unwrap();
                 let office = txn.create_office("Chair").unwrap();
                 let faction = txn.create_faction("Ward").unwrap();
-                let lot = txn.create_item_lot(CommodityKind::Coin, Quantity(300)).unwrap();
+                let lot = txn
+                    .create_item_lot(CommodityKind::Coin, Quantity(300))
+                    .unwrap();
 
                 for entity in [actor, target, observer, candidate] {
                     txn.set_ground_location(entity, place).unwrap();
@@ -870,6 +912,8 @@ mod tests {
                     },
                 )
                 .unwrap();
+                let _ = create_record(&mut txn, place, actor, RecordKind::OfficeRegister);
+                let _ = create_record(&mut txn, place, actor, RecordKind::SupportLedger);
                 txn.add_member(candidate, faction).unwrap();
                 txn.set_component_utility_profile(
                     target,
@@ -892,6 +936,7 @@ mod tests {
                         pm(100),
                         pm(25),
                         NonZeroU32::new(4).unwrap(),
+                        NonZeroU32::new(10).unwrap(),
                     ),
                 )
                 .unwrap();
@@ -910,6 +955,83 @@ mod tests {
                 candidate,
                 faction,
             }
+        }
+    }
+
+    struct PayloadFixture {
+        world: World,
+        place: EntityId,
+        actor: EntityId,
+        target: EntityId,
+    }
+
+    impl PayloadFixture {
+        fn new(with_combat_profile: bool) -> Self {
+            let mut world = World::new(build_prototype_world()).unwrap();
+            let place = world.topology().place_ids().next().unwrap();
+            let (actor, target) = {
+                let mut txn = new_txn(&mut world, 1);
+                let actor = txn
+                    .create_agent("Payload Actor", ControlSource::Ai)
+                    .unwrap();
+                let target = txn
+                    .create_agent("Payload Target", ControlSource::Ai)
+                    .unwrap();
+                txn.set_ground_location(actor, place).unwrap();
+                txn.set_ground_location(target, place).unwrap();
+                txn.set_component_agent_belief_store(actor, AgentBeliefStore::new())
+                    .unwrap();
+                if with_combat_profile {
+                    txn.set_component_combat_profile(
+                        actor,
+                        CombatProfile::new(
+                            pm(1000),
+                            pm(700),
+                            pm(650),
+                            pm(500),
+                            pm(50),
+                            pm(25),
+                            pm(20),
+                            pm(100),
+                            pm(25),
+                            NonZeroU32::new(4).unwrap(),
+                            NonZeroU32::new(10).unwrap(),
+                        ),
+                    )
+                    .unwrap();
+                }
+                let mut log = EventLog::new();
+                let _ = txn.commit(&mut log);
+                (actor, target)
+            };
+
+            Self {
+                world,
+                place,
+                actor,
+                target,
+            }
+        }
+
+        fn view(&self) -> PerAgentBeliefView<'_> {
+            PerAgentBeliefView::from_world(self.actor, &self.world)
+        }
+
+        fn give_actor_commodity(&mut self, commodity: CommodityKind, quantity: Quantity) {
+            let mut txn = new_txn(&mut self.world, 2);
+            let lot = txn.create_item_lot(commodity, quantity).unwrap();
+            txn.set_ground_location(lot, self.place).unwrap();
+            txn.set_owner(lot, self.actor).unwrap();
+            txn.set_possessor(lot, self.actor).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        fn clear_actor_combat_profile(&mut self) {
+            let mut txn = new_txn(&mut self.world, 2);
+            txn.clear_component_combat_profile(self.actor).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
         }
     }
 
@@ -949,6 +1071,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &action_defs,
+            politics_trace: None,
             tick: Tick(tick),
             system_id: SystemId::Perception,
         })
@@ -974,6 +1097,130 @@ mod tests {
     }
 
     #[test]
+    fn bribe_payload_offers_full_stock() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.give_actor_commodity(CommodityKind::Bread, Quantity(5));
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(
+            payloads[0],
+            ActionPayload::Bribe(BribeActionPayload {
+                target: fx.target,
+                offered_commodity: CommodityKind::Bread,
+                offered_quantity: Quantity(5),
+            })
+        );
+    }
+
+    #[test]
+    fn bribe_payload_no_self_bribe() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.give_actor_commodity(CommodityKind::Bread, Quantity(5));
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.actor], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn bribe_payload_empty_without_commodities() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn bribe_payload_multiple_commodity_types() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[0]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.give_actor_commodity(CommodityKind::Bread, Quantity(5));
+        fx.give_actor_commodity(CommodityKind::Coin, Quantity(3));
+        let view = fx.view();
+
+        let payloads = super::enumerate_bribe_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert_eq!(payloads.len(), 2);
+        assert!(payloads.contains(&ActionPayload::Bribe(BribeActionPayload {
+            target: fx.target,
+            offered_commodity: CommodityKind::Bread,
+            offered_quantity: Quantity(5),
+        })));
+        assert!(payloads.contains(&ActionPayload::Bribe(BribeActionPayload {
+            target: fx.target,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(3),
+        })));
+    }
+
+    #[test]
+    fn threaten_payload_emits_for_bound_target_with_combat_profile() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert_eq!(
+            payloads,
+            vec![ActionPayload::Threaten(ThreatenActionPayload {
+                target: fx.target,
+            })]
+        );
+    }
+
+    #[test]
+    fn threaten_payload_no_self_threaten() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[fx.actor], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn threaten_payload_empty_without_targets() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let fx = PayloadFixture::new(true);
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn threaten_payload_requires_combat_profile() {
+        let (defs, _handlers, ids) = setup_registries();
+        let def = defs.get(ids[1]).unwrap();
+        let mut fx = PayloadFixture::new(true);
+        fx.clear_actor_combat_profile();
+        let view = fx.view();
+
+        let payloads = super::enumerate_threaten_payloads(def, fx.actor, &[fx.target], &view);
+
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
     fn bribe_commit_transfers_goods_increases_loyalty_and_preserves_conservation() {
         let (defs, handlers, ids) = setup_registries();
         let mut fx = SocialFixture::new();
@@ -988,7 +1235,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1016,18 +1263,20 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            fx.world.controlled_commodity_quantity(fx.actor, CommodityKind::Coin),
+            fx.world
+                .controlled_commodity_quantity(fx.actor, CommodityKind::Coin),
             Quantity(0)
         );
         assert_eq!(
-            fx.world.controlled_commodity_quantity(fx.target, CommodityKind::Coin),
+            fx.world
+                .controlled_commodity_quantity(fx.target, CommodityKind::Coin),
             Quantity(300)
         );
+        assert_eq!(fx.world.loyalty_to(fx.target, fx.actor), Some(pm(300)));
         assert_eq!(
-            fx.world.loyalty_to(fx.target, fx.actor),
-            Some(pm(300))
+            provenance.operation,
+            worldwake_core::LotOperation::Transferred
         );
-        assert_eq!(provenance.operation, worldwake_core::LotOperation::Transferred);
         assert_eq!(provenance.amount, Quantity(300));
         assert_eq!(provenance.event_id, Some(bribe_event_id));
         verify_live_lot_conservation(&fx.world, CommodityKind::Coin, 300).unwrap();
@@ -1050,7 +1299,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1071,7 +1320,9 @@ mod tests {
     fn bribe_abort_has_no_side_effects() {
         let (defs, handlers, ids) = setup_registries();
         let mut fx = SocialFixture::new();
-        let before_actor = fx.world.controlled_commodity_quantity(fx.actor, CommodityKind::Coin);
+        let before_actor = fx
+            .world
+            .controlled_commodity_quantity(fx.actor, CommodityKind::Coin);
         let def = defs.get(ids[0]).unwrap();
         let handler = handlers.get(def.handler).unwrap();
         let instance = ActionInstance {
@@ -1085,7 +1336,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1102,7 +1353,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            fx.world.controlled_commodity_quantity(fx.actor, CommodityKind::Coin),
+            fx.world
+                .controlled_commodity_quantity(fx.actor, CommodityKind::Coin),
             before_actor
         );
         assert_eq!(fx.world.loyalty_to(fx.target, fx.actor), None);
@@ -1119,7 +1371,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1127,10 +1379,7 @@ mod tests {
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, ids[1], &instance, 4, 3);
 
-        assert_eq!(
-            fx.world.loyalty_to(fx.target, fx.actor),
-            Some(pm(650))
-        );
+        assert_eq!(fx.world.loyalty_to(fx.target, fx.actor), Some(pm(650)));
         assert_eq!(fx.world.hostile_towards(fx.actor), Vec::<EntityId>::new());
     }
 
@@ -1158,7 +1407,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1184,7 +1433,7 @@ mod tests {
             actor: fx.actor,
             targets: Vec::new(),
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1212,12 +1461,17 @@ mod tests {
             fx.world.support_declaration(fx.actor, fx.office),
             Some(fx.candidate)
         );
+        let after_first = record_at_place(&fx.world, fx.place, RecordKind::SupportLedger);
+        assert_eq!(after_first.entries.len(), 1);
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, ids[2], &second, 7, 4);
         assert_eq!(
             fx.world.support_declaration(fx.actor, fx.office),
             Some(second_candidate)
         );
+        let after_second = record_at_place(&fx.world, fx.place, RecordKind::SupportLedger);
+        assert_eq!(after_second.entries.len(), 2);
+        assert_eq!(after_second.entries[1].supersedes, Some(after_second.entries[0].entry_id));
     }
 
     #[test]
@@ -1277,6 +1531,37 @@ mod tests {
     }
 
     #[test]
+    fn declare_support_rejects_force_law_offices() {
+        let (defs, handlers, ids) = setup_registries();
+        let mut fx = SocialFixture::new();
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.succession_law = SuccessionLaw::Force;
+            txn.set_component_office_data(fx.office, office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let declare_payload = ActionPayload::DeclareSupport(DeclareSupportActionPayload {
+            office: fx.office,
+            candidate: fx.candidate,
+        });
+        let def = defs.get(ids[2]).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &declare_payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+    }
+
+    #[test]
     fn bribe_event_records_witnessed_obligation() {
         let (defs, handlers, ids) = setup_registries();
         let mut fx = SocialFixture::new();
@@ -1291,7 +1576,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1306,7 +1591,8 @@ mod tests {
             .unwrap()
             .social_observations
             .iter()
-            .any(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedObligation
+            .any(|observation| observation.kind
+                == worldwake_core::SocialObservationKind::WitnessedObligation
                 && observation.subjects == (fx.actor, fx.target)));
     }
 
@@ -1321,7 +1607,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1336,7 +1622,8 @@ mod tests {
             .unwrap()
             .social_observations
             .iter()
-            .any(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedConflict
+            .any(|observation| observation.kind
+                == worldwake_core::SocialObservationKind::WitnessedConflict
                 && observation.subjects == (fx.actor, fx.target)));
     }
 
@@ -1354,7 +1641,7 @@ mod tests {
             actor: fx.actor,
             targets: Vec::new(),
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1369,7 +1656,8 @@ mod tests {
             .unwrap()
             .social_observations
             .iter()
-            .any(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedCooperation
+            .any(|observation| observation.kind
+                == worldwake_core::SocialObservationKind::WitnessedCooperation
                 && observation.subjects == (fx.actor, fx.candidate)));
     }
 
@@ -1388,7 +1676,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(3),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1400,7 +1688,7 @@ mod tests {
             actor: fx.actor,
             targets: vec![fx.target],
             start_tick: Tick(4),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
@@ -1415,15 +1703,14 @@ mod tests {
             actor: fx.actor,
             targets: Vec::new(),
             start_tick: Tick(5),
-            remaining_duration: worldwake_sim::ActionDuration::Finite(1),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
         };
 
         let bribe_log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &bribe, 11, 3);
-        let threaten_log =
-            commit_action(&mut fx.world, &defs, &handlers, ids[1], &threaten, 12, 4);
+        let threaten_log = commit_action(&mut fx.world, &defs, &handlers, ids[1], &threaten, 12, 4);
         let support_log = commit_action(
             &mut fx.world,
             &defs,
@@ -1434,7 +1721,9 @@ mod tests {
             5,
         );
 
-        let bribe_record = bribe_log.get(bribe_log.events_by_tag(EventTag::ActionCommitted)[0]).unwrap();
+        let bribe_record = bribe_log
+            .get(bribe_log.events_by_tag(EventTag::ActionCommitted)[0])
+            .unwrap();
         assert!(bribe_record.tags().contains(&EventTag::Social));
         assert!(bribe_record.tags().contains(&EventTag::Transfer));
 

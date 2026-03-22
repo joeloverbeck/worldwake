@@ -1,13 +1,14 @@
 use crate::{
-    classify_band, derive_danger_pressure, derive_pain_pressure,
+    assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression, DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
-    RankedGoal,
+    RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
+    RankedGoalProvenance, RankedPriorityAdjustment,
 };
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, Tick, UtilityProfile,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -86,10 +87,17 @@ pub fn rank_candidates(
             suppressed.push(candidate.key);
             continue;
         }
+        let provenance = goal_ranking_provenance(candidate, &context, recipes);
         let scored = RankedGoal {
             grounded: candidate.clone(),
-            priority_class: priority_class(candidate, &context, recipes),
-            motive_score: motive_score(candidate, &context, recipes),
+            priority_class: ranked_priority_class(
+                candidate,
+                &context,
+                recipes,
+                provenance.as_ref(),
+            ),
+            motive_score: ranked_motive_score(candidate, &context, recipes, provenance.as_ref()),
+            provenance,
         };
         if scored.motive_score == 0 {
             zero_motive.push(candidate.key);
@@ -106,6 +114,95 @@ pub fn rank_candidates(
     }
 }
 
+fn ranked_priority_class(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+    provenance: Option<&RankedGoalProvenance>,
+) -> GoalPriorityClass {
+    provenance.cloned().map_or_else(
+        || priority_class(candidate, context, recipes),
+        |provenance| match provenance {
+            RankedGoalProvenance::Danger(_) => context.decision_context.danger_class,
+            RankedGoalProvenance::Drive(provenance) => provenance.final_priority_class,
+        },
+    )
+}
+
+fn ranked_motive_score(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+    provenance: Option<&RankedGoalProvenance>,
+) -> u32 {
+    provenance.cloned().map_or_else(
+        || motive_score(candidate, context, recipes),
+        |provenance| match provenance {
+            RankedGoalProvenance::Danger(_) => {
+                score_product(context.utility.danger_weight, context.danger_pressure)
+            }
+            RankedGoalProvenance::Drive(provenance) => provenance
+                .motive_inputs
+                .iter()
+                .map(|input| input.score)
+                .max()
+                .unwrap_or(0),
+        },
+    )
+}
+
+fn goal_ranking_provenance(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> Option<RankedGoalProvenance> {
+    match candidate.key.kind {
+        GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::AcquireCommodity {
+            commodity,
+            purpose: CommodityPurpose::SelfConsume,
+        } => self_consume_provenance(commodity, context).map(RankedGoalProvenance::Drive),
+        GoalKind::AcquireCommodity {
+            commodity: _,
+            purpose: CommodityPurpose::RecipeInput(recipe_id),
+        }
+        | GoalKind::ProduceCommodity { recipe_id } => {
+            recipe_output_provenance(recipe_id, context, recipes).map(RankedGoalProvenance::Drive)
+        }
+        GoalKind::Sleep => drive_goal_provenance(
+            context,
+            RankedDriveKind::Fatigue,
+            |needs| needs.fatigue,
+            |thresholds| thresholds.fatigue,
+            |utility| utility.fatigue_weight,
+            true,
+        )
+        .map(RankedGoalProvenance::Drive),
+        GoalKind::Relieve => drive_goal_provenance(
+            context,
+            RankedDriveKind::Bladder,
+            |needs| needs.bladder,
+            |thresholds| thresholds.bladder,
+            |utility| utility.bladder_weight,
+            false,
+        )
+        .map(RankedGoalProvenance::Drive),
+        GoalKind::Wash => drive_goal_provenance(
+            context,
+            RankedDriveKind::Dirtiness,
+            |needs| needs.dirtiness,
+            |thresholds| thresholds.dirtiness,
+            |utility| utility.dirtiness_weight,
+            false,
+        )
+        .map(RankedGoalProvenance::Drive),
+        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => Some(
+            RankedGoalProvenance::Danger(context.danger_assessment.clone()),
+        ),
+        _ => None,
+    }
+}
+
 struct RankingContext<'a> {
     view: &'a dyn GoalBeliefView,
     agent: EntityId,
@@ -113,6 +210,8 @@ struct RankingContext<'a> {
     utility: &'a UtilityProfile,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
+    has_clotted_wounds: bool,
+    danger_assessment: crate::DangerAssessment,
     danger_pressure: Permille,
     decision_context: DecisionContext,
 }
@@ -125,6 +224,7 @@ impl<'a> RankingContext<'a> {
         utility: &'a UtilityProfile,
         decision_context: DecisionContext,
     ) -> Self {
+        let danger_assessment = assess_danger(view, agent);
         Self {
             view,
             agent,
@@ -132,10 +232,27 @@ impl<'a> RankingContext<'a> {
             utility,
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
-            danger_pressure: derive_danger_pressure(view, agent),
+            has_clotted_wounds: has_clotted_wounds(view, agent),
+            danger_pressure: danger_assessment.pressure,
+            danger_assessment,
             decision_context,
         }
     }
+}
+
+#[derive(Copy, Clone)]
+struct DriveFactor {
+    drive: RankedDriveKind,
+    pressure: Permille,
+    weight: Permille,
+    band: ThresholdBand,
+    recovery_relevant: bool,
+}
+
+fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
+    view.wounds(agent)
+        .into_iter()
+        .any(|wound| wound.severity.value() > 0 && wound.bleed_rate_per_tick.value() == 0)
 }
 
 fn priority_class(
@@ -163,16 +280,19 @@ fn priority_class(
             context,
             |needs| needs.fatigue,
             |thresholds| thresholds.fatigue,
+            true,
         ),
         GoalKind::Relieve => drive_priority(
             context,
             |needs| needs.bladder,
             |thresholds| thresholds.bladder,
+            false,
         ),
         GoalKind::Wash => drive_priority(
             context,
             |needs| needs.dirtiness,
             |thresholds| thresholds.dirtiness,
+            false,
         ),
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             context.decision_context.danger_class
@@ -198,7 +318,13 @@ fn self_consume_priority(
 ) -> GoalPriorityClass {
     relevant_self_consume_factors(commodity, context)
         .into_iter()
-        .map(|(pressure, _, band)| classify_band(pressure, &band))
+        .map(|factor| {
+            promote_for_clotted_wound_recovery(
+                classify_band(factor.pressure, &factor.band),
+                context,
+                factor.recovery_relevant,
+            )
+        })
         .max()
         .unwrap_or(GoalPriorityClass::Background)
 }
@@ -206,11 +332,72 @@ fn self_consume_priority(
 fn drive_priority(
     context: &RankingContext<'_>,
     pressure: impl Fn(HomeostaticNeeds) -> Permille,
-    band: impl Fn(DriveThresholds) -> worldwake_core::ThresholdBand,
+    band: impl Fn(DriveThresholds) -> ThresholdBand,
+    recovery_relevant: bool,
 ) -> GoalPriorityClass {
-    match (context.needs, context.thresholds) {
+    let base = match (context.needs, context.thresholds) {
         (Some(needs), Some(thresholds)) => classify_band(pressure(needs), &band(thresholds)),
         _ => GoalPriorityClass::Background,
+    };
+
+    promote_for_clotted_wound_recovery(base, context, recovery_relevant)
+}
+
+fn drive_goal_provenance(
+    context: &RankingContext<'_>,
+    drive: RankedDriveKind,
+    pressure: impl Fn(HomeostaticNeeds) -> Permille,
+    band: impl Fn(DriveThresholds) -> ThresholdBand,
+    weight: impl Fn(&UtilityProfile) -> Permille,
+    recovery_relevant: bool,
+) -> Option<RankedDriveGoalProvenance> {
+    let (Some(needs), Some(thresholds)) = (context.needs, context.thresholds) else {
+        return None;
+    };
+    let pressure = pressure(needs);
+    let weight = weight(context.utility);
+    let base_priority_class = classify_band(pressure, &band(thresholds));
+    Some(drive_provenance_from_inputs(
+        context,
+        base_priority_class,
+        vec![RankedDriveMotiveInput {
+            drive,
+            pressure,
+            weight,
+            score: score_product(weight, pressure),
+            recovery_relevant,
+        }],
+    ))
+}
+
+fn promote_for_clotted_wound_recovery(
+    base: GoalPriorityClass,
+    context: &RankingContext<'_>,
+    recovery_relevant: bool,
+) -> GoalPriorityClass {
+    // Keep ranking aligned with combat recovery_conditions_met(): hunger, thirst, and fatigue
+    // at High block recovery for clotted wounds until the agent resolves that need.
+    if recovery_relevant && context.has_clotted_wounds && base == GoalPriorityClass::High {
+        GoalPriorityClass::Critical
+    } else {
+        base
+    }
+}
+
+fn drive_provenance_from_inputs(
+    context: &RankingContext<'_>,
+    base_priority_class: GoalPriorityClass,
+    motive_inputs: Vec<RankedDriveMotiveInput>,
+) -> RankedDriveGoalProvenance {
+    let recovery_relevant = motive_inputs.iter().any(|input| input.recovery_relevant);
+    let final_priority_class =
+        promote_for_clotted_wound_recovery(base_priority_class, context, recovery_relevant);
+    RankedDriveGoalProvenance {
+        base_priority_class,
+        final_priority_class,
+        adjustment: (final_priority_class != base_priority_class)
+            .then_some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion),
+        motive_inputs,
     }
 }
 
@@ -226,7 +413,7 @@ fn motive_score(
             purpose: CommodityPurpose::SelfConsume,
         } => relevant_self_consume_factors(commodity, context)
             .into_iter()
-            .map(|(pressure, weight, _)| score_product(weight, pressure))
+            .map(|factor| score_product(factor.weight, factor.pressure))
             .max()
             .unwrap_or(0),
         GoalKind::AcquireCommodity {
@@ -299,7 +486,9 @@ fn motive_score(
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
             .view
             .loyalty_to(context.agent, candidate)
-            .map_or(0, |loyalty| score_product(context.utility.social_weight, loyalty)),
+            .map_or(0, |loyalty| {
+                score_product(context.utility.social_weight, loyalty)
+            }),
     }
 }
 
@@ -372,6 +561,51 @@ fn commodity_goal_priority(
     }
 }
 
+fn self_consume_provenance(
+    commodity: CommodityKind,
+    context: &RankingContext<'_>,
+) -> Option<RankedDriveGoalProvenance> {
+    let factors = relevant_self_consume_factors(commodity, context);
+    let base_priority_class = factors
+        .iter()
+        .map(|factor| classify_band(factor.pressure, &factor.band))
+        .max()
+        .unwrap_or(GoalPriorityClass::Background);
+    let motive_inputs = factors
+        .into_iter()
+        .map(|factor| RankedDriveMotiveInput {
+            drive: factor.drive,
+            pressure: factor.pressure,
+            weight: factor.weight,
+            score: score_product(factor.weight, factor.pressure),
+            recovery_relevant: factor.recovery_relevant,
+        })
+        .collect::<Vec<_>>();
+    (!motive_inputs.is_empty())
+        .then(|| drive_provenance_from_inputs(context, base_priority_class, motive_inputs))
+}
+
+fn recipe_output_provenance(
+    recipe_id: worldwake_core::RecipeId,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> Option<RankedDriveGoalProvenance> {
+    recipes.get(recipe_id).and_then(|recipe| {
+        recipe
+            .outputs
+            .iter()
+            .filter_map(|(commodity, _)| self_consume_provenance(*commodity, context))
+            .max_by_key(|provenance| {
+                provenance
+                    .motive_inputs
+                    .iter()
+                    .map(|input| input.score)
+                    .max()
+                    .unwrap_or(0)
+            })
+    })
+}
+
 fn recipe_output_motive_score(
     recipe_id: worldwake_core::RecipeId,
     context: &RankingContext<'_>,
@@ -390,7 +624,7 @@ fn recipe_output_motive_score(
 fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
     let self_consume = relevant_self_consume_factors(commodity, context)
         .into_iter()
-        .map(|(pressure, weight, _)| score_product(weight, pressure))
+        .map(|factor| score_product(factor.weight, factor.pressure))
         .max()
         .unwrap_or(0);
     if self_consume > 0 {
@@ -403,7 +637,7 @@ fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContex
 fn relevant_self_consume_factors(
     commodity: CommodityKind,
     context: &RankingContext<'_>,
-) -> Vec<(Permille, Permille, worldwake_core::ThresholdBand)> {
+) -> Vec<DriveFactor> {
     let Some(needs) = context.needs else {
         return Vec::new();
     };
@@ -417,18 +651,22 @@ fn relevant_self_consume_factors(
 
     let mut factors = Vec::new();
     if profile.hunger_relief_per_unit.value() > 0 {
-        factors.push((
-            needs.hunger,
-            context.utility.hunger_weight,
-            thresholds.hunger,
-        ));
+        factors.push(DriveFactor {
+            drive: RankedDriveKind::Hunger,
+            pressure: needs.hunger,
+            weight: context.utility.hunger_weight,
+            band: thresholds.hunger,
+            recovery_relevant: true,
+        });
     }
     if profile.thirst_relief_per_unit.value() > 0 {
-        factors.push((
-            needs.thirst,
-            context.utility.thirst_weight,
-            thresholds.thirst,
-        ));
+        factors.push(DriveFactor {
+            drive: RankedDriveKind::Thirst,
+            pressure: needs.thirst,
+            weight: context.utility.thirst_weight,
+            band: thresholds.thirst,
+            recovery_relevant: true,
+        });
     }
     factors
 }
@@ -491,7 +729,10 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{build_decision_context, rank_candidates};
-    use crate::{GoalKey, GoalKind, GoalPriorityClass, GroundedGoal};
+    use crate::{
+        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
+        RankedPriorityAdjustment,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -754,20 +995,25 @@ mod tests {
             resource_source: None,
             alive: true,
             wounds: Vec::new(),
+            last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source,
         }
     }
 
-    fn wound(severity: u16) -> Wound {
+    fn wound_with_bleed(severity: u16, bleed_rate: u16) -> Wound {
         Wound {
             id: WoundId(u64::from(severity)),
             body_part: BodyPart::Torso,
             cause: WoundCause::Deprivation(DeprivationKind::Starvation),
             severity: pm(severity),
             inflicted_at: Tick(1),
-            bleed_rate_per_tick: pm(0),
+            bleed_rate_per_tick: pm(bleed_rate),
         }
+    }
+
+    fn wound(severity: u16) -> Wound {
+        wound_with_bleed(severity, 0)
     }
 
     fn goal(kind: GoalKind) -> GroundedGoal {
@@ -1015,7 +1261,10 @@ mod tests {
         danger_view.attackers.insert(agent, vec![attacker]);
         danger_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
 
         let ranked = rank(
@@ -1037,7 +1286,10 @@ mod tests {
         );
         self_care_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
 
         let ranked = rank(
@@ -1054,7 +1306,10 @@ mod tests {
         let mut calm_view = base_view(agent);
         calm_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
         let ranked = rank(
             &[goal(GoalKind::ShareBelief { listener, subject })],
@@ -1069,15 +1324,14 @@ mod tests {
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
         assert_eq!(
             ranked[0].motive_score,
-            150
-                * u32::from(
-                    belief_confidence(
-                        &PerceptionSource::DirectObservation,
-                        1,
-                        &BeliefConfidencePolicy::default(),
-                    )
-                    .value(),
+            150 * u32::from(
+                belief_confidence(
+                    &PerceptionSource::DirectObservation,
+                    1,
+                    &BeliefConfidencePolicy::default(),
                 )
+                .value(),
+            )
         );
     }
 
@@ -1147,9 +1401,18 @@ mod tests {
         );
 
         assert!(baseline_ranked[0].motive_score > baseline_ranked[1].motive_score);
-        assert_eq!(baseline_ranked[0].motive_score, 150 * u32::from(fresh_pressure.value()));
-        assert_eq!(baseline_ranked[1].motive_score, 150 * u32::from(rumor_pressure.value()));
-        assert_eq!(boosted_ranked[0].motive_score, 300 * u32::from(fresh_pressure.value()));
+        assert_eq!(
+            baseline_ranked[0].motive_score,
+            150 * u32::from(fresh_pressure.value())
+        );
+        assert_eq!(
+            baseline_ranked[1].motive_score,
+            150 * u32::from(rumor_pressure.value())
+        );
+        assert_eq!(
+            boosted_ranked[0].motive_score,
+            300 * u32::from(fresh_pressure.value())
+        );
     }
 
     #[test]
@@ -1160,7 +1423,10 @@ mod tests {
         let mut skeptical_view = base_view(agent);
         skeptical_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(4, PerceptionSource::Rumor { chain_len: 2 }))],
+            vec![(
+                subject,
+                believed_state(4, PerceptionSource::Rumor { chain_len: 2 }),
+            )],
         );
         skeptical_view.confidence_policies.insert(
             agent,
@@ -1219,7 +1485,10 @@ mod tests {
         let mut view = base_view(agent);
         view.beliefs.insert(
             agent,
-            vec![(known_subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                known_subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
 
         let zero_social = UtilityProfile {
@@ -1260,7 +1529,10 @@ mod tests {
         let mut enterprise_view = base_view(agent);
         enterprise_view.beliefs.insert(
             agent,
-            vec![(subject, believed_state(9, PerceptionSource::DirectObservation))],
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
         );
         enterprise_view.merchandise_profiles.insert(
             agent,
@@ -1531,9 +1803,15 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient }
+        );
         assert_eq!(ranked[0].motive_score, 900 * 500);
-        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
         assert_eq!(ranked[1].motive_score, 100 * 500);
     }
 
@@ -1564,9 +1842,15 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::TreatWounds { patient: agent });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
         assert_eq!(ranked[0].motive_score, 900 * 500);
-        assert_eq!(ranked[1].grounded.key.kind, GoalKind::TreatWounds { patient });
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::TreatWounds { patient }
+        );
         assert_eq!(ranked[1].motive_score, 100 * 500);
     }
 
@@ -1578,17 +1862,17 @@ mod tests {
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
-                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                sale_kinds: BTreeSet::from([CommodityKind::Firewood]),
                 home_market: Some(market),
             },
         );
         view.demand_memory
-            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+            .insert(agent, vec![demand(market, CommodityKind::Firewood, 10)]);
         let mut recipes = RecipeRegistry::new();
         let recipe_id = recipes.register(RecipeDefinition {
-            name: "Bake Bread".to_string(),
+            name: "Cut Firewood".to_string(),
             inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            outputs: vec![(CommodityKind::Firewood, Quantity(1))],
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: None,
             required_tool_kinds: Vec::new(),
@@ -1607,6 +1891,43 @@ mod tests {
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 200 * 1000);
+    }
+
+    #[test]
+    fn produce_commodity_uses_recipe_output_drive_when_recipe_serves_hunger() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
+        );
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        });
+
+        let ranked = rank(
+            &[goal(GoalKind::ProduceCommodity { recipe_id })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &recipes,
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(ranked[0].motive_score, 900 * 900);
+        assert!(matches!(
+            ranked[0].provenance,
+            Some(RankedGoalProvenance::Drive(_))
+        ));
     }
 
     #[test]
@@ -1709,6 +2030,339 @@ mod tests {
     }
 
     #[test]
+    fn clotted_wound_boosts_hunger_high_to_critical() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        match ranked[0]
+            .provenance
+            .as_ref()
+            .expect("hunger candidate should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::Critical);
+                assert_eq!(
+                    provenance.adjustment,
+                    Some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
+                );
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Hunger);
+                assert_eq!(
+                    provenance.motive_inputs[0].pressure,
+                    thresholds.hunger.high()
+                );
+                assert_eq!(provenance.motive_inputs[0].weight, utility().hunger_weight);
+                assert_eq!(
+                    provenance.motive_inputs[0].score,
+                    u32::from(utility().hunger_weight.value())
+                        * u32::from(thresholds.hunger.high().value())
+                );
+                assert!(provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("hunger candidate should not use danger provenance")
+            }
+        }
+    }
+
+    #[test]
+    fn bleeding_wound_no_boost() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound_with_bleed(200, 10)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::High);
+    }
+
+    #[test]
+    fn clotted_wound_no_boost_below_high() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        let below_high = thresholds.hunger.high().saturating_sub(pm(1));
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(below_high, pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_ne!(ranked[0].priority_class, GoalPriorityClass::Critical);
+    }
+
+    #[test]
+    fn clotted_wound_boosts_sleep_high_to_critical() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), thresholds.fatigue.high(), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::Sleep)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+    }
+
+    #[test]
+    fn clotted_wound_no_boost_relieve_or_wash() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                pm(0),
+                pm(0),
+                pm(0),
+                thresholds.bladder.high(),
+                thresholds.dirtiness.high(),
+            ),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::Relieve), goal(GoalKind::Wash)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::High);
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::High);
+        for goal in &ranked {
+            match goal
+                .provenance
+                .as_ref()
+                .expect("drive goals should carry drive provenance")
+            {
+                RankedGoalProvenance::Drive(provenance) => {
+                    assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                    assert_eq!(provenance.final_priority_class, GoalPriorityClass::High);
+                    assert_eq!(provenance.adjustment, None);
+                    assert_eq!(provenance.motive_inputs.len(), 1);
+                    assert!(!provenance.motive_inputs[0].recovery_relevant);
+                }
+                RankedGoalProvenance::Danger(_) => {
+                    panic!("relieve/wash should not use danger provenance")
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn promoted_hunger_outranks_higher_motive_wash_when_clotted_wound_recovery_applies() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(760), pm(0), pm(0), pm(0), pm(860)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+        let utility = UtilityProfile::default();
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::Wash),
+                goal(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 2);
+        let bread = &ranked[0];
+        let wash = &ranked[1];
+
+        assert_eq!(
+            bread.grounded.key.kind,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        );
+        assert_eq!(bread.priority_class, GoalPriorityClass::Critical);
+        assert_eq!(bread.motive_score, 380_000);
+
+        assert_eq!(wash.grounded.key.kind, GoalKind::Wash);
+        assert_eq!(wash.priority_class, GoalPriorityClass::High);
+        assert_eq!(wash.motive_score, 430_000);
+        assert!(wash.motive_score > bread.motive_score);
+
+        match bread
+            .provenance
+            .as_ref()
+            .expect("bread goal should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::Critical);
+                assert_eq!(
+                    provenance.adjustment,
+                    Some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion)
+                );
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(provenance.motive_inputs[0].drive, RankedDriveKind::Hunger);
+                assert_eq!(provenance.motive_inputs[0].pressure, pm(760));
+                assert_eq!(provenance.motive_inputs[0].weight, utility.hunger_weight);
+                assert_eq!(provenance.motive_inputs[0].score, 380_000);
+                assert!(provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("bread goal should not use danger provenance")
+            }
+        }
+
+        match wash
+            .provenance
+            .as_ref()
+            .expect("wash goal should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::High);
+                assert_eq!(provenance.adjustment, None);
+                assert_eq!(provenance.motive_inputs.len(), 1);
+                assert_eq!(
+                    provenance.motive_inputs[0].drive,
+                    RankedDriveKind::Dirtiness
+                );
+                assert_eq!(provenance.motive_inputs[0].pressure, pm(860));
+                assert_eq!(provenance.motive_inputs[0].weight, utility.dirtiness_weight);
+                assert_eq!(provenance.motive_inputs[0].score, 430_000);
+                assert!(!provenance.motive_inputs[0].recovery_relevant);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("wash goal should not use danger provenance")
+            }
+        }
+    }
+
+    #[test]
+    fn no_wounds_no_boost() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.high(), pm(0), pm(0), pm(0), pm(0)),
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::High);
+    }
+
+    #[test]
+    fn critical_stays_critical() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(200)]);
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+    }
+
+    #[test]
     fn claim_office_uses_enterprise_weight_and_medium_priority() {
         let agent = entity(1);
         let view = base_view(agent);
@@ -1729,6 +2383,123 @@ mod tests {
             ranked[0].motive_score,
             u32::from(utility().enterprise_weight.value())
         );
+    }
+
+    #[test]
+    fn critical_self_treat_outranks_claim_office_even_with_lower_motive() {
+        let agent = entity(1);
+        let office = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(850)]);
+        let profile = UtilityProfile {
+            pain_weight: pm(1),
+            enterprise_weight: pm(1000),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::ClaimOffice { office }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(ranked[0].motive_score, 850);
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::ClaimOffice { office }
+        );
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[1].motive_score, 1000);
+    }
+
+    #[test]
+    fn medium_self_treat_and_claim_office_tie_break_on_motive() {
+        let agent = entity(1);
+        let office = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(350)]);
+        let profile = UtilityProfile {
+            pain_weight: pm(3),
+            enterprise_weight: pm(1000),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::ClaimOffice { office }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].motive_score, 1050);
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::ClaimOffice { office }
+        );
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[1].motive_score, 1000);
+    }
+
+    #[test]
+    fn low_self_treat_ranks_below_claim_office() {
+        let agent = entity(1);
+        let office = entity(7);
+        let mut view = base_view(agent);
+        view.wounds.insert(agent, vec![wound(200)]);
+        let profile = UtilityProfile {
+            pain_weight: pm(1000),
+            enterprise_weight: pm(1),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::TreatWounds { patient: agent }),
+                goal(GoalKind::ClaimOffice { office }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::ClaimOffice { office }
+        );
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].motive_score, 1);
+        assert_eq!(
+            ranked[1].grounded.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
+        assert_eq!(ranked[1].priority_class, GoalPriorityClass::Low);
+        assert_eq!(ranked[1].motive_score, 200_000);
     }
 
     #[test]

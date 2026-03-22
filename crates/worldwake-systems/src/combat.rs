@@ -96,6 +96,7 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
         rng: _rng,
         active_actions,
         action_defs,
+        politics_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -395,7 +396,7 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         targets: Vec::new(),
         preconditions: vec![Precondition::ActorAlive],
         reservation_requirements: Vec::new(),
-        duration: DurationExpr::Indefinite,
+        duration: DurationExpr::ActorDefendStance,
         body_cost_per_tick: BodyCostPerTick::zero(),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![Precondition::ActorAlive],
@@ -584,7 +585,7 @@ fn start_defend(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_defend(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1011,12 +1012,9 @@ fn start_heal(
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let _ = validate_heal_context(txn, instance)?;
-    let _ = consume_one_unit_of_commodity(
-        txn,
-        instance.actor,
-        worldwake_core::CommodityKind::Medicine,
-    )?;
-    Ok(None)
+    Ok(Some(ActionState::Heal {
+        medicine_spent: false,
+    }))
 }
 
 fn direct_loot_entities(txn: &WorldTxn<'_>, corpse: EntityId) -> Vec<EntityId> {
@@ -1099,7 +1097,7 @@ fn start_bury(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_loot(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1109,7 +1107,7 @@ fn tick_loot(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_bury(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1118,10 +1116,23 @@ fn tick_bury(
 
 fn tick_heal(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
+    let medicine_spent = match instance.local_state {
+        Some(ActionState::Heal { medicine_spent }) => medicine_spent,
+        Some(other) => {
+            return Err(ActionError::InternalError(format!(
+                "heal action carried unexpected local state {other:?}"
+            )));
+        }
+        None => {
+            return Err(ActionError::InternalError(
+                "heal action missing local state".to_string(),
+            ));
+        }
+    };
     let target = validate_heal_context(txn, instance)?;
     let wounds =
         txn.get_component_wound_list(target)
@@ -1138,6 +1149,16 @@ fn tick_heal(
 
     if let Some(next) = apply_treatment(&wounds, profile) {
         let completed = next.wounds.is_empty();
+        if !medicine_spent {
+            let _ = consume_one_unit_of_commodity(
+                txn,
+                instance.actor,
+                worldwake_core::CommodityKind::Medicine,
+            )?;
+            instance.local_state = Some(ActionState::Heal {
+                medicine_spent: true,
+            });
+        }
         txn.set_component_wound_list(target, next)
             .map_err(|error| ActionError::InternalError(error.to_string()))?;
         return Ok(if completed {
@@ -1198,7 +1219,7 @@ fn commit_bury(
 #[allow(clippy::unnecessary_wraps)]
 fn tick_attack(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1336,13 +1357,13 @@ mod tests {
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyPart,
         CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef, CommodityKind,
         Container, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EntityKind, EventLog,
-        EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource,
-        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, Seed, Tick,
+        EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, Seed, Tick,
         VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
         WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionDuration, ActionError,
+        get_affordances, start_action, tick_action, ActionDuration, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
         ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
         DurationExpr, Interruptibility, PerAgentBeliefView, SystemExecutionContext, SystemId,
@@ -1422,6 +1443,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(6),
+            nz(10),
         )
     }
 
@@ -1582,14 +1604,14 @@ mod tests {
     }
 
     #[test]
-    fn register_defend_action_creates_indefinite_public_defend_definition() {
+    fn register_defend_action_creates_profile_driven_public_defend_definition() {
         let mut defs = worldwake_sim::ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let defend_id = register_defend_action(&mut defs, &mut handlers);
         let defend = defs.get(defend_id).unwrap();
 
         assert_eq!(defend.name, "defend");
-        assert_eq!(defend.duration, DurationExpr::Indefinite);
+        assert_eq!(defend.duration, DurationExpr::ActorDefendStance);
         assert_eq!(
             defend.interruptibility,
             Interruptibility::FreelyInterruptible
@@ -1800,7 +1822,7 @@ mod tests {
 
         assert_eq!(
             world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
-            Quantity(0)
+            Quantity(1)
         );
 
         let outcome = tick_action(
@@ -1820,6 +1842,10 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(
+            world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
+            Quantity(0)
+        );
         assert_eq!(outcome, TickOutcome::Continuing);
         let wound = &world.get_component_wound_list(patient).unwrap().wounds[0];
         assert_eq!(wound.bleed_rate_per_tick, pm(30));
@@ -2018,15 +2044,36 @@ mod tests {
         )
         .unwrap();
 
-        // Medicine consumed on start.
+        assert_eq!(
+            world.controlled_commodity_quantity(agent, CommodityKind::Medicine),
+            Quantity(1)
+        );
+
+        let first_tick = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
         assert_eq!(
             world.controlled_commodity_quantity(agent, CommodityKind::Medicine),
             Quantity(0)
         );
+        assert_eq!(first_tick, TickOutcome::Continuing);
 
-        // Tick until committed.
         let mut outcome = TickOutcome::Continuing;
-        for tick in 11..20 {
+        for tick in 12..20 {
             outcome = tick_action(
                 action_id,
                 &defs,
@@ -2049,6 +2096,92 @@ mod tests {
         }
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
+    }
+
+    #[test]
+    fn heal_abort_before_first_treatment_tick_preserves_medicine() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let healer = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let patient = spawn_guard(&mut world, 2, ControlSource::Ai);
+        arm_actor(&mut world, healer, 3, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 180, 20, 4)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+        let affordance = affordances_for(&world, healer, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == heal_id && affordance.bound_targets == vec![patient]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x39);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(10),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
+            Quantity(1)
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 10);
+            txn.set_component_wound_list(patient, WoundList::default())
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Aborted { .. }));
+        assert_eq!(
+            world.controlled_commodity_quantity(healer, CommodityKind::Medicine),
+            Quantity(1)
+        );
     }
 
     #[test]
@@ -2595,6 +2728,7 @@ mod tests {
                 pm(120),
                 pm(30),
                 nz(6),
+                nz(10),
             ),
         );
         let target = spawn_guard_with_profile(
@@ -2612,6 +2746,7 @@ mod tests {
                 pm(80),
                 pm(10),
                 nz(6),
+                nz(10),
             ),
         );
         arm_actor(&mut world, attacker, 3, CommodityKind::Sword, 1);
@@ -2656,7 +2791,7 @@ mod tests {
 
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Finite(4)
+            ActionDuration::new(4)
         );
 
         let mut outcome = TickOutcome::Continuing;
@@ -2704,7 +2839,7 @@ mod tests {
     }
 
     #[test]
-    fn defend_affordance_starts_and_stays_active_until_cancelled() {
+    fn defend_affordance_starts_with_finite_profile_duration_and_commits() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = spawn_guard(&mut world, 1, ControlSource::Ai);
         let mut defs = worldwake_sim::ActionDefRegistry::new();
@@ -2741,7 +2876,7 @@ mod tests {
 
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Indefinite
+            ActionDuration::new(10)
         );
         assert_eq!(active.get(&action_id).unwrap().status, ActionStatus::Active);
         assert_eq!(
@@ -2769,28 +2904,33 @@ mod tests {
         assert_eq!(outcome, TickOutcome::Continuing);
         assert_eq!(
             active.get(&action_id).unwrap().remaining_duration,
-            ActionDuration::Indefinite
+            ActionDuration::new(9)
         );
+        for tick in 7..=15 {
+            let outcome = tick_action(
+                action_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
 
-        let replan = abort_action(
-            action_id,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut world,
-                event_log: &mut log,
-                rng: &mut rng,
-            },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(7),
-            },
-            worldwake_sim::ExternalAbortReason::Other,
-        )
-        .unwrap();
+            if tick < 15 {
+                assert_eq!(outcome, TickOutcome::Continuing);
+            } else {
+                assert!(matches!(outcome, TickOutcome::Committed { .. }));
+            }
+        }
 
-        assert_eq!(replan.agent, actor);
         assert!(!active.contains_key(&action_id));
         assert_eq!(world.get_component_combat_stance(actor), None);
     }
@@ -2808,6 +2948,7 @@ mod tests {
             pm(50),
             pm(10),
             nz(1),
+            nz(10),
         );
 
         assert_eq!(effective_guard_skill(profile, None, None, None), pm(200));
@@ -2830,6 +2971,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(1),
+            nz(10),
         );
         let defending_target_profile = CombatProfile::new(
             pm(1000),
@@ -2842,6 +2984,7 @@ mod tests {
             pm(80),
             pm(10),
             nz(1),
+            nz(10),
         );
         let wounds = WoundList::default();
 
@@ -2970,6 +3113,7 @@ mod tests {
             pm(90),
             pm(12),
             nz(1),
+            nz(10),
         );
         let target_profile = CombatProfile::new(
             pm(1000),
@@ -2982,6 +3126,7 @@ mod tests {
             pm(10),
             pm(0),
             nz(1),
+            nz(10),
         );
         let wounds = WoundList::default();
 
@@ -3236,6 +3381,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(5),
             system_id: SystemId::Combat,
         })
@@ -3308,6 +3454,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(6),
             system_id: SystemId::Combat,
         })
@@ -3353,6 +3500,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(7),
             system_id: SystemId::Combat,
         })
@@ -3390,6 +3538,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Combat,
         })
@@ -3427,6 +3576,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Combat,
         })
@@ -3453,6 +3603,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(6),
+            nz(10),
         );
         let fast = CombatProfile::new(
             pm(1000),
@@ -3465,6 +3616,7 @@ mod tests {
             pm(120),
             pm(30),
             nz(6),
+            nz(10),
         );
 
         let slow_next = super::progress_wounds(
@@ -3486,6 +3638,152 @@ mod tests {
 
         assert_eq!(slow_next.wounds[0].bleed_rate_per_tick, pm(30));
         assert_eq!(fast_next.wounds[0].bleed_rate_per_tick, pm(15));
+    }
+
+    #[test]
+    fn zero_recovery_rate_wound_persists() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(20),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let wounds = WoundList {
+            wounds: vec![deprivation_wound(1, 200, 0, 2)],
+        };
+
+        for _ in 0..50 {
+            let next = super::progress_wounds(
+                &wounds,
+                profile,
+                Some(HomeostaticNeeds::new_sated()),
+                Some(DriveThresholds::default()),
+                false,
+            );
+            assert_eq!(
+                next, None,
+                "zero natural recovery should not emit passive wound updates"
+            );
+            assert_eq!(wounds.wounds.len(), 1);
+            assert_eq!(wounds.wounds[0].severity, pm(200));
+            assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(0));
+        }
+    }
+
+    #[test]
+    fn wound_bleed_clot_arithmetic_exact() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(25),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let mut wounds = WoundList {
+            wounds: vec![deprivation_wound(1, 100, 50, 2)],
+        };
+        let expected = [(150, 25), (175, 0)];
+
+        for (severity, bleed_rate) in expected {
+            wounds = super::progress_wounds(
+                &wounds,
+                profile,
+                Some(HomeostaticNeeds::new_sated()),
+                Some(DriveThresholds::default()),
+                false,
+            )
+            .expect("bleeding wound should progress until clotting reaches zero");
+            assert_eq!(wounds.wounds[0].severity, pm(severity));
+            assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(bleed_rate));
+        }
+
+        assert_eq!(wounds.wounds[0].severity, pm(175));
+        assert_eq!(wounds.wounds[0].bleed_rate_per_tick, pm(0));
+    }
+
+    #[test]
+    fn pruning_only_at_severity_zero() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(20),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let wounds = WoundList {
+            wounds: vec![
+                deprivation_wound(1, 500, 0, 2),
+                deprivation_wound(2, 0, 0, 2),
+                deprivation_wound(3, 100, 0, 2),
+            ],
+        };
+
+        let next = super::progress_wounds(
+            &wounds,
+            profile,
+            Some(HomeostaticNeeds::new_sated()),
+            Some(DriveThresholds::default()),
+            false,
+        )
+        .expect("removing the zero-severity wound should produce an updated list");
+
+        assert_eq!(
+            next.wounds.iter().map(|w| w.id).collect::<Vec<_>>(),
+            vec![WoundId(1), WoundId(3)]
+        );
+        assert_eq!(
+            next.wounds.iter().map(|w| w.severity).collect::<Vec<_>>(),
+            vec![pm(500), pm(100)]
+        );
+    }
+
+    #[test]
+    fn progress_wounds_returns_none_when_no_change() {
+        let profile = CombatProfile::new(
+            pm(1000),
+            pm(700),
+            pm(600),
+            pm(550),
+            pm(75),
+            pm(20),
+            pm(0),
+            pm(120),
+            pm(30),
+            nz(6),
+            nz(10),
+        );
+        let wounds = WoundList {
+            wounds: vec![deprivation_wound(1, 200, 0, 2)],
+        };
+
+        let next = super::progress_wounds(
+            &wounds,
+            profile,
+            Some(HomeostaticNeeds::new_sated()),
+            Some(DriveThresholds::default()),
+            false,
+        );
+
+        assert_eq!(next, None);
     }
 
     #[test]
@@ -3515,6 +3813,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Combat,
         })
@@ -3579,6 +3878,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(5),
             system_id: SystemId::Combat,
         })
@@ -3620,6 +3920,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Combat,
         })
@@ -3656,6 +3957,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(4),
             system_id: SystemId::Combat,
         })
@@ -3691,6 +3993,7 @@ mod tests {
             rng: &mut rng,
             active_actions: &active_actions,
             action_defs: &defs,
+            politics_trace: None,
             tick: Tick(3),
             system_id: SystemId::Combat,
         })

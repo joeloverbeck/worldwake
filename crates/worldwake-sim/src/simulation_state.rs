@@ -200,9 +200,8 @@ mod tests {
     use std::num::NonZeroU64;
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, EventPayload, PendingEvent, Quantity, Seed,
-        StateHash, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
-        WorldTxn,
+        ControlSource, EntityId, EventLog, EventPayload, PendingEvent, Quantity, Seed, StateHash,
+        Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -228,6 +227,7 @@ mod tests {
                 targets: vec![entity(2)],
                 payload_override: None,
                 mode: crate::ActionRequestMode::Strict,
+                provenance: crate::RequestProvenance::External,
             },
         }
     }
@@ -347,19 +347,21 @@ mod tests {
         state.controller_state_mut().clear();
         let _ = state.rng_state_mut().next_u32();
         state.replay_state_mut().set_terminal_tick(Tick(5)).unwrap();
-        let _ = state.event_log_mut().emit(PendingEvent::from_payload(EventPayload {
-            tick: Tick(5),
-            cause: CauseRef::SystemTick(Tick(5)),
-            actor_id: None,
-            target_ids: Vec::new(),
-            evidence: Vec::new(),
-            place_id: None,
-            state_deltas: Vec::new(),
-            observed_entities: std::collections::BTreeMap::new(),
-            visibility: VisibilitySpec::Hidden,
-            witness_data: WitnessData::default(),
-            tags: std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
-        }));
+        let _ = state
+            .event_log_mut()
+            .emit(PendingEvent::from_payload(EventPayload {
+                tick: Tick(5),
+                cause: CauseRef::SystemTick(Tick(5)),
+                actor_id: None,
+                target_ids: Vec::new(),
+                evidence: Vec::new(),
+                place_id: None,
+                state_deltas: Vec::new(),
+                observed_entities: std::collections::BTreeMap::new(),
+                visibility: VisibilitySpec::Hidden,
+                witness_data: WitnessData::default(),
+                tags: std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
+            }));
 
         assert_eq!(state.scheduler().current_tick(), Tick(5));
         assert_eq!(recipe_id.0, 1);

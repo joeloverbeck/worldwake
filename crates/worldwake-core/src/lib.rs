@@ -42,10 +42,11 @@ pub mod error;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
-pub mod factions;
 pub mod facility_queue;
+pub mod factions;
 pub mod goal;
 pub mod ids;
+pub mod institutional;
 pub mod items;
 pub mod load;
 pub mod needs;
@@ -69,9 +70,11 @@ pub mod wounds;
 pub use allocator::EntityAllocator;
 pub use belief::{
     belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, MismatchKind,
-    ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, SocialObservation,
-    SocialObservationKind, TellProfile,
+    recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
+    BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
+    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SocialObservation,
+    SocialObservationKind, TellMemoryKey, TellProfile, ToldBeliefMemory,
 };
 pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
 pub use canonical::{
@@ -97,13 +100,18 @@ pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
-pub use factions::{FactionData, FactionPurpose};
 pub use facility_queue::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueError, FacilityUseQueue,
     GrantedFacilityUse, QueuedFacilityUse,
 };
+pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
+pub use institutional::{
+    BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
+    InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
+};
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
     CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,

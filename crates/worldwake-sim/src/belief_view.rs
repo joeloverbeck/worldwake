@@ -1,11 +1,14 @@
-use crate::{ActionDuration, ActionPayload, DurationExpr};
+use crate::{
+    action_semantics::consultation_duration_ticks, ActionDuration, ActionPayload, DurationExpr,
+};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
-    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId, ResourceSource,
-    TellProfile, Tick, TickRange, TradeDispositionProfile, TravelDispositionProfile,
+    BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile,
+    CommodityKind, CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId,
+    EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile,
+    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile,
     UniqueItemKind, WorkstationTag, Wound,
 };
 
@@ -22,6 +25,9 @@ use worldwake_core::{
 /// - duration estimation
 /// - broader affordance/runtime helpers used by snapshot/search code
 pub trait GoalBeliefView {
+    fn current_tick(&self) -> Tick {
+        Tick(0)
+    }
     fn is_alive(&self, entity: EntityId) -> bool;
     fn is_dead(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
@@ -71,6 +77,28 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn told_belief_memory(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<ToldBeliefMemory> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
+    fn recipient_knowledge_status(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<RecipientKnowledgeStatus> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         let _ = agent;
         None
@@ -83,27 +111,45 @@ pub trait GoalBeliefView {
     fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        let _ = record;
+        None
+    }
     fn office_data(&self, office: EntityId) -> Option<OfficeData> {
         let _ = office;
         None
     }
-    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+    fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
         let _ = office;
-        None
+        InstitutionalBeliefRead::Unknown
     }
-    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
-        let _ = member;
-        Vec::new()
+    fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        let _ = (faction, member);
+        InstitutionalBeliefRead::Unknown
     }
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
         let _ = (subject, target);
         None
     }
-    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-        let _ = (supporter, office);
-        None
+    fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        let _ = (office, supporter);
+        InstitutionalBeliefRead::Unknown
     }
-    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+    fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
         let _ = office;
         Vec::new()
     }
@@ -116,6 +162,9 @@ pub trait GoalBeliefView {
 /// when they truly need runtime-only helpers such as reservations, queue state, or duration
 /// estimation.
 pub trait RuntimeBeliefView {
+    fn current_tick(&self) -> Tick {
+        Tick(0)
+    }
     fn is_alive(&self, entity: EntityId) -> bool;
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
@@ -193,8 +242,34 @@ pub trait RuntimeBeliefView {
         let _ = agent;
         None
     }
+    fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn told_belief_memory(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<ToldBeliefMemory> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
+    fn recipient_knowledge_status(
+        &self,
+        actor: EntityId,
+        counterparty: EntityId,
+        subject: EntityId,
+    ) -> Option<RecipientKnowledgeStatus> {
+        let _ = (actor, counterparty, subject);
+        None
+    }
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
     fn courage(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
         let _ = agent;
         None
     }
@@ -211,27 +286,45 @@ pub trait RuntimeBeliefView {
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        let _ = record;
+        None
+    }
     fn office_data(&self, office: EntityId) -> Option<OfficeData> {
         let _ = office;
         None
     }
-    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
+    fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
         let _ = office;
-        None
+        InstitutionalBeliefRead::Unknown
     }
-    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
-        let _ = member;
-        Vec::new()
+    fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        let _ = (faction, member);
+        InstitutionalBeliefRead::Unknown
     }
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
         let _ = (subject, target);
         None
     }
-    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-        let _ = (supporter, office);
-        None
+    fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        let _ = (office, supporter);
+        InstitutionalBeliefRead::Unknown
     }
-    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+    fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
         let _ = office;
         Vec::new()
     }
@@ -250,6 +343,10 @@ pub trait RuntimeBeliefView {
 macro_rules! impl_goal_belief_view {
     ($ty:ty) => {
         impl $crate::GoalBeliefView for $ty {
+            fn current_tick(&self) -> worldwake_core::Tick {
+                $crate::RuntimeBeliefView::current_tick(self)
+            }
+
             fn is_alive(&self, entity: worldwake_core::EntityId) -> bool {
                 $crate::RuntimeBeliefView::is_alive(self, entity)
             }
@@ -289,7 +386,10 @@ macro_rules! impl_goal_belief_view {
             fn known_entity_beliefs(
                 &self,
                 agent: worldwake_core::EntityId,
-            ) -> Vec<(worldwake_core::EntityId, worldwake_core::BelievedEntityState)> {
+            ) -> Vec<(
+                worldwake_core::EntityId,
+                worldwake_core::BelievedEntityState,
+            )> {
                 $crate::RuntimeBeliefView::known_entity_beliefs(self, agent)
             }
 
@@ -478,10 +578,40 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::tell_profile(self, agent)
             }
 
-            fn courage(
+            fn told_belief_memories(
                 &self,
                 agent: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::Permille> {
+            ) -> Vec<(
+                worldwake_core::TellMemoryKey,
+                worldwake_core::ToldBeliefMemory,
+            )> {
+                $crate::RuntimeBeliefView::told_belief_memories(self, agent)
+            }
+
+            fn told_belief_memory(
+                &self,
+                actor: worldwake_core::EntityId,
+                counterparty: worldwake_core::EntityId,
+                subject: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::ToldBeliefMemory> {
+                $crate::RuntimeBeliefView::told_belief_memory(self, actor, counterparty, subject)
+            }
+
+            fn recipient_knowledge_status(
+                &self,
+                actor: worldwake_core::EntityId,
+                counterparty: worldwake_core::EntityId,
+                subject: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::RecipientKnowledgeStatus> {
+                $crate::RuntimeBeliefView::recipient_knowledge_status(
+                    self,
+                    actor,
+                    counterparty,
+                    subject,
+                )
+            }
+
+            fn courage(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {
                 $crate::RuntimeBeliefView::courage(self, agent)
             }
 
@@ -539,6 +669,13 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::corpse_entities_at(self, place)
             }
 
+            fn record_data(
+                &self,
+                record: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::RecordData> {
+                $crate::RuntimeBeliefView::record_data(self, record)
+            }
+
             fn office_data(
                 &self,
                 office: worldwake_core::EntityId,
@@ -546,12 +683,19 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::office_data(self, office)
             }
 
-            fn office_holder(&self, office: worldwake_core::EntityId) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::office_holder(self, office)
+            fn believed_office_holder(
+                &self,
+                office: worldwake_core::EntityId,
+            ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
+                $crate::RuntimeBeliefView::believed_office_holder(self, office)
             }
 
-            fn factions_of(&self, member: worldwake_core::EntityId) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::factions_of(self, member)
+            fn believed_membership(
+                &self,
+                faction: worldwake_core::EntityId,
+                member: worldwake_core::EntityId,
+            ) -> worldwake_core::InstitutionalBeliefRead<bool> {
+                $crate::RuntimeBeliefView::believed_membership(self, faction, member)
             }
 
             fn loyalty_to(
@@ -562,19 +706,22 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::loyalty_to(self, subject, target)
             }
 
-            fn support_declaration(
+            fn believed_support_declaration(
                 &self,
-                supporter: worldwake_core::EntityId,
                 office: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::support_declaration(self, supporter, office)
+                supporter: worldwake_core::EntityId,
+            ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
+                $crate::RuntimeBeliefView::believed_support_declaration(self, office, supporter)
             }
 
-            fn support_declarations_for_office(
+            fn believed_support_declarations_for_office(
                 &self,
                 office: worldwake_core::EntityId,
-            ) -> Vec<(worldwake_core::EntityId, worldwake_core::EntityId)> {
-                $crate::RuntimeBeliefView::support_declarations_for_office(self, office)
+            ) -> Vec<(
+                worldwake_core::EntityId,
+                worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>>,
+            )> {
+                $crate::RuntimeBeliefView::believed_support_declarations_for_office(self, office)
             }
         }
     };
@@ -589,11 +736,20 @@ pub fn estimate_duration_from_beliefs(
     payload: &ActionPayload,
 ) -> Option<ActionDuration> {
     match *duration {
-        DurationExpr::Fixed(ticks) => Some(ActionDuration::Finite(ticks.get())),
+        DurationExpr::Fixed(ticks) => Some(ActionDuration::new(ticks.get())),
+        DurationExpr::ConsultRecord { target_index } => {
+            let target = targets.get(usize::from(target_index)).copied()?;
+            let record = view.record_data(target)?;
+            let factor = view.consultation_speed_factor(actor)?;
+            Some(ActionDuration::new(consultation_duration_ticks(
+                record.consultation_ticks,
+                factor,
+            )))
+        }
         DurationExpr::TargetConsumable { target_index } => {
             let target = targets.get(usize::from(target_index)).copied()?;
             let profile = view.item_lot_consumable_profile(target)?;
-            Some(ActionDuration::Finite(
+            Some(ActionDuration::new(
                 profile.consumption_ticks_per_unit.get(),
             ))
         }
@@ -603,7 +759,7 @@ pub fn estimate_duration_from_beliefs(
             view.adjacent_places_with_travel_ticks(origin)
                 .into_iter()
                 .find_map(|(adjacent, ticks)| {
-                    (adjacent == target).then_some(ActionDuration::Finite(ticks.get()))
+                    (adjacent == target).then_some(ActionDuration::new(ticks.get()))
                 })
         }
         DurationExpr::ActorMetabolism { kind } => {
@@ -612,22 +768,24 @@ pub fn estimate_duration_from_beliefs(
                 crate::MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                 crate::MetabolismDurationKind::Wash => profile.wash_ticks.get(),
             };
-            Some(ActionDuration::Finite(ticks))
+            Some(ActionDuration::new(ticks))
         }
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
-            .map(|profile| ActionDuration::Finite(profile.negotiation_round_ticks.get())),
-        DurationExpr::Indefinite => Some(ActionDuration::Indefinite),
+            .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get())),
+        DurationExpr::ActorDefendStance => view
+            .combat_profile(actor)
+            .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),
         DurationExpr::CombatWeapon => {
             let combat = payload.as_combat()?;
             match combat.weapon {
                 worldwake_core::CombatWeaponRef::Unarmed => view
                     .combat_profile(actor)
-                    .map(|profile| ActionDuration::Finite(profile.unarmed_attack_ticks.get())),
+                    .map(|profile| ActionDuration::new(profile.unarmed_attack_ticks.get())),
                 worldwake_core::CombatWeaponRef::Commodity(kind) => kind
                     .spec()
                     .combat_weapon_profile
-                    .map(|profile| ActionDuration::Finite(profile.attack_duration_ticks.get())),
+                    .map(|profile| ActionDuration::new(profile.attack_duration_ticks.get())),
             }
         }
         DurationExpr::TargetTreatment {
@@ -652,7 +810,7 @@ pub fn estimate_duration_from_beliefs(
             });
             let severity_per_tick = u32::from(severity_reduction_per_tick.value()).max(1);
             let wound_ticks = wound_load.div_ceil(severity_per_tick).max(1);
-            Some(ActionDuration::Finite(
+            Some(ActionDuration::new(
                 treatment_ticks_per_unit.get().max(wound_ticks),
             ))
         }

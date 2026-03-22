@@ -6,28 +6,38 @@
 // Each test binary uses a different subset of harness items.
 #![allow(dead_code)]
 
+mod timeline;
+
 use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
-    AgentBeliefStore, BelievedEntityState, BlockedIntentMemory, BodyCostPerTick, CarryCapacity,
-    CauseRef, CombatProfile, CombatStance, CommodityKind, ControlSource, DeprivationExposure,
-    DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-    RecipeId, ResourceSource, Seed, TellProfile, Tick, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, WoundList,
+    to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
+    BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
+    CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
+    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, PerceptionProfile,
+    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind,
+    RelationDelta, RelationValue, ResourceSource, Seed, StateDelta, SuccessionLaw,
+    TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
     ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
-    RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler,
-    SimulationState, SystemManifest, TickStepResult, TickStepServices,
+    PoliticalTraceSink, RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState,
+    RequestResolutionTraceSink, Scheduler, SimulationState, SystemManifest, TickStepResult,
+    TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
 // Re-export so test files using `use golden_harness::*` get the ownership types.
+#[allow(unused_imports)]
+pub use timeline::{CrossLayerTimelineBuilder, TimelineLayer};
 pub use worldwake_core::{ProductionOutputOwner, ProductionOutputOwnershipPolicy};
 
 // ---------------------------------------------------------------------------
@@ -63,6 +73,81 @@ pub fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
 
 pub fn commit_txn(txn: WorldTxn<'_>, event_log: &mut EventLog) {
     let _ = txn.commit(event_log);
+}
+
+pub fn first_event_id_matching(
+    log: &EventLog,
+    mut predicate: impl FnMut(EventId, &EventRecord) -> bool,
+) -> Option<EventId> {
+    (0..log.len())
+        .map(|index| EventId(index as u64))
+        .find(|event_id| {
+            log.get(*event_id)
+                .is_some_and(|record| predicate(*event_id, record))
+        })
+}
+
+pub fn first_tagged_event_id_matching(
+    log: &EventLog,
+    tag: EventTag,
+    mut predicate: impl FnMut(EventId, &EventRecord) -> bool,
+) -> Option<EventId> {
+    log.events_by_tag(tag).iter().copied().find(|event_id| {
+        log.get(*event_id)
+            .is_some_and(|record| predicate(*event_id, record))
+    })
+}
+
+pub fn event_sets_component(
+    record: &impl EventView,
+    entity: EntityId,
+    component_kind: ComponentKind,
+    after_matches: impl Fn(&ComponentValue) -> bool,
+) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Component(ComponentDelta::Set {
+                entity: changed_entity,
+                component_kind: changed_kind,
+                after,
+                ..
+            }) if *changed_entity == entity
+                && *changed_kind == component_kind
+                && after_matches(after)
+        )
+    })
+}
+
+pub fn event_adds_relation(record: &impl EventView, relation: &RelationValue) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
+                relation: changed_relation,
+                ..
+            }) if changed_relation == relation
+        )
+    })
+}
+
+pub fn event_removes_relation(record: &impl EventView, relation: &RelationValue) -> bool {
+    record.state_deltas().iter().any(|delta| {
+        matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Removed {
+                relation: changed_relation,
+                ..
+            }) if changed_relation == relation
+        )
+    })
+}
+
+pub fn assert_event_order(earlier: EventId, later: EventId, description: &str) {
+    assert!(
+        earlier < later,
+        "{description}: expected {earlier:?} to precede {later:?}"
+    );
 }
 
 pub fn seed_actor_beliefs(
@@ -177,16 +262,184 @@ pub fn seed_belief(
     commit_txn(txn, event_log);
 }
 
+pub fn seed_belief_from_world(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    subject: EntityId,
+    observed_tick: Tick,
+    source: PerceptionSource,
+) -> BelievedEntityState {
+    let belief = build_believed_entity_state(world, subject, observed_tick, source)
+        .expect("golden harness should only seed beliefs for observable subjects");
+    seed_belief(world, event_log, agent, subject, belief.clone());
+    belief
+}
+
+pub fn seed_office_holder_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    office: EntityId,
+    holder: Option<EntityId>,
+    learned_tick: Tick,
+    source: InstitutionalKnowledgeSource,
+    learned_at: Option<EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        InstitutionalBeliefKey::OfficeHolderOf { office },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office,
+                holder,
+                effective_tick: learned_tick,
+            },
+            source,
+            learned_tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, learned_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep institutional belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn seed_faction_membership_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    faction: EntityId,
+    member: EntityId,
+    active: bool,
+    learned_tick: Tick,
+    source: InstitutionalKnowledgeSource,
+    learned_at: Option<EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        InstitutionalBeliefKey::FactionMembersOf { faction },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::FactionMembership {
+                faction,
+                member,
+                active,
+                effective_tick: learned_tick,
+            },
+            source,
+            learned_tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, learned_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep institutional belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn seed_support_declaration_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    office: EntityId,
+    supporter: EntityId,
+    candidate: Option<EntityId>,
+    learned_tick: Tick,
+    source: InstitutionalKnowledgeSource,
+    learned_at: Option<EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        InstitutionalBeliefKey::SupportFor { supporter, office },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::SupportDeclaration {
+                office,
+                supporter,
+                candidate,
+                effective_tick: learned_tick,
+            },
+            source,
+            learned_tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, learned_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep institutional belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn seed_told_belief_memory(
+    world: &mut World,
+    event_log: &mut EventLog,
+    speaker: EntityId,
+    listener: EntityId,
+    subject: EntityId,
+    shared_state: &BelievedEntityState,
+    told_tick: Tick,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(speaker)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    store.record_told_belief(
+        TellMemoryKey {
+            counterparty: listener,
+            subject,
+        },
+        ToldBeliefMemory {
+            shared_state: to_shared_belief_snapshot(shared_state),
+            told_tick,
+        },
+    );
+
+    let mut txn = new_txn(world, 0);
+    txn.set_component_agent_belief_store(speaker, store)
+        .expect("golden harness should keep belief stores writable");
+    commit_txn(txn, event_log);
+}
+
 pub fn agent_belief_about(
     world: &World,
     agent: EntityId,
     subject: EntityId,
 ) -> Option<&BelievedEntityState> {
-    world.get_component_agent_belief_store(agent)?.get_entity(&subject)
+    world
+        .get_component_agent_belief_store(agent)?
+        .get_entity(&subject)
 }
 
 pub fn agent_belief_count(world: &World, agent: EntityId) -> usize {
-    world.get_component_agent_belief_store(agent)
+    world
+        .get_component_agent_belief_store(agent)
         .map_or(0, |store| store.known_entities.len())
 }
 
@@ -259,7 +512,40 @@ pub fn default_combat_profile() -> CombatProfile {
         pm(120),  // unarmed_wound_severity
         pm(35),   // unarmed_bleed_rate
         nz(6),    // unarmed_attack_ticks
+        nz(10),   // defend_stance_ticks
     )
+}
+
+/// Combat profile with zero natural recovery so wounds only decrease through
+/// medicine or other explicit treatment.
+pub fn no_recovery_combat_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(1000), // wound_capacity
+        pm(700),  // incapacitation_threshold
+        pm(500),  // attack_skill
+        pm(500),  // guard_skill
+        pm(80),   // defend_bonus
+        pm(25),   // natural_clot_resistance
+        pm(0),    // natural_recovery_rate
+        pm(120),  // unarmed_wound_severity
+        pm(35),   // unarmed_bleed_rate
+        nz(6),    // unarmed_attack_ticks
+        nz(10),   // defend_stance_ticks
+    )
+}
+
+/// Create a wound list with a single clotted wound at the requested severity.
+pub fn stable_wound_list(severity: u16) -> WoundList {
+    WoundList {
+        wounds: vec![Wound {
+            id: WoundId(1),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+            severity: pm(severity),
+            inflicted_at: Tick(0),
+            bleed_rate_per_tick: pm(0),
+        }],
+    }
 }
 
 /// Create a fully-equipped agent at a given place with specified needs.
@@ -448,6 +734,136 @@ pub fn add_hostility(
 }
 
 // ---------------------------------------------------------------------------
+// Office / Faction / Political helpers
+// ---------------------------------------------------------------------------
+
+/// Create a vacant Office entity with `OfficeData` at a jurisdiction.
+pub fn seed_office(
+    world: &mut World,
+    event_log: &mut EventLog,
+    title: &str,
+    jurisdiction: EntityId,
+    succession_law: SuccessionLaw,
+    succession_period_ticks: u64,
+    eligibility_rules: Vec<EligibilityRule>,
+) -> EntityId {
+    let mut txn = new_txn(world, 0);
+    let office = txn.create_office(title).unwrap();
+    txn.set_component_office_data(
+        office,
+        OfficeData {
+            title: title.to_string(),
+            jurisdiction,
+            succession_law,
+            eligibility_rules,
+            succession_period_ticks,
+            vacancy_since: Some(Tick(0)),
+        },
+    )
+    .unwrap();
+    for kind in [RecordKind::OfficeRegister, RecordKind::SupportLedger] {
+        let exists = txn.query_record_data().any(|(_, record)| {
+            record.record_kind == kind && record.home_place == jurisdiction
+        });
+        if !exists {
+            let _ = txn
+                .create_record(RecordData {
+                    record_kind: kind,
+                    home_place: jurisdiction,
+                    issuer: jurisdiction,
+                    consultation_ticks: 4,
+                    max_entries_per_consult: 6,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                })
+                .unwrap();
+        }
+    }
+    commit_txn(txn, event_log);
+    office
+}
+
+/// Create a Faction entity with `FactionData`.
+pub fn seed_faction(
+    world: &mut World,
+    event_log: &mut EventLog,
+    name: &str,
+    purpose: FactionPurpose,
+) -> EntityId {
+    let mut txn = new_txn(world, 0);
+    let faction = txn.create_faction(name).unwrap();
+    txn.set_component_faction_data(
+        faction,
+        FactionData {
+            name: name.to_string(),
+            purpose,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, event_log);
+    faction
+}
+
+/// Add `member_of` relation between an agent and a faction.
+pub fn add_faction_membership(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    faction: EntityId,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.add_member(agent, faction).unwrap();
+    commit_txn(txn, event_log);
+}
+
+/// Seed loyalty relation between two agents.
+pub fn set_loyalty(
+    world: &mut World,
+    event_log: &mut EventLog,
+    subject: EntityId,
+    target: EntityId,
+    value: Permille,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_loyalty(subject, target, value).unwrap();
+    commit_txn(txn, event_log);
+}
+
+/// Pre-declare support for a candidate at an office.
+pub fn declare_support(
+    world: &mut World,
+    event_log: &mut EventLog,
+    supporter: EntityId,
+    office: EntityId,
+    candidate: EntityId,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.declare_support(supporter, office, candidate).unwrap();
+    commit_txn(txn, event_log);
+}
+
+/// Update an agent's `UtilityProfile.courage` field.
+pub fn set_courage(world: &mut World, event_log: &mut EventLog, agent: EntityId, value: Permille) {
+    let mut profile = world
+        .get_component_utility_profile(agent)
+        .cloned()
+        .expect("agent should have a UtilityProfile");
+    profile.courage = value;
+    let mut txn = new_txn(world, 0);
+    txn.set_component_utility_profile(agent, profile).unwrap();
+    commit_txn(txn, event_log);
+}
+
+/// Create a `UtilityProfile` with a high enterprise weight for political goal
+/// generation. All other weights use defaults.
+pub fn enterprise_weighted_utility(enterprise: Permille) -> worldwake_core::UtilityProfile {
+    worldwake_core::UtilityProfile {
+        enterprise_weight: enterprise,
+        ..worldwake_core::UtilityProfile::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GoldenHarness
 // ---------------------------------------------------------------------------
 
@@ -462,6 +878,8 @@ pub struct GoldenHarness {
     pub recipes: RecipeRegistry,
     pub driver: AgentTickDriver,
     pub action_trace: Option<ActionTraceSink>,
+    pub request_resolution_trace: Option<RequestResolutionTraceSink>,
+    pub politics_trace: Option<PoliticalTraceSink>,
 }
 
 impl GoldenHarness {
@@ -484,6 +902,8 @@ impl GoldenHarness {
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
             action_trace: None,
+            request_resolution_trace: None,
+            politics_trace: None,
         }
     }
 
@@ -493,6 +913,22 @@ impl GoldenHarness {
 
     pub fn action_trace_sink(&self) -> Option<&ActionTraceSink> {
         self.action_trace.as_ref()
+    }
+
+    pub fn enable_request_resolution_tracing(&mut self) {
+        self.request_resolution_trace = Some(RequestResolutionTraceSink::new());
+    }
+
+    pub fn request_resolution_trace_sink(&self) -> Option<&RequestResolutionTraceSink> {
+        self.request_resolution_trace.as_ref()
+    }
+
+    pub fn enable_politics_tracing(&mut self) {
+        self.politics_trace = Some(PoliticalTraceSink::new());
+    }
+
+    pub fn politics_trace_sink(&self) -> Option<&PoliticalTraceSink> {
+        self.politics_trace.as_ref()
     }
 
     pub fn step_once(&mut self) -> TickStepResult {
@@ -510,6 +946,8 @@ impl GoldenHarness {
                 systems: &dispatch_table(),
                 input_producer: Some(&mut controllers),
                 action_trace: self.action_trace.as_mut(),
+                request_resolution_trace: self.request_resolution_trace.as_mut(),
+                politics_trace: self.politics_trace.as_mut(),
             },
         )
         .unwrap()
@@ -565,6 +1003,8 @@ impl GoldenHarness {
             recipes,
             driver: AgentTickDriver::new(PlanningBudget::default()),
             action_trace: None,
+            request_resolution_trace: None,
+            politics_trace: None,
         }
     }
 
@@ -639,8 +1079,31 @@ impl GoldenHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
+
+    fn emit_test_event(
+        log: &mut EventLog,
+        tick: u64,
+        tags: &[EventTag],
+        state_deltas: Vec<StateDelta>,
+    ) -> EventId {
+        log.emit(worldwake_core::PendingEvent::from_payload(
+            worldwake_core::EventPayload {
+                tick: Tick(tick),
+                cause: CauseRef::Bootstrap,
+                actor_id: None,
+                target_ids: Vec::new(),
+                evidence: Vec::new(),
+                place_id: None,
+                state_deltas,
+                observed_entities: BTreeMap::new(),
+                visibility: VisibilitySpec::Hidden,
+                witness_data: WitnessData::default(),
+                tags: tags.iter().copied().collect::<BTreeSet<_>>(),
+            },
+        ))
+    }
 
     #[test]
     fn setup_does_not_seed_remote_beliefs_by_default() {
@@ -737,18 +1200,25 @@ mod tests {
             max_tell_candidates: 2,
             max_relay_chain_len: 1,
             acceptance_fidelity: pm(250),
+            ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {
             memory_capacity: 5,
             memory_retention_ticks: 17,
             observation_fidelity: pm(600),
             confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
         };
 
         set_agent_tell_profile(&mut h.world, &mut h.event_log, agent, tell_profile);
         set_agent_perception_profile(&mut h.world, &mut h.event_log, agent, perception_profile);
 
-        assert_eq!(h.world.get_component_tell_profile(agent), Some(&tell_profile));
+        assert_eq!(
+            h.world.get_component_tell_profile(agent),
+            Some(&tell_profile)
+        );
         assert_eq!(
             h.world.get_component_perception_profile(agent),
             Some(&perception_profile)
@@ -792,7 +1262,13 @@ mod tests {
         belief.last_known_place = Some(ORCHARD_FARM);
         belief.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(7))]);
 
-        seed_belief(&mut h.world, &mut h.event_log, agent, subject, belief.clone());
+        seed_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            subject,
+            belief.clone(),
+        );
 
         assert_eq!(agent_belief_count(&h.world, agent), 1);
         assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&belief));
@@ -898,5 +1374,242 @@ mod tests {
         seed_belief(&mut h.world, &mut h.event_log, agent, subject, older);
 
         assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&newer));
+    }
+
+    #[test]
+    fn seed_belief_from_world_builds_and_stores_snapshot() {
+        let mut h = GoldenHarness::new(Seed([47; 32]));
+        let agent = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Observer",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let subject = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Subject",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            subject,
+            Tick(6),
+            PerceptionSource::DirectObservation,
+        );
+
+        assert_eq!(belief.observed_tick, Tick(6));
+        assert_eq!(belief.source, PerceptionSource::DirectObservation);
+        assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&belief));
+    }
+
+    #[test]
+    fn seed_told_belief_memory_records_requested_entry_and_preserves_beliefs() {
+        let mut h = GoldenHarness::new(Seed([48; 32]));
+        let speaker = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Speaker",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let listener = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Listener",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let subject = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Subject",
+            ORCHARD_FARM,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+
+        let listener_belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            listener,
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+        let subject_belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            subject,
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        );
+
+        seed_told_belief_memory(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            listener,
+            subject,
+            &subject_belief,
+            Tick(9),
+        );
+
+        let store = h
+            .world
+            .get_component_agent_belief_store(speaker)
+            .expect("speaker should have a belief store");
+        let memory = store
+            .told_beliefs
+            .get(&TellMemoryKey {
+                counterparty: listener,
+                subject,
+            })
+            .expect("told memory should be recorded for the requested listener and subject");
+
+        assert_eq!(memory.told_tick, Tick(9));
+        assert_eq!(
+            memory.shared_state,
+            to_shared_belief_snapshot(&subject_belief)
+        );
+        assert_eq!(
+            agent_belief_about(&h.world, speaker, listener),
+            Some(&listener_belief)
+        );
+        assert_eq!(
+            agent_belief_about(&h.world, speaker, subject),
+            Some(&subject_belief)
+        );
+    }
+
+    #[test]
+    fn event_log_helpers_match_component_and_relation_deltas() {
+        let office = EntityId {
+            slot: 91,
+            generation: 0,
+        };
+        let incumbent = EntityId {
+            slot: 92,
+            generation: 0,
+        };
+        let challenger = EntityId {
+            slot: 93,
+            generation: 0,
+        };
+        let death_tick = Tick(7);
+
+        let mut log = EventLog::new();
+        let death_event_id = emit_test_event(
+            &mut log,
+            death_tick.0,
+            &[EventTag::Combat],
+            vec![StateDelta::Component(ComponentDelta::Set {
+                entity: incumbent,
+                component_kind: ComponentKind::DeadAt,
+                before: None,
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt(death_tick)),
+            })],
+        );
+        let vacancy_relation = RelationValue::OfficeHolder {
+            office,
+            holder: incumbent,
+        };
+        let install_relation = RelationValue::OfficeHolder {
+            office,
+            holder: challenger,
+        };
+        let vacancy_event_id = emit_test_event(
+            &mut log,
+            8,
+            &[EventTag::Political],
+            vec![StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: worldwake_core::RelationKind::OfficeHolder,
+                relation: vacancy_relation.clone(),
+            })],
+        );
+        let install_event_id = emit_test_event(
+            &mut log,
+            13,
+            &[EventTag::Political],
+            vec![StateDelta::Relation(RelationDelta::Added {
+                relation_kind: worldwake_core::RelationKind::OfficeHolder,
+                relation: install_relation.clone(),
+            })],
+        );
+
+        let matched_death = first_tagged_event_id_matching(&log, EventTag::Combat, |_, record| {
+            event_sets_component(
+                record,
+                incumbent,
+                ComponentKind::DeadAt,
+                |after| matches!(after, ComponentValue::DeadAt(worldwake_core::DeadAt(tick)) if *tick == death_tick),
+            )
+        });
+        let matched_vacancy =
+            first_tagged_event_id_matching(&log, EventTag::Political, |_, record| {
+                event_removes_relation(record, &vacancy_relation)
+            });
+        let matched_install =
+            first_tagged_event_id_matching(&log, EventTag::Political, |_, record| {
+                event_adds_relation(record, &install_relation)
+            });
+
+        assert_eq!(matched_death, Some(death_event_id));
+        assert_eq!(matched_vacancy, Some(vacancy_event_id));
+        assert_eq!(matched_install, Some(install_event_id));
+    }
+
+    #[test]
+    fn event_log_helpers_preserve_append_order() {
+        let entity = EntityId {
+            slot: 101,
+            generation: 0,
+        };
+        let mut log = EventLog::new();
+
+        let earlier = emit_test_event(
+            &mut log,
+            1,
+            &[EventTag::Combat],
+            vec![StateDelta::Component(ComponentDelta::Set {
+                entity,
+                component_kind: ComponentKind::DeadAt,
+                before: None,
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt(Tick(1))),
+            })],
+        );
+        let later = emit_test_event(&mut log, 2, &[EventTag::Political], Vec::new());
+
+        let matched_earlier = first_event_id_matching(&log, |event_id, record| {
+            event_id == earlier
+                && event_sets_component(record, entity, ComponentKind::DeadAt, |_| true)
+        })
+        .expect("expected to find earlier event");
+        let matched_later =
+            first_tagged_event_id_matching(&log, EventTag::Political, |event_id, _| {
+                event_id == later
+            })
+            .expect("expected to find later event");
+
+        assert_event_order(
+            matched_earlier,
+            matched_later,
+            "append-only ordering must hold",
+        );
     }
 }

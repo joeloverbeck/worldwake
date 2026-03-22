@@ -11,9 +11,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Worktree Discipline: When instructed to work inside a worktree (e.g., `.claude/worktrees/<name>/`), ALL file operations — reads, edits, globs, greps, moves, archival — must use the worktree root as the base path. The default working directory is the main repo root; tool calls without an explicit worktree path will silently operate on main.
 - Ticket Fidelity: Never silently skip or rationalize away explicit ticket deliverables. If a ticket says to touch a file or produce an artifact, do it. If you believe a deliverable is wrong, unnecessary, or blocked, apply the 1-3-1 rule — present the problem and options to the user rather than deciding on your own. Marking a task "completed" with an excuse instead of doing the work, or instead of flagging the blocker, is never acceptable.
 
+## Ticket Expectations
+
+- Reassess every ticket against current code, focused tests, golden coverage, and harness setup before implementation. If current code and ticket assumptions diverge, update the ticket first.
+- Follow `docs/precision-rules.md` for all technical claims in tickets, specs, and golden test rationale.
+
 ## Foundational Principles
 
-Read `docs/FOUNDATIONS.md` before making any design decision. It defines 13 non-negotiable principles in 4 categories (Causal Foundations, World Dynamics, Agent Architecture, System Architecture) that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, concrete state over abstract scores, locality of information, feedback dampening, agent diversity, and system decoupling. All code, specs, and architectural choices must be evaluated against these principles.
+Read `docs/FOUNDATIONS.md` before making any design decision. It defines 13 non-negotiable principles in 4 categories (Causal Foundations, World Dynamics, Agent Architecture, System Architecture) that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, concrete state over abstract scores, locality of information, feedback dampening, agent diversity, system decoupling, and no backward compatibility. All code, specs, and architectural choices must be evaluated against these principles.
 
 ## Project
 
@@ -28,6 +33,8 @@ cargo clippy --workspace
 cargo test -p worldwake-core           # single crate
 cargo test -p worldwake-core test_name # single test
 ```
+
+Run the narrowest command that verifies your change first, then expand to broader workspace checks when warranted.
 
 ## Architecture
 
@@ -95,7 +102,7 @@ The simulation crate contains the action framework, scheduler, tick loop, and re
 | `action_def` | `ActionDef` — declarative action type definitions |
 | `action_def_registry` | Registry of all available action definitions |
 | `action_domain` | `ActionDomain` — enum categorizing actions by domain (Generic, Needs, Production, Trade, Travel, Transport, Combat, Care, Loot) |
-| `action_duration` | `ActionDuration` — resolved runtime duration for active actions (Finite or Indefinite) with tick advancement |
+| `action_duration` | `ActionDuration` — resolved runtime duration for active actions (always finite) with tick advancement |
 | `action_instance` | `ActionInstance`, `ActionInstanceId` — specific running action |
 | `action_state` | `ActionState` — action lifecycle state machine |
 | `action_status` | `ActionStatus` — outcome tracking |
@@ -182,12 +189,13 @@ These are non-negotiable design rules enforced by tests:
 
 - **No `Player` type** — only `ControlSource = Human | Ai | None`
 - **Belief-only planning** — agents never read world state directly (Principle 10)
-- **Information locality** — no system queries global state on behalf of an agent; information propagates at finite speed through the place graph (Principle 7)
+- **Information locality** — no system queries global state on behalf of an agent; information propagates through perception, reports, witnesses, and travel over the place graph (Principle 7)
 - **System decoupling** — system modules in `worldwake-systems` depend only on `worldwake-core` and `worldwake-sim`, never on each other (Principle 12)
 - **Append-only event log** — causal source of truth, never mutated
 - **Determinism** — `ChaCha8Rng` seeded, `BTreeMap`/`BTreeSet` only in authoritative state (no `HashMap`/`HashSet`), no floats, no wall-clock time
 - **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`
 - **Unique location** — every entity exists in exactly one place
+- **No backward compatibility layers** — when a design changes, update or remove the old path instead of adding shims, redirects, or deprecated wrappers
 
 ## Authoritative-to-AI Impact Rule
 
@@ -299,6 +307,8 @@ for event in sink.events() {
 - **Multi-tick actions** (e.g., harvest, travel, craft): Visible as active between ticks. Use `agent_active_action_name()` or action traces.
 - **When in doubt**: Enable action tracing and check `events_for_at(agent, tick)` to see exactly what happened.
 
+Key types: `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` (Started, Committed, Aborted, StartFailed). For same-tick cross-agent ordering, the contract is the explicit `ActionTraceEvent.sequence_in_tick` key — do not rewrite that contract as "later tick" unless strict tick separation is the intended engine rule.
+
 Action tracing is opt-in and zero-cost when disabled. Do not leave `enable_action_tracing()` in committed test code unless the test explicitly asserts on trace data.
 
 ## Spec Drafting Rules
@@ -341,7 +351,7 @@ Minimal: `serde`, `bincode`, `rand_chacha`, `blake3` (canonical state hashing). 
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
 - Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
-- Epic specs: `specs/E13-*.md` through `specs/E22-*.md` (`archive/specs/` contains archived or completed specs, including E01–E12)
+- Active specs: `specs/` (currently includes S-series specs plus E16b–E22 epic specs; `archive/specs/` contains archived or completed specs, including E01–E13)
 
 ## Commit Conventions
 
@@ -395,29 +405,3 @@ Sub-agents spawned via the `Task` tool **cannot prompt for interactive permissio
 Follow the canonical archival policy in `docs/archival-workflow.md`.
 
 Do not duplicate or drift this procedure in other files; update `docs/archival-workflow.md` as the source of truth.
-
-<!-- gitnexus:start -->
-# GitNexus MCP
-
-This project is indexed by GitNexus as **worldwake** (6795 symbols, 26337 relationships, 300 execution flows).
-
-## Always Start Here
-
-1. **Read `gitnexus://repo/{name}/context`** — codebase overview + check index freshness
-2. **Match your task to a skill below** and **read that skill file**
-3. **Follow the skill's workflow and checklist**
-
-> If step 1 warns the index is stale, run `npx gitnexus analyze` in the terminal first.
-
-## Skills
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->

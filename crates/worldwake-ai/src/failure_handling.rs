@@ -7,16 +7,23 @@ use worldwake_core::{
     Quantity, Tick,
 };
 use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionPayload, ExternalAbortReason, InterruptReason,
-    ReplanNeeded, RuntimeBeliefView,
+    AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
+    ActionStartFailureReason, ExternalAbortReason, InterruptReason, ReplanNeeded,
+    RuntimeBeliefView,
 };
+
+#[derive(Clone, Copy)]
+pub enum ExecutionFailure<'a> {
+    Replan(&'a ReplanNeeded),
+    Start(&'a ActionStartFailure),
+}
 
 pub struct PlanFailureContext<'a> {
     pub view: &'a dyn RuntimeBeliefView,
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub failed_step: &'a PlannedStep,
-    pub replan_signal: Option<&'a ReplanNeeded>,
+    pub execution_failure: Option<ExecutionFailure<'a>>,
     pub current_tick: Tick,
 }
 
@@ -35,7 +42,7 @@ pub fn handle_plan_failure(
         context.agent,
         &context.goal_key,
         context.failed_step,
-        context.replan_signal,
+        context.execution_failure,
     );
     let expires_tick = context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, budget));
 
@@ -73,7 +80,7 @@ fn derive_blocking_fact(
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
-    replan_signal: Option<&ReplanNeeded>,
+    execution_failure: Option<ExecutionFailure<'_>>,
 ) -> BlockingFact {
     if target_gone(view, step) {
         return BlockingFact::TargetGone;
@@ -86,7 +93,9 @@ fn derive_blocking_fact(
             }
         }
         PlannerOpKind::Trade => {
-            if let Some(fact) = classify_trade_failure(view, agent, goal_key, step) {
+            if let Some(fact) =
+                classify_trade_failure(view, agent, goal_key, step, execution_failure)
+            {
                 return fact;
             }
         }
@@ -112,6 +121,7 @@ fn derive_blocking_fact(
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport => {}
@@ -121,7 +131,7 @@ fn derive_blocking_fact(
         return BlockingFact::DangerTooHigh;
     }
 
-    if let Some(fact) = replan_signal.and_then(map_abort_reason) {
+    if let Some(fact) = execution_failure.and_then(map_execution_failure) {
         return fact;
     }
 
@@ -133,10 +143,15 @@ fn classify_trade_failure(
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
+    execution_failure: Option<ExecutionFailure<'_>>,
 ) -> Option<BlockingFact> {
     let payload = step.payload_override.as_ref()?.as_trade()?;
     let commodity = goal_key.commodity.unwrap_or(payload.requested_commodity);
     let place = view.effective_place(agent)?;
+
+    if let Some(fact) = classify_trade_execution_failure(agent, payload, execution_failure) {
+        return Some(fact);
+    }
 
     if view.commodity_quantity(payload.counterparty, payload.requested_commodity)
         < payload.requested_quantity
@@ -163,6 +178,82 @@ fn classify_trade_failure(
     }
 
     None
+}
+
+fn classify_trade_execution_failure(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    execution_failure: Option<ExecutionFailure<'_>>,
+) -> Option<BlockingFact> {
+    match execution_failure? {
+        ExecutionFailure::Start(failure) => {
+            classify_trade_start_failure_reason(agent, payload, &failure.reason)
+        }
+        ExecutionFailure::Replan(signal) => {
+            classify_trade_abort_reason(agent, payload, &signal.reason)
+        }
+    }
+}
+
+fn classify_trade_start_failure_reason(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    reason: &ActionStartFailureReason,
+) -> Option<BlockingFact> {
+    match reason {
+        ActionStartFailureReason::AbortRequested(reason) => {
+            classify_trade_handler_abort_reason(agent, payload, reason)
+        }
+        _ => None,
+    }
+}
+
+fn classify_trade_abort_reason(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    reason: &AbortReason,
+) -> Option<BlockingFact> {
+    match reason {
+        AbortReason::ExternalAbort {
+            kind: ExternalAbortReason::HandlerRequested { reason },
+            ..
+        } => classify_trade_handler_abort_reason(agent, payload, reason),
+        _ => None,
+    }
+}
+
+fn classify_trade_handler_abort_reason(
+    agent: EntityId,
+    payload: &worldwake_sim::TradeActionPayload,
+    reason: &ActionAbortRequestReason,
+) -> Option<BlockingFact> {
+    match reason {
+        ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+            holder, commodity, ..
+        } if *holder == payload.counterparty && *commodity == payload.requested_commodity => {
+            Some(BlockingFact::SellerOutOfStock)
+        }
+        ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+            holder, commodity, ..
+        } if *holder == agent && *commodity == payload.offered_commodity => {
+            Some(if *commodity == CommodityKind::Coin {
+                BlockingFact::TooExpensive
+            } else {
+                BlockingFact::MissingInput(*commodity)
+            })
+        }
+        ActionAbortRequestReason::TradeBundleRejected { acceptance, .. } => match acceptance {
+            worldwake_sim::TradeAcceptance::Accept => None,
+            worldwake_sim::TradeAcceptance::Reject { reason } => match reason {
+                worldwake_sim::TradeRejectionReason::InsufficientPayment
+                | worldwake_sim::TradeRejectionReason::PostTradeStateWorse => {
+                    Some(BlockingFact::TooExpensive)
+                }
+                worldwake_sim::TradeRejectionReason::NoNeed => Some(BlockingFact::NoKnownSeller),
+            },
+        },
+        _ => None,
+    }
 }
 
 fn classify_production_failure(
@@ -250,6 +341,7 @@ fn classify_input_failure(
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
@@ -284,11 +376,14 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Wash
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
-        | PlannerOpKind::DeclareSupport => view.entity_kind(target).is_none() || view.is_dead(target),
+        | PlannerOpKind::DeclareSupport => {
+            view.entity_kind(target).is_none() || view.is_dead(target)
+        }
         PlannerOpKind::Travel => false,
     }
 }
@@ -316,7 +411,14 @@ fn combat_too_risky(view: &dyn RuntimeBeliefView, agent: EntityId) -> bool {
         || (!view.visible_hostiles_for(agent).is_empty() && view.has_wounds(agent))
 }
 
-fn map_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
+fn map_execution_failure(failure: ExecutionFailure<'_>) -> Option<BlockingFact> {
+    match failure {
+        ExecutionFailure::Replan(signal) => map_replan_abort_reason(signal),
+        ExecutionFailure::Start(failure) => map_start_failure_reason(&failure.reason),
+    }
+}
+
+fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
     match &signal.reason {
         AbortReason::CommitConditionFailed { condition } => match condition {
             worldwake_sim::Precondition::TargetAdjacentToActor(_) => {
@@ -343,6 +445,17 @@ fn map_abort_reason(signal: &ReplanNeeded) -> Option<BlockingFact> {
             ExternalAbortReason::HandlerRequested { reason } => map_handler_abort_reason(reason),
             ExternalAbortReason::Other => detail.as_deref().and_then(parse_abort_detail),
         },
+    }
+}
+
+fn map_start_failure_reason(reason: &ActionStartFailureReason) -> Option<BlockingFact> {
+    match reason {
+        ActionStartFailureReason::ReservationUnavailable(_) => {
+            Some(BlockingFact::ReservationConflict)
+        }
+        ActionStartFailureReason::PreconditionFailed(detail) => parse_abort_detail(detail),
+        ActionStartFailureReason::InvalidTarget(_) => Some(BlockingFact::TargetGone),
+        ActionStartFailureReason::AbortRequested(reason) => map_handler_abort_reason(reason),
     }
 }
 
@@ -500,6 +613,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Defend => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Bribe => step
             .payload_override
@@ -550,6 +664,7 @@ fn related_place(
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend => goal_key.place.or_else(|| view.effective_place(agent)),
         PlannerOpKind::Tell
+        | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport => view.effective_place(agent),
@@ -579,7 +694,7 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
 mod tests {
     use super::{
         blocking_fact_ttl, clear_resolved_blockers, derive_blocking_fact, handle_plan_failure,
-        PlanFailureContext,
+        ExecutionFailure, PlanFailureContext,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
@@ -596,8 +711,11 @@ mod tests {
         Wound,
     };
     use worldwake_sim::{
-        AbortReason, ActionDuration, ActionPayload, CombatActionPayload, CraftActionPayload,
-        DurationExpr, InterruptReason, ReplanNeeded, RuntimeBeliefView, TradeActionPayload,
+        AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
+        ActionStartFailureReason, CombatActionPayload, CraftActionPayload,
+        DeclareSupportActionPayload, DurationExpr, InterruptReason, ReplanNeeded,
+        RequestAttemptTrace, RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
+        RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -831,7 +949,7 @@ mod tests {
             _targets: &[EntityId],
             _payload: &ActionPayload,
         ) -> Option<ActionDuration> {
-            Some(ActionDuration::Finite(1))
+            Some(ActionDuration::new(1))
         }
     }
 
@@ -839,6 +957,16 @@ mod tests {
         EntityId {
             slot,
             generation: 1,
+        }
+    }
+
+    const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
+        ResolvedRequestTrace {
+            attempt: RequestAttemptTrace {
+                input_sequence_no,
+                provenance: RequestProvenance::AiPlan,
+            },
+            binding: RequestBindingKind::ReproducedAffordance,
         }
     }
 
@@ -892,6 +1020,24 @@ mod tests {
             })),
             op_kind: PlannerOpKind::Craft,
             estimated_ticks: 4,
+            is_materialization_barrier: true,
+            expected_materializations: Vec::new(),
+        }
+    }
+
+    fn claim_office_goal(office: EntityId) -> GoalKey {
+        GoalKey::from(GoalKind::ClaimOffice { office })
+    }
+
+    fn declare_support_step(office: EntityId, candidate: EntityId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(6),
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::DeclareSupport(
+                DeclareSupportActionPayload { office, candidate },
+            )),
+            op_kind: PlannerOpKind::DeclareSupport,
+            estimated_ticks: 1,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
         }
@@ -966,7 +1112,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
-                replan_signal: None,
+                execution_failure: None,
                 current_tick: Tick(20),
             },
             &mut runtime,
@@ -1127,6 +1273,132 @@ mod tests {
     }
 
     #[test]
+    fn derive_blocking_fact_uses_structured_start_failure_when_view_is_insufficient() {
+        let agent = entity(1);
+        let workstation = entity(3);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, entity(10));
+        view.unique_items
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(3),
+            request: sample_request(4),
+            reason: ActionStartFailureReason::ReservationUnavailable(workstation),
+        };
+
+        let fact = derive_blocking_fact(
+            &view,
+            agent,
+            &GoalKey::from(GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(4),
+            }),
+            &craft_step(workstation),
+            Some(ExecutionFailure::Start(&start_failure)),
+        );
+
+        assert_eq!(fact, BlockingFact::ReservationConflict);
+    }
+
+    #[test]
+    fn derive_blocking_fact_uses_authoritative_trade_start_failure_when_belief_is_stale() {
+        let agent = entity(1);
+        let place = entity(10);
+        let seller = entity(2);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(1));
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(1));
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(3),
+            request: sample_request(5),
+            reason: ActionStartFailureReason::AbortRequested(
+                ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                    holder: seller,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                },
+            ),
+        };
+
+        let fact = derive_blocking_fact(
+            &view,
+            agent,
+            &trade_goal(),
+            &trade_step(seller),
+            Some(ExecutionFailure::Start(&start_failure)),
+        );
+
+        assert_eq!(fact, BlockingFact::SellerOutOfStock);
+    }
+
+    #[test]
+    fn handle_plan_failure_keeps_stale_political_start_failures_on_shared_unknown_path() {
+        let agent = entity(1);
+        let place = entity(10);
+        let office = entity(20);
+        let goal = claim_office_goal(office);
+        let step = declare_support_step(office, agent);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, place);
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(6),
+            request: sample_request(6),
+            reason: ActionStartFailureReason::PreconditionFailed(
+                format!("office {office} is not vacant"),
+            ),
+        };
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut blocked = BlockedIntentMemory::default();
+        let budget = PlanningBudget::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: Some(ExecutionFailure::Start(&start_failure)),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut blocked,
+            &budget,
+        );
+
+        assert_eq!(runtime.current_plan, None);
+        assert!(runtime.dirty);
+        assert_eq!(blocked.intents.len(), 1);
+        assert_eq!(blocked.intents[0].blocking_fact, BlockingFact::Unknown);
+        assert_eq!(blocked.intents[0].related_entity, Some(office));
+        assert_eq!(blocked.intents[0].related_place, Some(place));
+        assert_eq!(
+            blocked.intents[0].expires_tick,
+            Tick(20 + u64::from(budget.transient_block_ticks))
+        );
+    }
+
+    #[test]
     fn derive_blocking_fact_detects_no_known_seller_when_market_is_empty() {
         let agent = entity(1);
         let place = entity(10);
@@ -1173,7 +1445,7 @@ mod tests {
             agent,
             &GoalKey::from(GoalKind::Sleep),
             &step,
-            Some(&signal),
+            Some(ExecutionFailure::Replan(&signal)),
         );
         assert_eq!(fact, BlockingFact::DangerTooHigh);
     }

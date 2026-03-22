@@ -7,7 +7,7 @@ use crate::{
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, Name, OfficeData, PerceptionProfile, Permille, ProductionJob,
-    ProductionOutputOwnershipPolicy, Quantity, ReservationRecord, ResourceSource,
+    ProductionOutputOwnershipPolicy, Quantity, RecordData, ReservationRecord, ResourceSource,
     SubstitutePreferences, TellProfile, TradeDispositionProfile, TravelDispositionProfile,
     UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
@@ -197,6 +197,9 @@ pub enum ReservationDelta {
     Released { reservation: ReservationRecord },
 }
 
+// Component deltas are intentionally stored inline so event-log deltas remain
+// value-semantic and allocation-free on the hot commit path.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StateDelta {
     Entity(EntityDelta),
@@ -223,10 +226,11 @@ mod tests {
         CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container, ControlSource,
         DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, ExclusiveFacilityPolicy, FacilityUseQueue, FactionData, HomeostaticNeeds,
-        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
-        OfficeData, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, TellProfile, Tick, TickRange,
+        InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes,
+        LoadUnits, LotOperation, MetabolismProfile, Name, OfficeData, PerceptionProfile,
+        PerceptionSource, Permille, ProductionJob, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData, RecordEntryId,
+        RecordKind, ReservationId, ReservationRecord, ResourceSource, TellProfile, Tick, TickRange,
         TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
         WoundCause, WoundList,
     };
@@ -278,6 +282,7 @@ mod tests {
                 Permille::new(130).unwrap(),
                 Permille::new(28).unwrap(),
                 std::num::NonZeroU32::new(6).unwrap(),
+                std::num::NonZeroU32::new(10).unwrap(),
             )),
             ComponentValue::DeadAt(DeadAt(Tick(18))),
             ComponentValue::CombatStance(CombatStance::Defending),
@@ -297,6 +302,24 @@ mod tests {
                 name: "River Pact".to_string(),
                 purpose: crate::FactionPurpose::Political,
             }),
+            ComponentValue::RecordData(RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: entity(33),
+                issuer: entity(34),
+                consultation_ticks: 5,
+                max_entries_per_consult: 7,
+                entries: vec![InstitutionalRecordEntry {
+                    entry_id: RecordEntryId(0),
+                    claim: InstitutionalClaim::OfficeHolder {
+                        office: entity(35),
+                        holder: Some(entity(36)),
+                        effective_tick: Tick(8),
+                    },
+                    recorded_tick: Tick(9),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            }),
             ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
             ComponentValue::AgentBeliefStore(AgentBeliefStore {
                 known_entities: BTreeMap::from([(
@@ -311,22 +334,46 @@ mod tests {
                         resource_source: None,
                         alive: true,
                         wounds: Vec::new(),
+                        last_known_courage: None,
                         observed_tick: Tick(14),
                         source: PerceptionSource::DirectObservation,
                     },
                 )]),
                 social_observations: Vec::new(),
+                told_beliefs: BTreeMap::new(),
+                heard_beliefs: BTreeMap::new(),
+                institutional_beliefs: BTreeMap::from([(
+                    crate::InstitutionalBeliefKey::OfficeHolderOf { office: entity(20) },
+                    vec![crate::BelievedInstitutionalClaim {
+                        claim: crate::InstitutionalClaim::OfficeHolder {
+                            office: entity(20),
+                            holder: Some(entity(21)),
+                            effective_tick: Tick(15),
+                        },
+                        source: crate::InstitutionalKnowledgeSource::RecordConsultation {
+                            record: entity(22),
+                            entry_id: crate::RecordEntryId(4),
+                        },
+                        learned_tick: Tick(16),
+                        learned_at: Some(entity(23)),
+                    }],
+                )]),
             }),
             ComponentValue::PerceptionProfile(PerceptionProfile {
                 memory_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(920).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 24,
+                consultation_speed_factor: Permille::new(600).unwrap(),
+                contradiction_tolerance: Permille::new(350).unwrap(),
             }),
             ComponentValue::TellProfile(TellProfile {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
                 acceptance_fidelity: Permille::new(720).unwrap(),
+                conversation_memory_capacity: 9,
+                conversation_memory_retention_ticks: 28,
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
@@ -488,6 +535,7 @@ mod tests {
                 ComponentKind::UtilityProfile,
                 ComponentKind::OfficeData,
                 ComponentKind::FactionData,
+                ComponentKind::RecordData,
                 ComponentKind::BlockedIntentMemory,
                 ComponentKind::AgentBeliefStore,
                 ComponentKind::PerceptionProfile,

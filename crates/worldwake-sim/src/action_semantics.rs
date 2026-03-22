@@ -2,8 +2,8 @@ use crate::{ActionDuration, ActionPayload};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, PlaceTag,
-    Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
+    CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, Permille,
+    PlaceTag, Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -96,6 +96,9 @@ pub enum MetabolismDurationKind {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum DurationExpr {
     Fixed(NonZeroU32),
+    ConsultRecord {
+        target_index: u8,
+    },
     TargetConsumable {
         target_index: u8,
     },
@@ -106,7 +109,7 @@ pub enum DurationExpr {
         kind: MetabolismDurationKind,
     },
     ActorTradeDisposition,
-    Indefinite,
+    ActorDefendStance,
     CombatWeapon,
     TargetTreatment {
         target_index: u8,
@@ -119,11 +122,12 @@ impl DurationExpr {
     pub const fn fixed_ticks(self) -> Option<u32> {
         match self {
             Self::Fixed(ticks) => Some(ticks.get()),
-            Self::TargetConsumable { .. }
+            Self::ConsultRecord { .. }
+            | Self::TargetConsumable { .. }
             | Self::TravelToTarget { .. }
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
-            | Self::Indefinite
+            | Self::ActorDefendStance
             | Self::CombatWeapon
             | Self::TargetTreatment { .. } => None,
         }
@@ -137,7 +141,10 @@ impl DurationExpr {
         payload: &ActionPayload,
     ) -> Result<ActionDuration, String> {
         match self {
-            Self::Fixed(ticks) => Ok(ActionDuration::Finite(ticks.get())),
+            Self::Fixed(ticks) => Ok(ActionDuration::new(ticks.get())),
+            Self::ConsultRecord { target_index } => {
+                Self::resolve_consult_record_duration(world, actor, targets, target_index)
+            }
             Self::TargetConsumable { target_index } => {
                 let target = Self::target_at(targets, target_index)?;
                 let lot = world
@@ -148,7 +155,7 @@ impl DurationExpr {
                     .spec()
                     .consumable_profile
                     .ok_or_else(|| format!("target {target} commodity is not consumable"))?;
-                Ok(ActionDuration::Finite(
+                Ok(ActionDuration::new(
                     profile.consumption_ticks_per_unit.get(),
                 ))
             }
@@ -164,7 +171,7 @@ impl DurationExpr {
                     .ok_or_else(|| {
                         format!("no directed travel edge connects {origin} -> {target}")
                     })?;
-                Ok(ActionDuration::Finite(edge.travel_time_ticks()))
+                Ok(ActionDuration::new(edge.travel_time_ticks()))
             }
             Self::ActorMetabolism { kind } => {
                 let profile = world
@@ -174,13 +181,16 @@ impl DurationExpr {
                     MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                     MetabolismDurationKind::Wash => profile.wash_ticks.get(),
                 };
-                Ok(ActionDuration::Finite(ticks))
+                Ok(ActionDuration::new(ticks))
             }
             Self::ActorTradeDisposition => world
                 .get_component_trade_disposition_profile(actor)
-                .map(|profile| ActionDuration::Finite(profile.negotiation_round_ticks.get()))
+                .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
-            Self::Indefinite => Ok(ActionDuration::Indefinite),
+            Self::ActorDefendStance => world
+                .get_component_combat_profile(actor)
+                .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get()))
+                .ok_or_else(|| format!("actor {actor} lacks combat profile")),
             Self::CombatWeapon => {
                 let combat = payload.as_combat().ok_or_else(|| {
                     "combat weapon duration requires ActionPayload::Combat".to_string()
@@ -188,12 +198,12 @@ impl DurationExpr {
                 match combat.weapon {
                     CombatWeaponRef::Unarmed => world
                         .get_component_combat_profile(actor)
-                        .map(|profile| ActionDuration::Finite(profile.unarmed_attack_ticks.get()))
+                        .map(|profile| ActionDuration::new(profile.unarmed_attack_ticks.get()))
                         .ok_or_else(|| format!("actor {actor} lacks combat profile")),
                     CombatWeaponRef::Commodity(kind) => kind
                         .spec()
                         .combat_weapon_profile
-                        .map(|profile| ActionDuration::Finite(profile.attack_duration_ticks.get()))
+                        .map(|profile| ActionDuration::new(profile.attack_duration_ticks.get()))
                         .ok_or_else(|| format!("commodity {kind:?} is not a combat weapon")),
                 }
             }
@@ -224,7 +234,7 @@ impl DurationExpr {
 
                 let severity_per_tick = u32::from(severity_reduction_per_tick.value()).max(1);
                 let wound_ticks = wounds.wound_load().div_ceil(severity_per_tick).max(1);
-                Ok(ActionDuration::Finite(
+                Ok(ActionDuration::new(
                     treatment_ticks_per_unit.get().max(wound_ticks),
                 ))
             }
@@ -237,6 +247,34 @@ impl DurationExpr {
             .copied()
             .ok_or_else(|| format!("missing target at index {target_index}"))
     }
+
+    fn resolve_consult_record_duration(
+        world: &World,
+        actor: EntityId,
+        targets: &[EntityId],
+        target_index: u8,
+    ) -> Result<ActionDuration, String> {
+        let target = Self::target_at(targets, target_index)?;
+        let record = world
+            .get_component_record_data(target)
+            .ok_or_else(|| format!("target {target} is not a record"))?;
+        let profile = world
+            .get_component_perception_profile(actor)
+            .ok_or_else(|| format!("actor {actor} lacks perception profile"))?;
+        Ok(ActionDuration::new(consultation_duration_ticks(
+            record.consultation_ticks,
+            profile.consultation_speed_factor,
+        )))
+    }
+}
+
+pub(crate) fn consultation_duration_ticks(
+    consultation_ticks: u32,
+    consultation_speed_factor: Permille,
+) -> u32 {
+    let scaled_ticks =
+        (u64::from(consultation_ticks) * u64::from(consultation_speed_factor.value())) / 1000;
+    scaled_ticks.max(1).min(u64::from(u32::MAX)) as u32
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -259,8 +297,8 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, CauseRef, CombatProfile, CombatWeaponRef, CommodityKind,
         ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds, MetabolismProfile,
-        Permille, Quantity, RecipeId, Tick, TradeDispositionProfile, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        Permille, Quantity, RecipeId, RecordData, RecordKind, Tick, TradeDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -344,16 +382,17 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 9] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 10] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
+        DurationExpr::ConsultRecord { target_index: 0 },
         DurationExpr::TargetConsumable { target_index: 0 },
         DurationExpr::TravelToTarget { target_index: 1 },
         DurationExpr::ActorMetabolism {
             kind: MetabolismDurationKind::Wash,
         },
         DurationExpr::ActorTradeDisposition,
-        DurationExpr::Indefinite,
+        DurationExpr::ActorDefendStance,
         DurationExpr::CombatWeapon,
         DurationExpr::TargetTreatment {
             target_index: 2,
@@ -392,6 +431,10 @@ mod tests {
             Some(5)
         );
         assert_eq!(
+            DurationExpr::ConsultRecord { target_index: 0 }.fixed_ticks(),
+            None
+        );
+        assert_eq!(
             DurationExpr::TargetConsumable { target_index: 0 }.fixed_ticks(),
             None
         );
@@ -407,7 +450,7 @@ mod tests {
             None
         );
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
-        assert_eq!(DurationExpr::Indefinite.fixed_ticks(), None);
+        assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(
             DurationExpr::TargetTreatment {
@@ -540,7 +583,7 @@ mod tests {
             DurationExpr::TargetConsumable { target_index: 0 }
                 .resolve_for(&world, actor, &[target], &ActionPayload::None)
                 .unwrap(),
-            ActionDuration::Finite(
+            ActionDuration::new(
                 CommodityKind::Bread
                     .spec()
                     .consumable_profile
@@ -555,7 +598,7 @@ mod tests {
             }
             .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
-            ActionDuration::Finite(7)
+            ActionDuration::new(7)
         );
         assert_eq!(
             DurationExpr::ActorMetabolism {
@@ -563,7 +606,46 @@ mod tests {
             }
             .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
-            ActionDuration::Finite(9)
+            ActionDuration::new(9)
+        );
+    }
+
+    #[test]
+    fn duration_expr_resolves_consult_record_ticks_from_record_and_actor_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, record) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_perception_profile(
+                actor,
+                worldwake_core::PerceptionProfile {
+                    consultation_speed_factor: pm(375),
+                    ..worldwake_core::PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            let record = txn
+                .create_record(RecordData {
+                    record_kind: RecordKind::OfficeRegister,
+                    home_place: place,
+                    issuer: actor,
+                    consultation_ticks: 8,
+                    max_entries_per_consult: 4,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                })
+                .unwrap();
+            commit_txn(txn);
+            (actor, record)
+        };
+
+        assert_eq!(
+            DurationExpr::ConsultRecord { target_index: 0 }
+                .resolve_for(&world, actor, &[record], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(3)
         );
     }
 
@@ -590,7 +672,7 @@ mod tests {
             DurationExpr::TravelToTarget { target_index: 0 }
                 .resolve_for(&world, actor, &[destination], &ActionPayload::None)
                 .unwrap(),
-            ActionDuration::Finite(expected)
+            ActionDuration::new(expected)
         );
     }
 
@@ -623,6 +705,7 @@ mod tests {
                     pm(120),
                     pm(30),
                     nz(6),
+                    nz(10),
                 ),
             )
             .unwrap();
@@ -634,7 +717,13 @@ mod tests {
             DurationExpr::ActorTradeDisposition
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
-            ActionDuration::Finite(11)
+            ActionDuration::new(11)
+        );
+        assert_eq!(
+            DurationExpr::ActorDefendStance
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(10)
         );
         assert_eq!(
             DurationExpr::CombatWeapon
@@ -648,7 +737,7 @@ mod tests {
                     }),
                 )
                 .unwrap(),
-            ActionDuration::Finite(6)
+            ActionDuration::new(6)
         );
         assert_eq!(
             DurationExpr::CombatWeapon
@@ -662,7 +751,7 @@ mod tests {
                     }),
                 )
                 .unwrap(),
-            ActionDuration::Finite(
+            ActionDuration::new(
                 CommodityKind::Sword
                     .spec()
                     .combat_weapon_profile
@@ -684,10 +773,16 @@ mod tests {
         };
 
         assert_eq!(
-            DurationExpr::Indefinite
+            DurationExpr::ActorDefendStance
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
-                .unwrap(),
-            ActionDuration::Indefinite
+                .unwrap_err(),
+            format!("actor {actor} lacks combat profile")
+        );
+        assert_eq!(
+            DurationExpr::ConsultRecord { target_index: 0 }
+                .resolve_for(&world, actor, &[ENTITY_B], &ActionPayload::None)
+                .unwrap_err(),
+            format!("target {ENTITY_B} is not a record")
         );
         assert_eq!(
             DurationExpr::CombatWeapon

@@ -16,6 +16,7 @@ pub fn facility_queue_system(ctx: SystemExecutionContext<'_>) -> Result<(), Syst
         rng: _rng,
         active_actions,
         action_defs,
+        politics_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -455,6 +456,7 @@ mod tests {
             rng: &mut rng,
             active_actions,
             action_defs: defs,
+            politics_trace: None,
             tick: Tick(tick),
             system_id: SystemId::FacilityQueue,
         })
@@ -474,7 +476,7 @@ mod tests {
             actor,
             targets: vec![facility],
             start_tick: Tick(5),
-            remaining_duration: ActionDuration::Finite(2),
+            remaining_duration: ActionDuration::new(2),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: Some(ActionState::Empty),

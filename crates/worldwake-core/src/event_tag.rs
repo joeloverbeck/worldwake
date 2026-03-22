@@ -38,7 +38,7 @@ mod tests {
     >() {
     }
 
-const ALL_EVENT_TAGS: [EventTag; 21] = [
+    const ALL_EVENT_TAGS: [EventTag; 21] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
