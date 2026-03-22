@@ -6,8 +6,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ForceCandidateTrace, OfficeAvailabilityPhase, OfficeSuccessionOutcome, OfficeSuccessionTrace,
-    PoliticalTraceEvent, PoliticalTraceSink, SupportDeclarationTrace, SystemError,
-    SystemExecutionContext,
+    PoliticalTraceEvent, PoliticalTraceSink, SupportCountTrace, SupportDeclarationTrace,
+    SupportResolutionTrace, SystemError, SystemExecutionContext, VacancyTimerTrace,
 };
 
 const PUBLIC_ORDER_BASELINE: Permille = Permille::new_unchecked(750);
@@ -71,6 +71,7 @@ fn evaluate_office_succession(
                     cleared_stale_vacancy,
                 },
                 Vec::new(),
+                None,
                 Vec::new(),
             ),
         );
@@ -94,7 +95,8 @@ fn evaluate_office_succession(
                 office,
                 office_data,
                 OfficeSuccessionOutcome::VacancyActivated,
-                support_declaration_traces(office, office_data, world),
+                support_resolution_trace(office, office_data, world).declarations,
+                None,
                 force_candidate_traces(office_data, world),
             ),
         );
@@ -106,7 +108,8 @@ fn evaluate_office_succession(
         .expect("vacancy_since checked above to be some");
     let waited_ticks = tick.0.saturating_sub(start_tick.0);
     if waited_ticks < office_data.succession_period_ticks {
-        let support_declarations = support_declaration_traces(office, office_data, world);
+        let support_resolution = support_resolution_trace(office, office_data, world);
+        let support_declarations = support_resolution.declarations;
         let outcome = OfficeSuccessionOutcome::WaitingForTimer {
             start_tick,
             waited_ticks,
@@ -123,6 +126,9 @@ fn evaluate_office_succession(
                 office_data,
                 outcome,
                 support_declarations,
+                Some(SupportResolutionTrace {
+                    counted_support: support_resolution.counted_support,
+                }),
                 force_candidate_traces(office_data, world),
             ),
         );
@@ -219,13 +225,10 @@ fn resolve_support_succession(
     office_data: &OfficeData,
     politics_trace: &mut Option<&mut PoliticalTraceSink>,
 ) -> Result<(), SystemError> {
-    let support_declarations = support_declaration_traces(office, office_data, world);
-    let mut counts = BTreeMap::<EntityId, usize>::new();
-    for (_, candidate) in world.support_declarations_for_office(office) {
-        if candidate_is_eligible(world, office_data, candidate) {
-            *counts.entry(candidate).or_default() += 1;
-        }
-    }
+    let support_resolution = support_resolution_trace(office, office_data, world);
+    let support_declarations = support_resolution.declarations;
+    let counted_support = support_resolution.counted_support;
+    let counts = counted_support_by_candidate(&counted_support);
 
     let Some(max_support) = counts.values().copied().max() else {
         reset_vacancy_clock(world, event_log, tick, office, office_data)?;
@@ -237,6 +240,7 @@ fn resolve_support_succession(
                 office_data,
                 OfficeSuccessionOutcome::SupportResetNoEligibleDeclarations,
                 support_declarations,
+                Some(SupportResolutionTrace { counted_support }),
                 Vec::new(),
             ),
         );
@@ -262,6 +266,9 @@ fn resolve_support_succession(
                 office_data,
                 outcome,
                 support_declarations,
+                Some(SupportResolutionTrace {
+                    counted_support: counted_support.clone(),
+                }),
                 Vec::new(),
             ),
         );
@@ -282,6 +289,7 @@ fn resolve_support_succession(
             office_data,
             outcome,
             support_declarations,
+            Some(SupportResolutionTrace { counted_support }),
             Vec::new(),
         ),
     );
@@ -310,6 +318,7 @@ fn resolve_force_succession(
                 office_data,
                 outcome,
                 Vec::new(),
+                None,
                 force_candidates,
             ),
         );
@@ -327,6 +336,7 @@ fn resolve_force_succession(
             office_data,
             outcome,
             Vec::new(),
+            None,
             force_candidates,
         ),
     );
@@ -355,19 +365,49 @@ fn install_office_holder(
     Ok(())
 }
 
-fn support_declaration_traces(
+struct SupportResolutionSnapshot {
+    declarations: Vec<SupportDeclarationTrace>,
+    counted_support: Vec<SupportCountTrace>,
+}
+
+fn support_resolution_trace(
     office: EntityId,
     office_data: &OfficeData,
     world: &World,
-) -> Vec<SupportDeclarationTrace> {
-    world
+) -> SupportResolutionSnapshot {
+    let mut counted = BTreeMap::<EntityId, usize>::new();
+    let declarations = world
         .support_declarations_for_office(office)
         .into_iter()
-        .map(|(supporter, candidate)| SupportDeclarationTrace {
-            supporter,
-            candidate,
-            candidate_eligible: candidate_is_eligible(world, office_data, candidate),
+        .map(|(supporter, candidate)| {
+            let candidate_eligible = candidate_is_eligible(world, office_data, candidate);
+            if candidate_eligible {
+                *counted.entry(candidate).or_default() += 1;
+            }
+            SupportDeclarationTrace {
+                supporter,
+                candidate,
+                candidate_eligible,
+                counted: candidate_eligible,
+            }
         })
+        .collect();
+    let counted_support = counted
+        .into_iter()
+        .map(|(candidate, support)| SupportCountTrace { candidate, support })
+        .collect();
+    SupportResolutionSnapshot {
+        declarations,
+        counted_support,
+    }
+}
+
+fn counted_support_by_candidate(
+    counted_support: &[SupportCountTrace],
+) -> BTreeMap<EntityId, usize> {
+    counted_support
+        .iter()
+        .map(|entry| (entry.candidate, entry.support))
         .collect()
 }
 
@@ -421,6 +461,7 @@ fn office_trace_event(
     office_data: &OfficeData,
     outcome: OfficeSuccessionOutcome,
     support_declarations: Vec<SupportDeclarationTrace>,
+    support_resolution: Option<SupportResolutionTrace>,
     force_candidates: Vec<ForceCandidateTrace>,
 ) -> PoliticalTraceEvent {
     let availability_phase = availability_phase_for_trace(&outcome, &support_declarations);
@@ -432,6 +473,16 @@ fn office_trace_event(
         OfficeSuccessionOutcome::VacancyActivated => None,
         _ => office_data.vacancy_since,
     };
+    let vacancy_timer = office_data
+        .vacancy_since
+        .map(|start_tick| VacancyTimerTrace {
+            start_tick,
+            waited_ticks: tick.0.saturating_sub(start_tick.0),
+            required_ticks: office_data.succession_period_ticks,
+            remaining_ticks: office_data
+                .succession_period_ticks
+                .saturating_sub(tick.0.saturating_sub(start_tick.0)),
+        });
     PoliticalTraceEvent {
         tick,
         office,
@@ -441,8 +492,10 @@ fn office_trace_event(
             holder_before,
             vacancy_since_before,
             availability_phase,
+            vacancy_timer,
             outcome,
             support_declarations,
+            support_resolution,
             force_candidates,
         },
     }
@@ -540,7 +593,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDefRegistry, DeterministicRng, ForceCandidateTrace, OfficeAvailabilityPhase,
-        OfficeSuccessionOutcome, PoliticalTraceSink, SystemExecutionContext, SystemId,
+        OfficeSuccessionOutcome, PoliticalTraceSink, SupportCountTrace, SupportResolutionTrace,
+        SystemExecutionContext, SystemId, VacancyTimerTrace,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -807,6 +861,21 @@ mod tests {
                 remaining_ticks: 2,
             }
         );
+        assert_eq!(
+            waiting.trace.vacancy_timer,
+            Some(VacancyTimerTrace {
+                start_tick: Tick(3),
+                waited_ticks: 1,
+                required_ticks: 3,
+                remaining_ticks: 2,
+            })
+        );
+        assert_eq!(
+            waiting.trace.support_resolution,
+            Some(SupportResolutionTrace {
+                counted_support: Vec::new(),
+            })
+        );
     }
 
     #[test]
@@ -828,6 +897,7 @@ mod tests {
             OfficeAvailabilityPhase::VacantPendingResolution
         );
         assert_eq!(waiting.trace.support_declarations.len(), 1);
+        assert!(waiting.trace.support_declarations[0].counted);
         assert_eq!(
             waiting.trace.outcome,
             OfficeSuccessionOutcome::WaitingForTimer {
@@ -836,6 +906,15 @@ mod tests {
                 required_ticks: 3,
                 remaining_ticks: 2,
             }
+        );
+        assert_eq!(
+            waiting.trace.support_resolution,
+            Some(SupportResolutionTrace {
+                counted_support: vec![SupportCountTrace {
+                    candidate: fx.candidate_a,
+                    support: 1,
+                }],
+            })
         );
     }
 
@@ -939,7 +1018,58 @@ mod tests {
     }
 
     #[test]
-    fn support_succession_trace_records_tie_reset_and_filtered_votes() {
+    fn support_succession_trace_records_install_with_resolution_snapshot() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 3);
+        fx.declare_support(fx.candidate_a, fx.candidate_a, 4);
+        fx.declare_support(fx.candidate_b, fx.candidate_a, 4);
+        let mut trace = PoliticalTraceSink::new();
+        event_log = EventLog::new();
+
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 6);
+
+        let event = trace.event_for_office_at(fx.office, Tick(6)).unwrap();
+        assert_eq!(
+            event.trace.availability_phase,
+            OfficeAvailabilityPhase::ClosedOccupied
+        );
+        assert_eq!(
+            event.trace.outcome,
+            OfficeSuccessionOutcome::SupportInstalled {
+                holder: fx.candidate_a,
+                support: 2,
+            }
+        );
+        assert_eq!(
+            event.trace.vacancy_timer,
+            Some(VacancyTimerTrace {
+                start_tick: Tick(3),
+                waited_ticks: 3,
+                required_ticks: 3,
+                remaining_ticks: 0,
+            })
+        );
+        assert_eq!(
+            event.trace.support_resolution,
+            Some(SupportResolutionTrace {
+                counted_support: vec![SupportCountTrace {
+                    candidate: fx.candidate_a,
+                    support: 2,
+                }],
+            })
+        );
+        assert_eq!(event.trace.support_declarations.len(), 2);
+        assert!(event
+            .trace
+            .support_declarations
+            .iter()
+            .all(|declaration| declaration.counted));
+    }
+
+    #[test]
+    fn support_succession_trace_records_tie_reset_with_resolution_snapshot() {
         let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
         fx.kill_holder(2);
         let mut event_log = EventLog::new();
@@ -963,16 +1093,40 @@ mod tests {
                 support: 1,
             }
         );
+        assert_eq!(
+            event.trace.vacancy_timer,
+            Some(VacancyTimerTrace {
+                start_tick: Tick(3),
+                waited_ticks: 3,
+                required_ticks: 3,
+                remaining_ticks: 0,
+            })
+        );
+        assert_eq!(
+            event.trace.support_resolution,
+            Some(SupportResolutionTrace {
+                counted_support: vec![
+                    SupportCountTrace {
+                        candidate: fx.candidate_a,
+                        support: 1,
+                    },
+                    SupportCountTrace {
+                        candidate: fx.candidate_b,
+                        support: 1,
+                    },
+                ],
+            })
+        );
         assert_eq!(event.trace.support_declarations.len(), 2);
         assert!(event
             .trace
             .support_declarations
             .iter()
-            .all(|declaration| declaration.candidate_eligible));
+            .all(|declaration| declaration.candidate_eligible && declaration.counted));
     }
 
     #[test]
-    fn support_succession_trace_records_no_eligible_reset_phase() {
+    fn support_succession_trace_records_no_eligible_reset_with_resolution_snapshot() {
         let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
         let outsider = {
             let mut txn = new_txn(&mut fx.world, 2);
@@ -1010,8 +1164,24 @@ mod tests {
             event.trace.outcome,
             OfficeSuccessionOutcome::SupportResetNoEligibleDeclarations
         );
+        assert_eq!(
+            event.trace.vacancy_timer,
+            Some(VacancyTimerTrace {
+                start_tick: Tick(5),
+                waited_ticks: 3,
+                required_ticks: 3,
+                remaining_ticks: 0,
+            })
+        );
+        assert_eq!(
+            event.trace.support_resolution,
+            Some(SupportResolutionTrace {
+                counted_support: Vec::new(),
+            })
+        );
         assert_eq!(event.trace.support_declarations.len(), 1);
         assert!(!event.trace.support_declarations[0].candidate_eligible);
+        assert!(!event.trace.support_declarations[0].counted);
     }
 
     #[test]

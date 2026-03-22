@@ -10,7 +10,10 @@ use worldwake_core::{
     InstitutionalBeliefRead, MetabolismProfile, PerceptionProfile, PerceptionSource, Permille,
     PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{
+    ActionTraceKind, OfficeSuccessionOutcome, SupportCountTrace, SupportResolutionTrace,
+    VacancyTimerTrace,
+};
 
 // ---------------------------------------------------------------------------
 // Scenario 11: Simple Office Claim via DeclareSupport
@@ -1163,6 +1166,8 @@ fn build_remote_record_consultation_political_action_scenario(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_politics_tracing();
+    h.enable_politics_tracing();
     h.enable_institutional_knowledge_tracing();
 
     let agent = seed_agent(
@@ -1454,6 +1459,7 @@ fn build_knowledge_asymmetry_race_scenario(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_politics_tracing();
 
     let informed_agent = seed_agent(
         &mut h.world,
@@ -1705,6 +1711,43 @@ fn run_knowledge_asymmetry_race(seed: Seed) -> (StateHash, StateHash) {
         Some(informed_agent),
         "informed claimant should win the office before the uninformed claimant can finish the consult-driven branch"
     );
+
+    let politics_sink = h
+        .politics_trace_sink()
+        .expect("politics tracing should be enabled for knowledge-asymmetry scenario");
+    let install_trace = politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::SupportInstalled { holder, .. } if holder == informed_agent
+            )
+        })
+        .expect("politics trace should expose the support-law install for the informed claimant");
+    assert_eq!(
+        install_trace.trace.vacancy_timer,
+        Some(VacancyTimerTrace {
+            start_tick: Tick(0),
+            waited_ticks: 5,
+            required_ticks: 5,
+            remaining_ticks: 0,
+        })
+    );
+    assert_eq!(
+        install_trace.trace.support_resolution,
+        Some(SupportResolutionTrace {
+            counted_support: vec![SupportCountTrace {
+                candidate: informed_agent,
+                support: 1,
+            }],
+        })
+    );
+    assert_eq!(install_trace.trace.support_declarations.len(), 1);
+    assert_eq!(install_trace.trace.support_declarations[0].supporter, informed_agent);
+    assert_eq!(install_trace.trace.support_declarations[0].candidate, informed_agent);
+    assert!(install_trace.trace.support_declarations[0].candidate_eligible);
+    assert!(install_trace.trace.support_declarations[0].counted);
 
     (
         hash_world(&h.world).unwrap(),

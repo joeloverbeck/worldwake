@@ -19,9 +19,30 @@ pub struct OfficeSuccessionTrace {
     pub holder_before: Option<EntityId>,
     pub vacancy_since_before: Option<Tick>,
     pub availability_phase: OfficeAvailabilityPhase,
+    pub vacancy_timer: Option<VacancyTimerTrace>,
     pub outcome: OfficeSuccessionOutcome,
     pub support_declarations: Vec<SupportDeclarationTrace>,
+    pub support_resolution: Option<SupportResolutionTrace>,
     pub force_candidates: Vec<ForceCandidateTrace>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VacancyTimerTrace {
+    pub start_tick: Tick,
+    pub waited_ticks: u64,
+    pub required_ticks: u64,
+    pub remaining_ticks: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SupportResolutionTrace {
+    pub counted_support: Vec<SupportCountTrace>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SupportCountTrace {
+    pub candidate: EntityId,
+    pub support: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +89,7 @@ pub struct SupportDeclarationTrace {
     pub supporter: EntityId,
     pub candidate: EntityId,
     pub candidate_eligible: bool,
+    pub counted: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80,6 +102,19 @@ impl PoliticalTraceEvent {
     #[must_use]
     pub fn summary(&self) -> String {
         let phase = self.trace.availability_phase.summary_label();
+        let timer_suffix = self
+            .trace
+            .vacancy_timer
+            .map(|timer| {
+                format!(
+                    ", timer(start {}, waited {}, required {}, remaining {})",
+                    timer.start_tick.0,
+                    timer.waited_ticks,
+                    timer.required_ticks,
+                    timer.remaining_ticks
+                )
+            })
+            .unwrap_or_default();
         match &self.trace.outcome {
             OfficeSuccessionOutcome::OccupiedNoAction {
                 holder,
@@ -110,19 +145,19 @@ impl PoliticalTraceEvent {
                 self.tick.0, self.office, start_tick.0, waited_ticks, required_ticks, remaining_ticks, phase
             ),
             OfficeSuccessionOutcome::SupportInstalled { holder, support } => format!(
-                "tick {}: office {} installs {} by support with {} declarations [{}]",
-                self.tick.0, self.office, holder, support, phase
+                "tick {}: office {} installs {} by support with {} declarations{} [{}]",
+                self.tick.0, self.office, holder, support, timer_suffix, phase
             ),
             OfficeSuccessionOutcome::SupportResetNoEligibleDeclarations => format!(
-                "tick {}: office {} resets vacancy clock due to no eligible support declarations [{}]",
-                self.tick.0, self.office, phase
+                "tick {}: office {} resets vacancy clock due to no eligible support declarations{} [{}]",
+                self.tick.0, self.office, timer_suffix, phase
             ),
             OfficeSuccessionOutcome::SupportResetTie {
                 tied_candidates,
                 support,
             } => format!(
-                "tick {}: office {} resets vacancy clock due to support tie {:?} at {} [{}]",
-                self.tick.0, self.office, tied_candidates, support, phase
+                "tick {}: office {} resets vacancy clock due to support tie {:?} at {}{} [{}]",
+                self.tick.0, self.office, tied_candidates, support, timer_suffix, phase
             ),
             OfficeSuccessionOutcome::ForceInstalled { holder } => format!(
                 "tick {}: office {} installs {} by force-law uncontested succession [{}]",
@@ -252,10 +287,17 @@ mod tests {
             holder_before: None,
             vacancy_since_before: Some(Tick(1)),
             availability_phase: OfficeAvailabilityPhase::VacantPendingResolution,
+            vacancy_timer: Some(VacancyTimerTrace {
+                start_tick: Tick(1),
+                waited_ticks: 6,
+                required_ticks: 5,
+                remaining_ticks: 0,
+            }),
             outcome: OfficeSuccessionOutcome::ForceBlocked {
                 eligible_contender_count: 2,
             },
             support_declarations: Vec::new(),
+            support_resolution: None,
             force_candidates: vec![
                 ForceCandidateTrace {
                     candidate: office(4),

@@ -341,12 +341,20 @@ mod tests {
                 holder_before: None,
                 vacancy_since_before: Some(Tick(3)),
                 availability_phase: OfficeAvailabilityPhase::VacantClaimable,
+                vacancy_timer: Some(worldwake_sim::VacancyTimerTrace {
+                    start_tick: Tick(3),
+                    waited_ticks: 1,
+                    required_ticks: 5,
+                    remaining_ticks: 4,
+                }),
                 outcome: OfficeSuccessionOutcome::VacancyActivated,
                 support_declarations: vec![SupportDeclarationTrace {
                     supporter: entity(4),
                     candidate: entity(5),
                     candidate_eligible: false,
+                    counted: false,
                 }],
+                support_resolution: None,
                 force_candidates: Vec::new(),
             },
         });
