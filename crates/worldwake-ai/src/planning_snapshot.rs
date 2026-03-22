@@ -724,11 +724,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
-        EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId,
-        ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
+        EligibilityRule, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        OfficeData, Permille, Quantity, RecipeId, ResourceSource, SuccessionLaw, TellMemoryKey,
+        TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
@@ -752,6 +753,7 @@ mod tests {
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs: SupportDeclarationBeliefs,
+        office_data: BTreeMap<EntityId, OfficeData>,
     }
 
     impl Default for StubBeliefView {
@@ -773,6 +775,7 @@ mod tests {
                 confidence_policies: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
+                office_data: BTreeMap::new(),
             }
         }
     }
@@ -1014,6 +1017,10 @@ mod tests {
 
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+            self.office_data.get(&office).cloned()
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
@@ -1628,5 +1635,43 @@ mod tests {
             snapshot.believed_support_declaration(office, actor),
             InstitutionalBeliefRead::Unknown
         );
+    }
+
+    #[test]
+    fn snapshot_preserves_full_office_data_for_planner_semantics() {
+        let actor = entity(1);
+        let office = entity(100);
+        let town = entity(10);
+        let faction = entity(200);
+
+        let mut view = StubBeliefView::default();
+        for &entity in &[actor, office, town, faction] {
+            view.alive.insert(entity, true);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(faction, EntityKind::Faction);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.office_data.insert(
+            office,
+            OfficeData {
+                title: "Marshal".to_string(),
+                jurisdiction: town,
+                succession_law: SuccessionLaw::Force,
+                eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
+                succession_period_ticks: 19,
+                vacancy_since: Some(Tick(7)),
+            },
+        );
+
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([office]), &BTreeSet::new(), 0);
+
+        assert_eq!(snapshot.office_data(office), view.office_data(office));
     }
 }

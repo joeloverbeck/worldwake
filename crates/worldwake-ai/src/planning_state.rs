@@ -1594,10 +1594,11 @@ mod tests {
         ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, Permille, Quantity, RecipeId, RecipientKnowledgeStatus,
+        RecordData, RecordKind, ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -1605,6 +1606,7 @@ mod tests {
         ActionState, Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
         Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
     };
+    use worldwake_systems::register_office_actions;
 
     struct StubBeliefView {
         current_tick: Tick,
@@ -1642,6 +1644,7 @@ mod tests {
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
+        office_data: BTreeMap<EntityId, OfficeData>,
     }
 
     impl Default for StubBeliefView {
@@ -1681,6 +1684,7 @@ mod tests {
                 courages: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
+                office_data: BTreeMap::new(),
             }
         }
     }
@@ -2000,6 +2004,10 @@ mod tests {
 
         fn record_data(&self, record: EntityId) -> Option<RecordData> {
             self.record_data.get(&record).cloned()
+        }
+
+        fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+            self.office_data.get(&office).cloned()
         }
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
@@ -2566,6 +2574,89 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::recipient_knowledge_status(&state, actor, listener, bread),
             Some(RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief)
+        );
+    }
+
+    #[test]
+    fn planning_state_matches_live_office_data_and_force_claim_affordances() {
+        let actor = entity(1);
+        let office = entity(100);
+        let town = entity(10);
+
+        let mut view = StubBeliefView::default();
+        for &entity in &[actor, office, town] {
+            view.alive.insert(entity, true);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.beliefs.insert(
+            actor,
+            vec![(
+                office,
+                BelievedEntityState {
+                    last_known_place: Some(town),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    observed_tick: Tick(0),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.office_data.insert(
+            office,
+            OfficeData {
+                title: "Marshal".to_string(),
+                jurisdiction: town,
+                succession_law: SuccessionLaw::Force,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 19,
+                vacancy_since: Some(Tick(7)),
+            },
+        );
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([office]), &BTreeSet::new(), 0);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            RuntimeBeliefView::office_data(&state, office),
+            RuntimeBeliefView::office_data(&view, office)
+        );
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let office_ids = register_office_actions(&mut defs, &mut handlers);
+        let press_force_claim_def = office_ids[3];
+
+        let live_affordances = get_affordances(&view, actor, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| affordance.def_id == press_force_claim_def)
+            .map(|affordance| affordance.payload_override)
+            .collect::<Vec<_>>();
+        let planning_affordances = get_affordances(&state, actor, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| affordance.def_id == press_force_claim_def)
+            .map(|affordance| affordance.payload_override)
+            .collect::<Vec<_>>();
+
+        assert_eq!(live_affordances, planning_affordances);
+        assert_eq!(
+            live_affordances,
+            vec![Some(ActionPayload::PressForceClaim(
+                worldwake_sim::PressForceClaimActionPayload { office }
+            ))]
         );
     }
 
