@@ -74,6 +74,9 @@ Established the missing Phase 3 golden proof for craft-restock and stale prerequ
 ### S19: Institutional Record Consultation Golden E2E Suites — COMPLETED
 Established the delivered office-record golden coverage and closed the documentation/archive loop around the live source-declared scenarios: Scenario 33 now proves remote record travel plus consultation plus political follow-through, Scenario 34 proves knowledge-asymmetry-driven office races, and the hand-maintained golden docs were aligned to the shipped scenario inventory instead of the older planned Scenario 32 narrative.
 
+### E16b: Force Legitimacy & Jurisdiction Control — COMPLETED
+Replaced the thin E16 force-succession shortcut with explicit jurisdiction-control state: public claims, contested control, uncontested hold periods, and eventual installation into office. Force succession now arises from concrete local state (claims, contests, hold durations) rather than a hidden timing heuristic, with proper information paths for coups and recognition.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -81,7 +84,7 @@ All completed specs are archived under `archive/specs/`.
 ## Dependency Graph
 
 ```text
-Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15 + E15b + E15c + E16 + E16d + S01 + S02 + S03 + S07 + S08 + S14: COMPLETED
+Phase 1-2 + FND-01 + FND-02 + E21 + E14 + E15 + E15b + E15c + E16 + E16b + E16c + E16d + S01 + S02 + S03 + S07 + S08 + S14: COMPLETED
 
 S09 ✅ (design fix to defend action duration completed)
 S11 ✅ (wound lifecycle audit completed)
@@ -97,17 +100,17 @@ E15c, E16d ──→ S14 ✅ (cross-system golden proof for same-place Tell and 
 S01 ──→ ✅ COMPLETED (production output ownership claims)
 S02 ──→ ✅ COMPLETED (goal decision policy unification)
 E16 ──→ E16c (institutional beliefs need offices/factions/support substrate)
-E16c ──→ E16b (force legitimacy needs institutional records and belief propagation)
+E16c ──→ E16b ✅ (force legitimacy needs institutional records and belief propagation)
 E16c ──→ E17 (justice records and institutional knowledge should reuse one record/belief architecture)
-E16 ──→ E16b (explicit force legitimacy needs offices, factions, and succession substrate)
+E16 ──→ E16b ✅ (explicit force legitimacy needs offices, factions, and succession substrate)
 E15, S03 ✅ ──→ E17 (crime needs discovery + ownership claims + planner binding)
 E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
-E16b ──→ E19 (guards need contested-office control state)
+E16b ✅ ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
 S01 ✅, S03 ✅, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
 S02 ✅, E16 ──→ E18, E20
-S02 ✅, E16, E16b, E16c ──→ E19
+S02 ✅, E16, E16b ✅, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
 S04 ──→ S05 (stock storage needs selling + ownership)
 S04 ──→ S06 (opportunity valuation needs market presence)
@@ -165,8 +168,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - ✅ completed: AI no longer reads live office/faction/support helper seams; political goldens now rely on institutional beliefs or consultation-owned setup
 
 **Step 13**:
-- **E16b**: Force Legitimacy & Jurisdiction Control
-  - needs E16, E16c
+- **E16b**: Force Legitimacy & Jurisdiction Control — ✅ COMPLETED
+  - replaced thin force-succession shortcut with explicit jurisdiction-control state (claims, contests, hold durations, installation)
 - **E17**: Crime, Theft & Justice
   - needs E15, S01, S03, E16c
 - **S13**: Political Emergence Golden E2E Suites
@@ -181,7 +184,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - [x] Political planning gives explicit `Bribe`/`Threaten` outcomes instead of falling through unchanged planning state
 - [x] Political golden coverage proves claim, coalition, threat, travel, eligibility, suppression, force-succession, and locality scenarios
 - [x] Institutional facts propagate through records and consultation rather than live helper shortcuts
-- [ ] Force succession uses explicit contest/control state rather than presence-only installation
+- [x] Force succession uses explicit contest/control state rather than presence-only installation
 - [ ] All FND-02 tickets verified closed
 - [ ] T10: Belief isolation — agent does not react to unseen theft, death, or camp migration
 - [ ] T11: Office uniqueness
@@ -233,7 +236,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
-| `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, S02 |
@@ -263,6 +265,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
