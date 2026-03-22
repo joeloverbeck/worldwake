@@ -1709,9 +1709,9 @@ mod tests {
         AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
         DemandMemory, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, MerchandiseProfile, OfficeData,
-        PerceptionProfile, PerceptionSource, RecordData, RecordEntryId, RecordKind,
-        SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
-        TravelDispositionProfile, UtilityProfile,
+        OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource, RecordData,
+        RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TradeDispositionProfile, TravelDispositionProfile, UtilityProfile,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -1792,6 +1792,22 @@ mod tests {
             eligibility_rules: Vec::new(),
             succession_period_ticks: 8,
             vacancy_since: Some(Tick(3)),
+        }
+    }
+
+    fn sample_office_force_profile() -> OfficeForceProfile {
+        OfficeForceProfile {
+            uncontested_hold_ticks: std::num::NonZeroU32::new(9).unwrap(),
+            vacancy_claim_grace_ticks: std::num::NonZeroU32::new(4).unwrap(),
+            challenger_presence_grace_ticks: std::num::NonZeroU32::new(2).unwrap(),
+        }
+    }
+
+    fn sample_office_force_state() -> OfficeForceState {
+        OfficeForceState {
+            control_since: Some(Tick(7)),
+            contested_since: Some(Tick(9)),
+            last_uncontested_tick: Some(Tick(11)),
         }
     }
 
@@ -3710,6 +3726,76 @@ mod tests {
     }
 
     #[test]
+    fn set_component_office_force_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
+        let before = sample_office_force_profile();
+        let after = OfficeForceProfile {
+            uncontested_hold_ticks: std::num::NonZeroU32::new(12).unwrap(),
+            ..before.clone()
+        };
+        world
+            .insert_component_office_force_profile(office, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_office_force_profile(office, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: office,
+                component_kind: ComponentKind::OfficeForceProfile,
+                before: Some(ComponentValue::OfficeForceProfile(before)),
+                after: ComponentValue::OfficeForceProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_office_force_profile(office), Some(&after));
+    }
+
+    #[test]
+    fn set_component_office_force_state_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
+        let before = sample_office_force_state();
+        let after = OfficeForceState {
+            last_uncontested_tick: Some(Tick(15)),
+            ..before.clone()
+        };
+        world
+            .insert_component_office_force_state(office, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_office_force_state(office, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: office,
+                component_kind: ComponentKind::OfficeForceState,
+                before: Some(ComponentValue::OfficeForceState(before)),
+                after: ComponentValue::OfficeForceState(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_office_force_state(office), Some(&after));
+    }
+
+    #[test]
     fn set_component_record_data_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let record = world.create_record(sample_record_data(), Tick(1)).unwrap();
@@ -4214,6 +4300,64 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_office_data(office), None);
+    }
+
+    #[test]
+    fn clear_component_office_force_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
+        let before = sample_office_force_profile();
+        world
+            .insert_component_office_force_profile(office, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_office_force_profile(office).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: office,
+                component_kind: ComponentKind::OfficeForceProfile,
+                before: ComponentValue::OfficeForceProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_office_force_profile(office), None);
+    }
+
+    #[test]
+    fn clear_component_office_force_state_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
+        let before = sample_office_force_state();
+        world
+            .insert_component_office_force_state(office, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_office_force_state(office).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: office,
+                component_kind: ComponentKind::OfficeForceState,
+                before: ComponentValue::OfficeForceState(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_office_force_state(office), None);
     }
 
     #[test]

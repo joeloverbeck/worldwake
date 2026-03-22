@@ -7,11 +7,12 @@ use crate::{
     DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-    MerchandiseProfile, MetabolismProfile, Name, OfficeData, PerceptionProfile, PlaceTag,
-    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
-    RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick, Topology,
-    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    WorkstationMarker, WorldError, WoundList,
+    MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
+    OfficeForceState, PerceptionProfile, PlaceTag, ProductionJob,
+    ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData, RelationTables,
+    ResourceSource, SubstitutePreferences, TellProfile, Tick, Topology,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -594,12 +595,13 @@ mod tests {
         DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, FactionData, FactionPurpose, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, PerceptionProfile,
-        PerceptionSource, Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity,
-        RecordData, RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
-        SubstitutePreferences, SuccessionLaw, TellProfile, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
+        OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource, Permille,
+        Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, RecordData, RecordEntryId,
+        RecordKind, ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences,
+        SuccessionLaw, TellProfile, Tick, TickRange, Topology, TradeDispositionProfile,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
+        Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -798,6 +800,22 @@ mod tests {
             eligibility_rules: Vec::new(),
             succession_period_ticks: 12,
             vacancy_since: None,
+        }
+    }
+
+    fn sample_office_force_profile() -> OfficeForceProfile {
+        OfficeForceProfile {
+            uncontested_hold_ticks: NonZeroU32::new(9).unwrap(),
+            vacancy_claim_grace_ticks: NonZeroU32::new(4).unwrap(),
+            challenger_presence_grace_ticks: NonZeroU32::new(2).unwrap(),
+        }
+    }
+
+    fn sample_office_force_state() -> OfficeForceState {
+        OfficeForceState {
+            control_since: Some(Tick(7)),
+            contested_since: Some(Tick(9)),
+            last_uncontested_tick: Some(Tick(10)),
         }
     }
 
@@ -4348,6 +4366,50 @@ mod tests {
     }
 
     #[test]
+    fn office_force_profile_component_roundtrip_on_office() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+        let profile = sample_office_force_profile();
+
+        world
+            .insert_component_office_force_profile(id, profile.clone())
+            .unwrap();
+        assert_eq!(world.get_component_office_force_profile(id), Some(&profile));
+        assert!(world.has_component_office_force_profile(id));
+        assert_eq!(
+            world.query_office_force_profile().collect::<Vec<_>>(),
+            vec![(id, &profile)]
+        );
+        assert_eq!(world.count_with_office_force_profile(), 1);
+
+        let removed = world.remove_component_office_force_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_office_force_profile(id), None);
+    }
+
+    #[test]
+    fn office_force_state_component_roundtrip_on_office() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+        let state = sample_office_force_state();
+
+        world
+            .insert_component_office_force_state(id, state.clone())
+            .unwrap();
+        assert_eq!(world.get_component_office_force_state(id), Some(&state));
+        assert!(world.has_component_office_force_state(id));
+        assert_eq!(
+            world.query_office_force_state().collect::<Vec<_>>(),
+            vec![(id, &state)]
+        );
+        assert_eq!(world.count_with_office_force_state(), 1);
+
+        let removed = world.remove_component_office_force_state(id).unwrap();
+        assert_eq!(removed, Some(state));
+        assert_eq!(world.get_component_office_force_state(id), None);
+    }
+
+    #[test]
     fn insert_office_data_on_non_office_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
@@ -4358,6 +4420,32 @@ mod tests {
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
         assert_eq!(world.get_component_office_data(id), None);
+    }
+
+    #[test]
+    fn insert_office_force_profile_on_non_office_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_office_force_profile(id, sample_office_force_profile())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.get_component_office_force_profile(id), None);
+    }
+
+    #[test]
+    fn insert_office_force_state_on_non_office_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_office_force_state(id, sample_office_force_state())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert_eq!(world.get_component_office_force_state(id), None);
     }
 
     #[test]

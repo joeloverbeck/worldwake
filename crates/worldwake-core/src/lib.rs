@@ -124,7 +124,9 @@ pub use load::{
 };
 pub use needs::{BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
 pub use numerics::{LoadUnits, Permille, Quantity};
-pub use offices::{EligibilityRule, OfficeData, SuccessionLaw};
+pub use offices::{
+    EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
+};
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,

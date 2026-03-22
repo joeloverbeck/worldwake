@@ -6,10 +6,11 @@ use crate::{
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, Name, OfficeData, PerceptionProfile, Permille, ProductionJob,
-    ProductionOutputOwnershipPolicy, Quantity, RecordData, ReservationRecord, ResourceSource,
-    SubstitutePreferences, TellProfile, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
+    PerceptionProfile, Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity,
+    RecordData, ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile,
+    TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UtilityProfile,
+    WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -227,12 +228,12 @@ mod tests {
         DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, ExclusiveFacilityPolicy, FacilityUseQueue, FactionData, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes,
-        LoadUnits, LotOperation, MetabolismProfile, Name, OfficeData, PerceptionProfile,
-        PerceptionSource, Permille, ProductionJob, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData, RecordEntryId,
-        RecordKind, ReservationId, ReservationRecord, ResourceSource, TellProfile, Tick, TickRange,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
-        WoundCause, WoundList,
+        LoadUnits, LotOperation, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
+        OfficeForceState, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
+        RecordData, RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
+        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -297,6 +298,16 @@ mod tests {
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 12,
                 vacancy_since: Some(Tick(6)),
+            }),
+            ComponentValue::OfficeForceProfile(OfficeForceProfile {
+                uncontested_hold_ticks: std::num::NonZeroU32::new(9).unwrap(),
+                vacancy_claim_grace_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                challenger_presence_grace_ticks: std::num::NonZeroU32::new(2).unwrap(),
+            }),
+            ComponentValue::OfficeForceState(OfficeForceState {
+                control_since: Some(Tick(7)),
+                contested_since: Some(Tick(8)),
+                last_uncontested_tick: Some(Tick(10)),
             }),
             ComponentValue::FactionData(FactionData {
                 name: "River Pact".to_string(),
@@ -534,6 +545,8 @@ mod tests {
                 ComponentKind::FacilityQueueDispositionProfile,
                 ComponentKind::UtilityProfile,
                 ComponentKind::OfficeData,
+                ComponentKind::OfficeForceProfile,
+                ComponentKind::OfficeForceState,
                 ComponentKind::FactionData,
                 ComponentKind::RecordData,
                 ComponentKind::BlockedIntentMemory,

@@ -12,7 +12,7 @@ use crate::{
     institutional::RecordData,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
-    offices::OfficeData,
+    offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
@@ -124,7 +124,9 @@ mod tests {
         institutional::{
             InstitutionalClaim, InstitutionalRecordEntry, RecordData, RecordEntryId, RecordKind,
         },
-        offices::{EligibilityRule, OfficeData, SuccessionLaw},
+        offices::{
+            EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
+        },
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
@@ -237,6 +239,22 @@ mod tests {
         }
     }
 
+    fn sample_office_force_profile() -> OfficeForceProfile {
+        OfficeForceProfile {
+            uncontested_hold_ticks: NonZeroU32::new(9).unwrap(),
+            vacancy_claim_grace_ticks: NonZeroU32::new(4).unwrap(),
+            challenger_presence_grace_ticks: NonZeroU32::new(2).unwrap(),
+        }
+    }
+
+    fn sample_office_force_state() -> OfficeForceState {
+        OfficeForceState {
+            control_since: Some(Tick(11)),
+            contested_since: Some(Tick(13)),
+            last_uncontested_tick: Some(Tick(17)),
+        }
+    }
+
     fn sample_faction_data() -> FactionData {
         FactionData {
             name: "River Pact".to_string(),
@@ -299,8 +317,10 @@ mod tests {
         tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
         tables.insert_office_data(entity(26), sample_office_data());
-        tables.insert_faction_data(entity(27), sample_faction_data());
-        tables.insert_record_data(entity(28), sample_record_data());
+        tables.insert_office_force_profile(entity(27), sample_office_force_profile());
+        tables.insert_office_force_state(entity(28), sample_office_force_state());
+        tables.insert_faction_data(entity(29), sample_faction_data());
+        tables.insert_record_data(entity(30), sample_record_data());
         tables.insert_item_lot(
             entity(11),
             ItemLot {
@@ -365,6 +385,8 @@ mod tests {
         assert_eq!(tables.iter_deprivation_exposures().count(), 0);
         assert_eq!(tables.iter_metabolism_profiles().count(), 0);
         assert_eq!(tables.iter_office_data().count(), 0);
+        assert_eq!(tables.iter_office_force_profile().count(), 0);
+        assert_eq!(tables.iter_office_force_state().count(), 0);
         assert_eq!(tables.iter_faction_data().count(), 0);
         assert_eq!(tables.iter_record_data().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
@@ -517,6 +539,28 @@ mod tests {
         assert_eq!(tables.insert_office_data(id, office.clone()), None);
         assert_eq!(tables.get_office_data(id), Some(&office));
         assert!(tables.has_office_data(id));
+    }
+
+    #[test]
+    fn insert_and_get_office_force_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(34);
+        let profile = sample_office_force_profile();
+
+        assert_eq!(tables.insert_office_force_profile(id, profile.clone()), None);
+        assert_eq!(tables.get_office_force_profile(id), Some(&profile));
+        assert!(tables.has_office_force_profile(id));
+    }
+
+    #[test]
+    fn insert_and_get_office_force_state() {
+        let mut tables = ComponentTables::default();
+        let id = entity(35);
+        let state = sample_office_force_state();
+
+        assert_eq!(tables.insert_office_force_state(id, state.clone()), None);
+        assert_eq!(tables.get_office_force_state(id), Some(&state));
+        assert!(tables.has_office_force_state(id));
     }
 
     #[test]

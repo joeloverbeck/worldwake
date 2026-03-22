@@ -12,7 +12,7 @@ The full force-legitimacy lifecycle — from claim to contest to control to inst
 
 ## Assumption Reassessment (2026-03-22)
 
-1. Existing golden political tests in `crates/worldwake-ai/tests/golden_political.rs` (or similar) cover support-law offices. No golden tests cover force-law offices.
+1. Existing golden force coverage already exists in [`crates/worldwake-ai/tests/golden_offices.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_offices.rs), but it covers the provisional shortcut only, for example `golden_force_succession_sole_eligible`. Those tests are not sufficient for E16b and must be updated or replaced once the explicit force-control lifecycle lands.
 2. The force-control lifecycle state machine, action handlers, institutional beliefs, affordances, and planner ops from tickets -001 through -008 must all be integrated before these goldens can run.
 3. Golden test harness patterns are well-established: `GoldenTestHarness` with `step_once()`, decision tracing, action tracing, and deterministic replay.
 4. N/A — AI regression layer: golden E2E coverage.
@@ -22,8 +22,8 @@ The full force-legitimacy lifecycle — from claim to contest to control to inst
 8. Closure boundaries tested: (a) `PressForceClaim` commit → `contests_office` mutation, (b) control system per-tick → `office_controller` mutation, (c) installation gate → `office_holder` mutation. All three authoritative boundaries are covered.
 9. N/A — no ControlSource manipulation beyond standard AI control.
 10. Golden scenarios isolate force-law behavior: use `SuccessionLaw::Force` offices exclusively, with eligible agents positioned for claim/contest/control scenarios.
-11. No mismatches found.
-12. Installation arithmetic: `control_since + uncontested_hold_ticks <= current_tick`. Scenarios set `uncontested_hold_ticks` to small values (e.g., 3-5 ticks) for test tractability.
+11. Mismatch corrected: there is already a golden around force-law succession, but it asserts the old sole-contender shortcut. This ticket owns migrating golden force coverage to the real E16b lifecycle rather than leaving the old scenario in place as a false architectural oracle.
+12. Installation arithmetic: `control_since + uncontested_hold_ticks <= current_tick`. Scenarios set `OfficeForceProfile` fields to small values (e.g., `uncontested_hold_ticks = 3..5`) for tractability and must not rely on `OfficeData.succession_period_ticks` for force-law timing anymore.
 
 ## Architecture Check
 
@@ -52,6 +52,7 @@ Minimum scenarios from the spec's test list:
 - Agent remains sole controller for `uncontested_hold_ticks`
 - Agent is installed as `office_holder`
 - Verify installation event, belief projection, register entry
+- Verify the scenario timing is configured through `OfficeForceProfile`, not generic `OfficeData.succession_period_ticks`
 
 **Scenario B: Contested force office**
 - Two eligible agents at force office jurisdiction
@@ -119,7 +120,9 @@ Each golden scenario must have a deterministic replay companion that reproduces 
 2. All agent knowledge acquisition follows Principle 7 (locality)
 3. All state transitions follow the lifecycle state machine from the spec
 4. Deterministic replay produces identical outcomes
-5. No existing golden tests break
+5. Force-law timing in the scenarios is driven by `OfficeForceProfile`, not `OfficeData.succession_period_ticks`
+6. Legacy shortcut-oriented force goldens are updated or removed rather than preserved as parallel expectations
+7. No existing golden tests break
 
 ## Test Plan
 

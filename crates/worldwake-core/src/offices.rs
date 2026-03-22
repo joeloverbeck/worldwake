@@ -1,5 +1,6 @@
 use crate::{Component, EntityId, Tick};
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 
 /// Authoritative metadata attached to office entities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -14,6 +15,26 @@ pub struct OfficeData {
 
 impl Component for OfficeData {}
 
+/// Explicit force-succession timing policy attached to force-law offices.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OfficeForceProfile {
+    pub uncontested_hold_ticks: NonZeroU32,
+    pub vacancy_claim_grace_ticks: NonZeroU32,
+    pub challenger_presence_grace_ticks: NonZeroU32,
+}
+
+impl Component for OfficeForceProfile {}
+
+/// Mutable continuity state for force-based office control.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OfficeForceState {
+    pub control_since: Option<Tick>,
+    pub contested_since: Option<Tick>,
+    pub last_uncontested_tick: Option<Tick>,
+}
+
+impl Component for OfficeForceState {}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SuccessionLaw {
     Support,
@@ -27,10 +48,13 @@ pub enum EligibilityRule {
 
 #[cfg(test)]
 mod tests {
-    use super::{EligibilityRule, OfficeData, SuccessionLaw};
+    use super::{
+        EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
+    };
     use crate::{traits::Component, EntityId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
+    use std::num::NonZeroU32;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -47,6 +71,10 @@ mod tests {
     fn office_data_component_bounds() {
         assert_component_bounds::<OfficeData>();
         assert_value_bounds::<OfficeData>();
+        assert_component_bounds::<OfficeForceProfile>();
+        assert_value_bounds::<OfficeForceProfile>();
+        assert_component_bounds::<OfficeForceState>();
+        assert_value_bounds::<OfficeForceState>();
     }
 
     #[test]
@@ -84,5 +112,33 @@ mod tests {
         let roundtrip: EligibilityRule = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, rule);
+    }
+
+    #[test]
+    fn office_force_profile_roundtrips_through_bincode() {
+        let profile = OfficeForceProfile {
+            uncontested_hold_ticks: NonZeroU32::new(12).unwrap(),
+            vacancy_claim_grace_ticks: NonZeroU32::new(7).unwrap(),
+            challenger_presence_grace_ticks: NonZeroU32::new(3).unwrap(),
+        };
+
+        let bytes = bincode::serialize(&profile).unwrap();
+        let roundtrip: OfficeForceProfile = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn office_force_state_roundtrips_through_bincode() {
+        let state = OfficeForceState {
+            control_since: Some(Tick(9)),
+            contested_since: Some(Tick(13)),
+            last_uncontested_tick: Some(Tick(15)),
+        };
+
+        let bytes = bincode::serialize(&state).unwrap();
+        let roundtrip: OfficeForceState = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, state);
     }
 }

@@ -15,6 +15,7 @@ The current `resolve_force_succession()` in `worldwake-systems/src/offices.rs` i
 1. `resolve_force_succession()` exists in `offices.rs` (lines ~288-333). It checks for exactly one eligible contender present and installs them. It will be fully replaced.
 2. The politics system flow in `offices.rs` dispatches to `resolve_force_succession()` for `SuccessionLaw::Force` offices. The dispatch point needs to call the new logic instead.
 3. `OfficeForceProfile` and `OfficeForceState` will exist from ticket -001. `contests_office/contested_by` and `office_controller/offices_controlled` will exist from ticket -002.
+4. Current force-law timing still lives on generic `OfficeData.succession_period_ticks` because the provisional branch predates `OfficeForceProfile`. This ticket must finish the architectural migration: force-law timing must come from `OfficeForceProfile`, not from generic office metadata.
 4. N/A — not an AI regression ticket.
 5. N/A — no ordering dependency beyond tick-level system execution.
 6. Removing `resolve_force_succession` entirely. The missing substrate it stood in for (explicit contest/control state) is now being added by tickets -001 and -002. This does not reopen regressions because the old behavior was intentionally conservative and no golden tests depend on its exact behavior (golden political tests use support-law offices).
@@ -22,13 +23,14 @@ The current `resolve_force_succession()` in `worldwake-systems/src/offices.rs` i
 8. Closure boundary: the force-control system resolves `office_controller` mutations per tick and, when the installation gate is met, atomically installs `office_holder`. The authoritative symbols are `office_controller` (new relation from -002), `OfficeForceState` (new component from -001), and `install_office_holder()` (existing).
 9. N/A — no ControlSource manipulation.
 10. N/A — no golden scenario in this ticket (golden coverage is ticket -009).
-11. No mismatches found. The old `resolve_force_succession` is confirmed to be the only force branch.
-12. Installation requires `control_since + uncontested_hold_ticks <= current_tick` with `last_uncontested_tick == current_tick - 1` (no gap). The math is simple integer comparison on `Tick` values.
+11. Mismatch corrected: the old ticket phrasing implied only the system function needed replacement. In practice this ticket also owns the cleanup of force-law timing authority. After this ticket, force offices should no longer depend on `OfficeData.succession_period_ticks` for claim/control/installation timing.
+12. Installation requires `control_since + uncontested_hold_ticks <= current_tick` with `last_uncontested_tick == current_tick - 1` (no gap). Any vacancy and challenger grace timing used by the force branch must likewise derive from `OfficeForceProfile` integer fields, not from `OfficeData.succession_period_ticks`.
 
 ## Architecture Check
 
 1. The state machine is directly derived from the spec's lifecycle diagram. Four concrete situations (no claimants, one controller, same controller continues, multiple claimants) map to branches in a per-tick scan. Installation is a fifth branch gated on temporal continuity. This is cleaner than the presence-only heuristic.
 2. `resolve_force_succession()` is removed entirely (Principle 26). No wrapper or compatibility shim.
+3. Force-law timing must be fully law-specific after this change. Leaving `SuccessionLaw::Force` dependent on generic `OfficeData.succession_period_ticks` would preserve split authority between old and new timing surfaces and weaken the architecture.
 
 ## Verification Layers
 
@@ -49,6 +51,7 @@ The current `resolve_force_succession()` in `worldwake-systems/src/offices.rs` i
 Remove the old function entirely. Add new per-tick force-control logic:
 
 For each force office with `OfficeForceProfile`:
+0. Read all force timing from `OfficeForceProfile`. Do not gate the force branch on `OfficeData.succession_period_ticks` once the new state machine exists.
 1. Gather live claimants from `contested_by(office)`, filter to those present at jurisdiction
 2. **Departure rule**: if current `office_controller` is not present at jurisdiction, `clear_office_controller(office)` and reset `control_since`
 3. Derive situation:
@@ -112,7 +115,8 @@ During the per-tick scan, remove dead claimants from `contests_office` (using `t
 5. No hidden "time at place" heuristic substitutes for stored control state
 6. The provisional `resolve_force_succession` is fully removed (Principle 26)
 7. All values remain deterministic and integer-based
-8. No existing golden tests break (current goldens use support-law offices)
+8. `SuccessionLaw::Force` no longer consults `OfficeData.succession_period_ticks`; force timing authority lives on `OfficeForceProfile`
+9. No existing golden tests break (current goldens use support-law offices)
 
 ## Test Plan
 
