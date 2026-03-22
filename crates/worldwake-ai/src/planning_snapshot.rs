@@ -5,7 +5,7 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, PlaceTag,
-    Quantity, RecipeId, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
+    Quantity, RecipeId, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
     ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
@@ -46,6 +46,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
     pub(crate) combat_profile: Option<CombatProfile>,
     pub(crate) courage: Option<Permille>,
+    pub(crate) record_data: Option<RecordData>,
     pub(crate) hostile_targets: Vec<EntityId>,
     pub(crate) visible_hostiles: Vec<EntityId>,
     pub(crate) current_attackers: Vec<EntityId>,
@@ -85,6 +86,7 @@ impl Default for SnapshotEntity {
             trade_disposition_profile: None,
             combat_profile: None,
             courage: None,
+            record_data: None,
             hostile_targets: Vec::new(),
             visible_hostiles: Vec::new(),
             current_attackers: Vec::new(),
@@ -211,6 +213,7 @@ pub struct PlanningSnapshot {
         BTreeMap<EntityId, OfficeSupportBeliefReads>,
     pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
     pub(crate) actor_tell_profile: Option<TellProfile>,
+    pub(crate) actor_consultation_speed_factor: Option<Permille>,
     /// All-pairs shortest travel times between snapshot places.
     /// Computed via Floyd-Warshall during construction. O(n^3) where n is
     /// the number of places in the snapshot (typically 10-20, so < 8000 ops).
@@ -304,6 +307,7 @@ impl PlanningSnapshot {
                 .collect(),
             actor_confidence_policy: view.belief_confidence_policy(actor),
             actor_tell_profile: view.tell_profile(actor),
+            actor_consultation_speed_factor: view.consultation_speed_factor(actor),
             shortest_travel_ticks,
         }
     }
@@ -437,8 +441,8 @@ fn build_snapshot_entity(
     evidence_entities: &BTreeSet<EntityId>,
     included_places: &BTreeSet<EntityId>,
 ) -> SnapshotEntity {
-    SnapshotEntity {
-        kind: view.entity_kind(entity),
+        SnapshotEntity {
+            kind: view.entity_kind(entity),
         effective_place: view.effective_place(entity),
         in_transit_state: view.in_transit_state(entity),
         direct_container: view.direct_container(entity),
@@ -480,10 +484,11 @@ fn build_snapshot_entity(
         homeostatic_needs: view.homeostatic_needs(entity),
         drive_thresholds: view.drive_thresholds(entity),
         metabolism_profile: view.metabolism_profile(entity),
-        trade_disposition_profile: view.trade_disposition_profile(entity),
-        combat_profile: view.combat_profile(entity),
-        courage: view.courage(entity),
-        hostile_targets: view.hostile_targets_of(entity),
+            trade_disposition_profile: view.trade_disposition_profile(entity),
+            combat_profile: view.combat_profile(entity),
+            courage: view.courage(entity),
+            record_data: view.record_data(entity),
+            hostile_targets: view.hostile_targets_of(entity),
         visible_hostiles: view.visible_hostiles_for(entity),
         current_attackers: view.current_attackers_of(entity),
         demand_memory: view.demand_memory(entity),

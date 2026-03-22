@@ -11,13 +11,13 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, Permille, PlaceTag, Quantity,
-    WorkstationTag,
+    CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, InstitutionalBeliefRead,
+    Permille, PlaceTag, Quantity, RecordKind, WorkstationTag,
 };
 use worldwake_sim::{
-    ActionDef, ActionPayload, CombatActionPayload, DeclareSupportActionPayload, LootActionPayload,
-    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
-    TransportActionPayload,
+    ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
+    DeclareSupportActionPayload, LootActionPayload, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -150,12 +150,13 @@ const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
 const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
+    PlannerOpKind::ConsultRecord,
     PlannerOpKind::Bribe,
     PlannerOpKind::Threaten,
     PlannerOpKind::DeclareSupport,
 ];
 const SUPPORT_OFFICE_OPS: &[PlannerOpKind] =
-    &[PlannerOpKind::Travel, PlannerOpKind::DeclareSupport];
+    &[PlannerOpKind::Travel, PlannerOpKind::ConsultRecord, PlannerOpKind::DeclareSupport];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -236,6 +237,101 @@ fn build_loot_payload_override(
     Ok(Some(ActionPayload::Loot(LootActionPayload { target })))
 }
 
+fn office_requiring_vacancy_belief(goal: &GoalKind) -> Option<EntityId> {
+    match goal {
+        GoalKind::ClaimOffice { office }
+        | GoalKind::SupportCandidateForOffice { office, .. } => Some(*office),
+        _ => None,
+    }
+}
+
+fn political_step_requires_known_vacancy(goal: &GoalKind, op_kind: PlannerOpKind) -> bool {
+    matches!(
+        (goal, op_kind),
+        (GoalKind::ClaimOffice { .. }, PlannerOpKind::Bribe)
+            | (GoalKind::ClaimOffice { .. }, PlannerOpKind::Threaten)
+            | (
+                GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. },
+                PlannerOpKind::DeclareSupport,
+            )
+    )
+}
+
+fn consulted_office_holder_read_for_record(
+    state: &PlanningState<'_>,
+    record: EntityId,
+    office: EntityId,
+) -> InstitutionalBeliefRead<Option<EntityId>> {
+    let Some(record_data) = state.record_data(record) else {
+        return InstitutionalBeliefRead::Unknown;
+    };
+    if record_data.record_kind != RecordKind::OfficeRegister {
+        return InstitutionalBeliefRead::Unknown;
+    }
+
+    let mut holders = BTreeSet::new();
+    for entry in record_data
+        .entries_newest_first()
+        .take(record_data.max_entries_per_consult as usize)
+    {
+        if let worldwake_core::InstitutionalClaim::OfficeHolder {
+            office: entry_office,
+            holder,
+            ..
+        } = entry.claim
+        {
+            if entry_office == office {
+                holders.insert(holder);
+            }
+        }
+    }
+
+    match holders.len() {
+        0 => InstitutionalBeliefRead::Unknown,
+        1 => InstitutionalBeliefRead::Certain(
+            *holders
+                .iter()
+                .next()
+                .expect("single office-holder belief must exist"),
+        ),
+        _ => InstitutionalBeliefRead::Conflicted(holders.into_iter().collect()),
+    }
+}
+
+fn office_register_for_goal(
+    state: &PlanningState<'_>,
+    office: EntityId,
+) -> Option<(EntityId, EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+    state
+        .snapshot()
+        .entities
+        .iter()
+        .filter_map(|(&entity, snapshot)| {
+            let record_data = snapshot.record_data.as_ref()?;
+            (record_data.record_kind == RecordKind::OfficeRegister).then_some((
+                entity,
+                record_data.home_place,
+                consulted_office_holder_read_for_record(state, entity, office),
+            ))
+        })
+        .find(|(_, _, read)| !matches!(read, InstitutionalBeliefRead::Unknown))
+}
+
+fn political_step_blocked_by_unknown_vacancy(
+    goal: &GoalKind,
+    state: &PlanningState<'_>,
+    op_kind: PlannerOpKind,
+) -> bool {
+    if !political_step_requires_known_vacancy(goal, op_kind) {
+        return false;
+    }
+    let Some(office) = office_requiring_vacancy_belief(goal) else {
+        return true;
+    };
+    office_register_for_goal(state, office).is_some()
+        && state.believed_office_holder(office) != InstitutionalBeliefRead::Certain(None)
+}
+
 impl GoalKindPlannerExt for GoalKind {
     fn goal_kind_tag(&self) -> GoalKindTag {
         match self {
@@ -313,6 +409,7 @@ impl GoalKindPlannerExt for GoalKind {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn build_payload_override(
         &self,
         affordance_payload: Option<&ActionPayload>,
@@ -322,11 +419,45 @@ impl GoalKindPlannerExt for GoalKind {
         semantics: &PlannerOpSemantics,
     ) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
         if let Some(payload) = payload_override_from_affordance(self, affordance_payload)? {
+            if semantics.op_kind == PlannerOpKind::ConsultRecord {
+                let Some(record) = payload.as_consult_record().map(|consult| consult.record) else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
+                let Some(office) = office_requiring_vacancy_belief(self) else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
+                if matches!(
+                    consulted_office_holder_read_for_record(state, record, office),
+                    InstitutionalBeliefRead::Unknown
+                ) {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+            }
             return Ok(Some(payload));
         }
 
         let actor = state.snapshot().actor();
+        if political_step_blocked_by_unknown_vacancy(self, state, semantics.op_kind) {
+            return Err(GoalPayloadOverrideError::UnsupportedGoal);
+        }
         match semantics.op_kind {
+            PlannerOpKind::ConsultRecord => {
+                let Some(office) = office_requiring_vacancy_belief(self) else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
+                let Some(record) = targets.first().copied() else {
+                    return Err(GoalPayloadOverrideError::MissingTarget);
+                };
+                if matches!(
+                    consulted_office_holder_read_for_record(state, record, office),
+                    InstitutionalBeliefRead::Unknown
+                ) {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+                Ok(Some(ActionPayload::ConsultRecord(
+                    ConsultRecordActionPayload { record },
+                )))
+            }
             PlannerOpKind::Trade => {
                 let Some(counterparty) = targets.first().copied() else {
                     return Err(GoalPayloadOverrideError::MissingTarget);
@@ -427,6 +558,9 @@ impl GoalKindPlannerExt for GoalKind {
         payload_override: Option<&ActionPayload>,
     ) -> PlanningState<'snapshot> {
         let actor = state.snapshot().actor();
+        if political_step_blocked_by_unknown_vacancy(self, &state, op_kind) {
+            return state;
+        }
         // Cargo uses transport transition kinds in planner_ops.rs for hypothetical state changes,
         // so MoveCargo intentionally falls through the default no-op path here.
         match op_kind {
@@ -533,13 +667,32 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => state,
             },
+            PlannerOpKind::ConsultRecord => match office_requiring_vacancy_belief(self) {
+                Some(office) => {
+                    let Some(record) = payload_override
+                        .and_then(ActionPayload::as_consult_record)
+                        .map(|payload| payload.record)
+                        .or_else(|| targets.first().copied())
+                    else {
+                        return state;
+                    };
+                    match consulted_office_holder_read_for_record(&state, record, office) {
+                        InstitutionalBeliefRead::Unknown => state,
+                        read => {
+                            let mut state = state;
+                            state.override_office_holder_belief(office, read);
+                            state
+                        }
+                    }
+                }
+                None => state,
+            },
             PlannerOpKind::Trade
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::Attack
             | PlannerOpKind::Defend
             | PlannerOpKind::Tell
-            | PlannerOpKind::ConsultRecord
             | PlannerOpKind::MoveCargo => state,
         }
     }
@@ -762,6 +915,15 @@ impl GoalKindPlannerExt for GoalKind {
                     .map(|(_, recipe)| recipe),
                 budget.max_prerequisite_locations,
             ),
+            GoalKind::ClaimOffice { office }
+            | GoalKind::SupportCandidateForOffice { office, .. } => {
+                if state.believed_office_holder(*office) != InstitutionalBeliefRead::Unknown {
+                    return Vec::new();
+                }
+                office_register_for_goal(state, *office)
+                    .map(|(_, home_place, _)| vec![home_place])
+                    .unwrap_or_default()
+            }
             _ => Vec::new(),
         }
     }
@@ -1263,7 +1425,10 @@ pub struct RankedGoal {
 
 #[cfg(test)]
 mod tests {
-    use super::{GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedGoal};
+    use super::{
+        GoalKindPlannerExt, GoalKindTag, GoalPayloadOverrideError, GoalPriorityClass,
+        GroundedGoal, RankedGoal,
+    };
     use crate::{
         build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
         GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
@@ -1277,19 +1442,32 @@ mod tests {
         test_utils::{entity_id, sample_trade_disposition_profile},
         ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, Permille, Quantity, RecipeId, ResourceSource, SuccessionLaw, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
+        RecordKind, ResourceSource, SuccessionLaw, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,
-        ActionHandlerId, ActionPayload, BribeActionPayload, DurationExpr, Interruptibility,
-        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        ActionHandlerId, ActionPayload, BribeActionPayload, ConsultRecordActionPayload,
+        DurationExpr, Interruptibility, QueueForFacilityUsePayload, RecipeRegistry,
+        RuntimeBeliefView, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
+
+    fn vacant_office(title: &str, jurisdiction: EntityId, faction: EntityId) -> OfficeData {
+        OfficeData {
+            title: title.to_string(),
+            jurisdiction,
+            succession_law: SuccessionLaw::Support,
+            eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+            succession_period_ticks: 10,
+            vacancy_since: Some(Tick(1)),
+        }
+    }
 
     #[test]
     fn goal_priority_class_satisfies_required_bounds() {
@@ -1708,6 +1886,9 @@ mod tests {
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
         courage_values: BTreeMap<EntityId, Permille>,
         combat_profiles: BTreeMap<EntityId, Option<CombatProfile>>,
+        consultation_speed_factors: BTreeMap<EntityId, Permille>,
+        record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
+        office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
         office_data_map: BTreeMap<EntityId, OfficeData>,
     }
@@ -1889,6 +2070,10 @@ mod tests {
             self.courage_values.get(&agent).copied()
         }
 
+        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+            self.consultation_speed_factors.get(&agent).copied()
+        }
+
         fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
             if let Some(override_val) = self.combat_profiles.get(&agent) {
                 return *override_val;
@@ -2007,6 +2192,20 @@ mod tests {
                 .get(&office)
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
+            self.record_data.get(&record).cloned()
+        }
+
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
@@ -2450,6 +2649,7 @@ mod tests {
             GoalKind::ClaimOffice { office: entity(40) }.relevant_op_kinds(),
             &[
                 PlannerOpKind::Travel,
+                PlannerOpKind::ConsultRecord,
                 PlannerOpKind::Bribe,
                 PlannerOpKind::Threaten,
                 PlannerOpKind::DeclareSupport,
@@ -2461,8 +2661,182 @@ mod tests {
                 candidate: entity(41),
             }
             .relevant_op_kinds(),
-            &[PlannerOpKind::Travel, PlannerOpKind::DeclareSupport]
+            &[
+                PlannerOpKind::Travel,
+                PlannerOpKind::ConsultRecord,
+                PlannerOpKind::DeclareSupport,
+            ]
         );
+    }
+
+    #[test]
+    fn political_prerequisite_places_include_office_register_when_vacancy_belief_unknown() {
+        let actor = entity(1);
+        let office = entity(40);
+        let archive = entity(10);
+        let jurisdiction = entity(11);
+        let record = entity(12);
+        let faction = entity(13);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, office, record]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, jurisdiction);
+        view.effective_places.insert(office, jurisdiction);
+        view.effective_places.insert(record, archive);
+        view.entities_at.insert(jurisdiction, vec![actor, office]);
+        view.entities_at.insert(archive, vec![record]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.office_data_map
+            .insert(office, vacant_office("Steward", jurisdiction, faction));
+        view.record_data.insert(
+            record,
+            worldwake_core::RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: archive,
+                issuer: actor,
+                consultation_ticks: 4,
+                max_entries_per_consult: 2,
+                entries: vec![worldwake_core::InstitutionalRecordEntry {
+                    entry_id: worldwake_core::RecordEntryId(0),
+                    claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(3),
+                    },
+                    recorded_tick: Tick(3),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, record]),
+            &BTreeSet::from([archive, jurisdiction]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            GoalKind::ClaimOffice { office }.prerequisite_places(
+                &state,
+                &RecipeRegistry::new(),
+                &PlanningBudget::default()
+            ),
+            vec![archive]
+        );
+    }
+
+    #[test]
+    fn consult_record_step_overrides_unknown_vacancy_belief_and_unblocks_declare_support() {
+        let actor = entity(1);
+        let office = entity(40);
+        let candidate = entity(41);
+        let archive = entity(10);
+        let jurisdiction = entity(11);
+        let record = entity(12);
+        let faction = entity(13);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, candidate, office, record]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(candidate, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, archive);
+        view.effective_places.insert(candidate, jurisdiction);
+        view.effective_places.insert(office, jurisdiction);
+        view.effective_places.insert(record, archive);
+        view.entities_at.insert(archive, vec![actor, record]);
+        view.entities_at
+            .insert(jurisdiction, vec![candidate, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.consultation_speed_factors
+            .insert(actor, Permille::new(500).unwrap());
+        view.office_data_map
+            .insert(office, vacant_office("Steward", jurisdiction, faction));
+        view.record_data.insert(
+            record,
+            worldwake_core::RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: archive,
+                issuer: actor,
+                consultation_ticks: 4,
+                max_entries_per_consult: 2,
+                entries: vec![worldwake_core::InstitutionalRecordEntry {
+                    entry_id: worldwake_core::RecordEntryId(0),
+                    claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(3),
+                    },
+                    recorded_tick: Tick(3),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office, candidate, record]),
+            &BTreeSet::from([archive, jurisdiction]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SupportCandidateForOffice { office, candidate };
+        let declare_def = ActionDef {
+            id: ActionDefId(77),
+            name: "declare_support".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::NonInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let declare_semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::DeclareSupport,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[GoalKindTag::SupportCandidateForOffice],
+        };
+
+        assert_eq!(
+            goal.build_payload_override(None, &state, &[], &declare_def, &declare_semantics),
+            Err(GoalPayloadOverrideError::UnsupportedGoal)
+        );
+
+        let consulted = goal.apply_planner_step(
+            state,
+            PlannerOpKind::ConsultRecord,
+            &[record],
+            Some(&ActionPayload::ConsultRecord(ConsultRecordActionPayload {
+                record,
+            })),
+        );
+
+        assert_eq!(
+            consulted.believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(None)
+        );
+        assert!(goal
+            .build_payload_override(None, &consulted, &[], &declare_def, &declare_semantics)
+            .is_ok());
     }
 
     #[test]
@@ -2482,6 +2856,8 @@ mod tests {
         view.entities_at
             .insert(town, vec![actor, candidate, office]);
         set_office_jurisdiction(&mut view, office, town);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
 
         let snapshot = build_planning_snapshot(
             &view,
@@ -3618,6 +3994,8 @@ mod tests {
             view.courage_values.insert(target, courage);
         }
         set_office_jurisdiction(&mut view, office, town);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
         view
     }
 
@@ -4248,6 +4626,8 @@ mod tests {
             .insert(target, Permille::new(900).unwrap());
 
         set_office_jurisdiction(&mut view, office, town);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -4324,6 +4704,8 @@ mod tests {
             .insert(office, vec![(rival, rival)]);
 
         set_office_jurisdiction(&mut view, office, town);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -4404,6 +4786,8 @@ mod tests {
             .insert(office, vec![(rival, rival)]);
 
         set_office_jurisdiction(&mut view, office, town);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -4497,6 +4881,8 @@ mod tests {
             .insert(office, vec![(rival, rival)]);
 
         set_office_jurisdiction(&mut view, office, town);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
 
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(

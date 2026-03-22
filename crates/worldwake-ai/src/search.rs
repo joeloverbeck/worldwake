@@ -797,7 +797,7 @@ mod tests {
         build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
         build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanTerminalKind,
         PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningBudget,
-        PlanningEntityRef, PlanningSnapshot, PlanningState,
+        PlanningEntityRef, PlanningSnapshot, PlanningState, PlanSearchResult,
     };
     use std::cmp::Ordering;
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -845,6 +845,11 @@ mod tests {
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
+        office_data: BTreeMap<EntityId, worldwake_core::OfficeData>,
+        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
+        office_holder_beliefs: BTreeMap<EntityId, worldwake_core::InstitutionalBeliefRead<Option<EntityId>>>,
+        consultation_speed_factors: BTreeMap<EntityId, Permille>,
+        record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -1015,6 +1020,9 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
             ))
         }
+        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+            self.consultation_speed_factors.get(&agent).copied()
+        }
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }
@@ -1056,6 +1064,27 @@ mod tests {
         }
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
+        }
+        fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
+            self.record_data.get(&record).cloned()
+        }
+        fn office_data(&self, office: EntityId) -> Option<worldwake_core::OfficeData> {
+            self.office_data.get(&office).cloned()
+        }
+        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
+            self.support_declarations
+                .get(&office)
+                .cloned()
+                .unwrap_or_default()
+        }
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> worldwake_core::InstitutionalBeliefRead<Option<EntityId>> {
+            self.office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(worldwake_core::InstitutionalBeliefRead::Unknown)
         }
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
@@ -5301,6 +5330,203 @@ mod tests {
         assert_eq!(
             first.non_terminal_after_beam, 1,
             "beam_width=1 should leave exactly 1 non-terminal successor"
+        );
+    }
+
+    #[test]
+    fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belief_unknown() {
+        let actor = entity(1);
+        let candidate = entity(2);
+        let office = entity(3);
+        let town = entity(10);
+        let archive = entity(11);
+        let hall = entity(12);
+        let record = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, candidate, office, record, town, archive, hall]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(candidate, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(record, EntityKind::Record);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(archive, EntityKind::Place);
+        view.kinds.insert(hall, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(candidate, hall);
+        view.effective_places.insert(office, hall);
+        view.effective_places.insert(record, archive);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(archive, vec![record]);
+        view.entities_at.insert(hall, vec![candidate, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.consultation_speed_factors
+            .insert(actor, Permille::new(500).unwrap());
+        view.office_data.insert(
+            office,
+            worldwake_core::OfficeData {
+                title: "Steward".to_string(),
+                jurisdiction: hall,
+                succession_law: worldwake_core::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: Some(Tick(2)),
+            },
+        );
+        view.record_data.insert(
+            record,
+            worldwake_core::RecordData {
+                record_kind: worldwake_core::RecordKind::OfficeRegister,
+                home_place: archive,
+                issuer: actor,
+                consultation_ticks: 4,
+                max_entries_per_consult: 2,
+                entries: vec![worldwake_core::InstitutionalRecordEntry {
+                    entry_id: worldwake_core::RecordEntryId(0),
+                    claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(2),
+                    },
+                    recorded_tick: Tick(2),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            },
+        );
+        view.adjacent.insert(
+            town,
+            vec![(archive, NonZeroU32::new(1).unwrap())],
+        );
+        view.adjacent.insert(
+            archive,
+            vec![
+                (town, NonZeroU32::new(1).unwrap()),
+                (hall, NonZeroU32::new(1).unwrap()),
+            ],
+        );
+        view.adjacent
+            .insert(hall, vec![(archive, NonZeroU32::new(1).unwrap())]);
+
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([candidate, office, record]),
+            &BTreeSet::from([town, archive, hall]),
+            2,
+        );
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
+            evidence_entities: BTreeSet::from([candidate, office, record]),
+            evidence_places: BTreeSet::from([archive, hall]),
+        };
+
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &semantics,
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            None,
+        );
+
+        let plan = match result {
+            PlanSearchResult::Found(plan) => plan,
+            other => panic!("expected plan, got {other:?}"),
+        };
+        let op_kinds = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+        assert_eq!(
+            op_kinds,
+            vec![
+                PlannerOpKind::Travel,
+                PlannerOpKind::ConsultRecord,
+                PlannerOpKind::Travel,
+                PlannerOpKind::DeclareSupport,
+            ]
+        );
+    }
+
+    #[test]
+    fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_certain() {
+        let actor = entity(1);
+        let candidate = entity(2);
+        let office = entity(3);
+        let town = entity(10);
+        let hall = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, candidate, office, town, hall]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(candidate, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(hall, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(candidate, hall);
+        view.effective_places.insert(office, hall);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(hall, vec![candidate, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.office_holder_beliefs.insert(
+            office,
+            worldwake_core::InstitutionalBeliefRead::Certain(None),
+        );
+        view.office_data.insert(
+            office,
+            worldwake_core::OfficeData {
+                title: "Steward".to_string(),
+                jurisdiction: hall,
+                succession_law: worldwake_core::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: Some(Tick(2)),
+            },
+        );
+        view.adjacent
+            .insert(town, vec![(hall, NonZeroU32::new(1).unwrap())]);
+        view.adjacent
+            .insert(hall, vec![(town, NonZeroU32::new(1).unwrap())]);
+
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([candidate, office]),
+            &BTreeSet::from([town, hall]),
+            1,
+        );
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
+            evidence_entities: BTreeSet::from([candidate, office]),
+            evidence_places: BTreeSet::from([hall]),
+        };
+
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &semantics,
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            None,
+        );
+
+        let plan = match result {
+            PlanSearchResult::Found(plan) => plan,
+            other => panic!("expected plan, got {other:?}"),
+        };
+        assert!(
+            plan.steps
+                .iter()
+                .all(|step| step.op_kind != PlannerOpKind::ConsultRecord)
         );
     }
 }

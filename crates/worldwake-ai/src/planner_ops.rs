@@ -106,7 +106,10 @@ const GOALS_TREAT_WOUNDS: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKind
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
 const GOALS_BURY: &[GoalKindTag] = &[GoalKindTag::BuryCorpse];
 const GOALS_TELL: &[GoalKindTag] = &[GoalKindTag::ShareBelief];
-const GOALS_CONSULT_RECORD: &[GoalKindTag] = &[];
+const GOALS_CONSULT_RECORD: &[GoalKindTag] = &[
+    GoalKindTag::ClaimOffice,
+    GoalKindTag::SupportCandidateForOffice,
+];
 const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 const GOALS_BRIBE: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
@@ -286,7 +289,7 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
         ),
         PlannerOpKind::ConsultRecord => base_semantics(
             op_kind,
-            false,
+            true,
             false,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_CONSULT_RECORD,
@@ -1404,10 +1407,14 @@ mod tests {
                 table.contains_key(&def.id)
                     && matches!(
                         def.name.as_str(),
-                        "attack" | "defend" | "bury" | "tell" | "consult_record"
+                        "attack" | "defend" | "bury" | "tell"
                     )
             })
             .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
+        assert!(defs
+            .iter()
+            .filter(|def| table.contains_key(&def.id) && def.name == "consult_record")
+            .all(|def| table.get(&def.id).unwrap().may_appear_mid_plan));
         assert_eq!(
             table
                 .values()
@@ -1415,6 +1422,17 @@ mod tests {
                 .unwrap()
                 .relevant_goal_kinds,
             &[GoalKindTag::ShareBelief]
+        );
+        assert_eq!(
+            table
+                .values()
+                .find(|semantics| semantics.op_kind == PlannerOpKind::ConsultRecord)
+                .unwrap()
+                .relevant_goal_kinds,
+            &[
+                GoalKindTag::ClaimOffice,
+                GoalKindTag::SupportCandidateForOffice
+            ]
         );
     }
 

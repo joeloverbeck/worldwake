@@ -5,8 +5,9 @@ use worldwake_core::{
     load_per_unit, ActionDefId, BelievedEntityState, CombatProfile, CommodityKind,
     DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
     InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile, Permille, PlaceTag,
-    Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey,
+    TellProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -178,6 +179,14 @@ impl<'snapshot> PlanningState<'snapshot> {
     ) {
         self.support_declaration_belief_overrides
             .insert((office, supporter), value);
+    }
+
+    #[must_use]
+    pub fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        self.snapshot
+            .entities
+            .get(&record)
+            .and_then(|snapshot| snapshot.record_data.clone())
     }
 
     /// Count hypothetical support declarations for `candidate` at `office`,
@@ -1446,6 +1455,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .unwrap_or_default()
     }
 
+    fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        PlanningState::record_data(self, record)
+    }
+
     fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
         if supporter != self.snapshot.actor() {
             return None;
@@ -1490,6 +1503,11 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&agent)
             .and_then(|snapshot| snapshot.merchandise_profile.clone())
+    }
+
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        (agent == self.snapshot.actor()).then_some(self.snapshot.actor_consultation_speed_factor)
+            .flatten()
     }
 
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
@@ -1541,9 +1559,10 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource,
-        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        MetabolismProfile, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
+        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -1580,6 +1599,8 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
+        record_data: BTreeMap<EntityId, RecordData>,
+        consultation_speed_factors: BTreeMap<EntityId, Permille>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         courages: BTreeMap<EntityId, Permille>,
@@ -1619,6 +1640,8 @@ mod tests {
                 wounds: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 attackers: BTreeMap::new(),
+                record_data: BTreeMap::new(),
+                consultation_speed_factors: BTreeMap::new(),
                 facility_queue_positions: BTreeMap::new(),
                 facility_grants: BTreeMap::new(),
                 courages: BTreeMap::new(),
@@ -1855,6 +1878,10 @@ mod tests {
             self.courages.get(&agent).copied()
         }
 
+        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+            self.consultation_speed_factors.get(&agent).copied()
+        }
+
         fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
             self.support_declarations
                 .get(&office)
@@ -1943,6 +1970,10 @@ mod tests {
 
         fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
             self.demand_memory.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn record_data(&self, record: EntityId) -> Option<RecordData> {
+            self.record_data.get(&record).cloned()
         }
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
@@ -3133,6 +3164,52 @@ mod tests {
                 Some(actor),
                 Some(rival),
             ]))
+        );
+    }
+
+    #[test]
+    fn planning_state_uses_snapshot_record_data_and_consultation_speed_factor() {
+        let actor = entity(1);
+        let record = entity(40);
+        let town = entity(10);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(record, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(record, town);
+        view.entities_at.insert(town, vec![actor, record]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.consultation_speed_factors
+            .insert(actor, Permille::new(500).unwrap());
+        view.record_data.insert(
+            record,
+            RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: town,
+                issuer: actor,
+                consultation_ticks: 4,
+                max_entries_per_consult: 2,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([record]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(state.record_data(record), view.record_data.get(&record).cloned());
+        assert_eq!(
+            RuntimeBeliefView::consultation_speed_factor(&state, actor),
+            Some(Permille::new(500).unwrap())
         );
     }
 
