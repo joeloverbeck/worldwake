@@ -382,11 +382,13 @@ fn build_force_succession_context(
     let current_controller = world
         .office_controller(office)
         .filter(|controller| world.effective_place(*controller) == Some(office_data.jurisdiction))
-        .filter(|controller| candidate_is_eligible(world, office_data, *controller));
+        .filter(|controller| candidate_is_eligible(world, office_data, *controller))
+        .filter(|controller| present_claimants.contains(controller));
 
     Ok(ForceSuccessionContext {
         profile,
         prior_state,
+        vacancy_since: office_data.vacancy_since,
         current_controller,
         raw_claimants,
         dead_claimants,
@@ -399,38 +401,86 @@ fn build_force_succession_context(
 fn evaluate_force_resolution(tick: Tick, context: &ForceSuccessionContext) -> ForceResolution {
     let mut next_state = context.prior_state.clone();
     let mut desired_controller = context.current_controller;
-
-    let outcome = match context.present_claimants.as_slice() {
-        [] => {
-            desired_controller = None;
-            reset_force_state(&mut next_state);
-            OfficeSuccessionOutcome::ForceNoClaimants
-        }
-        [controller] => {
+    let outcome = if let Some(controller) = context.current_controller {
+        let challenger_count = context
+            .present_claimants
+            .iter()
+            .filter(|claimant| **claimant != controller)
+            .count();
+        if challenger_count == 0 {
+            next_state.challenged_since = None;
             next_state.contested_since = None;
             next_state.last_uncontested_tick = Some(tick);
-            if desired_controller == Some(*controller) {
-                if next_state.control_since.is_none() {
-                    next_state.control_since = Some(tick);
-                }
-                OfficeSuccessionOutcome::ForceControllerMaintained {
-                    controller: *controller,
+            if next_state.control_since.is_none() {
+                next_state.control_since = Some(tick);
+            }
+            OfficeSuccessionOutcome::ForceControllerMaintained { controller }
+        } else {
+            next_state.last_uncontested_tick = None;
+            next_state.contested_since = None;
+            let challenged_since = next_state.challenged_since.get_or_insert(tick);
+            let waited_ticks = tick.0.saturating_sub(challenged_since.0) + 1;
+            let required_ticks = u64::from(context.profile.challenger_presence_grace_ticks.get());
+            if waited_ticks < required_ticks {
+                OfficeSuccessionOutcome::ForceChallengerGracePending {
+                    controller,
+                    challenger_count,
+                    waited_ticks,
+                    required_ticks,
                 }
             } else {
-                desired_controller = Some(*controller);
-                next_state.control_since = Some(tick);
-                OfficeSuccessionOutcome::ForceControllerEstablished {
-                    controller: *controller,
+                desired_controller = None;
+                next_state.control_since = None;
+                next_state.challenged_since = None;
+                next_state.contested_since = Some(tick);
+                OfficeSuccessionOutcome::ForceContested {
+                    claimant_count: context.present_claimants.len(),
                 }
             }
         }
-        claimants => {
-            desired_controller = None;
-            next_state.control_since = None;
-            next_state.last_uncontested_tick = None;
-            next_state.contested_since = next_state.contested_since.or(Some(tick));
-            OfficeSuccessionOutcome::ForceContested {
-                claimant_count: claimants.len(),
+    } else {
+        match context.present_claimants.as_slice() {
+            [] => {
+                desired_controller = None;
+                reset_force_state(&mut next_state);
+                OfficeSuccessionOutcome::ForceNoClaimants
+            }
+            [claimant] => {
+                next_state.challenged_since = None;
+                next_state.contested_since = None;
+                next_state.last_uncontested_tick = None;
+                let waited_ticks = context
+                    .vacancy_since
+                    .map(|vacancy_since| tick.0.saturating_sub(vacancy_since.0))
+                    .unwrap_or_default();
+                let required_ticks =
+                    u64::from(context.profile.vacancy_claim_grace_ticks.get());
+                if waited_ticks < required_ticks {
+                    desired_controller = None;
+                    next_state.control_since = None;
+                    OfficeSuccessionOutcome::ForceVacancyClaimGracePending {
+                        claimant: *claimant,
+                        waited_ticks,
+                        required_ticks,
+                    }
+                } else {
+                    desired_controller = Some(*claimant);
+                    next_state.control_since = Some(tick);
+                    next_state.last_uncontested_tick = Some(tick);
+                    OfficeSuccessionOutcome::ForceControllerEstablished {
+                        controller: *claimant,
+                    }
+                }
+            }
+            claimants => {
+                desired_controller = None;
+                next_state.control_since = None;
+                next_state.challenged_since = None;
+                next_state.last_uncontested_tick = None;
+                next_state.contested_since = next_state.contested_since.or(Some(tick));
+                OfficeSuccessionOutcome::ForceContested {
+                    claimant_count: claimants.len(),
+                }
             }
         }
     };
@@ -675,6 +725,7 @@ fn reset_force_state(state: &mut OfficeForceState) {
 fn cleared_force_state() -> OfficeForceState {
     OfficeForceState {
         control_since: None,
+        challenged_since: None,
         contested_since: None,
         last_uncontested_tick: None,
     }
@@ -688,6 +739,7 @@ struct SupportResolutionSnapshot {
 struct ForceSuccessionContext {
     profile: OfficeForceProfile,
     prior_state: OfficeForceState,
+    vacancy_since: Option<Tick>,
     current_controller: Option<EntityId>,
     raw_claimants: Vec<EntityId>,
     dead_claimants: Vec<EntityId>,
@@ -780,7 +832,9 @@ fn availability_phase_for_trace(
             }
         }
         OfficeSuccessionOutcome::ForceControllerEstablished { .. }
+        | OfficeSuccessionOutcome::ForceVacancyClaimGracePending { .. }
         | OfficeSuccessionOutcome::ForceControllerMaintained { .. }
+        | OfficeSuccessionOutcome::ForceChallengerGracePending { .. }
         | OfficeSuccessionOutcome::ForceContested { .. }
         | OfficeSuccessionOutcome::ForceBlocked { .. } => {
             OfficeAvailabilityPhase::VacantPendingResolution
@@ -1068,6 +1122,7 @@ mod tests {
                         office,
                         OfficeForceState {
                             control_since: None,
+                            challenged_since: None,
                             contested_since: None,
                             last_uncontested_tick: None,
                         },
@@ -1118,6 +1173,37 @@ mod tests {
         fn add_force_claim(&mut self, claimant: EntityId, tick: u64) {
             let mut txn = new_txn(&mut self.world, tick);
             txn.add_force_claim(claimant, self.office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        fn remove_force_claim(&mut self, claimant: EntityId, tick: u64) {
+            let mut txn = new_txn(&mut self.world, tick);
+            txn.remove_force_claim(claimant, self.office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        fn set_force_profile(
+            &mut self,
+            uncontested_hold_ticks: u32,
+            vacancy_claim_grace_ticks: u32,
+            challenger_presence_grace_ticks: u32,
+            tick: u64,
+        ) {
+            let mut txn = new_txn(&mut self.world, tick);
+            txn.set_component_office_force_profile(
+                self.office,
+                OfficeForceProfile {
+                    uncontested_hold_ticks: NonZeroU32::new(uncontested_hold_ticks).unwrap(),
+                    vacancy_claim_grace_ticks: NonZeroU32::new(vacancy_claim_grace_ticks).unwrap(),
+                    challenger_presence_grace_ticks: NonZeroU32::new(
+                        challenger_presence_grace_ticks,
+                    )
+                    .unwrap(),
+                },
+            )
+            .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
@@ -1576,9 +1662,45 @@ mod tests {
             fx.world.get_component_office_force_state(fx.office),
             Some(&OfficeForceState {
                 control_since: Some(Tick(4)),
+                challenged_since: None,
                 contested_since: None,
                 last_uncontested_tick: Some(Tick(4)),
             })
+        );
+    }
+
+    #[test]
+    fn force_control_vacancy_claim_grace_delays_controller_establishment() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        fx.set_force_profile(3, 2, 1, 2);
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        let mut trace = PoliticalTraceSink::new();
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
+        event_log = EventLog::new();
+
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 4);
+
+        assert_eq!(fx.world.office_holder(fx.office), None);
+        assert_eq!(fx.world.office_controller(fx.office), None);
+        assert_eq!(
+            fx.world.get_component_office_force_state(fx.office),
+            Some(&OfficeForceState {
+                control_since: None,
+                challenged_since: None,
+                contested_since: None,
+                last_uncontested_tick: None,
+            })
+        );
+        let pending = trace.event_for_office_at(fx.office, Tick(4)).unwrap();
+        assert_eq!(
+            pending.trace.outcome,
+            OfficeSuccessionOutcome::ForceVacancyClaimGracePending {
+                claimant: fx.candidate_a,
+                waited_ticks: 1,
+                required_ticks: 2,
+            }
         );
     }
 
@@ -1602,6 +1724,7 @@ mod tests {
             fx.world.get_component_office_force_state(fx.office),
             Some(&OfficeForceState {
                 control_since: None,
+                challenged_since: None,
                 contested_since: Some(Tick(5)),
                 last_uncontested_tick: None,
             })
@@ -1701,6 +1824,7 @@ mod tests {
                 .get_component_office_force_state(departure_fx.office),
             Some(&OfficeForceState {
                 control_since: None,
+                challenged_since: None,
                 contested_since: None,
                 last_uncontested_tick: None,
             })
@@ -1740,6 +1864,7 @@ mod tests {
             fx.world.get_component_office_force_state(fx.office),
             Some(&OfficeForceState {
                 control_since: None,
+                challenged_since: None,
                 contested_since: None,
                 last_uncontested_tick: None,
             })
@@ -1845,6 +1970,76 @@ mod tests {
                     eligible: true,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn force_control_challenger_presence_grace_delays_contest() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        fx.set_force_profile(3, 1, 2, 2);
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        let mut trace = PoliticalTraceSink::new();
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
+        event_log = EventLog::new();
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 4);
+        fx.add_force_claim(fx.candidate_b, 5);
+        event_log = EventLog::new();
+
+        run_succession_with_trace(&mut fx.world, &mut event_log, &mut trace, 5);
+
+        assert_eq!(fx.world.office_holder(fx.office), None);
+        assert_eq!(fx.world.office_controller(fx.office), Some(fx.candidate_a));
+        assert_eq!(
+            fx.world.get_component_office_force_state(fx.office),
+            Some(&OfficeForceState {
+                control_since: Some(Tick(4)),
+                challenged_since: Some(Tick(5)),
+                contested_since: None,
+                last_uncontested_tick: None,
+            })
+        );
+        let pending = trace.event_for_office_at(fx.office, Tick(5)).unwrap();
+        assert_eq!(
+            pending.trace.outcome,
+            OfficeSuccessionOutcome::ForceChallengerGracePending {
+                controller: fx.candidate_a,
+                challenger_count: 1,
+                waited_ticks: 1,
+                required_ticks: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn force_control_challenger_departure_before_grace_expiry_preserves_controller_continuity() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        fx.set_force_profile(4, 1, 2, 2);
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
+        event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 4);
+        fx.add_force_claim(fx.candidate_b, 5);
+        event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 5);
+        fx.remove_force_claim(fx.candidate_b, 6);
+        event_log = EventLog::new();
+
+        run_succession(&mut fx.world, &mut event_log, 6);
+
+        assert_eq!(fx.world.office_holder(fx.office), None);
+        assert_eq!(fx.world.office_controller(fx.office), Some(fx.candidate_a));
+        assert_eq!(
+            fx.world.get_component_office_force_state(fx.office),
+            Some(&OfficeForceState {
+                control_since: Some(Tick(4)),
+                challenged_since: None,
+                contested_since: None,
+                last_uncontested_tick: Some(Tick(6)),
+            })
         );
     }
 

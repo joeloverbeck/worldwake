@@ -70,11 +70,22 @@ pub enum OfficeSuccessionOutcome {
         tied_candidates: Vec<EntityId>,
     },
     ForceNoClaimants,
+    ForceVacancyClaimGracePending {
+        claimant: EntityId,
+        waited_ticks: u64,
+        required_ticks: u64,
+    },
     ForceControllerEstablished {
         controller: EntityId,
     },
     ForceControllerMaintained {
         controller: EntityId,
+    },
+    ForceChallengerGracePending {
+        controller: EntityId,
+        challenger_count: usize,
+        waited_ticks: u64,
+        required_ticks: u64,
     },
     ForceContested {
         claimant_count: usize,
@@ -133,6 +144,14 @@ impl PoliticalTraceEvent {
                 "tick {}: office {} has no active force claimants [{}]",
                 self.tick.0, self.office, phase
             )),
+            OfficeSuccessionOutcome::ForceVacancyClaimGracePending {
+                claimant,
+                waited_ticks,
+                required_ticks,
+            } => Some(format!(
+                "tick {}: office {} keeps vacancy claim grace pending for {} (waited {}, required {}) [{}]",
+                self.tick.0, self.office, claimant, waited_ticks, required_ticks, phase
+            )),
             OfficeSuccessionOutcome::ForceControllerEstablished { controller } => Some(format!(
                 "tick {}: office {} recognizes {} as current force controller [{}]",
                 self.tick.0, self.office, controller, phase
@@ -140,6 +159,21 @@ impl PoliticalTraceEvent {
             OfficeSuccessionOutcome::ForceControllerMaintained { controller } => Some(format!(
                 "tick {}: office {} keeps {} as uncontested force controller [{}]",
                 self.tick.0, self.office, controller, phase
+            )),
+            OfficeSuccessionOutcome::ForceChallengerGracePending {
+                controller,
+                challenger_count,
+                waited_ticks,
+                required_ticks,
+            } => Some(format!(
+                "tick {}: office {} keeps {} as controller while {} challengers remain within grace (waited {}, required {}) [{}]",
+                self.tick.0,
+                self.office,
+                controller,
+                challenger_count,
+                waited_ticks,
+                required_ticks,
+                phase
             )),
             OfficeSuccessionOutcome::ForceContested { claimant_count } => Some(format!(
                 "tick {}: office {} remains force-contested by {} claimants [{}]",
@@ -239,8 +273,10 @@ impl PoliticalTraceEvent {
                 phase
             ),
             OfficeSuccessionOutcome::ForceNoClaimants
+            | OfficeSuccessionOutcome::ForceVacancyClaimGracePending { .. }
             | OfficeSuccessionOutcome::ForceControllerEstablished { .. }
             | OfficeSuccessionOutcome::ForceControllerMaintained { .. }
+            | OfficeSuccessionOutcome::ForceChallengerGracePending { .. }
             | OfficeSuccessionOutcome::ForceContested { .. }
             | OfficeSuccessionOutcome::ForceInstalled { .. }
             | OfficeSuccessionOutcome::ForceBlocked { .. } => {
@@ -406,5 +442,58 @@ mod tests {
             .unwrap()
             .summary()
             .contains("phase: vacant pending resolution"));
+    }
+
+    #[test]
+    fn summary_formats_pending_force_grace_outcomes() {
+        let jurisdiction = office(3);
+        let office_id = office(1);
+
+        let vacancy_pending = PoliticalTraceEvent {
+            tick: Tick(4),
+            office: office_id,
+            trace: OfficeSuccessionTrace {
+                jurisdiction,
+                succession_law: SuccessionLaw::Force,
+                holder_before: None,
+                vacancy_since_before: Some(Tick(3)),
+                availability_phase: OfficeAvailabilityPhase::VacantPendingResolution,
+                vacancy_timer: None,
+                outcome: OfficeSuccessionOutcome::ForceVacancyClaimGracePending {
+                    claimant: office(9),
+                    waited_ticks: 1,
+                    required_ticks: 2,
+                },
+                support_declarations: Vec::new(),
+                support_resolution: None,
+                force_candidates: Vec::new(),
+            },
+        };
+        assert!(vacancy_pending.summary().contains("vacancy claim grace pending"));
+
+        let challenger_pending = PoliticalTraceEvent {
+            tick: Tick(5),
+            office: office_id,
+            trace: OfficeSuccessionTrace {
+                jurisdiction,
+                succession_law: SuccessionLaw::Force,
+                holder_before: None,
+                vacancy_since_before: Some(Tick(3)),
+                availability_phase: OfficeAvailabilityPhase::VacantPendingResolution,
+                vacancy_timer: None,
+                outcome: OfficeSuccessionOutcome::ForceChallengerGracePending {
+                    controller: office(10),
+                    challenger_count: 1,
+                    waited_ticks: 1,
+                    required_ticks: 2,
+                },
+                support_declarations: Vec::new(),
+                support_resolution: None,
+                force_candidates: Vec::new(),
+            },
+        };
+        assert!(challenger_pending
+            .summary()
+            .contains("within grace"));
     }
 }

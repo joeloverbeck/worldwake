@@ -817,6 +817,7 @@ pub fn seed_office(
             office,
             OfficeForceState {
                 control_since: None,
+                challenged_since: None,
                 contested_since: None,
                 last_uncontested_tick: None,
             },

@@ -29,6 +29,7 @@ impl Component for OfficeForceProfile {}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OfficeForceState {
     pub control_since: Option<Tick>,
+    pub challenged_since: Option<Tick>,
     pub contested_since: Option<Tick>,
     pub last_uncontested_tick: Option<Tick>,
 }
@@ -130,6 +131,7 @@ mod tests {
     fn office_force_state_roundtrips_through_bincode() {
         let state = OfficeForceState {
             control_since: Some(Tick(9)),
+            challenged_since: Some(Tick(11)),
             contested_since: Some(Tick(13)),
             last_uncontested_tick: Some(Tick(15)),
         };

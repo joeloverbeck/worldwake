@@ -1,5 +1,7 @@
 # E16b: Force Legitimacy & Jurisdiction Control
 
+**Status**: ✅ COMPLETED
+
 ## Epic Summary
 
 Replace the thin E16 force-succession shortcut with explicit jurisdiction-control state: public claims, contested control, uncontested hold periods, and eventual installation into office. The goal is to make "rule by force" arise from concrete local state rather than a hidden timing heuristic.
@@ -524,3 +526,13 @@ No remote agent learns a coup outcome without an actual carrier of information.
 - Section 4.5 (offices, factions, institutional propagation)
 - Section 7.4 (vacancy, legitimacy, loyalty, enforcement)
 - Section 9.13 (office uniqueness)
+
+## Outcome
+
+- Completed: 2026-03-22
+- What changed:
+  The force-law office architecture is now fully explicit: claims and controllers are stateful world objects, institutional belief propagation and AI force-claim planning are live, and the final missing profile-driven grace windows for vacancy claims and challenger presence are implemented in the authoritative control state machine.
+- Deviations from original plan:
+  The original staged rollout left `vacancy_claim_grace_ticks` and `challenger_presence_grace_ticks` as stored-but-unused policy. Ticket `E16BFORLEGJURCON-010` closed that gap without adding alternate controller surfaces or backward-compatibility shims. Existing AI goldens were sufficient; no new golden scenario was required to validate the final grace-window step.
+- Verification results:
+  Verified through focused systems coverage, full `worldwake-systems`, full `worldwake-ai`, workspace `clippy`, and full workspace tests on 2026-03-22.

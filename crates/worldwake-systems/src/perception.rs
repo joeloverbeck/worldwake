@@ -2002,11 +2002,13 @@ mod tests {
                     component_kind: ComponentKind::OfficeForceState,
                     before: Some(ComponentValue::OfficeForceState(OfficeForceState {
                         control_since: None,
+                        challenged_since: Some(Tick(4)),
                         contested_since: Some(Tick(4)),
                         last_uncontested_tick: None,
                     })),
                     after: ComponentValue::OfficeForceState(OfficeForceState {
                         control_since: Some(Tick(5)),
+                        challenged_since: None,
                         contested_since: None,
                         last_uncontested_tick: Some(Tick(5)),
                     }),

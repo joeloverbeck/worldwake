@@ -250,6 +250,7 @@ mod tests {
     fn sample_office_force_state() -> OfficeForceState {
         OfficeForceState {
             control_since: Some(Tick(11)),
+            challenged_since: Some(Tick(12)),
             contested_since: Some(Tick(13)),
             last_uncontested_tick: Some(Tick(17)),
         }

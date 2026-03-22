@@ -319,6 +319,7 @@ mod tests {
             }),
             ComponentValue::OfficeForceState(OfficeForceState {
                 control_since: Some(Tick(7)),
+                challenged_since: Some(Tick(7)),
                 contested_since: Some(Tick(8)),
                 last_uncontested_tick: Some(Tick(10)),
             }),
