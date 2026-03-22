@@ -54,6 +54,27 @@ pub enum OfficeAvailabilityPhase {
     VacantReopenedAfterReset,
 }
 
+/// Why a force-law controller was not installed as office holder despite being
+/// the desired controller. Each variant names the specific gate condition that
+/// blocked installation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ForceInstallationDeferralReason {
+    /// Other live (alive) claimants exist besides the controller. Installation
+    /// requires all live claimants to be the controller.
+    OtherLiveClaimants {
+        controller: EntityId,
+        blocking_claimants: Vec<EntityId>,
+    },
+    /// The uncontested hold period has not yet elapsed.
+    HoldIncomplete {
+        held_ticks: u64,
+        required_ticks: u64,
+    },
+    /// The current tick is not the last uncontested tick (controller was not
+    /// uncontested this tick).
+    NotUncontestedThisTick,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OfficeSuccessionOutcome {
     OccupiedNoAction {
@@ -89,6 +110,10 @@ pub enum OfficeSuccessionOutcome {
     },
     ForceContested {
         claimant_count: usize,
+    },
+    ForceInstallationDeferred {
+        controller: EntityId,
+        reason: ForceInstallationDeferralReason,
     },
     ForceInstalled {
         holder: EntityId,
@@ -178,6 +203,13 @@ impl PoliticalTraceEvent {
             OfficeSuccessionOutcome::ForceContested { claimant_count } => Some(format!(
                 "tick {}: office {} remains force-contested by {} claimants [{}]",
                 self.tick.0, self.office, claimant_count, phase
+            )),
+            OfficeSuccessionOutcome::ForceInstallationDeferred {
+                controller,
+                reason,
+            } => Some(format!(
+                "tick {}: office {} defers force installation of {} — {reason:?} [{}]",
+                self.tick.0, self.office, controller, phase
             )),
             OfficeSuccessionOutcome::ForceInstalled { holder } => Some(format!(
                 "tick {}: office {} installs {} by force-law uncontested succession [{}]",
@@ -278,6 +310,7 @@ impl PoliticalTraceEvent {
             | OfficeSuccessionOutcome::ForceControllerMaintained { .. }
             | OfficeSuccessionOutcome::ForceChallengerGracePending { .. }
             | OfficeSuccessionOutcome::ForceContested { .. }
+            | OfficeSuccessionOutcome::ForceInstallationDeferred { .. }
             | OfficeSuccessionOutcome::ForceInstalled { .. }
             | OfficeSuccessionOutcome::ForceBlocked { .. } => {
                 unreachable!("force outcomes are handled by force_summary")

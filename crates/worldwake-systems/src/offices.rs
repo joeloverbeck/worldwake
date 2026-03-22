@@ -6,9 +6,10 @@ use worldwake_core::{
     SuccessionLaw, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
-    ForceCandidateTrace, OfficeAvailabilityPhase, OfficeSuccessionOutcome, OfficeSuccessionTrace,
-    PoliticalTraceEvent, PoliticalTraceSink, SupportCountTrace, SupportDeclarationTrace,
-    SupportResolutionTrace, SystemError, SystemExecutionContext, VacancyTimerTrace,
+    ForceCandidateTrace, ForceInstallationDeferralReason, OfficeAvailabilityPhase,
+    OfficeSuccessionOutcome, OfficeSuccessionTrace, PoliticalTraceEvent, PoliticalTraceSink,
+    SupportCountTrace, SupportDeclarationTrace, SupportResolutionTrace, SystemError,
+    SystemExecutionContext, VacancyTimerTrace,
 };
 
 const PUBLIC_ORDER_BASELINE: Permille = Permille::new_unchecked(750);
@@ -297,14 +298,17 @@ fn resolve_force_succession(
     let context = build_force_succession_context(world, office, office_data)?;
     let resolution = evaluate_force_resolution(tick, &context);
 
-    if let Some(controller) = resolution.desired_controller.filter(|controller| {
-        context
-            .live_claimants
-            .iter()
-            .all(|claimant| *claimant == *controller)
-            && force_hold_complete(&context.profile, &resolution.next_state, tick)
-            && resolution.next_state.last_uncontested_tick == Some(tick)
-    }) {
+    // Check whether installation is possible: desired_controller exists and
+    // all gate conditions pass.
+    let installation_deferral = resolution.desired_controller.and_then(|controller| {
+        check_force_installation_gate(controller, &context, &resolution, tick)
+            .map(|reason| (controller, reason))
+    });
+
+    if let Some(controller) = resolution
+        .desired_controller
+        .filter(|_| installation_deferral.is_none())
+    {
         install_force_office_holder(
             world,
             event_log,
@@ -332,6 +336,8 @@ fn resolve_force_succession(
 
     commit_force_control_update(world, event_log, tick, office, &context, &resolution)?;
 
+    // Always emit the resolution outcome (e.g., ForceControllerMaintained).
+    let resolution_candidates = context.force_candidates.clone();
     record_political_trace(
         politics_trace,
         office_trace_event(
@@ -341,9 +347,27 @@ fn resolve_force_succession(
             resolution.outcome,
             Vec::new(),
             None,
-            context.force_candidates,
+            resolution_candidates,
         ),
     );
+
+    // If the gate blocked installation, emit an additional deferral trace
+    // explaining WHY the controller was not installed despite being desired.
+    if let Some((controller, reason)) = installation_deferral {
+        record_political_trace(
+            politics_trace,
+            office_trace_event(
+                tick,
+                office,
+                office_data,
+                OfficeSuccessionOutcome::ForceInstallationDeferred { controller, reason },
+                Vec::new(),
+                None,
+                context.force_candidates,
+            ),
+        );
+    }
+
     Ok(())
 }
 
@@ -710,6 +734,43 @@ fn active_force_control_entry(
     }
 }
 
+/// Check whether the force installation gate allows installing this controller.
+/// Returns `None` if installation may proceed, or `Some(reason)` explaining why
+/// installation is deferred.
+fn check_force_installation_gate(
+    controller: EntityId,
+    context: &ForceSuccessionContext,
+    resolution: &ForceResolution,
+    tick: Tick,
+) -> Option<ForceInstallationDeferralReason> {
+    let blocking_claimants: Vec<EntityId> = context
+        .live_claimants
+        .iter()
+        .copied()
+        .filter(|claimant| *claimant != controller)
+        .collect();
+    if !blocking_claimants.is_empty() {
+        return Some(ForceInstallationDeferralReason::OtherLiveClaimants {
+            controller,
+            blocking_claimants,
+        });
+    }
+    if !force_hold_complete(&context.profile, &resolution.next_state, tick) {
+        let held_ticks = resolution
+            .next_state
+            .control_since
+            .map_or(0, |since| tick.0.saturating_sub(since.0) + 1);
+        return Some(ForceInstallationDeferralReason::HoldIncomplete {
+            held_ticks,
+            required_ticks: u64::from(context.profile.uncontested_hold_ticks.get()),
+        });
+    }
+    if resolution.next_state.last_uncontested_tick != Some(tick) {
+        return Some(ForceInstallationDeferralReason::NotUncontestedThisTick);
+    }
+    None
+}
+
 fn force_hold_complete(profile: &OfficeForceProfile, state: &OfficeForceState, tick: Tick) -> bool {
     let Some(control_since) = state.control_since else {
         return false;
@@ -836,6 +897,7 @@ fn availability_phase_for_trace(
         | OfficeSuccessionOutcome::ForceControllerMaintained { .. }
         | OfficeSuccessionOutcome::ForceChallengerGracePending { .. }
         | OfficeSuccessionOutcome::ForceContested { .. }
+        | OfficeSuccessionOutcome::ForceInstallationDeferred { .. }
         | OfficeSuccessionOutcome::ForceBlocked { .. } => {
             OfficeAvailabilityPhase::VacantPendingResolution
         }

@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21, S18 craft-restock supply-chain coverage added 2026-03-21, S19 office-record coverage aligned 2026-03-22)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21, S18 craft-restock supply-chain coverage added 2026-03-21, S19 office-record coverage aligned 2026-03-22, S16b force-controller departure emergence added 2026-03-22)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -38,7 +38,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 | ShareBelief | Yes | 2e, 22, 24, 25 |
-| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 28, 33, 34 |
+| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 28, 33, 34, 35 |
 | SupportCandidateForOffice | Yes | 12, 13, 14 |
 
 **Coverage: 19/19 GoalKinds tested (100%).**
@@ -52,7 +52,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | Production (harvest, craft) | Yes | 2d-craft, 4, 5, 6b, 26 |
 | FacilityQueue (queue_for_facility_use) | Yes | 9 |
 | Trade | Yes | 2b, 27 |
-| Travel | Yes | 1, 3 (implicit) |
+| Travel | Yes | 1, 3 (implicit), 35 |
 | Transport | Yes | pick-up/materialization (4, 6c) + destination-local cargo delivery semantics (2d) |
 | Combat (attack, defend) | Yes | 7c, 7f |
 | Care (heal, self-care) | Yes | 2c |
@@ -77,7 +77,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 |-------|-------|-----------|
 | VillageSquare | Yes | All |
 | OrchardFarm | Yes | 1, 2d, 2d-craft, 3, 3b, 4, 5 |
-| GeneralStore | Yes | 2d, 2d-craft |
+| GeneralStore | Yes | 2d, 2d-craft, 35 |
 | CommonHouse | **No** | — |
 | RulersHall | Yes | 33 |
 | GuardPost | **No** | — |
@@ -150,6 +150,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | social_weight diversity → distinct social behavior (Principle 20) | Yes |
 | Zero-motive filter prevents execution of unmotivated goals | Yes |
 | Rumor → travel → passive observation → discovery → belief source upgrade → replan | Yes |
+| Force controller departure → control clearing → rival ClaimOffice → PressForceClaim → uncontested hold → office installation | Yes |
 | Enterprise weight → ClaimOffice → DeclareSupport → succession resolution → office installation | Yes |
 | Loyalty → SupportCandidateForOffice → DeclareSupport(other) → multi-agent support competition → decisive installation | Yes |
 | Bribe → commodity transfer → loyalty → SupportCandidateForOffice → coalition majority → office installation | Yes |
@@ -179,12 +180,12 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 
 | Metric | Current | Pending Backlog |
 |--------|---------|-----------------|
-| Proven tests | 139 | 139 |
+| Proven tests | 141 | 141 |
 | GoalKind coverage | 19/19 (100%) | 19/19 (100%) |
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
-| Places used | 9/12 | 9/12 |
-| Cross-system chains | 73 | 73 |
+| Places used | 10/12 | 10/12 |
+| Cross-system chains | 74 | 74 |
 
 ### Pending Backlog Summary
 

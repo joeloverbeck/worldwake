@@ -100,7 +100,8 @@ pub use institutional_knowledge_trace::{
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
 pub use politics_trace::{
-    ForceCandidateTrace, OfficeAvailabilityPhase, OfficeSuccessionOutcome, OfficeSuccessionTrace,
+    ForceCandidateTrace, ForceInstallationDeferralReason, OfficeAvailabilityPhase,
+    OfficeSuccessionOutcome, OfficeSuccessionTrace,
     PoliticalTraceEvent, PoliticalTraceSink, SupportCountTrace, SupportDeclarationTrace,
     SupportResolutionTrace, VacancyTimerTrace,
 };

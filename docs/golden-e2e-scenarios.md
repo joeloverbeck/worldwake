@@ -918,3 +918,27 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 **Foundation alignment**: Principle 12 (claim generation still depends on local belief, not omniscience), Principle 19 (intent to claim does not reserve the office), Principle 21 (office succession remains a real world process), Principle 24 (care and politics interact only through shared state and generic runtime recovery).
 **Cross-system chain**: reported office belief + self-care pressure → delayed claimant generates `ClaimOffice` but heals first → winner commits `declare_support` and installs through support-law succession → stale delayed `declare_support` hits authoritative `StartFailed` → next-tick political candidate removal and no-retry behavior.
 **Distinct from Scenarios 22 and 24**: Scenarios 22 and 24 prove that lawful office knowledge can unlock political planning and success. Scenario 28 proves the opposite branch: once another actor lawfully closes the opportunity first, the delayed claimant loses cleanly through the same shared start-failure architecture instead of crashing or retaining a stale office claim forever.
+
+### Scenario 35: Force Controller Departure Enables Rival Claim
+**File**: `golden_emergent.rs` | **Tests**: `golden_force_controller_departure_enables_rival_claim`, `golden_force_controller_departure_enables_rival_claim_replays_deterministically`
+**Systems exercised**: Travel (controller departure), Force-Control State Machine (departure detection, control clearing), AI (candidate generation for vacant force office, plan search for `PressForceClaim`), action tracing, politics tracing, decision tracing, deterministic replay
+**Setup**: A force-law office ("War Chief") at Village Square with succession_period=5. Agent A ("Controller") is human-controlled, pre-seeded as `office_controller` (without an active force claim — simulating a completed past claim cycle). Agent B ("Rival") is AI-controlled with sated needs, enterprise_weight=pm(800), and seeded institutional beliefs about the office with A as controller. A is issued a human `RequestAction` for travel to the adjacent General Store.
+**Emergent behavior proven**:
+- A's travel starts within tick 0, entering transit and clearing `effective_place` from Village Square before the rival's AI input production phase runs.
+- The force-control system detects A's absence from the jurisdiction and clears the `office_controller` relation.
+- B's AI observes the now-uncontrolled office, generates `ClaimOffice`, plans `PressForceClaim`, and executes within the same tick.
+- B becomes `office_controller` through the vacancy claim grace path and, after uncontested hold (succession_period=5), is installed as `office_holder`.
+- No orchestrator connects travel to politics — the chain emerges from physical-presence state.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Assertion surface**:
+1. Action trace: A's travel commits before B's `press_force_claim` (travel departure is the causal trigger).
+2. Politics trace: `ForceControllerEstablished { controller: B }` after A departs.
+3. Politics trace: `ForceInstalled { holder: B }` after uncontested hold.
+4. Decision trace: B does NOT generate `ClaimOffice` strictly before the departure tick; B DOES generate `ClaimOffice` at or after the departure tick.
+5. Negative: no `declare_support` commits.
+6. Authoritative state: B becomes `office_holder`.
+7. Determinism: replay companion.
+**Foundation alignment**: Principle 1 (maximal emergence — travel consequence cascades into political domain), Principle 8 (travel occupancy as a real dampener — leaving jurisdiction has political cost), Principle 10 (no positive feedback without dampener — physical presence requirement prevents remote force control).
+**Cross-system chain**: human-controlled travel departure → controller enters transit → force-control system clears absent controller → rival AI detects uncontrolled office → `ClaimOffice` generation → `PressForceClaim` → uncontested hold → `ForceInstalled` as office holder.
+**Distinct from Scenario 22**: Scenario 22 proves combat death triggers force-law vacancy and succession. Scenario 35 proves the non-lethal path: physical departure from the jurisdiction cascades into political vacancy through the same force-control state machine, without combat or death.
+**Implementation notes**: The controller is pre-seeded via `set_office_controller` without `add_force_claim`. A lingering live force claim would block installation because `install_force_office_holder` requires all live claimants to be the controller. ORCHARD_FARM is not adjacent to VILLAGE_SQUARE — General Store (1-tick direct edge) is used as the departure destination.

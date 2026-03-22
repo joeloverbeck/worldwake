@@ -153,6 +153,51 @@ For social goldens, also document subject choice explicitly. Agent subjects can 
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 When a focused planning test is specifically about a planner failure boundary, assert the exact failure mode your scenario is meant to prove instead of only asserting "no plan". Use `BudgetExhausted`, `FrontierExhausted`, or another concrete planner-owned boundary as appropriate. Generic non-success is too weak because it also matches unrelated earlier contract breaks.
 
+## Prototype World Topology Reference
+
+The prototype world (`build_prototype_world`) defines directed travel edges between places. When issuing a human `RequestAction` for travel, the target must be a **directly adjacent** place — there is no multi-hop resolution for human inputs. The travel action's `TargetAdjacentToActor(0)` precondition will reject non-adjacent targets with a `StartFailed`.
+
+| Place | Adjacent to (with travel time in ticks) |
+|-------|----------------------------------------|
+| VillageSquare | GeneralStore (1), CommonHouse (1), RulersHall (1), GuardPost (1), PublicLatrine (1), SouthGate (2) |
+| GeneralStore | VillageSquare (1) |
+| CommonHouse | VillageSquare (1) |
+| RulersHall | VillageSquare (1) |
+| GuardPost | VillageSquare (1) |
+| PublicLatrine | VillageSquare (1) |
+| SouthGate | VillageSquare (2), EastFieldTrail (3) |
+| EastFieldTrail | SouthGate (3), OrchardFarm (2), NorthCrossroads (3) |
+| OrchardFarm | EastFieldTrail (2) |
+| NorthCrossroads | EastFieldTrail (3), ForestPath (4) |
+| ForestPath | NorthCrossroads (4), BanditCamp (4) |
+| BanditCamp | ForestPath (4) |
+
+Note: OrchardFarm is **not** adjacent to VillageSquare. The shortest path is VillageSquare → SouthGate → EastFieldTrail → OrchardFarm (7 ticks). For human-controlled departure scenarios, use an adjacent place like GeneralStore (1 tick).
+
+The canonical source is `PROTOTYPE_EDGE_SPECS` in `crates/worldwake-core/src/topology.rs`. If new edges are added, update this table.
+
+## Force Installation Tracing
+
+When the force-control system determines a `desired_controller` but the installation gate blocks (the controller cannot yet be installed as `office_holder`), the politics trace emits an additional `ForceInstallationDeferred` event alongside the normal resolution outcome (e.g., `ForceControllerMaintained`). This makes the installation gate's reasoning observable without requiring engine source code inspection.
+
+The deferral reason (`ForceInstallationDeferralReason`) names the specific gate condition that blocked:
+
+- `OtherLiveClaimants { controller, blocking_claimants }` — other alive claimants exist besides the controller (even if absent from the jurisdiction). Installation requires all live claimants to be the controller.
+- `HoldIncomplete { held_ticks, required_ticks }` — the uncontested hold period has not yet elapsed.
+- `NotUncontestedThisTick` — the controller was not uncontested this tick.
+
+When debugging "why didn't the controller get installed as holder?", check for `ForceInstallationDeferred` events in the politics trace before reading engine source.
+
+## Same-Tick Ordering for 1-Tick Actions
+
+When travel to an adjacent place completes within the same tick as the departure (e.g., 1-tick travel to GeneralStore), the intra-tick ordering is:
+
+1. **Input processing**: travel starts → actor enters transit → `effective_place` becomes `None`
+2. **AI input production**: rival AI detects vacancy → generates goals → issues actions
+3. **Action progression**: travel commits → actor placed at destination; rival actions commit
+
+This means the departure and the rival's first observation of vacancy happen within the same tick. Decision trace assertions about "before departure" must use strict `<` on tick number, not `<=`, because the rival's ClaimOffice generation at the departure tick is causally correct — the controller has already entered transit before the AI runs.
+
 ## Ticket Precision
 
 Golden-related tickets must follow `docs/precision-rules.md` for all technical claims.

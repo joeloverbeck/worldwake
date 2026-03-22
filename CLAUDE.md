@@ -300,6 +300,7 @@ for event in sink.events() {
 | "How long did the action take?" | Action trace — compare Started tick vs Committed tick |
 | "Why was the action aborted?" | Action trace — check `ActionTraceKind::Aborted { reason }` |
 | "What items were created?" | Action trace — check `CommitOutcome::materializations` |
+| "Why wasn't the controller installed as holder?" | Politics trace — check `ForceInstallationDeferred { reason }` |
 
 ### Golden test observation strategy
 

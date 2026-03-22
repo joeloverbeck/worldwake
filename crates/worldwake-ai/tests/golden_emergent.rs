@@ -2762,3 +2762,296 @@ fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_repl
         "crowd-out prevention should replay deterministically"
     );
 }
+
+// ===========================================================================
+// Suite 10: force_controller_departure_enables_rival_claim
+//
+// Proves: an agent's physical departure from a force-law jurisdiction
+// cascades into political vacancy and rival AI claim. This cross-system
+// chain (travel → force-control clearing → AI candidate generation →
+// PressForceClaim) emerges from shared state, not orchestration.
+// Foundation: Principle 1, Principle 8, Principle 10.
+// Cross-systems: Travel + Force-Control State Machine + AI.
+// ===========================================================================
+
+#[allow(clippy::too_many_lines)]
+fn run_force_controller_departure_enables_rival_claim(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    h.enable_politics_tracing();
+
+    // -- Agent A ("Controller"): human-controlled, will depart --
+    let controller_agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Controller",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+        KnownRecipes::new(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        controller_agent,
+        default_perception_profile(),
+    );
+    set_control_source(&mut h, controller_agent, ControlSource::Human, 0);
+
+    // -- Agent B ("Rival"): AI-controlled, sated, enterprise-weighted --
+    let rival = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Rival",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+        KnownRecipes::new(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        rival,
+        default_perception_profile(),
+    );
+
+    // -- Force-law office at VillageSquare --
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "War Chief",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Force,
+        5,
+        vec![],
+    );
+
+    // Pre-seed A as office_controller directly (no force claim).
+    // A has already completed a force claim cycle in the "past" — only the
+    // controller relation remains. This ensures A's departure clears the
+    // controller without leaving a lingering live claim that blocks B's
+    // installation.
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_office_controller(office, controller_agent).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Seed beliefs for both agents.
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        controller_agent,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        rival,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    // B needs to know about the office and its controller.
+    seed_known_office_at_place(
+        &mut h.world,
+        &mut h.event_log,
+        rival,
+        office,
+        VILLAGE_SQUARE,
+        Tick(0),
+    );
+    seed_force_controller_belief(
+        &mut h.world,
+        &mut h.event_log,
+        rival,
+        office,
+        Some(controller_agent),
+        false,
+        Tick(0),
+        Some(VILLAGE_SQUARE),
+    );
+
+    // -- Issue human input: Controller A travels away from VillageSquare --
+    let travel_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("full registries should include travel");
+
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        Tick(0),
+        InputKind::RequestAction {
+            actor: controller_agent,
+            def_id: travel_def_id,
+            targets: vec![general_store],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+
+    // -- Tick loop: wait for B to become office_holder --
+    for _ in 0..80 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(rival) {
+            break;
+        }
+    }
+
+    // =====================================================================
+    // Assertions
+    // =====================================================================
+
+    // 1. Rival installed as office_holder.
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(rival),
+        "rival should be installed as office holder after uncontested hold"
+    );
+
+    // 2. Action trace: A's travel commits before B's press_force_claim.
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+
+    let controller_travel_commit = action_sink
+        .events_for(controller_agent)
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "travel"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("controller should commit a travel action");
+
+    let rival_claim_commit = action_sink
+        .events_for(rival)
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "press_force_claim"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("rival should commit a press_force_claim action");
+
+    assert!(
+        controller_travel_commit < rival_claim_commit,
+        "controller's travel must commit before rival's force claim \
+         (travel={:?}, claim={:?})",
+        controller_travel_commit,
+        rival_claim_commit
+    );
+
+    // 3. Controller cleared after departure (intermediate state).
+    //    By the time rival claims, the controller must have been cleared.
+    //    We verify via politics trace: ForceControllerEstablished for rival
+    //    implies the old controller was cleared first.
+    let politics_sink = h
+        .politics_trace_sink()
+        .expect("politics tracing should be enabled");
+
+    politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::ForceControllerEstablished { controller }
+                    if controller == rival
+            )
+        })
+        .expect(
+            "politics trace should record rival establishing force control \
+             after controller's departure",
+        );
+
+    // 4. ForceInstalled for rival as holder.
+    politics_sink
+        .events_for_office(office)
+        .into_iter()
+        .find(|event| {
+            matches!(
+                event.trace.outcome,
+                OfficeSuccessionOutcome::ForceInstalled { holder }
+                    if holder == rival
+            )
+        })
+        .expect("politics trace should record rival's installation as office holder");
+
+    // 5. Decision trace: B does NOT generate ClaimOffice at tick 0 (office is
+    //    controlled by A); B DOES generate ClaimOffice after A departs.
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+
+    let claim_goal = GoalKind::ClaimOffice { office };
+    let history = trace_sink.goal_history_for(rival, &claim_goal);
+
+    // Find the first tick where ClaimOffice is generated.
+    let first_generated_tick = history
+        .iter()
+        .find(|entry| entry.status.is_generated())
+        .map(|entry| entry.tick);
+    assert!(
+        first_generated_tick.is_some(),
+        "rival should eventually generate ClaimOffice goal"
+    );
+
+    // The travel starts at the commit tick (1-tick travel commits in the same
+    // tick). Within that tick the controller enters transit BEFORE the rival's
+    // AI runs, so ClaimOffice generation at the departure tick is correct.
+    // The assertion: no ClaimOffice STRICTLY before the departure tick.
+    let travel_commit_tick = controller_travel_commit.0;
+    let pre_departure_generated = history.iter().any(|entry| {
+        entry.tick < travel_commit_tick && entry.status.is_generated()
+    });
+    assert!(
+        !pre_departure_generated,
+        "rival should NOT generate ClaimOffice before controller's travel \
+         departure tick (office is still controlled)"
+    );
+
+    // 6. Negative: no declare_support actions committed by any agent.
+    let all_events_iter = action_sink
+        .events_for(controller_agent)
+        .into_iter()
+        .chain(action_sink.events_for(rival).into_iter());
+    let declare_support_commits = all_events_iter
+        .filter(|event| {
+            event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .count();
+    assert_eq!(
+        declare_support_commits, 0,
+        "force-law scenario must not rely on declare_support actions"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_force_controller_departure_enables_rival_claim() {
+    let _ = run_force_controller_departure_enables_rival_claim(Seed([47; 32]));
+}
+
+#[test]
+fn golden_force_controller_departure_enables_rival_claim_replays_deterministically() {
+    let first = run_force_controller_departure_enables_rival_claim(Seed([48; 32]));
+    let second = run_force_controller_departure_enables_rival_claim(Seed([48; 32]));
+    assert_eq!(
+        first, second,
+        "force controller departure scenario should replay deterministically"
+    );
+}
