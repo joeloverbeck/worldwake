@@ -97,6 +97,7 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
         active_actions,
         action_defs,
         politics_trace: _,
+        perception_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -3382,6 +3383,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(5),
             system_id: SystemId::Combat,
         })
@@ -3455,6 +3457,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(6),
             system_id: SystemId::Combat,
         })
@@ -3501,6 +3504,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(7),
             system_id: SystemId::Combat,
         })
@@ -3539,6 +3543,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Combat,
         })
@@ -3577,6 +3582,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Combat,
         })
@@ -3814,6 +3820,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Combat,
         })
@@ -3879,6 +3886,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(5),
             system_id: SystemId::Combat,
         })
@@ -3921,6 +3929,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Combat,
         })
@@ -3958,6 +3967,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Combat,
         })
@@ -3994,6 +4004,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Combat,
         })

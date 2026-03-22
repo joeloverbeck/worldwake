@@ -7,7 +7,7 @@ use worldwake_core::{
     RelationValue, SocialObservation, SocialObservationKind, StateDelta, VisibilitySpec,
     WitnessData, World, WorldTxn,
 };
-use worldwake_sim::{SystemError, SystemExecutionContext};
+use worldwake_sim::{PerceptionTraceEvent, SystemError, SystemExecutionContext};
 
 #[derive(Copy, Clone)]
 struct DiscoveryContext {
@@ -24,6 +24,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         active_actions: _active_actions,
         action_defs: _action_defs,
         politics_trace: _,
+        mut perception_trace,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -40,55 +41,19 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         let institutional_claims = institutional_claims_for_event(&record);
 
         for witness in resolve_witnesses(world, &record) {
-            let Some(profile) = world.get_component_perception_profile(witness).copied() else {
-                continue;
-            };
-            if !passes_observation_check(profile.observation_fidelity.value(), rng) {
-                continue;
-            }
-
-            let store = updated_stores.entry(witness).or_insert_with(|| {
-                world
-                    .get_component_agent_belief_store(witness)
-                    .cloned()
-                    .unwrap_or_default()
-            });
-
-            for (entity, observed) in record.observed_entities() {
-                let snapshot = observed
-                    .to_believed_entity_state(record.tick(), PerceptionSource::DirectObservation);
-                record_observed_snapshot(
-                    event_log,
-                    DiscoveryContext {
-                        tick,
-                        observer: witness,
-                        place: record.place_id().or(snapshot.last_known_place),
-                    },
-                    store,
-                    *entity,
-                    snapshot,
-                    true,
-                );
-            }
-
-            for observation in &social_observations {
-                store.record_social_observation(observation.clone());
-            }
-
-            for (key, claim) in &institutional_claims {
-                store.record_institutional_belief(
-                    *key,
-                    BelievedInstitutionalClaim {
-                        claim: *claim,
-                        source: InstitutionalKnowledgeSource::WitnessedEvent,
-                        learned_tick: record.tick(),
-                        learned_at: record.place_id(),
-                    },
-                    &profile,
-                );
-            }
-
-            store.enforce_capacity(&profile, tick);
+            process_witness_event(
+                world,
+                event_log,
+                rng,
+                &mut updated_stores,
+                perception_trace.as_deref_mut(),
+                tick,
+                event_id,
+                &record,
+                witness,
+                &social_observations,
+                &institutional_claims,
+            );
         }
     }
 
@@ -113,6 +78,99 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     }
     let _ = txn.commit(event_log);
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_witness_event(
+    world: &World,
+    event_log: &mut EventLog,
+    rng: &mut worldwake_sim::DeterministicRng,
+    updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
+    mut perception_trace: Option<&mut worldwake_sim::PerceptionTraceSink>,
+    tick: worldwake_core::Tick,
+    event_id: worldwake_core::EventId,
+    record: &worldwake_core::EventRecord,
+    witness: EntityId,
+    social_observations: &[worldwake_core::SocialObservation],
+    institutional_claims: &[(InstitutionalBeliefKey, InstitutionalClaim)],
+) {
+    let Some(profile) = world.get_component_perception_profile(witness).copied() else {
+        return;
+    };
+    let passed = passes_observation_check(profile.observation_fidelity.value(), rng);
+    if !passed {
+        if let Some(ref mut sink) = perception_trace {
+            sink.record(PerceptionTraceEvent {
+                tick,
+                sequence_in_tick: 0,
+                observer: witness,
+                event_id,
+                observation_passed: false,
+                entity_observations: vec![],
+                institutional_claims: vec![],
+            });
+        }
+        return;
+    }
+
+    let store = updated_stores.entry(witness).or_insert_with(|| {
+        world
+            .get_component_agent_belief_store(witness)
+            .cloned()
+            .unwrap_or_default()
+    });
+
+    let mut traced_entities = Vec::new();
+    for (entity, observed) in record.observed_entities() {
+        let snapshot = observed
+            .to_believed_entity_state(record.tick(), PerceptionSource::DirectObservation);
+        record_observed_snapshot(
+            event_log,
+            DiscoveryContext {
+                tick,
+                observer: witness,
+                place: record.place_id().or(snapshot.last_known_place),
+            },
+            store,
+            *entity,
+            snapshot,
+            true,
+        );
+        if perception_trace.is_some() {
+            traced_entities.push(*entity);
+        }
+    }
+
+    for observation in social_observations {
+        store.record_social_observation(observation.clone());
+    }
+
+    for (key, claim) in institutional_claims {
+        store.record_institutional_belief(
+            *key,
+            BelievedInstitutionalClaim {
+                claim: *claim,
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: record.tick(),
+                learned_at: record.place_id(),
+            },
+            &profile,
+        );
+    }
+
+    if let Some(ref mut sink) = perception_trace {
+        sink.record(PerceptionTraceEvent {
+            tick,
+            sequence_in_tick: 0,
+            observer: witness,
+            event_id,
+            observation_passed: true,
+            entity_observations: traced_entities,
+            institutional_claims: institutional_claims.to_vec(),
+        });
+    }
+
+    store.enforce_capacity(&profile, tick);
 }
 
 fn observe_passive_local_entities(
@@ -787,6 +845,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -853,6 +912,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -918,6 +978,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -983,6 +1044,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -1049,6 +1111,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -1121,6 +1184,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -1195,6 +1259,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(5),
             system_id: SystemId::Perception,
         })
@@ -1357,6 +1422,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(6),
             system_id: SystemId::Perception,
         })
@@ -1445,6 +1511,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(7),
             system_id: SystemId::Perception,
         })
@@ -1490,6 +1557,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1540,6 +1608,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(2),
             system_id: SystemId::Perception,
         })
@@ -1600,6 +1669,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1675,6 +1745,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1770,6 +1841,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1820,6 +1892,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1870,6 +1943,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -1939,6 +2013,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(4),
             system_id: SystemId::Perception,
         })
@@ -2026,6 +2101,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(5),
             system_id: SystemId::Perception,
         })
@@ -2111,6 +2187,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(5),
             system_id: SystemId::Perception,
         })
@@ -2181,6 +2258,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(6),
             system_id: SystemId::Perception,
         })
@@ -2247,6 +2325,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2306,6 +2385,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2348,6 +2428,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2400,6 +2481,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2469,6 +2551,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2554,6 +2637,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2641,6 +2725,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2743,6 +2828,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
@@ -2860,11 +2946,182 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Perception,
         })
         .unwrap();
 
         assert!(discovery_records(&event_log).is_empty());
+    }
+
+    #[test]
+    fn trace_records_institutional_claims() {
+        use worldwake_sim::PerceptionTraceSink;
+
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+
+        let (observer, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let office = txn.create_office("Council").unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, office)
+        };
+
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(3),
+            place,
+            None,
+            vec![office, observer],
+            vec![StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OfficeHolder,
+                relation: RelationValue::OfficeHolder { office, holder: observer },
+            })],
+        );
+
+        let mut rng = DeterministicRng::new(Seed([7; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+        let mut trace_sink = PerceptionTraceSink::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: Some(&mut trace_sink),
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let events = trace_sink.events_for(observer);
+        assert!(
+            !events.is_empty(),
+            "trace should record at least one event for the observer"
+        );
+        let event = events[0];
+        assert!(event.observation_passed);
+        assert!(
+            !event.institutional_claims.is_empty(),
+            "trace should record institutional claims from political event"
+        );
+        assert_eq!(
+            event.institutional_claims[0].0,
+            InstitutionalBeliefKey::OfficeHolderOf { office }
+        );
+    }
+
+    #[test]
+    fn trace_records_failed_observation_check() {
+        use worldwake_sim::PerceptionTraceSink;
+
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+
+        let (observer, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            // fidelity=0 means observation check always fails
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(0))
+                .unwrap();
+            let office = txn.create_office("Council").unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, office)
+        };
+
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(3),
+            place,
+            None,
+            vec![office, observer],
+            vec![StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OfficeHolder,
+                relation: RelationValue::OfficeHolder { office, holder: observer },
+            })],
+        );
+
+        let mut rng = DeterministicRng::new(Seed([7; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+        let mut trace_sink = PerceptionTraceSink::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: Some(&mut trace_sink),
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let events = trace_sink.events_for(observer);
+        assert!(
+            !events.is_empty(),
+            "trace should record failed observation check"
+        );
+        assert!(!events[0].observation_passed);
+        assert!(events[0].institutional_claims.is_empty());
+    }
+
+    #[test]
+    fn trace_absent_when_disabled() {
+        // This test verifies that perception_system works fine with None trace.
+        // The zero-cost guarantee comes from Option::is_some() checks at compile time.
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+
+        {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        };
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([7; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        // No trace sink — should still succeed without any allocation.
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
     }
 }

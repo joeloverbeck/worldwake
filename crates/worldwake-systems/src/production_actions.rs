@@ -1680,6 +1680,7 @@ mod tests {
                 active_actions: &active,
                 action_defs: &defs,
                 politics_trace: None,
+                perception_trace: None,
                 tick: Tick(tick),
                 system_id: SystemId::Needs,
             })
@@ -2192,6 +2193,7 @@ mod tests {
                 active_actions: &active,
                 action_defs: &defs,
                 politics_trace: None,
+                perception_trace: None,
                 tick: Tick(tick),
                 system_id: SystemId::Needs,
             })

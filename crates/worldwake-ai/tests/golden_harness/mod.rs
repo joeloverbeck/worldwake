@@ -30,7 +30,8 @@ use worldwake_core::{
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
     ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
-    InstitutionalKnowledgeTraceSink, PoliticalTraceSink, RecipeDefinition, RecipeRegistry,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
+    RecipeRegistry,
     ReplayRecordingConfig, ReplayState, RequestResolutionTraceSink, Scheduler, SimulationState,
     SystemManifest, TickStepResult, TickStepServices,
 };
@@ -1035,6 +1036,7 @@ pub struct GoldenHarness {
     pub action_trace: Option<ActionTraceSink>,
     pub request_resolution_trace: Option<RequestResolutionTraceSink>,
     pub politics_trace: Option<PoliticalTraceSink>,
+    pub perception_trace: Option<PerceptionTraceSink>,
     pub institutional_knowledge_trace: Option<InstitutionalKnowledgeTraceSink>,
 }
 
@@ -1060,6 +1062,7 @@ impl GoldenHarness {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
+            perception_trace: None,
             institutional_knowledge_trace: None,
         }
     }
@@ -1088,6 +1091,14 @@ impl GoldenHarness {
         self.politics_trace.as_ref()
     }
 
+    pub fn enable_perception_tracing(&mut self) {
+        self.perception_trace = Some(PerceptionTraceSink::new());
+    }
+
+    pub fn perception_trace_sink(&self) -> Option<&PerceptionTraceSink> {
+        self.perception_trace.as_ref()
+    }
+
     pub fn enable_institutional_knowledge_tracing(&mut self) {
         self.institutional_knowledge_trace = Some(InstitutionalKnowledgeTraceSink::new());
     }
@@ -1113,6 +1124,7 @@ impl GoldenHarness {
                 action_trace: self.action_trace.as_mut(),
                 request_resolution_trace: self.request_resolution_trace.as_mut(),
                 politics_trace: self.politics_trace.as_mut(),
+                perception_trace: self.perception_trace.as_mut(),
                 institutional_knowledge_trace: self.institutional_knowledge_trace.as_mut(),
             },
         )
@@ -1171,6 +1183,7 @@ impl GoldenHarness {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
+            perception_trace: None,
             institutional_knowledge_trace: None,
         }
     }

@@ -2228,6 +2228,7 @@ mod tests {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
+                perception_trace: None,
                     institutional_knowledge_trace: None,
                 },
             )
@@ -2700,6 +2701,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &harness.defs,
             politics_trace: None,
+                perception_trace: None,
             tick,
             system_id: SystemId::Perception,
         })
@@ -2715,6 +2717,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &harness.defs,
             politics_trace: None,
+                perception_trace: None,
             tick,
             system_id: SystemId::Perception,
         })

@@ -1,6 +1,6 @@
 use crate::{
-    ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng, PoliticalTraceSink,
-    SystemId,
+    ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng, PerceptionTraceSink,
+    PoliticalTraceSink, SystemId,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -17,6 +17,7 @@ pub struct SystemExecutionContext<'a> {
     pub active_actions: &'a BTreeMap<ActionInstanceId, ActionInstance>,
     pub action_defs: &'a ActionDefRegistry,
     pub politics_trace: Option<&'a mut PoliticalTraceSink>,
+    pub perception_trace: Option<&'a mut PerceptionTraceSink>,
     pub tick: Tick,
     pub system_id: SystemId,
 }
@@ -93,6 +94,7 @@ mod tests {
         let _ = context.event_log;
         let _ = context.rng;
         let _ = context.politics_trace;
+        let _ = context.perception_trace;
         let _ = context.tick;
         Ok(())
     }
@@ -120,6 +122,7 @@ mod tests {
                 active_actions: &active_actions,
                 action_defs: &action_defs,
                 politics_trace: None,
+                perception_trace: None,
                 tick: Tick(3),
                 system_id,
             })
@@ -146,6 +149,7 @@ mod tests {
                 active_actions: &active_actions,
                 action_defs: &action_defs,
                 politics_trace: None,
+                perception_trace: None,
                 tick: Tick(11),
                 system_id,
             })
