@@ -28,6 +28,7 @@ pub mod controller_state;
 pub mod deterministic_rng;
 pub mod input_event;
 pub mod input_queue;
+pub mod institutional_knowledge_trace;
 pub mod interrupt_abort;
 pub mod per_agent_belief_view;
 pub mod politics_trace;
@@ -90,6 +91,11 @@ pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
 pub use input_queue::{InputQueue, InputQueueError};
+pub use institutional_knowledge_trace::{
+    build_record_consultation_trace_event, InstitutionalBeliefReadSummary,
+    InstitutionalBeliefTransitionTrace, InstitutionalKnowledgeTraceEvent,
+    InstitutionalKnowledgeTraceSink, InstitutionalKnowledgeTraceSource,
+};
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
 pub use politics_trace::{

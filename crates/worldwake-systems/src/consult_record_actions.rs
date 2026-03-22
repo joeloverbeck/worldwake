@@ -261,13 +261,16 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_believed_entity_state, CauseRef, ControlSource, EventLog, PerceptionSource,
-        RecordData, RecordEntryId, RecordKind, Seed, Tick, WitnessData,
+        build_believed_entity_state, BelievedInstitutionalClaim, CauseRef, ControlSource, EventLog,
+        PerceptionSource, RecordData, RecordEntryId, RecordKind, Seed, Tick, WitnessData,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
         ActionExecutionContext, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
-        ExternalAbortReason, PerAgentBeliefView, TickOutcome,
+        ActionTraceSink, ControllerState, ExternalAbortReason, InputKind,
+        InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
+        InstitutionalKnowledgeTraceSink, InstitutionalKnowledgeTraceSource, PerAgentBeliefView,
+        Scheduler, SystemDispatchTable, SystemManifest, TickOutcome, TickStepServices, step_tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -462,6 +465,72 @@ mod tests {
         )
         .unwrap();
         (instance_id, active_actions, log, rng)
+    }
+
+    fn enqueue_best_effort_consult_request(
+        scheduler: &mut Scheduler,
+        actor: EntityId,
+        def_id: ActionDefId,
+        record: EntityId,
+    ) {
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id,
+                targets: vec![record],
+                payload_override: Some(ActionPayload::ConsultRecord(ConsultRecordActionPayload {
+                    record,
+                })),
+                mode: worldwake_sim::ActionRequestMode::BestEffort,
+                provenance: worldwake_sim::RequestProvenance::External,
+            },
+        );
+    }
+
+    fn run_consult_through_step_tick(
+        world: &mut World,
+        actor: EntityId,
+        record: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        def_id: ActionDefId,
+    ) -> InstitutionalKnowledgeTraceSink {
+        let mut event_log = EventLog::new();
+        let mut scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut controller = ControllerState::with_entity(actor);
+        let mut rng = test_rng();
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let mut action_trace = ActionTraceSink::new();
+        let mut knowledge_trace = InstitutionalKnowledgeTraceSink::new();
+
+        enqueue_best_effort_consult_request(&mut scheduler, actor, def_id, record);
+        for _ in 0..4 {
+            step_tick(
+                world,
+                &mut event_log,
+                &mut scheduler,
+                &mut controller,
+                &mut rng,
+                TickStepServices {
+                    action_defs: defs,
+                    action_handlers: handlers,
+                    recipe_registry: &recipes,
+                    systems: &SystemDispatchTable::canonical_noop(),
+                    input_producer: None,
+                    action_trace: Some(&mut action_trace),
+                    request_resolution_trace: None,
+                    politics_trace: None,
+                    institutional_knowledge_trace: Some(&mut knowledge_trace),
+                },
+            )
+            .unwrap();
+            if scheduler.active_actions().is_empty() && scheduler.current_tick().0 > 0 {
+                break;
+            }
+        }
+
+        knowledge_trace
     }
 
     #[test]
@@ -680,5 +749,145 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(actor).unwrap();
         assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn consult_record_step_tick_emits_knowledge_trace_for_unknown_to_vacant_transition() {
+        let (mut world, actor, record, _) = setup_world(4, 1, 500);
+        let office = entity(120);
+        let entry_id = {
+            let mut txn = new_txn(&mut world, 2);
+            let entry_id = txn
+                .append_record_entry(
+                    record,
+                    InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(0),
+                    },
+                )
+                .unwrap();
+            commit_txn(txn);
+            entry_id
+        };
+        let (defs, handlers, def_id) = setup_registries();
+
+        let knowledge_trace =
+            run_consult_through_step_tick(&mut world, actor, record, &defs, &handlers, def_id);
+
+        let events = knowledge_trace.events_for(actor);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].source,
+            InstitutionalKnowledgeTraceSource::RecordConsultation {
+                record,
+                home_place: world.effective_place(record).unwrap(),
+            }
+        );
+        assert_eq!(
+            events[0].transitions,
+            vec![InstitutionalBeliefTransitionTrace {
+                key: InstitutionalBeliefKey::OfficeHolderOf { office },
+                source_entry_ids: vec![entry_id],
+                previous: InstitutionalBeliefReadSummary::Unknown,
+                new: InstitutionalBeliefReadSummary::OfficeHolderCertain { holder: None },
+            }]
+        );
+    }
+
+    #[test]
+    fn consult_record_step_tick_emits_conflicted_transition_for_multiple_consulted_entries() {
+        let (mut world, actor, record, _) = setup_world(4, 2, 500);
+        let office = entity(130);
+        let older_holder = entity(131);
+        let newer_holder = entity(132);
+        let (older_entry, newer_entry) = {
+            let mut txn = new_txn(&mut world, 2);
+            let older = txn
+                .append_record_entry(
+                    record,
+                    InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: Some(older_holder),
+                        effective_tick: Tick(0),
+                    },
+                )
+                .unwrap();
+            let newer = txn
+                .append_record_entry(
+                    record,
+                    InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: Some(newer_holder),
+                        effective_tick: Tick(1),
+                    },
+                )
+                .unwrap();
+            commit_txn(txn);
+            (older, newer)
+        };
+        let (defs, handlers, def_id) = setup_registries();
+
+        let knowledge_trace =
+            run_consult_through_step_tick(&mut world, actor, record, &defs, &handlers, def_id);
+
+        let events = knowledge_trace.events_for(actor);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].transitions,
+            vec![InstitutionalBeliefTransitionTrace {
+                key: InstitutionalBeliefKey::OfficeHolderOf { office },
+                source_entry_ids: vec![newer_entry, older_entry],
+                previous: InstitutionalBeliefReadSummary::Unknown,
+                new: InstitutionalBeliefReadSummary::OfficeHolderConflicted {
+                    holders: vec![Some(older_holder), Some(newer_holder)],
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn consult_record_step_tick_suppresses_trace_when_effective_read_does_not_change() {
+        let (mut world, actor, record, _) = setup_world(4, 1, 500);
+        let office = entity(140);
+        let learned_at = world.effective_place(actor);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.project_institutional_belief(
+                actor,
+                InstitutionalBeliefKey::OfficeHolderOf { office },
+                BelievedInstitutionalClaim {
+                    claim: InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(0),
+                    },
+                    source: InstitutionalKnowledgeSource::WitnessedEvent,
+                    learned_tick: Tick(0),
+                    learned_at,
+                },
+            )
+            .unwrap();
+            let _ = txn
+                .append_record_entry(
+                    record,
+                    InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(0),
+                    },
+                )
+                .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, def_id) = setup_registries();
+
+        let knowledge_trace =
+            run_consult_through_step_tick(&mut world, actor, record, &defs, &handlers, def_id);
+
+        assert!(
+            knowledge_trace.events_for(actor).is_empty(),
+            "duplicate consult data should not emit an effective-read transition trace"
+        );
     }
 }

@@ -1163,6 +1163,7 @@ fn build_remote_record_consultation_political_action_scenario(
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
+    h.enable_institutional_knowledge_tracing();
 
     let agent = seed_agent(
         &mut h.world,
@@ -1352,6 +1353,34 @@ fn run_remote_record_consultation_political_action(seed: Seed) -> (StateHash, St
     assert!(
         consult_commit < declare_support_commit,
         "consult_record must commit before declare_support in the remote-record path"
+    );
+
+    let knowledge_sink = h
+        .institutional_knowledge_trace_sink()
+        .expect("institutional knowledge tracing should be enabled for remote-record office scenario");
+    let knowledge_events = knowledge_sink.events_for(agent);
+    assert_eq!(
+        knowledge_events.len(),
+        1,
+        "remote-record office scenario should emit one effective institutional knowledge event"
+    );
+    let knowledge_event = knowledge_events[0];
+    assert_eq!(
+        knowledge_event.source,
+        worldwake_sim::InstitutionalKnowledgeTraceSource::RecordConsultation {
+            record: remote_record,
+            home_place: RULERS_HALL,
+        }
+    );
+    assert_eq!(
+        knowledge_event.transitions,
+        vec![worldwake_sim::InstitutionalBeliefTransitionTrace {
+            key: worldwake_core::InstitutionalBeliefKey::OfficeHolderOf { office },
+            source_entry_ids: vec![worldwake_core::RecordEntryId(0)],
+            previous: worldwake_sim::InstitutionalBeliefReadSummary::Unknown,
+            new: worldwake_sim::InstitutionalBeliefReadSummary::OfficeHolderCertain { holder: None },
+        }],
+        "remote-record office scenario should trace the authoritative office-holder knowledge acquisition"
     );
 
     assert_eq!(

@@ -3,10 +3,10 @@ use crate::{
     get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
     ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
     ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
-    PoliticalTraceSink, RecipeRegistry, RequestBindingKind, RequestResolutionOutcome,
-    RequestResolutionRejectionReason, RequestResolutionTraceEvent, RequestResolutionTraceSink,
-    Scheduler, SystemDispatchTable, SystemError, TickInputContext, TickInputError,
-    TickInputProducer, TickOutcome,
+    InstitutionalKnowledgeTraceSink, PoliticalTraceSink, RecipeRegistry, RequestBindingKind,
+    RequestResolutionOutcome, RequestResolutionRejectionReason, RequestResolutionTraceEvent,
+    RequestResolutionTraceSink, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
+    TickInputError, TickInputProducer, TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -24,6 +24,7 @@ pub struct TickStepServices<'a> {
     pub action_trace: Option<&'a mut ActionTraceSink>,
     pub request_resolution_trace: Option<&'a mut RequestResolutionTraceSink>,
     pub politics_trace: Option<&'a mut PoliticalTraceSink>,
+    pub institutional_knowledge_trace: Option<&'a mut InstitutionalKnowledgeTraceSink>,
 }
 
 struct TickStepRuntime<'a> {
@@ -160,7 +161,7 @@ pub fn step_tick(
     let (inputs_processed, actions_started, actions_aborted) =
         process_inputs(&mut runtime, controller, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
-        progress_active_actions(&mut runtime, tick, &services)?;
+        progress_active_actions(&mut runtime, tick, &mut services)?;
     let systems_ran = run_systems(&mut runtime, tick, &mut services)?;
     let post_system_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     emit_end_of_tick_marker(runtime.event_log, tick);
@@ -526,7 +527,7 @@ fn validate_cancel_actor(
 fn progress_active_actions(
     runtime: &mut TickStepRuntime<'_>,
     tick: Tick,
-    services: &TickStepServices<'_>,
+    services: &mut TickStepServices<'_>,
 ) -> Result<(u32, u32), TickStepError> {
     let active_action_ids = runtime
         .scheduler
@@ -544,6 +545,8 @@ fn progress_active_actions(
             .get(&instance_id)
             .cloned()
             .expect("active action ids must correspond to active actions");
+        let before_belief_store =
+            maybe_snapshot_consult_record_beliefs(services.institutional_knowledge_trace.is_some(), runtime.world, &instance);
         match runtime
             .scheduler
             .tick_active_action(
@@ -564,6 +567,13 @@ fn progress_active_actions(
         {
             TickOutcome::Continuing => {}
             TickOutcome::Committed { outcome } => {
+                record_consult_record_knowledge_trace(
+                    services.institutional_knowledge_trace.as_deref_mut(),
+                    runtime.world,
+                    tick,
+                    &instance,
+                    before_belief_store.as_ref(),
+                );
                 runtime
                     .scheduler
                     .retain_committed_action(crate::CommittedAction {
@@ -615,6 +625,48 @@ fn progress_active_actions(
     }
 
     Ok((actions_completed, actions_aborted))
+}
+
+fn maybe_snapshot_consult_record_beliefs(
+    tracing_enabled: bool,
+    world: &World,
+    instance: &crate::ActionInstance,
+) -> Option<worldwake_core::AgentBeliefStore> {
+    (tracing_enabled && matches!(instance.payload, crate::ActionPayload::ConsultRecord(_)))
+        .then(|| world.get_component_agent_belief_store(instance.actor).cloned())
+        .flatten()
+}
+
+fn record_consult_record_knowledge_trace(
+    knowledge_sink: Option<&mut InstitutionalKnowledgeTraceSink>,
+    world: &World,
+    tick: Tick,
+    instance: &crate::ActionInstance,
+    before_store: Option<&worldwake_core::AgentBeliefStore>,
+) {
+    let (Some(knowledge_sink), Some(before_store), Some(payload)) = (
+        knowledge_sink,
+        before_store,
+        instance.payload.as_consult_record(),
+    ) else {
+        return;
+    };
+    let (Some(record_data), Some(after_store)) = (
+        world.get_component_record_data(payload.record),
+        world.get_component_agent_belief_store(instance.actor),
+    ) else {
+        return;
+    };
+    if let Some(event) = crate::build_record_consultation_trace_event(
+        tick,
+        instance.actor,
+        payload.record,
+        record_data,
+        before_store,
+        after_store,
+    ) {
+        knowledge_sink.record(event);
+    }
 }
 
 fn abort_actions_for_dead_actors(
@@ -1120,6 +1172,7 @@ mod tests {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
+                institutional_knowledge_trace: None,
         }
     }
 
@@ -1252,6 +1305,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -1306,6 +1360,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -1362,6 +1417,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap_err();
@@ -1436,6 +1492,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -1516,6 +1573,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -1599,6 +1657,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: Some(&mut request_trace),
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -1702,6 +1761,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: Some(&mut request_trace),
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -1770,6 +1830,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: Some(&mut request_trace),
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap_err();
@@ -1846,6 +1907,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap_err();
@@ -1953,6 +2015,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -1981,6 +2044,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2080,6 +2144,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2174,6 +2239,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2270,6 +2336,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2344,6 +2411,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap_err();
@@ -2402,6 +2470,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2459,6 +2528,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2517,6 +2587,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2599,6 +2670,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2638,6 +2710,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2688,6 +2761,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2741,6 +2815,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2802,6 +2877,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2827,6 +2903,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2883,6 +2960,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();
@@ -2901,6 +2979,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .unwrap();

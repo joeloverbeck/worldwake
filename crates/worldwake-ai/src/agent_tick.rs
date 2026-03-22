@@ -2226,6 +2226,7 @@ mod tests {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
+                    institutional_knowledge_trace: None,
                 },
             )
             .unwrap()

@@ -62,6 +62,7 @@ pub fn handle_tick(
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                institutional_knowledge_trace: None,
             },
         )
         .map_err(|e| CommandError::new(format!("tick error: {e:?}")))?;

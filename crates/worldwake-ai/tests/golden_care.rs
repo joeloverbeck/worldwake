@@ -1097,6 +1097,7 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
                 action_trace: h.action_trace.as_mut(),
                 request_resolution_trace: None,
                 politics_trace: h.politics_trace.as_mut(),
+                institutional_knowledge_trace: h.institutional_knowledge_trace.as_mut(),
             },
         )
         .unwrap();
