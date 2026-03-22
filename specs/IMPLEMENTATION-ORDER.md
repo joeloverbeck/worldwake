@@ -85,6 +85,7 @@ S11 ✅ (wound lifecycle audit completed)
 S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
 S12 ✅ (planner prerequisite-aware search heuristic completed)
 E16c ──→ S13 (political emergence golden coverage needs institutional beliefs)
+E16c ──→ S19 (institutional record consultation golden coverage needs ConsultRecord action + records)
 S15 ✅ (cross-system start-failure emergence golden coverage)
 S16 ✅ (S09 behavioral golden validation coverage)
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
@@ -166,6 +167,9 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S13**: Political Emergence Golden E2E Suites
   - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
+- **S19**: Institutional Record Consultation Golden E2E Suites
+  - needs E16c, E16d, S13 (institutional beliefs, ConsultRecord action, Record entities)
+  - adds ConsultRecord prerequisite coverage: local consultation, remote multi-hop record travel, and knowledge asymmetry race
 
 #### Phase 3 Gate
 - [ ] `OmniscientBeliefView` fully replaced — no code path uses it
@@ -227,6 +231,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
+| `S19-institutional-record-consultation-golden-suites.md` | 3 | 13 | E16c, E16d, S13, E14 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
