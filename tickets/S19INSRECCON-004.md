@@ -8,28 +8,29 @@
 
 ## Problem
 
-No golden test proves that institutional knowledge creates real competitive advantage through consultation duration cost. Existing Scenario 28 races two agents traveling from different locations — the asymmetry is geographic distance. Scenario 34 races two co-located agents where the asymmetry is knowledge state: one agent already knows the vacancy (Certain belief, skips ConsultRecord), while the other must consult the record first (Unknown belief, ConsultRecord takes ticks). The informed agent acts immediately and wins the office.
+No golden test proves that institutional knowledge creates real competitive advantage through consultation duration cost. Existing Scenario 28 races two agents traveling from different locations — the asymmetry is geographic distance. Scenario 34 races two co-located agents where the asymmetry is knowledge state: one agent already knows the vacancy (Certain belief, skips ConsultRecord), while the other must consult the record first (Unknown belief, ConsultRecord takes ticks). The informed agent acts immediately and wins the office because the consultation delay lawfully exceeds the office's succession window.
 
 This proves Principle 14 (Unknown vs Certain creates real behavioral divergence), Principle 20 (knowledge diversity → different competitive outcomes), and Principle 8 (consultation has real duration that costs competitive time).
 
 ## Assumption Reassessment (2026-03-22)
 
 1. Unit test `search_political_goal_skips_consult_record_when_vacancy_belief_is_already_certain` at `search.rs:5448` confirms Agent A (Certain) will plan DeclareSupport directly. Unit test at `search.rs:5330` confirms Agent B (Unknown) will plan ConsultRecord→DeclareSupport. The golden test validates that this planning divergence produces a competitive outcome divergence end-to-end.
-2. `seed_office()` creates records with `consultation_ticks: 4`. With `consultation_speed_factor: pm(500)`, the ConsultRecord handler computes duration as `ceil(4 * 1000 / 500) = 8 ticks`. **This math must be verified against the live `consult_record_actions.rs` handler during implementation.** If `consultation_speed_factor: pm(500)` means "half speed" (slower), 8 ticks is correct. If it means "50% of base" (faster), the setup needs `consultation_ticks` adjusted upward.
-3. The `GoalKind` under test is `ClaimOffice` for both agents. Agent A's plan: DeclareSupport (1 tick). Agent B's plan: ConsultRecord (8 ticks) → DeclareSupport (1 tick). With `succession_period_ticks: 5`, Agent A declares support on tick ~1, succession resolves around tick ~6. Agent B finishes consultation around tick ~8, declares support around tick ~9 — too late.
+2. Live consultation duration comes from `consultation_ticks * consultation_speed_factor / 1000`, floored by integer division and clamped to at least 1 tick. With the harness default `consultation_ticks: 4` and `consultation_speed_factor: pm(500)`, ConsultRecord takes 2 ticks, not 8. That is not enough by itself to make the informed agent win before support succession resolves.
+3. The `GoalKind` under test is `ClaimOffice` for both agents. Agent A's plan: `DeclareSupport` (1 tick). Agent B's plan: `ConsultRecord` → `DeclareSupport`. To preserve the intended invariant under the live engine, the scenario must explicitly raise the consulted record's `consultation_ticks` so B cannot finish consultation before the 5-tick support succession window closes.
 4. This is a golden E2E ticket. Full action registries required (provided by `GoldenHarness`).
-5. Ordering: the divergence depends on **consultation duration** (Agent B spends ticks consulting while Agent A acts immediately), not on tick ordering or priority class. Both agents have identical enterprise_weight, so candidate generation and ranking produce ClaimOffice at the same priority. The competitive outcome is driven purely by action duration asymmetry.
+5. Ordering: the divergence depends on **consultation duration relative to the succession timer** (Agent B spends ticks consulting while Agent A acts immediately), not on rank-weight asymmetry. Both agents have identical `enterprise_weight`, so the relevant planning divergence is knowledge state plus the legally configured record duration.
 8. Closure boundary: Agent A's `declare_support` commits (action trace) while Agent B is still executing `consult_record`. Succession resolves in A's favor (authoritative relation: `world.office_holder(office) == Some(agent_a)`). AI-layer: A's plan lacks ConsultRecord; B's plan includes ConsultRecord. Authoritative-layer: `office_holder()` returns A.
-10. Isolation: both agents sated, no competing needs. Both at VillageSquare, no travel needed. Both have identical enterprise_weight. The **only** variable is institutional knowledge state (Certain vs Unknown). This isolates consultation duration as the sole cause of competitive divergence.
+10. Isolation: both agents sated, no competing needs. Both at VillageSquare, no travel needed. Both have identical enterprise_weight. The decisive asymmetry is institutional knowledge state plus the authoritative consultation duration configured on the record.
 
 ## Architecture Check
 
 1. Follows the established multi-agent golden pattern from Scenario 12 (competing claims with supporter). Two agents with different knowledge states instead of different loyalty/social weights.
-2. No backward-compatibility shims introduced.
+2. The clean architecture is to make the decisive delay explicit in authoritative record state by raising `RecordData.consultation_ticks` for this scenario. That is better than pretending the existing `pm(500)` setting is slower or relying on nonexistent support-duration accumulation.
+3. No backward-compatibility shims introduced.
 
 ## Verification Layers
 
-1. Agent A's `declare_support` commits before Agent B's `consult_record` commits → action trace ordering
+1. Agent A's `declare_support` commits before Agent B finishes `consult_record` → action trace ordering
 2. Agent A is office holder, not Agent B → authoritative world state (`world.office_holder(office) == Some(agent_a)`)
 3. Agent A's plan has no ConsultRecord step; Agent B's plan includes ConsultRecord → decision trace
 4. Deterministic → replay companion
@@ -43,6 +44,7 @@ Setup function creating:
 - Two sated agents at `VILLAGE_SQUARE`, both with `enterprise_weighted_utility(pm(800))` and perception profiles.
 - Vacant office at `VILLAGE_SQUARE` via `seed_office()`.
 - Vacancy entry in the OfficeRegister via `seed_office_vacancy_entry()`.
+- Override the consulted OfficeRegister's `consultation_ticks` to a value that exceeds the `succession_period_ticks: 5` window under `consultation_speed_factor: pm(500)`. A concrete live-safe choice is `consultation_ticks: 12`, which yields a 6-tick consult.
 - Agent A ("Informed"): entity beliefs about office AND `seed_office_holder_belief(agent_a, office, None, ...)` — Certain(None) institutional belief. Planner skips ConsultRecord.
 - Agent B ("Uninformed"): entity beliefs about office and record, but **no** `seed_office_holder_belief()` — Unknown institutional belief. Planner inserts ConsultRecord.
 
@@ -85,8 +87,8 @@ Runs 30 ticks. Asserts:
 
 1. Agent A must not consult any record — it already knows the vacancy (Certain belief)
 2. Agent B must consult the record before declaring support — it starts with Unknown belief
-3. Agent A wins the office — the informed agent's time advantage from skipping consultation must be decisive
-4. Both agents have identical enterprise_weight and physical setup — knowledge state is the only differentiator
+3. Agent A wins the office — the informed agent's time advantage from skipping consultation must be decisive under the scenario's explicit record-duration setup
+4. Both agents have identical enterprise_weight, location, and office access. The decisive asymmetry is knowledge state plus the authoritative consultation duration configured on the record
 5. Determinism: two runs with same seed produce identical state hashes
 6. All existing golden tests continue to pass unchanged
 
@@ -94,7 +96,7 @@ Runs 30 ticks. Asserts:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_offices.rs::golden_knowledge_asymmetry_race_informed_wins_office` — proves knowledge asymmetry → consultation duration → competitive outcome
+1. `crates/worldwake-ai/tests/golden_offices.rs::golden_knowledge_asymmetry_race_informed_wins_office` — proves knowledge asymmetry + explicit record consultation duration → competitive outcome
 2. `crates/worldwake-ai/tests/golden_offices.rs::golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` — deterministic replay
 
 ### Commands

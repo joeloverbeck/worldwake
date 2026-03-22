@@ -698,6 +698,9 @@ mod tests {
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
+    type SupportDeclarationBeliefs =
+        BTreeMap<EntityId, Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)>>;
+
     struct StubBeliefView {
         current_tick: Tick,
         alive: BTreeMap<EntityId, bool>,
@@ -714,8 +717,7 @@ mod tests {
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
-        support_declaration_beliefs:
-            BTreeMap<EntityId, Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)>>,
+        support_declaration_beliefs: SupportDeclarationBeliefs,
     }
 
     impl Default for StubBeliefView {

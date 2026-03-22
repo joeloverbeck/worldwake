@@ -15,18 +15,19 @@ This proves Principle 7 (locality — must physically travel to record location 
 ## Assumption Reassessment (2026-03-22)
 
 1. The prototype topology at `topology.rs:460–528` confirms: VillageSquare ↔ RulersHall with 1-tick edges. OrchardFarm → EastFieldTrail (2 ticks) → SouthGate (1 tick) → VillageSquare (1 tick) → RulersHall (1 tick). Total OrchardFarm→RulersHall = 5 ticks. RulersHall→VillageSquare = 1 tick.
-2. `seed_office()` creates records at the office's jurisdiction. For this scenario, the office jurisdiction is VillageSquare but the record must be at RulersHall. This means we must either: (a) create the office first (which places records at VillageSquare), then create a separate OfficeRegister at RulersHall, or (b) create the office without auto-records and manually create records at RulersHall.
+2. `seed_office()` creates records at the office jurisdiction. For this scenario, the office jurisdiction is VillageSquare but the consulted record must be at RulersHall. With the new harness helper from S19INSRECCON-001, the clean setup is: create the office normally, then call `seed_office_register(..., RULERS_HALL)` and append the vacancy entry there.
 3. The `GoalKind` under test is `ClaimOffice`. The planner must produce a 4-step plan: Travel(→RulersHall) → ConsultRecord → Travel(→VillageSquare) → DeclareSupport. The planner's ability to route through the record location before the office jurisdiction is the contract under test.
-4. This is a golden E2E ticket. Full action registries required (provided by `GoldenHarness`).
-5. No ordering dependency between agents — single agent scenario.
+4. Live consultation duration comes from `consultation_ticks * consultation_speed_factor / 1000`, floored by integer division and clamped to at least 1 tick. With the harness default `consultation_ticks: 4` and `consultation_speed_factor: pm(500)`, ConsultRecord takes 2 ticks.
+5. This is a golden E2E ticket. Full action registries required (provided by `GoldenHarness`).
+6. No ordering dependency between agents — single agent scenario.
 8. Closure boundary: travel commits reaching RulersHall (action trace) → ConsultRecord committed (action trace) → travel commits reaching VillageSquare (action trace) → DeclareSupport committed (action trace) → succession installs office holder (authoritative relation). AI-layer: plan shape is Travel→ConsultRecord→Travel→DeclareSupport.
 10. Isolation: single agent, sated, no competing affordances. The contract is the multi-hop information-gathering path shape.
-12. Duration math: OrchardFarm→RulersHall travel = 5 ticks. ConsultRecord = ceil(4 * 1000 / 500) = 8 ticks (with `consultation_speed_factor: pm(500)`). RulersHall→VillageSquare travel = 1 tick. DeclareSupport = 1 tick. Succession period = 5 ticks. Total ≈ 20 ticks. Use 40-tick run for margin.
+12. Duration math: OrchardFarm→RulersHall travel = 5 ticks. ConsultRecord = 2 ticks with `consultation_ticks: 4` and `consultation_speed_factor: pm(500)`. RulersHall→VillageSquare travel = 1 tick. DeclareSupport = 1 tick. Succession period = 5 ticks. Total ≈ 14 ticks. Use a 30- to 40-tick run for margin.
 
 ## Architecture Check
 
 1. Follows the established `build_*_scenario` + `run_*` + test + replay pattern. The setup is more complex (remote record at different location from office jurisdiction) but the test structure is identical.
-2. The OfficeRegister record must be at RulersHall. Since `seed_office()` auto-creates records at the office jurisdiction (VillageSquare), the scenario setup must explicitly create a separate OfficeRegister at RulersHall. The VillageSquare records created by `seed_office()` exist but are not seeded into the agent's beliefs — the agent only knows about the RulersHall record.
+2. The OfficeRegister record must be at RulersHall. Since `seed_office()` auto-creates records at the office jurisdiction (VillageSquare), the scenario setup should explicitly use `seed_office_register(..., RULERS_HALL)` and seed the vacancy entry there. The VillageSquare records created by `seed_office()` still exist, but the agent only knows about the RulersHall record.
 3. No backward-compatibility shims introduced.
 
 ## Verification Layers
@@ -48,7 +49,7 @@ This proves Principle 7 (locality — must physically travel to record location 
 Setup function creating:
 - Single sated agent at `ORCHARD_FARM` with `enterprise_weighted_utility(pm(800))` and perception profile.
 - Vacant office ("Village Elder") at `VILLAGE_SQUARE` via `seed_office()`.
-- Separate OfficeRegister record at `RULERS_HALL` with vacancy entry. Created via `WorldTxn::create_record()` + `seed_office_vacancy_entry()`.
+- Separate OfficeRegister record at `RULERS_HALL` with vacancy entry. Created via `seed_office_register()` + `seed_office_vacancy_entry()`.
 - Entity beliefs: agent has beliefs about the office (at VillageSquare), the RulersHall record, and relevant places (OrchardFarm, RulersHall, VillageSquare, and intermediate places on the route). **No** institutional belief about office holder.
 
 ### 2. Add `run_remote_record_consultation()` function

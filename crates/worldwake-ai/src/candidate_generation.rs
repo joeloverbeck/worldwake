@@ -4800,6 +4800,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn political_candidates_use_institutional_beliefs_for_unknown_certain_and_conflicted_reads() {
         let agent = entity(1);
         let office = entity(2);
@@ -5045,6 +5046,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn political_candidates_require_visible_vacancy_and_skip_existing_declaration() {
         let agent = entity(1);
         let office = entity(2);

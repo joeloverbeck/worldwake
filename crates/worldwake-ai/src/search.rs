@@ -5327,6 +5327,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belief_unknown() {
         let actor = entity(1);
         let candidate = entity(2);

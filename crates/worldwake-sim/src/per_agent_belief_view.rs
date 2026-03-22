@@ -1666,6 +1666,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn political_queries_use_belief_backed_institutional_reads_and_actor_private_relations() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();

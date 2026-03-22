@@ -56,6 +56,8 @@ pub fn nz(value: u32) -> NonZeroU32 {
 pub const VILLAGE_SQUARE: EntityId = prototype_place_entity(PrototypePlace::VillageSquare);
 /// Orchard Farm — slot 1.
 pub const ORCHARD_FARM: EntityId = prototype_place_entity(PrototypePlace::OrchardFarm);
+/// Ruler's Hall — village hall, slot 4.
+pub const RULERS_HALL: EntityId = prototype_place_entity(PrototypePlace::RulersHall);
 /// Public Latrine — sanitation facility in the village.
 pub const PUBLIC_LATRINE: EntityId = prototype_place_entity(PrototypePlace::PublicLatrine);
 
@@ -276,6 +278,7 @@ pub fn seed_belief_from_world(
     belief
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn seed_office_holder_belief(
     world: &mut World,
     event_log: &mut EventLog,
@@ -292,7 +295,7 @@ pub fn seed_office_holder_belief(
         .unwrap_or_else(AgentBeliefStore::new);
     let profile = world
         .get_component_perception_profile(agent)
-        .cloned()
+        .copied()
         .unwrap_or_default();
     store.record_institutional_belief(
         InstitutionalBeliefKey::OfficeHolderOf { office },
@@ -315,6 +318,7 @@ pub fn seed_office_holder_belief(
     commit_txn(txn, event_log);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn seed_faction_membership_belief(
     world: &mut World,
     event_log: &mut EventLog,
@@ -332,7 +336,7 @@ pub fn seed_faction_membership_belief(
         .unwrap_or_else(AgentBeliefStore::new);
     let profile = world
         .get_component_perception_profile(agent)
-        .cloned()
+        .copied()
         .unwrap_or_default();
     store.record_institutional_belief(
         InstitutionalBeliefKey::FactionMembersOf { faction },
@@ -356,6 +360,7 @@ pub fn seed_faction_membership_belief(
     commit_txn(txn, event_log);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn seed_support_declaration_belief(
     world: &mut World,
     event_log: &mut EventLog,
@@ -373,7 +378,7 @@ pub fn seed_support_declaration_belief(
         .unwrap_or_else(AgentBeliefStore::new);
     let profile = world
         .get_component_perception_profile(agent)
-        .cloned()
+        .copied()
         .unwrap_or_default();
     store.record_institutional_belief(
         InstitutionalBeliefKey::SupportFor { supporter, office },
@@ -737,6 +742,38 @@ pub fn add_hostility(
 // Office / Faction / Political helpers
 // ---------------------------------------------------------------------------
 
+fn find_office_register_at(world: &World, place: EntityId) -> Option<EntityId> {
+    world.query_record_data().find_map(|(entity, record)| {
+        (record.record_kind == RecordKind::OfficeRegister && record.home_place == place)
+            .then_some(entity)
+    })
+}
+
+pub fn seed_office_register(
+    world: &mut World,
+    event_log: &mut EventLog,
+    place: EntityId,
+) -> EntityId {
+    if let Some(record) = find_office_register_at(world, place) {
+        return record;
+    }
+
+    let mut txn = new_txn(world, 0);
+    let record = txn
+        .create_record(RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place: place,
+            issuer: place,
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .expect("golden harness should be able to create office registers");
+    commit_txn(txn, event_log);
+    record
+}
+
 /// Create a vacant Office entity with `OfficeData` at a jurisdiction.
 pub fn seed_office(
     world: &mut World,
@@ -781,6 +818,28 @@ pub fn seed_office(
     }
     commit_txn(txn, event_log);
     office
+}
+
+pub fn seed_office_vacancy_entry(
+    world: &mut World,
+    event_log: &mut EventLog,
+    office: EntityId,
+    record_place: EntityId,
+) {
+    let record = find_office_register_at(world, record_place).unwrap_or_else(|| {
+        panic!("expected OfficeRegister at place {record_place:?} before seeding vacancy entry")
+    });
+    let mut txn = new_txn(world, 0);
+    txn.append_record_entry(
+        record,
+        InstitutionalClaim::OfficeHolder {
+            office,
+            holder: None,
+            effective_tick: Tick(0),
+        },
+    )
+    .expect("golden harness should be able to append office vacancy entries");
+    commit_txn(txn, event_log);
 }
 
 /// Create a Faction entity with `FactionData`.
@@ -1494,6 +1553,107 @@ mod tests {
         assert_eq!(
             agent_belief_about(&h.world, speaker, subject),
             Some(&subject_belief)
+        );
+    }
+
+    #[test]
+    fn seed_office_register_reuses_existing_local_register_and_creates_remote_register() {
+        let mut h = GoldenHarness::new(Seed([49; 32]));
+        let office = seed_office(
+            &mut h.world,
+            &mut h.event_log,
+            "Village Elder",
+            VILLAGE_SQUARE,
+            SuccessionLaw::Support,
+            5,
+            vec![],
+        );
+
+        let local_record = seed_office_register(&mut h.world, &mut h.event_log, VILLAGE_SQUARE);
+        let local_record_data = h
+            .world
+            .get_component_record_data(local_record)
+            .expect("local office register should exist");
+        assert_eq!(local_record_data.record_kind, RecordKind::OfficeRegister);
+        assert_eq!(local_record_data.home_place, VILLAGE_SQUARE);
+        assert_eq!(local_record_data.consultation_ticks, 4);
+        assert_eq!(local_record_data.max_entries_per_consult, 6);
+
+        let local_matches = h
+            .world
+            .query_record_data()
+            .filter(|(_, record)| {
+                record.record_kind == RecordKind::OfficeRegister
+                    && record.home_place == VILLAGE_SQUARE
+            })
+            .count();
+        assert_eq!(
+            local_matches, 1,
+            "seed_office_register should reuse the existing local office register"
+        );
+
+        let remote_record = seed_office_register(&mut h.world, &mut h.event_log, RULERS_HALL);
+        let remote_record_data = h
+            .world
+            .get_component_record_data(remote_record)
+            .expect("remote office register should be created");
+        assert_eq!(remote_record_data.record_kind, RecordKind::OfficeRegister);
+        assert_eq!(remote_record_data.home_place, RULERS_HALL);
+        assert_eq!(remote_record_data.issuer, RULERS_HALL);
+        assert_eq!(remote_record_data.consultation_ticks, 4);
+        assert_eq!(remote_record_data.max_entries_per_consult, 6);
+        assert!(remote_record_data.entries.is_empty());
+
+        let remote_matches = h
+            .world
+            .query_record_data()
+            .filter(|(_, record)| {
+                record.record_kind == RecordKind::OfficeRegister
+                    && record.home_place == RULERS_HALL
+            })
+            .count();
+        assert_eq!(remote_matches, 1);
+        assert_ne!(local_record, remote_record);
+        assert!(
+            h.world.get_component_office_data(office).is_some(),
+            "office seeding should remain intact while record helpers run"
+        );
+    }
+
+    #[test]
+    fn seed_office_vacancy_entry_appends_authoritative_office_holder_none_claim() {
+        let mut h = GoldenHarness::new(Seed([50; 32]));
+        let office = seed_office(
+            &mut h.world,
+            &mut h.event_log,
+            "Village Elder",
+            VILLAGE_SQUARE,
+            SuccessionLaw::Support,
+            5,
+            vec![],
+        );
+
+        let record = seed_office_register(&mut h.world, &mut h.event_log, VILLAGE_SQUARE);
+        seed_office_vacancy_entry(&mut h.world, &mut h.event_log, office, VILLAGE_SQUARE);
+
+        let record_data = h
+            .world
+            .get_component_record_data(record)
+            .expect("office register should still exist after appending vacancy");
+        assert_eq!(record_data.entries.len(), 1);
+        assert_eq!(record_data.next_entry_id, 1);
+
+        let entry = &record_data.entries[0];
+        assert_eq!(entry.recorded_tick, Tick(0));
+        assert_eq!(entry.supersedes, None);
+        assert_eq!(entry.entry_id.0, 0);
+        assert_eq!(
+            entry.claim,
+            InstitutionalClaim::OfficeHolder {
+                office,
+                holder: None,
+                effective_tick: Tick(0),
+            }
         );
     }
 

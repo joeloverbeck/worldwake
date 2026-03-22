@@ -16,9 +16,10 @@ Scenario 32 proves that when an agent has Unknown institutional belief about an 
 
 1. Unit test `search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belief_unknown` at `search.rs:5330` confirms the planner inserts ConsultRecord when `InstitutionalBeliefRead::Unknown`. This unit test validates the planning layer; the golden test validates end-to-end execution.
 2. Unit test `search_political_goal_skips_consult_record_when_vacancy_belief_is_already_certain` at `search.rs:5448` confirms the planner skips ConsultRecord when belief is `Certain`. This is the contrast behavior exercised by existing Scenario 11.
-3. The `GoalKind` under test is `ClaimOffice`. The planner operator surface is: `ConsultRecord` (prerequisite when Unknown) → `DeclareSupport` (terminal). The affordance surface requires: the agent has entity belief about the office, the office has `SuccessionLaw::Support`, and the agent is at the office jurisdiction (for DeclareSupport) and at the record's home_place (for ConsultRecord).
-4. This is a golden E2E ticket. Full action registries are required (already provided by `GoldenHarness`).
-5. No ordering dependency between agents — single agent scenario.
+3. The `GoalKind` under test is `ClaimOffice`. The planner operator surface is: `ConsultRecord` (prerequisite when Unknown) → `DeclareSupport` (terminal). The affordance surface requires: the agent has entity belief about the office, the office has `SuccessionLaw::Support`, and the agent is at the office jurisdiction (for `DeclareSupport`) and at the record's `home_place` (for `ConsultRecord`).
+4. Live consultation duration comes from `consultation_ticks * consultation_speed_factor / 1000` in `action_semantics.rs`, floored by integer division and clamped to at least 1 tick. With the harness default `consultation_ticks: 4` and `consultation_speed_factor: pm(500)`, ConsultRecord takes 2 ticks, not 8.
+5. This is a golden E2E ticket. Full action registries are required (already provided by `GoldenHarness`).
+6. No ordering dependency between agents — single agent scenario.
 8. The closure boundary asserted is: ConsultRecord committed (action trace) → DeclareSupport committed (action trace) → succession resolution installs office holder (authoritative relation: `world.office_holder(office) == Some(agent)`). AI-layer symbols: `ClaimOffice` candidate in `DecisionOutcome::Planning`, plan shape includes `ConsultRecord` step. Authoritative-layer: `office_holder()` relation query.
 10. Isolation: single agent, sated (no competing needs), single office, no other agents (no competing claimants). The only lawful branch is the ConsultRecord → DeclareSupport chain.
 
@@ -40,7 +41,7 @@ Scenario 32 proves that when an agent has Unknown institutional belief about an 
 ### 1. Add `build_consult_record_prerequisite_scenario()` in `golden_offices.rs`
 
 Setup function creating:
-- Single sated agent at `VILLAGE_SQUARE` with `enterprise_weighted_utility(pm(800))` and `PerceptionProfile { institutional_memory_capacity: 20, consultation_speed_factor: pm(500), ... }`.
+- Single sated agent at `VILLAGE_SQUARE` with `enterprise_weighted_utility(pm(800))` and `PerceptionProfile { institutional_memory_capacity: 20, consultation_speed_factor: pm(500), ... }`. In current code this makes consultation faster than baseline, not slower.
 - Vacant office at `VILLAGE_SQUARE` via `seed_office()` (creates OfficeRegister record with empty entries).
 - Vacancy entry in the OfficeRegister via `seed_office_vacancy_entry(world, event_log, office, VILLAGE_SQUARE)` from S19INSRECCON-001.
 - Entity beliefs about office and record via `seed_actor_beliefs()`.
@@ -48,7 +49,7 @@ Setup function creating:
 
 ### 2. Add `run_consult_record_prerequisite()` function
 
-Runs 30 ticks (ConsultRecord ~8 ticks + DeclareSupport 1 tick + succession period 5 ticks + margin). Asserts:
+Runs 20 ticks (ConsultRecord 2 ticks + DeclareSupport 1 tick + succession period 5 ticks + margin). Asserts:
 1. Action trace: `consult_record` committed before `declare_support` (using `ActionTraceSink`).
 2. Authoritative state: `world.office_holder(office) == Some(agent)`.
 3. Decision trace: early-tick plan includes ConsultRecord step.

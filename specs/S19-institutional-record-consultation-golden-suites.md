@@ -51,7 +51,7 @@ All existing political goldens (Scenarios 11-19, 22-25, 28) use `seed_office_hol
 **Emergent behavior proven**:
 - Agent generates ClaimOffice candidate (the goal is generatable even with Unknown belief, per `goal_model.rs:893`).
 - Planner inserts ConsultRecord as mid-plan prerequisite because belief is Unknown (per `search.rs:5330` unit test contract).
-- Agent executes ConsultRecord (3 ticks scaled by `consultation_speed_factor`).
+- Agent executes ConsultRecord. Under the live duration formula, `pm(500)` makes consultation faster than baseline, not slower.
 - ConsultRecord handler projects `Certain(None)` into agent's institutional belief store.
 - Agent then executes DeclareSupport(self).
 - After succession period, succession system installs agent as office holder.
@@ -78,13 +78,13 @@ All existing political goldens (Scenarios 11-19, 22-25, 28) use `seed_office_hol
 **Setup**:
 - Single sated agent at OrchardFarm with high `enterprise_weight` (pm(800)). PerceptionProfile with `institutional_memory_capacity: 20`, `consultation_speed_factor: pm(500)`.
 - Vacant office ("Village Elder") at VillageSquare with `SuccessionLaw::Support`, `succession_period_ticks: 5`, no eligibility rules.
-- Office register (Record entity, `RecordKind::OfficeRegister`) at RulersHall with `consultation_ticks: 3`, one entry recording vacancy.
+- Office register (Record entity, `RecordKind::OfficeRegister`) at RulersHall with live helper defaults (`consultation_ticks: 4`), plus one entry recording vacancy.
 - Agent has entity beliefs about office (at VillageSquare), record (at RulersHall), and relevant places. **No institutional belief about office holder** — `InstitutionalBeliefRead::Unknown`.
 
 **Topology for this scenario**:
 - OrchardFarm → EastFieldTrail (2 ticks) → SouthGate (1 tick) → VillageSquare (1 tick) → RulersHall (1 tick) = 5 ticks to record
 - RulersHall → VillageSquare = 1 tick to office jurisdiction
-- Total travel: 6 ticks + consultation (3 ticks scaled) + DeclareSupport + succession period
+- Total travel: 6 ticks + consultation (2 ticks with the live helper defaults and `pm(500)`) + DeclareSupport + succession period
 
 **Emergent behavior proven**:
 - Agent generates ClaimOffice candidate despite being far from both record and office.
@@ -116,19 +116,19 @@ All existing political goldens (Scenarios 11-19, 22-25, 28) use `seed_office_hol
 **Setup**:
 - Two sated agents at VillageSquare, both with high `enterprise_weight` (pm(800)). Both have PerceptionProfiles.
 - Vacant office ("Village Elder") at VillageSquare with `SuccessionLaw::Support`, `succession_period_ticks: 5`, no eligibility rules.
-- Office register (Record entity, `RecordKind::OfficeRegister`) at VillageSquare with `consultation_ticks: 4` (long enough to create meaningful delay), one entry recording vacancy.
+- Office register (Record entity, `RecordKind::OfficeRegister`) at VillageSquare with `consultation_ticks: 12`, one entry recording vacancy. This explicit duration is required because the live `pm(500)` profile halves consultation time.
 - Agent A ("Informed"): has entity beliefs about office AND `Certain(None)` institutional belief about office holder (seeded via `seed_office_holder_belief`). The planner will skip ConsultRecord for A.
 - Agent B ("Uninformed"): has entity beliefs about office and record, but **no institutional belief about office holder** — `Unknown`. The planner will insert ConsultRecord for B.
 
 **Emergent behavior proven**:
 - Both agents generate ClaimOffice candidates on the same tick.
 - Agent A's plan: DeclareSupport(self) — immediate, no prerequisites.
-- Agent B's plan: ConsultRecord(record) → DeclareSupport(self) — consultation takes 4 ticks (scaled by `consultation_speed_factor`).
+- Agent B's plan: ConsultRecord(record) → DeclareSupport(self). Under the live duration formula, `consultation_ticks: 12` with `consultation_speed_factor: pm(500)` yields a 6-tick consult, which lawfully exceeds the 5-tick succession window.
 - Agent A declares support immediately. Succession period begins counting A's support.
 - Agent B spends ticks consulting the record, then declares support — but A already has a head start in the succession window.
-- Succession installs Agent A (more support ticks accumulated, or sole supporter at resolution time).
+- Succession installs Agent A because support succession resolves on the current declarations at the end of the vacancy timer, and Agent B has not yet finished consultation and declared support.
 - Agent B either declares support after A is already installed (resulting in StartFailed or no-op), or B's support arrives too late to change the outcome.
-- **The competitive outcome (who holds office) emerges from knowledge state + consultation duration, not from any explicit priority or ordering system.**
+- **The competitive outcome (who holds office) emerges from knowledge state + authoritative record duration, not from any explicit priority or ordering system.**
 
 **Assertion surface**:
 1. Action traces: A's `declare_support` commits before B's `consult_record` commits (A acts immediately while B is still consulting)
@@ -138,11 +138,11 @@ All existing political goldens (Scenarios 11-19, 22-25, 28) use `seed_office_hol
 
 **Why distinct from Scenario 28** (remote office claim race): Scenario 28 races two agents who both travel from different locations to the same office — the asymmetry is geographic distance. Scenario 34 races two co-located agents where the asymmetry is knowledge state — one must consult a record (costing time) while the other already knows. This proves that institutional knowledge is a real competitive resource, not just a planning convenience.
 
-**Scenario isolation**: Both agents are sated with no competing needs. No travel needed (all co-located). The only variable between agents is institutional knowledge state. This isolates the consultation duration as the sole cause of competitive divergence.
+**Scenario isolation**: Both agents are sated with no competing needs. No travel needed (all co-located). The decisive asymmetry is institutional knowledge state plus the explicit consultation duration configured on the record.
 
-**Setup math**: With `consultation_ticks: 4` and `consultation_speed_factor: pm(500)`, actual consultation duration = ceil(4 * 1000 / 500) = 8 ticks. DeclareSupport is a 1-tick action. So A declares support on tick ~1, while B finishes consultation around tick ~8 and declares support around tick ~9. With `succession_period_ticks: 5`, A has accumulated 5+ ticks of support before B even starts, ensuring A wins.
+**Setup math**: Live code computes consultation duration as `max(1, floor(consultation_ticks * consultation_speed_factor / 1000))`. With `consultation_ticks: 12` and `consultation_speed_factor: pm(500)`, B's consult takes 6 ticks. DeclareSupport is a 1-tick action. So A can declare immediately and the 5-tick support succession window can resolve before B finishes consultation and submits any competing declaration.
 
-**Note**: The exact consultation duration scaling formula should be verified during ticket reassessment against the live `consult_record_actions.rs` handler. If `consultation_speed_factor: pm(500)` means "half speed" (takes longer), the 8-tick estimate holds. If it means "50% of normal duration" (takes shorter), adjust `consultation_ticks` accordingly.
+**Note**: Live reassessment corrected the earlier assumption here. `consultation_speed_factor: pm(500)` means 50% of base duration in the current engine, so scenarios that need a long consult must raise `consultation_ticks` explicitly in record state.
 
 ## FND-01 Section H
 
@@ -164,7 +164,7 @@ No new positive-feedback loops are introduced by these test scenarios — they e
 
 ### H.3 Concrete Dampeners
 
-- Consultation duration (physical time cost — `consultation_ticks` scaled by `consultation_speed_factor`)
+- Consultation duration (physical time cost — `consultation_ticks * consultation_speed_factor / 1000`, floored and clamped to at least 1 tick)
 - Travel time to record location (physical distance cost)
 - Succession period delay (physical time gate on office installation)
 - Enterprise weight threshold (agent-specific motivation gate)
@@ -174,7 +174,7 @@ No new positive-feedback loops are introduced by these test scenarios — they e
 
 **Stored (authoritative)**: `RecordData` component (entries, consultation_ticks, home_place), `AgentBeliefStore.institutional_beliefs` (post-consultation), office-holder relation, `OfficeData` component, `PerceptionProfile` (consultation_speed_factor)
 
-**Derived (transient)**: `InstitutionalBeliefRead::Unknown` / `Certain` / `Conflicted` (derived from belief store queries), plan shape including/excluding ConsultRecord (derived by planner from belief state), consultation duration (derived from `consultation_ticks * 1000 / consultation_speed_factor`), office-holder outcome (consequence of succession resolution)
+**Derived (transient)**: `InstitutionalBeliefRead::Unknown` / `Certain` / `Conflicted` (derived from belief store queries), plan shape including/excluding ConsultRecord (derived by planner from belief state), consultation duration (derived from `consultation_ticks * consultation_speed_factor / 1000`, floored and clamped), office-holder outcome (consequence of succession resolution)
 
 ## Cross-System Interactions (Principle 24)
 
@@ -196,7 +196,7 @@ No new positive-feedback loops are introduced by these test scenarios — they e
 1. Agent A: AI reads `Certain(None)` → plans DeclareSupport directly (no ConsultRecord)
 2. Agent B: AI reads `Unknown` → plans ConsultRecord→DeclareSupport
 3. A commits DeclareSupport while B is still consulting (action duration asymmetry)
-4. Succession resolves in A's favor (A has more accumulated support ticks)
+4. Succession resolves in A's favor because the support timer closes before B can submit a competing declaration
 5. B's eventual DeclareSupport either arrives after A's installation or competes too late
 
 ## Tickets
@@ -250,7 +250,7 @@ No new positive-feedback loops are introduced by these test scenarios — they e
 **Deliverable**: Add S19 scenarios to coverage matrix and cross-system chains in `docs/golden-e2e-coverage.md`. New cross-system chains:
 - ConsultRecord prerequisite → institutional belief acquisition → political action (32)
 - Remote record → travel to record → consultation → travel to office → political action (33)
-- Knowledge asymmetry → consultation duration cost → competitive political outcome (34)
+- Knowledge asymmetry → consultation duration cost encoded in authoritative record state → competitive political outcome (34)
 
 ---
 
