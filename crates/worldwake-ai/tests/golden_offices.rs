@@ -2,7 +2,7 @@
 
 mod golden_harness;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use golden_harness::*;
 use worldwake_ai::{
@@ -12,7 +12,7 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, AgentData, BeliefConfidencePolicy,
-    BelievedEntityState, CombatProfile, CommodityKind, ControlSource, DriveThresholds, EventTag,
+    CombatProfile, CommodityKind, ControlSource, DriveThresholds, EventTag,
     FactionPurpose, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, MetabolismProfile,
     PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed, StateHash,
     SuccessionLaw, TellProfile, Tick, UtilityProfile,
@@ -224,73 +224,6 @@ fn set_control_source(
     txn.set_component_agent_data(agent, AgentData { control_source })
         .unwrap();
     commit_txn(txn, &mut h.event_log);
-}
-
-fn seed_known_office_at_place(
-    world: &mut worldwake_core::World,
-    event_log: &mut worldwake_core::EventLog,
-    agent: worldwake_core::EntityId,
-    office: worldwake_core::EntityId,
-    place: worldwake_core::EntityId,
-    tick: Tick,
-) {
-    seed_belief(
-        world,
-        event_log,
-        agent,
-        office,
-        BelievedEntityState {
-            last_known_place: Some(place),
-            last_known_inventory: BTreeMap::default(),
-            workstation_tag: None,
-            resource_source: None,
-            alive: true,
-            wounds: Vec::new(),
-            last_known_courage: None,
-            observed_tick: tick,
-            source: PerceptionSource::DirectObservation,
-        },
-    );
-}
-
-#[allow(clippy::too_many_arguments)]
-fn seed_force_controller_belief(
-    world: &mut worldwake_core::World,
-    event_log: &mut worldwake_core::EventLog,
-    agent: worldwake_core::EntityId,
-    office: worldwake_core::EntityId,
-    controller: Option<worldwake_core::EntityId>,
-    contested: bool,
-    tick: Tick,
-    learned_at: Option<worldwake_core::EntityId>,
-) {
-    let mut store = world
-        .get_component_agent_belief_store(agent)
-        .cloned()
-        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
-    let profile = world
-        .get_component_perception_profile(agent)
-        .copied()
-        .unwrap_or_default();
-    store.record_institutional_belief(
-        worldwake_core::InstitutionalBeliefKey::ForceControllerOf { office },
-        worldwake_core::BelievedInstitutionalClaim {
-            claim: worldwake_core::InstitutionalClaim::ForceControl {
-                office,
-                controller,
-                contested,
-                effective_tick: tick,
-            },
-            source: worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-            learned_tick: tick,
-            learned_at,
-        },
-        &profile,
-    );
-
-    let mut txn = new_txn(world, tick.0);
-    txn.set_component_agent_belief_store(agent, store).unwrap();
-    commit_txn(txn, event_log);
 }
 
 #[test]

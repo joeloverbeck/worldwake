@@ -8,6 +8,7 @@
 
 mod timeline;
 
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
@@ -865,6 +866,75 @@ pub fn seed_office_vacancy_entry(
         },
     )
     .expect("golden harness should be able to append office vacancy entries");
+    commit_txn(txn, event_log);
+}
+
+/// Seed a belief that `office` was last seen at `place`.
+pub fn seed_known_office_at_place(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    office: EntityId,
+    place: EntityId,
+    tick: Tick,
+) {
+    seed_belief(
+        world,
+        event_log,
+        agent,
+        office,
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: BTreeMap::default(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            observed_tick: tick,
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+}
+
+/// Seed an `InstitutionalClaim::ForceControl` belief into an agent's belief store.
+#[allow(clippy::too_many_arguments)]
+pub fn seed_force_controller_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    office: EntityId,
+    controller: Option<EntityId>,
+    contested: bool,
+    tick: Tick,
+    learned_at: Option<EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .copied()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        InstitutionalBeliefKey::ForceControllerOf { office },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::ForceControl {
+                office,
+                controller,
+                contested,
+                effective_tick: tick,
+            },
+            source: InstitutionalKnowledgeSource::WitnessedEvent,
+            learned_tick: tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, tick.0);
+    txn.set_component_agent_belief_store(agent, store).unwrap();
     commit_txn(txn, event_log);
 }
 

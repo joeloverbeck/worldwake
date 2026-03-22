@@ -1,6 +1,6 @@
 # S16BFORLEGEMEGOL-001: Promote force-control harness helpers to shared golden_harness
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -79,3 +79,10 @@ Delete the two function definitions from `golden_offices.rs`. Since the file alr
 1. `cargo test -p worldwake-ai --test golden_offices`
 2. `cargo test -p worldwake-ai --test golden_emergent`
 3. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-22
+- **What changed**: Promoted `seed_known_office_at_place` and `seed_force_controller_belief` from file-local functions in `golden_offices.rs` to `pub` helpers in `golden_harness/mod.rs`. Added `BTreeMap` import to harness. Removed unused `BTreeMap` and `BelievedEntityState` imports from `golden_offices.rs`.
+- **Deviations**: None.
+- **Verification**: golden_offices 35/35 passed, golden_emergent 38/38 passed, clippy clean.
