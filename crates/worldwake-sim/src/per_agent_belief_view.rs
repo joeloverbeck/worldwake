@@ -8,10 +8,11 @@ use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
     BelievedEntityState, CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
     ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource,
-    TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
+    WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -789,6 +790,13 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .filter(|holder| *holder == self.agent || self.believed_entity(*holder).is_some())
     }
 
+    fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        self.belief_store.believed_office_holder(office)
+    }
+
     fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
         if member != self.agent && self.believed_entity(member).is_none() {
             return Vec::new();
@@ -816,10 +824,27 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.world.support_declaration(supporter, office)
     }
 
+    fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        self.belief_store
+            .believed_support_declaration(office, supporter)
+    }
+
     fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
         // Pre-E14: delegate to world directly, matching support_declaration() pattern.
         // Post-E14: gate by observation (agent must have perceived each declaration).
         self.world.support_declarations_for_office(office)
+    }
+
+    fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+        self.belief_store
+            .believed_support_declarations_for_office(office)
     }
 
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
@@ -873,10 +898,12 @@ mod tests {
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
         CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
-        FactionPurpose, MerchandiseProfile, OfficeData, PerceptionProfile, Permille, Quantity,
-        RecordData, RecordKind, RecipientKnowledgeStatus, ResourceSource, SuccessionLaw,
-        TellMemoryKey, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile,
+        Permille, Quantity, RecordData, RecordKind, RecipientKnowledgeStatus, ResourceSource,
+        SuccessionLaw, TellMemoryKey, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1732,6 +1759,95 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::support_declaration(&view, agent, office),
             Some(holder)
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_reads_from_institutional_belief_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, holder, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            commit_txn(txn);
+            (agent, holder, office)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::OfficeHolder {
+                    office,
+                    holder: Some(holder),
+                    effective_tick: Tick(3),
+                },
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::believed_office_holder(&view, office),
+            InstitutionalBeliefRead::Certain(Some(holder))
+        );
+    }
+
+    #[test]
+    fn believed_support_declarations_for_office_reads_from_institutional_belief_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, supporter, candidate, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let supporter = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let candidate = txn.create_agent("Cora", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(supporter, place).unwrap();
+            txn.set_ground_location(candidate, place).unwrap();
+            commit_txn(txn);
+            (agent, supporter, candidate, office)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor { supporter, office },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::SupportDeclaration {
+                    office,
+                    supporter,
+                    candidate: Some(candidate),
+                    effective_tick: Tick(5),
+                },
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: office,
+                    entry_id: worldwake_core::RecordEntryId(1),
+                },
+                learned_tick: Tick(6),
+                learned_at: Some(place),
+            }],
+        );
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::believed_support_declaration(&view, office, supporter),
+            InstitutionalBeliefRead::Certain(Some(candidate))
+        );
+        assert_eq!(
+            RuntimeBeliefView::believed_support_declarations_for_office(&view, office),
+            vec![(
+                supporter,
+                InstitutionalBeliefRead::Certain(Some(candidate)),
+            )]
         );
     }
 
