@@ -713,6 +713,20 @@ fn golden_healer_acquires_remote_ground_medicine_for_patient_replays_determinist
 // ---------------------------------------------------------------------------
 // Scenario 2c-self: Wounded agent self-treats with medicine
 // ---------------------------------------------------------------------------
+//
+// Systems: AI, Care, Combat
+// GoalKinds: TreatWounds(self)
+// ActionDomains: Care
+// Places: VillageSquare
+// Principles: 7
+//
+// Setup: Single wounded agent with own Medicine(1) at VillageSquare.
+//
+// Proves: Self-care is lawful. Agent emits TreatWounds{patient: self},
+//   consumes medicine, and reduces wound load.
+//
+// Chain: Wound state -> TreatWounds{self} goal -> heal action -> medicine
+//   consumed -> wound severity reduced.
 
 fn run_self_care_with_medicine(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
@@ -789,6 +803,19 @@ fn golden_self_care_with_medicine_replays_deterministically() {
 // ---------------------------------------------------------------------------
 // Scenario 2c-self-acquire: Wounded agent acquires ground medicine, self-treats
 // ---------------------------------------------------------------------------
+//
+// Systems: AI, Care, Transport, Combat
+// GoalKinds: TreatWounds(self)
+// ActionDomains: Care, Transport
+// Places: VillageSquare
+//
+// Setup: Wounded agent with no medicine. Ground Medicine(1) at same place.
+//
+// Proves: Agent picks up ground medicine and self-treats. Self-care
+//   acquisition path works through planner resolve of pick_up before heal.
+//
+// Chain: Wound state -> TreatWounds{self} goal -> pick_up ground medicine
+//   -> heal action -> wound reduced.
 
 fn run_self_care_acquires_ground_medicine(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
@@ -864,6 +891,22 @@ fn golden_self_care_acquires_ground_medicine_replays_deterministically() {
 // ---------------------------------------------------------------------------
 // Scenario 2c-report: Indirect wound report does NOT trigger care goal
 // ---------------------------------------------------------------------------
+//
+// Systems: AI, Care, Perception
+// GoalKinds: TreatWounds(other)
+// ActionDomains: Care
+// Places: VillageSquare, OrchardFarm
+// Principles: 7
+//
+// Setup: Observer at VillageSquare with Medicine(1). Wounded patient at
+//   OrchardFarm. Observer has Report-sourced wound belief only.
+//
+// Proves: Report-sourced beliefs do NOT trigger TreatWounds — only
+//   DirectObservation does (Principle 7 locality). Observer does not
+//   consume medicine or travel to patient.
+//
+// Chain: Report belief about wounds -> direct-observation gate rejects
+//   -> no TreatWounds candidate generated -> medicine unconsumed.
 
 fn run_indirect_report_no_care(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
@@ -955,6 +998,22 @@ fn golden_indirect_report_does_not_trigger_care_replays_deterministically() {
 // ---------------------------------------------------------------------------
 // Scenario 2c-invalidation: Care goal invalidates when patient self-heals
 // ---------------------------------------------------------------------------
+//
+// Systems: AI, Care, Combat
+// GoalKinds: TreatWounds(other), TreatWounds(self)
+// ActionDomains: Care
+// Places: VillageSquare
+//
+// Setup: Patient with Medicine(1) and healer without medicine, co-located.
+//   Patient can self-treat.
+//
+// Proves: Patient self-heals. Healer's TreatWounds{patient} goal is
+//   satisfied when patient pain reaches zero. Healer never acquires medicine.
+//   Also proves pre-start wound disappearance -> StartFailed + blocked intent.
+//
+// Chain: Patient self-treats -> pain zero -> healer goal satisfied and drops.
+//   Or: healer selects TreatWounds -> wounds disappear -> StartFailed ->
+//   blocked-intent memory.
 
 fn run_care_goal_invalidation(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);

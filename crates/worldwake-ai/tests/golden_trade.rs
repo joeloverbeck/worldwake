@@ -877,6 +877,25 @@ fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 2b: Buyer-Driven Trade Acquisition
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Trade, Conservation
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Trade, Needs
+// Places: VillageSquare
+//
+// Setup: Hungry buyer and sated seller co-located at VillageSquare. Seller
+//   advertises bread via MerchandiseProfile; buyer holds coins.
+//
+// Proves: Buyer generates AcquireCommodity from hunger. Planner resolves
+//   through local trade barrier. Trade transfers bread and coins. Buyer
+//   consumes acquired bread. Bread and coin conservation holds.
+//
+// Chain: Need pressure -> seller discovery via MerchandiseProfile -> planner
+//   trade barrier -> trade valuation/exchange -> consumption.
+
 #[test]
 fn golden_buyer_driven_trade_acquisition() {
     let _ = run_buyer_driven_trade_scenario(Seed([12; 32]));
@@ -893,6 +912,25 @@ fn golden_buyer_driven_trade_acquisition_replays_deterministically() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 2d: Merchant Restock and Return to Home Market
+// ---------------------------------------------------------------------------
+//
+// Systems: Enterprise, Travel, Production, Transport, Conservation
+// GoalKinds: RestockCommodity, MoveCargo
+// ActionDomains: Production, Travel, Transport
+// Places: GeneralStore, OrchardFarm
+//
+// Setup: Merchant at General Store with MerchandiseProfile(Apple), zero stock,
+//   remembered unmet demand. Orchard Farm has apple ResourceSource.
+//
+// Proves: Merchant generates RestockCommodity{Apple} from concrete demand.
+//   Travels to Orchard Farm, harvests, returns stock to General Store.
+//   Destination-local controlled stock satisfies restock delivery.
+//
+// Chain: Demand memory -> enterprise restock signal -> multi-leg travel ->
+//   harvest/materialization -> cargo return to home market.
+
 #[test]
 fn golden_merchant_restock_return_stock() {
     let _ = run_merchant_restock_return_stock_scenario(Seed([14; 32]));
@@ -908,6 +946,24 @@ fn golden_merchant_restock_return_stock_replays_deterministically() {
         "merchant restock-return stock scenario should replay deterministically"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 27: Local Trade Start Failure Recovers via Production Fallback
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Trade, Production, Travel, Conservation
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Trade, Production, Travel, Needs
+// Places: VillageSquare, OrchardFarm
+//
+// Setup: Two hungry buyers target one edible stock unit. Loser records
+//   StartFailed on stale trade start.
+//
+// Proves: Losing buyer records lawful StartFailed. Next AI tick clears
+//   stale local trade branch. Recovery through distant production fallback.
+//
+// Chain: Two buyers -> stale trade start -> StartFailed -> next AI tick
+//   clears branch -> travel to remote production -> harvest -> eat.
 
 #[test]
 fn golden_local_trade_start_failure_recovers_via_production_fallback() {

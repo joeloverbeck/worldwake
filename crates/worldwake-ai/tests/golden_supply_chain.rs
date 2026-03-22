@@ -66,10 +66,6 @@ fn build_craft_restock_recipe_registry() -> RecipeRegistry {
     recipes
 }
 
-// ---------------------------------------------------------------------------
-// Segment 1: Merchant Restock Cycle (with traces)
-// ---------------------------------------------------------------------------
-
 #[allow(clippy::too_many_lines)]
 fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
     let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
@@ -294,10 +290,6 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
         hash_event_log(&h.event_log).unwrap(),
     )
 }
-
-// ---------------------------------------------------------------------------
-// Segment 2: Consumer Co-located Trade (with traces)
-// ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
 fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash, StateHash) {
@@ -1575,6 +1567,27 @@ fn test_merchant_restock_replay() {
         "Merchant restock scenario should replay deterministically"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 2d-craft: Merchant Restock via Prerequisite-Aware Craft
+// ---------------------------------------------------------------------------
+//
+// Systems: Enterprise, Travel, Production, AI, Conservation
+// GoalKinds: RestockCommodity
+// ActionDomains: Production, Travel, Transport
+// Places: GeneralStore, OrchardFarm
+//
+// Setup: Merchant at General Store advertising bread, zero stock, remembered
+//   demand. Remote firewood at Orchard Farm, local mill. Test-local recipe
+//   registry for Harvest Firewood and Bake Bread.
+//
+// Proves: RestockCommodity{Bread} from concrete demand. Tick-0 traces show
+//   prerequisite-aware spatial guidance toward Orchard Farm. Full chain:
+//   travel -> harvest remote firewood -> return -> craft Bake Bread ->
+//   bread stock at home market.
+//
+// Chain: Demand memory -> restock signal -> prerequisite-aware route to remote
+//   input -> harvest/pickup -> return -> local craft -> bread at home market.
 
 #[test]
 fn golden_merchant_restocks_via_prerequisite_aware_craft() {

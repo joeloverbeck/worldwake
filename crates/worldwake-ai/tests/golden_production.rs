@@ -2182,6 +2182,20 @@ fn run_grant_expiry_before_intended_action_scenario(
 // ---------------------------------------------------------------------------
 // Scenario 3: Resource Contention with Conservation
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, Production, Travel, Conservation
+// GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+// ActionDomains: Needs, Production, Travel
+// Places: VillageSquare, OrchardFarm
+//
+// Setup: Two critically hungry agents at Village Square. Alice has 1 bread.
+//   Orchard Farm has apples.
+//
+// Proves: Both agents act concurrently. Commodity totals never increase.
+//   Per-tick conservation enforced.
+//
+// Chain: Concurrent hunger pressure -> goal generation -> action execution
+//   -> conservation verification.
 
 #[test]
 fn golden_resource_contention_with_conservation() {
@@ -2487,6 +2501,20 @@ fn golden_materialized_output_ownership_prevents_theft() {
 // ---------------------------------------------------------------------------
 // Scenario 4: Materialization Barrier Chain
 // ---------------------------------------------------------------------------
+//
+// Systems: Production, Transport, Needs, AI
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Production, Transport, Needs
+// Places: OrchardFarm
+//
+// Setup: Agent at Orchard Farm, critically hungry, no food. OrchardRow with
+//   20 apples.
+//
+// Proves: Harvest -> ground lots materialize -> replan -> pick-up -> replan
+//   -> eat. Longest emergent chain. Conservation: never exceeds 20.
+//
+// Chain: Harvest -> materialization on ground -> replan -> pick-up -> replan
+//   -> eat.
 
 #[test]
 fn golden_materialization_barrier_chain() {
@@ -2573,6 +2601,20 @@ fn golden_materialization_barrier_chain() {
 // ---------------------------------------------------------------------------
 // Scenario 6b: Multi-Recipe Craft Path
 // ---------------------------------------------------------------------------
+//
+// Systems: Production, Transport, Needs, AI
+// GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
+// ActionDomains: Production, Transport, Needs
+// Places: VillageSquare
+//
+// Setup: Agent with 1 firewood, knows 3 recipes. Mill workstation at
+//   Village Square.
+//
+// Proves: Selects bake bread recipe. Crafting consumes firewood, produces
+//   bread. Agent eats. Conservation verified.
+//
+// Chain: Recipe selection -> craft action -> output materialization -> replan
+//   -> eat.
 
 #[test]
 fn golden_acquire_commodity_recipe_input() {
@@ -2716,6 +2758,22 @@ fn golden_dead_agent_pruned_from_facility_queue_replays_deterministically() {
 // ---------------------------------------------------------------------------
 // Scenario 3f: Faction-Owned Production — Member vs Outsider
 // ---------------------------------------------------------------------------
+//
+// Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Production, Travel, Transport, Needs
+// Places: OrchardFarm, VillageSquare
+// Principles: (faction institutional delegation)
+//
+// Setup: Faction-owned orchard at Orchard Farm (ProducerOwner policy).
+//   Member Kael and outsider Wren both hungry. Fallback Actor-policy
+//   orchard at Village Square.
+//
+// Proves: Harvest output owned by faction. Member picks up via institutional
+//   delegation. Outsider blocked, replans to fallback. Conservation holds.
+//
+// Chain: ProducerOwner policy -> faction-owned output -> member pickup /
+//   outsider blocked -> outsider travel + fallback -> hunger relief for both.
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum FactionOwnershipMilestone {

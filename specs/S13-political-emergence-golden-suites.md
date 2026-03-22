@@ -234,9 +234,9 @@ No positive-feedback loops require additional dampening beyond existing systems.
 
 ---
 
-### S13-005: Update golden-e2e-scenarios.md
+### S13-005: Add structured scenario metadata to source comments
 
-**Deliverable**: Add detailed scenario descriptions for S21-S23 in `docs/golden-e2e-scenarios.md`.
+**Deliverable**: Add structured `// Scenario` comment blocks with metadata (Systems, GoalKinds, Setup, Proves, Chain) to the S21-S23 golden tests in `golden_emergent.rs`. Run `python3 scripts/golden_inventory.py --write --check-docs` to regenerate docs. (The former `docs/golden-e2e-scenarios.md` has been replaced by source-embedded annotations and generated output in `docs/generated/golden-scenario-map.md`.)
 
 ## Critical Files
 
@@ -246,7 +246,7 @@ No positive-feedback loops require additional dampening beyond existing systems.
 | `crates/worldwake-ai/tests/golden_emergent.rs` | Add 3 new suites (~8 tests + replay companions) |
 | `crates/worldwake-ai/tests/golden_harness/mod.rs` | May need new helpers |
 | `docs/golden-e2e-coverage.md` | Update coverage matrix |
-| `docs/golden-e2e-scenarios.md` | Add scenario descriptions |
+| `docs/generated/golden-scenario-map.md` | Regenerated from source annotations |
 
 ## Verification
 
@@ -258,7 +258,7 @@ Per ticket:
 
 After all tickets:
 5. Verify `docs/golden-e2e-coverage.md` reflects new scenarios in all matrices
-6. Verify `docs/golden-e2e-scenarios.md` has detailed descriptions for S21-S23
+6. Verify `docs/generated/golden-scenario-map.md` has metadata for S21-S23 (run `python3 scripts/golden_inventory.py --write --check-docs`)
 
 ## Implementation Order
 
