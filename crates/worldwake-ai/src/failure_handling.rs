@@ -124,7 +124,9 @@ fn derive_blocking_fact(
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
-        | PlannerOpKind::DeclareSupport => {}
+        | PlannerOpKind::DeclareSupport
+        | PlannerOpKind::PressForceClaim
+        | PlannerOpKind::YieldForceClaim => {}
     }
 
     if danger_too_high(view, agent) {
@@ -346,7 +348,9 @@ fn classify_input_failure(
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
-        | PlannerOpKind::DeclareSupport => None,
+        | PlannerOpKind::DeclareSupport
+        | PlannerOpKind::PressForceClaim
+        | PlannerOpKind::YieldForceClaim => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -381,7 +385,9 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
-        | PlannerOpKind::DeclareSupport => {
+        | PlannerOpKind::DeclareSupport
+        | PlannerOpKind::PressForceClaim
+        | PlannerOpKind::YieldForceClaim => {
             view.entity_kind(target).is_none() || view.is_dead(target)
         }
         PlannerOpKind::Travel => false,
@@ -632,6 +638,16 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
             .as_ref()
             .and_then(ActionPayload::as_declare_support)
             .map(|payload| payload.office),
+        PlannerOpKind::PressForceClaim => step
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_press_force_claim)
+            .map(|payload| payload.office),
+        PlannerOpKind::YieldForceClaim => step
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_yield_force_claim)
+            .map(|payload| payload.office),
     }
 }
 
@@ -667,7 +683,9 @@ fn related_place(
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
-        | PlannerOpKind::DeclareSupport => view.effective_place(agent),
+        | PlannerOpKind::DeclareSupport
+        | PlannerOpKind::PressForceClaim
+        | PlannerOpKind::YieldForceClaim => view.effective_place(agent),
     }
 }
 

@@ -305,38 +305,69 @@ fn emit_political_candidates(
         let Some(office_data) = ctx.view.office_data(office) else {
             continue;
         };
-        if office_data.succession_law != worldwake_core::SuccessionLaw::Support {
-            record_office_wide_political_omission(
-                diagnostics,
-                office,
-                PoliticalCandidateOmissionReason::ForceSuccessionLaw,
-            );
-            continue;
-        }
-        let office_evidence = match political_office_evidence(ctx, office, &office_data) {
-            Ok(evidence) => evidence,
-            Err(reason) => {
-                record_office_wide_political_omission(diagnostics, office, reason);
-                continue;
-            }
-        };
+        match office_data.succession_law {
+            worldwake_core::SuccessionLaw::Support => {
+                let office_evidence = match political_office_evidence(ctx, office, &office_data) {
+                    Ok(evidence) => evidence,
+                    Err(reason) => {
+                        record_office_wide_political_omission(diagnostics, office, reason);
+                        continue;
+                    }
+                };
 
-        emit_claim_office_candidate(
-            candidates,
-            diagnostics,
-            ctx,
-            office,
-            &office_data,
-            &office_evidence,
-        );
-        emit_support_candidate_goals(
-            candidates,
-            diagnostics,
-            ctx,
-            office,
-            &office_data,
-            &office_evidence,
-        );
+                emit_claim_office_candidate(
+                    candidates,
+                    diagnostics,
+                    ctx,
+                    office,
+                    &office_data,
+                    &office_evidence,
+                );
+                emit_support_candidate_goals(
+                    candidates,
+                    diagnostics,
+                    ctx,
+                    office,
+                    &office_data,
+                    &office_evidence,
+                );
+            }
+            worldwake_core::SuccessionLaw::Force => {
+                let office_evidence = match force_political_office_evidence(ctx, office, &office_data)
+                {
+                    Ok(evidence) => evidence,
+                    Err(reason) => {
+                        diagnostics.omitted_political.push(PoliticalCandidateOmission {
+                            family: PoliticalGoalFamily::ClaimOffice,
+                            office,
+                            candidate: None,
+                            reason,
+                        });
+                        diagnostics.omitted_political.push(PoliticalCandidateOmission {
+                            family: PoliticalGoalFamily::SupportCandidateForOffice,
+                            office,
+                            candidate: None,
+                            reason: PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+                        });
+                        continue;
+                    }
+                };
+                emit_claim_office_candidate(
+                    candidates,
+                    diagnostics,
+                    ctx,
+                    office,
+                    &office_data,
+                    &office_evidence,
+                );
+                diagnostics.omitted_political.push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::SupportCandidateForOffice,
+                    office,
+                    candidate: None,
+                    reason: PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+                });
+            }
+        }
     }
 }
 
@@ -359,6 +390,34 @@ fn political_office_evidence(
         InstitutionalBeliefRead::Conflicted(_) => {
             Err(PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted)
         }
+    }
+}
+
+fn force_political_office_evidence(
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+    office_data: &OfficeData,
+) -> Result<Evidence, PoliticalCandidateOmissionReason> {
+    if office_data.vacancy_since.is_some() {
+        return Ok(Evidence::default());
+    }
+    let hostiles = ctx
+        .view
+        .hostile_targets_of(ctx.agent)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    match ctx.view.believed_force_controller(office) {
+        InstitutionalBeliefRead::Certain((None, _)) => Ok(Evidence::default()),
+        InstitutionalBeliefRead::Certain((Some(controller), _)) if controller == ctx.agent => {
+            Err(PoliticalCandidateOmissionReason::AlreadyDeclaredSupport)
+        }
+        InstitutionalBeliefRead::Certain((Some(controller), _)) if hostiles.contains(&controller) => {
+            Ok(Evidence::with_entity(controller))
+        }
+        InstitutionalBeliefRead::Conflicted(_) => {
+            Err(PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted)
+        }
+        _ => Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant),
     }
 }
 
@@ -1686,6 +1745,8 @@ mod tests {
         office_data: BTreeMap<EntityId, OfficeData>,
         office_holders: BTreeMap<EntityId, EntityId>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+        force_controller_beliefs:
+            BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
@@ -1737,6 +1798,7 @@ mod tests {
                 office_data: BTreeMap::new(),
                 office_holders: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
+                force_controller_beliefs: BTreeMap::new(),
                 factions_by_member: BTreeMap::new(),
                 loyalties: BTreeMap::new(),
                 support_declarations: BTreeMap::new(),
@@ -2078,6 +2140,16 @@ mod tests {
             office: EntityId,
         ) -> InstitutionalBeliefRead<Option<EntityId>> {
             self.office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
+
+        fn believed_force_controller(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+            self.force_controller_beliefs
                 .get(&office)
                 .cloned()
                 .unwrap_or(InstitutionalBeliefRead::Unknown)
@@ -5232,7 +5304,7 @@ mod tests {
     }
 
     #[test]
-    fn political_candidates_skip_force_law_offices() {
+    fn political_candidates_emit_claim_for_force_law_offices_and_keep_support_suppressed() {
         let agent = entity(1);
         let office = entity(2);
         let candidate = entity(3);
@@ -5254,6 +5326,8 @@ mod tests {
         view.factions_by_member.insert(agent, vec![faction]);
         view.factions_by_member.insert(candidate, vec![faction]);
         view.loyalties.insert((agent, candidate), pm(650));
+        view.force_controller_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain((None, false)));
         view.beliefs.insert(
             agent,
             vec![known_entity(office, town), known_entity(candidate, town)],
@@ -5269,26 +5343,65 @@ mod tests {
         );
 
         assert!(
-            !contains_goal(&candidates.candidates, GoalKind::ClaimOffice { office }),
-            "Force-law offices should not emit support-based ClaimOffice goals"
+            contains_goal(&candidates.candidates, GoalKind::ClaimOffice { office }),
+            "Force-law offices should emit ClaimOffice when control is believed vacant"
         );
         assert!(
             !contains_goal(
                 &candidates.candidates,
                 GoalKind::SupportCandidateForOffice { office, candidate }
             ),
-            "Force-law offices should not emit support-based support-candidate goals"
+            "Force-law offices should keep support-candidate goals suppressed"
         );
         assert!(contains_political_omission(
             &candidates.diagnostics,
-            PoliticalGoalFamily::ClaimOffice,
+            PoliticalGoalFamily::SupportCandidateForOffice,
             office,
             None,
             PoliticalCandidateOmissionReason::ForceSuccessionLaw,
         ));
-        assert!(contains_political_omission(
-            &candidates.diagnostics,
-            PoliticalGoalFamily::SupportCandidateForOffice,
+    }
+
+    #[test]
+    fn political_candidates_emit_claim_for_enemy_held_force_office() {
+        let agent = entity(1);
+        let enemy = entity(2);
+        let office = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, enemy]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(enemy, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(enemy, town);
+        view.entities_at.insert(town, vec![agent, enemy]);
+
+        let mut office_data = vacant_office("Warlord", town, faction);
+        office_data.succession_law = worldwake_core::SuccessionLaw::Force;
+        view.office_data.insert(office, office_data);
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.hostiles.insert(agent, vec![enemy]);
+        view.force_controller_beliefs.insert(
+            office,
+            InstitutionalBeliefRead::Certain((Some(enemy), false)),
+        );
+        view.beliefs.insert(agent, vec![known_entity(office, town), known_entity(enemy, town)]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(contains_goal(&result.candidates, GoalKind::ClaimOffice { office }));
+        assert!(!contains_political_omission(
+            &result.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
             office,
             None,
             PoliticalCandidateOmissionReason::ForceSuccessionLaw,

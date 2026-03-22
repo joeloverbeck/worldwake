@@ -1656,7 +1656,9 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Defend
         | crate::PlannerOpKind::Bribe
         | crate::PlannerOpKind::Threaten
-        | crate::PlannerOpKind::DeclareSupport => {}
+        | crate::PlannerOpKind::DeclareSupport
+        | crate::PlannerOpKind::PressForceClaim
+        | crate::PlannerOpKind::YieldForceClaim => {}
     }
 }
 
@@ -5822,12 +5824,12 @@ mod tests {
         match &traces[0].outcome {
             crate::DecisionOutcome::Planning(planning) => {
                 assert!(
-                    !planning
+                    planning
                         .candidates
                         .generated
                         .iter()
                         .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
-                    "Force-law offices must not emit ClaimOffice candidates in agent_tick"
+                    "Force-law offices should emit ClaimOffice candidates in agent_tick"
                 );
                 assert!(
                     !planning.candidates.generated.iter().any(|goal| {
@@ -5840,11 +5842,17 @@ mod tests {
                     "Force-law offices must not emit SupportCandidateForOffice candidates in agent_tick"
                 );
                 assert!(
-                    !planning.planning.attempts.iter().any(|attempt| {
+                    planning.planning.attempts.iter().any(|attempt| {
                         matches!(
                             attempt.goal.kind,
                             GoalKind::ClaimOffice { office: goal_office } if goal_office == office
-                        ) || matches!(
+                        )
+                    }),
+                    "Force-law ClaimOffice should enter political plan search in agent_tick"
+                );
+                assert!(
+                    !planning.planning.attempts.iter().any(|attempt| {
+                        matches!(
                             attempt.goal.kind,
                             GoalKind::SupportCandidateForOffice {
                                 office: goal_office,
@@ -5852,21 +5860,7 @@ mod tests {
                             } if goal_office == office && candidate == rival
                         )
                     }),
-                    "Force-law offices must not enter political plan search in agent_tick"
-                );
-                assert!(
-                    planning
-                        .candidates
-                        .omitted_political
-                        .iter()
-                        .any(|omission| {
-                            omission.family == crate::PoliticalGoalFamily::ClaimOffice
-                                && omission.office == office
-                                && omission.candidate.is_none()
-                                && omission.reason
-                                    == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
-                        }),
-                    "Force-law omission should be preserved in the decision trace for ClaimOffice"
+                    "Force-law support-candidate goals must not enter political plan search in agent_tick"
                 );
                 assert!(
                     planning.candidates.omitted_political.iter().any(|omission| {

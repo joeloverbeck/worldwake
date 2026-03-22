@@ -31,6 +31,8 @@ pub enum PlannerOpKind {
     Bribe,
     Threaten,
     DeclareSupport,
+    PressForceClaim,
+    YieldForceClaim,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -118,6 +120,7 @@ const GOALS_DECLARE_SUPPORT: &[GoalKindTag] = &[
     GoalKindTag::ClaimOffice,
     GoalKindTag::SupportCandidateForOffice,
 ];
+const GOALS_PRESS_FORCE_CLAIM: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
 
 #[must_use]
 pub fn build_semantics_table(
@@ -162,6 +165,12 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Social, "threaten", ActionPayload::None) => Some(PlannerOpKind::Threaten),
         (ActionDomain::Social, "declare_support", ActionPayload::None) => {
             Some(PlannerOpKind::DeclareSupport)
+        }
+        (ActionDomain::Social, "press_force_claim", ActionPayload::PressForceClaim(_)) => {
+            Some(PlannerOpKind::PressForceClaim)
+        }
+        (ActionDomain::Social, "yield_force_claim", ActionPayload::YieldForceClaim(_)) => {
+            Some(PlannerOpKind::YieldForceClaim)
         }
         (ActionDomain::Combat, "attack", _) => Some(PlannerOpKind::Attack),
         (ActionDomain::Combat, "defend", _) => Some(PlannerOpKind::Defend),
@@ -274,7 +283,9 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
-        | PlannerOpKind::DeclareSupport => unreachable!("handled by social_or_combat_semantics"),
+        | PlannerOpKind::DeclareSupport
+        | PlannerOpKind::PressForceClaim
+        | PlannerOpKind::YieldForceClaim => unreachable!("handled by social_or_combat_semantics"),
     }
 }
 
@@ -329,6 +340,16 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             PlannerTransitionKind::GoalModelFallback,
             GOALS_DECLARE_SUPPORT,
         ),
+        PlannerOpKind::PressForceClaim => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_PRESS_FORCE_CLAIM,
+        ),
+        PlannerOpKind::YieldForceClaim => {
+            base_semantics(op_kind, false, false, PlannerTransitionKind::GoalModelFallback, &[])
+        }
         _ => return None,
     })
 }

@@ -5,12 +5,14 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, PlaceTag,
-    Quantity, RecipeId, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    Quantity, RecipeId, RecordData, ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile,
+    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+    Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
 type SupportBeliefRead = InstitutionalBeliefRead<Option<EntityId>>;
+type ForceControllerBeliefRead = InstitutionalBeliefRead<(Option<EntityId>, bool)>;
 type OfficeSupportBeliefReads = Vec<(EntityId, SupportBeliefRead)>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,6 +58,8 @@ pub(crate) struct SnapshotEntity {
     pub(crate) facility_queue: Option<SnapshotFacilityQueue>,
     /// For Office entities: the jurisdiction place. Captured from `OfficeData.jurisdiction`.
     pub(crate) jurisdiction: Option<EntityId>,
+    /// For Office entities: the succession law. Captured from `OfficeData.succession_law`.
+    pub(crate) succession_law: Option<SuccessionLaw>,
 }
 
 impl Default for SnapshotEntity {
@@ -95,6 +99,7 @@ impl Default for SnapshotEntity {
             reservation_ranges: Vec::new(),
             facility_queue: None,
             jurisdiction: None,
+            succession_law: None,
         }
     }
 }
@@ -204,6 +209,7 @@ pub struct PlanningSnapshot {
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
     pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub(crate) actor_office_holder_beliefs: BTreeMap<EntityId, SupportBeliefRead>,
+    pub(crate) actor_force_controller_beliefs: BTreeMap<EntityId, ForceControllerBeliefRead>,
     /// Baseline believed-certain support declarations per office: (supporter, candidate) pairs.
     pub(crate) office_certain_support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     /// Belief-derived support declaration reads per office.
@@ -281,6 +287,12 @@ impl PlanningSnapshot {
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
                 .map(|office| (office, view.believed_office_holder(office)))
                 .collect(),
+            actor_force_controller_beliefs: included_entities
+                .iter()
+                .copied()
+                .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
+                .map(|office| (office, view.believed_force_controller(office)))
+                .collect(),
             office_certain_support_declarations: included_entities
                 .iter()
                 .copied()
@@ -348,6 +360,21 @@ impl PlanningSnapshot {
             .get(&office)
             .cloned()
             .unwrap_or(InstitutionalBeliefRead::Unknown)
+    }
+
+    #[must_use]
+    pub(crate) fn believed_force_controller(&self, office: EntityId) -> ForceControllerBeliefRead {
+        self.actor_force_controller_beliefs
+            .get(&office)
+            .cloned()
+            .unwrap_or(InstitutionalBeliefRead::Unknown)
+    }
+
+    #[must_use]
+    pub(crate) fn succession_law(&self, office: EntityId) -> Option<SuccessionLaw> {
+        self.entities
+            .get(&office)
+            .and_then(|snapshot| snapshot.succession_law.clone())
     }
 
     #[must_use]
@@ -498,6 +525,7 @@ fn build_snapshot_entity(
         reservation_ranges: view.reservation_ranges(entity),
         facility_queue: snapshot_facility_queue(view, actor, entity),
         jurisdiction: view.office_data(entity).map(|d| d.jurisdiction),
+        succession_law: view.office_data(entity).map(|d| d.succession_law),
     }
 }
 

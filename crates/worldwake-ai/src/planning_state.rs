@@ -5,9 +5,9 @@ use worldwake_core::{
     load_per_unit, ActionDefId, BelievedEntityState, CombatProfile, CommodityKind,
     DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
     InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile, Permille, PlaceTag,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey,
-    TellProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    WorkstationTag, Wound,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SuccessionLaw,
+    TellMemoryKey, TellProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -47,6 +47,8 @@ pub struct PlanningState<'snapshot> {
     pain_overrides: BTreeMap<EntityId, Permille>,
     support_declaration_overrides: BTreeMap<(EntityId, EntityId), Option<EntityId>>,
     office_holder_belief_overrides: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+    force_controller_belief_overrides:
+        BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
     support_declaration_belief_overrides:
         BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
     facility_queue_membership_overrides: BTreeMap<EntityId, Option<HypotheticalQueueJoin>>,
@@ -71,6 +73,7 @@ impl<'snapshot> PlanningState<'snapshot> {
             pain_overrides: BTreeMap::new(),
             support_declaration_overrides: BTreeMap::new(),
             office_holder_belief_overrides: BTreeMap::new(),
+            force_controller_belief_overrides: BTreeMap::new(),
             support_declaration_belief_overrides: BTreeMap::new(),
             facility_queue_membership_overrides: BTreeMap::new(),
             facility_grant_overrides: BTreeMap::new(),
@@ -127,6 +130,22 @@ impl<'snapshot> PlanningState<'snapshot> {
             .get(&office)
             .cloned()
             .unwrap_or_else(|| self.snapshot.believed_office_holder(office))
+    }
+
+    #[must_use]
+    pub fn believed_force_controller(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+        self.force_controller_belief_overrides
+            .get(&office)
+            .cloned()
+            .unwrap_or_else(|| self.snapshot.believed_force_controller(office))
+    }
+
+    #[must_use]
+    pub fn succession_law(&self, office: EntityId) -> Option<SuccessionLaw> {
+        self.snapshot.succession_law(office)
     }
 
     #[must_use]
@@ -190,6 +209,14 @@ impl<'snapshot> PlanningState<'snapshot> {
         value: InstitutionalBeliefRead<Option<EntityId>>,
     ) {
         self.office_holder_belief_overrides.insert(office, value);
+    }
+
+    pub fn override_force_controller_belief(
+        &mut self,
+        office: EntityId,
+        value: InstitutionalBeliefRead<(Option<EntityId>, bool)>,
+    ) {
+        self.force_controller_belief_overrides.insert(office, value);
     }
 
     pub fn override_support_declaration_belief(

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, InstitutionalBeliefRead,
-    Permille, PlaceTag, Quantity, RecordKind, WorkstationTag,
+    Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
@@ -155,6 +155,7 @@ const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Bribe,
     PlannerOpKind::Threaten,
     PlannerOpKind::DeclareSupport,
+    PlannerOpKind::PressForceClaim,
 ];
 const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
@@ -248,6 +249,10 @@ fn office_requiring_vacancy_belief(goal: &GoalKind) -> Option<EntityId> {
         }
         _ => None,
     }
+}
+
+fn office_succession_law(state: &PlanningState<'_>, office: EntityId) -> Option<SuccessionLaw> {
+    state.succession_law(office)
 }
 
 fn political_step_requires_known_vacancy(goal: &GoalKind, op_kind: PlannerOpKind) -> bool {
@@ -621,7 +626,9 @@ impl GoalKindPlannerExt for GoalKind {
             PlannerOpKind::DeclareSupport => match self {
                 GoalKind::ClaimOffice { office } => {
                     // Principle 7 (Locality): DeclareSupport requires actor at office jurisdiction.
-                    if actor_at_jurisdiction(&state, actor, *office) {
+                    if actor_at_jurisdiction(&state, actor, *office)
+                        && office_succession_law(&state, *office) == Some(SuccessionLaw::Support)
+                    {
                         state.with_support_declaration(actor, *office, actor)
                     } else {
                         state
@@ -645,6 +652,23 @@ impl GoalKindPlannerExt for GoalKind {
             PlannerOpKind::Threaten => match self {
                 GoalKind::ClaimOffice { office } => {
                     apply_threaten_for_office(state, actor, *office, payload_override)
+                }
+                _ => state,
+            },
+            PlannerOpKind::PressForceClaim => match self {
+                GoalKind::ClaimOffice { office } => {
+                    if actor_at_jurisdiction(&state, actor, *office)
+                        && office_succession_law(&state, *office) == Some(SuccessionLaw::Force)
+                    {
+                        let mut state = state;
+                        state.override_force_controller_belief(
+                            *office,
+                            InstitutionalBeliefRead::Certain((Some(actor), false)),
+                        );
+                        state
+                    } else {
+                        state
+                    }
                 }
                 _ => state,
             },
@@ -674,7 +698,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Attack
             | PlannerOpKind::Defend
             | PlannerOpKind::Tell
-            | PlannerOpKind::MoveCargo => state,
+            | PlannerOpKind::MoveCargo
+            | PlannerOpKind::YieldForceClaim => state,
         }
     }
 
@@ -697,7 +722,10 @@ impl GoalKindPlannerExt for GoalKind {
         if matches!(
             self,
             GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. }
-        ) && step.op_kind == PlannerOpKind::DeclareSupport
+        ) && matches!(
+            step.op_kind,
+            PlannerOpKind::DeclareSupport | PlannerOpKind::PressForceClaim
+        )
         {
             return true;
         }
@@ -788,7 +816,15 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 state.effective_support_declaration(actor, *office) == Some(*candidate)
             }
-            GoalKind::ClaimOffice { office } => state.has_support_majority(*office, actor),
+            GoalKind::ClaimOffice { office } => match office_succession_law(state, *office) {
+                Some(SuccessionLaw::Support) => state.has_support_majority(*office, actor),
+                Some(SuccessionLaw::Force) => matches!(
+                    state.believed_force_controller(*office),
+                    InstitutionalBeliefRead::Certain((Some(controller), false))
+                        if controller == actor
+                ),
+                None => false,
+            },
             GoalKind::ProduceCommodity { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
@@ -822,8 +858,14 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
-            | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
+            GoalKind::ClaimOffice { office } => {
+                if office_succession_law(state, *office) == Some(SuccessionLaw::Force) {
+                    state.snapshot().jurisdiction(*office).into_iter().collect()
+                } else {
+                    Vec::new()
+                }
+            }
             GoalKind::ProduceCommodity { recipe_id } => {
                 let required_tag = recipes
                     .get(*recipe_id)
@@ -898,6 +940,11 @@ impl GoalKindPlannerExt for GoalKind {
             ),
             GoalKind::ClaimOffice { office }
             | GoalKind::SupportCandidateForOffice { office, .. } => {
+                if matches!(self, GoalKind::ClaimOffice { .. })
+                    && office_succession_law(state, *office) == Some(SuccessionLaw::Force)
+                {
+                    return state.snapshot().jurisdiction(*office).into_iter().collect();
+                }
                 if state.believed_office_holder(*office) != InstitutionalBeliefRead::Unknown {
                     return Vec::new();
                 }
@@ -937,6 +984,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Heal
             | PlannerOpKind::Tell
             | PlannerOpKind::DeclareSupport
+            | PlannerOpKind::PressForceClaim
+            | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Bury => {}
         }
 
@@ -1870,6 +1919,8 @@ mod tests {
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+        force_controller_beliefs:
+            BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data_map: BTreeMap<EntityId, OfficeData>,
@@ -2176,6 +2227,16 @@ mod tests {
 
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data_map.get(&office).cloned()
+        }
+
+        fn believed_force_controller(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+            self.force_controller_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn believed_support_declaration(
@@ -2642,6 +2703,7 @@ mod tests {
                 PlannerOpKind::Bribe,
                 PlannerOpKind::Threaten,
                 PlannerOpKind::DeclareSupport,
+                PlannerOpKind::PressForceClaim,
             ]
         );
         assert_eq!(
@@ -4347,6 +4409,17 @@ mod tests {
         view.effective_places.insert(actor, town);
         view.effective_places.insert(office, town);
         view.entities_at.insert(town, vec![actor, office]);
+        view.office_data_map.insert(
+            office,
+            OfficeData {
+                title: "Mayor".to_string(),
+                jurisdiction: town,
+                succession_law: SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 1,
+                vacancy_since: Some(worldwake_core::Tick(0)),
+            },
+        );
 
         if !support_declarations.is_empty() {
             // Ensure all supporters/candidates are alive and placed
@@ -4381,6 +4454,42 @@ mod tests {
 
         let snapshot = build_planning_snapshot(&view, actor, &evidence, &BTreeSet::from([town]), 1);
         // Leak to get 'static lifetime for convenience in tests
+        let leaked = Box::leak(Box::new(snapshot));
+        let state = PlanningState::new(leaked);
+        (state, actor, office)
+    }
+
+    fn force_claim_office_state(
+        believed_controller: InstitutionalBeliefRead<(Option<EntityId>, bool)>,
+    ) -> (PlanningState<'static>, EntityId, EntityId) {
+        let actor = entity(1);
+        let office = entity(40);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, office, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(office, town);
+        view.entities_at.insert(town, vec![actor, office]);
+        view.office_data_map.insert(
+            office,
+            OfficeData {
+                title: "Warlord".to_string(),
+                jurisdiction: town,
+                succession_law: SuccessionLaw::Force,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 1,
+                vacancy_since: Some(worldwake_core::Tick(0)),
+            },
+        );
+        view.force_controller_beliefs
+            .insert(office, believed_controller);
+
+        let evidence = BTreeSet::from([actor, office, town]);
+        let snapshot = build_planning_snapshot(&view, actor, &evidence, &BTreeSet::from([town]), 1);
         let leaked = Box::leak(Box::new(snapshot));
         let state = PlanningState::new(leaked);
         (state, actor, office)
@@ -4455,6 +4564,26 @@ mod tests {
             !goal.is_satisfied(&state),
             "zero support should NOT satisfy ClaimOffice"
         );
+    }
+
+    #[test]
+    fn claim_office_force_law_satisfied_when_actor_is_uncontested_controller() {
+        let actor = entity(1);
+        let office = entity(40);
+        let (state, _, _) =
+            force_claim_office_state(InstitutionalBeliefRead::Certain((Some(actor), false)));
+        let goal = GoalKind::ClaimOffice { office };
+        assert!(goal.is_satisfied(&state));
+    }
+
+    #[test]
+    fn claim_office_force_law_not_satisfied_when_control_is_contested() {
+        let actor = entity(1);
+        let office = entity(40);
+        let (state, _, _) =
+            force_claim_office_state(InstitutionalBeliefRead::Certain((Some(actor), true)));
+        let goal = GoalKind::ClaimOffice { office };
+        assert!(!goal.is_satisfied(&state));
     }
 
     #[test]
