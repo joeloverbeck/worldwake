@@ -141,6 +141,10 @@ pub trait GoalBeliefView {
         let _ = (faction, member);
         InstitutionalBeliefRead::Unknown
     }
+    fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
+        let _ = claimant;
+        Vec::new()
+    }
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
         let _ = (subject, target);
         None
@@ -322,6 +326,10 @@ pub trait RuntimeBeliefView {
     ) -> InstitutionalBeliefRead<bool> {
         let _ = (faction, member);
         InstitutionalBeliefRead::Unknown
+    }
+    fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
+        let _ = claimant;
+        Vec::new()
     }
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
         let _ = (subject, target);

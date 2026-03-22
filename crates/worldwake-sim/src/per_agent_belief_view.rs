@@ -802,6 +802,14 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.belief_store.believed_membership(faction, member)
     }
 
+    fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
+        if claimant != self.agent {
+            return Vec::new();
+        }
+
+        self.world.offices_contested_by(claimant)
+    }
+
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<worldwake_core::Permille> {
         if subject != self.agent {
             return None;
